@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 import requests
 from dotenv import load_dotenv
@@ -20,8 +20,22 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 CACHE_DIR = Path("/tmp/nba_dfs_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 
-# DraftKings scoring weights
-DK_WEIGHTS = {
+# Browser-like headers for stats.nba.com requests
+NBA_HEADERS = {
+    "Host": "stats.nba.com",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Origin": "https://www.nba.com",
+    "Referer": "https://www.nba.com/",
+    "Connection": "keep-alive",
+}
+
+# Scoring weights (fantasy points)
+FP_WEIGHTS = {
     "PTS": 1.0,
     "REB": 1.25,
     "AST": 1.5,
@@ -31,7 +45,6 @@ DK_WEIGHTS = {
     "FG3M": 0.5,
 }
 
-# Mapping from nba_api team tricodes to Odds API full names
 TRICODE_TO_NAME = {
     "ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn Nets",
     "CHA": "Charlotte Hornets", "CHI": "Chicago Bulls", "CLE": "Cleveland Cavaliers",
@@ -45,6 +58,10 @@ TRICODE_TO_NAME = {
     "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "WAS": "Washington Wizards",
 }
 
+
+# ---------------------------------------------------------------------------
+# Caching helpers
+# ---------------------------------------------------------------------------
 
 def _cache_path(key: str) -> Path:
     today = date.today().isoformat()
@@ -64,18 +81,42 @@ def _write_cache(key: str, data):
     p.write_text(json.dumps(data))
 
 
+# ---------------------------------------------------------------------------
+# NBA data fetching — uses cdn.nba.com (no IP blocking) where possible,
+# falls back to stats.nba.com with browser headers + retries.
+# ---------------------------------------------------------------------------
+
+def _nba_stats_request(url: str, params: dict, retries: int = 3) -> dict:
+    """Make a request to stats.nba.com with browser headers and retries."""
+    for attempt in range(retries):
+        try:
+            resp = requests.get(
+                url, params=params, headers=NBA_HEADERS, timeout=60
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            if attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))
+    return {}
+
+
 def fetch_todays_games():
-    """Fetch today's NBA games using nba_api live scoreboard."""
+    """Fetch today's NBA games from cdn.nba.com (no IP restrictions)."""
     cached = _read_cache("todays_games")
     if cached is not None:
         return cached
 
-    from nba_api.live.nba.endpoints import scoreboard
+    url = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
 
-    sb = scoreboard.ScoreBoard()
-    games_data = sb.get_dict()
     games = []
-    for game in games_data.get("scoreboard", {}).get("games", []):
+    for game in data.get("scoreboard", {}).get("games", []):
         games.append({
             "gameId": game["gameId"],
             "homeTeam": {
@@ -92,58 +133,209 @@ def fetch_todays_games():
 
 
 def fetch_team_roster(team_id: int):
-    """Fetch roster for a team."""
+    """Fetch roster via stats.nba.com with browser headers."""
     cache_key = f"roster_{team_id}"
     cached = _read_cache(cache_key)
     if cached is not None:
         return cached
 
-    from nba_api.stats.endpoints import commonteamroster
+    time.sleep(1)
+    url = "https://stats.nba.com/stats/commonteamroster"
+    params = {"TeamID": team_id, "Season": "2025-26"}
+    data = _nba_stats_request(url, params)
 
-    time.sleep(1.5)
-    roster = commonteamroster.CommonTeamRoster(team_id=team_id)
     players = []
-    for row in roster.get_normalized_dict()["CommonTeamRoster"]:
-        players.append(
-            {"playerId": row["PLAYER_ID"], "playerName": row["PLAYER"]}
-        )
+    result_sets = data.get("resultSets", [])
+    if result_sets:
+        headers = result_sets[0].get("headers", [])
+        rows = result_sets[0].get("rowSet", [])
+        pid_idx = headers.index("PLAYER_ID") if "PLAYER_ID" in headers else None
+        name_idx = headers.index("PLAYER") if "PLAYER" in headers else None
+        if pid_idx is not None and name_idx is not None:
+            for row in rows:
+                players.append({
+                    "playerId": row[pid_idx],
+                    "playerName": row[name_idx],
+                })
+
     _write_cache(cache_key, players)
     return players
 
 
 def fetch_player_gamelog(player_id: int, season: str = "2025-26"):
-    """Fetch season game log for a player."""
+    """Fetch player game log via stats.nba.com with browser headers."""
     cache_key = f"gamelog_{player_id}_{season}"
     cached = _read_cache(cache_key)
     if cached is not None:
         return cached
 
-    from nba_api.stats.endpoints import playergamelog
+    time.sleep(1)
+    url = "https://stats.nba.com/stats/playergamelog"
+    params = {
+        "PlayerID": player_id,
+        "Season": season,
+        "SeasonType": "Regular Season",
+    }
+    data = _nba_stats_request(url, params)
 
-    time.sleep(1.5)
-    log = playergamelog.PlayerGameLog(
-        player_id=player_id, season=season, season_type_all_star="Regular Season"
-    )
-    rows = log.get_normalized_dict().get("PlayerGameLog", [])
     games = []
-    for r in rows:
-        min_str = r.get("MIN", "0")
-        try:
-            mins = float(min_str) if min_str else 0.0
-        except (ValueError, TypeError):
-            mins = 0.0
-        games.append({
-            "MIN": mins,
-            "PTS": r.get("PTS", 0) or 0,
-            "REB": r.get("REB", 0) or 0,
-            "AST": r.get("AST", 0) or 0,
-            "STL": r.get("STL", 0) or 0,
-            "BLK": r.get("BLK", 0) or 0,
-            "TOV": r.get("TOV", 0) or 0,
-            "FG3M": r.get("FG3M", 0) or 0,
-        })
+    result_sets = data.get("resultSets", [])
+    if result_sets:
+        headers = result_sets[0].get("headers", [])
+        rows = result_sets[0].get("rowSet", [])
+        col = {h: i for i, h in enumerate(headers)}
+        for row in rows:
+            min_val = row[col["MIN"]] if "MIN" in col else 0
+            try:
+                mins = float(min_val) if min_val else 0.0
+            except (ValueError, TypeError):
+                mins = 0.0
+            games.append({
+                "MIN": mins,
+                "PTS": row[col.get("PTS", 0)] or 0,
+                "REB": row[col.get("REB", 0)] or 0,
+                "AST": row[col.get("AST", 0)] or 0,
+                "STL": row[col.get("STL", 0)] or 0,
+                "BLK": row[col.get("BLK", 0)] or 0,
+                "TOV": row[col.get("TOV", 0)] or 0,
+                "FG3M": row[col.get("FG3M", 0)] or 0,
+            })
+
     _write_cache(cache_key, games)
     return games
+
+
+def fetch_all_player_stats():
+    """Fetch all player season stats in one request instead of per-player.
+    This is much faster and avoids dozens of individual API calls."""
+    cache_key = "all_player_stats"
+    cached = _read_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    url = "https://stats.nba.com/stats/leaguedashplayerstats"
+    params = {
+        "Conference": "",
+        "DateFrom": "",
+        "DateTo": "",
+        "Division": "",
+        "GameScope": "",
+        "GameSegment": "",
+        "Height": "",
+        "ISTRound": "",
+        "LastNGames": 0,
+        "LeagueID": "00",
+        "Location": "",
+        "MeasureType": "Base",
+        "Month": 0,
+        "OpponentTeamID": 0,
+        "Outcome": "",
+        "PORound": 0,
+        "PaceAdjust": "N",
+        "PerMode": "PerGame",
+        "Period": 0,
+        "PlayerExperience": "",
+        "PlayerPosition": "",
+        "PlusMinus": "N",
+        "Rank": "N",
+        "Season": "2025-26",
+        "SeasonSegment": "",
+        "SeasonType": "Regular Season",
+        "ShotClockRange": "",
+        "StarterBench": "",
+        "TeamID": 0,
+        "TwoWay": 0,
+        "VsConference": "",
+        "VsDivision": "",
+        "Weight": "",
+    }
+    data = _nba_stats_request(url, params)
+
+    stats = {}
+    result_sets = data.get("resultSets", [])
+    if result_sets:
+        headers = result_sets[0].get("headers", [])
+        rows = result_sets[0].get("rowSet", [])
+        col = {h: i for i, h in enumerate(headers)}
+        for row in rows:
+            pid = row[col.get("PLAYER_ID", 0)]
+            stats[pid] = {
+                "name": row[col.get("PLAYER_NAME", 1)],
+                "team_id": row[col.get("TEAM_ID", 2)],
+                "gp": row[col.get("GP", 0)] or 0,
+                "min": row[col.get("MIN", 0)] or 0,
+                "pts": row[col.get("PTS", 0)] or 0,
+                "reb": row[col.get("REB", 0)] or 0,
+                "ast": row[col.get("AST", 0)] or 0,
+                "stl": row[col.get("STL", 0)] or 0,
+                "blk": row[col.get("BLK", 0)] or 0,
+                "tov": row[col.get("TOV", 0)] or 0,
+                "fg3m": row[col.get("FG3M", 0)] or 0,
+            }
+
+    _write_cache(cache_key, stats)
+    return stats
+
+
+def fetch_last5_stats():
+    """Fetch last-5-game stats for all players in one request."""
+    cache_key = "all_player_stats_last5"
+    cached = _read_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    url = "https://stats.nba.com/stats/leaguedashplayerstats"
+    params = {
+        "Conference": "",
+        "DateFrom": "",
+        "DateTo": "",
+        "Division": "",
+        "GameScope": "",
+        "GameSegment": "",
+        "Height": "",
+        "ISTRound": "",
+        "LastNGames": 5,
+        "LeagueID": "00",
+        "Location": "",
+        "MeasureType": "Base",
+        "Month": 0,
+        "OpponentTeamID": 0,
+        "Outcome": "",
+        "PORound": 0,
+        "PaceAdjust": "N",
+        "PerMode": "PerGame",
+        "Period": 0,
+        "PlayerExperience": "",
+        "PlayerPosition": "",
+        "PlusMinus": "N",
+        "Rank": "N",
+        "Season": "2025-26",
+        "SeasonSegment": "",
+        "SeasonType": "Regular Season",
+        "ShotClockRange": "",
+        "StarterBench": "",
+        "TeamID": 0,
+        "TwoWay": 0,
+        "VsConference": "",
+        "VsDivision": "",
+        "Weight": "",
+    }
+    data = _nba_stats_request(url, params)
+
+    stats = {}
+    result_sets = data.get("resultSets", [])
+    if result_sets:
+        headers = result_sets[0].get("headers", [])
+        rows = result_sets[0].get("rowSet", [])
+        col = {h: i for i, h in enumerate(headers)}
+        for row in rows:
+            pid = row[col.get("PLAYER_ID", 0)]
+            stats[pid] = {
+                "min": row[col.get("MIN", 0)] or 0,
+            }
+
+    _write_cache(cache_key, stats)
+    return stats
 
 
 def fetch_vegas_lines():
@@ -191,57 +383,62 @@ def fetch_vegas_lines():
     return lines
 
 
-def calc_dk_fpts(stats: dict) -> float:
-    """Calculate DraftKings fantasy points from a stat line."""
-    return sum(stats.get(k, 0) * v for k, v in DK_WEIGHTS.items())
+# ---------------------------------------------------------------------------
+# Projection model
+# ---------------------------------------------------------------------------
+
+def calc_fpts(stats: dict) -> float:
+    """Calculate fantasy points from per-game averages."""
+    return sum(stats.get(k, 0) * v for k, v in FP_WEIGHTS.items())
 
 
-def project_player(player_name: str, games: list, vegas_total: Optional[float]) -> Optional[dict]:
-    """Project fantasy points for a player using the two-stage model."""
-    if not games:
+def project_player_from_avgs(
+    name: str, season: dict, last5_min: float, vegas_total: Optional[float]
+) -> Optional[dict]:
+    """Project fantasy points using season averages + last-5 minutes."""
+    avg_min = season.get("min", 0)
+    if avg_min < 15:
         return None
 
-    season_mins = [g["MIN"] for g in games]
-    avg_min_season = sum(season_mins) / len(season_mins) if season_mins else 0
-
-    if avg_min_season < 15:
-        return None
-
-    season_fpts = [calc_dk_fpts(g) for g in games]
-    season_fpts_per_min = []
-    for g, fpts in zip(games, season_fpts):
-        if g["MIN"] > 0:
-            season_fpts_per_min.append(fpts / g["MIN"])
-    avg_fppm = (
-        sum(season_fpts_per_min) / len(season_fpts_per_min)
-        if season_fpts_per_min
-        else 0
+    # Fantasy points per minute from season averages
+    fpts_per_game = (
+        season["pts"] * FP_WEIGHTS["PTS"]
+        + season["reb"] * FP_WEIGHTS["REB"]
+        + season["ast"] * FP_WEIGHTS["AST"]
+        + season["stl"] * FP_WEIGHTS["STL"]
+        + season["blk"] * FP_WEIGHTS["BLK"]
+        + season["tov"] * FP_WEIGHTS["TOV"]
+        + season["fg3m"] * FP_WEIGHTS["FG3M"]
     )
+    fppm = fpts_per_game / avg_min if avg_min > 0 else 0
 
-    last5 = games[:5]
-    last5_mins = [g["MIN"] for g in last5]
-    avg_min_last5 = sum(last5_mins) / len(last5_mins) if last5_mins else avg_min_season
+    # Stage 1: Predicted minutes
+    pred_minutes = (avg_min * 0.75) + (last5_min * 0.25)
 
-    pred_minutes = (avg_min_season * 0.75) + (avg_min_last5 * 0.25)
-
+    # Vegas adjustment
     vegas_adj = 1.0
     if vegas_total is not None:
         vegas_adj = vegas_total / 220.0
 
-    projected_fp = pred_minutes * avg_fppm * vegas_adj
+    projected_fp = pred_minutes * fppm * vegas_adj
 
     return {
-        "name": player_name,
+        "name": name,
         "projected_fp": round(projected_fp, 2),
         "pred_minutes": round(pred_minutes, 1),
-        "fppm": round(avg_fppm, 3),
+        "fppm": round(fppm, 3),
         "vegas_adj": round(vegas_adj, 3),
     }
 
 
+# ---------------------------------------------------------------------------
+# API endpoint
+# ---------------------------------------------------------------------------
+
 @app.get("/api/picks")
 async def get_picks():
     try:
+        # 1. Get today's games from CDN (reliable from cloud)
         games = fetch_todays_games()
         if not games:
             return JSONResponse(
@@ -249,28 +446,41 @@ async def get_picks():
                 status_code=200,
             )
 
+        # 2. Collect team IDs playing today
+        team_ids_today = set()
+        team_vegas = {}
         vegas_lines = fetch_vegas_lines()
-
-        teams = []
         for game in games:
-            teams.append(
-                (game["homeTeam"]["teamId"], game["homeTeam"]["teamTricode"])
-            )
-            teams.append(
-                (game["awayTeam"]["teamId"], game["awayTeam"]["teamTricode"])
+            for side in ("homeTeam", "awayTeam"):
+                tid = game[side]["teamId"]
+                tri = game[side]["teamTricode"]
+                team_ids_today.add(tid)
+                full_name = TRICODE_TO_NAME.get(tri, "")
+                if full_name in vegas_lines:
+                    team_vegas[tid] = vegas_lines[full_name]
+
+        # 3. Fetch all player season stats in ONE request (instead of per-player)
+        all_stats = fetch_all_player_stats()
+        if not all_stats:
+            return JSONResponse(
+                content={"error": "Could not fetch player stats from NBA.com. Please try again later."},
+                status_code=200,
             )
 
+        # 4. Fetch last-5 stats in one request
+        last5 = fetch_last5_stats()
+
+        # 5. Project players on today's teams
         projections = []
-        for team_id, tricode in teams:
-            team_full_name = TRICODE_TO_NAME.get(tricode, "")
-            game_total = vegas_lines.get(team_full_name)
-
-            roster = fetch_team_roster(team_id)
-            for player in roster:
-                gamelog = fetch_player_gamelog(player["playerId"])
-                proj = project_player(player["playerName"], gamelog, game_total)
-                if proj is not None:
-                    projections.append(proj)
+        for pid_str, pdata in all_stats.items():
+            pid = int(pid_str) if isinstance(pid_str, str) else pid_str
+            if pdata["team_id"] not in team_ids_today:
+                continue
+            last5_min = last5.get(str(pid), last5.get(pid, {})).get("min", pdata["min"])
+            vegas_total = team_vegas.get(pdata["team_id"])
+            proj = project_player_from_avgs(pdata["name"], pdata, last5_min, vegas_total)
+            if proj is not None:
+                projections.append(proj)
 
         projections.sort(key=lambda x: x["projected_fp"], reverse=True)
         top5 = [{"name": p["name"]} for p in projections[:5]]
