@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NBA DFS Picks</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.25rem;
+      color: #fff;
+    }
+    .subtitle {
+      font-size: 0.9rem;
+      color: #888;
+      margin-bottom: 2rem;
+    }
+    button {
+      background: #1d4ed8;
+      color: #fff;
+      border: none;
+      padding: 0.85rem 2.5rem;
+      font-size: 1.05rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #2563eb; }
+    button:disabled {
+      background: #374151;
+      cursor: not-allowed;
+    }
+    .spinner {
+      display: none;
+      margin: 1.5rem auto 0;
+      width: 32px;
+      height: 32px;
+      border: 3px solid #333;
+      border-top-color: #1d4ed8;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .picks-list {
+      list-style: none;
+      margin-top: 1.5rem;
+      text-align: left;
+    }
+    .picks-list li {
+      background: #141428;
+      padding: 0.85rem 1.1rem;
+      margin-bottom: 0.5rem;
+      border-radius: 8px;
+      border-left: 3px solid #1d4ed8;
+      font-size: 1rem;
+    }
+    .picks-list li .rank {
+      color: #1d4ed8;
+      font-weight: 700;
+      margin-right: 0.6rem;
+    }
+    .error {
+      margin-top: 1.5rem;
+      color: #f87171;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>NBA DFS Picks</h1>
+    <p class="subtitle">Top 5 DraftKings plays for today</p>
+    <button id="btn" onclick="getPicks()">Get Picks</button>
+    <div class="spinner" id="spinner"></div>
+    <ul class="picks-list" id="picks"></ul>
+    <p class="error" id="error"></p>
+  </div>
+  <script>
+    async function getPicks() {
+      const btn = document.getElementById('btn');
+      const spinner = document.getElementById('spinner');
+      const picksList = document.getElementById('picks');
+      const errorEl = document.getElementById('error');
+
+      btn.disabled = true;
+      btn.textContent = 'Loading...';
+      spinner.style.display = 'block';
+      picksList.innerHTML = '';
+      errorEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/picks');
+        const data = await res.json();
+
+        if (data.error) {
+          errorEl.textContent = data.error;
+        } else if (Array.isArray(data)) {
+          data.forEach((player, i) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="rank">#${i + 1}</span>${player.name}`;
+            picksList.appendChild(li);
+          });
+        }
+      } catch (err) {
+        errorEl.textContent = 'Failed to fetch picks. Please try again.';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Get Picks';
+        spinner.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
