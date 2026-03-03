@@ -16,7 +16,7 @@ app = FastAPI()
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v18")
+CACHE_DIR = Path("/tmp/nba_cache_v19")
 CACHE_DIR.mkdir(exist_ok=True)
 
 AI_MODEL = None
@@ -34,6 +34,7 @@ for _p in [
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
+MIN_GATE = 15  # Minimum projected minutes to qualify
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
@@ -133,11 +134,15 @@ def _fetch_athlete(pid):
             blended["season_min"] = season["min"]
             blended["recent_pts"] = recent["pts"]
             blended["season_pts"] = season["pts"]
+            blended["recent_stl"] = recent["stl"]
+            blended["recent_blk"] = recent["blk"]
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
+            blended["recent_stl"] = season["stl"]
+            blended["recent_blk"] = season["blk"]
     except Exception as e:
         print(f"Stat parse error pid={pid}: {e}")
         return None
@@ -145,57 +150,159 @@ def _fetch_athlete(pid):
     return blended
 
 # ─────────────────────────────────────────────────────────────────────────────
+# INJURY CASCADE ENGINE
+#
+# When a player is OUT, their avg minutes get redistributed to remaining
+# teammates at the same position (or adjacent positions).
+# This is what found González (18→26 min) and Cooper (13→17 min) on March 2.
+#
+# Position adjacency: G↔G, F↔F, C↔F (centers share with forwards)
+# ─────────────────────────────────────────────────────────────────────────────
+
+POS_GROUPS = {
+    "PG": "G", "SG": "G", "G": "G",
+    "SF": "F", "PF": "F", "F": "F",
+    "C": "C",
+}
+
+def _pos_group(pos):
+    return POS_GROUPS.get(pos, "G")
+
+def _cascade_minutes(roster, stats_map):
+    """Redistribute minutes from OUT players to eligible teammates."""
+    cascade_flags = {}
+
+    # Group players by team
+    teams = {}
+    for p in roster:
+        team = p.get("team_abbr", "")
+        if team not in teams:
+            teams[team] = []
+        teams[team].append(p)
+
+    for team, team_players in teams.items():
+        # Find OUT players with known minutes
+        out_players = []
+        active_players = []
+        for p in team_players:
+            pid = p["id"]
+            s = stats_map.get(pid)
+            if p.get("is_out") and s and s.get("min", 0) > 0:
+                out_players.append((p, s))
+            elif not p.get("is_out") and s and s.get("min", 0) > 0:
+                active_players.append((p, s))
+
+        if not out_players or not active_players:
+            continue
+
+        # Calculate total minutes freed per position group
+        freed_by_group = {}
+        for op, os in out_players:
+            pg = _pos_group(op["pos"])
+            freed_by_group[pg] = freed_by_group.get(pg, 0) + os.get("min", 0)
+            # Centers also share with forwards
+            if pg == "C":
+                freed_by_group["F"] = freed_by_group.get("F", 0) + os.get("min", 0) * 0.3
+
+        # Distribute freed minutes to active players in same position group
+        for group, freed_min in freed_by_group.items():
+            # Find eligible recipients: same group, sorted by current minutes (lowest first = biggest benefit)
+            recipients = []
+            for ap, astat in active_players:
+                apg = _pos_group(ap["pos"])
+                # G receives G minutes, F receives F minutes, C receives both C and F
+                if apg == group or (apg == "C" and group == "F") or (apg == "F" and group == "C"):
+                    recipients.append((ap, astat))
+
+            if not recipients:
+                continue
+
+            # Sort by minutes ascending — bench players get proportionally more
+            recipients.sort(key=lambda x: x[1].get("min", 0))
+
+            # Weight distribution: lower-minute players get more of the freed minutes
+            total_weight = sum(1.0 / max(r[1].get("min", 1), 1) for r in recipients)
+            for rp, rs in recipients:
+                weight = (1.0 / max(rs.get("min", 1), 1)) / total_weight
+                bonus = freed_min * weight * 0.7  # 70% of freed minutes get redistributed
+                pid = rp["id"]
+                if pid not in cascade_flags:
+                    cascade_flags[pid] = 0.0
+                cascade_flags[pid] += bonus
+
+    return cascade_flags
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # THE CORE MODEL
+#
+# DFS Scoring Formula: PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
 #
 # Real Sports Value = actual_score × slot_multiplier_received
 # The slot multiplier is determined by ownership — high-owned players (stars)
-# always land in low-multiplier slots. Bench players get 3x+ if smart players
-# identify them early.
+# always land in low-multiplier slots.
 #
-# We estimate ownership via minutes:
-#   Stars (35+ min)     → everyone drafts them → low slot mult ~1.2x → low EV
-#   Starters (28-35)    → popular → slot mult ~1.5x
-#   Role players(22-28) → moderate ownership → slot mult ~2.0x
+# We estimate ownership via projected minutes (including cascade):
+#   Stars (33+ min)     → everyone drafts them → low slot mult ~0.9x → AVOID
+#   Starters (28-33)    → popular → slot mult ~1.5x
+#   Role players(22-28) → moderate ownership → slot mult ~2.2x
 #   Bench (15-22)       → low ownership, high mult ~2.8x ← SWEET SPOT
-#   Deep bench (<15)    → very low owned, mult ~3.5x IF they play
+#   Deep bench (<15)    → below minutes gate, filtered out
 #
 # CHALK = best EV at moderate risk (role players + starters in form)
-#   Sort key: projected_score × moderate_ownership_mult × hot_streak
-#   This surfaces Reed Sheppard (22 min, hot) over Jokic (35 min, cold)
-#
 # UPSIDE = best EV at high risk (deep bench + bench with hot streaks)
-#   Sort key: projected_score × aggressive_ownership_mult × hot_streak^2
-#   This surfaces Hugo González, Sharife Cooper, Filipowski
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _ownership_mult_chalk(avg_min):
+def _ownership_mult_chalk(proj_min):
     """Moderate inverse-ownership mult. Penalizes stars, rewards role players."""
-    if avg_min < 15:  return 1.8   # deep bench — too risky for chalk
-    if avg_min < 22:  return 2.8   # bench sweet spot (Sheppard, González tier)
-    if avg_min < 28:  return 2.2   # role players
-    if avg_min < 33:  return 1.5   # starters
+    if proj_min < 15:  return 1.8   # deep bench — too risky for chalk
+    if proj_min < 22:  return 2.8   # bench sweet spot (Sheppard, González tier)
+    if proj_min < 28:  return 2.2   # role players
+    if proj_min < 33:  return 1.5   # starters
     return 0.9                      # stars — everyone drafts them, low mult
 
-def _ownership_mult_upside(avg_min):
+def _ownership_mult_upside(proj_min):
     """Aggressive inverse-ownership mult. Maximizes deep bench upside."""
-    if avg_min < 15:  return 3.5   # deep bench lottery tickets
-    if avg_min < 22:  return 3.0   # bench players
-    if avg_min < 28:  return 2.0   # role players
-    if avg_min < 33:  return 1.2   # starters
+    if proj_min < 15:  return 3.5   # deep bench lottery tickets
+    if proj_min < 22:  return 3.0   # bench players
+    if proj_min < 28:  return 2.0   # role players
+    if proj_min < 33:  return 1.2   # starters
     return 0.6                      # stars — skip them for upside
 
-def project_player(pinfo, stats, spread, total, side, team_abbr=""):
+def _dfs_score(pts, reb, ast, stl, blk, tov):
+    """Full DFS scoring formula — matches the leaderboard exactly."""
+    return pts + reb + (ast * 1.5) + (stl * 3.5) + (blk * 3.0) - (tov * 1.2)
+
+def project_player(pinfo, stats, spread, total, side, team_abbr="",
+                   cascade_bonus=0.0):
     if pinfo.get("is_out"): return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
+    # Apply cascade minute boost
+    proj_min = avg_min + cascade_bonus
+    is_cascade = cascade_bonus >= 2.0  # Flag if cascade added 2+ minutes
+
+    # Minutes gate: must project to at least 15 minutes
+    if proj_min < MIN_GATE: return None
+
     pts = stats["pts"]
     reb = stats["reb"]
     ast = stats["ast"]
+    stl = stats.get("stl", 0)
+    blk = stats.get("blk", 0)
+    tov = stats.get("tov", 0)
     if pts + reb + ast <= 0: return None
 
+    # Full DFS scoring formula (not just pts+reb+ast)
+    heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
+
+    # Scale heuristic by minute boost from cascade
+    if cascade_bonus > 0 and avg_min > 0:
+        min_scale = proj_min / avg_min
+        heuristic *= min_scale
+
     # AI blend
-    heuristic = pts + reb + ast
     base = heuristic
     if AI_MODEL is not None:
         try:
@@ -206,12 +313,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr=""):
             base = (ai_norm * 0.7) + (heuristic * 0.3)
         except: pass
 
-    # Contextual multipliers
-    pace_adj   = 1.0 + (0.03 * ((total or 222) - 222) / 20)
+    # Contextual multipliers (strengthened pace adjustment)
+    pace_adj   = 1.0 + (0.06 * ((total or 222) - 222) / 20)   # doubled from 0.03
     spread_adj = 1.0 + (0.015 * (15 - abs(spread or 0)) / 15)
     home_adj   = 1.02 if side == "home" else 1.0
 
-    # Raw projected ▼ score (what they'll actually score in Real Sports)
+    # Raw projected score (what they'll actually score in Real Sports)
     raw_score = (base * pace_adj * spread_adj * home_adj) / 5.0
 
     # Hot streak: recent form vs season avg
@@ -220,52 +327,107 @@ def project_player(pinfo, stats, spread, total, side, team_abbr=""):
     hot = round((recent_pts / season_pts) if season_pts > 0 else 1.0, 2)
     hot = min(hot, 2.5)  # cap at 2.5x to prevent outliers
 
-    om_chalk  = _ownership_mult_chalk(avg_min)
-    om_upside = _ownership_mult_upside(avg_min)
+    # Use projected minutes (with cascade) for ownership tiers
+    om_chalk  = _ownership_mult_chalk(proj_min)
+    om_upside = _ownership_mult_upside(proj_min)
 
     # EV scores
     chalk_ev  = round(raw_score * om_chalk  * max(hot, 1.0), 2)
     upside_ev = round(raw_score * om_upside * max(hot, 1.0) * max(hot, 1.0), 2)  # hot^2 for upside
+
+    # Expected draft points (EDP) = raw_score / 5 * est_mult
+    expected_dp = round(raw_score * om_chalk, 1)
 
     return {
         "id":      pinfo["id"],
         "name":    pinfo["name"],
         "pos":     pinfo["pos"],
         "team":    team_abbr,
-        "rating":  round(raw_score, 1),   # actual projected ▼ score shown on card
+        "rating":  round(raw_score, 1),
         "chalk_ev":chalk_ev,
         "upside_ev":upside_ev,
-        "predMin": round(avg_min, 1),
+        "expected_dp": expected_dp,
+        "predMin": round(proj_min, 1),
         "pts":     round(pts, 1),
         "reb":     round(reb, 1),
         "ast":     round(ast, 1),
+        "stl":     round(stl, 1),
+        "blk":     round(blk, 1),
         "hot":     hot,
+        "est_mult": om_chalk,
         "om":      om_chalk,
         "slot":    "1.0x",
         "_base":   base,
+        "is_cascade_pick": is_cascade,
     }
 
 def _run_game(game):
     home_r = fetch_roster(game["home"]["id"], game["home"]["abbr"])
     away_r = fetch_roster(game["away"]["id"], game["away"]["abbr"])
+
+    all_roster = home_r + away_r
     players_in = (
         [(p, game["home"]["abbr"], "home") for p in home_r] +
         [(p, game["away"]["abbr"], "away") for p in away_r]
     )
-    out = []
+
+    # Fetch all athlete stats first
+    stats_map = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futs = {pool.submit(_fetch_athlete, p["id"]): (p, ab, sd)
-                for p, ab, sd in players_in}
+        futs = {pool.submit(_fetch_athlete, p["id"]): p for p, _, _ in players_in}
         for fut in as_completed(futs):
-            p, ab, sd = futs[fut]
+            p = futs[fut]
             try:
                 stats = fut.result()
                 if stats:
-                    proj = project_player(p, stats, game["spread"], game["total"], sd, ab)
-                    if proj: out.append(proj)
+                    stats_map[p["id"]] = stats
             except Exception as e:
-                print(f"proj err {p['name']}: {e}")
+                print(f"fetch err {p['name']}: {e}")
+
+    # Run cascade engine to redistribute minutes from OUT players
+    cascade_flags = _cascade_minutes(all_roster, stats_map)
+
+    # Project all players with cascade-adjusted minutes
+    out = []
+    for p, ab, sd in players_in:
+        stats = stats_map.get(p["id"])
+        if not stats:
+            continue
+        cascade_bonus = cascade_flags.get(p["id"], 0.0)
+        proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
+                              cascade_bonus=cascade_bonus)
+        if proj:
+            out.append(proj)
     return out
+
+def _classify_tiers(projections):
+    """Classify all projections into TOP / ACCEPTABLE / AVOID tiers."""
+    top = []
+    acceptable = []
+    avoid = []
+
+    for p in projections:
+        proj_min = p.get("predMin", 0)
+        edp = p.get("expected_dp", 0)
+        is_cascade = p.get("is_cascade_pick", False)
+
+        if proj_min >= 33:
+            # Stars — always AVOID regardless of raw score
+            avoid.append(p)
+        elif edp >= 15 or (is_cascade and edp >= 12):
+            # High EDP or cascade-boosted players
+            top.append(p)
+        elif edp >= 8:
+            acceptable.append(p)
+        else:
+            avoid.append(p)
+
+    # Sort each tier by expected_dp descending
+    top.sort(key=lambda x: x.get("expected_dp", 0), reverse=True)
+    acceptable.sort(key=lambda x: x.get("expected_dp", 0), reverse=True)
+    avoid.sort(key=lambda x: x.get("expected_dp", 0), reverse=True)
+
+    return {"top_picks": top[:8], "acceptable_fills": acceptable[:8], "avoid": avoid[:5]}
 
 def _build_lineups(projections):
     # CHALK: sorted by chalk_ev (value-weighted, penalizes stars)
@@ -286,7 +448,11 @@ def _build_lineups(projections):
         upside = [dict(p) for p in upside_sorted[:5]]
 
     for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
-    return chalk, upside
+
+    # Build tier classification
+    tiers = _classify_tiers(projections)
+
+    return chalk, upside, tiers
 
 def _save_history(game_label, players):
     hist = []
@@ -310,17 +476,17 @@ async def get_games():
 async def get_slate():
     games = fetch_games()
     if not games:
-        return {"games": [], "lineups": {"chalk": [], "upside": []}}
-    cached = _cg("slate_v3")
+        return {"games": [], "lineups": {"chalk": [], "upside": []}, "tiers": None}
+    cached = _cg("slate_v4")
     if cached: return cached
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
         for fut in as_completed({pool.submit(_run_game, g): g for g in games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
-    chalk, upside = _build_lineups(all_proj)
-    result = {"games": games, "lineups": {"chalk": chalk, "upside": upside}}
-    _cs("slate_v3", result)
+    chalk, upside, tiers = _build_lineups(all_proj)
+    result = {"games": games, "lineups": {"chalk": chalk, "upside": upside}, "tiers": tiers}
+    _cs("slate_v4", result)
     return result
 
 @app.get("/api/picks")
@@ -331,9 +497,9 @@ async def get_picks(gameId: str = Query(...)):
     projections = _run_game(game)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
-    chalk, upside = _build_lineups(projections)
+    chalk, upside, tiers = _build_lineups(projections)
     _save_history(game["label"], chalk)
-    return {"game": game, "lineups": {"chalk": chalk, "upside": upside}}
+    return {"game": game, "lineups": {"chalk": chalk, "upside": upside}, "tiers": tiers}
 
 @app.get("/api/history")
 async def get_history():
