@@ -3,231 +3,245 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NBA Real Sports Picks</title>
+  <title>Daily Draft Optimizer</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a1a;
-      color: #e0e0e0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .container {
-      text-align: center;
-      max-width: 460px;
-      width: 100%;
-      padding: 2rem;
-    }
-    h1 {
-      font-size: 1.8rem;
-      margin-bottom: 0.25rem;
-      color: #fff;
-    }
-    .subtitle {
-      font-size: 0.9rem;
-      color: #888;
-      margin-bottom: 1.5rem;
-    }
-    .tabs {
-      display: flex;
-      gap: 0.4rem;
-      margin-bottom: 1.5rem;
-    }
-    .tab {
-      flex: 1;
-      padding: 0.6rem 0;
-      background: #1a1a2e;
-      border: 1px solid #2a2a3e;
-      color: #888;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      font-weight: 600;
-      transition: all 0.2s;
-    }
-    .tab:hover { background: #222240; border-color: #444; }
-    .tab.active {
-      background: #1d4ed8;
-      border-color: #1d4ed8;
-      color: #fff;
-    }
-    .tab:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .spinner {
-      display: none;
-      margin: 1.5rem auto 0;
-      width: 32px;
-      height: 32px;
-      border: 3px solid #333;
-      border-top-color: #1d4ed8;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .picks-list {
-      list-style: none;
-      margin-top: 1.5rem;
-      text-align: left;
-    }
-    .picks-list li {
-      background: #141428;
-      padding: 0.8rem 1rem;
-      margin-bottom: 0.5rem;
-      border-radius: 10px;
-      border-left: 3px solid #1d4ed8;
-      display: flex;
-      align-items: center;
-      gap: 0.8rem;
-    }
-    .slot-badge {
-      background: #1d4ed8;
-      color: #fff;
-      font-weight: 700;
-      font-size: 0.82rem;
-      padding: 0.3rem 0.5rem;
-      border-radius: 6px;
-      min-width: 3rem;
-      text-align: center;
-      flex-shrink: 0;
-    }
-    .player-info {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    .player-name {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: #fff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .player-meta {
-      color: #888;
-      font-size: 0.78rem;
-      margin-top: 0.15rem;
-    }
-    .player-meta .team-tag {
-      color: #a5b4fc;
-      font-weight: 600;
-    }
-    .error {
-      margin-top: 1.5rem;
-      color: #f87171;
-      font-size: 0.95rem;
-    }
-    .mode-desc {
-      font-size: 0.75rem;
-      color: #666;
-      margin-bottom: 1rem;
-      min-height: 1.1rem;
-    }
-    .btn {
-      width: 100%;
-      padding: 0.85rem;
-      background: #1d4ed8;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .btn:hover { background: #2563eb; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a1a;color:#e0e0e0;min-height:100vh}
+    .wrap{max-width:580px;margin:0 auto;padding:1.5rem 1rem}
+    h1{font-size:1.5rem;color:#fff;text-align:center}
+    .sub{text-align:center;color:#888;font-size:.85rem;margin:.25rem 0 1.5rem}
+
+    .section-title{font-size:1.1rem;font-weight:700;color:#fff;margin:1.5rem 0 .75rem;padding-bottom:.4rem;border-bottom:1px solid #2a2a4a}
+    .slate-info{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem}
+    .slate-chip{background:#1e1e3a;padding:.25rem .6rem;border-radius:5px;font-size:.75rem;color:#a0a0c0}
+    .slate-chip b{color:#60a5fa}
+
+    .game-bar{display:flex;gap:.5rem;margin-bottom:1rem}
+    select{flex:1;background:#141428;color:#e0e0e0;border:1px solid #2a2a4a;padding:.65rem .75rem;border-radius:8px;font-size:.95rem;appearance:none;cursor:pointer}
+    select:focus{outline:none;border-color:#3b82f6}
+    .btn{background:#1d4ed8;color:#fff;border:none;padding:.65rem 1.4rem;font-size:.95rem;border-radius:8px;cursor:pointer;transition:background .2s;white-space:nowrap}
+    .btn:hover{background:#2563eb}
+    .btn:disabled{background:#374151;cursor:not-allowed}
+
+    .ctx{display:flex;gap:.75rem;justify-content:center;margin-bottom:1.25rem;flex-wrap:wrap}
+    .chip{background:#1e1e3a;padding:.35rem .75rem;border-radius:6px;font-size:.8rem;color:#a0a0c0}
+    .chip b{color:#60a5fa}
+
+    .tabs{display:flex;gap:0;margin-bottom:1rem;border-bottom:1px solid #2a2a4a}
+    .tab{flex:1;text-align:center;padding:.6rem 0;font-size:.85rem;cursor:pointer;color:#888;border-bottom:2px solid transparent;transition:all .2s;background:none;border-top:none;border-left:none;border-right:none}
+    .tab.active{color:#60a5fa;border-bottom-color:#3b82f6}
+    .tab:hover{color:#bbb}
+
+    .card{background:#141428;border-radius:10px;padding:.8rem 1rem;margin-bottom:.5rem;border-left:3px solid #1d4ed8;display:flex;align-items:center;gap:.75rem}
+    .slot-badge{background:#1d4ed8;color:#fff;font-weight:700;font-size:.82rem;padding:.3rem .45rem;border-radius:6px;min-width:2.8rem;text-align:center;flex-shrink:0}
+    .info{flex:1;min-width:0}
+    .pname{font-size:1rem;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .game-tag{font-size:.65rem;color:#60a5fa;background:#1e1e3a;padding:.1rem .4rem;border-radius:3px;margin-left:.4rem;vertical-align:middle}
+    .meta{font-size:.78rem;color:#888;margin-top:.15rem}
+    .meta span{margin-right:.6rem}
+    .meta .team-tag{color:#a5b4fc;font-weight:600}
+
+    .spinner{display:none;margin:2rem auto;width:32px;height:32px;border:3px solid #333;border-top-color:#3b82f6;border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .msg{text-align:center;margin-top:1.5rem;color:#888;font-size:.9rem}
+    .err{color:#f87171}
+    .empty{color:#666;padding:2rem 0;text-align:center}
+    .divider{height:1px;background:#2a2a4a;margin:1.5rem 0}
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>NBA Real Sports Picks</h1>
-    <p class="subtitle">Top 5 player picks for today</p>
+  <div class="wrap">
+    <h1>Daily Draft Optimizer</h1>
+    <p class="sub">Real App — NBA Rankings</p>
 
-    <div class="tabs">
-      <button class="tab active" data-mode="chalk" onclick="switchMode('chalk')">Chalk</button>
-      <button class="tab" data-mode="diff" onclick="switchMode('diff')">Differentiated</button>
-      <button class="tab" data-mode="contrarian" onclick="switchMode('contrarian')">Contrarian</button>
+    <!-- SLATE-WIDE PICKS -->
+    <div class="section-title">Full Slate Top 5</div>
+    <div id="slateInfo" class="slate-info"></div>
+    <div class="tabs" id="slateTabs" style="display:none">
+      <button class="tab active" data-t="chalk" onclick="switchSlateTab('chalk')">Chalk</button>
+      <button class="tab" data-t="diff" onclick="switchSlateTab('diff')">Differentiated</button>
+      <button class="tab" data-t="contra" onclick="switchSlateTab('contra')">Contrarian</button>
     </div>
-    <p class="mode-desc" id="modeDesc">Highest-floor picks — proven producers with strong matchups.</p>
+    <div class="spinner" id="slateSpin" style="display:block"></div>
+    <div id="slateList"></div>
+    <p id="slateMsg" class="msg"></p>
 
-    <button class="btn" id="getPicksBtn" onclick="getPicks()">Get Picks</button>
+    <div class="divider"></div>
 
-    <div class="spinner" id="spinner"></div>
-    <ul class="picks-list" id="picks"></ul>
-    <p class="error" id="error"></p>
+    <!-- PER-GAME PICKS -->
+    <div class="section-title">Single Game Picks</div>
+    <div class="game-bar">
+      <select id="gameSel"><option value="">Loading games...</option></select>
+      <button class="btn" id="goBtn" disabled onclick="getPicks()">Get Picks</button>
+    </div>
+
+    <div id="ctx" class="ctx" style="display:none"></div>
+
+    <div class="tabs" id="tabs" style="display:none">
+      <button class="tab active" data-t="chalk" onclick="switchTab('chalk')">Chalk</button>
+      <button class="tab" data-t="diff" onclick="switchTab('diff')">Differentiated</button>
+      <button class="tab" data-t="contra" onclick="switchTab('contra')">Contrarian</button>
+    </div>
+
+    <div class="spinner" id="spin"></div>
+    <div id="list"></div>
+    <p class="msg" id="msg"></p>
   </div>
 
-  <script>
-    const MODE_DESCRIPTIONS = {
-      chalk: 'Highest-floor picks \u2014 proven producers with strong matchups.',
-      diff: 'Balanced value \u2014 projection weighted by outperformance potential.',
-      contrarian: 'Hidden gems \u2014 trending players set to exceed expectations.',
-    };
+<script>
+let DATA = null;
+let SLATE = null;
+let CUR_TAB = 'chalk';
+let SLATE_TAB = 'chalk';
 
-    let currentMode = 'chalk';
-    let loading = false;
+// --- Load games + slate on page load ---
+(async function(){
+  const sel = document.getElementById('gameSel');
+  const btn = document.getElementById('goBtn');
 
-    function switchMode(mode) {
-      if (loading) return;
-      currentMode = mode;
+  try {
+    const r = await fetch('/api/games');
+    const games = await r.json();
+    if (games.error) { sel.innerHTML = '<option>'+games.error+'</option>'; return; }
+    if (!games.length) { sel.innerHTML = '<option>No games today</option>'; return; }
+    sel.innerHTML = '<option value="">Select a game...</option>';
+    games.forEach(function(g) {
+      const o = document.createElement('option');
+      o.value = g.gameId;
+      let extra = '';
+      if (g.total) extra += ' | O/U '+g.total;
+      if (g.spread != null) extra += ' | Spread '+g.spread;
+      o.textContent = g.label + extra;
+      sel.appendChild(o);
+    });
+    sel.onchange = function() { btn.disabled = !sel.value; };
+  } catch(e) { sel.innerHTML = '<option>Failed to load games</option>'; }
 
-      document.querySelectorAll('.tab').forEach(t => {
-        t.classList.toggle('active', t.dataset.mode === mode);
-      });
-      document.getElementById('modeDesc').textContent = MODE_DESCRIPTIONS[mode];
+  loadSlate();
+})();
+
+async function loadSlate() {
+  const spin = document.getElementById('slateSpin');
+  const list = document.getElementById('slateList');
+  const msg = document.getElementById('slateMsg');
+  const info = document.getElementById('slateInfo');
+  const tabs = document.getElementById('slateTabs');
+
+  spin.style.display = 'block';
+  list.innerHTML = '';
+  msg.textContent = '';
+
+  try {
+    const r = await fetch('/api/slate');
+    const d = await r.json();
+    if (d.error) {
+      msg.innerHTML = '<span class="err">'+d.error+'</span>';
+      spin.style.display = 'none';
+      return;
     }
 
-    async function getPicks(mode) {
-      if (!mode) mode = currentMode;
-      const spinner = document.getElementById('spinner');
-      const picksList = document.getElementById('picks');
-      const errorEl = document.getElementById('error');
+    SLATE = d;
 
-      const btn = document.getElementById('getPicksBtn');
-      loading = true;
-      btn.disabled = true;
-      document.querySelectorAll('.tab').forEach(t => t.disabled = true);
-      spinner.style.display = 'block';
-      picksList.innerHTML = '';
-      errorEl.textContent = '';
+    var chips = '<span class="slate-chip"><b>'+d.games.length+'</b> games</span>';
+    chips += '<span class="slate-chip"><b>'+d.totalPlayers+'</b> players</span>';
+    d.games.forEach(function(g) {
+      chips += '<span class="slate-chip">'+g.label+'</span>';
+    });
+    info.innerHTML = chips;
 
-      try {
-        const res = await fetch('/api/picks?mode=' + encodeURIComponent(mode));
-        const data = await res.json();
+    tabs.style.display = 'flex';
+    SLATE_TAB = 'chalk';
+    document.querySelectorAll('#slateTabs .tab').forEach(function(t) {
+      t.classList.toggle('active', t.dataset.t === 'chalk');
+    });
+    renderLineup(d.lineups.chalk, list, true);
+  } catch(e) {
+    msg.innerHTML = '<span class="err">Failed to load slate picks.</span>';
+  } finally {
+    spin.style.display = 'none';
+  }
+}
 
-        if (data.error) {
-          errorEl.textContent = data.error;
-        } else if (Array.isArray(data)) {
-          data.forEach(player => {
-            const li = document.createElement('li');
-            li.innerHTML =
-              '<span class="slot-badge">' + player.slot + '</span>' +
-              '<div class="player-info">' +
-                '<span class="player-name">' + player.name + '</span>' +
-                '<span class="player-meta">' +
-                  '<span class="team-tag">' + player.team + '</span>' +
-                  ' \u2014 ' + player.game +
-                '</span>' +
-              '</div>';
-            picksList.appendChild(li);
-          });
-        }
-      } catch (err) {
-        errorEl.textContent = 'Failed to fetch picks. Please try again.';
-      } finally {
-        loading = false;
-        btn.disabled = false;
-        document.querySelectorAll('.tab').forEach(t => t.disabled = false);
-        spinner.style.display = 'none';
-      }
-    }
+function switchSlateTab(tab) {
+  SLATE_TAB = tab;
+  document.querySelectorAll('#slateTabs .tab').forEach(function(t) {
+    t.classList.toggle('active', t.dataset.t === tab);
+  });
+  if (!SLATE) return;
+  var map = {chalk:'chalk', diff:'differentiated', contra:'contrarian'};
+  renderLineup(SLATE.lineups[map[tab]] || [], document.getElementById('slateList'), true);
+}
 
-  </script>
+async function getPicks() {
+  var sel = document.getElementById('gameSel');
+  var btn = document.getElementById('goBtn');
+  var spin = document.getElementById('spin');
+  var list = document.getElementById('list');
+  var msg = document.getElementById('msg');
+  var ctx = document.getElementById('ctx');
+  var tabs = document.getElementById('tabs');
+
+  if (!sel.value) return;
+  btn.disabled = true; btn.textContent = 'Loading...';
+  spin.style.display = 'block'; list.innerHTML = ''; msg.textContent = '';
+  ctx.style.display = 'none'; tabs.style.display = 'none';
+
+  try {
+    var r = await fetch('/api/picks?gameId=' + encodeURIComponent(sel.value));
+    var d = await r.json();
+    if (d.error) { msg.innerHTML = '<span class="err">'+d.error+'</span>'; return; }
+
+    DATA = d;
+    var g = d.game;
+    var chipHtml = '<div class="chip"><b>'+g.home+'</b> vs <b>'+g.away+'</b></div>';
+    if (g.total) chipHtml += '<div class="chip">O/U <b>'+g.total+'</b></div>';
+    if (g.spread != null) chipHtml += '<div class="chip">Spread <b>'+(g.spread > 0 ? '+' : '')+g.spread+'</b></div>';
+    ctx.innerHTML = chipHtml;
+    ctx.style.display = 'flex';
+    tabs.style.display = 'flex';
+
+    CUR_TAB = 'chalk';
+    document.querySelectorAll('#tabs .tab').forEach(function(t) {
+      t.classList.toggle('active', t.dataset.t === 'chalk');
+    });
+    renderLineup(d.lineups.chalk, list, false);
+  } catch(e) {
+    msg.innerHTML = '<span class="err">Failed to fetch picks. Try again.</span>';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Get Picks';
+    spin.style.display = 'none';
+  }
+}
+
+function switchTab(tab) {
+  CUR_TAB = tab;
+  document.querySelectorAll('#tabs .tab').forEach(function(t) {
+    t.classList.toggle('active', t.dataset.t === tab);
+  });
+  if (!DATA) return;
+  var map = {chalk:'chalk', diff:'differentiated', contra:'contrarian'};
+  renderLineup(DATA.lineups[map[tab]] || [], document.getElementById('list'), false);
+}
+
+function renderLineup(picks, container, showGame) {
+  if (!picks || !picks.length) { container.innerHTML = '<div class="empty">No picks available</div>'; return; }
+  container.innerHTML = picks.map(function(p) {
+    var gameTag = (showGame && p.game) ? '<span class="game-tag">'+p.game+'</span>' : '';
+    return '<div class="card">' +
+      '<div class="slot-badge">'+(p.slot || '')+'</div>' +
+      '<div class="info">' +
+        '<div class="pname">'+p.name+gameTag+'</div>' +
+        '<div class="meta">' +
+          '<span class="team-tag">'+(p.team || '')+'</span>' +
+          '<span>'+(p.pos || '')+'</span>' +
+          '<span>'+p.predMin+' min</span>' +
+          '<span>Form x'+p.form+'</span>' +
+          '<span>Matchup x'+p.matchup+'</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+</script>
 </body>
 </html>

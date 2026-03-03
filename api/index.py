@@ -1,10 +1,8 @@
-import os
-import time
 import json
 import hashlib
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
@@ -13,728 +11,795 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-
 app = FastAPI()
 
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
-CACHE_DIR = Path("/tmp/nba_dfs_cache")
+CACHE_DIR = Path("/tmp/nba_real_cache_v5")
 CACHE_DIR.mkdir(exist_ok=True)
 
-# Browser-like headers for stats.nba.com requests
-NBA_HEADERS = {
-    "Host": "stats.nba.com",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Origin": "https://www.nba.com",
-    "Referer": "https://www.nba.com/",
-    "Connection": "keep-alive",
-}
-
-# Scoring weights (fantasy points)
-FP_WEIGHTS = {
-    "PTS": 1.0,
-    "REB": 1.25,
-    "AST": 1.5,
-    "STL": 2.0,
-    "BLK": 2.0,
-    "TOV": -0.5,
-    "FG3M": 0.5,
-}
-
-TRICODE_TO_NAME = {
-    "ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn Nets",
-    "CHA": "Charlotte Hornets", "CHI": "Chicago Bulls", "CLE": "Cleveland Cavaliers",
-    "DAL": "Dallas Mavericks", "DEN": "Denver Nuggets", "DET": "Detroit Pistons",
-    "GSW": "Golden State Warriors", "HOU": "Houston Rockets", "IND": "Indiana Pacers",
-    "LAC": "Los Angeles Clippers", "LAL": "Los Angeles Lakers", "MEM": "Memphis Grizzlies",
-    "MIA": "Miami Heat", "MIL": "Milwaukee Bucks", "MIN": "Minnesota Timberwolves",
-    "NOP": "New Orleans Pelicans", "NYK": "New York Knicks", "OKC": "Oklahoma City Thunder",
-    "ORL": "Orlando Magic", "PHI": "Philadelphia 76ers", "PHX": "Phoenix Suns",
-    "POR": "Portland Trail Blazers", "SAC": "Sacramento Kings", "SAS": "San Antonio Spurs",
-    "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "WAS": "Washington Wizards",
-}
+ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+ESPN_CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba"
 
 # Draft slot multipliers for the 5-pick lineup
 SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 
-
 # ---------------------------------------------------------------------------
-# Caching helpers
-# ---------------------------------------------------------------------------
-
-def _cache_path(key: str) -> Path:
-    today = date.today().isoformat()
-    safe = hashlib.md5(f"{today}:{key}".encode()).hexdigest()
-    return CACHE_DIR / f"{safe}.json"
-
-
-def _read_cache(key: str):
-    p = _cache_path(key)
-    if p.exists():
-        return json.loads(p.read_text())
-    return None
-
-
-def _write_cache(key: str, data):
-    p = _cache_path(key)
-    p.write_text(json.dumps(data))
-
-
-# ---------------------------------------------------------------------------
-# NBA data fetching — uses cdn.nba.com (no IP blocking) where possible,
-# falls back to stats.nba.com with browser headers + retries.
+# Cache helpers
 # ---------------------------------------------------------------------------
 
-def _nba_stats_request(url: str, params: dict, retries: int = 3) -> dict:
-    """Make a request to stats.nba.com with browser headers and retries."""
-    for attempt in range(retries):
+def _cp(k):
+    return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
+
+
+def _cg(k):
+    p = _cp(k)
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def _cs(k, v):
+    _cp(k).write_text(json.dumps(v))
+
+
+def _safe_float(v, default=0.0):
+    try:
+        return float(v) if v is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _espn_get(url, timeout=15):
+    """Fetch any ESPN URL with retry."""
+    for attempt in range(3):
         try:
-            resp = requests.get(
-                url, params=params, headers=NBA_HEADERS, timeout=60
-            )
-            resp.raise_for_status()
-            return resp.json()
+            r = requests.get(url, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
         except Exception:
-            if attempt < retries - 1:
-                time.sleep(2 * (attempt + 1))
+            if attempt == 2:
+                raise
     return {}
 
 
-def fetch_todays_games():
-    """Fetch today's NBA games from cdn.nba.com (no IP restrictions)."""
-    cached = _read_cache("todays_games")
-    if cached is not None:
-        return cached
+# ---------------------------------------------------------------------------
+# Data fetching (ESPN — works from Vercel cloud, unlike stats.nba.com)
+# ---------------------------------------------------------------------------
 
-    url = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
-    try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception:
-        return []
+def fetch_games():
+    """Today's NBA games from ESPN scoreboard."""
+    c = _cg("games")
+    if c is not None:
+        return c
 
+    data = _espn_get(f"{ESPN}/scoreboard")
     games = []
-    for game in data.get("scoreboard", {}).get("games", []):
+    for ev in data.get("events", []):
+        comp = ev["competitions"][0]
+        home = away = None
+        for cd in comp.get("competitors", []):
+            t = {
+                "id": cd["team"]["id"],
+                "name": cd["team"]["displayName"],
+                "abbr": cd["team"].get("abbreviation", ""),
+            }
+            if cd["homeAway"] == "home":
+                home = t
+            else:
+                away = t
+        if not home or not away:
+            continue
+
+        odds_list = comp.get("odds", [])
+        odds = odds_list[0] if odds_list else {}
+
         games.append({
-            "gameId": game["gameId"],
-            "homeTeam": {
-                "teamId": game["homeTeam"]["teamId"],
-                "teamTricode": game["homeTeam"]["teamTricode"],
-            },
-            "awayTeam": {
-                "teamId": game["awayTeam"]["teamId"],
-                "teamTricode": game["awayTeam"]["teamTricode"],
-            },
+            "gameId": ev["id"],
+            "label": f"{away['abbr']} @ {home['abbr']}",
+            "home": home,
+            "away": away,
+            "spread": _safe_float(odds.get("spread"), None),
+            "total": _safe_float(odds.get("overUnder"), None),
         })
-    _write_cache("todays_games", games)
+
+    _cs("games", games)
     return games
 
 
-def fetch_team_roster(team_id: int):
-    """Fetch roster via stats.nba.com with browser headers."""
-    cache_key = f"roster_{team_id}"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
+def fetch_roster(team_id):
+    """Team roster from ESPN."""
+    c = _cg(f"ros_{team_id}")
+    if c is not None:
+        return c
 
-    time.sleep(1)
-    url = "https://stats.nba.com/stats/commonteamroster"
-    params = {"TeamID": team_id, "Season": "2025-26"}
-    data = _nba_stats_request(url, params)
-
+    data = _espn_get(f"{ESPN}/teams/{team_id}/roster")
     players = []
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        pid_idx = headers.index("PLAYER_ID") if "PLAYER_ID" in headers else None
-        name_idx = headers.index("PLAYER") if "PLAYER" in headers else None
-        if pid_idx is not None and name_idx is not None:
-            for row in rows:
-                players.append({
-                    "playerId": row[pid_idx],
-                    "playerName": row[name_idx],
-                })
+    for a in data.get("athletes", []):
+        players.append({
+            "id": a["id"],
+            "name": a.get("fullName", a.get("displayName", "Unknown")),
+            "pos": a.get("position", {}).get("abbreviation", ""),
+            "age": a.get("age", 25),
+        })
 
-    _write_cache(cache_key, players)
+    _cs(f"ros_{team_id}", players)
     return players
 
 
-def fetch_player_gamelog(player_id: int, season: str = "2025-26"):
-    """Fetch player game log via stats.nba.com with browser headers."""
-    cache_key = f"gamelog_{player_id}_{season}"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
+# ---------------------------------------------------------------------------
+# Player stats + game log parsing (ESPN overview endpoint)
+# ---------------------------------------------------------------------------
 
-    time.sleep(1)
-    url = "https://stats.nba.com/stats/playergamelog"
-    params = {
-        "PlayerID": player_id,
-        "Season": season,
-        "SeasonType": "Regular Season",
-    }
-    data = _nba_stats_request(url, params)
+NAME_MAP = {
+    "gamesplayed": "gp", "avgminutes": "min", "fieldgoalpct": "fgp",
+    "avgrebounds": "reb", "avgassists": "ast", "avgblocks": "blk",
+    "avgsteals": "stl", "avgturnovers": "tov", "avgpoints": "pts",
+}
 
-    games = []
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            min_val = row[col["MIN"]] if "MIN" in col else 0
-            try:
-                mins = float(min_val) if min_val else 0.0
-            except (ValueError, TypeError):
-                mins = 0.0
-            games.append({
-                "MIN": mins,
-                "PTS": row[col.get("PTS", 0)] or 0,
-                "REB": row[col.get("REB", 0)] or 0,
-                "AST": row[col.get("AST", 0)] or 0,
-                "STL": row[col.get("STL", 0)] or 0,
-                "BLK": row[col.get("BLK", 0)] or 0,
-                "TOV": row[col.get("TOV", 0)] or 0,
-                "FG3M": row[col.get("FG3M", 0)] or 0,
-            })
-
-    _write_cache(cache_key, games)
-    return games
+GAMELOG_LABEL_MAP = {
+    "min": "min", "minutes": "min",
+    "pts": "pts", "points": "pts",
+    "reb": "reb", "rebounds": "reb", "totalrebounds": "reb",
+    "ast": "ast", "assists": "ast",
+    "stl": "stl", "steals": "stl",
+    "blk": "blk", "blocks": "blk",
+    "to": "tov", "turnovers": "tov",
+}
 
 
-def fetch_all_player_stats():
-    """Fetch all player season stats in one request instead of per-player."""
-    cache_key = "all_player_stats"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
+def _fetch_athlete(pid):
+    """Fetch season stats + recent game log for one player."""
+    c = _cg(f"ath3_{pid}")
+    if c is not None:
+        return c
 
-    url = "https://stats.nba.com/stats/leaguedashplayerstats"
-    params = {
-        "Conference": "",
-        "DateFrom": "",
-        "DateTo": "",
-        "Division": "",
-        "GameScope": "",
-        "GameSegment": "",
-        "Height": "",
-        "ISTRound": "",
-        "LastNGames": 0,
-        "LeagueID": "00",
-        "Location": "",
-        "MeasureType": "Base",
-        "Month": 0,
-        "OpponentTeamID": 0,
-        "Outcome": "",
-        "PORound": 0,
-        "PaceAdjust": "N",
-        "PerMode": "PerGame",
-        "Period": 0,
-        "PlayerExperience": "",
-        "PlayerPosition": "",
-        "PlusMinus": "N",
-        "Rank": "N",
-        "Season": "2025-26",
-        "SeasonSegment": "",
-        "SeasonType": "Regular Season",
-        "ShotClockRange": "",
-        "StarterBench": "",
-        "TeamID": 0,
-        "TwoWay": 0,
-        "VsConference": "",
-        "VsDivision": "",
-        "Weight": "",
-    }
-    data = _nba_stats_request(url, params)
-
-    stats = {}
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            pid = row[col.get("PLAYER_ID", 0)]
-            stats[pid] = {
-                "name": row[col.get("PLAYER_NAME", 1)],
-                "team_id": row[col.get("TEAM_ID", 2)],
-                "team_abbrev": row[col.get("TEAM_ABBREVIATION", 3)] if "TEAM_ABBREVIATION" in col else "",
-                "gp": row[col.get("GP", 0)] or 0,
-                "min": row[col.get("MIN", 0)] or 0,
-                "pts": row[col.get("PTS", 0)] or 0,
-                "reb": row[col.get("REB", 0)] or 0,
-                "ast": row[col.get("AST", 0)] or 0,
-                "stl": row[col.get("STL", 0)] or 0,
-                "blk": row[col.get("BLK", 0)] or 0,
-                "tov": row[col.get("TOV", 0)] or 0,
-                "fg3m": row[col.get("FG3M", 0)] or 0,
-            }
-
-    _write_cache(cache_key, stats)
-    return stats
-
-
-def fetch_last5_stats():
-    """Fetch last-5-game stats for all players (full stat lines)."""
-    cache_key = "all_player_stats_last5_full"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
-
-    url = "https://stats.nba.com/stats/leaguedashplayerstats"
-    params = {
-        "Conference": "",
-        "DateFrom": "",
-        "DateTo": "",
-        "Division": "",
-        "GameScope": "",
-        "GameSegment": "",
-        "Height": "",
-        "ISTRound": "",
-        "LastNGames": 5,
-        "LeagueID": "00",
-        "Location": "",
-        "MeasureType": "Base",
-        "Month": 0,
-        "OpponentTeamID": 0,
-        "Outcome": "",
-        "PORound": 0,
-        "PaceAdjust": "N",
-        "PerMode": "PerGame",
-        "Period": 0,
-        "PlayerExperience": "",
-        "PlayerPosition": "",
-        "PlusMinus": "N",
-        "Rank": "N",
-        "Season": "2025-26",
-        "SeasonSegment": "",
-        "SeasonType": "Regular Season",
-        "ShotClockRange": "",
-        "StarterBench": "",
-        "TeamID": 0,
-        "TwoWay": 0,
-        "VsConference": "",
-        "VsDivision": "",
-        "Weight": "",
-    }
-    data = _nba_stats_request(url, params)
-
-    stats = {}
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            pid = row[col.get("PLAYER_ID", 0)]
-            stats[pid] = {
-                "min": row[col.get("MIN", 0)] or 0,
-                "pts": row[col.get("PTS", 0)] or 0,
-                "reb": row[col.get("REB", 0)] or 0,
-                "ast": row[col.get("AST", 0)] or 0,
-                "stl": row[col.get("STL", 0)] or 0,
-                "blk": row[col.get("BLK", 0)] or 0,
-                "tov": row[col.get("TOV", 0)] or 0,
-                "fg3m": row[col.get("FG3M", 0)] or 0,
-            }
-
-    _write_cache(cache_key, stats)
-    return stats
-
-
-def fetch_vegas_lines():
-    """Fetch NBA game totals from The Odds API."""
-    cached = _read_cache("vegas_lines")
-    if cached is not None:
-        return cached
-
-    if not ODDS_API_KEY:
-        return {}
-
-    url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/"
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "totals",
-        "oddsFormat": "american",
-    }
+    url = f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview"
     try:
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+        r = requests.get(url, timeout=12)
+        if r.status_code == 200:
+            data = r.json()
+            stats = _parse_season_stats(data)
+            if stats and stats["min"] > 0:
+                recent = _parse_game_log(data.get("gameLog", {}))
+                if recent:
+                    stats["recent"] = recent
+                _cs(f"ath3_{pid}", stats)
+                return stats
     except Exception:
-        return {}
+        pass
 
-    lines = {}
-    for game in data:
-        home = game.get("home_team", "")
-        away = game.get("away_team", "")
-        total = None
-        for bm in game.get("bookmakers", []):
-            for market in bm.get("markets", []):
-                if market["key"] == "totals":
-                    for outcome in market.get("outcomes", []):
-                        if outcome["name"] == "Over":
-                            total = outcome.get("point")
-                            break
-            if total is not None:
-                break
-        if total is not None:
-            lines[home] = total
-            lines[away] = total
-
-    _write_cache("vegas_lines", lines)
-    return lines
+    _cs(f"ath3_{pid}", None)
+    return None
 
 
-def fetch_team_defense_ratings():
-    """Fetch team defensive ratings (DEF_RATING = points allowed per 100 poss).
+def _parse_season_stats(data):
+    """Parse season averages from ESPN overview endpoint."""
+    result = {"min": 0, "pts": 0, "reb": 0, "ast": 0, "stl": 0, "blk": 0,
+              "tov": 0, "fg3m": 0, "fgp": 0.44, "gp": 0}
 
-    Higher DEF_RATING means worse defense, which is better for opposing players.
+    stats_block = data.get("statistics", {})
+    names = stats_block.get("names", [])
+    splits = stats_block.get("splits", [])
+
+    if not names or not splits:
+        return None
+
+    values = splits[0].get("stats", [])
+    if len(names) != len(values):
+        return None
+
+    for name, val in zip(names, values):
+        mapped = NAME_MAP.get(name.lower())
+        if not mapped:
+            continue
+        v = _safe_float(val)
+        if mapped == "fgp" and v > 1:
+            v /= 100
+        if mapped == "gp":
+            v = int(v)
+        result[mapped] = v
+
+    return result if result["min"] > 0 else None
+
+
+def _parse_game_log(game_log):
+    """Extract last 5 game averages from ESPN gameLog.
+
+    Handles multiple ESPN formats:
+    - Format A: statistics[].labels/names + events[].stats
+    - Format B: seasonTypes[].categories[].events{}
+    - Format C: categories[].events[]
+    - Format D: top-level labels[] + entries[]
     """
-    cache_key = "team_def_ratings"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
+    if not game_log:
+        return None
 
-    url = "https://stats.nba.com/stats/leaguedashteamstats"
-    params = {
-        "Conference": "",
-        "DateFrom": "",
-        "DateTo": "",
-        "Division": "",
-        "GameScope": "",
-        "GameSegment": "",
-        "Height": "",
-        "ISTRound": "",
-        "LastNGames": 0,
-        "LeagueID": "00",
-        "Location": "",
-        "MeasureType": "Advanced",
-        "Month": 0,
-        "OpponentTeamID": 0,
-        "Outcome": "",
-        "PORound": 0,
-        "PaceAdjust": "N",
-        "PerMode": "PerGame",
-        "Period": 0,
-        "PlayerExperience": "",
-        "PlayerPosition": "",
-        "PlusMinus": "N",
-        "Rank": "N",
-        "Season": "2025-26",
-        "SeasonSegment": "",
-        "SeasonType": "Regular Season",
-        "ShotClockRange": "",
-        "StarterBench": "",
-        "TeamID": 0,
-        "TwoWay": 0,
-        "VsConference": "",
-        "VsDivision": "",
-        "Weight": "",
-    }
-    data = _nba_stats_request(url, params)
+    try:
+        for stat_block in game_log.get("statistics", []):
+            raw_labels = stat_block.get("labels", stat_block.get("names", []))
+            labels = [l.lower() for l in raw_labels]
+            events = stat_block.get("events", [])
+            if isinstance(events, dict):
+                events = list(events.values())
+            if labels and events:
+                result = _avg_entries(labels, events[-5:])
+                if result:
+                    return result
 
-    ratings = {}
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            tid = row[col.get("TEAM_ID", 0)]
-            def_rating = row[col.get("DEF_RATING", 0)] if "DEF_RATING" in col else None
-            pace = row[col.get("PACE", 0)] if "PACE" in col else None
-            ratings[tid] = {
-                "def_rating": float(def_rating) if def_rating else 112.0,
-                "pace": float(pace) if pace else 100.0,
-            }
+        season_types = game_log.get("seasonTypes", [])
+        if season_types:
+            for st in season_types:
+                for cat in st.get("categories", []):
+                    labels = [l.lower() for l in cat.get("labels", [])]
+                    events = cat.get("events", {})
+                    if isinstance(events, dict):
+                        entries = list(events.values())
+                    elif isinstance(events, list):
+                        entries = events
+                    else:
+                        continue
+                    if labels and entries:
+                        result = _avg_entries(labels, entries[-5:])
+                        if result:
+                            return result
 
-    _write_cache(cache_key, ratings)
-    return ratings
+        for cat in game_log.get("categories", []):
+            labels = [l.lower() for l in cat.get("labels", [])]
+            events = cat.get("events", cat.get("entries", []))
+            if isinstance(events, dict):
+                events = list(events.values())
+            if labels and events:
+                result = _avg_entries(labels, events[-5:])
+                if result:
+                    return result
+
+        labels = [l.lower() for l in game_log.get("labels", [])]
+        entries = game_log.get("entries", game_log.get("events", []))
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        if labels and entries:
+            result = _avg_entries(labels, entries[-5:])
+            if result:
+                return result
+
+    except Exception:
+        pass
+
+    return None
+
+
+def _avg_entries(labels, entries):
+    """Average numeric stats from game log entries."""
+    sums = {"min": 0, "pts": 0, "reb": 0, "ast": 0, "stl": 0, "blk": 0, "tov": 0}
+    count = 0
+
+    for entry in entries:
+        stats = entry if isinstance(entry, list) else entry.get("stats", [])
+        if not stats or len(stats) != len(labels):
+            continue
+
+        found_any = False
+        for lbl, val in zip(labels, stats):
+            mapped = GAMELOG_LABEL_MAP.get(lbl)
+            if mapped:
+                v = _safe_float(val)
+                if v >= 0:
+                    sums[mapped] += v
+                    found_any = True
+        if found_any:
+            count += 1
+
+    if count == 0:
+        return None
+
+    return {k: round(v / count, 1) for k, v in sums.items()}
 
 
 # ---------------------------------------------------------------------------
-# Projection model — value-based with matchup, form, and opportunity factors
+# Team defensive stats — hardcoded fallback + ESPN Core API
+# ---------------------------------------------------------------------------
+# DEF_RATING = points allowed per 100 possessions. Higher = worse defense.
+# Updated ~March 2026. Sources: StatMuse, FOX Sports, NBA.com
+
+LEAGUE_AVG_DEF_RATING = 112.0
+
+_DEFENSE_BY_ID = {
+    "25": (107.0, 107.6),   # OKC Thunder
+    "8":  (109.0, 109.7),   # Detroit Pistons
+    "14": (112.0, 112.8),   # Miami Heat
+    "24": (112.5, 112.9),   # San Antonio Spurs
+    "16": (112.0, 112.6),   # Minnesota Timberwolves
+    "10": (111.0, 112.8),   # Houston Rockets
+    "19": (113.0, 113.5),   # Orlando Magic
+    "29": (113.5, 113.8),   # Memphis Grizzlies
+    "5":  (113.5, 114.1),   # Cleveland Cavaliers
+    "18": (114.0, 114.7),   # New York Knicks
+    "2":  (110.0, 115.2),   # Boston Celtics
+    "15": (115.0, 115.5),   # Milwaukee Bucks
+    "12": (115.0, 115.8),   # LA Clippers
+    "11": (116.0, 116.0),   # Indiana Pacers
+    "6":  (116.0, 116.2),   # Dallas Mavericks
+    "21": (116.5, 116.5),   # Phoenix Suns
+    "9":  (117.0, 116.8),   # Golden State Warriors
+    "1":  (117.5, 117.0),   # Atlanta Hawks
+    "23": (117.5, 117.2),   # Sacramento Kings
+    "4":  (118.0, 117.5),   # Chicago Bulls
+    "13": (118.5, 118.0),   # LA Lakers
+    "7":  (119.0, 118.0),   # Denver Nuggets
+    "20": (119.0, 118.5),   # Philadelphia 76ers
+    "22": (119.5, 118.8),   # Portland Trail Blazers
+    "28": (120.0, 119.0),   # Toronto Raptors
+    "17": (120.5, 119.5),   # Brooklyn Nets
+    "30": (121.0, 120.0),   # Charlotte Hornets
+    "3":  (121.5, 120.3),   # New Orleans Pelicans
+    "27": (124.0, 121.2),   # Washington Wizards
+    "26": (125.9, 122.2),   # Utah Jazz
+}
+
+
+def fetch_team_defense(team_id):
+    """Fetch team defensive stats. ESPN Core API with hardcoded fallback."""
+    c = _cg(f"def_{team_id}")
+    if c is not None:
+        return c
+
+    fallback = _DEFENSE_BY_ID.get(str(team_id), (112.0, 112.0))
+    defaults = {"opp_ppg": fallback[0], "def_rating": fallback[1], "opp_fgp": 0.465}
+
+    try:
+        data = _espn_get(
+            f"{ESPN_CORE}/seasons/2026/types/2/teams/{team_id}/statistics",
+            timeout=10,
+        )
+        for cat in data.get("splits", {}).get("categories", data.get("categories", [])):
+            cat_name = cat.get("name", "").lower()
+            if "defen" not in cat_name and "opponent" not in cat_name:
+                continue
+            for stat in cat.get("stats", []):
+                sname = stat.get("name", "").lower()
+                val = _safe_float(stat.get("value"), None)
+                if val is None:
+                    continue
+                if "opponentpoints" in sname or "opppoints" in sname:
+                    defaults["opp_ppg"] = val
+                elif "defensiverating" in sname or "defrating" in sname:
+                    defaults["def_rating"] = val
+                elif ("opponent" in sname and "fieldgoal" in sname
+                      and "pct" in sname):
+                    defaults["opp_fgp"] = val if val < 1 else val / 100
+    except Exception:
+        pass
+
+    _cs(f"def_{team_id}", defaults)
+    return defaults
+
+
+# ---------------------------------------------------------------------------
+# Fetch all player + team data for a game (parallel)
 # ---------------------------------------------------------------------------
 
-def _calc_fp(stats: dict) -> float:
-    """Calculate fantasy points from a stat line dict (lowercase keys)."""
-    return (
-        (stats.get("pts", 0) or 0) * FP_WEIGHTS["PTS"]
-        + (stats.get("reb", 0) or 0) * FP_WEIGHTS["REB"]
-        + (stats.get("ast", 0) or 0) * FP_WEIGHTS["AST"]
-        + (stats.get("stl", 0) or 0) * FP_WEIGHTS["STL"]
-        + (stats.get("blk", 0) or 0) * FP_WEIGHTS["BLK"]
-        + (stats.get("tov", 0) or 0) * FP_WEIGHTS["TOV"]
-        + (stats.get("fg3m", 0) or 0) * FP_WEIGHTS["FG3M"]
+def fetch_game_players(home_id, away_id):
+    """Fetch rosters, player stats, and team defense for both teams."""
+    home_roster = fetch_roster(home_id)
+    away_roster = fetch_roster(away_id)
+
+    players = [(p, "home") for p in home_roster] + [(p, "away") for p in away_roster]
+    pids = list({p["id"] for p, _ in players})
+
+    stats = {}
+    home_def = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+    away_def = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        player_futs = {ex.submit(_fetch_athlete, pid): pid for pid in pids}
+        home_def_fut = ex.submit(fetch_team_defense, home_id)
+        away_def_fut = ex.submit(fetch_team_defense, away_id)
+
+        for f in as_completed(player_futs):
+            pid = player_futs[f]
+            try:
+                r = f.result()
+                if r:
+                    stats[pid] = r
+            except Exception:
+                pass
+
+        try:
+            home_def = home_def_fut.result()
+        except Exception:
+            pass
+        try:
+            away_def = away_def_fut.result()
+        except Exception:
+            pass
+
+    return players, stats, home_def, away_def
+
+
+# ---------------------------------------------------------------------------
+# OUTPERFORMANCE PROJECTION MODEL
+# ---------------------------------------------------------------------------
+# Ranks by "who will EXCEED their baseline tonight" — not raw volume.
+# Surfaces: hot players facing weak defenses, role players with expanded
+# roles due to injuries, stars with juicy matchups.
+# ---------------------------------------------------------------------------
+
+def recent_form_multiplier(stats):
+    """How hot/cold is this player vs season baseline? (0.85 to 1.40)"""
+    recent = stats.get("recent")
+    if not recent:
+        return 1.0
+
+    season_composite = (
+        max(stats.get("pts", 1), 1) * 1.0
+        + max(stats.get("reb", 0.5), 0.5) * 0.6
+        + max(stats.get("ast", 0.5), 0.5) * 0.8
+        + max(stats.get("stl", 0.1), 0.1) * 1.5
+        + max(stats.get("blk", 0.1), 0.1) * 1.5
+    )
+    recent_composite = (
+        recent.get("pts", stats.get("pts", 0)) * 1.0
+        + recent.get("reb", stats.get("reb", 0)) * 0.6
+        + recent.get("ast", stats.get("ast", 0)) * 0.8
+        + recent.get("stl", stats.get("stl", 0)) * 1.5
+        + recent.get("blk", stats.get("blk", 0)) * 1.5
     )
 
+    if season_composite <= 0:
+        return 1.0
 
-def project_player_value(
-    name: str,
-    team_abbrev: str,
-    season: dict,
-    last5: dict,
-    opp_def_rating: float,
-    league_avg_def: float,
-    vegas_total: Optional[float],
-    opp_team: str,
-    game_label: str,
-) -> Optional[dict]:
-    """Project player value for tonight using DFS-style analysis.
+    return max(0.85, min(recent_composite / season_composite, 1.40))
 
-    Factors in: matchup quality (defense vs position), recent form,
-    minutes opportunity, and Vegas game environment.  Returns a projection
-    dict with outperformance boost score for draft slot ranking.
-    """
-    avg_min = season.get("min", 0) or 0
+
+def matchup_multiplier(opp_defense, pos):
+    """Opponent defense weakness — position-aware. (0.92 to 1.20)"""
+    opp_ppg = opp_defense.get("opp_ppg", LEAGUE_AVG_DEF_RATING)
+    def_rating = opp_defense.get("def_rating", LEAGUE_AVG_DEF_RATING)
+
+    ppg_diff = opp_ppg - LEAGUE_AVG_DEF_RATING
+    rating_diff = def_rating - LEAGUE_AVG_DEF_RATING
+    matchup_signal = max(ppg_diff / 12.0, rating_diff / 12.0)
+
+    # Position adjustment: bigs feast on bad interior D, guards on bad perimeter D
+    if pos in ("PG", "SG", "G"):
+        matchup_signal *= 1.05
+    elif pos in ("C", "PF"):
+        matchup_signal *= 1.08
+
+    mult = 1.0 + matchup_signal * 0.10
+    return max(0.92, min(mult, 1.20))
+
+
+def usage_trend_multiplier(stats):
+    """Detect expanding role from recent minutes increase. (0.95 to 1.25)"""
+    recent = stats.get("recent")
+    if not recent:
+        return 1.0
+
+    season_min = max(stats.get("min", 1), 1)
+    recent_min = recent.get("min", season_min)
+    min_ratio = recent_min / season_min
+
+    if min_ratio > 1.05:
+        boost = (min_ratio - 1.0) * 1.5
+        return min(1.0 + boost, 1.25)
+    elif min_ratio < 0.90:
+        return max(0.95, min_ratio)
+    return 1.0
+
+
+def game_closeness_factor(spread):
+    """Close games = more clutch opportunities, starters play full minutes."""
+    if spread is None:
+        return 1.0
+    expected_margin = abs(spread) * 1.3
+    return 1.0 + 0.25 * (1.0 - min(expected_margin / 30.0, 1.0))
+
+
+def pace_factor(total):
+    """Scoring environment. Inverted-U around O/U 222."""
+    if total is None:
+        return 1.0
+    deviation = abs(total - 222) / 30.0
+    return 1.0 + 0.06 * max(1.0 - deviation, 0)
+
+
+def base_production_score(stats, pos):
+    """Base per-game production. Two-way stats weighted heavily."""
+    pts = stats.get("pts", 0)
+    reb = stats.get("reb", 0)
+    ast = stats.get("ast", 0)
+    stl = stats.get("stl", 0)
+    blk = stats.get("blk", 0)
+    tov = stats.get("tov", 0)
+    fgp = stats.get("fgp", 0.44)
+
+    score = (pts * 1.0 + reb * 1.0 + ast * 1.5
+             + stl * 3.5 + blk * 3.0 - tov * 1.2)
+    score += (fgp - 0.44) * 10.0
+
+    if pos in ("PG", "SG", "G"):
+        if stl + blk >= 2.0:
+            score *= 1.08
+    elif pos in ("C", "PF"):
+        if ast >= 5.0:
+            score *= 1.06
+
+    return score
+
+
+def project_player(name, pos, age, side, stats, spread, total, game_label="",
+                   team_abbrev="", opp_defense=None):
+    """Project OUTPERFORMANCE: who will exceed their baseline tonight?"""
+    avg_min = stats["min"]
     if avg_min < 15:
         return None
 
-    # --- Base fantasy points from season averages ---
-    season_fp = _calc_fp(season)
-    if season_fp <= 0:
-        return None
+    if opp_defense is None:
+        opp_defense = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
 
-    # Fantasy points per minute (efficiency metric)
-    fppm = season_fp / avg_min
+    base = base_production_score(stats, pos)
+    form = recent_form_multiplier(stats)
+    matchup = matchup_multiplier(opp_defense, pos)
+    usage = usage_trend_multiplier(stats)
+    closeness = game_closeness_factor(spread)
+    pace = pace_factor(total)
+    home_adj = 1.015 if side == "home" else 0.985
 
-    # --- Last 5 games fantasy points (recent form) ---
-    last5_fp = _calc_fp(last5) if last5 else season_fp
-    last5_min = (last5.get("min", 0) or 0) if last5 else avg_min
-    if last5_min <= 0:
-        last5_min = avg_min
+    # Minutes projection
+    pred_min = avg_min
+    recent = stats.get("recent")
+    if recent and recent.get("min", 0) > avg_min:
+        pred_min = recent["min"] * 0.7 + avg_min * 0.3
 
-    # 1. FORM FACTOR — how hot/cold is the player vs their season baseline?
-    #    Capped at +/-40% adjustment per DFS best practices (avoid recency bias)
-    form_ratio = last5_fp / season_fp if season_fp > 0 else 1.0
-    form_factor = max(0.6, min(1.4, form_ratio))
+    if spread is not None:
+        abs_spread = abs(spread)
+        if abs_spread <= 4:
+            pred_min *= 1.0 + (4 - abs_spread) * 0.006
+        elif abs_spread > 8:
+            pred_min *= max(1.0 - (abs_spread - 8) * 0.015, 0.82)
 
-    # 2. MINUTES OPPORTUNITY — trending minutes indicate role changes / injuries
-    #    Players seeing more minutes recently likely have expanded opportunity
-    min_ratio = last5_min / avg_min if avg_min > 0 else 1.0
-    min_factor = max(0.8, min(1.3, min_ratio))
+    if age and age > 35:
+        pred_min *= 0.94
+    elif age and age > 32:
+        pred_min *= 0.97
 
-    # 3. MATCHUP FACTOR — opponent defensive weakness (Defense vs Position proxy)
-    #    Higher DEF_RATING = worse defense = more fantasy points for opposing players
-    #    Typical range: 105 (elite D) to 120 (terrible D), league avg ~112
-    if league_avg_def > 0 and opp_def_rating > 0:
-        def_ratio = opp_def_rating / league_avg_def
-        matchup_factor = max(0.85, min(1.20, def_ratio))
-    else:
-        matchup_factor = 1.0
+    # Composite outperformance score
+    outperformance = base * form * matchup * usage * closeness * pace * home_adj
+    min_scale = pred_min / 30.0
+    final_rating = outperformance * min_scale
 
-    # 4. VEGAS PACE FACTOR — game total implies scoring environment
-    #    High totals (230+) = run-and-gun, Low totals (<210) = grind
-    if vegas_total and vegas_total > 0:
-        vegas_factor = vegas_total / 220.0
-    else:
-        vegas_factor = 1.0
-
-    # 5. PREDICTED MINUTES — weighted toward recent (40% recency per DFS models)
-    pred_minutes = (avg_min * 0.6) + (last5_min * 0.4)
-
-    # 6. COMPOSITE PROJECTION
-    projected_fp = pred_minutes * fppm * form_factor * matchup_factor * vegas_factor
-
-    # 7. BOOST SCORE — outperformance potential relative to season baseline
-    #    This is the key metric for value-based draft slot assignment
-    #    boost > 1.0 means projecting ABOVE their season average tonight
-    boost = projected_fp / season_fp if season_fp > 0 else 1.0
+    # Boost: product of all situational multipliers (>1.0 = above-average situation)
+    boost = form * matchup * usage * closeness * pace * home_adj
+    # Also account for minutes expansion
+    if avg_min > 0:
+        boost *= (pred_min / avg_min)
 
     return {
         "name": name,
+        "pos": pos,
         "team": team_abbrev,
-        "opponent": opp_team,
         "game": game_label,
-        "projected_fp": round(projected_fp, 1),
-        "season_fp": round(season_fp, 1),
+        "rating": round(final_rating, 1),
+        "predMin": round(pred_min, 1),
         "boost": round(boost, 2),
-        "form_ratio": round(form_ratio, 2),
-        "matchup_factor": round(matchup_factor, 2),
-        "min_factor": round(min_factor, 2),
-        "vegas_factor": round(vegas_factor, 2),
+        "form": round(form, 2),
+        "matchup": round(matchup, 3),
+        "usage": round(usage, 3),
+        "closeness": round(closeness, 3),
+        "side": side,
+        # Internal sort keys
+        "_form": form,
+        "_matchup": matchup,
+        "_usage": usage,
+        "_base": base,
     }
 
 
-def rank_players_for_mode(projections: list, mode: str) -> list:
-    """Rank and select top 5 players based on the mode-specific scoring.
+# ---------------------------------------------------------------------------
+# Lineup building — 3 modes with draft slot assignment
+# ---------------------------------------------------------------------------
 
-    Chalk:       Raw projection power — safest, highest-floor picks.
-    Diff:        Balanced projection * boost — smart value plays.
-    Contrarian:  Boost-heavy — finds hidden gems outperforming expectations.
+def build_lineups(projections):
+    """Build 3 meaningfully different lineup variants with draft slots.
+
+    Chalk:   Top 5 by overall outperformance score (safe, high-floor).
+    Diff:    Matchup + form hunting — guarantees 2+ non-chalk players.
+    Contra:  Breakout/usage plays — hunts injury-driven role expansions.
     """
-    for p in projections:
-        fp = p["projected_fp"]
-        boost = max(p["boost"], 0.1)
+    if len(projections) < 5:
+        return [], [], []
 
-        if mode == "chalk":
-            # Favor high raw projection with slight matchup tilt
-            # Stars with good matchups dominate here
-            p["mode_score"] = fp * (boost ** 0.3)
-        elif mode == "diff":
-            # Balanced — projection weighted by outperformance potential
-            # Smart mid-tier picks with great matchups rise
-            p["mode_score"] = fp * boost
-        else:  # contrarian
-            # Value-first — find players who will exceed expectations the most
-            # Role players on hot streaks facing bad defenses shine here
-            p["mode_score"] = fp * (boost ** 1.5)
+    ranked = sorted(projections, key=lambda x: x["rating"], reverse=True)
+    pool = ranked[:20]
+    chalk_names = {p["name"] for p in ranked[:5]}
 
-    ranked = sorted(projections, key=lambda x: x["mode_score"], reverse=True)
-    return ranked[:5]
+    chalk = [dict(p) for p in ranked[:5]]
+    _assign_slots(chalk)
+
+    # Diff: matchup × form signal
+    diff_sorted = sorted(pool, key=lambda x: (
+        x.get("_matchup", 1.0) ** 2.0
+        * x.get("_form", 1.0) ** 2.0
+        * (x["rating"] ** 0.5)
+    ), reverse=True)
+    diff = _build_with_min_unique(diff_sorted, chalk_names, min_unique=2)
+    _assign_slots(diff)
+
+    # Contrarian: usage/breakout signal
+    contra_sorted = sorted(pool, key=lambda x: (
+        x.get("_usage", 1.0) ** 3.0
+        * x.get("_form", 1.0) ** 1.5
+        * (x["rating"] ** 0.4)
+    ), reverse=True)
+    contra = _build_with_min_unique(contra_sorted, chalk_names, min_unique=2)
+    _assign_slots(contra)
+
+    return chalk, diff, contra
+
+
+def _build_with_min_unique(sorted_pool, chalk_names, min_unique=2):
+    """Pick top 5, guaranteeing at least min_unique players NOT in chalk."""
+    unique = []
+    shared = []
+    for p in sorted_pool:
+        if p["name"] in chalk_names:
+            shared.append(dict(p))
+        else:
+            unique.append(dict(p))
+        if len(unique) >= min_unique and len(unique) + len(shared) >= 5:
+            break
+
+    lineup = unique[:min_unique]
+    remaining = shared + unique[min_unique:]
+    remaining.sort(key=lambda x: x["rating"], reverse=True)
+    for p in remaining:
+        if len(lineup) >= 5:
+            break
+        if p["name"] not in {x["name"] for x in lineup}:
+            lineup.append(p)
+
+    lineup.sort(key=lambda x: x["rating"], reverse=True)
+    return lineup[:5]
+
+
+def _assign_slots(lineup):
+    """Assign draft slot values (2.0x, 1.8x, ...) to a 5-player lineup."""
+    for i, p in enumerate(lineup):
+        p["slot"] = SLOT_VALUES[i] if i < len(SLOT_VALUES) else "1.0x"
 
 
 # ---------------------------------------------------------------------------
-# API endpoint
+# API endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/api/games")
+async def get_games():
+    try:
+        return JSONResponse(content=fetch_games())
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 @app.get("/api/picks")
-async def get_picks(mode: str = Query(default="chalk")):
+async def get_picks(gameId: str = Query(...)):
+    """Per-game picks: top 5 for a specific game, 3 lineup variants."""
     try:
-        if mode not in ("chalk", "diff", "contrarian"):
-            mode = "chalk"
+        games = fetch_games()
+        game = next((g for g in games if g["gameId"] == gameId), None)
+        if not game:
+            return JSONResponse(content={"error": "Game not found."}, status_code=404)
 
-        # 1. Get today's games from CDN (reliable from cloud)
-        games = fetch_todays_games()
-        if not games:
-            return JSONResponse(
-                content={"error": "No NBA games scheduled today."},
-                status_code=200,
-            )
+        spread = game.get("spread")
+        total = game.get("total")
 
-        # 2. Build game context — map every team to its opponent and game label
-        team_ids_today = set()
-        team_vegas: dict = {}
-        team_opponent: dict = {}       # team_id -> opponent tricode
-        team_game_label: dict = {}     # team_id -> "HOU @ WAS"
-        tri_to_id: dict = {}           # tricode -> team_id
-        id_to_tri: dict = {}           # team_id -> tricode
+        players, stats, home_def, away_def = fetch_game_players(
+            game["home"]["id"], game["away"]["id"]
+        )
 
-        vegas_lines = fetch_vegas_lines()
-
-        for game in games:
-            home_id = game["homeTeam"]["teamId"]
-            away_id = game["awayTeam"]["teamId"]
-            home_tri = game["homeTeam"]["teamTricode"]
-            away_tri = game["awayTeam"]["teamTricode"]
-
-            team_ids_today.add(home_id)
-            team_ids_today.add(away_id)
-
-            tri_to_id[home_tri] = home_id
-            tri_to_id[away_tri] = away_id
-            id_to_tri[home_id] = home_tri
-            id_to_tri[away_id] = away_tri
-
-            # Opponent mapping
-            team_opponent[home_id] = away_tri
-            team_opponent[away_id] = home_tri
-
-            # Game label
-            label = f"{away_tri} @ {home_tri}"
-            team_game_label[home_id] = label
-            team_game_label[away_id] = label
-
-            # Vegas lines by team_id
-            for side_key, tid in [("homeTeam", home_id), ("awayTeam", away_id)]:
-                tri = game[side_key]["teamTricode"]
-                full_name = TRICODE_TO_NAME.get(tri, "")
-                if full_name in vegas_lines:
-                    team_vegas[tid] = vegas_lines[full_name]
-
-        # 3. Fetch all data sources
-        all_stats = fetch_all_player_stats()
-        if not all_stats:
-            return JSONResponse(
-                content={"error": "Could not fetch player stats from NBA.com. Please try again later."},
-                status_code=200,
-            )
-
-        last5 = fetch_last5_stats()
-        defense_ratings = fetch_team_defense_ratings()
-
-        # League average DEF_RATING for normalization
-        if defense_ratings:
-            all_defs = [
-                t["def_rating"]
-                for t in defense_ratings.values()
-                if isinstance(t, dict)
-            ]
-            league_avg_def = sum(all_defs) / len(all_defs) if all_defs else 112.0
-        else:
-            league_avg_def = 112.0
-
-        # 4. Project all eligible players on today's teams
         projections = []
-        for pid_str, pdata in all_stats.items():
-            pid = int(pid_str) if isinstance(pid_str, str) else pid_str
-            tid = pdata["team_id"]
-
-            if tid not in team_ids_today:
+        for pinfo, side in players:
+            s = stats.get(pinfo["id"])
+            if not s:
                 continue
-
-            # Opponent info
-            opp_tri = team_opponent.get(tid, "")
-            opp_id = tri_to_id.get(opp_tri)
-
-            # Opponent's defensive rating (higher = worse defense = better for player)
-            opp_def = 112.0
-            if opp_id is not None and defense_ratings:
-                opp_entry = defense_ratings.get(opp_id) or defense_ratings.get(str(opp_id))
-                if opp_entry and isinstance(opp_entry, dict):
-                    opp_def = opp_entry.get("def_rating", 112.0)
-
-            # Player's last 5 game stats (full stat line)
-            p_last5 = last5.get(str(pid)) or last5.get(pid) or {}
-
-            # Player's team tricode
-            player_tri = pdata.get("team_abbrev") or id_to_tri.get(tid, "")
-
-            proj = project_player_value(
-                name=pdata["name"],
-                team_abbrev=player_tri,
-                season=pdata,
-                last5=p_last5,
-                opp_def_rating=opp_def,
-                league_avg_def=league_avg_def,
-                vegas_total=team_vegas.get(tid),
-                opp_team=opp_tri,
-                game_label=team_game_label.get(tid, ""),
+            opp_def = away_def if side == "home" else home_def
+            team_abbrev = game["home"]["abbr"] if side == "home" else game["away"]["abbr"]
+            p = project_player(
+                pinfo["name"], pinfo["pos"], pinfo.get("age", 25),
+                side, s, spread, total, game["label"],
+                team_abbrev=team_abbrev,
+                opp_defense=opp_def,
             )
-            if proj is not None:
-                projections.append(proj)
+            if p:
+                projections.append(p)
 
-        # 5. Rank for the selected mode and pick top 5
-        top5 = rank_players_for_mode(projections, mode)
-
-        # 6. Assign draft slots and build response
-        result = []
-        for i, p in enumerate(top5):
-            slot = SLOT_VALUES[i] if i < len(SLOT_VALUES) else "1.0x"
-            result.append({
-                "name": p["name"],
-                "team": p["team"],
-                "opponent": p["opponent"],
-                "game": p["game"],
-                "slot": slot,
-                "projected_fp": p["projected_fp"],
-                "boost": p["boost"],
-                "matchup_factor": p["matchup_factor"],
-                "form_ratio": p["form_ratio"],
+        if len(projections) < 5:
+            return JSONResponse(content={
+                "error": f"Not enough eligible players ({len(projections)} found, need 5). "
+                         f"Stats fetched for {len(stats)}/{len(players)} players."
             })
 
-        return JSONResponse(content=result)
+        chalk, diff, contra = build_lineups(projections)
 
+        return JSONResponse(content={
+            "game": {
+                "label": game["label"],
+                "home": game["home"]["name"],
+                "away": game["away"]["name"],
+                "spread": spread,
+                "total": total,
+            },
+            "lineups": {
+                "chalk": chalk,
+                "differentiated": diff,
+                "contrarian": contra,
+            },
+        })
     except Exception as e:
-        return JSONResponse(
-            content={"error": f"Failed to generate picks: {str(e)}"},
-            status_code=500,
-        )
+        return JSONResponse(content={"error": f"Failed: {str(e)}"}, status_code=500)
+
+
+@app.get("/api/slate")
+async def get_slate():
+    """Full-slate top 5 picks across ALL games today."""
+    try:
+        games = fetch_games()
+        if not games:
+            return JSONResponse(content={"error": "No games on today's slate."})
+
+        all_projections = []
+        game_summaries = []
+
+        def process_game(game):
+            spread = game.get("spread")
+            total = game.get("total")
+            players, stats, home_def, away_def = fetch_game_players(
+                game["home"]["id"], game["away"]["id"]
+            )
+            projs = []
+            for pinfo, side in players:
+                s = stats.get(pinfo["id"])
+                if not s:
+                    continue
+                opp_def = away_def if side == "home" else home_def
+                team_abbrev = game["home"]["abbr"] if side == "home" else game["away"]["abbr"]
+                p = project_player(
+                    pinfo["name"], pinfo["pos"], pinfo.get("age", 25),
+                    side, s, spread, total, game["label"],
+                    team_abbrev=team_abbrev,
+                    opp_defense=opp_def,
+                )
+                if p:
+                    projs.append(p)
+            return game, projs
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futs = {ex.submit(process_game, g): g for g in games}
+            for f in as_completed(futs):
+                try:
+                    game, projs = f.result()
+                    all_projections.extend(projs)
+                    game_summaries.append({
+                        "label": game["label"],
+                        "spread": game.get("spread"),
+                        "total": game.get("total"),
+                        "playerCount": len(projs),
+                    })
+                except Exception:
+                    pass
+
+        if len(all_projections) < 5:
+            return JSONResponse(content={
+                "error": f"Not enough players across slate ({len(all_projections)} found)."
+            })
+
+        chalk, diff, contra = build_lineups(all_projections)
+
+        return JSONResponse(content={
+            "games": game_summaries,
+            "totalPlayers": len(all_projections),
+            "lineups": {
+                "chalk": chalk,
+                "differentiated": diff,
+                "contrarian": contra,
+            },
+        })
+    except Exception as e:
+        return JSONResponse(content={"error": f"Slate failed: {str(e)}"}, status_code=500)
