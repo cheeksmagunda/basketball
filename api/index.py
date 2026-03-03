@@ -422,7 +422,11 @@ def fetch_game_players(home_id, away_id):
 # ---------------------------------------------------------------------------
 
 def recent_form_multiplier(stats):
-    """How hot/cold is this player vs season baseline? (0.85 to 1.40)"""
+    """How hot/cold is this player vs season baseline? (0.80 to 1.50)
+
+    Wider range than typical DFS models because we specifically want to
+    surface hot-streak players (e.g. Sheppard 28pts vs 12 PPG season).
+    """
     recent = stats.get("recent")
     if not recent:
         return 1.0
@@ -445,11 +449,15 @@ def recent_form_multiplier(stats):
     if season_composite <= 0:
         return 1.0
 
-    return max(0.85, min(recent_composite / season_composite, 1.40))
+    return max(0.80, min(recent_composite / season_composite, 1.50))
 
 
 def matchup_multiplier(opp_defense, pos):
-    """Opponent defense weakness — position-aware. (0.92 to 1.20)"""
+    """Opponent defense weakness — position-aware. (0.90 to 1.25)
+
+    Wider range + higher sensitivity so that truly bad defenses (WAS, UTA)
+    give a meaningfully larger edge than average matchups.
+    """
     opp_ppg = opp_defense.get("opp_ppg", LEAGUE_AVG_DEF_RATING)
     def_rating = opp_defense.get("def_rating", LEAGUE_AVG_DEF_RATING)
 
@@ -461,14 +469,18 @@ def matchup_multiplier(opp_defense, pos):
     if pos in ("PG", "SG", "G"):
         matchup_signal *= 1.05
     elif pos in ("C", "PF"):
-        matchup_signal *= 1.08
+        matchup_signal *= 1.10
 
-    mult = 1.0 + matchup_signal * 0.10
-    return max(0.92, min(mult, 1.20))
+    mult = 1.0 + matchup_signal * 0.15
+    return max(0.90, min(mult, 1.25))
 
 
 def usage_trend_multiplier(stats):
-    """Detect expanding role from recent minutes increase. (0.95 to 1.25)"""
+    """Detect expanding role from recent minutes increase. (0.95 to 1.35)
+
+    Wider cap to better capture major role expansions when a star teammate
+    goes down (e.g. Moody with Curry out, Sensabaugh with 3 starters out).
+    """
     recent = stats.get("recent")
     if not recent:
         return 1.0
@@ -479,7 +491,7 @@ def usage_trend_multiplier(stats):
 
     if min_ratio > 1.05:
         boost = (min_ratio - 1.0) * 1.5
-        return min(1.0 + boost, 1.25)
+        return min(1.0 + boost, 1.35)
     elif min_ratio < 0.90:
         return max(0.95, min_ratio)
     return 1.0
@@ -600,63 +612,86 @@ def project_player(name, pos, age, side, stats, spread, total, game_label="",
 def build_lineups(projections):
     """Build 3 meaningfully different lineup variants with draft slots.
 
-    Chalk:   Top 5 by overall outperformance score (safe, high-floor).
-    Diff:    Matchup + form hunting — guarantees 2+ non-chalk players.
-    Contra:  Breakout/usage plays — hunts injury-driven role expansions.
+    The key insight: we rank by OUTPERFORMANCE POTENTIAL, not raw production.
+    This is what surfaces hot role players facing bad defenses over safe stars.
+
+    Chalk:   rating^0.8 × boost^1.5  — best outperformers with a production floor.
+    Diff:    matchup^2.5 × form^2.5 × rating^0.4  — matchup + hot-streak gems.
+    Contra:  usage^3 × form^2 × rating^0.3  — injury-driven breakout plays.
     """
     if len(projections) < 5:
         return [], [], []
 
-    ranked = sorted(projections, key=lambda x: x["rating"], reverse=True)
-    pool = ranked[:20]
-    chalk_names = {p["name"] for p in ranked[:5]}
+    by_rating = sorted(projections, key=lambda x: x["rating"], reverse=True)
+    pool = by_rating[:25]
 
-    chalk = [dict(p) for p in ranked[:5]]
+    # === CHALK: Outperformance-weighted ===
+    # rating^0.8 dampens raw production dominance
+    # boost^1.5 amplifies situational edge (form × matchup × usage × ...)
+    # A hot player (boost=2.0) vs bad defense beats a safe star (boost=1.05)
+    def _chalk_key(p):
+        return (max(p["rating"], 0.1) ** 0.8) * (max(p.get("boost", 1.0), 0.5) ** 1.5)
+
+    chalk_sorted = sorted(pool, key=_chalk_key, reverse=True)
+    chalk = [dict(p) for p in chalk_sorted[:5]]
+    chalk_names = {p["name"] for p in chalk}
     _assign_slots(chalk)
 
-    # Diff: matchup × form signal
-    diff_sorted = sorted(pool, key=lambda x: (
-        x.get("_matchup", 1.0) ** 2.0
-        * x.get("_form", 1.0) ** 2.0
-        * (x["rating"] ** 0.5)
-    ), reverse=True)
-    diff = _build_with_min_unique(diff_sorted, chalk_names, min_unique=2)
+    # === DIFF: Matchup + form gems ===
+    # Hunts players facing terrible defenses AND on hot streaks
+    # rating^0.4 keeps a production floor but lets matchup/form dominate
+    def _diff_key(p):
+        return (p.get("_matchup", 1.0) ** 2.5
+                * p.get("_form", 1.0) ** 2.5
+                * max(p["rating"], 0.1) ** 0.4)
+
+    diff_sorted = sorted(pool, key=_diff_key, reverse=True)
+    diff = _select_with_diversity(diff_sorted, chalk_names, min_unique=2)
     _assign_slots(diff)
 
-    # Contrarian: usage/breakout signal
-    contra_sorted = sorted(pool, key=lambda x: (
-        x.get("_usage", 1.0) ** 3.0
-        * x.get("_form", 1.0) ** 1.5
-        * (x["rating"] ** 0.4)
-    ), reverse=True)
-    contra = _build_with_min_unique(contra_sorted, chalk_names, min_unique=2)
+    # === CONTRARIAN: Usage/breakout plays ===
+    # Hunts injury-driven role expansions (Moody w/ Curry out, etc.)
+    # usage^3 massively rewards expanding minutes
+    def _contra_key(p):
+        return (p.get("_usage", 1.0) ** 3.0
+                * p.get("_form", 1.0) ** 2.0
+                * max(p["rating"], 0.1) ** 0.3)
+
+    contra_sorted = sorted(pool, key=_contra_key, reverse=True)
+    contra = _select_with_diversity(contra_sorted, chalk_names, min_unique=2)
     _assign_slots(contra)
 
     return chalk, diff, contra
 
 
-def _build_with_min_unique(sorted_pool, chalk_names, min_unique=2):
-    """Pick top 5, guaranteeing at least min_unique players NOT in chalk."""
+def _select_with_diversity(sorted_pool, chalk_names, min_unique=2):
+    """Pick top 5 from sorted_pool, guaranteeing min_unique non-chalk players.
+
+    Maintains the sorted_pool order for slot assignment — the mode-specific
+    ranking determines who gets the 2.0x slot, not raw production.
+    """
     unique = []
     shared = []
     for p in sorted_pool:
-        if p["name"] in chalk_names:
-            shared.append(dict(p))
-        else:
+        if p["name"] not in chalk_names:
             unique.append(dict(p))
+        else:
+            shared.append(dict(p))
         if len(unique) >= min_unique and len(unique) + len(shared) >= 5:
             break
 
+    # Take required unique picks first, then fill with best remaining
     lineup = unique[:min_unique]
     remaining = shared + unique[min_unique:]
-    remaining.sort(key=lambda x: x["rating"], reverse=True)
     for p in remaining:
         if len(lineup) >= 5:
             break
         if p["name"] not in {x["name"] for x in lineup}:
             lineup.append(p)
 
-    lineup.sort(key=lambda x: x["rating"], reverse=True)
+    # Maintain the mode-specific sort order for slot assignment
+    pool_order = {p["name"]: i for i, p in enumerate(sorted_pool)}
+    lineup.sort(key=lambda x: pool_order.get(x["name"], 999))
     return lineup[:5]
 
 
