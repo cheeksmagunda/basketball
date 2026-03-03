@@ -251,8 +251,8 @@ def _cascade_minutes(roster, stats_map):
 #   Bench (15-22)       → low ownership, high mult ~2.8x ← SWEET SPOT
 #   Deep bench (<15)    → below minutes gate, filtered out
 #
-# CHALK = best EV at moderate risk (role players + starters)
-# UPSIDE = 5 different players from chalk — lower usage, higher ceiling
+# STARTING 5 = best EV at moderate risk (role players + starters)
+# MOONSHOT = 5 different players — lower usage, higher ceiling, higher production floor
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ownership_mult_chalk(proj_min):
@@ -405,18 +405,20 @@ def _run_game(game, cal_bias=0.0):
     _cs(cache_key, out)
     return out
 
-CHALK_FLOOR = 3.5  # Minimum raw rating to qualify for chalk Starting 5
+CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
+MOONSHOT_FLOOR = 6.0  # Higher floor for Moonshot — filters low-production bench warmers
 
 def _build_lineups(projections):
-    # CHALK: sorted by chalk_ev, with production floor filter
+    # STARTING 5: sorted by chalk_ev, with production floor filter
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
     chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # UPSIDE: 5 totally different players — lower usage, higher ceiling
+    # MOONSHOT: 5 totally different players — higher production floor
     chalk_names = {p["name"] for p in chalk}
-    upside_pool = [p for p in chalk_eligible if p["name"] not in chalk_names]
-    upside = sorted(upside_pool, key=lambda x: x["chalk_ev"], reverse=True)[:5]
+    moonshot_pool = [p for p in projections
+                     if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
+    upside = sorted(moonshot_pool, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
 
     return chalk, upside

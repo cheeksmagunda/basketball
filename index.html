@@ -443,6 +443,11 @@
       color: var(--muted); cursor: pointer; transition: all 0.2s;
     }
     .scope-tab.active { background: rgba(79,142,247,0.12); border-color: var(--chalk); color: var(--chalk); }
+    .scope-tab.has-actuals::after {
+      content: ''; position: absolute; top: 3px; right: 3px;
+      width: 5px; height: 5px; border-radius: 50%; background: var(--green);
+    }
+    .scope-tab { position: relative; }
 
     .enter-results-btn {
       width: 100%; padding: 12px; margin-top: 14px;
@@ -467,8 +472,12 @@
     .comp-actual { font-weight: 700; }
     .comp-actual.hit { color: var(--green); }
     .comp-actual.miss { color: var(--red); }
+    .comp-section-label {
+      font-size: 0.7rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase;
+      letter-spacing: 0.5px; padding: 6px 0 4px; margin-top: 4px;
+    }
     .comp-summary {
-      display: flex; gap: 12px; padding: 12px 0; font-size: 0.75rem; color: var(--text-dim);
+      display: flex; gap: 12px; flex-wrap: wrap; padding: 12px 0; font-size: 0.75rem; color: var(--text-dim);
       border-top: 1px solid var(--border); margin-top: 8px;
     }
 
@@ -498,6 +507,15 @@
     }
     .score-row input:focus { border-color: var(--chalk); }
     .score-row input.invalid { border-color: var(--red); }
+    .score-row input[type="text"] {
+      text-align: left; font-weight: 400;
+    }
+    .remove-row-btn {
+      background: none; border: none; color: var(--text-dim);
+      font-size: 1.2rem; cursor: pointer; padding: 0 4px;
+      opacity: 0.3; transition: opacity 0.15s;
+    }
+    .remove-row-btn:hover { opacity: 1; color: var(--red); }
     .modal-cancel {
       flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
       background: transparent; color: var(--muted); cursor: pointer;
@@ -537,8 +555,8 @@
     <div id="slateChips" class="game-chips"></div>
 
     <div class="mode-tabs" id="slateTabs" style="display:none">
-      <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Chalk</button>
-      <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🔥 Upside</button>
+      <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Starting 5</button>
+      <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🚀 Moonshot</button>
     </div>
 
     <div id="slateList"></div>
@@ -556,8 +574,8 @@
     </button>
 
     <div class="mode-tabs" id="picksTabsWrap" style="display:none; margin-top:0;">
-      <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Chalk</button>
-      <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🔥 Upside</button>
+      <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Starting 5</button>
+      <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🚀 Moonshot</button>
     </div>
     <div id="picksList"></div>
 
@@ -587,6 +605,7 @@
           📷 Attach screenshot for reference
         </label>
         <div id="modalScoreRows"></div>
+        <button type="button" id="addPlayerBtn" onclick="addResultRow('', null)" style="display:none;background:none;border:1px dashed var(--border-bright);border-radius:8px;padding:8px;width:100%;color:var(--text-dim);font-size:0.8rem;cursor:pointer;margin-top:6px;transition:border-color 0.15s">+ Add Player</button>
         <div id="modalError" style="color:var(--red);font-size:0.75rem;margin:8px 0;display:none"></div>
         <div style="display:flex;gap:8px;margin-top:14px">
           <button class="modal-cancel" onclick="closeEntryModal()">Cancel</button>
@@ -615,6 +634,8 @@ let LAB_ACTIVE_DATE = null;
 let LAB_ACTIVE_SCOPE = null;
 let MODAL_DATE = null;
 let MODAL_SCOPE = null;
+let MODAL_ROW_COUNT = 0;
+let LAB_DAY_DATA = null;  // in-memory dayData including auto-generated game tabs
 
 // ── LOCALSTORAGE HELPERS ──
 const LAB_KEY = 'nba_lab_history';
@@ -818,7 +839,7 @@ function renderCards(picks, containerId, mode) {
         </div>
         <div class="score-col" style="--score-color:${scoreColor}">
           <div class="score-num">${p.rating}</div>
-          <span class="score-label">${isUpside ? 'upside' : 'projected'}</span>
+          <span class="score-label">${isUpside ? 'moonshot' : 'projected'}</span>
           <div class="slot-badge" style="background:${isUpside?'rgba(249,115,22,0.1)':'rgba(79,142,247,0.1)'};border-color:${isUpside?'rgba(249,115,22,0.25)':'rgba(79,142,247,0.25)'}">
             ${p.slot}
           </div>
@@ -927,10 +948,11 @@ function loadDay(date) {
   renderDayPicker();
 
   const data = labLoad();
-  const dayData = data[date];
+  const dayData = data[date] || {};
   const detail = document.getElementById('dayDetail');
+  LAB_DAY_DATA = dayData;
 
-  if (!dayData || Object.keys(dayData).length === 0) {
+  if (Object.keys(dayData).length === 0) {
     const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
     detail.innerHTML = `
       <div class="day-title">${dateLabel}</div>
@@ -938,9 +960,23 @@ function loadDay(date) {
         <span class="icon">📋</span>
         <p>No predictions saved for this day.</p>
       </div>
-      <button class="enter-results-btn" onclick="openManualEntryModal('${date}')">Enter Results Manually</button>
+      <button class="enter-results-btn" onclick="openEntryModal('${date}','manual')">Enter Results Manually</button>
     `;
     return;
+  }
+
+  // Auto-generate per-game tabs from slate's games list
+  const slateGames = dayData['slate']?.predictions?.games;
+  if (slateGames && Array.isArray(slateGames)) {
+    slateGames.forEach(g => {
+      const gameKey = `game_${g.gameId}`;
+      if (!dayData[gameKey]) {
+        dayData[gameKey] = {
+          predictions: { chalk: [], gameLabel: g.label || 'Game' },
+          savedAt: dayData['slate']?.savedAt
+        };
+      }
+    });
   }
 
   const scopes = Object.keys(dayData);
@@ -950,9 +986,13 @@ function loadDay(date) {
   const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   const tabsHtml = scopes.map(s => {
-    const label = s === 'slate' ? 'Full Slate' : (dayData[s].predictions?.gameLabel || s.replace('game_', 'Game '));
+    let label;
+    if (s === 'slate') label = 'Full Slate';
+    else if (s === 'manual') label = 'Manual';
+    else label = dayData[s].predictions?.gameLabel || s.replace('game_', '');
+    const hasActuals = dayData[s]?.actuals?.length > 0;
     const active = s === activeScope ? 'active' : '';
-    return `<button class="scope-tab ${active}" onclick="switchLabScope('${date}','${s}')">${label}</button>`;
+    return `<button class="scope-tab ${active}${hasActuals ? ' has-actuals' : ''}" onclick="switchLabScope('${date}','${s}')">${label}</button>`;
   }).join('');
 
   detail.innerHTML = `
@@ -970,57 +1010,95 @@ function switchLabScope(date, scope) {
 
 function renderLabScope(date, scope) {
   const data = labLoad();
-  const scopeData = data[date]?.[scope];
+  // Try localStorage first, fall back to in-memory dayData (auto-generated game tabs)
+  const scopeData = data[date]?.[scope] || LAB_DAY_DATA?.[scope];
   const el = document.getElementById('labScopeContent');
 
-  if (!scopeData || !scopeData.predictions) {
-    el.innerHTML = '<div class="empty-state"><span class="icon">📋</span><p>No data for this view.</p></div>';
+  if (!scopeData) {
+    el.innerHTML = `
+      <div class="empty-state" style="margin-bottom:14px"><span class="icon">📋</span><p>No predictions for this game.</p></div>
+      <button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Results</button>`;
     return;
   }
 
-  const preds = scopeData.predictions;
+  const preds = scopeData.predictions || {};
   const actuals = scopeData.actuals;
   const players = preds.chalk || [];
 
   if (actuals && actuals.length) {
-    // Comparison view
+    // Comparison view — Our Picks + Leaderboard Players
     let html = '<div style="margin-bottom:12px">';
-    players.forEach((p, i) => {
-      const actual = actuals[i]?.score;
-      const diff = actual != null ? actual - p.rating : null;
-      const cls = diff != null ? (diff >= 0 ? 'hit' : 'miss') : '';
-      html += `
-        <div class="comp-row">
-          <div class="comp-name">${p.name}</div>
-          <div class="comp-scores">
-            <span class="comp-pred">proj ${p.rating}</span>
-            <span class="comp-arrow">&rarr;</span>
-            <span class="comp-actual ${cls}">${actual != null ? actual : '—'}</span>
-          </div>
-        </div>`;
-    });
 
+    // Our Picks section (only if we had predictions)
+    if (players.length > 0) {
+      html += '<div class="comp-section-label">Our Picks</div>';
+      players.forEach(p => {
+        const actual = actuals.find(a => a.name === p.name);
+        const score = actual?.score;
+        const diff = score != null ? score - p.rating : null;
+        const cls = diff != null ? (diff >= 0 ? 'hit' : 'miss') : '';
+        html += `
+          <div class="comp-row">
+            <div class="comp-name">${p.name}${!actual ? ' <span style="opacity:0.4;font-size:0.75rem">not in results</span>' : ''}</div>
+            <div class="comp-scores">
+              <span class="comp-pred">proj ${p.rating}</span>
+              <span class="comp-arrow">&rarr;</span>
+              <span class="comp-actual ${cls}">${score != null ? score : '—'}</span>
+            </div>
+          </div>`;
+      });
+    }
+
+    // Leaderboard Players (ones we didn't predict)
+    const predNames = new Set(players.map(p => p.name));
+    const extras = actuals.filter(a => !predNames.has(a.name));
+    if (extras.length > 0) {
+      html += '<div class="comp-section-label" style="margin-top:12px">Leaderboard Players</div>';
+      extras.sort((a, b) => (b.score || 0) - (a.score || 0));
+      extras.forEach(a => {
+        html += `
+          <div class="comp-row">
+            <div class="comp-name">${a.name}</div>
+            <div class="comp-scores">
+              <span class="comp-actual">${a.score != null ? a.score : '—'}</span>
+            </div>
+          </div>`;
+      });
+    }
+
+    // Summary
     const scored = actuals.filter(a => a.score != null);
     if (scored.length) {
-      const totalPred = players.slice(0, scored.length).reduce((s, p) => s + p.rating, 0);
       const totalActual = scored.reduce((s, a) => s + a.score, 0);
-      const hits = scored.filter((a, i) => a.score >= players[i]?.rating).length;
+      const matchedPicks = players.filter(p => actuals.find(a => a.name === p.name && a.score != null));
+      const totalPred = matchedPicks.reduce((s, p) => s + p.rating, 0);
+      const hits = matchedPicks.filter(p => {
+        const a = actuals.find(a => a.name === p.name);
+        return a && a.score >= p.rating;
+      }).length;
       html += `
         <div class="comp-summary">
-          <span>Predicted: <b>${totalPred.toFixed(1)}</b></span>
-          <span>Actual: <b>${totalActual.toFixed(1)}</b></span>
-          <span>Hit rate: <b>${hits}/${scored.length}</b></span>
+          ${matchedPicks.length > 0 ? `<span>Predicted: <b>${totalPred.toFixed(1)}</b></span>` : ''}
+          <span>Total actual: <b>${totalActual.toFixed(1)}</b></span>
+          ${matchedPicks.length > 0 ? `<span>Hit rate: <b>${hits}/${matchedPicks.length}</b></span>` : ''}
+          <span>Players: <b>${scored.length}</b></span>
         </div>`;
     }
     html += '</div>';
-    html += `<button class="enter-results-btn done">Results Submitted</button>`;
+    html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Edit Results</button>`;
     el.innerHTML = html;
   } else {
     // Show predictions + enter results button
-    let html = '<div id="labCardsList"></div>';
-    html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Actual Results</button>`;
-    el.innerHTML = html;
-    renderCards(players, 'labCardsList', 'chalk');
+    if (players.length > 0) {
+      let html = '<div id="labCardsList"></div>';
+      html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Actual Results</button>`;
+      el.innerHTML = html;
+      renderCards(players, 'labCardsList', 'chalk');
+    } else {
+      el.innerHTML = `
+        <div class="empty-state" style="margin-bottom:14px"><span class="icon">📋</span><p>No predictions for this view.</p></div>
+        <button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Results</button>`;
+    }
   }
 }
 
@@ -1028,34 +1106,75 @@ function renderLabScope(date, scope) {
 function openEntryModal(date, scope) {
   MODAL_DATE = date;
   MODAL_SCOPE = scope;
+  MODAL_ROW_COUNT = 0;
 
   const data = labLoad();
-  const preds = data[date]?.[scope]?.predictions;
-  if (!preds) return;
+  const scopeData = data[date]?.[scope] || LAB_DAY_DATA?.[scope];
+  const preds = scopeData?.predictions;
+  const players = preds?.chalk || [];
+  const existing = scopeData?.actuals;
 
-  const players = preds.chalk || [];
   const header = document.getElementById('modalHeader');
   const rows = document.getElementById('modalScoreRows');
+  header.textContent = scope === 'slate' ? 'Enter Slate Results'
+    : scope === 'manual' ? 'Enter Results'
+    : `Enter Results — ${preds?.gameLabel || 'Game'}`;
 
-  header.textContent = scope === 'slate' ? 'Enter Slate Results' : 'Enter Game Results';
+  rows.innerHTML = '';
 
-  rows.innerHTML = players.map((p, i) => `
-    <div class="score-row">
-      <div class="score-row-name">${p.name}</div>
-      <div class="score-row-pred">proj ${p.rating}</div>
-      <input type="number" min="0" max="150" step="0.1" placeholder="Score"
-             id="scoreInput_${i}" oninput="validateScoreInputs()">
-    </div>`).join('');
+  // If re-editing, pre-fill from existing actuals
+  if (existing && existing.length) {
+    existing.forEach(a => {
+      const pred = players.find(p => p.name === a.name);
+      addResultRow(a.name, pred?.rating || null, a.score);
+    });
+  } else if (players.length > 0) {
+    // Pre-fill with our predictions
+    players.forEach(p => addResultRow(p.name, p.rating, null));
+    // Add empty rows for leaderboard players we didn't predict
+    for (let i = 0; i < 3; i++) addResultRow('', null, null);
+  } else {
+    // No predictions — all blank rows
+    for (let i = 0; i < 5; i++) addResultRow('', null, null);
+  }
 
+  document.getElementById('addPlayerBtn').style.display = 'block';
   document.getElementById('modalError').style.display = 'none';
   document.getElementById('screenshotPreview').style.display = 'none';
   document.getElementById('screenshotInput').value = '';
   document.getElementById('modalSubmitBtn').disabled = true;
   document.getElementById('entryModal').classList.remove('hidden');
+  validateResultInputs();
+}
+
+function addResultRow(name, projRating, existingScore) {
+  const idx = MODAL_ROW_COUNT++;
+  const rows = document.getElementById('modalScoreRows');
+  const row = document.createElement('div');
+  row.className = 'score-row';
+  row.id = `resultRow_${idx}`;
+  row.style.gridTemplateColumns = '1fr auto 70px 28px';
+  row.innerHTML = `
+    <input type="text" value="${name || ''}" placeholder="Player name" id="resultName_${idx}"
+           oninput="validateResultInputs()">
+    ${projRating ? `<span class="score-row-pred">proj ${projRating}</span>` : '<span></span>'}
+    <input type="number" min="0" max="150" step="0.1" placeholder="Score"
+           id="resultScore_${idx}" value="${existingScore != null ? existingScore : ''}"
+           oninput="validateResultInputs()">
+    <button type="button" class="remove-row-btn" onclick="removeResultRow(${idx})" title="Remove">&times;</button>
+  `;
+  rows.appendChild(row);
+}
+
+function removeResultRow(idx) {
+  const row = document.getElementById(`resultRow_${idx}`);
+  if (row) row.remove();
+  validateResultInputs();
 }
 
 function closeEntryModal() {
   document.getElementById('entryModal').classList.add('hidden');
+  document.getElementById('addPlayerBtn').style.display = 'none';
   MODAL_DATE = null;
   MODAL_SCOPE = null;
 }
@@ -1071,151 +1190,81 @@ function previewScreenshot(input) {
   }
 }
 
-function validateScoreInputs() {
-  const data = labLoad();
-  const preds = data[MODAL_DATE]?.[MODAL_SCOPE]?.predictions;
-  if (!preds) return;
+function validateResultInputs() {
+  const rowEls = document.querySelectorAll('[id^="resultRow_"]');
+  let filledCount = 0;
+  let hasInvalid = false;
 
-  const players = preds.chalk || [];
-  let allValid = true;
-
-  players.forEach((p, i) => {
-    const input = document.getElementById(`scoreInput_${i}`);
-    const val = input.value.trim();
-    if (val === '') { allValid = false; return; }
-    const num = parseFloat(val);
-    if (isNaN(num) || num < 0 || num > 150) {
-      input.classList.add('invalid');
-      allValid = false;
-    } else {
-      input.classList.remove('invalid');
-    }
-  });
-
-  document.getElementById('modalSubmitBtn').disabled = !allValid;
-
-  const err = document.getElementById('modalError');
-  if (!allValid && players.some((_, i) => document.getElementById(`scoreInput_${i}`).value.trim() !== '')) {
-    err.textContent = 'All 5 scores required. Each must be 0-150.';
-    err.style.display = 'block';
-  } else {
-    err.style.display = 'none';
-  }
-}
-
-async function submitActuals() {
-  const data = labLoad();
-  const preds = data[MODAL_DATE]?.[MODAL_SCOPE]?.predictions;
-  if (!preds) return;
-
-  const players = preds.chalk || [];
-
-  // Check for duplicate submission
-  const existing = data[MODAL_DATE]?.[MODAL_SCOPE]?.actuals;
-  if (existing && existing.length) {
-    if (!confirm('Results already submitted for this view. Overwrite?')) return;
-  }
-
-  const actuals = players.map((p, i) => ({
-    name: p.name,
-    predicted_rating: p.rating,
-    actual_score: parseFloat(document.getElementById(`scoreInput_${i}`).value),
-    score: parseFloat(document.getElementById(`scoreInput_${i}`).value)
-  }));
-
-  // Save locally
-  labSaveActuals(MODAL_DATE, MODAL_SCOPE, actuals);
-
-  // Send to backend for calibration
-  try {
-    const r = await fetch('/api/actuals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: MODAL_DATE,
-        scope: MODAL_SCOPE,
-        scores: actuals
-      })
-    });
-    if (r.ok) {
-      const result = await r.json();
-      if (result.calibration) {
-        calSave(result.calibration);
-      }
-    }
-  } catch(e) {
-    console.warn('Backend calibration sync failed:', e);
-  }
-
-  closeEntryModal();
-  loadDay(MODAL_DATE);
-  renderDayPicker();
-}
-
-// ── MANUAL ENTRY (for days without predictions) ──
-function openManualEntryModal(date) {
-  MODAL_DATE = date;
-  MODAL_SCOPE = 'manual';
-
-  const header = document.getElementById('modalHeader');
-  const rows = document.getElementById('modalScoreRows');
-  header.textContent = 'Enter Results Manually';
-
-  rows.innerHTML = Array.from({length: 5}, (_, i) => `
-    <div class="score-row" style="grid-template-columns: 1fr 70px">
-      <input type="text" placeholder="Player name" id="manualName_${i}"
-             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;padding:8px;color:var(--text);font-size:0.85rem;outline:none;width:100%"
-             oninput="validateManualInputs()">
-      <input type="number" min="0" max="150" step="0.1" placeholder="Score"
-             id="scoreInput_${i}" oninput="validateManualInputs()">
-    </div>`).join('');
-
-  document.getElementById('modalError').style.display = 'none';
-  document.getElementById('screenshotPreview').style.display = 'none';
-  document.getElementById('screenshotInput').value = '';
-  document.getElementById('modalSubmitBtn').disabled = true;
-  document.getElementById('modalSubmitBtn').onclick = submitManualActuals;
-  document.getElementById('entryModal').classList.remove('hidden');
-}
-
-function validateManualInputs() {
-  let allValid = true;
-  for (let i = 0; i < 5; i++) {
-    const name = document.getElementById(`manualName_${i}`).value.trim();
-    const scoreEl = document.getElementById(`scoreInput_${i}`);
+  rowEls.forEach(row => {
+    const idx = row.id.replace('resultRow_', '');
+    const nameEl = document.getElementById(`resultName_${idx}`);
+    const scoreEl = document.getElementById(`resultScore_${idx}`);
+    const name = nameEl.value.trim();
     const val = scoreEl.value.trim();
-    if (!name || val === '') { allValid = false; continue; }
+
+    // Both empty = skip (ok)
+    if (!name && !val) {
+      scoreEl.classList.remove('invalid');
+      return;
+    }
+    // One filled, one empty = incomplete
+    if (!name || !val) { hasInvalid = true; scoreEl.classList.remove('invalid'); return; }
+    // Both filled — validate score
     const num = parseFloat(val);
     if (isNaN(num) || num < 0 || num > 150) {
       scoreEl.classList.add('invalid');
-      allValid = false;
+      hasInvalid = true;
     } else {
       scoreEl.classList.remove('invalid');
+      filledCount++;
     }
-  }
-  document.getElementById('modalSubmitBtn').disabled = !allValid;
+  });
+
+  const valid = filledCount >= 1 && !hasInvalid;
+  document.getElementById('modalSubmitBtn').disabled = !valid;
+  const err = document.getElementById('modalError');
+  err.style.display = hasInvalid ? 'block' : 'none';
+  err.textContent = hasInvalid ? 'Fill both name and score (0-150) for each row, or leave both empty.' : '';
 }
 
-async function submitManualActuals() {
-  const actuals = [];
-  for (let i = 0; i < 5; i++) {
-    const name = document.getElementById(`manualName_${i}`).value.trim();
-    const score = parseFloat(document.getElementById(`scoreInput_${i}`).value);
-    actuals.push({ name, actual_score: score, score, predicted_rating: 0 });
-  }
-
-  // Save as both predictions and actuals for this day
+async function submitActuals() {
+  // Collect all filled rows
+  const rowEls = document.querySelectorAll('[id^="resultRow_"]');
   const data = labLoad();
+  const scopeData = data[MODAL_DATE]?.[MODAL_SCOPE] || LAB_DAY_DATA?.[MODAL_SCOPE];
+  const players = scopeData?.predictions?.chalk || [];
+
+  const actuals = [];
+  rowEls.forEach(row => {
+    const idx = row.id.replace('resultRow_', '');
+    const name = document.getElementById(`resultName_${idx}`).value.trim();
+    const val = document.getElementById(`resultScore_${idx}`).value.trim();
+    if (!name || !val) return;
+    const score = parseFloat(val);
+    const pred = players.find(p => p.name === name);
+    actuals.push({
+      name,
+      predicted_rating: pred?.rating || 0,
+      actual_score: score,
+      score
+    });
+  });
+
+  if (!actuals.length) return;
+
+  // Ensure scope exists in localStorage
   if (!data[MODAL_DATE]) data[MODAL_DATE] = {};
-  data[MODAL_DATE]['manual'] = {
-    predictions: {
-      chalk: actuals.map(a => ({ name: a.name, rating: 0, team: '', pos: '' })),
-      gameLabel: 'Manual Entry'
-    },
-    actuals: actuals,
-    actualsAt: new Date().toISOString(),
-    savedAt: new Date().toISOString()
-  };
+  if (!data[MODAL_DATE][MODAL_SCOPE]) {
+    data[MODAL_DATE][MODAL_SCOPE] = {
+      predictions: scopeData?.predictions || {
+        chalk: actuals.map(a => ({ name: a.name, rating: a.predicted_rating, team: '', pos: '' })),
+        gameLabel: scopeData?.predictions?.gameLabel || (MODAL_SCOPE === 'slate' ? 'Slate' : 'Game')
+      },
+      savedAt: new Date().toISOString()
+    };
+  }
+  data[MODAL_DATE][MODAL_SCOPE].actuals = actuals;
+  data[MODAL_DATE][MODAL_SCOPE].actualsAt = new Date().toISOString();
   labSave(data);
 
   // Send to backend for calibration
@@ -1223,7 +1272,7 @@ async function submitManualActuals() {
     const r = await fetch('/api/actuals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: MODAL_DATE, scope: 'manual', scores: actuals })
+      body: JSON.stringify({ date: MODAL_DATE, scope: MODAL_SCOPE, scores: actuals })
     });
     if (r.ok) {
       const result = await r.json();
@@ -1234,8 +1283,6 @@ async function submitManualActuals() {
   }
 
   closeEntryModal();
-  // Reset the onclick back to the normal handler
-  document.getElementById('modalSubmitBtn').onclick = submitActuals;
   loadDay(MODAL_DATE);
   renderDayPicker();
 }
