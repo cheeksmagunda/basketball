@@ -14,13 +14,14 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-CACHE_DIR = Path("/tmp/nba_real_cache_v2")
+CACHE_DIR = Path("/tmp/nba_real_cache_v3")
 CACHE_DIR.mkdir(exist_ok=True)
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+ESPN_CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba"
 
 # ---------------------------------------------------------------------------
-# Cache
+# Cache helpers
 # ---------------------------------------------------------------------------
 def _cp(k):
     return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
@@ -32,12 +33,16 @@ def _cg(k):
 def _cs(k, v):
     _cp(k).write_text(json.dumps(v))
 
-# ---------------------------------------------------------------------------
-# ESPN helpers
-# ---------------------------------------------------------------------------
-def _espn(path, timeout=15):
-    """Fetch from ESPN API with retry."""
-    url = f"{ESPN}{path}"
+
+def _safe_float(v, default=0.0):
+    try:
+        return float(v) if v is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _espn_get(url, timeout=15):
+    """Fetch any ESPN URL with retry."""
     for attempt in range(3):
         try:
             r = requests.get(url, timeout=timeout)
@@ -49,23 +54,16 @@ def _espn(path, timeout=15):
     return {}
 
 
-def _safe_float(v, default=0.0):
-    try:
-        return float(v) if v is not None else default
-    except (ValueError, TypeError):
-        return default
-
-
 # ---------------------------------------------------------------------------
 # Data fetching
 # ---------------------------------------------------------------------------
 def fetch_games():
-    """Today's NBA games from ESPN scoreboard (includes odds)."""
+    """Today's NBA games from ESPN scoreboard."""
     c = _cg("games")
     if c is not None:
         return c
 
-    data = _espn("/scoreboard")
+    data = _espn_get(f"{ESPN}/scoreboard")
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
@@ -106,7 +104,7 @@ def fetch_roster(team_id):
     if c is not None:
         return c
 
-    data = _espn(f"/teams/{team_id}/roster")
+    data = _espn_get(f"{ESPN}/teams/{team_id}/roster")
     players = []
     for a in data.get("athletes", []):
         players.append({
@@ -120,49 +118,59 @@ def fetch_roster(team_id):
     return players
 
 
+# ---------------------------------------------------------------------------
+# Player stats + game log parsing
+# ---------------------------------------------------------------------------
+# ESPN overview returns:
+#   statistics.names = ["gamesPlayed", "avgMinutes", ...]
+#   statistics.splits[0].stats = ["50", "34.2", ...]
+#   gameLog = { ... recent game data ... }
+NAME_MAP = {
+    "gamesplayed": "gp", "avgminutes": "min", "fieldgoalpct": "fgp",
+    "avgrebounds": "reb", "avgassists": "ast", "avgblocks": "blk",
+    "avgsteals": "stl", "avgturnovers": "tov", "avgpoints": "pts",
+}
+
+# Labels that appear in game log entries
+GAMELOG_LABEL_MAP = {
+    "min": "min", "minutes": "min",
+    "pts": "pts", "points": "pts",
+    "reb": "reb", "rebounds": "reb", "totalrebounds": "reb",
+    "ast": "ast", "assists": "ast",
+    "stl": "stl", "steals": "stl",
+    "blk": "blk", "blocks": "blk",
+    "to": "tov", "turnovers": "tov",
+}
+
+
 def _fetch_athlete(pid):
-    """Fetch season stats for one player from ESPN overview endpoint."""
-    c = _cg(f"ath_{pid}")
+    """Fetch season stats + recent game log for one player."""
+    c = _cg(f"ath3_{pid}")
     if c is not None:
         return c
 
-    # The /overview endpoint is the only one that reliably works
     url = f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview"
     try:
         r = requests.get(url, timeout=12)
         if r.status_code == 200:
-            stats = _parse_overview(r.json())
+            data = r.json()
+            stats = _parse_season_stats(data)
             if stats and stats["min"] > 0:
-                _cs(f"ath_{pid}", stats)
+                # Also extract recent game log
+                recent = _parse_game_log(data.get("gameLog", {}))
+                if recent:
+                    stats["recent"] = recent
+                _cs(f"ath3_{pid}", stats)
                 return stats
     except Exception:
         pass
 
-    _cs(f"ath_{pid}", None)
+    _cs(f"ath3_{pid}", None)
     return None
 
 
-# ESPN overview endpoint returns:
-#   statistics.names = ["gamesPlayed", "avgMinutes", "fieldGoalPct", ..., "avgPoints"]
-#   statistics.splits[0].stats = ["50", "34.2", "48.1", ..., "25.7"]  (Regular Season)
-NAME_MAP = {
-    "gamesplayed": "gp",
-    "avgminutes": "min",
-    "fieldgoalpct": "fgp",
-    "threepointpct": None,      # not used directly
-    "freethrowpct": None,
-    "avgrebounds": "reb",
-    "avgassists": "ast",
-    "avgblocks": "blk",
-    "avgsteals": "stl",
-    "avgfouls": None,
-    "avgturnovers": "tov",
-    "avgpoints": "pts",
-}
-
-
-def _parse_overview(data):
-    """Parse the ESPN /overview endpoint response for season averages."""
+def _parse_season_stats(data):
+    """Parse season averages from overview endpoint."""
     result = {"min": 0, "pts": 0, "reb": 0, "ast": 0, "stl": 0, "blk": 0,
               "tov": 0, "fg3m": 0, "fgp": 0.44, "gp": 0}
 
@@ -170,7 +178,6 @@ def _parse_overview(data):
     names = stats_block.get("names", [])
     splits = stats_block.get("splits", [])
 
-    # Use first split (Regular Season) if available
     if not names or not splits:
         return None
 
@@ -179,8 +186,7 @@ def _parse_overview(data):
         return None
 
     for name, val in zip(names, values):
-        key = name.lower()
-        mapped = NAME_MAP.get(key)
+        mapped = NAME_MAP.get(name.lower())
         if not mapped:
             continue
         v = _safe_float(val)
@@ -193,19 +199,161 @@ def _parse_overview(data):
     return result if result["min"] > 0 else None
 
 
+def _parse_game_log(game_log):
+    """Extract last 5 game averages from the overview gameLog.
+
+    Handles multiple ESPN formats:
+    - Format A: seasonTypes[].categories[].events{} with labels
+    - Format B: categories[].events[] or entries[]
+    - Format C: labels[] + entries[] at top level
+    """
+    if not game_log:
+        return None
+
+    try:
+        # --- Format A: seasonTypes[0].categories[0].events ---
+        season_types = game_log.get("seasonTypes", [])
+        if season_types:
+            for st in season_types:
+                for cat in st.get("categories", []):
+                    labels = [l.lower() for l in cat.get("labels", [])]
+                    events = cat.get("events", {})
+                    if isinstance(events, dict):
+                        entries = list(events.values())
+                    elif isinstance(events, list):
+                        entries = events
+                    else:
+                        continue
+                    if labels and entries:
+                        result = _avg_entries(labels, entries[-5:])
+                        if result:
+                            return result
+
+        # --- Format B: categories[0].events ---
+        for cat in game_log.get("categories", []):
+            labels = [l.lower() for l in cat.get("labels", [])]
+            events = cat.get("events", cat.get("entries", []))
+            if isinstance(events, dict):
+                events = list(events.values())
+            if labels and events:
+                result = _avg_entries(labels, events[-5:])
+                if result:
+                    return result
+
+        # --- Format C: top-level labels + entries ---
+        labels = [l.lower() for l in game_log.get("labels", [])]
+        entries = game_log.get("entries", game_log.get("events", []))
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        if labels and entries:
+            result = _avg_entries(labels, entries[-5:])
+            if result:
+                return result
+
+    except Exception:
+        pass
+
+    return None
+
+
+def _avg_entries(labels, entries):
+    """Average numeric stats from game log entries."""
+    sums = {"min": 0, "pts": 0, "reb": 0, "ast": 0, "stl": 0, "blk": 0, "tov": 0}
+    count = 0
+
+    for entry in entries:
+        stats = entry if isinstance(entry, list) else entry.get("stats", [])
+        if not stats:
+            continue
+        if len(stats) != len(labels):
+            continue
+
+        found_any = False
+        for lbl, val in zip(labels, stats):
+            mapped = GAMELOG_LABEL_MAP.get(lbl)
+            if mapped:
+                v = _safe_float(val)
+                if v >= 0:
+                    sums[mapped] += v
+                    found_any = True
+        if found_any:
+            count += 1
+
+    if count == 0:
+        return None
+
+    return {k: round(v / count, 1) for k, v in sums.items()}
+
+
+# ---------------------------------------------------------------------------
+# Team defensive stats
+# ---------------------------------------------------------------------------
+def fetch_team_defense(team_id):
+    """Fetch team defensive stats (how bad their defense is).
+
+    Uses ESPN Core API for detailed defensive category stats.
+    Returns opponent PPG, defensive rating, and opponent FG%.
+    Falls back to league average defaults if fetch fails.
+    """
+    c = _cg(f"def_{team_id}")
+    if c is not None:
+        return c
+
+    defaults = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+
+    try:
+        data = _espn_get(
+            f"{ESPN_CORE}/seasons/2026/types/2/teams/{team_id}/statistics",
+            timeout=10,
+        )
+
+        for cat in data.get("splits", {}).get("categories", data.get("categories", [])):
+            cat_name = cat.get("name", "").lower()
+            if "defen" not in cat_name and "opponent" not in cat_name:
+                continue
+            for stat in cat.get("stats", []):
+                sname = stat.get("name", "").lower()
+                val = _safe_float(stat.get("value"), None)
+                if val is None:
+                    continue
+                if "opponentpoints" in sname or "opppoints" in sname:
+                    defaults["opp_ppg"] = val
+                elif "defensiverating" in sname or "defrating" in sname:
+                    defaults["def_rating"] = val
+                elif ("opponent" in sname and "fieldgoal" in sname
+                      and "pct" in sname):
+                    defaults["opp_fgp"] = val if val < 1 else val / 100
+
+    except Exception:
+        pass
+
+    _cs(f"def_{team_id}", defaults)
+    return defaults
+
+
+# ---------------------------------------------------------------------------
+# Fetch all player + team data for a game
+# ---------------------------------------------------------------------------
 def fetch_game_players(home_id, away_id):
-    """Fetch rosters + stats for both teams. Uses parallel HTTP."""
+    """Fetch rosters, player stats, and team defense for both teams."""
     home_roster = fetch_roster(home_id)
     away_roster = fetch_roster(away_id)
 
     players = [(p, "home") for p in home_roster] + [(p, "away") for p in away_roster]
     pids = list({p["id"] for p, _ in players})
 
+    # Fetch player stats + team defense in parallel
     stats = {}
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        futs = {ex.submit(_fetch_athlete, pid): pid for pid in pids}
-        for f in as_completed(futs):
-            pid = futs[f]
+    home_def = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+    away_def = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        player_futs = {ex.submit(_fetch_athlete, pid): pid for pid in pids}
+        home_def_fut = ex.submit(fetch_team_defense, home_id)
+        away_def_fut = ex.submit(fetch_team_defense, away_id)
+
+        for f in as_completed(player_futs):
+            pid = player_futs[f]
             try:
                 r = f.result()
                 if r:
@@ -213,237 +361,298 @@ def fetch_game_players(home_id, away_id):
             except Exception:
                 pass
 
-    return players, stats
+        try:
+            home_def = home_def_fut.result()
+        except Exception:
+            pass
+        try:
+            away_def = away_def_fut.result()
+        except Exception:
+            pass
+
+    return players, stats, home_def, away_def
 
 
 # ---------------------------------------------------------------------------
-# Real Rating projection model
+# OUTPERFORMANCE projection model
 # ---------------------------------------------------------------------------
-# This model approximates Real Ratings, NOT DFS fantasy points.
-# Key insight: Real Rating rewards IMPORTANT stats in CLOSE games,
-# not raw volume in blowouts. A 20-point game in a 2-point thriller
-# outranks a 35-point game in a 20-point blowout.
+# This model predicts WHO WILL EXCEED THEIR BASELINE tonight.
+# It does NOT rank by raw production (that always picks biggest stars).
 #
-# Pipeline:
-#   Stage 1: Predict minutes (closeness-aware)
-#   Stage 2: Compute importance-weighted production rate per minute
-#   Stage 3: Game closeness factor (the core differentiator vs DFS)
-#   Stage 4: Clutch usage proxy + underdog boost + pace
-#   Final:   Minutes × Rate × Closeness × Clutch × Underdog × Pace
+# Key signals:
+#   1. Recent form: Is the player on a hot streak? (last 5 games vs season)
+#   2. Matchup quality: Is the opponent defense weak? (defense-vs-position)
+#   3. Usage trend: Are recent minutes UP? (proxy for teammate injuries)
+#   4. Game context: Closeness, underdog status, pace
+#
+# Final ranking = outperformance score (expected tonight / baseline - 1.0)
+# This naturally surfaces:
+#   - Hot players facing weak defenses (Sheppard vs WSH)
+#   - Role players with expanded roles (Moody with Curry out)
+#   - Stars with juicy matchups (Jokic vs depleted Utah)
 # ---------------------------------------------------------------------------
 
-# Importance-weighted stat values (NOT DFS scoring)
-# Assists/steals/blocks weighted higher because they represent high-leverage
-# plays that swing close games. Raw points weighted lower than DFS.
-REAL_W = {
-    "pts": 0.85,   # points: important but volume ≠ importance
-    "reb": 1.1,    # rebounds: possession-winning, matters late
-    "ast": 1.8,    # assists: playmaking drives winning basketball
-    "stl": 3.0,    # steals: game-changing defensive plays
-    "blk": 2.5,    # blocks: momentum-shifting, highlight plays
-    "tov": -1.5,   # turnovers: devastating in close games
-    "fg3m": 0.4,   # 3PM: slight bonus for momentum/crowd factor
-}
+# League averages for normalization
+LEAGUE_AVG_PPG_ALLOWED = 112.0
+LEAGUE_AVG_DEF_RATING = 112.0
+
+
+def recent_form_multiplier(stats):
+    """How much is this player trending UP from their season baseline?
+
+    Compares last 5 game averages to season averages.
+    A player averaging 25 PPG recently vs 18 PPG season = massive boost.
+
+    Returns multiplier: 0.85 (cold) to 1.40 (scorching).
+    """
+    recent = stats.get("recent")
+    if not recent:
+        return 1.0  # no game log data, neutral
+
+    season_pts = max(stats.get("pts", 1), 1)
+    season_reb = max(stats.get("reb", 1), 0.5)
+    season_ast = max(stats.get("ast", 1), 0.5)
+    season_stl = max(stats.get("stl", 0.3), 0.1)
+    season_blk = max(stats.get("blk", 0.3), 0.1)
+
+    recent_pts = recent.get("pts", season_pts)
+    recent_reb = recent.get("reb", season_reb)
+    recent_ast = recent.get("ast", season_ast)
+    recent_stl = recent.get("stl", season_stl)
+    recent_blk = recent.get("blk", season_blk)
+
+    # Weighted composite: points matter most, but two-way stats count
+    season_composite = (season_pts * 1.0 + season_reb * 0.6
+                        + season_ast * 0.8 + season_stl * 1.5
+                        + season_blk * 1.5)
+    recent_composite = (recent_pts * 1.0 + recent_reb * 0.6
+                        + recent_ast * 0.8 + recent_stl * 1.5
+                        + recent_blk * 1.5)
+
+    if season_composite <= 0:
+        return 1.0
+
+    raw_ratio = recent_composite / season_composite
+
+    # Clamp to 0.85 - 1.40 range
+    return max(0.85, min(raw_ratio, 1.40))
+
+
+def matchup_multiplier(opp_defense, pos):
+    """How much does the opponent's weak defense help this player?
+
+    Bad defensive teams allow more points = higher production for everyone.
+    Position-aware: guards benefit more from perimeter defense weakness,
+    bigs benefit more from interior defense weakness.
+
+    Returns multiplier: 0.92 (elite defense) to 1.20 (worst defense).
+    """
+    opp_ppg = opp_defense.get("opp_ppg", LEAGUE_AVG_PPG_ALLOWED)
+    def_rating = opp_defense.get("def_rating", LEAGUE_AVG_DEF_RATING)
+
+    # How much worse than average is this defense?
+    # opp_ppg 120 vs avg 112 = 8 points above average = terrible defense
+    ppg_diff = opp_ppg - LEAGUE_AVG_PPG_ALLOWED  # positive = bad defense
+    rating_diff = def_rating - LEAGUE_AVG_DEF_RATING
+
+    # Use the worse signal (more favorable for the player)
+    matchup_signal = max(ppg_diff / 12.0, rating_diff / 12.0)
+
+    # Position adjustment: guards benefit slightly more from bad perimeter D
+    if pos in ("PG", "SG", "G"):
+        matchup_signal *= 1.05
+    elif pos in ("C", "PF"):
+        matchup_signal *= 1.08  # bigs feast on bad interior D
+
+    # Convert to multiplier: -1 to +1 signal → 0.92 to 1.20
+    mult = 1.0 + matchup_signal * 0.10
+    return max(0.92, min(mult, 1.20))
+
+
+def usage_trend_multiplier(stats):
+    """Detect expanding role from recent minutes increase.
+
+    If recent minutes >> season minutes, teammates are probably injured
+    and this player is getting more opportunity.
+    This is the signal that catches Moody (Curry out) and Sensabaugh
+    (Markkanen/Kessler/Nurkic out).
+
+    Returns multiplier: 0.95 to 1.25.
+    """
+    recent = stats.get("recent")
+    if not recent:
+        return 1.0
+
+    season_min = max(stats.get("min", 1), 1)
+    recent_min = recent.get("min", season_min)
+
+    # How much have minutes increased?
+    min_ratio = recent_min / season_min
+
+    if min_ratio > 1.05:
+        # Minutes are UP: teammate injuries, expanded role
+        # More minutes = more production opportunity
+        boost = (min_ratio - 1.0) * 1.5  # 10% more minutes → 15% boost
+        return min(1.0 + boost, 1.25)
+    elif min_ratio < 0.90:
+        # Minutes are DOWN: maybe coming back from injury, load managed
+        return max(0.95, min_ratio)
+    else:
+        return 1.0
 
 
 def game_closeness_factor(spread):
-    """Core Real Rating differentiator: close games produce higher ratings.
-
-    The audit guide formula:
-        Game_Closeness_Factor = 1.0 + 0.5 × (1 - |Final_Margin| / 30)
-    We use spread as proxy for expected final margin (~1.3× spread).
-
-    Returns:
-        ~1.22  for pick'em (spread 0)
-        ~1.15  for spread ±3
-        ~1.05  for spread ±7
-        ~0.93  for spread ±11
-        ~0.82  for spread ±15+
-    """
+    """Close games = higher-quality production, more clutch opportunities."""
     if spread is None:
         return 1.0
     expected_margin = abs(spread) * 1.3
-    return 1.0 + 0.45 * (1.0 - min(expected_margin / 30.0, 1.0))
-
-
-def clutch_usage_proxy(stats, pos):
-    """Estimate clutch involvement from position and production profile.
-
-    Without actual clutch data, we approximate who gets the ball in crunch
-    time (last 5 min, margin ≤ 5):
-    - High PPG + AST guards = primary late-game ball handlers
-    - High STL players = active defenders creating key turnovers
-    - Guards/wings get position bonus (they run late-game sets)
-    - Big men get clutch bonus only if they're primary scorers
-
-    Returns multiplier 1.0 to ~1.18.
-    """
-    pts = stats.get("pts", 0)
-    ast = stats.get("ast", 0)
-    stl = stats.get("stl", 0)
-    min_ = max(stats.get("min", 1), 1)
-
-    # Per-minute ball dominance = proxy for late-game usage
-    usage = (pts + 1.5 * ast + stl) / min_
-
-    # Position-based clutch tendency
-    if pos in ("PG", "SG", "G"):
-        pos_mult = 1.06        # guards handle ball late
-    elif pos in ("SF", "F"):
-        pos_mult = 1.03        # wings are secondary options
-    elif pos in ("C", "PF"):
-        pos_mult = 0.97 if pts < 18 else 1.02  # bigs only if they're stars
-    else:
-        pos_mult = 1.0
-
-    # Scale usage into 1.0 to ~1.18 range
-    clutch = 1.0 + min(usage * 0.10, 0.12) * pos_mult
-    return clutch
-
-
-def underdog_boost(spread, side):
-    """Slight underdogs generate more dramatic Real Rating swings.
-
-    Being down forces higher-leverage plays. Comebacks are rewarded heavily
-    in Real Rating. Sweet spot: team spread +1 to +6.
-
-    ESPN spread convention: positive = home underdog.
-    """
-    if spread is None:
-        return 1.0
-
-    # Compute this player's team spread
-    # spread > 0 = home is underdog, so away is favorite
-    team_spread = spread if side == "home" else -spread
-
-    if 1.0 <= team_spread <= 6.0:
-        # Sweet spot underdog: peak boost at +3.5
-        return 1.0 + (3.5 - abs(team_spread - 3.5)) * 0.014  # max ~1.049
-    elif team_spread > 6.0:
-        # Heavy underdog: blowout risk outweighs comeback potential
-        return max(0.96 - (team_spread - 6) * 0.004, 0.92)
-    elif team_spread < -5.0:
-        # Heavy favorite: less drama, slight penalty
-        return max(1.0 - (abs(team_spread) - 5) * 0.006, 0.94)
-    else:
-        return 1.0
+    return 1.0 + 0.25 * (1.0 - min(expected_margin / 30.0, 1.0))
 
 
 def pace_factor(total):
-    """Scoring environment adjustment.
-
-    Optimal for Real Rating: O/U 215-230 (enough scoring, still competitive).
-    Very high totals (240+) suggest pace-inflated, less meaningful stats.
-    Very low totals (<205) mean fewer opportunities overall.
-    Inverted-U centered around 222.
-    """
+    """Scoring environment. Inverted-U around O/U 222."""
     if total is None:
         return 1.0
     deviation = abs(total - 222) / 30.0
-    return 1.0 + 0.06 * max(1.0 - deviation, 0)  # max ~1.06 at sweet spot
+    return 1.0 + 0.06 * max(1.0 - deviation, 0)
 
 
-def real_rating_per_min(stats, pos):
-    """Stage 2: Importance-weighted production rate per minute.
+def base_production_score(stats, pos):
+    """Base per-game production score from season averages.
 
-    Unlike DFS (all stats equal value), Real Rating emphasizes:
-    - Assists/steals/blocks (high-leverage plays) weighted highest
-    - Points weighted lower per unit (volume ≠ importance)
-    - Turnovers penalized heavily (game-changing in crunch time)
-    - FG% bonus: efficient scoring = fewer wasted possessions
+    Weights emphasize two-way players (steals + blocks from guards
+    are rare and signal high-quality production like Derrick White).
     """
-    min_ = stats.get("min", 1)
-    if min_ <= 0:
-        return 0
-
-    base = sum(stats.get(k, 0) * w for k, w in REAL_W.items())
-
-    # Efficiency: high FG% means fewer wasted possessions
+    pts = stats.get("pts", 0)
+    reb = stats.get("reb", 0)
+    ast = stats.get("ast", 0)
+    stl = stats.get("stl", 0)
+    blk = stats.get("blk", 0)
+    tov = stats.get("tov", 0)
     fgp = stats.get("fgp", 0.44)
-    eff_bonus = (fgp - 0.44) * 8.0
 
-    return (base + eff_bonus) / min_
+    # Two-way stats weighted heavily (steals + blocks from guards = rare/valuable)
+    score = (pts * 1.0 + reb * 1.0 + ast * 1.5
+             + stl * 3.5 + blk * 3.0 - tov * 1.2)
+
+    # Efficiency bonus
+    score += (fgp - 0.44) * 10.0
+
+    # Per-position: guards who stuff the stat sheet get extra credit
+    if pos in ("PG", "SG", "G"):
+        two_way = stl + blk
+        if two_way >= 2.0:  # guards with 2+ combined stl+blk = elite
+            score *= 1.08
+    elif pos in ("C", "PF"):
+        # Bigs with assists = rare playmaking (Jokic-type)
+        if ast >= 5.0:
+            score *= 1.06
+
+    return score
 
 
-def project_player(name, pos, age, side, stats, spread, total, game_label=""):
-    """Full Real Rating projection.
+def project_player(name, pos, age, side, stats, spread, total, game_label="",
+                   opp_defense=None):
+    """Project OUTPERFORMANCE score: who will exceed their baseline tonight?
+
+    The model finds players whose situation tonight is much better than
+    their season average situation — hot streaks, weak opponents, expanded
+    roles due to injuries.
 
     Pipeline:
-        Stage 1: Minutes (closeness-aware — close games = more starter minutes)
-        Stage 2: Rate per minute (importance-weighted, not DFS-weighted)
-        Stage 3: Game closeness boost (THE differentiator)
-        Stage 4: Clutch × Underdog × Pace × Home
-        Final:   Minutes × Rate × Closeness × Clutch × Underdog × Pace × Home
-
-    Key interaction: Minutes × Closeness — minutes matter MORE in close games.
+        1. Base production score (season averages, two-way weighted)
+        2. Recent form multiplier (are they hot right now?)
+        3. Matchup multiplier (is the opponent defense bad?)
+        4. Usage trend (are minutes expanding — injury proxy?)
+        5. Game context (closeness, pace)
+        6. Final outperformance score
     """
     avg_min = stats["min"]
     if avg_min < 15:
         return None
 
-    # --- Stage 1: Minutes prediction (closeness-aware) ---
+    if opp_defense is None:
+        opp_defense = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+
+    # --- Stage 1: Base production ---
+    base = base_production_score(stats, pos)
+
+    # --- Stage 2: Recent form (THE key signal) ---
+    form = recent_form_multiplier(stats)
+
+    # --- Stage 3: Matchup quality ---
+    matchup = matchup_multiplier(opp_defense, pos)
+
+    # --- Stage 4: Usage trend (injury proxy) ---
+    usage = usage_trend_multiplier(stats)
+
+    # --- Stage 5: Game context ---
+    closeness = game_closeness_factor(spread)
+    pace = pace_factor(total)
+    home_adj = 1.015 if side == "home" else 0.985
+
+    # --- Stage 6: Minutes projection ---
     pred_min = avg_min
+    recent = stats.get("recent")
+    if recent and recent.get("min", 0) > avg_min:
+        # Use recent minutes if higher (captures injury-driven expansion)
+        pred_min = recent["min"] * 0.7 + avg_min * 0.3
 
     if spread is not None:
         abs_spread = abs(spread)
         if abs_spread <= 4:
-            # Close game: starters play full 4th quarter (+1-3% minutes)
-            pred_min *= 1.0 + (4 - abs_spread) * 0.007
-        elif abs_spread > 7:
-            # Blowout risk: stars sit late in 4th
-            pred_min *= max(1.0 - (abs_spread - 7) * 0.020, 0.80)
+            pred_min *= 1.0 + (4 - abs_spread) * 0.006
+        elif abs_spread > 8:
+            pred_min *= max(1.0 - (abs_spread - 8) * 0.015, 0.82)
 
-    # Age fatigue
     if age and age > 35:
         pred_min *= 0.94
     elif age and age > 32:
         pred_min *= 0.97
 
-    # --- Stage 2: Importance-weighted rate per minute ---
-    rate = real_rating_per_min(stats, pos)
+    # --- Final: Outperformance score ---
+    # Base × Form × Matchup × Usage × Context adjustments
+    # This ranks by "how much better will tonight be vs baseline?"
+    outperformance = (base * form * matchup * usage
+                      * closeness * pace * home_adj)
 
-    # --- Stage 3: Game closeness (the core differentiator) ---
-    closeness = game_closeness_factor(spread)
+    # Scale by minutes (more minutes = more opportunity)
+    min_scale = pred_min / 30.0  # normalize around 30 min
+    final_rating = outperformance * min_scale
 
-    # --- Stage 4: Contextual multipliers ---
-    clutch = clutch_usage_proxy(stats, pos)
-    dog = underdog_boost(spread, side)
-    pace = pace_factor(total)
-    home_adj = 1.015 if side == "home" else 0.985
-
-    # --- Final: Minutes × Rate × Closeness × Clutch × Underdog × Pace × Home ---
-    proj_rating = pred_min * rate * closeness * clutch * dog * pace * home_adj
-
-    # --- Tier classification ---
+    # --- Tier ---
     tier = "star" if pred_min >= 33 else ("starter" if pred_min >= 24 else "role")
 
-    # --- Variance (ranking confidence) ---
-    # Stars are more predictable; role players are volatile.
-    # Close games reduce variance for stars (reliable clutch usage).
+    # --- Variance ---
     base_var = 0.12 if tier == "star" else (0.18 if tier == "starter" else 0.28)
+    # Hot streaks reduce variance (they're more predictable)
+    if form > 1.10:
+        base_var *= 0.85
+    # Close games reduce star variance
     if spread is not None and abs(spread) <= 4:
-        base_var *= 0.85  # close games = more predictable star usage
+        base_var *= 0.90
 
     return {
         "name": name, "pos": pos, "tier": tier,
-        "rating": round(proj_rating, 1),
+        "rating": round(final_rating, 1),
         "predMin": round(pred_min, 1),
-        "rpm": round(rate, 2),
-        "vegasAdj": round(pace, 3),
-        "blowoutAdj": round(closeness, 3),
-        "homeAdj": round(home_adj, 3),
-        "stdDev": round(proj_rating * base_var, 1),
+        "rpm": round(form, 2),           # repurpose: show form multiplier
+        "vegasAdj": round(matchup, 3),    # repurpose: show matchup quality
+        "blowoutAdj": round(usage, 3),    # repurpose: show usage trend
+        "homeAdj": round(closeness, 3),   # repurpose: show closeness
+        "stdDev": round(final_rating * base_var, 1),
         "side": side,
         "game": game_label,
-        # Internal fields for lineup construction (not rendered by frontend)
+        # Internal
+        "_form": form,
+        "_matchup": matchup,
+        "_usage": usage,
         "_closeness": closeness,
-        "_clutch": clutch,
-        "_underdog": dog,
     }
 
 
 def pairwise_conf(a, b):
-    """P(a ranks above b) using normal CDF approximation."""
+    """P(a ranks above b)."""
     diff = a["rating"] - b["rating"]
     comb = math.sqrt(a["stdDev"] ** 2 + b["stdDev"] ** 2)
     if comb == 0:
@@ -452,40 +661,36 @@ def pairwise_conf(a, b):
 
 
 def build_lineups(projections):
-    """Build 3 lineup variants optimized for Real Rating ranking accuracy.
+    """Build 3 lineup variants.
 
-    Chalk:   Top 5 by projected Real Rating.
-    Diff:    Favor close-game players when ratings are tight.
-             Re-sorts top pool with extra closeness weight.
-    Contra:  Maximize game-importance exposure. Heavy closeness +
-             underdog weight to find "importance over volume" plays.
+    Chalk:   Top 5 by outperformance score.
+    Diff:    Extra weight on matchup quality (defense-vs-position plays).
+    Contra:  Extra weight on usage trend (injury-driven breakouts).
     """
     if len(projections) < 5:
         return [], [], []
 
     ranked = sorted(projections, key=lambda x: x["rating"], reverse=True)
-    pool = ranked[:12]  # wider pool for diff/contra construction
+    pool = ranked[:15]
 
-    # --- Chalk: straightforward top 5 ---
+    # --- Chalk: top 5 by outperformance ---
     chalk = [dict(p) for p in ranked[:5]]
     _annotate(chalk)
 
-    # --- Differentiated: re-rank with extra closeness weight ---
-    # When two players are similar in rating, prefer the one in a closer game.
-    # closeness^0.4 gives moderate extra weight to close-game players.
+    # --- Differentiated: favor matchup + form ---
     diff_sorted = sorted(pool, key=lambda x: (
-        x["rating"] * (x.get("_closeness", 1.0) ** 0.4)
+        x["rating"]
+        * (x.get("_matchup", 1.0) ** 0.8)
+        * (x.get("_form", 1.0) ** 0.5)
     ), reverse=True)
     diff = [dict(p) for p in diff_sorted[:5]]
     _annotate(diff)
 
-    # --- Contrarian: maximize game importance exposure ---
-    # Heavy closeness + underdog weighting. Finds players whose importance
-    # context is undervalued by volume-based models.
+    # --- Contrarian: favor usage trend (injury breakouts) ---
     contra_sorted = sorted(pool, key=lambda x: (
         x["rating"]
-        * (x.get("_closeness", 1.0) ** 1.0)
-        * (x.get("_underdog", 1.0) ** 1.5)
+        * (x.get("_usage", 1.0) ** 1.5)
+        * (x.get("_form", 1.0) ** 0.8)
     ), reverse=True)
     contra = [dict(p) for p in contra_sorted[:5]]
     _annotate(contra)
@@ -527,16 +732,21 @@ async def get_picks(gameId: str = Query(...)):
         spread = game.get("spread")
         total = game.get("total")
 
-        players, stats = fetch_game_players(game["home"]["id"], game["away"]["id"])
+        players, stats, home_def, away_def = fetch_game_players(
+            game["home"]["id"], game["away"]["id"]
+        )
 
         projections = []
         for pinfo, side in players:
             s = stats.get(pinfo["id"])
             if not s:
                 continue
+            # Opponent defense: home player faces away team's D, vice versa
+            opp_def = away_def if side == "home" else home_def
             p = project_player(
                 pinfo["name"], pinfo["pos"], pinfo.get("age", 25),
-                side, s, spread, total, game["label"]
+                side, s, spread, total, game["label"],
+                opp_defense=opp_def,
             )
             if p:
                 projections.append(p)
@@ -577,19 +787,22 @@ async def get_slate():
         all_projections = []
         game_summaries = []
 
-        # Fetch all games in parallel
         def process_game(game):
             spread = game.get("spread")
             total = game.get("total")
-            players, stats = fetch_game_players(game["home"]["id"], game["away"]["id"])
+            players, stats, home_def, away_def = fetch_game_players(
+                game["home"]["id"], game["away"]["id"]
+            )
             projs = []
             for pinfo, side in players:
                 s = stats.get(pinfo["id"])
                 if not s:
                     continue
+                opp_def = away_def if side == "home" else home_def
                 p = project_player(
                     pinfo["name"], pinfo["pos"], pinfo.get("age", 25),
-                    side, s, spread, total, game["label"]
+                    side, s, spread, total, game["label"],
+                    opp_defense=opp_def,
                 )
                 if p:
                     projs.append(p)
@@ -628,3 +841,41 @@ async def get_slate():
         })
     except Exception as e:
         return JSONResponse(content={"error": f"Slate failed: {str(e)}"}, status_code=500)
+
+
+@app.get("/api/debug")
+async def debug():
+    """Debug: show raw data for first player to verify parsing."""
+    try:
+        games = fetch_games()
+        if not games:
+            return JSONResponse(content={"error": "No games"})
+        g = games[0]
+        roster = fetch_roster(g["home"]["id"])
+        # Pick a starter (higher index often = more established player)
+        p = roster[min(3, len(roster) - 1)] if len(roster) > 3 else roster[0]
+        pid = p["id"]
+
+        url = f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview"
+        r = requests.get(url, timeout=12)
+        data = r.json() if r.status_code == 200 else {}
+
+        # Extract what we'd parse
+        stats = _parse_season_stats(data)
+        game_log_raw = data.get("gameLog", {})
+        game_log_keys = list(game_log_raw.keys()) if isinstance(game_log_raw, dict) else []
+        recent = _parse_game_log(game_log_raw)
+
+        # Team defense
+        team_def = fetch_team_defense(g["home"]["id"])
+
+        return JSONResponse(content={
+            "player": p,
+            "season_stats": stats,
+            "recent_5_game_avg": recent,
+            "game_log_top_keys": game_log_keys,
+            "game_log_sample": str(json.dumps(game_log_raw))[:2000],
+            "team_defense": team_def,
+        })
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)})
