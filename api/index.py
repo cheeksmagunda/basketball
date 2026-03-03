@@ -1,8 +1,6 @@
-import os
 import json
 import math
 import hashlib
-import traceback
 from datetime import date
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-CACHE_DIR = Path("/tmp/nba_real_cache")
+CACHE_DIR = Path("/tmp/nba_real_cache_v2")
 CACHE_DIR.mkdir(exist_ok=True)
 
 # Real App rating weights (NOT DraftKings/FanDuel scoring)
@@ -126,115 +124,76 @@ def fetch_roster(team_id):
 
 
 def _fetch_athlete(pid):
-    """Fetch season stats for one player from ESPN."""
+    """Fetch season stats for one player from ESPN overview endpoint."""
     c = _cg(f"ath_{pid}")
     if c is not None:
         return c
 
-    urls = [
-        f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}",
-        f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview",
-        f"{ESPN}/athletes/{pid}/statistics",
-        f"{ESPN}/athletes/{pid}",
-    ]
-    for url in urls:
-        try:
-            r = requests.get(url, timeout=12)
-            if r.status_code != 200:
-                continue
-            stats = _parse_stats(r.json())
+    # The /overview endpoint is the only one that reliably works
+    url = f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview"
+    try:
+        r = requests.get(url, timeout=12)
+        if r.status_code == 200:
+            stats = _parse_overview(r.json())
             if stats and stats["min"] > 0:
                 _cs(f"ath_{pid}", stats)
                 return stats
-        except Exception:
-            continue
+    except Exception:
+        pass
 
-    # Cache misses too so we don't retry every time
     _cs(f"ath_{pid}", None)
     return None
 
 
-def _listify(x):
-    if isinstance(x, list):
-        return x
-    if isinstance(x, dict):
-        return [x]
-    return []
-
-
-STAT_MAP = {
-    "avgminutes": "min", "minutes": "min", "min": "min", "minutespergame": "min",
-    "avgpoints": "pts", "points": "pts", "pts": "pts", "pointspergame": "pts",
-    "avgtotalrebounds": "reb", "totalrebounds": "reb", "rebounds": "reb", "reb": "reb",
+# ESPN overview endpoint returns:
+#   statistics.names = ["gamesPlayed", "avgMinutes", "fieldGoalPct", ..., "avgPoints"]
+#   statistics.splits[0].stats = ["50", "34.2", "48.1", ..., "25.7"]  (Regular Season)
+NAME_MAP = {
+    "gamesplayed": "gp",
+    "avgminutes": "min",
+    "fieldgoalpct": "fgp",
+    "threepointpct": None,      # not used directly
+    "freethrowpct": None,
     "avgrebounds": "reb",
-    "avgassists": "ast", "assists": "ast", "ast": "ast",
-    "avgsteals": "stl", "steals": "stl", "stl": "stl",
-    "avgblocks": "blk", "blocks": "blk", "blk": "blk",
-    "avgturnovers": "tov", "turnovers": "tov", "tov": "tov", "to": "tov",
-    "avgthreepointersmade": "fg3m", "threepointersmade": "fg3m",
-    "threepointfieldgoalsmade": "fg3m", "fg3m": "fg3m", "3pm": "fg3m",
-    "fieldgoalpct": "fgp", "fieldgoalpercentage": "fgp", "fg%": "fgp", "fgpct": "fgp",
-    "gamesplayed": "gp", "gp": "gp",
+    "avgassists": "ast",
+    "avgblocks": "blk",
+    "avgsteals": "stl",
+    "avgfouls": None,
+    "avgturnovers": "tov",
+    "avgpoints": "pts",
 }
 
 
-def _parse_stats(data):
-    """Parse ESPN athlete response for season averages. Handles multiple formats."""
+def _parse_overview(data):
+    """Parse the ESPN /overview endpoint response for season averages."""
     result = {"min": 0, "pts": 0, "reb": 0, "ast": 0, "stl": 0, "blk": 0,
               "tov": 0, "fg3m": 0, "fgp": 0.44, "gp": 0}
 
-    athlete = data.get("athlete", data)
+    stats_block = data.get("statistics", {})
+    names = stats_block.get("names", [])
+    splits = stats_block.get("splits", [])
 
-    # --- Format A: labels[] + values/displayValues[] ---
-    for block in _listify(athlete.get("statsSummary", athlete.get("statistics", []))):
-        labels = block.get("labels", block.get("names", []))
-        values = block.get("displayValues", block.get("values", []))
-        if labels and values and len(labels) == len(values):
-            for lbl, val in zip(labels, values):
-                _assign_stat(result, lbl, val)
-            if result["min"] > 0:
-                return result
+    # Use first split (Regular Season) if available
+    if not names or not splits:
+        return None
 
-    # --- Format B: splits.categories[].stats[] ---
-    stat_items = []
-    sources = [
-        athlete.get("statistics", []),
-        data.get("statistics", []),
-        data.get("stats", []),
-    ]
-    for src in sources:
-        for block in _listify(src):
-            for cat in _listify(block.get("splits", {}).get("categories", [])):
-                stat_items.extend(_listify(cat.get("stats", [])))
-            for cat in _listify(block.get("categories", [])):
-                stat_items.extend(_listify(cat.get("stats", [])))
-            stat_items.extend(_listify(block.get("stats", [])))
+    values = splits[0].get("stats", [])
+    if len(names) != len(values):
+        return None
 
-    for s in stat_items:
-        if not isinstance(s, dict):
+    for name, val in zip(names, values):
+        key = name.lower()
+        mapped = NAME_MAP.get(key)
+        if not mapped:
             continue
-        name = s.get("name", s.get("abbreviation", ""))
-        val = s.get("perGame", s.get("averageValue", s.get("avg", s.get("value", 0))))
-        _assign_stat(result, name, val)
-
-    return result if result["min"] > 0 else None
-
-
-def _assign_stat(result, label, val):
-    key = str(label).lower().replace(" ", "").replace("pergame", "").replace("/game", "")
-    mapped = STAT_MAP.get(key)
-    if not mapped:
-        for prefix, field in STAT_MAP.items():
-            if key.startswith(prefix):
-                mapped = field
-                break
-    if mapped:
         v = _safe_float(val)
         if mapped == "fgp" and v > 1:
             v /= 100
         if mapped == "gp":
             v = int(v)
         result[mapped] = v
+
+    return result if result["min"] > 0 else None
 
 
 def fetch_game_players(home_id, away_id):
@@ -419,45 +378,6 @@ async def get_picks(gameId: str = Query(...)):
         })
     except Exception as e:
         return JSONResponse(content={"error": f"Failed: {str(e)}"}, status_code=500)
-
-
-@app.get("/api/debug")
-async def debug():
-    """Debug endpoint: show raw ESPN responses for first player."""
-    import requests as req
-    try:
-        games = fetch_games()
-        if not games:
-            return JSONResponse(content={"error": "No games"})
-        g = games[0]
-        roster = fetch_roster(g["home"]["id"])
-        if not roster:
-            return JSONResponse(content={"error": "No roster", "teamId": g["home"]["id"]})
-        p = roster[0]
-        pid = p["id"]
-        results = {"player": p, "responses": {}}
-        urls = [
-            f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}",
-            f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview",
-            f"{ESPN}/athletes/{pid}/statistics",
-            f"{ESPN}/athletes/{pid}",
-        ]
-        for url in urls:
-            try:
-                r = req.get(url, timeout=12)
-                key = url.split("/")[-1] if url.split("/")[-1] != pid else "athlete_v3"
-                if key == pid:
-                    key = "athlete_v3"
-                results["responses"][key] = {
-                    "status": r.status_code,
-                    "keys": list(r.json().keys()) if r.status_code == 200 else None,
-                    "sample": str(r.text[:3000]) if r.status_code == 200 else r.text[:500],
-                }
-            except Exception as e:
-                results["responses"][url.split("/")[-1]] = {"error": str(e)}
-        return JSONResponse(content=results)
-    except Exception as e:
-        return JSONResponse(content={"error": str(e), "tb": traceback.format_exc()})
 
 
 @app.get("/api/slate")
