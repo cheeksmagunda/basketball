@@ -288,18 +288,57 @@ def _avg_entries(labels, entries):
 # ---------------------------------------------------------------------------
 # Team defensive stats
 # ---------------------------------------------------------------------------
+# Fallback defensive ratings by ESPN team ID.
+# Used when ESPN Core API doesn't return data. Updated ~March 2026.
+# Sources: StatMuse, FOX Sports, NBA.com (DRtg = pts allowed per 100 poss)
+_DEFENSE_BY_ID = {
+    # id: (opp_ppg, def_rating)
+    "25": (107.0, 107.6),   # OKC Thunder
+    "8":  (109.0, 109.7),   # Detroit Pistons
+    "14": (112.0, 112.8),   # Miami Heat
+    "24": (112.5, 112.9),   # San Antonio Spurs
+    "16": (112.0, 112.6),   # Minnesota Timberwolves
+    "10": (111.0, 112.8),   # Houston Rockets
+    "19": (113.0, 113.5),   # Orlando Magic
+    "29": (113.5, 113.8),   # Memphis Grizzlies
+    "5":  (113.5, 114.1),   # Cleveland Cavaliers
+    "18": (114.0, 114.7),   # New York Knicks
+    "2":  (110.0, 115.2),   # Boston Celtics
+    "15": (115.0, 115.5),   # Milwaukee Bucks
+    "12": (115.0, 115.8),   # LA Clippers
+    "11": (116.0, 116.0),   # Indiana Pacers
+    "6":  (116.0, 116.2),   # Dallas Mavericks
+    "21": (116.5, 116.5),   # Phoenix Suns
+    "9":  (117.0, 116.8),   # Golden State Warriors
+    "1":  (117.5, 117.0),   # Atlanta Hawks
+    "23": (117.5, 117.2),   # Sacramento Kings
+    "4":  (118.0, 117.5),   # Chicago Bulls
+    "13": (118.5, 118.0),   # LA Lakers
+    "7":  (119.0, 118.0),   # Denver Nuggets
+    "20": (119.0, 118.5),   # Philadelphia 76ers
+    "22": (119.5, 118.8),   # Portland Trail Blazers
+    "28": (120.0, 119.0),   # Toronto Raptors
+    "17": (120.5, 119.5),   # Brooklyn Nets
+    "30": (121.0, 120.0),   # Charlotte Hornets
+    "3":  (121.5, 120.3),   # New Orleans Pelicans
+    "27": (124.0, 121.2),   # Washington Wizards
+    "26": (125.9, 122.2),   # Utah Jazz
+}
+
+
 def fetch_team_defense(team_id):
     """Fetch team defensive stats (how bad their defense is).
 
-    Uses ESPN Core API for detailed defensive category stats.
+    Tries ESPN Core API first, falls back to hardcoded table.
     Returns opponent PPG, defensive rating, and opponent FG%.
-    Falls back to league average defaults if fetch fails.
     """
     c = _cg(f"def_{team_id}")
     if c is not None:
         return c
 
-    defaults = {"opp_ppg": 112.0, "def_rating": 112.0, "opp_fgp": 0.465}
+    # Start with fallback data
+    fallback = _DEFENSE_BY_ID.get(str(team_id), (112.0, 112.0))
+    defaults = {"opp_ppg": fallback[0], "def_rating": fallback[1], "opp_fgp": 0.465}
 
     try:
         data = _espn_get(
@@ -325,7 +364,7 @@ def fetch_team_defense(team_id):
                     defaults["opp_fgp"] = val if val < 1 else val / 100
 
     except Exception:
-        pass
+        pass  # fallback data already set
 
     _cs(f"def_{team_id}", defaults)
     return defaults
@@ -661,41 +700,80 @@ def pairwise_conf(a, b):
 
 
 def build_lineups(projections):
-    """Build 3 lineup variants.
+    """Build 3 meaningfully different lineup variants.
 
-    Chalk:   Top 5 by outperformance score.
-    Diff:    Extra weight on matchup quality (defense-vs-position plays).
-    Contra:  Extra weight on usage trend (injury-driven breakouts).
+    Chalk:   Top 5 by overall outperformance score (balanced).
+    Diff:    Best matchup + form plays — guarantees at least 2 players
+             NOT in chalk by heavily weighting matchup quality and
+             recent hot streaks over raw production.
+    Contra:  Breakout/usage plays — guarantees at least 2 players
+             NOT in chalk by hunting injury-driven role expansions
+             and undervalued players with high recent minutes.
     """
     if len(projections) < 5:
         return [], [], []
 
     ranked = sorted(projections, key=lambda x: x["rating"], reverse=True)
-    pool = ranked[:15]
+    pool = ranked[:20]  # wider pool for finding differentiated picks
+    chalk_names = {p["name"] for p in ranked[:5]}
 
     # --- Chalk: top 5 by outperformance ---
     chalk = [dict(p) for p in ranked[:5]]
     _annotate(chalk)
 
-    # --- Differentiated: favor matchup + form ---
+    # --- Differentiated: matchup + form hunting ---
+    # Sort by matchup×form signal rather than raw rating.
+    # This surfaces players facing terrible defenses who are also hot,
+    # even if their season baseline is lower.
     diff_sorted = sorted(pool, key=lambda x: (
-        x["rating"]
-        * (x.get("_matchup", 1.0) ** 0.8)
-        * (x.get("_form", 1.0) ** 0.5)
+        x.get("_matchup", 1.0) ** 2.0
+        * x.get("_form", 1.0) ** 2.0
+        * (x["rating"] ** 0.5)
     ), reverse=True)
-    diff = [dict(p) for p in diff_sorted[:5]]
+    # Guarantee at least 2 non-chalk players
+    diff = _build_with_min_unique(diff_sorted, chalk_names, min_unique=2)
     _annotate(diff)
 
-    # --- Contrarian: favor usage trend (injury breakouts) ---
+    # --- Contrarian: usage/breakout hunting ---
+    # Sort by usage trend signal — finds players whose minutes are
+    # expanding (teammates injured) and who are capitalizing.
     contra_sorted = sorted(pool, key=lambda x: (
-        x["rating"]
-        * (x.get("_usage", 1.0) ** 1.5)
-        * (x.get("_form", 1.0) ** 0.8)
+        x.get("_usage", 1.0) ** 3.0
+        * x.get("_form", 1.0) ** 1.5
+        * (x["rating"] ** 0.4)
     ), reverse=True)
-    contra = [dict(p) for p in contra_sorted[:5]]
+    # Guarantee at least 2 non-chalk players
+    contra = _build_with_min_unique(contra_sorted, chalk_names, min_unique=2)
     _annotate(contra)
 
     return chalk, diff, contra
+
+
+def _build_with_min_unique(sorted_pool, chalk_names, min_unique=2):
+    """Pick top 5, guaranteeing at least min_unique players NOT in chalk."""
+    unique = []
+    shared = []
+    for p in sorted_pool:
+        if p["name"] in chalk_names:
+            shared.append(dict(p))
+        else:
+            unique.append(dict(p))
+        if len(unique) >= min_unique and len(unique) + len(shared) >= 5:
+            break
+
+    # Fill lineup: take required unique picks, then fill with best remaining
+    lineup = unique[:min_unique]
+    remaining = shared + unique[min_unique:]
+    remaining.sort(key=lambda x: x["rating"], reverse=True)
+    for p in remaining:
+        if len(lineup) >= 5:
+            break
+        if p["name"] not in {x["name"] for x in lineup}:
+            lineup.append(p)
+
+    # Sort final lineup by rating for ranking
+    lineup.sort(key=lambda x: x["rating"], reverse=True)
+    return lineup[:5]
 
 
 def _annotate(lineup):
