@@ -242,6 +242,10 @@ def _cascade_minutes(roster, stats_map):
                     cascade_flags[pid] = 0.0
                 cascade_flags[pid] += bonus
 
+    # Cap: no player gains more than 10 minutes from cascade
+    for pid in cascade_flags:
+        cascade_flags[pid] = min(cascade_flags[pid], 10.0)
+
     return cascade_flags
 
 
@@ -268,7 +272,7 @@ def _cascade_minutes(roster, stats_map):
 def _ownership_mult_chalk(proj_min):
     """Moderate inverse-ownership mult. Penalizes stars, rewards role players."""
     if proj_min < 15:  return 1.8   # deep bench — too risky for chalk
-    if proj_min < 22:  return 2.8   # bench sweet spot (Sheppard, González tier)
+    if proj_min < 22:  return 2.0   # bench — moderate for chalk (safe mode)
     if proj_min < 28:  return 2.2   # role players
     if proj_min < 33:  return 1.5   # starters
     return 0.9                      # stars — everyone drafts them, low mult
@@ -311,7 +315,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Scale heuristic by minute boost from cascade
     if cascade_bonus > 0 and avg_min > 0:
-        min_scale = proj_min / avg_min
+        min_scale = min(proj_min / avg_min, 1.4)  # cap at 40% boost
         heuristic *= min_scale
 
     # AI blend
@@ -339,9 +343,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     hot = round((recent_pts / season_pts) if season_pts > 0 else 1.0, 2)
     hot = min(hot, 2.5)  # cap at 2.5x to prevent outliers
 
-    # Use projected minutes (with cascade) for ownership tiers
-    om_chalk  = _ownership_mult_chalk(proj_min)
-    om_upside = _ownership_mult_upside(proj_min)
+    # Use BASE avg_min for ownership tiers (not cascaded proj_min)
+    # Ownership reflects public perception of the player's role, not our projection
+    om_chalk  = _ownership_mult_chalk(avg_min)
+    om_upside = _ownership_mult_upside(avg_min)
 
     # EV scores
     chalk_ev  = round(raw_score * om_chalk  * max(hot, 1.0), 2)
@@ -442,8 +447,12 @@ def _classify_tiers(projections):
     return {"top_picks": top[:8], "acceptable_fills": acceptable[:8], "avoid": avoid[:5]}
 
 def _build_lineups(projections):
-    # CHALK: sorted by chalk_ev (value-weighted, penalizes stars)
-    chalk = sorted(projections, key=lambda x: x["chalk_ev"], reverse=True)[:5]
+    # CHALK: production floor (rating >= 4.0) + sorted by chalk_ev
+    chalk_eligible = [p for p in projections if p["rating"] >= 4.0]
+    if len(chalk_eligible) < 5:
+        # Fallback: fill remaining from all projections
+        chalk_eligible = sorted(projections, key=lambda x: x["chalk_ev"], reverse=True)
+    chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
     # UPSIDE: sorted by upside_ev (aggressively rewards bench + hot streaks)
