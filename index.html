@@ -3,7 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>REAL APP — NBA Draft Optimizer</title>
+  <title>The Oracle — NBA Draft Optimizer</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="The Oracle">
+  <meta name="application-name" content="The Oracle">
+  <meta name="theme-color" content="#060a0f">
+  <meta property="og:title" content="The Oracle — NBA Draft Optimizer">
+  <meta property="og:description" content="AI-powered NBA DFS draft optimizer with injury cascade, game script analysis, and calibration feedback.">
+  <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -537,7 +545,7 @@
     <div class="logo">
       <div class="logo-icon">🏀</div>
       <div>
-        REAL APP
+        THE ORACLE
         <span class="logo-sub">NBA Draft Optimizer</span>
       </div>
     </div>
@@ -577,6 +585,7 @@
       <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Starting 5</button>
       <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🚀 Moonshot</button>
     </div>
+    <div id="gameScriptBadge" style="display:none;font-size:0.7rem;color:var(--text-dim);padding:4px 0 2px;text-align:center;letter-spacing:0.5px"></div>
     <div id="picksList"></div>
 
   </div>
@@ -776,6 +785,15 @@ async function runAnalysis() {
     }
     PICKS_DATA = await r.json();
     document.getElementById('picksTabsWrap').style.display = 'flex';
+    // Show game script badge
+    const badge = document.getElementById('gameScriptBadge');
+    if (PICKS_DATA.gameScript) {
+      const total = PICKS_DATA.game?.total;
+      badge.innerHTML = `Game Script: <b>${PICKS_DATA.gameScript}</b>${total ? ` (O/U ${total})` : ''}`;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
 
     // Auto-save to lab

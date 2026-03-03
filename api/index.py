@@ -267,6 +267,84 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
     return pts + reb + (ast * 1.5) + (stl * 3.5) + (blk * 3.0) - (tov * 1.2)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GAME SCRIPT ENGINE (per-game only — does NOT affect full slate)
+#
+# Over/under tiers adjust which stat categories get boosted:
+#   < 220  → Defensive Grind: boost STL/BLK, suppress PTS/AST/REB volume
+#   220-235 → Balanced Pace: neutral, lean on matchup and spread
+#   236-245 → Fast-Paced: boost scorers, assist props, rebounders (shot volume)
+#   > 245  → Track Meet: boost PTS+AST combos, but if spread > 8 penalize
+#            (blowout risk = usage collapses for starters late)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _game_script_weights(total, spread):
+    """Return per-stat multipliers based on over/under and spread."""
+    w = {"pts": 1.0, "reb": 1.0, "ast": 1.0, "stl": 1.0, "blk": 1.0, "tov": 1.0}
+    t = total or 222
+
+    if t < 220:
+        # Defensive Grind — steals/blocks are gold, volume stats suppressed
+        w["pts"] = 0.85
+        w["reb"] = 0.90
+        w["ast"] = 0.85
+        w["stl"] = 1.40
+        w["blk"] = 1.35
+        w["tov"] = 1.15   # turnovers hurt more in slow games
+    elif t <= 235:
+        # Balanced — slight lean toward matchup, essentially neutral
+        w["pts"] = 1.0
+        w["reb"] = 1.0
+        w["ast"] = 1.0
+        w["stl"] = 1.05
+        w["blk"] = 1.05
+    elif t <= 245:
+        # Fast-Paced — scorers and playmakers thrive, shot volume is up
+        w["pts"] = 1.15
+        w["reb"] = 1.10
+        w["ast"] = 1.15
+        w["stl"] = 0.95
+        w["blk"] = 0.95
+        w["tov"] = 0.90   # turnovers less costly in high-scoring games
+    else:
+        # Track Meet (> 245) — huge scoring upside
+        w["pts"] = 1.25
+        w["ast"] = 1.20
+        w["reb"] = 1.05
+        w["stl"] = 0.90
+        w["blk"] = 0.90
+        w["tov"] = 0.85
+        # Blowout risk: if spread > 8, starters sit in garbage time
+        if abs(spread or 0) > 8:
+            w["pts"] *= 0.88
+            w["ast"] *= 0.88
+            w["reb"] *= 0.92
+
+    return w
+
+
+def _game_script_dfs(stats, total, spread):
+    """DFS score adjusted by game script weights. For per-game projections only."""
+    w = _game_script_weights(total, spread)
+    pts = stats.get("pts", 0) * w["pts"]
+    reb = stats.get("reb", 0) * w["reb"]
+    ast = stats.get("ast", 0) * w["ast"]
+    stl = stats.get("stl", 0) * w["stl"]
+    blk = stats.get("blk", 0) * w["blk"]
+    tov = stats.get("tov", 0) * w["tov"]
+    return _dfs_score(pts, reb, ast, stl, blk, tov)
+
+
+def _game_script_label(total):
+    """Human-readable game script tier for display."""
+    t = total or 222
+    if t < 220:   return "Defensive Grind"
+    if t <= 235:  return "Balanced Pace"
+    if t <= 245:  return "Fast-Paced"
+    return "Track Meet"
+
+
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
                    cascade_bonus=0.0, cal_bias=0.0):
     if pinfo.get("is_out"): return None
@@ -351,6 +429,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "ast":     round(ast, 1),
         "stl":     round(stl, 1),
         "blk":     round(blk, 1),
+        "tov":     round(tov, 1),
         "est_mult": om_chalk,
         "om":      om_chalk,
         "slot":    "1.0x",
@@ -423,6 +502,104 @@ def _build_lineups(projections):
 
     return chalk, upside
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-GAME LINEUP BUILDER
+#
+# Single-game drafts are fundamentally different from full-slate:
+# - Only 2 teams, so everyone is picking from the same pool
+# - Must diversify across both teams (min 2 per side)
+# - Stars are MORE important in single-game (smaller pool = stars stand out)
+# - Ownership is more concentrated, so contrarian plays matter more
+# ─────────────────────────────────────────────────────────────────────────────
+
+GAME_CHALK_FLOOR = 4.0  # Slightly higher floor for single-game (smaller pool = less noise)
+
+def _pick_balanced(pool, n, min_per_team=2):
+    """Pick n players from pool ensuring at least min_per_team from each team."""
+    teams = {}
+    for p in pool:
+        t = p["team"]
+        teams.setdefault(t, []).append(p)
+
+    # Sort each team's pool by chalk_ev
+    for t in teams:
+        teams[t].sort(key=lambda x: x["chalk_ev"], reverse=True)
+
+    team_list = list(teams.keys())
+    if len(team_list) < 2:
+        # Only one team available — just return top n
+        return sorted(pool, key=lambda x: x["chalk_ev"], reverse=True)[:n]
+
+    picked = []
+    used = set()
+
+    # Phase 1: guarantee min_per_team from each team
+    for t in team_list:
+        count = 0
+        for p in teams[t]:
+            if count >= min_per_team:
+                break
+            picked.append(p)
+            used.add(p["name"])
+            count += 1
+
+    # Phase 2: fill remaining slots from best available across both teams
+    remaining = n - len(picked)
+    rest = sorted([p for p in pool if p["name"] not in used],
+                  key=lambda x: x["chalk_ev"], reverse=True)
+    picked.extend(rest[:remaining])
+
+    # Sort final picks by chalk_ev for slot assignment
+    picked.sort(key=lambda x: x["chalk_ev"], reverse=True)
+    return picked[:n]
+
+
+def _apply_game_script(projections, game):
+    """Re-score projections using game script weights. Returns new list (doesn't mutate)."""
+    total  = game.get("total") or 222
+    spread = game.get("spread") or 0
+    rescored = []
+    for p in projections:
+        # Recalculate DFS with game-script-weighted stats
+        # Player stats are stored as top-level keys on the projection dict
+        gs_dfs = _game_script_dfs(p, total, spread)
+        orig_dfs = _dfs_score(p.get("pts",0), p.get("reb",0), p.get("ast",0),
+                              p.get("stl",0), p.get("blk",0), p.get("tov",0))
+        if orig_dfs > 0:
+            script_factor = gs_dfs / orig_dfs
+        else:
+            script_factor = 1.0
+        new_rating  = round(p["rating"] * script_factor, 1)
+        new_ev      = round(p["chalk_ev"] * script_factor, 2)
+        rp = dict(p)
+        rp["rating"]   = new_rating
+        rp["chalk_ev"] = new_ev
+        rp["expected_dp"] = round(new_ev, 1)
+        rp["game_script"] = _game_script_label(total)
+        rescored.append(rp)
+    return rescored
+
+
+def _build_game_lineups(projections, game):
+    """Build lineups for a single-game draft with team balance + game script."""
+    # Re-score using game script (over/under tiers)
+    rescored = _apply_game_script(projections, game)
+
+    eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
+
+    # STARTING 5: balanced across both teams
+    chalk = _pick_balanced(eligible, 5, min_per_team=2)
+    for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
+
+    # MOONSHOT: 5 different players, still balanced
+    chalk_names = {p["name"] for p in chalk}
+    moonshot_eligible = [p for p in rescored
+                         if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
+    upside = _pick_balanced(moonshot_eligible, 5, min_per_team=1)
+    for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
+
+    return chalk, upside
+
 def _save_history(game_label, players):
     hist = []
     if HISTORY_FILE.exists():
@@ -468,9 +645,12 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     projections = _run_game(game, cal_bias=cal_bias)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
-    chalk, upside = _build_lineups(projections)
+    chalk, upside = _build_game_lineups(projections, game)
     _save_history(game["label"], chalk)
-    return {"date": date.today().isoformat(), "game": game, "lineups": {"chalk": chalk, "upside": upside}}
+    script = _game_script_label(game.get("total"))
+    return {"date": date.today().isoformat(), "game": game,
+            "gameScript": script,
+            "lineups": {"chalk": chalk, "upside": upside}}
 
 @app.get("/api/history")
 async def get_history():

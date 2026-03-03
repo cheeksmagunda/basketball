@@ -1,27 +1,58 @@
-# Daily Draft Optimizer (Real App)
+# The Oracle — NBA Draft Optimizer
 
-A heuristic-based Daily Fantasy Sports (DFS) lineup optimizer specifically tailored for real-time NBA outperformance predictions. 
+AI-powered NBA DFS draft optimizer with injury cascade analysis, game script modeling, and calibration feedback.
 
-## The Prediction Logic
-Unlike standard fantasy optimizers that project raw points, this application uses a customized weighting algorithm to predict **baseline outperformance**—hunting for players who will massively exceed their averages. 
+## How It Works
 
-The application utilizes two distinct scoring models depending on the slate:
+### Full Slate (Starting 5 + Moonshot)
+Analyzes all games on today's NBA slate and builds two 5-player lineups:
 
-1. **Full Slate Mode:** Enforces a strict minutes-floor penalty (26+ mins) to prevent fragile bench players from hijacking the top 2.0x slots, leaning heavily on high-volume starters with situational edges.
-2. **Single Game Mode:** Highly aggressive. Forgiving of minute floors down to 18 minutes, specifically hunting for role players on hot streaks facing weak defenses to fill the critical 1.2x and 1.4x draft slots.
+- **Starting 5:** Best expected value picks weighted by inverse ownership. Bench sweet-spot players (15-22 min) get the highest multiplier because fewer people draft them. Stars get penalized — everyone picks them, so they land in low-multiplier slots.
+- **Moonshot:** 5 completely different players with a higher production floor (rating >= 6.0). Filters out low-production bench warmers and targets high-ceiling role players.
 
-### Features
-* **Live ESPN Integration:** Leverages raw ESPN API endpoints (scoreboard, rosters, common v3, and core v2) to bypass traditional NBA data rate limits.
-* **Real-time Injury Parsing:** Automatically drops players who are ruled `Out` by the ESPN injury endpoints, preventing dead lineup slots.
-* **Volume-Scaling (The "Scrub Trap" Fix):** A mathematical penalty applied to players projecting under 35 minutes, scaling down their situational boosts (Matchup/Form) to properly balance a 15-minute bench player with a perfect matchup vs a 36-minute star with an average matchup.
+### Per-Game Analysis
+Single-game drafts use a different model with two key differences:
 
-### Lineup Strategies
-* **Chalk (Optimal):** Focuses heavily on high-floor, safe minutes anchored to baseline production `(rating^1.2 * boost^0.8)`. Always ensures top raw scorers are anchored in the lineup.
-* **Upside (Tournament):** Blends differentiated form gems and injury-pivot plays `(usage^2.5 * matchup^2.0 * form^1.5)`. Hunts for expanding roles and the perfect defensive matchup.
+1. **Team Balance:** Guarantees at least 2 players from each team (no all-NO lineups).
+2. **Game Script Engine:** Adjusts stat weights based on the game's over/under:
+
+| O/U Range | Script | Strategy |
+|-----------|--------|----------|
+| < 220 | Defensive Grind | Boost STL/BLK, suppress volume stats |
+| 220-235 | Balanced Pace | Neutral — lean on matchup and spread |
+| 236-245 | Fast-Paced | Boost scorers, assists, rebounders |
+| > 245 | Track Meet | Boost PTS+AST combos, penalize if spread > 8 (blowout risk) |
+
+### Injury Cascade Engine
+When a player is ruled OUT, their projected minutes get redistributed to remaining teammates at the same position group. Bench players get proportionally more of the freed minutes. This is how the model finds value plays like expanded-role backups.
+
+### Calibration Feedback Loop
+After entering actual results in the Lab, the backend calculates prediction bias and adjusts future projections. The calibration is an exponential moving average (alpha=0.3) of prediction errors.
+
+### DFS Scoring Formula
+```
+PTS + REB + AST*1.5 + STL*3.5 + BLK*3.0 - TOV*1.2
+```
+
+## Architecture
+
+- **Frontend:** Single-file `index.html` (vanilla JS, no framework). PWA-capable with Add to Home Screen support.
+- **Backend:** FastAPI (`api/index.py`) deployed on Vercel serverless functions.
+- **Data:** ESPN API (scoreboard, rosters, athlete overview). No API key required.
+- **AI Model:** LightGBM model (`lgbm_model.pkl`) blended 70/30 with heuristic scoring.
+- **Storage:** LocalStorage for Lab history, `/tmp` for server-side caching.
 
 ## Local Development
-Run the app locally with Uvicorn and FastAPI:
 
 ```bash
 pip install -r requirements.txt
 uvicorn server:app --reload
+```
+
+## Deployment
+
+Deployed on Vercel. Push to main triggers auto-deploy.
+
+```bash
+vercel --prod
+```
