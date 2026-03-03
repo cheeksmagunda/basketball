@@ -445,14 +445,13 @@
     <div id="slateChips" class="game-chips"></div>
 
     <div class="mode-tabs" id="slateTabs" style="display:none">
-      <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Chalk</button>
-      <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🔥 Upside</button>
+      <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Starting 5</button>
+      <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🔥 Rotation</button>
     </div>
 
     <div id="slateList"></div>
 
-    <!-- Tier breakdown below lineup cards -->
-    <div id="slateTiersContainer"></div>
+    <div id="slateTiersContainer" style="display:none"></div>
 
     <div class="divider"></div>
 
@@ -467,13 +466,12 @@
     </button>
 
     <div class="mode-tabs" id="picksTabsWrap" style="display:none; margin-top:0;">
-      <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Chalk</button>
-      <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🔥 Upside</button>
+      <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Starting 5</button>
+      <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🔥 Rotation</button>
     </div>
     <div id="picksList"></div>
 
-    <!-- Tier breakdown below game picks -->
-    <div id="picksTiersContainer"></div>
+    <div id="picksTiersContainer" style="display:none"></div>
   </div>
 
   <!-- ══ LAB VIEW ══ -->
@@ -647,7 +645,7 @@ function renderCards(picks, containerId, mode) {
         </div>
         <div class="score-col" style="--score-color:${scoreColor}">
           <div class="score-num">${isUpside ? (p.upside_ev || p.rating) : p.rating}</div>
-          <span class="score-label">${isUpside ? '🔥 upside' : (p.hot >= 1.15 ? '🔥 hot' : 'projected')}</span>
+          <span class="score-label">${isUpside ? '🔥 rotation' : (p.hot >= 1.15 ? '🔥 hot' : 'projected')}</span>
           <div class="slot-badge" style="background:${isUpside?'rgba(249,115,22,0.1)':'rgba(79,142,247,0.1)'};border-color:${isUpside?'rgba(249,115,22,0.25)':'rgba(79,142,247,0.25)'}">
             ${p.slot}
           </div>
