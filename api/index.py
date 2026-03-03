@@ -2,6 +2,7 @@ import os
 import json
 import math
 import hashlib
+import traceback
 from datetime import date
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,9 +41,17 @@ def _cs(k, v):
 # ESPN helpers
 # ---------------------------------------------------------------------------
 def _espn(path, timeout=15):
-    r = requests.get(f"{ESPN}{path}", timeout=timeout)
-    r.raise_for_status()
-    return r.json()
+    """Fetch from ESPN API with retry."""
+    url = f"{ESPN}{path}"
+    for attempt in range(3):
+        try:
+            r = requests.get(url, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            if attempt == 2:
+                raise
+    return {}
 
 
 def _safe_float(v, default=0.0):
@@ -126,10 +135,11 @@ def _fetch_athlete(pid):
         f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}",
         f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview",
         f"{ESPN}/athletes/{pid}/statistics",
+        f"{ESPN}/athletes/{pid}",
     ]
     for url in urls:
         try:
-            r = requests.get(url, timeout=15)
+            r = requests.get(url, timeout=12)
             if r.status_code != 200:
                 continue
             stats = _parse_stats(r.json())
@@ -139,6 +149,7 @@ def _fetch_athlete(pid):
         except Exception:
             continue
 
+    # Cache misses too so we don't retry every time
     _cs(f"ath_{pid}", None)
     return None
 
@@ -259,7 +270,7 @@ def real_rating(s):
     return base + eff
 
 
-def project_player(name, pos, age, side, stats, spread, total):
+def project_player(name, pos, age, side, stats, spread, total, game_label=""):
     avg_min = stats["min"]
     if avg_min < 15:
         return None
@@ -301,6 +312,7 @@ def project_player(name, pos, age, side, stats, spread, total):
         "homeAdj": round(home_adj, 3),
         "stdDev": round(proj_rating * var, 1),
         "side": side,
+        "game": game_label,
     }
 
 
@@ -371,20 +383,23 @@ async def get_picks(gameId: str = Query(...)):
         total = game.get("total")
 
         players, stats = fetch_game_players(game["home"]["id"], game["away"]["id"])
-        if not stats:
-            return JSONResponse(content={"error": "Could not fetch player stats. Try again later."})
 
         projections = []
         for pinfo, side in players:
             s = stats.get(pinfo["id"])
             if not s:
                 continue
-            p = project_player(pinfo["name"], pinfo["pos"], pinfo.get("age", 25), side, s, spread, total)
+            p = project_player(
+                pinfo["name"], pinfo["pos"], pinfo.get("age", 25),
+                side, s, spread, total, game["label"]
+            )
             if p:
                 projections.append(p)
 
         if len(projections) < 5:
-            return JSONResponse(content={"error": "Not enough eligible players for this game."})
+            return JSONResponse(content={
+                "error": f"Not enough eligible players ({len(projections)} found, need 5). Stats fetched for {len(stats)}/{len(players)} players."
+            })
 
         chalk, diff, contra = build_lineups(projections)
 
@@ -404,3 +419,67 @@ async def get_picks(gameId: str = Query(...)):
         })
     except Exception as e:
         return JSONResponse(content={"error": f"Failed: {str(e)}"}, status_code=500)
+
+
+@app.get("/api/slate")
+async def get_slate():
+    """Full-slate top 5 picks across ALL games today."""
+    try:
+        games = fetch_games()
+        if not games:
+            return JSONResponse(content={"error": "No games on today's slate."})
+
+        all_projections = []
+        game_summaries = []
+
+        # Fetch all games in parallel
+        def process_game(game):
+            spread = game.get("spread")
+            total = game.get("total")
+            players, stats = fetch_game_players(game["home"]["id"], game["away"]["id"])
+            projs = []
+            for pinfo, side in players:
+                s = stats.get(pinfo["id"])
+                if not s:
+                    continue
+                p = project_player(
+                    pinfo["name"], pinfo["pos"], pinfo.get("age", 25),
+                    side, s, spread, total, game["label"]
+                )
+                if p:
+                    projs.append(p)
+            return game, projs
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futs = {ex.submit(process_game, g): g for g in games}
+            for f in as_completed(futs):
+                try:
+                    game, projs = f.result()
+                    all_projections.extend(projs)
+                    game_summaries.append({
+                        "label": game["label"],
+                        "spread": game.get("spread"),
+                        "total": game.get("total"),
+                        "playerCount": len(projs),
+                    })
+                except Exception:
+                    pass
+
+        if len(all_projections) < 5:
+            return JSONResponse(content={
+                "error": f"Not enough players across slate ({len(all_projections)} found)."
+            })
+
+        chalk, diff, contra = build_lineups(all_projections)
+
+        return JSONResponse(content={
+            "games": game_summaries,
+            "totalPlayers": len(all_projections),
+            "lineups": {
+                "chalk": chalk,
+                "differentiated": diff,
+                "contrarian": contra,
+            },
+        })
+    except Exception as e:
+        return JSONResponse(content={"error": f"Slate failed: {str(e)}"}, status_code=500)
