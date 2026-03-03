@@ -17,7 +17,7 @@
     }
     .container {
       text-align: center;
-      max-width: 420px;
+      max-width: 460px;
       width: 100%;
       padding: 2rem;
     }
@@ -29,21 +29,33 @@
     .subtitle {
       font-size: 0.9rem;
       color: #888;
-      margin-bottom: 2rem;
+      margin-bottom: 1.5rem;
     }
-    button {
-      background: #1d4ed8;
-      color: #fff;
-      border: none;
-      padding: 0.85rem 2.5rem;
-      font-size: 1.05rem;
+    .tabs {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 1.5rem;
+    }
+    .tab {
+      flex: 1;
+      padding: 0.6rem 0;
+      background: #1a1a2e;
+      border: 1px solid #2a2a3e;
+      color: #888;
       border-radius: 8px;
       cursor: pointer;
-      transition: background 0.2s;
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: all 0.2s;
     }
-    button:hover { background: #2563eb; }
-    button:disabled {
-      background: #374151;
+    .tab:hover { background: #222240; border-color: #444; }
+    .tab.active {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+      color: #fff;
+    }
+    .tab:disabled {
+      opacity: 0.5;
       cursor: not-allowed;
     }
     .spinner {
@@ -64,21 +76,57 @@
     }
     .picks-list li {
       background: #141428;
-      padding: 0.85rem 1.1rem;
+      padding: 0.8rem 1rem;
       margin-bottom: 0.5rem;
-      border-radius: 8px;
+      border-radius: 10px;
       border-left: 3px solid #1d4ed8;
-      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
     }
-    .picks-list li .rank {
-      color: #1d4ed8;
+    .slot-badge {
+      background: #1d4ed8;
+      color: #fff;
       font-weight: 700;
-      margin-right: 0.6rem;
+      font-size: 0.82rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 6px;
+      min-width: 3rem;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .player-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .player-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .player-meta {
+      color: #888;
+      font-size: 0.78rem;
+      margin-top: 0.15rem;
+    }
+    .player-meta .team-tag {
+      color: #a5b4fc;
+      font-weight: 600;
     }
     .error {
       margin-top: 1.5rem;
       color: #f87171;
       font-size: 0.95rem;
+    }
+    .mode-desc {
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 1rem;
+      min-height: 1.1rem;
     }
   </style>
 </head>
@@ -86,45 +134,85 @@
   <div class="container">
     <h1>NBA Real Sports Picks</h1>
     <p class="subtitle">Top 5 player picks for today</p>
-    <button id="btn" onclick="getPicks()">Get Picks</button>
+
+    <div class="tabs">
+      <button class="tab active" data-mode="chalk" onclick="switchMode('chalk')">Chalk</button>
+      <button class="tab" data-mode="diff" onclick="switchMode('diff')">Differentiated</button>
+      <button class="tab" data-mode="contrarian" onclick="switchMode('contrarian')">Contrarian</button>
+    </div>
+    <p class="mode-desc" id="modeDesc">Highest-floor picks — proven producers with strong matchups.</p>
+
     <div class="spinner" id="spinner"></div>
     <ul class="picks-list" id="picks"></ul>
     <p class="error" id="error"></p>
   </div>
+
   <script>
-    async function getPicks() {
-      const btn = document.getElementById('btn');
+    const MODE_DESCRIPTIONS = {
+      chalk: 'Highest-floor picks \u2014 proven producers with strong matchups.',
+      diff: 'Balanced value \u2014 projection weighted by outperformance potential.',
+      contrarian: 'Hidden gems \u2014 trending players set to exceed expectations.',
+    };
+
+    let currentMode = 'chalk';
+    let loading = false;
+
+    function switchMode(mode) {
+      if (loading) return;
+      currentMode = mode;
+
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.mode === mode);
+      });
+      document.getElementById('modeDesc').textContent = MODE_DESCRIPTIONS[mode];
+
+      getPicks(mode);
+    }
+
+    async function getPicks(mode) {
+      if (!mode) mode = currentMode;
       const spinner = document.getElementById('spinner');
       const picksList = document.getElementById('picks');
       const errorEl = document.getElementById('error');
 
-      btn.disabled = true;
-      btn.textContent = 'Loading...';
+      loading = true;
+      document.querySelectorAll('.tab').forEach(t => t.disabled = true);
       spinner.style.display = 'block';
       picksList.innerHTML = '';
       errorEl.textContent = '';
 
       try {
-        const res = await fetch('/api/picks');
+        const res = await fetch('/api/picks?mode=' + encodeURIComponent(mode));
         const data = await res.json();
 
         if (data.error) {
           errorEl.textContent = data.error;
         } else if (Array.isArray(data)) {
-          data.forEach((player, i) => {
+          data.forEach(player => {
             const li = document.createElement('li');
-            li.innerHTML = `<span class="rank">#${i + 1}</span>${player.name}`;
+            li.innerHTML =
+              '<span class="slot-badge">' + player.slot + '</span>' +
+              '<div class="player-info">' +
+                '<span class="player-name">' + player.name + '</span>' +
+                '<span class="player-meta">' +
+                  '<span class="team-tag">' + player.team + '</span>' +
+                  ' \u2014 ' + player.game +
+                '</span>' +
+              '</div>';
             picksList.appendChild(li);
           });
         }
       } catch (err) {
         errorEl.textContent = 'Failed to fetch picks. Please try again.';
       } finally {
-        btn.disabled = false;
-        btn.textContent = 'Get Picks';
+        loading = false;
+        document.querySelectorAll('.tab').forEach(t => t.disabled = false);
         spinner.style.display = 'none';
       }
     }
+
+    // Auto-load chalk picks on page load
+    getPicks('chalk');
   </script>
 </body>
 </html>

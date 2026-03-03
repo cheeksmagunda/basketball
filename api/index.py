@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
 import requests
@@ -57,6 +57,9 @@ TRICODE_TO_NAME = {
     "POR": "Portland Trail Blazers", "SAC": "Sacramento Kings", "SAS": "San Antonio Spurs",
     "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "WAS": "Washington Wizards",
 }
+
+# Draft slot multipliers for the 5-pick lineup
+SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 
 
 # ---------------------------------------------------------------------------
@@ -206,8 +209,7 @@ def fetch_player_gamelog(player_id: int, season: str = "2025-26"):
 
 
 def fetch_all_player_stats():
-    """Fetch all player season stats in one request instead of per-player.
-    This is much faster and avoids dozens of individual API calls."""
+    """Fetch all player season stats in one request instead of per-player."""
     cache_key = "all_player_stats"
     cached = _read_cache(cache_key)
     if cached is not None:
@@ -262,6 +264,7 @@ def fetch_all_player_stats():
             stats[pid] = {
                 "name": row[col.get("PLAYER_NAME", 1)],
                 "team_id": row[col.get("TEAM_ID", 2)],
+                "team_abbrev": row[col.get("TEAM_ABBREVIATION", 3)] if "TEAM_ABBREVIATION" in col else "",
                 "gp": row[col.get("GP", 0)] or 0,
                 "min": row[col.get("MIN", 0)] or 0,
                 "pts": row[col.get("PTS", 0)] or 0,
@@ -278,8 +281,8 @@ def fetch_all_player_stats():
 
 
 def fetch_last5_stats():
-    """Fetch last-5-game stats for all players in one request."""
-    cache_key = "all_player_stats_last5"
+    """Fetch last-5-game stats for all players (full stat lines)."""
+    cache_key = "all_player_stats_last5_full"
     cached = _read_cache(cache_key)
     if cached is not None:
         return cached
@@ -332,6 +335,13 @@ def fetch_last5_stats():
             pid = row[col.get("PLAYER_ID", 0)]
             stats[pid] = {
                 "min": row[col.get("MIN", 0)] or 0,
+                "pts": row[col.get("PTS", 0)] or 0,
+                "reb": row[col.get("REB", 0)] or 0,
+                "ast": row[col.get("AST", 0)] or 0,
+                "stl": row[col.get("STL", 0)] or 0,
+                "blk": row[col.get("BLK", 0)] or 0,
+                "tov": row[col.get("TOV", 0)] or 0,
+                "fg3m": row[col.get("FG3M", 0)] or 0,
             }
 
     _write_cache(cache_key, stats)
@@ -383,52 +393,203 @@ def fetch_vegas_lines():
     return lines
 
 
+def fetch_team_defense_ratings():
+    """Fetch team defensive ratings (DEF_RATING = points allowed per 100 poss).
+
+    Higher DEF_RATING means worse defense, which is better for opposing players.
+    """
+    cache_key = "team_def_ratings"
+    cached = _read_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    url = "https://stats.nba.com/stats/leaguedashteamstats"
+    params = {
+        "Conference": "",
+        "DateFrom": "",
+        "DateTo": "",
+        "Division": "",
+        "GameScope": "",
+        "GameSegment": "",
+        "Height": "",
+        "ISTRound": "",
+        "LastNGames": 0,
+        "LeagueID": "00",
+        "Location": "",
+        "MeasureType": "Advanced",
+        "Month": 0,
+        "OpponentTeamID": 0,
+        "Outcome": "",
+        "PORound": 0,
+        "PaceAdjust": "N",
+        "PerMode": "PerGame",
+        "Period": 0,
+        "PlayerExperience": "",
+        "PlayerPosition": "",
+        "PlusMinus": "N",
+        "Rank": "N",
+        "Season": "2025-26",
+        "SeasonSegment": "",
+        "SeasonType": "Regular Season",
+        "ShotClockRange": "",
+        "StarterBench": "",
+        "TeamID": 0,
+        "TwoWay": 0,
+        "VsConference": "",
+        "VsDivision": "",
+        "Weight": "",
+    }
+    data = _nba_stats_request(url, params)
+
+    ratings = {}
+    result_sets = data.get("resultSets", [])
+    if result_sets:
+        headers = result_sets[0].get("headers", [])
+        rows = result_sets[0].get("rowSet", [])
+        col = {h: i for i, h in enumerate(headers)}
+        for row in rows:
+            tid = row[col.get("TEAM_ID", 0)]
+            def_rating = row[col.get("DEF_RATING", 0)] if "DEF_RATING" in col else None
+            pace = row[col.get("PACE", 0)] if "PACE" in col else None
+            ratings[tid] = {
+                "def_rating": float(def_rating) if def_rating else 112.0,
+                "pace": float(pace) if pace else 100.0,
+            }
+
+    _write_cache(cache_key, ratings)
+    return ratings
+
+
 # ---------------------------------------------------------------------------
-# Projection model
+# Projection model — value-based with matchup, form, and opportunity factors
 # ---------------------------------------------------------------------------
 
-def calc_fpts(stats: dict) -> float:
-    """Calculate fantasy points from per-game averages."""
-    return sum(stats.get(k, 0) * v for k, v in FP_WEIGHTS.items())
+def _calc_fp(stats: dict) -> float:
+    """Calculate fantasy points from a stat line dict (lowercase keys)."""
+    return (
+        (stats.get("pts", 0) or 0) * FP_WEIGHTS["PTS"]
+        + (stats.get("reb", 0) or 0) * FP_WEIGHTS["REB"]
+        + (stats.get("ast", 0) or 0) * FP_WEIGHTS["AST"]
+        + (stats.get("stl", 0) or 0) * FP_WEIGHTS["STL"]
+        + (stats.get("blk", 0) or 0) * FP_WEIGHTS["BLK"]
+        + (stats.get("tov", 0) or 0) * FP_WEIGHTS["TOV"]
+        + (stats.get("fg3m", 0) or 0) * FP_WEIGHTS["FG3M"]
+    )
 
 
-def project_player_from_avgs(
-    name: str, season: dict, last5_min: float, vegas_total: Optional[float]
+def project_player_value(
+    name: str,
+    team_abbrev: str,
+    season: dict,
+    last5: dict,
+    opp_def_rating: float,
+    league_avg_def: float,
+    vegas_total: Optional[float],
+    opp_team: str,
+    game_label: str,
 ) -> Optional[dict]:
-    """Project fantasy points using season averages + last-5 minutes."""
-    avg_min = season.get("min", 0)
+    """Project player value for tonight using DFS-style analysis.
+
+    Factors in: matchup quality (defense vs position), recent form,
+    minutes opportunity, and Vegas game environment.  Returns a projection
+    dict with outperformance boost score for draft slot ranking.
+    """
+    avg_min = season.get("min", 0) or 0
     if avg_min < 15:
         return None
 
-    # Fantasy points per minute from season averages
-    fpts_per_game = (
-        season["pts"] * FP_WEIGHTS["PTS"]
-        + season["reb"] * FP_WEIGHTS["REB"]
-        + season["ast"] * FP_WEIGHTS["AST"]
-        + season["stl"] * FP_WEIGHTS["STL"]
-        + season["blk"] * FP_WEIGHTS["BLK"]
-        + season["tov"] * FP_WEIGHTS["TOV"]
-        + season["fg3m"] * FP_WEIGHTS["FG3M"]
-    )
-    fppm = fpts_per_game / avg_min if avg_min > 0 else 0
+    # --- Base fantasy points from season averages ---
+    season_fp = _calc_fp(season)
+    if season_fp <= 0:
+        return None
 
-    # Stage 1: Predicted minutes
-    pred_minutes = (avg_min * 0.75) + (last5_min * 0.25)
+    # Fantasy points per minute (efficiency metric)
+    fppm = season_fp / avg_min
 
-    # Vegas adjustment
-    vegas_adj = 1.0
-    if vegas_total is not None:
-        vegas_adj = vegas_total / 220.0
+    # --- Last 5 games fantasy points (recent form) ---
+    last5_fp = _calc_fp(last5) if last5 else season_fp
+    last5_min = (last5.get("min", 0) or 0) if last5 else avg_min
+    if last5_min <= 0:
+        last5_min = avg_min
 
-    projected_fp = pred_minutes * fppm * vegas_adj
+    # 1. FORM FACTOR — how hot/cold is the player vs their season baseline?
+    #    Capped at +/-40% adjustment per DFS best practices (avoid recency bias)
+    form_ratio = last5_fp / season_fp if season_fp > 0 else 1.0
+    form_factor = max(0.6, min(1.4, form_ratio))
+
+    # 2. MINUTES OPPORTUNITY — trending minutes indicate role changes / injuries
+    #    Players seeing more minutes recently likely have expanded opportunity
+    min_ratio = last5_min / avg_min if avg_min > 0 else 1.0
+    min_factor = max(0.8, min(1.3, min_ratio))
+
+    # 3. MATCHUP FACTOR — opponent defensive weakness (Defense vs Position proxy)
+    #    Higher DEF_RATING = worse defense = more fantasy points for opposing players
+    #    Typical range: 105 (elite D) to 120 (terrible D), league avg ~112
+    if league_avg_def > 0 and opp_def_rating > 0:
+        def_ratio = opp_def_rating / league_avg_def
+        matchup_factor = max(0.85, min(1.20, def_ratio))
+    else:
+        matchup_factor = 1.0
+
+    # 4. VEGAS PACE FACTOR — game total implies scoring environment
+    #    High totals (230+) = run-and-gun, Low totals (<210) = grind
+    if vegas_total and vegas_total > 0:
+        vegas_factor = vegas_total / 220.0
+    else:
+        vegas_factor = 1.0
+
+    # 5. PREDICTED MINUTES — weighted toward recent (40% recency per DFS models)
+    pred_minutes = (avg_min * 0.6) + (last5_min * 0.4)
+
+    # 6. COMPOSITE PROJECTION
+    projected_fp = pred_minutes * fppm * form_factor * matchup_factor * vegas_factor
+
+    # 7. BOOST SCORE — outperformance potential relative to season baseline
+    #    This is the key metric for value-based draft slot assignment
+    #    boost > 1.0 means projecting ABOVE their season average tonight
+    boost = projected_fp / season_fp if season_fp > 0 else 1.0
 
     return {
         "name": name,
-        "projected_fp": round(projected_fp, 2),
-        "pred_minutes": round(pred_minutes, 1),
-        "fppm": round(fppm, 3),
-        "vegas_adj": round(vegas_adj, 3),
+        "team": team_abbrev,
+        "opponent": opp_team,
+        "game": game_label,
+        "projected_fp": round(projected_fp, 1),
+        "season_fp": round(season_fp, 1),
+        "boost": round(boost, 2),
+        "form_ratio": round(form_ratio, 2),
+        "matchup_factor": round(matchup_factor, 2),
+        "min_factor": round(min_factor, 2),
+        "vegas_factor": round(vegas_factor, 2),
     }
+
+
+def rank_players_for_mode(projections: list, mode: str) -> list:
+    """Rank and select top 5 players based on the mode-specific scoring.
+
+    Chalk:       Raw projection power — safest, highest-floor picks.
+    Diff:        Balanced projection * boost — smart value plays.
+    Contrarian:  Boost-heavy — finds hidden gems outperforming expectations.
+    """
+    for p in projections:
+        fp = p["projected_fp"]
+        boost = max(p["boost"], 0.1)
+
+        if mode == "chalk":
+            # Favor high raw projection with slight matchup tilt
+            # Stars with good matchups dominate here
+            p["mode_score"] = fp * (boost ** 0.3)
+        elif mode == "diff":
+            # Balanced — projection weighted by outperformance potential
+            # Smart mid-tier picks with great matchups rise
+            p["mode_score"] = fp * boost
+        else:  # contrarian
+            # Value-first — find players who will exceed expectations the most
+            # Role players on hot streaks facing bad defenses shine here
+            p["mode_score"] = fp * (boost ** 1.5)
+
+    ranked = sorted(projections, key=lambda x: x["mode_score"], reverse=True)
+    return ranked[:5]
 
 
 # ---------------------------------------------------------------------------
@@ -436,8 +597,11 @@ def project_player_from_avgs(
 # ---------------------------------------------------------------------------
 
 @app.get("/api/picks")
-async def get_picks():
+async def get_picks(mode: str = Query(default="chalk")):
     try:
+        if mode not in ("chalk", "diff", "contrarian"):
+            mode = "chalk"
+
         # 1. Get today's games from CDN (reliable from cloud)
         games = fetch_todays_games()
         if not games:
@@ -446,20 +610,47 @@ async def get_picks():
                 status_code=200,
             )
 
-        # 2. Collect team IDs playing today
+        # 2. Build game context — map every team to its opponent and game label
         team_ids_today = set()
-        team_vegas = {}
+        team_vegas: dict = {}
+        team_opponent: dict = {}       # team_id -> opponent tricode
+        team_game_label: dict = {}     # team_id -> "HOU @ WAS"
+        tri_to_id: dict = {}           # tricode -> team_id
+        id_to_tri: dict = {}           # team_id -> tricode
+
         vegas_lines = fetch_vegas_lines()
+
         for game in games:
-            for side in ("homeTeam", "awayTeam"):
-                tid = game[side]["teamId"]
-                tri = game[side]["teamTricode"]
-                team_ids_today.add(tid)
+            home_id = game["homeTeam"]["teamId"]
+            away_id = game["awayTeam"]["teamId"]
+            home_tri = game["homeTeam"]["teamTricode"]
+            away_tri = game["awayTeam"]["teamTricode"]
+
+            team_ids_today.add(home_id)
+            team_ids_today.add(away_id)
+
+            tri_to_id[home_tri] = home_id
+            tri_to_id[away_tri] = away_id
+            id_to_tri[home_id] = home_tri
+            id_to_tri[away_id] = away_tri
+
+            # Opponent mapping
+            team_opponent[home_id] = away_tri
+            team_opponent[away_id] = home_tri
+
+            # Game label
+            label = f"{away_tri} @ {home_tri}"
+            team_game_label[home_id] = label
+            team_game_label[away_id] = label
+
+            # Vegas lines by team_id
+            for side_key, tid in [("homeTeam", home_id), ("awayTeam", away_id)]:
+                tri = game[side_key]["teamTricode"]
                 full_name = TRICODE_TO_NAME.get(tri, "")
                 if full_name in vegas_lines:
                     team_vegas[tid] = vegas_lines[full_name]
 
-        # 3. Fetch all player season stats in ONE request (instead of per-player)
+        # 3. Fetch all data sources
         all_stats = fetch_all_player_stats()
         if not all_stats:
             return JSONResponse(
@@ -467,24 +658,80 @@ async def get_picks():
                 status_code=200,
             )
 
-        # 4. Fetch last-5 stats in one request
         last5 = fetch_last5_stats()
+        defense_ratings = fetch_team_defense_ratings()
 
-        # 5. Project players on today's teams
+        # League average DEF_RATING for normalization
+        if defense_ratings:
+            all_defs = [
+                t["def_rating"]
+                for t in defense_ratings.values()
+                if isinstance(t, dict)
+            ]
+            league_avg_def = sum(all_defs) / len(all_defs) if all_defs else 112.0
+        else:
+            league_avg_def = 112.0
+
+        # 4. Project all eligible players on today's teams
         projections = []
         for pid_str, pdata in all_stats.items():
             pid = int(pid_str) if isinstance(pid_str, str) else pid_str
-            if pdata["team_id"] not in team_ids_today:
+            tid = pdata["team_id"]
+
+            if tid not in team_ids_today:
                 continue
-            last5_min = last5.get(str(pid), last5.get(pid, {})).get("min", pdata["min"])
-            vegas_total = team_vegas.get(pdata["team_id"])
-            proj = project_player_from_avgs(pdata["name"], pdata, last5_min, vegas_total)
+
+            # Opponent info
+            opp_tri = team_opponent.get(tid, "")
+            opp_id = tri_to_id.get(opp_tri)
+
+            # Opponent's defensive rating (higher = worse defense = better for player)
+            opp_def = 112.0
+            if opp_id is not None and defense_ratings:
+                opp_entry = defense_ratings.get(opp_id) or defense_ratings.get(str(opp_id))
+                if opp_entry and isinstance(opp_entry, dict):
+                    opp_def = opp_entry.get("def_rating", 112.0)
+
+            # Player's last 5 game stats (full stat line)
+            p_last5 = last5.get(str(pid)) or last5.get(pid) or {}
+
+            # Player's team tricode
+            player_tri = pdata.get("team_abbrev") or id_to_tri.get(tid, "")
+
+            proj = project_player_value(
+                name=pdata["name"],
+                team_abbrev=player_tri,
+                season=pdata,
+                last5=p_last5,
+                opp_def_rating=opp_def,
+                league_avg_def=league_avg_def,
+                vegas_total=team_vegas.get(tid),
+                opp_team=opp_tri,
+                game_label=team_game_label.get(tid, ""),
+            )
             if proj is not None:
                 projections.append(proj)
 
-        projections.sort(key=lambda x: x["projected_fp"], reverse=True)
-        top5 = [{"name": p["name"]} for p in projections[:5]]
-        return JSONResponse(content=top5)
+        # 5. Rank for the selected mode and pick top 5
+        top5 = rank_players_for_mode(projections, mode)
+
+        # 6. Assign draft slots and build response
+        result = []
+        for i, p in enumerate(top5):
+            slot = SLOT_VALUES[i] if i < len(SLOT_VALUES) else "1.0x"
+            result.append({
+                "name": p["name"],
+                "team": p["team"],
+                "opponent": p["opponent"],
+                "game": p["game"],
+                "slot": slot,
+                "projected_fp": p["projected_fp"],
+                "boost": p["boost"],
+                "matchup_factor": p["matchup_factor"],
+                "form_ratio": p["form_ratio"],
+            })
+
+        return JSONResponse(content=result)
 
     except Exception as e:
         return JSONResponse(
