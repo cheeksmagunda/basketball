@@ -1,493 +1,406 @@
 import os
-import time
 import json
+import math
 import hashlib
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-
 app = FastAPI()
 
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
-CACHE_DIR = Path("/tmp/nba_dfs_cache")
+CACHE_DIR = Path("/tmp/nba_real_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 
-# Browser-like headers for stats.nba.com requests
-NBA_HEADERS = {
-    "Host": "stats.nba.com",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Origin": "https://www.nba.com",
-    "Referer": "https://www.nba.com/",
-    "Connection": "keep-alive",
-}
+# Real App rating weights (NOT DraftKings/FanDuel scoring)
+REAL_W = {"pts": 1.0, "reb": 1.2, "ast": 1.5, "stl": 2.0, "blk": 2.0, "tov": -0.5, "fg3m": 0.5}
 
-# Scoring weights (fantasy points)
-FP_WEIGHTS = {
-    "PTS": 1.0,
-    "REB": 1.25,
-    "AST": 1.5,
-    "STL": 2.0,
-    "BLK": 2.0,
-    "TOV": -0.5,
-    "FG3M": 0.5,
-}
-
-TRICODE_TO_NAME = {
-    "ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn Nets",
-    "CHA": "Charlotte Hornets", "CHI": "Chicago Bulls", "CLE": "Cleveland Cavaliers",
-    "DAL": "Dallas Mavericks", "DEN": "Denver Nuggets", "DET": "Detroit Pistons",
-    "GSW": "Golden State Warriors", "HOU": "Houston Rockets", "IND": "Indiana Pacers",
-    "LAC": "Los Angeles Clippers", "LAL": "Los Angeles Lakers", "MEM": "Memphis Grizzlies",
-    "MIA": "Miami Heat", "MIL": "Milwaukee Bucks", "MIN": "Minnesota Timberwolves",
-    "NOP": "New Orleans Pelicans", "NYK": "New York Knicks", "OKC": "Oklahoma City Thunder",
-    "ORL": "Orlando Magic", "PHI": "Philadelphia 76ers", "PHX": "Phoenix Suns",
-    "POR": "Portland Trail Blazers", "SAC": "Sacramento Kings", "SAS": "San Antonio Spurs",
-    "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "WAS": "Washington Wizards",
-}
-
+ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 
 # ---------------------------------------------------------------------------
-# Caching helpers
+# Cache
 # ---------------------------------------------------------------------------
+def _cp(k):
+    return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
 
-def _cache_path(key: str) -> Path:
-    today = date.today().isoformat()
-    safe = hashlib.md5(f"{today}:{key}".encode()).hexdigest()
-    return CACHE_DIR / f"{safe}.json"
+def _cg(k):
+    p = _cp(k)
+    return json.loads(p.read_text()) if p.exists() else None
 
-
-def _read_cache(key: str):
-    p = _cache_path(key)
-    if p.exists():
-        return json.loads(p.read_text())
-    return None
-
-
-def _write_cache(key: str, data):
-    p = _cache_path(key)
-    p.write_text(json.dumps(data))
-
+def _cs(k, v):
+    _cp(k).write_text(json.dumps(v))
 
 # ---------------------------------------------------------------------------
-# NBA data fetching — uses cdn.nba.com (no IP blocking) where possible,
-# falls back to stats.nba.com with browser headers + retries.
+# ESPN helpers
 # ---------------------------------------------------------------------------
-
-def _nba_stats_request(url: str, params: dict, retries: int = 3) -> dict:
-    """Make a request to stats.nba.com with browser headers and retries."""
-    for attempt in range(retries):
-        try:
-            resp = requests.get(
-                url, params=params, headers=NBA_HEADERS, timeout=60
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            if attempt < retries - 1:
-                time.sleep(2 * (attempt + 1))
-    return {}
+def _espn(path, timeout=15):
+    r = requests.get(f"{ESPN}{path}", timeout=timeout)
+    r.raise_for_status()
+    return r.json()
 
 
-def fetch_todays_games():
-    """Fetch today's NBA games from cdn.nba.com (no IP restrictions)."""
-    cached = _read_cache("todays_games")
-    if cached is not None:
-        return cached
-
-    url = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
+def _safe_float(v, default=0.0):
     try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception:
-        return []
+        return float(v) if v is not None else default
+    except (ValueError, TypeError):
+        return default
 
+
+# ---------------------------------------------------------------------------
+# Data fetching
+# ---------------------------------------------------------------------------
+def fetch_games():
+    """Today's NBA games from ESPN scoreboard (includes odds)."""
+    c = _cg("games")
+    if c is not None:
+        return c
+
+    data = _espn("/scoreboard")
     games = []
-    for game in data.get("scoreboard", {}).get("games", []):
+    for ev in data.get("events", []):
+        comp = ev["competitions"][0]
+        home = away = None
+        for cd in comp.get("competitors", []):
+            t = {
+                "id": cd["team"]["id"],
+                "name": cd["team"]["displayName"],
+                "abbr": cd["team"].get("abbreviation", ""),
+            }
+            if cd["homeAway"] == "home":
+                home = t
+            else:
+                away = t
+        if not home or not away:
+            continue
+
+        odds_list = comp.get("odds", [])
+        odds = odds_list[0] if odds_list else {}
+
         games.append({
-            "gameId": game["gameId"],
-            "homeTeam": {
-                "teamId": game["homeTeam"]["teamId"],
-                "teamTricode": game["homeTeam"]["teamTricode"],
-            },
-            "awayTeam": {
-                "teamId": game["awayTeam"]["teamId"],
-                "teamTricode": game["awayTeam"]["teamTricode"],
-            },
+            "gameId": ev["id"],
+            "label": f"{away['abbr']} @ {home['abbr']}",
+            "home": home,
+            "away": away,
+            "spread": _safe_float(odds.get("spread"), None),
+            "total": _safe_float(odds.get("overUnder"), None),
+            "startTime": ev.get("date", ""),
         })
-    _write_cache("todays_games", games)
+
+    _cs("games", games)
     return games
 
 
-def fetch_team_roster(team_id: int):
-    """Fetch roster via stats.nba.com with browser headers."""
-    cache_key = f"roster_{team_id}"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
+def fetch_roster(team_id):
+    """Team roster from ESPN."""
+    c = _cg(f"ros_{team_id}")
+    if c is not None:
+        return c
 
-    time.sleep(1)
-    url = "https://stats.nba.com/stats/commonteamroster"
-    params = {"TeamID": team_id, "Season": "2025-26"}
-    data = _nba_stats_request(url, params)
-
+    data = _espn(f"/teams/{team_id}/roster")
     players = []
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        pid_idx = headers.index("PLAYER_ID") if "PLAYER_ID" in headers else None
-        name_idx = headers.index("PLAYER") if "PLAYER" in headers else None
-        if pid_idx is not None and name_idx is not None:
-            for row in rows:
-                players.append({
-                    "playerId": row[pid_idx],
-                    "playerName": row[name_idx],
-                })
+    for a in data.get("athletes", []):
+        players.append({
+            "id": a["id"],
+            "name": a.get("fullName", a.get("displayName", "Unknown")),
+            "pos": a.get("position", {}).get("abbreviation", ""),
+            "age": a.get("age", 25),
+        })
 
-    _write_cache(cache_key, players)
+    _cs(f"ros_{team_id}", players)
     return players
 
 
-def fetch_player_gamelog(player_id: int, season: str = "2025-26"):
-    """Fetch player game log via stats.nba.com with browser headers."""
-    cache_key = f"gamelog_{player_id}_{season}"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
+def _fetch_athlete(pid):
+    """Fetch season stats for one player from ESPN."""
+    c = _cg(f"ath_{pid}")
+    if c is not None:
+        return c
 
-    time.sleep(1)
-    url = "https://stats.nba.com/stats/playergamelog"
-    params = {
-        "PlayerID": player_id,
-        "Season": season,
-        "SeasonType": "Regular Season",
-    }
-    data = _nba_stats_request(url, params)
+    urls = [
+        f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}",
+        f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview",
+        f"{ESPN}/athletes/{pid}/statistics",
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=15)
+            if r.status_code != 200:
+                continue
+            stats = _parse_stats(r.json())
+            if stats and stats["min"] > 0:
+                _cs(f"ath_{pid}", stats)
+                return stats
+        except Exception:
+            continue
 
-    games = []
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            min_val = row[col["MIN"]] if "MIN" in col else 0
-            try:
-                mins = float(min_val) if min_val else 0.0
-            except (ValueError, TypeError):
-                mins = 0.0
-            games.append({
-                "MIN": mins,
-                "PTS": row[col.get("PTS", 0)] or 0,
-                "REB": row[col.get("REB", 0)] or 0,
-                "AST": row[col.get("AST", 0)] or 0,
-                "STL": row[col.get("STL", 0)] or 0,
-                "BLK": row[col.get("BLK", 0)] or 0,
-                "TOV": row[col.get("TOV", 0)] or 0,
-                "FG3M": row[col.get("FG3M", 0)] or 0,
-            })
-
-    _write_cache(cache_key, games)
-    return games
+    _cs(f"ath_{pid}", None)
+    return None
 
 
-def fetch_all_player_stats():
-    """Fetch all player season stats in one request instead of per-player.
-    This is much faster and avoids dozens of individual API calls."""
-    cache_key = "all_player_stats"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
-
-    url = "https://stats.nba.com/stats/leaguedashplayerstats"
-    params = {
-        "Conference": "",
-        "DateFrom": "",
-        "DateTo": "",
-        "Division": "",
-        "GameScope": "",
-        "GameSegment": "",
-        "Height": "",
-        "ISTRound": "",
-        "LastNGames": 0,
-        "LeagueID": "00",
-        "Location": "",
-        "MeasureType": "Base",
-        "Month": 0,
-        "OpponentTeamID": 0,
-        "Outcome": "",
-        "PORound": 0,
-        "PaceAdjust": "N",
-        "PerMode": "PerGame",
-        "Period": 0,
-        "PlayerExperience": "",
-        "PlayerPosition": "",
-        "PlusMinus": "N",
-        "Rank": "N",
-        "Season": "2025-26",
-        "SeasonSegment": "",
-        "SeasonType": "Regular Season",
-        "ShotClockRange": "",
-        "StarterBench": "",
-        "TeamID": 0,
-        "TwoWay": 0,
-        "VsConference": "",
-        "VsDivision": "",
-        "Weight": "",
-    }
-    data = _nba_stats_request(url, params)
-
-    stats = {}
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            pid = row[col.get("PLAYER_ID", 0)]
-            stats[pid] = {
-                "name": row[col.get("PLAYER_NAME", 1)],
-                "team_id": row[col.get("TEAM_ID", 2)],
-                "gp": row[col.get("GP", 0)] or 0,
-                "min": row[col.get("MIN", 0)] or 0,
-                "pts": row[col.get("PTS", 0)] or 0,
-                "reb": row[col.get("REB", 0)] or 0,
-                "ast": row[col.get("AST", 0)] or 0,
-                "stl": row[col.get("STL", 0)] or 0,
-                "blk": row[col.get("BLK", 0)] or 0,
-                "tov": row[col.get("TOV", 0)] or 0,
-                "fg3m": row[col.get("FG3M", 0)] or 0,
-            }
-
-    _write_cache(cache_key, stats)
-    return stats
+def _listify(x):
+    if isinstance(x, list):
+        return x
+    if isinstance(x, dict):
+        return [x]
+    return []
 
 
-def fetch_last5_stats():
-    """Fetch last-5-game stats for all players in one request."""
-    cache_key = "all_player_stats_last5"
-    cached = _read_cache(cache_key)
-    if cached is not None:
-        return cached
-
-    url = "https://stats.nba.com/stats/leaguedashplayerstats"
-    params = {
-        "Conference": "",
-        "DateFrom": "",
-        "DateTo": "",
-        "Division": "",
-        "GameScope": "",
-        "GameSegment": "",
-        "Height": "",
-        "ISTRound": "",
-        "LastNGames": 5,
-        "LeagueID": "00",
-        "Location": "",
-        "MeasureType": "Base",
-        "Month": 0,
-        "OpponentTeamID": 0,
-        "Outcome": "",
-        "PORound": 0,
-        "PaceAdjust": "N",
-        "PerMode": "PerGame",
-        "Period": 0,
-        "PlayerExperience": "",
-        "PlayerPosition": "",
-        "PlusMinus": "N",
-        "Rank": "N",
-        "Season": "2025-26",
-        "SeasonSegment": "",
-        "SeasonType": "Regular Season",
-        "ShotClockRange": "",
-        "StarterBench": "",
-        "TeamID": 0,
-        "TwoWay": 0,
-        "VsConference": "",
-        "VsDivision": "",
-        "Weight": "",
-    }
-    data = _nba_stats_request(url, params)
-
-    stats = {}
-    result_sets = data.get("resultSets", [])
-    if result_sets:
-        headers = result_sets[0].get("headers", [])
-        rows = result_sets[0].get("rowSet", [])
-        col = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            pid = row[col.get("PLAYER_ID", 0)]
-            stats[pid] = {
-                "min": row[col.get("MIN", 0)] or 0,
-            }
-
-    _write_cache(cache_key, stats)
-    return stats
+STAT_MAP = {
+    "avgminutes": "min", "minutes": "min", "min": "min", "minutespergame": "min",
+    "avgpoints": "pts", "points": "pts", "pts": "pts", "pointspergame": "pts",
+    "avgtotalrebounds": "reb", "totalrebounds": "reb", "rebounds": "reb", "reb": "reb",
+    "avgrebounds": "reb",
+    "avgassists": "ast", "assists": "ast", "ast": "ast",
+    "avgsteals": "stl", "steals": "stl", "stl": "stl",
+    "avgblocks": "blk", "blocks": "blk", "blk": "blk",
+    "avgturnovers": "tov", "turnovers": "tov", "tov": "tov", "to": "tov",
+    "avgthreepointersmade": "fg3m", "threepointersmade": "fg3m",
+    "threepointfieldgoalsmade": "fg3m", "fg3m": "fg3m", "3pm": "fg3m",
+    "fieldgoalpct": "fgp", "fieldgoalpercentage": "fgp", "fg%": "fgp", "fgpct": "fgp",
+    "gamesplayed": "gp", "gp": "gp",
+}
 
 
-def fetch_vegas_lines():
-    """Fetch NBA game totals from The Odds API."""
-    cached = _read_cache("vegas_lines")
-    if cached is not None:
-        return cached
+def _parse_stats(data):
+    """Parse ESPN athlete response for season averages. Handles multiple formats."""
+    result = {"min": 0, "pts": 0, "reb": 0, "ast": 0, "stl": 0, "blk": 0,
+              "tov": 0, "fg3m": 0, "fgp": 0.44, "gp": 0}
 
-    if not ODDS_API_KEY:
-        return {}
+    athlete = data.get("athlete", data)
 
-    url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/"
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "totals",
-        "oddsFormat": "american",
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception:
-        return {}
+    # --- Format A: labels[] + values/displayValues[] ---
+    for block in _listify(athlete.get("statsSummary", athlete.get("statistics", []))):
+        labels = block.get("labels", block.get("names", []))
+        values = block.get("displayValues", block.get("values", []))
+        if labels and values and len(labels) == len(values):
+            for lbl, val in zip(labels, values):
+                _assign_stat(result, lbl, val)
+            if result["min"] > 0:
+                return result
 
-    lines = {}
-    for game in data:
-        home = game.get("home_team", "")
-        away = game.get("away_team", "")
-        total = None
-        for bm in game.get("bookmakers", []):
-            for market in bm.get("markets", []):
-                if market["key"] == "totals":
-                    for outcome in market.get("outcomes", []):
-                        if outcome["name"] == "Over":
-                            total = outcome.get("point")
-                            break
-            if total is not None:
+    # --- Format B: splits.categories[].stats[] ---
+    stat_items = []
+    sources = [
+        athlete.get("statistics", []),
+        data.get("statistics", []),
+        data.get("stats", []),
+    ]
+    for src in sources:
+        for block in _listify(src):
+            for cat in _listify(block.get("splits", {}).get("categories", [])):
+                stat_items.extend(_listify(cat.get("stats", [])))
+            for cat in _listify(block.get("categories", [])):
+                stat_items.extend(_listify(cat.get("stats", [])))
+            stat_items.extend(_listify(block.get("stats", [])))
+
+    for s in stat_items:
+        if not isinstance(s, dict):
+            continue
+        name = s.get("name", s.get("abbreviation", ""))
+        val = s.get("perGame", s.get("averageValue", s.get("avg", s.get("value", 0))))
+        _assign_stat(result, name, val)
+
+    return result if result["min"] > 0 else None
+
+
+def _assign_stat(result, label, val):
+    key = str(label).lower().replace(" ", "").replace("pergame", "").replace("/game", "")
+    mapped = STAT_MAP.get(key)
+    if not mapped:
+        for prefix, field in STAT_MAP.items():
+            if key.startswith(prefix):
+                mapped = field
                 break
-        if total is not None:
-            lines[home] = total
-            lines[away] = total
+    if mapped:
+        v = _safe_float(val)
+        if mapped == "fgp" and v > 1:
+            v /= 100
+        if mapped == "gp":
+            v = int(v)
+        result[mapped] = v
 
-    _write_cache("vegas_lines", lines)
-    return lines
+
+def fetch_game_players(home_id, away_id):
+    """Fetch rosters + stats for both teams. Uses parallel HTTP."""
+    home_roster = fetch_roster(home_id)
+    away_roster = fetch_roster(away_id)
+
+    players = [(p, "home") for p in home_roster] + [(p, "away") for p in away_roster]
+    pids = list({p["id"] for p, _ in players})
+
+    stats = {}
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futs = {ex.submit(_fetch_athlete, pid): pid for pid in pids}
+        for f in as_completed(futs):
+            pid = futs[f]
+            try:
+                r = f.result()
+                if r:
+                    stats[pid] = r
+            except Exception:
+                pass
+
+    return players, stats
 
 
 # ---------------------------------------------------------------------------
-# Projection model
+# Projection & ranking model
 # ---------------------------------------------------------------------------
+def real_rating(s):
+    """Per-game Real App rating from season averages."""
+    base = sum(s.get(k, 0) * w for k, w in REAL_W.items())
+    eff = (s.get("fgp", 0.44) - 0.44) * 5.0
+    return base + eff
 
-def calc_fpts(stats: dict) -> float:
-    """Calculate fantasy points from per-game averages."""
-    return sum(stats.get(k, 0) * v for k, v in FP_WEIGHTS.items())
 
-
-def project_player_from_avgs(
-    name: str, season: dict, last5_min: float, vegas_total: Optional[float]
-) -> Optional[dict]:
-    """Project fantasy points using season averages + last-5 minutes."""
-    avg_min = season.get("min", 0)
+def project_player(name, pos, age, side, stats, spread, total):
+    avg_min = stats["min"]
     if avg_min < 15:
         return None
 
-    # Fantasy points per minute from season averages
-    fpts_per_game = (
-        season["pts"] * FP_WEIGHTS["PTS"]
-        + season["reb"] * FP_WEIGHTS["REB"]
-        + season["ast"] * FP_WEIGHTS["AST"]
-        + season["stl"] * FP_WEIGHTS["STL"]
-        + season["blk"] * FP_WEIGHTS["BLK"]
-        + season["tov"] * FP_WEIGHTS["TOV"]
-        + season["fg3m"] * FP_WEIGHTS["FG3M"]
-    )
-    fppm = fpts_per_game / avg_min if avg_min > 0 else 0
+    pred_min = avg_min
 
-    # Stage 1: Predicted minutes
-    pred_minutes = (avg_min * 0.75) + (last5_min * 0.25)
+    # Blowout risk: |spread| > 7 reduces star minutes 1.5%/pt above 7
+    blowout = 1.0
+    if spread is not None and abs(spread) > 7:
+        blowout = max(1.0 - (abs(spread) - 7) * 0.015, 0.85)
 
-    # Vegas adjustment
-    vegas_adj = 1.0
-    if vegas_total is not None:
-        vegas_adj = vegas_total / 220.0
+    # Age fatigue
+    age_adj = 0.94 if age and age > 35 else (0.97 if age and age > 32 else 1.0)
 
-    projected_fp = pred_minutes * fppm * vegas_adj
+    # Home/away
+    home_adj = 1.015 if side == "home" else 0.985
+
+    pred_min *= blowout * age_adj
+
+    # Per-minute rating
+    rpg = real_rating(stats)
+    rpm = rpg / avg_min if avg_min > 0 else 0
+
+    # Vegas pace/total adjustment
+    vegas = (total / 220.0) if total else 1.0
+
+    proj_rating = pred_min * rpm * vegas * home_adj
+
+    tier = "star" if pred_min >= 34 else ("starter" if pred_min >= 25 else "role")
+    var = 0.15 if tier == "star" else (0.20 if tier == "starter" else 0.30)
 
     return {
-        "name": name,
-        "projected_fp": round(projected_fp, 2),
-        "pred_minutes": round(pred_minutes, 1),
-        "fppm": round(fppm, 3),
-        "vegas_adj": round(vegas_adj, 3),
+        "name": name, "pos": pos, "tier": tier,
+        "rating": round(proj_rating, 1),
+        "predMin": round(pred_min, 1),
+        "rpm": round(rpm, 2),
+        "vegasAdj": round(vegas, 3),
+        "blowoutAdj": round(blowout, 3),
+        "homeAdj": round(home_adj, 3),
+        "stdDev": round(proj_rating * var, 1),
+        "side": side,
     }
 
 
+def pairwise_conf(a, b):
+    """P(a ranks above b)."""
+    diff = a["rating"] - b["rating"]
+    comb = math.sqrt(a["stdDev"] ** 2 + b["stdDev"] ** 2)
+    if comb == 0:
+        return 0.5
+    return round(0.5 * (1 + math.erf(diff / (comb * math.sqrt(2)))), 3)
+
+
+def build_lineups(projections):
+    """Build 3 lineup variants from projections."""
+    ranked = sorted(projections, key=lambda x: x["rating"], reverse=True)[:8]
+    if len(ranked) < 5:
+        return [], [], []
+
+    chalk = [dict(p) for p in ranked[:5]]
+    _annotate(chalk)
+
+    diff = [dict(p) for p in ranked[:5]]
+    min_conf_idx = min(range(4), key=lambda i: chalk[i].get("confidence", 1))
+    if chalk[min_conf_idx].get("confidence", 1) < 0.65:
+        diff[min_conf_idx], diff[min_conf_idx + 1] = diff[min_conf_idx + 1], diff[min_conf_idx]
+    _annotate(diff)
+
+    contra = [dict(p) for p in ranked[:5]]
+    if len(ranked) > 5:
+        contra[4] = dict(ranked[5])
+    _annotate(contra)
+
+    return chalk, diff, contra
+
+
+def _annotate(lineup):
+    for i, p in enumerate(lineup):
+        p["rank"] = i + 1
+        if i < len(lineup) - 1:
+            c = pairwise_conf(p, lineup[i + 1])
+            p["confidence"] = c
+            p["confLabel"] = "high" if c >= 0.70 else ("medium" if c >= 0.55 else "low")
+        else:
+            p["confidence"] = None
+            p["confLabel"] = "-"
+
+
 # ---------------------------------------------------------------------------
-# API endpoint
+# API endpoints
 # ---------------------------------------------------------------------------
+@app.get("/api/games")
+async def get_games():
+    try:
+        return JSONResponse(content=fetch_games())
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 @app.get("/api/picks")
-async def get_picks():
+async def get_picks(gameId: str = Query(...)):
     try:
-        # 1. Get today's games from CDN (reliable from cloud)
-        games = fetch_todays_games()
-        if not games:
-            return JSONResponse(
-                content={"error": "No NBA games scheduled today."},
-                status_code=200,
-            )
+        games = fetch_games()
+        game = next((g for g in games if g["gameId"] == gameId), None)
+        if not game:
+            return JSONResponse(content={"error": "Game not found."}, status_code=404)
 
-        # 2. Collect team IDs playing today
-        team_ids_today = set()
-        team_vegas = {}
-        vegas_lines = fetch_vegas_lines()
-        for game in games:
-            for side in ("homeTeam", "awayTeam"):
-                tid = game[side]["teamId"]
-                tri = game[side]["teamTricode"]
-                team_ids_today.add(tid)
-                full_name = TRICODE_TO_NAME.get(tri, "")
-                if full_name in vegas_lines:
-                    team_vegas[tid] = vegas_lines[full_name]
+        spread = game.get("spread")
+        total = game.get("total")
 
-        # 3. Fetch all player season stats in ONE request (instead of per-player)
-        all_stats = fetch_all_player_stats()
-        if not all_stats:
-            return JSONResponse(
-                content={"error": "Could not fetch player stats from NBA.com. Please try again later."},
-                status_code=200,
-            )
+        players, stats = fetch_game_players(game["home"]["id"], game["away"]["id"])
+        if not stats:
+            return JSONResponse(content={"error": "Could not fetch player stats. Try again later."})
 
-        # 4. Fetch last-5 stats in one request
-        last5 = fetch_last5_stats()
-
-        # 5. Project players on today's teams
         projections = []
-        for pid_str, pdata in all_stats.items():
-            pid = int(pid_str) if isinstance(pid_str, str) else pid_str
-            if pdata["team_id"] not in team_ids_today:
+        for pinfo, side in players:
+            s = stats.get(pinfo["id"])
+            if not s:
                 continue
-            last5_min = last5.get(str(pid), last5.get(pid, {})).get("min", pdata["min"])
-            vegas_total = team_vegas.get(pdata["team_id"])
-            proj = project_player_from_avgs(pdata["name"], pdata, last5_min, vegas_total)
-            if proj is not None:
-                projections.append(proj)
+            p = project_player(pinfo["name"], pinfo["pos"], pinfo.get("age", 25), side, s, spread, total)
+            if p:
+                projections.append(p)
 
-        projections.sort(key=lambda x: x["projected_fp"], reverse=True)
-        top5 = [{"name": p["name"]} for p in projections[:5]]
-        return JSONResponse(content=top5)
+        if len(projections) < 5:
+            return JSONResponse(content={"error": "Not enough eligible players for this game."})
 
+        chalk, diff, contra = build_lineups(projections)
+
+        return JSONResponse(content={
+            "game": {
+                "label": game["label"],
+                "home": game["home"]["name"],
+                "away": game["away"]["name"],
+                "spread": spread,
+                "total": total,
+            },
+            "lineups": {
+                "chalk": chalk,
+                "differentiated": diff,
+                "contrarian": contra,
+            },
+        })
     except Exception as e:
-        return JSONResponse(
-            content={"error": f"Failed to generate picks: {str(e)}"},
-            status_code=500,
-        )
+        return JSONResponse(content={"error": f"Failed: {str(e)}"}, status_code=500)

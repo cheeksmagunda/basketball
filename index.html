@@ -3,128 +3,174 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NBA Real Sports Picks</title>
+  <title>Daily Draft Optimizer</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a1a;
-      color: #e0e0e0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .container {
-      text-align: center;
-      max-width: 420px;
-      width: 100%;
-      padding: 2rem;
-    }
-    h1 {
-      font-size: 1.8rem;
-      margin-bottom: 0.25rem;
-      color: #fff;
-    }
-    .subtitle {
-      font-size: 0.9rem;
-      color: #888;
-      margin-bottom: 2rem;
-    }
-    button {
-      background: #1d4ed8;
-      color: #fff;
-      border: none;
-      padding: 0.85rem 2.5rem;
-      font-size: 1.05rem;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button:hover { background: #2563eb; }
-    button:disabled {
-      background: #374151;
-      cursor: not-allowed;
-    }
-    .spinner {
-      display: none;
-      margin: 1.5rem auto 0;
-      width: 32px;
-      height: 32px;
-      border: 3px solid #333;
-      border-top-color: #1d4ed8;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .picks-list {
-      list-style: none;
-      margin-top: 1.5rem;
-      text-align: left;
-    }
-    .picks-list li {
-      background: #141428;
-      padding: 0.85rem 1.1rem;
-      margin-bottom: 0.5rem;
-      border-radius: 8px;
-      border-left: 3px solid #1d4ed8;
-      font-size: 1rem;
-    }
-    .picks-list li .rank {
-      color: #1d4ed8;
-      font-weight: 700;
-      margin-right: 0.6rem;
-    }
-    .error {
-      margin-top: 1.5rem;
-      color: #f87171;
-      font-size: 0.95rem;
-    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a1a;color:#e0e0e0;min-height:100vh}
+    .wrap{max-width:540px;margin:0 auto;padding:1.5rem 1rem}
+    h1{font-size:1.5rem;color:#fff;text-align:center}
+    .sub{text-align:center;color:#888;font-size:.85rem;margin:.25rem 0 1.5rem}
+    .game-bar{display:flex;gap:.5rem;margin-bottom:1rem}
+    select{flex:1;background:#141428;color:#e0e0e0;border:1px solid #2a2a4a;padding:.65rem .75rem;border-radius:8px;font-size:.95rem;appearance:none;cursor:pointer}
+    select:focus{outline:none;border-color:#3b82f6}
+    .btn{background:#1d4ed8;color:#fff;border:none;padding:.65rem 1.4rem;font-size:.95rem;border-radius:8px;cursor:pointer;transition:background .2s;white-space:nowrap}
+    .btn:hover{background:#2563eb}
+    .btn:disabled{background:#374151;cursor:not-allowed}
+    .ctx{display:flex;gap:.75rem;justify-content:center;margin-bottom:1.25rem;flex-wrap:wrap}
+    .chip{background:#1e1e3a;padding:.35rem .75rem;border-radius:6px;font-size:.8rem;color:#a0a0c0}
+    .chip b{color:#60a5fa}
+    .tabs{display:flex;gap:0;margin-bottom:1rem;border-bottom:1px solid #2a2a4a}
+    .tab{flex:1;text-align:center;padding:.6rem 0;font-size:.85rem;cursor:pointer;color:#888;border-bottom:2px solid transparent;transition:all .2s}
+    .tab.active{color:#60a5fa;border-bottom-color:#3b82f6}
+    .tab:hover{color:#bbb}
+    .card{background:#141428;border-radius:10px;padding:.85rem 1rem;margin-bottom:.5rem;border-left:3px solid #1d4ed8;display:flex;align-items:center;gap:.75rem}
+    .rank-num{font-size:1.3rem;font-weight:800;color:#3b82f6;min-width:1.8rem;text-align:center}
+    .info{flex:1}
+    .pname{font-size:1rem;font-weight:600;color:#fff}
+    .meta{font-size:.78rem;color:#888;margin-top:.15rem}
+    .meta span{margin-right:.6rem}
+    .conf-badge{font-size:.7rem;padding:.2rem .5rem;border-radius:4px;font-weight:600;text-transform:uppercase;white-space:nowrap}
+    .conf-high{background:#065f46;color:#34d399}
+    .conf-medium{background:#78350f;color:#fbbf24}
+    .conf-low{background:#7f1d1d;color:#f87171}
+    .breakdown{font-size:.75rem;color:#666;margin-top:.3rem}
+    .breakdown span{margin-right:.5rem}
+    .spinner{display:none;margin:2rem auto;width:32px;height:32px;border:3px solid #333;border-top-color:#3b82f6;border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .msg{text-align:center;margin-top:1.5rem;color:#888;font-size:.9rem}
+    .err{color:#f87171}
+    .empty{color:#666;padding:2rem 0;text-align:center}
+    .tier{font-size:.65rem;padding:.1rem .4rem;border-radius:3px;margin-left:.4rem;vertical-align:middle}
+    .tier-star{background:#312e81;color:#a5b4fc}
+    .tier-starter{background:#1e3a2f;color:#6ee7b7}
+    .tier-role{background:#2a2a3a;color:#999}
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>NBA Real Sports Picks</h1>
-    <p class="subtitle">Top 5 player picks for today</p>
-    <button id="btn" onclick="getPicks()">Get Picks</button>
-    <div class="spinner" id="spinner"></div>
-    <ul class="picks-list" id="picks"></ul>
-    <p class="error" id="error"></p>
+  <div class="wrap">
+    <h1>Daily Draft Optimizer</h1>
+    <p class="sub">Real App — Single-Game Rankings</p>
+
+    <div class="game-bar">
+      <select id="gameSel"><option value="">Loading games...</option></select>
+      <button class="btn" id="goBtn" disabled onclick="getPicks()">Get Picks</button>
+    </div>
+
+    <div id="ctx" class="ctx" style="display:none"></div>
+
+    <div class="tabs" id="tabs" style="display:none">
+      <div class="tab active" data-t="chalk" onclick="switchTab('chalk')">Chalk</div>
+      <div class="tab" data-t="diff" onclick="switchTab('diff')">Differentiated</div>
+      <div class="tab" data-t="contra" onclick="switchTab('contra')">Contrarian</div>
+    </div>
+
+    <div class="spinner" id="spin"></div>
+    <div id="list"></div>
+    <p class="msg" id="msg"></p>
   </div>
-  <script>
-    async function getPicks() {
-      const btn = document.getElementById('btn');
-      const spinner = document.getElementById('spinner');
-      const picksList = document.getElementById('picks');
-      const errorEl = document.getElementById('error');
 
-      btn.disabled = true;
-      btn.textContent = 'Loading...';
-      spinner.style.display = 'block';
-      picksList.innerHTML = '';
-      errorEl.textContent = '';
+<script>
+let DATA = null;
+let CUR_TAB = 'chalk';
 
-      try {
-        const res = await fetch('/api/picks');
-        const data = await res.json();
+(async function(){
+  const sel = document.getElementById('gameSel');
+  const btn = document.getElementById('goBtn');
+  try {
+    const r = await fetch('/api/games');
+    const games = await r.json();
+    if (games.error) { sel.innerHTML = '<option>'+games.error+'</option>'; return; }
+    if (!games.length) { sel.innerHTML = '<option>No games today</option>'; return; }
+    sel.innerHTML = '<option value="">Select a game...</option>';
+    games.forEach(g => {
+      const o = document.createElement('option');
+      o.value = g.gameId;
+      let extra = '';
+      if (g.total) extra += ' | O/U '+g.total;
+      if (g.spread != null) extra += ' | Spread '+g.spread;
+      o.textContent = g.label + extra;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => { btn.disabled = !sel.value; };
+  } catch(e) { sel.innerHTML = '<option>Failed to load games</option>'; }
+})();
 
-        if (data.error) {
-          errorEl.textContent = data.error;
-        } else if (Array.isArray(data)) {
-          data.forEach((player, i) => {
-            const li = document.createElement('li');
-            li.innerHTML = `<span class="rank">#${i + 1}</span>${player.name}`;
-            picksList.appendChild(li);
-          });
-        }
-      } catch (err) {
-        errorEl.textContent = 'Failed to fetch picks. Please try again.';
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Get Picks';
-        spinner.style.display = 'none';
-      }
-    }
-  </script>
+async function getPicks() {
+  const sel = document.getElementById('gameSel');
+  const btn = document.getElementById('goBtn');
+  const spin = document.getElementById('spin');
+  const list = document.getElementById('list');
+  const msg = document.getElementById('msg');
+  const ctx = document.getElementById('ctx');
+  const tabs = document.getElementById('tabs');
+
+  if (!sel.value) return;
+  btn.disabled = true; btn.textContent = 'Loading...';
+  spin.style.display = 'block'; list.innerHTML = ''; msg.textContent = '';
+  ctx.style.display = 'none'; tabs.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/picks?gameId=' + encodeURIComponent(sel.value));
+    const d = await r.json();
+    if (d.error) { msg.innerHTML = '<span class="err">'+d.error+'</span>'; return; }
+
+    DATA = d;
+    const g = d.game;
+    let chips = '<div class="chip"><b>'+g.home+'</b> vs <b>'+g.away+'</b></div>';
+    if (g.total) chips += '<div class="chip">O/U <b>'+g.total+'</b></div>';
+    if (g.spread != null) chips += '<div class="chip">Spread <b>'+(g.spread > 0 ? '+' : '')+g.spread+'</b></div>';
+    ctx.innerHTML = chips;
+    ctx.style.display = 'flex';
+    tabs.style.display = 'flex';
+
+    CUR_TAB = 'chalk';
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.t === 'chalk'));
+    renderLineup(d.lineups.chalk);
+  } catch(e) {
+    msg.innerHTML = '<span class="err">Failed to fetch picks. Try again.</span>';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Get Picks';
+    spin.style.display = 'none';
+  }
+}
+
+function switchTab(tab) {
+  CUR_TAB = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
+  if (!DATA) return;
+  const map = {chalk:'chalk', diff:'differentiated', contra:'contrarian'};
+  renderLineup(DATA.lineups[map[tab]] || []);
+}
+
+function renderLineup(picks) {
+  const list = document.getElementById('list');
+  if (!picks || !picks.length) { list.innerHTML = '<div class="empty">No picks available</div>'; return; }
+  list.innerHTML = picks.map(p => {
+    const confCls = p.confLabel === 'high' ? 'conf-high' : (p.confLabel === 'medium' ? 'conf-medium' : 'conf-low');
+    const tierCls = 'tier-' + p.tier;
+    const conf = p.confidence != null
+      ? '<span class="conf-badge '+confCls+'">'+p.confLabel+' '+Math.round(p.confidence*100)+'%</span>'
+      : '';
+    return '<div class="card">' +
+      '<div class="rank-num">'+p.rank+'</div>' +
+      '<div class="info">' +
+        '<div class="pname">'+p.name+' <span class="tier '+tierCls+'">'+p.tier+'</span></div>' +
+        '<div class="meta">' +
+          '<span>'+(p.pos || '-')+'</span>' +
+          '<span>Rating: '+p.rating+'</span>' +
+          '<span>'+p.predMin+' min</span>' +
+        '</div>' +
+        '<div class="breakdown">' +
+          '<span>RPM '+p.rpm+'</span>' +
+          '<span>Vegas x'+p.vegasAdj+'</span>' +
+          '<span>Blowout x'+p.blowoutAdj+'</span>' +
+          '<span>Home x'+p.homeAdj+'</span>' +
+        '</div>' +
+      '</div>' +
+      conf +
+    '</div>';
+  }).join('');
+}
+</script>
 </body>
 </html>
