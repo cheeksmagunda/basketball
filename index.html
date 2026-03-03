@@ -3,7 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>REAL APP — NBA Draft Optimizer</title>
+  <title>The Oracle — NBA Draft Optimizer</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="The Oracle">
+  <meta name="application-name" content="The Oracle">
+  <meta name="theme-color" content="#060a0f">
+  <meta property="og:title" content="The Oracle — NBA Draft Optimizer">
+  <meta property="og:description" content="AI-powered NBA DFS draft optimizer with injury cascade, game script analysis, and calibration feedback.">
+  <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -241,19 +249,7 @@
       font-size: 0.6rem; padding: 2px 6px; border-radius: 4px;
     }
 
-    /* ── TIER SECTIONS ── */
-    .tier-section { margin-bottom: 20px; }
-    .tier-label {
-      font-family: 'Barlow Condensed', sans-serif; font-size: 0.7rem;
-      font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase;
-      padding: 4px 10px; border: 1px solid; border-radius: 4px;
-      display: inline-block; margin-bottom: 10px;
-    }
-    .tier-card {
-      grid-template-columns: 1fr auto;
-      padding: 12px 16px 12px 16px;
-    }
-    .tier-card .rank-badge { display: none; }
+
 
     /* ── SKELETON LOADING ── */
     .skeleton {
@@ -418,6 +414,128 @@
     }
 
     .hidden { display: none !important; }
+
+    /* ── LAB: DAY PICKER ── */
+    .day-picker {
+      display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 14px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .day-picker::-webkit-scrollbar { display: none; }
+    .day-chip {
+      flex-shrink: 0; padding: 7px 12px;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--surface2);
+      color: var(--muted); cursor: pointer; transition: all 0.2s; position: relative;
+      white-space: nowrap;
+    }
+    .day-chip:hover { border-color: var(--border-bright); color: var(--text-dim); }
+    .day-chip.active { background: rgba(79,142,247,0.12); border-color: var(--chalk); color: var(--chalk); }
+    .day-chip.has-actuals::after {
+      content: ''; position: absolute; top: 4px; right: 4px;
+      width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+    }
+    .day-chip.no-data { opacity: 0.4; }
+
+    /* ── LAB: DAY DETAIL ── */
+    .day-title {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 1.1rem; font-weight: 800;
+      letter-spacing: 0.03em; margin-bottom: 14px; color: var(--text);
+    }
+    .scope-tabs { display: flex; gap: 4px; margin-bottom: 14px; overflow-x: auto; }
+    .scope-tab {
+      flex-shrink: 0; padding: 6px 12px;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      border-radius: 7px; border: 1px solid var(--border); background: var(--surface2);
+      color: var(--muted); cursor: pointer; transition: all 0.2s;
+    }
+    .scope-tab.active { background: rgba(79,142,247,0.12); border-color: var(--chalk); color: var(--chalk); }
+    .scope-tab.has-actuals::after {
+      content: ''; position: absolute; top: 3px; right: 3px;
+      width: 5px; height: 5px; border-radius: 50%; background: var(--green);
+    }
+    .scope-tab { position: relative; }
+
+    .enter-results-btn {
+      width: 100%; padding: 12px; margin-top: 14px;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.85rem; font-weight: 800;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      border-radius: 10px; border: 1px solid var(--border-bright); background: var(--surface2);
+      color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+    }
+    .enter-results-btn:hover { border-color: var(--chalk); color: var(--chalk); }
+    .enter-results-btn.done { border-color: var(--green); color: var(--green); pointer-events: none; }
+
+    /* ── LAB: COMPARISON ROW ── */
+    .comp-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .comp-row:last-child { border-bottom: none; }
+    .comp-name { font-size: 0.85rem; font-weight: 600; }
+    .comp-scores { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
+    .comp-pred { color: var(--muted); }
+    .comp-arrow { color: var(--text-dim); font-size: 0.7rem; }
+    .comp-actual { font-weight: 700; }
+    .comp-actual.hit { color: var(--green); }
+    .comp-actual.miss { color: var(--red); }
+    .comp-section-label {
+      font-size: 0.7rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase;
+      letter-spacing: 0.5px; padding: 6px 0 4px; margin-top: 4px;
+    }
+    .comp-summary {
+      display: flex; gap: 12px; flex-wrap: wrap; padding: 12px 0; font-size: 0.75rem; color: var(--text-dim);
+      border-top: 1px solid var(--border); margin-top: 8px;
+    }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-box {
+      background: var(--bg); border: 1px solid var(--border-bright); border-radius: 16px;
+      padding: 24px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto;
+    }
+    .modal-header {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 1.1rem; font-weight: 800;
+      margin-bottom: 16px; color: var(--text);
+    }
+    .score-row {
+      display: grid; grid-template-columns: 1fr 50px 70px; gap: 8px; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .score-row-name { font-size: 0.82rem; font-weight: 600; }
+    .score-row-pred { font-size: 0.75rem; color: var(--muted); text-align: center; }
+    .score-row input {
+      background: var(--surface2); border: 1px solid var(--border-bright); border-radius: 8px;
+      padding: 8px; color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: center;
+      outline: none; width: 100%;
+    }
+    .score-row input:focus { border-color: var(--chalk); }
+    .score-row input.invalid { border-color: var(--red); }
+    .score-row input[type="text"] {
+      text-align: left; font-weight: 400;
+    }
+    .remove-row-btn {
+      background: none; border: none; color: var(--text-dim);
+      font-size: 1.2rem; cursor: pointer; padding: 0 4px;
+      opacity: 0.3; transition: opacity 0.15s;
+    }
+    .remove-row-btn:hover { opacity: 1; color: var(--red); }
+    .modal-cancel {
+      flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); cursor: pointer;
+      font-family: 'Barlow Condensed', sans-serif; font-weight: 700; text-transform: uppercase;
+    }
+    .modal-submit {
+      flex: 2; padding: 10px; border-radius: 10px; border: none;
+      background: var(--chalk); color: #fff; cursor: pointer;
+      font-family: 'Barlow Condensed', sans-serif; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.06em; transition: all 0.2s;
+    }
+    .modal-submit:disabled { opacity: 0.35; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -427,7 +545,7 @@
     <div class="logo">
       <div class="logo-icon">🏀</div>
       <div>
-        REAL APP
+        THE ORACLE
         <span class="logo-sub">NBA Draft Optimizer</span>
       </div>
     </div>
@@ -445,14 +563,11 @@
     <div id="slateChips" class="game-chips"></div>
 
     <div class="mode-tabs" id="slateTabs" style="display:none">
-      <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Chalk</button>
-      <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🔥 Upside</button>
+      <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Starting 5</button>
+      <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🚀 Moonshot</button>
     </div>
 
     <div id="slateList"></div>
-
-    <!-- Tier breakdown below lineup cards -->
-    <div id="slateTiersContainer"></div>
 
     <div class="divider"></div>
 
@@ -467,22 +582,46 @@
     </button>
 
     <div class="mode-tabs" id="picksTabsWrap" style="display:none; margin-top:0;">
-      <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Chalk</button>
-      <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🔥 Upside</button>
+      <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Starting 5</button>
+      <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🚀 Moonshot</button>
     </div>
+    <div id="gameScriptBadge" style="display:none;font-size:0.7rem;color:var(--text-dim);padding:4px 0 2px;text-align:center;letter-spacing:0.5px"></div>
     <div id="picksList"></div>
 
-    <!-- Tier breakdown below game picks -->
-    <div id="picksTiersContainer"></div>
   </div>
 
   <!-- ══ LAB VIEW ══ -->
   <div id="viewLab" class="hidden">
     <div class="lab-header">
       <span class="lab-title">History</span>
-      <button class="sync-btn" onclick="syncScores()">↻ Sync Actuals</button>
     </div>
-    <div id="historyList"></div>
+
+    <!-- Day Picker -->
+    <div class="day-picker" id="dayPicker"></div>
+
+    <!-- Day Detail -->
+    <div id="dayDetail"></div>
+
+    <!-- Score Entry Modal -->
+    <div class="modal-overlay hidden" id="entryModal">
+      <div class="modal-box">
+        <div class="modal-header" id="modalHeader">Enter Actual Scores</div>
+        <div id="screenshotPreview" style="display:none;margin-bottom:12px">
+          <img id="screenshotImg" style="width:100%;border-radius:8px;border:1px solid var(--border)">
+        </div>
+        <label class="attach-btn" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.75rem;color:var(--text-dim);margin-bottom:14px">
+          <input type="file" accept="image/*" id="screenshotInput" style="display:none" onchange="previewScreenshot(this)">
+          📷 Attach screenshot for reference
+        </label>
+        <div id="modalScoreRows"></div>
+        <button type="button" id="addPlayerBtn" onclick="addResultRow('', null)" style="display:none;background:none;border:1px dashed var(--border-bright);border-radius:8px;padding:8px;width:100%;color:var(--text-dim);font-size:0.8rem;cursor:pointer;margin-top:6px;transition:border-color 0.15s">+ Add Player</button>
+        <div id="modalError" style="color:var(--red);font-size:0.75rem;margin:8px 0;display:none"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="modal-cancel" onclick="closeEntryModal()">Cancel</button>
+          <button class="modal-submit" id="modalSubmitBtn" disabled onclick="submitActuals()">Submit Results</button>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -500,6 +639,51 @@ const TEAM_COLORS = {
 let SLATE = null;
 let PICKS_DATA = null;
 let CURRENT_SLATE_TAB = 'chalk';
+let LAB_ACTIVE_DATE = null;
+let LAB_ACTIVE_SCOPE = null;
+let MODAL_DATE = null;
+let MODAL_SCOPE = null;
+let MODAL_ROW_COUNT = 0;
+let LAB_DAY_DATA = null;  // in-memory dayData including auto-generated game tabs
+
+// ── LOCALSTORAGE HELPERS ──
+const LAB_KEY = 'nba_lab_history';
+const CAL_KEY = 'nba_calibration';
+
+function labLoad() {
+  try { return JSON.parse(localStorage.getItem(LAB_KEY)) || {}; }
+  catch { return {}; }
+}
+function labSave(data) {
+  try { localStorage.setItem(LAB_KEY, JSON.stringify(data)); }
+  catch(e) { console.warn('Lab save failed:', e); }
+}
+function labSaveDay(date, scope, predictions) {
+  const data = labLoad();
+  if (!data[date]) data[date] = {};
+  data[date][scope] = { predictions, savedAt: new Date().toISOString() };
+  labSave(data);
+}
+function labSaveActuals(date, scope, actuals) {
+  const data = labLoad();
+  if (!data[date]) data[date] = {};
+  if (!data[date][scope]) data[date][scope] = {};
+  data[date][scope].actuals = actuals;
+  data[date][scope].actualsAt = new Date().toISOString();
+  labSave(data);
+}
+function calLoad() {
+  try { return JSON.parse(localStorage.getItem(CAL_KEY)) || { bias: 0, samples: 0 }; }
+  catch { return { bias: 0, samples: 0 }; }
+}
+function calSave(cal) {
+  try { localStorage.setItem(CAL_KEY, JSON.stringify(cal)); }
+  catch(e) { console.warn('Cal save failed:', e); }
+}
+function getCalBias() {
+  const cal = calLoad();
+  return cal.samples >= 5 ? cal.bias : 0;
+}
 
 // ── INIT ──
 (async function init() {
@@ -534,10 +718,21 @@ async function initGameSelector() {
 async function loadSlate() {
   renderSkeletons('slateList', 5);
   try {
-    const r = await fetch('/api/slate');
+    const bias = getCalBias();
+    const url = bias ? `/api/slate?cal_bias=${bias}` : '/api/slate';
+    const r = await fetch(url);
     if (!r.ok) throw new Error('Slate fetch failed');
     SLATE = await r.json();
     document.getElementById('slateTabs').style.display = 'flex';
+
+    // Auto-save to lab
+    if (SLATE.date) {
+      labSaveDay(SLATE.date, 'slate', {
+        chalk: SLATE.lineups.chalk,
+        upside: SLATE.lineups.upside,
+        games: SLATE.games
+      });
+    }
 
     const chips = document.getElementById('slateChips');
     const now = new Date();
@@ -547,7 +742,6 @@ async function loadSlate() {
       <div class="chip">🏀 ${dateStr}</div>
     `;
     switchSlate('chalk');
-    renderTiers(SLATE.tiers, 'slateTiersContainer');
   } catch(e) {
     document.getElementById('slateList').innerHTML = `
       <div class="empty-state">
@@ -580,18 +774,40 @@ async function runAnalysis() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Analyzing...';
   renderSkeletons('picksList', 5);
-  document.getElementById('picksTiersContainer').innerHTML = '';
 
   try {
-    const r = await fetch(`/api/picks?gameId=${gameId}`);
+    const bias = getCalBias();
+    const biasParam = bias ? `&cal_bias=${bias}` : '';
+    const r = await fetch(`/api/picks?gameId=${gameId}${biasParam}`);
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: 'Server error' }));
       throw new Error(err.error || `HTTP ${r.status}`);
     }
     PICKS_DATA = await r.json();
     document.getElementById('picksTabsWrap').style.display = 'flex';
+    // Reset tab state to Starting 5
+    document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t =>
+      t.classList.toggle('active', t.dataset.t === 'chalk'));
+    // Show game script badge
+    const badge = document.getElementById('gameScriptBadge');
+    if (PICKS_DATA.gameScript) {
+      const total = PICKS_DATA.game?.total;
+      badge.innerHTML = `Game Script: <b>${PICKS_DATA.gameScript}</b>${total ? ` (O/U ${total})` : ''}`;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
-    renderTiers(PICKS_DATA.tiers, 'picksTiersContainer');
+
+    // Auto-save to lab
+    if (PICKS_DATA.date) {
+      const label = sel.options[sel.selectedIndex].textContent;
+      labSaveDay(PICKS_DATA.date, `game_${gameId}`, {
+        chalk: PICKS_DATA.lineups.chalk,
+        upside: PICKS_DATA.lineups.upside,
+        gameLabel: label
+      });
+    }
   } catch(e) {
     document.getElementById('picksList').innerHTML = '';
     banner.textContent = `⚠ ${e.message}`;
@@ -619,20 +835,17 @@ function renderCards(picks, containerId, mode) {
       ? `rgba(${parseInt(tc.slice(1,3),16)},${parseInt(tc.slice(3,5),16)},${parseInt(tc.slice(5,7),16)},0.08)`
       : 'rgba(79,142,247,0.08)';
 
-    const cascadeBadge = p.is_cascade_pick ? '<span class="cascade-badge">⚡ CASCADE</span>' : '';
     const multBadge = p.est_mult ? `<span class="mult-badge">${p.est_mult}x est</span>` : '';
 
     const statsHtml = [
       multBadge,
-      cascadeBadge,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,
       p.ast      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.ast}</b> ast</div>`,
       p.stl      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.stl}</b> stl</div>`,
       p.blk      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.blk}</b> blk</div>`,
-      (isUpside && p.hot >= 1.15) && `<div class="stat-pill" style="color:#f97316"><b>↑${Math.round((p.hot-1)*100)}%</b> form</div>`,
-      (!isUpside && p.hot >= 1.15) && `<div class="stat-pill" style="color:#f97316"><b>↑${Math.round((p.hot-1)*100)}%</b> form</div>`,
+      (p._decline && p._decline < 0.85) && `<div class="stat-pill" style="color:#f43f5e"><b>↓${Math.round((1-p._decline)*100)}%</b> usage</div>`,
     ].filter(Boolean).join('');
 
     return `
@@ -646,64 +859,14 @@ function renderCards(picks, containerId, mode) {
           <div class="stat-pills">${statsHtml}</div>
         </div>
         <div class="score-col" style="--score-color:${scoreColor}">
-          <div class="score-num">${isUpside ? (p.upside_ev || p.rating) : p.rating}</div>
-          <span class="score-label">${isUpside ? '🔥 upside' : (p.hot >= 1.15 ? '🔥 hot' : 'projected')}</span>
+          <div class="score-num">${p.rating}</div>
+          <span class="score-label">${isUpside ? 'moonshot' : 'projected'}</span>
           <div class="slot-badge" style="background:${isUpside?'rgba(249,115,22,0.1)':'rgba(79,142,247,0.1)'};border-color:${isUpside?'rgba(249,115,22,0.25)':'rgba(79,142,247,0.25)'}">
             ${p.slot}
           </div>
         </div>
       </div>`;
   }).join('');
-}
-
-// ── RENDER TIERS ──
-function renderTiers(tiers, containerId) {
-  const el = document.getElementById(containerId);
-  if (!tiers || !tiers.top_picks) { el.innerHTML = ''; return; }
-
-  function hexToRgb(hex) {
-    const r = parseInt(hex.slice(1,3), 16);
-    const g = parseInt(hex.slice(3,5), 16);
-    const b = parseInt(hex.slice(5,7), 16);
-    return `${r},${g},${b}`;
-  }
-
-  const tierHtml = (label, color, players) => {
-    if (!players || !players.length) return '';
-    const rgb = hexToRgb(color);
-    return `
-      <div class="tier-section">
-        <div class="tier-label" style="color:${color};border-color:${color}">${label}</div>
-        ${players.map((p, i) => {
-          const cascade = p.is_cascade_pick ? '<span class="cascade-badge">⚡ CASCADE</span>' : '';
-          const mult = p.est_mult ? `<span class="mult-badge">${p.est_mult}x est</span>` : '';
-          const tc = TEAM_COLORS[p.team] || color;
-          const tcRgb = hexToRgb(tc);
-          return `
-          <div class="player-card tier-card" style="--tcolor:${tc};--tcolor-alpha:rgba(${tcRgb},0.08);animation-delay:${i*0.04}s">
-            <div class="rank-badge" style="display:none"></div>
-            <div class="player-info">
-              <div class="player-meta">${p.team || '—'} <span class="pos-pill">${p.pos}</span> ${cascade}</div>
-              <div class="player-name">${p.name}</div>
-              <div class="stat-pills">${mult} <span class="stat-pill">${p.predMin}min</span></div>
-            </div>
-            <div class="score-col">
-              <div class="score-num" style="color:${color}">${p.expected_dp || p.chalk_ev}</div>
-              <span class="score-label">exp draft pts</span>
-              <div style="font-size:0.65rem;color:var(--muted)">raw ${p.rating}</div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
-  };
-
-  el.innerHTML = `
-    <div class="divider"></div>
-    <div class="section-label">Player Tiers</div>
-    ${tierHtml('TOP PICKS', '#22c55e', tiers.top_picks)}
-    ${tierHtml('ACCEPTABLE FILLS', '#f97316', tiers.acceptable_fills)}
-    ${tierHtml('AVOID', '#f43f5e', tiers.avoid)}
-  `;
 }
 
 // ── SKELETON ──
@@ -726,60 +889,423 @@ function switchNav(view) {
   document.getElementById('viewLab').classList.toggle('hidden', !isLab);
   document.getElementById('navOptimizer').classList.toggle('active', !isLab);
   document.getElementById('navLab').classList.toggle('active', isLab);
-  if (isLab) loadHistory();
+  if (isLab) initLab();
 }
 
-// ── HISTORY ──
-async function loadHistory() {
-  const el = document.getElementById('historyList');
-  el.innerHTML = '<div class="empty-state"><span class="icon">⏳</span><p>Loading history...</p></div>';
+// ── LAB ──
+async function initLab() {
+  await migrateHistory();
+  renderDayPicker();
+  const data = labLoad();
+  const dates = Object.keys(data).sort().reverse();
+  if (dates.length > 0) {
+    loadDay(LAB_ACTIVE_DATE && data[LAB_ACTIVE_DATE] ? LAB_ACTIVE_DATE : dates[0]);
+  } else {
+    document.getElementById('dayDetail').innerHTML =
+      '<div class="empty-state"><span class="icon">📋</span><p>No predictions saved yet.<br>Run an analysis from the Optimizer to start tracking.</p></div>';
+  }
+}
+
+async function migrateHistory() {
+  if (localStorage.getItem('nba_lab_migrated')) return;
   try {
     const r = await fetch('/api/history');
-    const data = await r.json();
-    if (!data.length) {
-      el.innerHTML = '<div class="empty-state"><span class="icon">📋</span><p>No history yet. Run an analysis to start tracking picks.</p></div>';
+    const history = await r.json();
+    if (!Array.isArray(history) || !history.length) {
+      localStorage.setItem('nba_lab_migrated', '1');
       return;
     }
-    el.innerHTML = data.slice().reverse().map(h => `
-      <div class="history-card">
-        <div class="history-card-header">
-          <span class="history-game">🏀 ${h.game || 'Unknown Game'}</span>
-          <span class="history-date">${(h.timestamp||'').slice(0,10)}</span>
-        </div>
-        ${(h.players||[]).slice(0,5).map(p => {
-          const hasActual = p.actual_score != null;
-          const hit = hasActual && p.actual_score >= p.rating;
-          return `
-          <div class="history-row">
-            <div class="history-player">
-              ${p.name}
-              <span>${p.team||''} ${p.pos||''}</span>
-            </div>
-            <div class="history-scores">
-              <span class="projected-score">proj ${p.rating}</span>
-              <span class="actual-score ${hasActual ? (hit?'hit':'miss') : 'pending'}">
-                ${hasActual ? p.actual_score : '—'}
-              </span>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`).join('');
+    const data = labLoad();
+    history.forEach(h => {
+      const date = (h.timestamp || '').slice(0, 10);
+      if (!date) return;
+      const gameKey = h.game ? `game_${h.game.replace(/\s/g, '_')}` : 'slate';
+      if (!data[date]) data[date] = {};
+      if (!data[date][gameKey]) {
+        data[date][gameKey] = {
+          predictions: {
+            chalk: (h.players || []).map(p => ({
+              name: p.name, rating: p.rating, team: p.team || '', pos: p.pos || ''
+            })),
+            gameLabel: h.game || 'Slate'
+          },
+          savedAt: h.timestamp
+        };
+      }
+    });
+    labSave(data);
+    localStorage.setItem('nba_lab_migrated', '1');
   } catch(e) {
-    el.innerHTML = '<div class="empty-state"><span class="icon">⚠️</span><p>Failed to load history.</p></div>';
+    console.warn('History migration failed:', e);
   }
 }
 
-async function syncScores() {
-  const btn = document.querySelector('.sync-btn');
-  btn.textContent = '↻ Syncing...';
-  btn.disabled = true;
-  try {
-    await fetch('/api/evaluate');
-    await loadHistory();
-  } finally {
-    btn.textContent = '↻ Sync Actuals';
-    btn.disabled = false;
+function renderDayPicker() {
+  const picker = document.getElementById('dayPicker');
+  const data = labLoad();
+  const days = [];
+  const start = new Date('2025-03-02T12:00:00');
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    days.push(d.toISOString().slice(0, 10));
   }
+  picker.innerHTML = days.map(d => {
+    const dayData = data[d];
+    const hasData = dayData && Object.keys(dayData).length > 0;
+    const hasActuals = hasData && Object.values(dayData).some(s => s.actuals);
+    const label = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const cls = [
+      'day-chip',
+      d === LAB_ACTIVE_DATE ? 'active' : '',
+      hasActuals ? 'has-actuals' : ''
+    ].filter(Boolean).join(' ');
+    return `<button class="${cls}" onclick="loadDay('${d}')">${label}</button>`;
+  }).reverse().join('');
+}
+
+function loadDay(date) {
+  LAB_ACTIVE_DATE = date;
+  renderDayPicker();
+
+  const data = labLoad();
+  const dayData = data[date] || {};
+  const detail = document.getElementById('dayDetail');
+  LAB_DAY_DATA = dayData;
+
+  if (Object.keys(dayData).length === 0) {
+    const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    detail.innerHTML = `
+      <div class="day-title">${dateLabel}</div>
+      <div class="empty-state" style="margin-bottom:14px">
+        <span class="icon">📋</span>
+        <p>No predictions saved for this day.</p>
+      </div>
+      <button class="enter-results-btn" onclick="openEntryModal('${date}','manual')">Enter Results Manually</button>
+    `;
+    return;
+  }
+
+  // Auto-generate per-game tabs from slate's games list
+  const slateGames = dayData['slate']?.predictions?.games;
+  if (slateGames && Array.isArray(slateGames)) {
+    slateGames.forEach(g => {
+      const gameKey = `game_${g.gameId}`;
+      if (!dayData[gameKey]) {
+        dayData[gameKey] = {
+          predictions: { chalk: [], gameLabel: g.label || 'Game' },
+          savedAt: dayData['slate']?.savedAt
+        };
+      }
+    });
+  }
+
+  const scopes = Object.keys(dayData);
+  const activeScope = LAB_ACTIVE_SCOPE && scopes.includes(LAB_ACTIVE_SCOPE) ? LAB_ACTIVE_SCOPE : scopes[0];
+  LAB_ACTIVE_SCOPE = activeScope;
+
+  const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  const tabsHtml = scopes.map(s => {
+    let label;
+    if (s === 'slate') label = 'Full Slate';
+    else if (s === 'manual') label = 'Manual';
+    else label = dayData[s].predictions?.gameLabel || s.replace('game_', '');
+    const hasActuals = dayData[s]?.actuals?.length > 0;
+    const active = s === activeScope ? 'active' : '';
+    return `<button class="scope-tab ${active}${hasActuals ? ' has-actuals' : ''}" onclick="switchLabScope('${date}','${s}')">${label}</button>`;
+  }).join('');
+
+  detail.innerHTML = `
+    <div class="day-title">${dateLabel}</div>
+    <div class="scope-tabs">${tabsHtml}</div>
+    <div id="labScopeContent"></div>
+  `;
+  renderLabScope(date, activeScope);
+}
+
+function switchLabScope(date, scope) {
+  LAB_ACTIVE_SCOPE = scope;
+  loadDay(date);
+}
+
+function renderLabScope(date, scope) {
+  const data = labLoad();
+  // Try localStorage first, fall back to in-memory dayData (auto-generated game tabs)
+  const scopeData = data[date]?.[scope] || LAB_DAY_DATA?.[scope];
+  const el = document.getElementById('labScopeContent');
+
+  if (!scopeData) {
+    el.innerHTML = `
+      <div class="empty-state" style="margin-bottom:14px"><span class="icon">📋</span><p>No predictions for this game.</p></div>
+      <button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Results</button>`;
+    return;
+  }
+
+  const preds = scopeData.predictions || {};
+  const actuals = scopeData.actuals;
+  const players = preds.chalk || [];
+
+  if (actuals && actuals.length) {
+    // Comparison view — Our Picks + Leaderboard Players
+    let html = '<div style="margin-bottom:12px">';
+
+    // Our Picks section (only if we had predictions)
+    if (players.length > 0) {
+      html += '<div class="comp-section-label">Our Picks</div>';
+      players.forEach(p => {
+        const actual = actuals.find(a => a.name === p.name);
+        const score = actual?.score;
+        const diff = score != null ? score - p.rating : null;
+        const cls = diff != null ? (diff >= 0 ? 'hit' : 'miss') : '';
+        html += `
+          <div class="comp-row">
+            <div class="comp-name">${p.name}${!actual ? ' <span style="opacity:0.4;font-size:0.75rem">not in results</span>' : ''}</div>
+            <div class="comp-scores">
+              <span class="comp-pred">proj ${p.rating}</span>
+              <span class="comp-arrow">&rarr;</span>
+              <span class="comp-actual ${cls}">${score != null ? score : '—'}</span>
+            </div>
+          </div>`;
+      });
+    }
+
+    // Leaderboard Players (ones we didn't predict)
+    const predNames = new Set(players.map(p => p.name));
+    const extras = actuals.filter(a => !predNames.has(a.name));
+    if (extras.length > 0) {
+      html += '<div class="comp-section-label" style="margin-top:12px">Leaderboard Players</div>';
+      extras.sort((a, b) => (b.score || 0) - (a.score || 0));
+      extras.forEach(a => {
+        html += `
+          <div class="comp-row">
+            <div class="comp-name">${a.name}</div>
+            <div class="comp-scores">
+              <span class="comp-actual">${a.score != null ? a.score : '—'}</span>
+            </div>
+          </div>`;
+      });
+    }
+
+    // Summary
+    const scored = actuals.filter(a => a.score != null);
+    if (scored.length) {
+      const totalActual = scored.reduce((s, a) => s + a.score, 0);
+      const matchedPicks = players.filter(p => actuals.find(a => a.name === p.name && a.score != null));
+      const totalPred = matchedPicks.reduce((s, p) => s + p.rating, 0);
+      const hits = matchedPicks.filter(p => {
+        const a = actuals.find(a => a.name === p.name);
+        return a && a.score >= p.rating;
+      }).length;
+      html += `
+        <div class="comp-summary">
+          ${matchedPicks.length > 0 ? `<span>Predicted: <b>${totalPred.toFixed(1)}</b></span>` : ''}
+          <span>Total actual: <b>${totalActual.toFixed(1)}</b></span>
+          ${matchedPicks.length > 0 ? `<span>Hit rate: <b>${hits}/${matchedPicks.length}</b></span>` : ''}
+          <span>Players: <b>${scored.length}</b></span>
+        </div>`;
+    }
+    html += '</div>';
+    html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Edit Results</button>`;
+    el.innerHTML = html;
+  } else {
+    // Show predictions + enter results button
+    if (players.length > 0) {
+      let html = '<div id="labCardsList"></div>';
+      html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Actual Results</button>`;
+      el.innerHTML = html;
+      renderCards(players, 'labCardsList', 'chalk');
+    } else {
+      el.innerHTML = `
+        <div class="empty-state" style="margin-bottom:14px"><span class="icon">📋</span><p>No predictions for this view.</p></div>
+        <button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Results</button>`;
+    }
+  }
+}
+
+// ── SCORE ENTRY MODAL ──
+function openEntryModal(date, scope) {
+  MODAL_DATE = date;
+  MODAL_SCOPE = scope;
+  MODAL_ROW_COUNT = 0;
+
+  const data = labLoad();
+  const scopeData = data[date]?.[scope] || LAB_DAY_DATA?.[scope];
+  const preds = scopeData?.predictions;
+  const players = preds?.chalk || [];
+  const existing = scopeData?.actuals;
+
+  const header = document.getElementById('modalHeader');
+  const rows = document.getElementById('modalScoreRows');
+  header.textContent = scope === 'slate' ? 'Enter Slate Results'
+    : scope === 'manual' ? 'Enter Results'
+    : `Enter Results — ${preds?.gameLabel || 'Game'}`;
+
+  rows.innerHTML = '';
+
+  // If re-editing, pre-fill from existing actuals
+  if (existing && existing.length) {
+    existing.forEach(a => {
+      const pred = players.find(p => p.name === a.name);
+      addResultRow(a.name, pred?.rating || null, a.score);
+    });
+  } else if (players.length > 0) {
+    // Pre-fill with our predictions
+    players.forEach(p => addResultRow(p.name, p.rating, null));
+    // Add empty rows for leaderboard players we didn't predict
+    for (let i = 0; i < 3; i++) addResultRow('', null, null);
+  } else {
+    // No predictions — all blank rows
+    for (let i = 0; i < 5; i++) addResultRow('', null, null);
+  }
+
+  document.getElementById('addPlayerBtn').style.display = 'block';
+  document.getElementById('modalError').style.display = 'none';
+  document.getElementById('screenshotPreview').style.display = 'none';
+  document.getElementById('screenshotInput').value = '';
+  document.getElementById('modalSubmitBtn').disabled = true;
+  document.getElementById('entryModal').classList.remove('hidden');
+  validateResultInputs();
+}
+
+function addResultRow(name, projRating, existingScore) {
+  const idx = MODAL_ROW_COUNT++;
+  const rows = document.getElementById('modalScoreRows');
+  const row = document.createElement('div');
+  row.className = 'score-row';
+  row.id = `resultRow_${idx}`;
+  row.style.gridTemplateColumns = '1fr auto 70px 28px';
+  row.innerHTML = `
+    <input type="text" value="${name || ''}" placeholder="Player name" id="resultName_${idx}"
+           oninput="validateResultInputs()">
+    ${projRating ? `<span class="score-row-pred">proj ${projRating}</span>` : '<span></span>'}
+    <input type="number" min="0" max="150" step="0.1" placeholder="Score"
+           id="resultScore_${idx}" value="${existingScore != null ? existingScore : ''}"
+           oninput="validateResultInputs()">
+    <button type="button" class="remove-row-btn" onclick="removeResultRow(${idx})" title="Remove">&times;</button>
+  `;
+  rows.appendChild(row);
+}
+
+function removeResultRow(idx) {
+  const row = document.getElementById(`resultRow_${idx}`);
+  if (row) row.remove();
+  validateResultInputs();
+}
+
+function closeEntryModal() {
+  document.getElementById('entryModal').classList.add('hidden');
+  document.getElementById('addPlayerBtn').style.display = 'none';
+  MODAL_DATE = null;
+  MODAL_SCOPE = null;
+}
+
+function previewScreenshot(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      document.getElementById('screenshotImg').src = e.target.result;
+      document.getElementById('screenshotPreview').style.display = 'block';
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+function validateResultInputs() {
+  const rowEls = document.querySelectorAll('[id^="resultRow_"]');
+  let filledCount = 0;
+  let hasInvalid = false;
+
+  rowEls.forEach(row => {
+    const idx = row.id.replace('resultRow_', '');
+    const nameEl = document.getElementById(`resultName_${idx}`);
+    const scoreEl = document.getElementById(`resultScore_${idx}`);
+    const name = nameEl.value.trim();
+    const val = scoreEl.value.trim();
+
+    // Both empty = skip (ok)
+    if (!name && !val) {
+      scoreEl.classList.remove('invalid');
+      return;
+    }
+    // One filled, one empty = incomplete
+    if (!name || !val) { hasInvalid = true; scoreEl.classList.remove('invalid'); return; }
+    // Both filled — validate score
+    const num = parseFloat(val);
+    if (isNaN(num) || num < 0 || num > 150) {
+      scoreEl.classList.add('invalid');
+      hasInvalid = true;
+    } else {
+      scoreEl.classList.remove('invalid');
+      filledCount++;
+    }
+  });
+
+  const valid = filledCount >= 1 && !hasInvalid;
+  document.getElementById('modalSubmitBtn').disabled = !valid;
+  const err = document.getElementById('modalError');
+  err.style.display = hasInvalid ? 'block' : 'none';
+  err.textContent = hasInvalid ? 'Fill both name and score (0-150) for each row, or leave both empty.' : '';
+}
+
+async function submitActuals() {
+  // Collect all filled rows
+  const rowEls = document.querySelectorAll('[id^="resultRow_"]');
+  const data = labLoad();
+  const scopeData = data[MODAL_DATE]?.[MODAL_SCOPE] || LAB_DAY_DATA?.[MODAL_SCOPE];
+  const players = scopeData?.predictions?.chalk || [];
+
+  const actuals = [];
+  rowEls.forEach(row => {
+    const idx = row.id.replace('resultRow_', '');
+    const name = document.getElementById(`resultName_${idx}`).value.trim();
+    const val = document.getElementById(`resultScore_${idx}`).value.trim();
+    if (!name || !val) return;
+    const score = parseFloat(val);
+    const pred = players.find(p => p.name === name);
+    actuals.push({
+      name,
+      predicted_rating: pred?.rating || 0,
+      actual_score: score,
+      score
+    });
+  });
+
+  if (!actuals.length) return;
+
+  // Ensure scope exists in localStorage
+  if (!data[MODAL_DATE]) data[MODAL_DATE] = {};
+  if (!data[MODAL_DATE][MODAL_SCOPE]) {
+    data[MODAL_DATE][MODAL_SCOPE] = {
+      predictions: scopeData?.predictions || {
+        chalk: actuals.map(a => ({ name: a.name, rating: a.predicted_rating, team: '', pos: '' })),
+        gameLabel: scopeData?.predictions?.gameLabel || (MODAL_SCOPE === 'slate' ? 'Slate' : 'Game')
+      },
+      savedAt: new Date().toISOString()
+    };
+  }
+  data[MODAL_DATE][MODAL_SCOPE].actuals = actuals;
+  data[MODAL_DATE][MODAL_SCOPE].actualsAt = new Date().toISOString();
+  labSave(data);
+
+  // Send to backend for calibration
+  try {
+    const r = await fetch('/api/actuals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: MODAL_DATE, scope: MODAL_SCOPE, scores: actuals })
+    });
+    if (r.ok) {
+      const result = await r.json();
+      if (result.calibration) calSave(result.calibration);
+    }
+  } catch(e) {
+    console.warn('Backend calibration sync failed:', e);
+  }
+
+  closeEntryModal();
+  loadDay(MODAL_DATE);
+  renderDayPicker();
 }
 </script>
 </body>
