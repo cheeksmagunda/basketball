@@ -1,0 +1,16 @@
+{
+  "builds": [
+    { "src": "api/index.py", "use": "@vercel/python", "config": { "maxDuration": 60 } },
+    { "src": "index.html", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/refresh",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}
