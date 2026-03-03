@@ -132,6 +132,7 @@ def _fetch_athlete(pid):
         if recent:
             blended = {k: round(season[k] * 0.6 + recent[k] * 0.4, 2) for k in season}
             blended["season_min"] = season["min"]
+            blended["recent_min"] = recent["min"]
             blended["recent_pts"] = recent["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_stl"] = recent["stl"]
@@ -139,6 +140,7 @@ def _fetch_athlete(pid):
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
+            blended["recent_min"] = season["min"]
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_stl"] = season["stl"]
@@ -297,10 +299,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
-    # Scale heuristic by minute boost from cascade
+    # Scale heuristic by minute boost from cascade (capped at 1.4x)
     if cascade_bonus > 0 and avg_min > 0:
-        min_scale = proj_min / avg_min
+        min_scale = min(proj_min / avg_min, 1.4)
         heuristic *= min_scale
+
+    # Declining usage penalty: if recent minutes dropped >15% vs season,
+    # scale output proportionally (e.g. Conley post-trade: 26→19 min = 0.73x)
+    season_min = stats.get("season_min", avg_min)
+    recent_min = stats.get("recent_min", avg_min)
+    decline_factor = 1.0
+    if season_min > 0 and recent_min < season_min * 0.85:
+        decline_factor = recent_min / season_min
+        heuristic *= decline_factor
 
     # AI blend
     base = heuristic
@@ -321,21 +332,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Raw projected score (what they'll actually score in Real Sports)
     raw_score = (base * pace_adj * spread_adj * home_adj) / 5.0
 
-    # Hot streak: recent form vs season avg
-    season_pts = stats.get("season_pts", pts)
-    recent_pts = stats.get("recent_pts", pts)
-    hot = round((recent_pts / season_pts) if season_pts > 0 else 1.0, 2)
-    hot = min(hot, 2.5)  # cap at 2.5x to prevent outliers
-
     # Use projected minutes (with cascade) for ownership tiers
     om_chalk  = _ownership_mult_chalk(proj_min)
     om_upside = _ownership_mult_upside(proj_min)
 
-    # EV scores
-    chalk_ev  = round(raw_score * om_chalk  * max(hot, 1.0), 2)
-    upside_ev = round(raw_score * om_upside * max(hot, 1.0) * max(hot, 1.0), 2)  # hot^2 for upside
+    # EV scores — hot removed; recent form already captured in 60/40 blend
+    chalk_ev  = round(raw_score * om_chalk, 2)
+    upside_ev = round(raw_score * om_upside, 2)
 
-    # Expected draft points (EDP) = raw_score / 5 * est_mult
+    # Expected draft points (EDP) = raw_score * est_mult
     expected_dp = round(raw_score * om_chalk, 1)
 
     return {
@@ -353,12 +358,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "ast":     round(ast, 1),
         "stl":     round(stl, 1),
         "blk":     round(blk, 1),
-        "hot":     hot,
         "est_mult": om_chalk,
         "om":      om_chalk,
         "slot":    "1.0x",
         "_base":   base,
         "is_cascade_pick": is_cascade,
+        "_decline": round(decline_factor, 2),
     }
 
 def _run_game(game):
@@ -429,12 +434,15 @@ def _classify_tiers(projections):
 
     return {"top_picks": top[:8], "acceptable_fills": acceptable[:8], "avoid": avoid[:5]}
 
+CHALK_FLOOR = 3.5  # Minimum raw rating to qualify for chalk Starting 5
+
 def _build_lineups(projections):
-    # CHALK: sorted by chalk_ev (value-weighted, penalizes stars)
-    chalk = sorted(projections, key=lambda x: x["chalk_ev"], reverse=True)[:5]
+    # CHALK: sorted by chalk_ev, with production floor filter
+    chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
+    chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # UPSIDE: sorted by upside_ev (aggressively rewards bench + hot streaks)
+    # UPSIDE: sorted by upside_ev (aggressively rewards bench players)
     upside_sorted = sorted(projections, key=lambda x: x["upside_ev"], reverse=True)
     chalk_names = {p["name"] for p in chalk}
 
