@@ -421,6 +421,45 @@ async def get_picks(gameId: str = Query(...)):
         return JSONResponse(content={"error": f"Failed: {str(e)}"}, status_code=500)
 
 
+@app.get("/api/debug")
+async def debug():
+    """Debug endpoint: show raw ESPN responses for first player."""
+    import requests as req
+    try:
+        games = fetch_games()
+        if not games:
+            return JSONResponse(content={"error": "No games"})
+        g = games[0]
+        roster = fetch_roster(g["home"]["id"])
+        if not roster:
+            return JSONResponse(content={"error": "No roster", "teamId": g["home"]["id"]})
+        p = roster[0]
+        pid = p["id"]
+        results = {"player": p, "responses": {}}
+        urls = [
+            f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}",
+            f"https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/overview",
+            f"{ESPN}/athletes/{pid}/statistics",
+            f"{ESPN}/athletes/{pid}",
+        ]
+        for url in urls:
+            try:
+                r = req.get(url, timeout=12)
+                key = url.split("/")[-1] if url.split("/")[-1] != pid else "athlete_v3"
+                if key == pid:
+                    key = "athlete_v3"
+                results["responses"][key] = {
+                    "status": r.status_code,
+                    "keys": list(r.json().keys()) if r.status_code == 200 else None,
+                    "sample": str(r.text[:3000]) if r.status_code == 200 else r.text[:500],
+                }
+            except Exception as e:
+                results["responses"][url.split("/")[-1]] = {"error": str(e)}
+        return JSONResponse(content=results)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e), "tb": traceback.format_exc()})
+
+
 @app.get("/api/slate")
 async def get_slate():
     """Full-slate top 5 picks across ALL games today."""
