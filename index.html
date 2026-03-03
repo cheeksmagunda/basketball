@@ -785,6 +785,9 @@ async function runAnalysis() {
     }
     PICKS_DATA = await r.json();
     document.getElementById('picksTabsWrap').style.display = 'flex';
+    // Reset tab state to Starting 5
+    document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t =>
+      t.classList.toggle('active', t.dataset.t === 'chalk'));
     // Show game script badge
     const badge = document.getElementById('gameScriptBadge');
     if (PICKS_DATA.gameScript) {

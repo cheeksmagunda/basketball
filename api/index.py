@@ -1,4 +1,5 @@
 import json
+import copy
 import hashlib
 import pickle
 import numpy as np
@@ -514,54 +515,50 @@ def _build_lineups(projections):
 
 GAME_CHALK_FLOOR = 4.0  # Slightly higher floor for single-game (smaller pool = less noise)
 
-def _pick_balanced(pool, n, min_per_team=2):
+def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
     """Pick n players from pool ensuring at least min_per_team from each team."""
+    if not pool:
+        return []
+
     teams = {}
     for p in pool:
         t = p["team"]
         teams.setdefault(t, []).append(p)
 
-    # Sort each team's pool by chalk_ev
     for t in teams:
-        teams[t].sort(key=lambda x: x["chalk_ev"], reverse=True)
+        teams[t].sort(key=lambda x: x[sort_key], reverse=True)
 
     team_list = list(teams.keys())
     if len(team_list) < 2:
-        # Only one team available — just return top n
-        return sorted(pool, key=lambda x: x["chalk_ev"], reverse=True)[:n]
+        return sorted(pool, key=lambda x: x[sort_key], reverse=True)[:n]
 
     picked = []
     used = set()
 
-    # Phase 1: guarantee min_per_team from each team
+    # Phase 1: guarantee min_per_team from each team (capped by available players)
     for t in team_list:
-        count = 0
-        for p in teams[t]:
-            if count >= min_per_team:
-                break
+        avail = min(min_per_team, len(teams[t]))
+        for p in teams[t][:avail]:
             picked.append(p)
             used.add(p["name"])
-            count += 1
 
     # Phase 2: fill remaining slots from best available across both teams
     remaining = n - len(picked)
-    rest = sorted([p for p in pool if p["name"] not in used],
-                  key=lambda x: x["chalk_ev"], reverse=True)
-    picked.extend(rest[:remaining])
+    if remaining > 0:
+        rest = sorted([p for p in pool if p["name"] not in used],
+                      key=lambda x: x[sort_key], reverse=True)
+        picked.extend(rest[:remaining])
 
-    # Sort final picks by chalk_ev for slot assignment
-    picked.sort(key=lambda x: x["chalk_ev"], reverse=True)
+    picked.sort(key=lambda x: x[sort_key], reverse=True)
     return picked[:n]
 
 
 def _apply_game_script(projections, game):
-    """Re-score projections using game script weights. Returns new list (doesn't mutate)."""
+    """Re-score projections using game script weights. Returns new list (deep copies, no mutation)."""
     total  = game.get("total") or 222
     spread = game.get("spread") or 0
     rescored = []
     for p in projections:
-        # Recalculate DFS with game-script-weighted stats
-        # Player stats are stored as top-level keys on the projection dict
         gs_dfs = _game_script_dfs(p, total, spread)
         orig_dfs = _dfs_score(p.get("pts",0), p.get("reb",0), p.get("ast",0),
                               p.get("stl",0), p.get("blk",0), p.get("tov",0))
@@ -571,7 +568,7 @@ def _apply_game_script(projections, game):
             script_factor = 1.0
         new_rating  = round(p["rating"] * script_factor, 1)
         new_ev      = round(p["chalk_ev"] * script_factor, 2)
-        rp = dict(p)
+        rp = copy.deepcopy(p)
         rp["rating"]   = new_rating
         rp["chalk_ev"] = new_ev
         rp["expected_dp"] = round(new_ev, 1)
@@ -581,24 +578,26 @@ def _apply_game_script(projections, game):
 
 
 def _build_game_lineups(projections, game):
-    """Build lineups for a single-game draft with team balance + game script."""
-    # Re-score using game script (over/under tiers)
-    rescored = _apply_game_script(projections, game)
+    """Build lineups for a single-game draft with team balance + game script.
 
+    Starting 5: sorted by chalk_ev (ownership-weighted EV) — rewards role players
+                 in low-ownership draft slots.
+    Moonshot:   sorted by raw rating (pure ceiling) — rewards stars and high-production
+                 players regardless of ownership. Overlap with Starting 5 is allowed
+                 because the 2-team pool is too small to force 10 unique players.
+    """
+    rescored = _apply_game_script(projections, game)
     eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
 
-    # STARTING 5: balanced across both teams
+    # STARTING 5: best ownership-weighted EV, balanced across both teams
     chalk = _pick_balanced(eligible, 5, min_per_team=2)
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # MOONSHOT: 5 different players, still balanced
-    chalk_names = {p["name"] for p in chalk}
-    moonshot_eligible = [p for p in rescored
-                         if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
-    upside = _pick_balanced(moonshot_eligible, 5, min_per_team=1)
-    for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
+    # MOONSHOT: best raw ceiling, balanced — independent from Starting 5 (overlap OK)
+    moonshot = _pick_balanced(eligible, 5, min_per_team=2, sort_key="rating")
+    for i, p in enumerate(moonshot): p["slot"] = SLOT_VALUES[i]
 
-    return chalk, upside
+    return chalk, moonshot
 
 def _save_history(game_label, players):
     hist = []
