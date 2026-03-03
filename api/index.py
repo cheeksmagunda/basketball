@@ -252,7 +252,7 @@ def _cascade_minutes(roster, stats_map):
 #   Deep bench (<15)    → below minutes gate, filtered out
 #
 # CHALK = best EV at moderate risk (role players + starters)
-# UPSIDE = chalk with max 2 alternative swaps for differentiation
+# UPSIDE = 5 different players from chalk — lower usage, higher ceiling
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ownership_mult_chalk(proj_min):
@@ -413,25 +413,10 @@ def _build_lineups(projections):
     chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # UPSIDE: start with chalk, swap bottom 2 for best alternatives
+    # UPSIDE: 5 totally different players — lower usage, higher ceiling
     chalk_names = {p["name"] for p in chalk}
-    alternatives = [p for p in chalk_eligible if p["name"] not in chalk_names]
-    alternatives.sort(key=lambda x: x["chalk_ev"], reverse=True)
-
-    upside = [dict(p) for p in chalk]
-    if len(alternatives) >= 1:
-        # Sort upside by chalk_ev ascending to find weakest chalk picks
-        weakest = sorted(upside, key=lambda x: x["chalk_ev"])
-        for i in range(min(2, len(alternatives), len(weakest))):
-            swap_in = alternatives[i]
-            swap_out = weakest[i]
-            # Only swap if alternative is competitive (within 70% of the weakest)
-            if swap_in["chalk_ev"] >= swap_out["chalk_ev"] * 0.7:
-                idx = next(j for j, p in enumerate(upside) if p["name"] == swap_out["name"])
-                upside[idx] = dict(swap_in)
-
-    # Re-sort upside by chalk_ev and assign slots
-    upside.sort(key=lambda x: x["chalk_ev"], reverse=True)
+    upside_pool = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    upside = sorted(upside_pool, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
 
     return chalk, upside

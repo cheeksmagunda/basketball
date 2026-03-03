@@ -427,7 +427,7 @@
       content: ''; position: absolute; top: 4px; right: 4px;
       width: 6px; height: 6px; border-radius: 50%; background: var(--green);
     }
-    .day-chip.no-data { opacity: 0.3; pointer-events: none; }
+    .day-chip.no-data { opacity: 0.4; }
 
     /* ── LAB: DAY DETAIL ── */
     .day-title {
@@ -793,12 +793,10 @@ function renderCards(picks, containerId, mode) {
       ? `rgba(${parseInt(tc.slice(1,3),16)},${parseInt(tc.slice(3,5),16)},${parseInt(tc.slice(5,7),16)},0.08)`
       : 'rgba(79,142,247,0.08)';
 
-    const cascadeBadge = p.is_cascade_pick ? '<span class="cascade-badge">⚡ CASCADE</span>' : '';
     const multBadge = p.est_mult ? `<span class="mult-badge">${p.est_mult}x est</span>` : '';
 
     const statsHtml = [
       multBadge,
-      cascadeBadge,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,
@@ -820,7 +818,7 @@ function renderCards(picks, containerId, mode) {
         </div>
         <div class="score-col" style="--score-color:${scoreColor}">
           <div class="score-num">${p.rating}</div>
-          <span class="score-label">${isUpside ? 'alt projected' : 'projected'}</span>
+          <span class="score-label">${isUpside ? 'upside' : 'projected'}</span>
           <div class="slot-badge" style="background:${isUpside?'rgba(249,115,22,0.1)':'rgba(79,142,247,0.1)'};border-color:${isUpside?'rgba(249,115,22,0.25)':'rgba(79,142,247,0.25)'}">
             ${p.slot}
           </div>
@@ -853,7 +851,8 @@ function switchNav(view) {
 }
 
 // ── LAB ──
-function initLab() {
+async function initLab() {
+  await migrateHistory();
   renderDayPicker();
   const data = labLoad();
   const dates = Object.keys(data).sort().reverse();
@@ -862,6 +861,40 @@ function initLab() {
   } else {
     document.getElementById('dayDetail').innerHTML =
       '<div class="empty-state"><span class="icon">📋</span><p>No predictions saved yet.<br>Run an analysis from the Optimizer to start tracking.</p></div>';
+  }
+}
+
+async function migrateHistory() {
+  if (localStorage.getItem('nba_lab_migrated')) return;
+  try {
+    const r = await fetch('/api/history');
+    const history = await r.json();
+    if (!Array.isArray(history) || !history.length) {
+      localStorage.setItem('nba_lab_migrated', '1');
+      return;
+    }
+    const data = labLoad();
+    history.forEach(h => {
+      const date = (h.timestamp || '').slice(0, 10);
+      if (!date) return;
+      const gameKey = h.game ? `game_${h.game.replace(/\s/g, '_')}` : 'slate';
+      if (!data[date]) data[date] = {};
+      if (!data[date][gameKey]) {
+        data[date][gameKey] = {
+          predictions: {
+            chalk: (h.players || []).map(p => ({
+              name: p.name, rating: p.rating, team: p.team || '', pos: p.pos || ''
+            })),
+            gameLabel: h.game || 'Slate'
+          },
+          savedAt: h.timestamp
+        };
+      }
+    });
+    labSave(data);
+    localStorage.setItem('nba_lab_migrated', '1');
+  } catch(e) {
+    console.warn('History migration failed:', e);
   }
 }
 
@@ -883,7 +916,6 @@ function renderDayPicker() {
     const cls = [
       'day-chip',
       d === LAB_ACTIVE_DATE ? 'active' : '',
-      !hasData ? 'no-data' : '',
       hasActuals ? 'has-actuals' : ''
     ].filter(Boolean).join(' ');
     return `<button class="${cls}" onclick="loadDay('${d}')">${label}</button>`;
@@ -899,7 +931,15 @@ function loadDay(date) {
   const detail = document.getElementById('dayDetail');
 
   if (!dayData || Object.keys(dayData).length === 0) {
-    detail.innerHTML = '<div class="empty-state"><span class="icon">📋</span><p>No predictions saved for this day.</p></div>';
+    const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    detail.innerHTML = `
+      <div class="day-title">${dateLabel}</div>
+      <div class="empty-state" style="margin-bottom:14px">
+        <span class="icon">📋</span>
+        <p>No predictions saved for this day.</p>
+      </div>
+      <button class="enter-results-btn" onclick="openManualEntryModal('${date}')">Enter Results Manually</button>
+    `;
     return;
   }
 
@@ -1108,6 +1148,94 @@ async function submitActuals() {
   }
 
   closeEntryModal();
+  loadDay(MODAL_DATE);
+  renderDayPicker();
+}
+
+// ── MANUAL ENTRY (for days without predictions) ──
+function openManualEntryModal(date) {
+  MODAL_DATE = date;
+  MODAL_SCOPE = 'manual';
+
+  const header = document.getElementById('modalHeader');
+  const rows = document.getElementById('modalScoreRows');
+  header.textContent = 'Enter Results Manually';
+
+  rows.innerHTML = Array.from({length: 5}, (_, i) => `
+    <div class="score-row" style="grid-template-columns: 1fr 70px">
+      <input type="text" placeholder="Player name" id="manualName_${i}"
+             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;padding:8px;color:var(--text);font-size:0.85rem;outline:none;width:100%"
+             oninput="validateManualInputs()">
+      <input type="number" min="0" max="150" step="0.1" placeholder="Score"
+             id="scoreInput_${i}" oninput="validateManualInputs()">
+    </div>`).join('');
+
+  document.getElementById('modalError').style.display = 'none';
+  document.getElementById('screenshotPreview').style.display = 'none';
+  document.getElementById('screenshotInput').value = '';
+  document.getElementById('modalSubmitBtn').disabled = true;
+  document.getElementById('modalSubmitBtn').onclick = submitManualActuals;
+  document.getElementById('entryModal').classList.remove('hidden');
+}
+
+function validateManualInputs() {
+  let allValid = true;
+  for (let i = 0; i < 5; i++) {
+    const name = document.getElementById(`manualName_${i}`).value.trim();
+    const scoreEl = document.getElementById(`scoreInput_${i}`);
+    const val = scoreEl.value.trim();
+    if (!name || val === '') { allValid = false; continue; }
+    const num = parseFloat(val);
+    if (isNaN(num) || num < 0 || num > 150) {
+      scoreEl.classList.add('invalid');
+      allValid = false;
+    } else {
+      scoreEl.classList.remove('invalid');
+    }
+  }
+  document.getElementById('modalSubmitBtn').disabled = !allValid;
+}
+
+async function submitManualActuals() {
+  const actuals = [];
+  for (let i = 0; i < 5; i++) {
+    const name = document.getElementById(`manualName_${i}`).value.trim();
+    const score = parseFloat(document.getElementById(`scoreInput_${i}`).value);
+    actuals.push({ name, actual_score: score, score, predicted_rating: 0 });
+  }
+
+  // Save as both predictions and actuals for this day
+  const data = labLoad();
+  if (!data[MODAL_DATE]) data[MODAL_DATE] = {};
+  data[MODAL_DATE]['manual'] = {
+    predictions: {
+      chalk: actuals.map(a => ({ name: a.name, rating: 0, team: '', pos: '' })),
+      gameLabel: 'Manual Entry'
+    },
+    actuals: actuals,
+    actualsAt: new Date().toISOString(),
+    savedAt: new Date().toISOString()
+  };
+  labSave(data);
+
+  // Send to backend for calibration
+  try {
+    const r = await fetch('/api/actuals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: MODAL_DATE, scope: 'manual', scores: actuals })
+    });
+    if (r.ok) {
+      const result = await r.json();
+      if (result.calibration) calSave(result.calibration);
+    }
+  } catch(e) {
+    console.warn('Backend calibration sync failed:', e);
+  }
+
+  closeEntryModal();
+  // Reset the onclick back to the normal handler
+  document.getElementById('modalSubmitBtn').onclick = submitActuals;
   loadDay(MODAL_DATE);
   renderDayPicker();
 }
