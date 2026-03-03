@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-CACHE_DIR = Path("/tmp/nba_real_cache_v3")
+CACHE_DIR = Path("/tmp/nba_real_cache_v4")
 CACHE_DIR.mkdir(exist_ok=True)
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
@@ -203,15 +203,34 @@ def _parse_game_log(game_log):
     """Extract last 5 game averages from the overview gameLog.
 
     Handles multiple ESPN formats:
-    - Format A: seasonTypes[].categories[].events{} with labels
-    - Format B: categories[].events[] or entries[]
-    - Format C: labels[] + entries[] at top level
+    - Format A: statistics[].labels/names + statistics[].events[].stats
+      (current ESPN format as of March 2026)
+    - Format B: seasonTypes[].categories[].events{} with labels
+    - Format C: categories[].events[] or entries[]
+    - Format D: labels[] + entries[] at top level
     """
     if not game_log:
         return None
 
     try:
-        # --- Format A: seasonTypes[0].categories[0].events ---
+        # --- Format A: statistics[0].labels + events[].stats ---
+        # This is the actual format ESPN returns as of March 2026:
+        #   gameLog.statistics[0].labels = ["MIN", "FG%", "REB", "AST", ...]
+        #   gameLog.statistics[0].names  = ["minutes", "fieldGoalPct", ...]
+        #   gameLog.statistics[0].events = [{"eventId": "...", "stats": ["18", ...]}, ...]
+        for stat_block in game_log.get("statistics", []):
+            # Prefer 'labels' (short: "MIN", "PTS") but fall back to 'names'
+            raw_labels = stat_block.get("labels", stat_block.get("names", []))
+            labels = [l.lower() for l in raw_labels]
+            events = stat_block.get("events", [])
+            if isinstance(events, dict):
+                events = list(events.values())
+            if labels and events:
+                result = _avg_entries(labels, events[-5:])
+                if result:
+                    return result
+
+        # --- Format B: seasonTypes[0].categories[0].events ---
         season_types = game_log.get("seasonTypes", [])
         if season_types:
             for st in season_types:
@@ -229,7 +248,7 @@ def _parse_game_log(game_log):
                         if result:
                             return result
 
-        # --- Format B: categories[0].events ---
+        # --- Format C: categories[0].events ---
         for cat in game_log.get("categories", []):
             labels = [l.lower() for l in cat.get("labels", [])]
             events = cat.get("events", cat.get("entries", []))
@@ -240,7 +259,7 @@ def _parse_game_log(game_log):
                 if result:
                     return result
 
-        # --- Format C: top-level labels + entries ---
+        # --- Format D: top-level labels + entries ---
         labels = [l.lower() for l in game_log.get("labels", [])]
         entries = game_log.get("entries", game_log.get("events", []))
         if isinstance(entries, dict):
