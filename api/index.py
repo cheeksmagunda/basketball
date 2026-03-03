@@ -269,21 +269,31 @@ def _cascade_minutes(roster, stats_map):
 # UPSIDE = best EV at high risk (deep bench + bench with hot streaks)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _ownership_mult_chalk(proj_min):
-    """Moderate inverse-ownership mult. Penalizes stars, rewards role players."""
-    if proj_min < 15:  return 1.8   # deep bench — too risky for chalk
-    if proj_min < 22:  return 2.0   # bench — moderate for chalk (safe mode)
-    if proj_min < 28:  return 2.2   # role players
-    if proj_min < 33:  return 1.5   # starters
-    return 0.9                      # stars — everyone drafts them, low mult
+def _lerp_mult(minutes, points):
+    """Linearly interpolate ownership mult from control points — no cliffs."""
+    if minutes <= points[0][0]: return points[0][1]
+    if minutes >= points[-1][0]: return points[-1][1]
+    for i in range(len(points) - 1):
+        x0, y0 = points[i]
+        x1, y1 = points[i + 1]
+        if x0 <= minutes <= x1:
+            t = (minutes - x0) / (x1 - x0)
+            return round(y0 + t * (y1 - y0), 3)
+    return points[-1][1]
 
-def _ownership_mult_upside(proj_min):
-    """Aggressive inverse-ownership mult. Maximizes deep bench upside."""
-    if proj_min < 15:  return 3.5   # deep bench lottery tickets
-    if proj_min < 22:  return 3.0   # bench players
-    if proj_min < 28:  return 2.0   # role players
-    if proj_min < 33:  return 1.2   # starters
-    return 0.6                      # stars — skip them for upside
+# Smooth ownership curves: (minutes, multiplier) control points
+# Chalk: peaks at role players (22 min), gently slopes down for stars
+CHALK_CURVE = [(15, 2.0), (22, 2.2), (28, 1.5), (33, 1.1), (38, 0.8)]
+# Upside: aggressively rewards low-minute players, steeper star penalty
+UPSIDE_CURVE = [(15, 3.0), (22, 2.8), (28, 1.8), (33, 0.9), (38, 0.5)]
+
+def _ownership_mult_chalk(avg_min):
+    """Smooth inverse-ownership mult for Starting 5 (safe) mode."""
+    return _lerp_mult(avg_min, CHALK_CURVE)
+
+def _ownership_mult_upside(avg_min):
+    """Smooth aggressive inverse-ownership mult for Rotation (upside) mode."""
+    return _lerp_mult(avg_min, UPSIDE_CURVE)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
