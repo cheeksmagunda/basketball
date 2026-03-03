@@ -1,10 +1,12 @@
 import json
 import hashlib
 import pickle
+import time
 import numpy as np
 import requests
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
@@ -35,9 +37,19 @@ for _p in [
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 MIN_GATE = 15  # Minimum projected minutes to qualify
+CACHE_TTL = 1800  # 30 minutes in seconds
+ET = ZoneInfo("America/New_York")
 
-def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
-def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
+def _today():
+    """NBA date in Eastern Time (YYYYMMDD). ESPN and NBA operate on ET."""
+    return datetime.now(ET).strftime("%Y%m%d")
+
+def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{_today()}:{k}'.encode()).hexdigest()}.json"
+def _cg(k):
+    p = _cp(k)
+    if not p.exists(): return None
+    if time.time() - p.stat().st_mtime > CACHE_TTL: return None  # expired
+    return json.loads(p.read_text())
 def _cs(k, v): _cp(k).write_text(json.dumps(v))
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
@@ -53,7 +65,7 @@ def _espn_get(url):
 def fetch_games():
     c = _cg("games")
     if c: return c
-    data = _espn_get(f"{ESPN}/scoreboard")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={_today()}")
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
