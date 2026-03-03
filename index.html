@@ -128,6 +128,20 @@
       margin-bottom: 1rem;
       min-height: 1.1rem;
     }
+    .btn {
+      width: 100%;
+      padding: 0.85rem;
+      background: #1d4ed8;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #2563eb; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -141,6 +155,8 @@
       <button class="tab" data-mode="contrarian" onclick="switchMode('contrarian')">Contrarian</button>
     </div>
     <p class="mode-desc" id="modeDesc">Highest-floor picks — proven producers with strong matchups.</p>
+
+    <button class="btn" id="getPicksBtn" onclick="getPicks()">Get Picks</button>
 
     <div class="spinner" id="spinner"></div>
     <ul class="picks-list" id="picks"></ul>
@@ -165,8 +181,6 @@
         t.classList.toggle('active', t.dataset.mode === mode);
       });
       document.getElementById('modeDesc').textContent = MODE_DESCRIPTIONS[mode];
-
-      getPicks(mode);
     }
 
     async function getPicks(mode) {
@@ -175,7 +189,9 @@
       const picksList = document.getElementById('picks');
       const errorEl = document.getElementById('error');
 
+      const btn = document.getElementById('getPicksBtn');
       loading = true;
+      btn.disabled = true;
       document.querySelectorAll('.tab').forEach(t => t.disabled = true);
       spinner.style.display = 'block';
       picksList.innerHTML = '';
@@ -206,13 +222,12 @@
         errorEl.textContent = 'Failed to fetch picks. Please try again.';
       } finally {
         loading = false;
+        btn.disabled = false;
         document.querySelectorAll('.tab').forEach(t => t.disabled = false);
         spinner.style.display = 'none';
       }
     }
 
-    // Auto-load chalk picks on page load
-    getPicks('chalk');
   </script>
 </body>
 </html>
