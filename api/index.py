@@ -6,7 +6,7 @@ import requests
 from datetime import date, datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Body
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
@@ -251,8 +251,8 @@ def _cascade_minutes(roster, stats_map):
 #   Bench (15-22)       → low ownership, high mult ~2.8x ← SWEET SPOT
 #   Deep bench (<15)    → below minutes gate, filtered out
 #
-# CHALK = best EV at moderate risk (role players + starters in form)
-# UPSIDE = best EV at high risk (deep bench + bench with hot streaks)
+# CHALK = best EV at moderate risk (role players + starters)
+# UPSIDE = chalk with max 2 alternative swaps for differentiation
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ownership_mult_chalk(proj_min):
@@ -263,20 +263,12 @@ def _ownership_mult_chalk(proj_min):
     if proj_min < 33:  return 1.5   # starters
     return 0.9                      # stars — everyone drafts them, low mult
 
-def _ownership_mult_upside(proj_min):
-    """Aggressive inverse-ownership mult. Maximizes deep bench upside."""
-    if proj_min < 15:  return 3.5   # deep bench lottery tickets
-    if proj_min < 22:  return 3.0   # bench players
-    if proj_min < 28:  return 2.0   # role players
-    if proj_min < 33:  return 1.2   # starters
-    return 0.6                      # stars — skip them for upside
-
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
     return pts + reb + (ast * 1.5) + (stl * 3.5) + (blk * 3.0) - (tov * 1.2)
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
-                   cascade_bonus=0.0):
+                   cascade_bonus=0.0, cal_bias=0.0):
     if pinfo.get("is_out"): return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
@@ -332,13 +324,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Raw projected score (what they'll actually score in Real Sports)
     raw_score = (base * pace_adj * spread_adj * home_adj) / 5.0
 
+    # Apply calibration bias from user-uploaded actuals
+    if cal_bias != 0.0:
+        raw_score += cal_bias
+
     # Use projected minutes (with cascade) for ownership tiers
     om_chalk  = _ownership_mult_chalk(proj_min)
-    om_upside = _ownership_mult_upside(proj_min)
 
-    # EV scores — hot removed; recent form already captured in 60/40 blend
+    # EV score — ownership-weighted expected value
     chalk_ev  = round(raw_score * om_chalk, 2)
-    upside_ev = round(raw_score * om_upside, 2)
 
     # Expected draft points (EDP) = raw_score * est_mult
     expected_dp = round(raw_score * om_chalk, 1)
@@ -350,7 +344,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "team":    team_abbr,
         "rating":  round(raw_score, 1),
         "chalk_ev":chalk_ev,
-        "upside_ev":upside_ev,
         "expected_dp": expected_dp,
         "predMin": round(proj_min, 1),
         "pts":     round(pts, 1),
@@ -364,9 +357,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "_base":   base,
         "is_cascade_pick": is_cascade,
         "_decline": round(decline_factor, 2),
+        "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
     }
 
-def _run_game(game):
+def _run_game(game, cal_bias=0.0):
+    cache_key = f"game_proj_{game['gameId']}"
+    if cal_bias == 0.0:
+        cached = _cg(cache_key)
+        if cached: return cached
+
     home_r = fetch_roster(game["home"]["id"], game["home"]["abbr"])
     away_r = fetch_roster(game["away"]["id"], game["away"]["abbr"])
 
@@ -400,39 +399,11 @@ def _run_game(game):
             continue
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
         proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
-                              cascade_bonus=cascade_bonus)
+                              cascade_bonus=cascade_bonus, cal_bias=cal_bias)
         if proj:
             out.append(proj)
+    _cs(cache_key, out)
     return out
-
-def _classify_tiers(projections):
-    """Classify all projections into TOP / ACCEPTABLE / AVOID tiers."""
-    top = []
-    acceptable = []
-    avoid = []
-
-    for p in projections:
-        proj_min = p.get("predMin", 0)
-        edp = p.get("expected_dp", 0)
-        is_cascade = p.get("is_cascade_pick", False)
-
-        if proj_min >= 33:
-            # Stars — always AVOID regardless of raw score
-            avoid.append(p)
-        elif edp >= 15 or (is_cascade and edp >= 12):
-            # High EDP or cascade-boosted players
-            top.append(p)
-        elif edp >= 8:
-            acceptable.append(p)
-        else:
-            avoid.append(p)
-
-    # Sort each tier by expected_dp descending
-    top.sort(key=lambda x: x.get("expected_dp", 0), reverse=True)
-    acceptable.sort(key=lambda x: x.get("expected_dp", 0), reverse=True)
-    avoid.sort(key=lambda x: x.get("expected_dp", 0), reverse=True)
-
-    return {"top_picks": top[:8], "acceptable_fills": acceptable[:8], "avoid": avoid[:5]}
 
 CHALK_FLOOR = 3.5  # Minimum raw rating to qualify for chalk Starting 5
 
@@ -442,25 +413,28 @@ def _build_lineups(projections):
     chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # UPSIDE: sorted by upside_ev (aggressively rewards bench players)
-    upside_sorted = sorted(projections, key=lambda x: x["upside_ev"], reverse=True)
+    # UPSIDE: start with chalk, swap bottom 2 for best alternatives
     chalk_names = {p["name"] for p in chalk}
+    alternatives = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    alternatives.sort(key=lambda x: x["chalk_ev"], reverse=True)
 
-    upside = []
-    for p in upside_sorted:
-        if len(upside) >= 5: break
-        upside.append(dict(p))
+    upside = [dict(p) for p in chalk]
+    if len(alternatives) >= 1:
+        # Sort upside by chalk_ev ascending to find weakest chalk picks
+        weakest = sorted(upside, key=lambda x: x["chalk_ev"])
+        for i in range(min(2, len(alternatives), len(weakest))):
+            swap_in = alternatives[i]
+            swap_out = weakest[i]
+            # Only swap if alternative is competitive (within 70% of the weakest)
+            if swap_in["chalk_ev"] >= swap_out["chalk_ev"] * 0.7:
+                idx = next(j for j, p in enumerate(upside) if p["name"] == swap_out["name"])
+                upside[idx] = dict(swap_in)
 
-    # Force at least 2 different names vs chalk
-    if sum(1 for p in upside if p["name"] not in chalk_names) < 2:
-        upside = [dict(p) for p in upside_sorted[:5]]
-
+    # Re-sort upside by chalk_ev and assign slots
+    upside.sort(key=lambda x: x["chalk_ev"], reverse=True)
     for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
 
-    # Build tier classification
-    tiers = _classify_tiers(projections)
-
-    return chalk, upside, tiers
+    return chalk, upside
 
 def _save_history(game_label, players):
     hist = []
@@ -481,33 +455,35 @@ async def get_games():
     return fetch_games()
 
 @app.get("/api/slate")
-async def get_slate():
+async def get_slate(cal_bias: float = Query(0.0)):
     games = fetch_games()
     if not games:
-        return {"games": [], "lineups": {"chalk": [], "upside": []}, "tiers": None}
-    cached = _cg("slate_v4")
-    if cached: return cached
+        return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}}
+    if cal_bias == 0.0:
+        cached = _cg("slate_v5")
+        if cached: return cached
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for fut in as_completed({pool.submit(_run_game, g): g for g in games}):
+        for fut in as_completed({pool.submit(_run_game, g, cal_bias): g for g in games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
-    chalk, upside, tiers = _build_lineups(all_proj)
-    result = {"games": games, "lineups": {"chalk": chalk, "upside": upside}, "tiers": tiers}
-    _cs("slate_v4", result)
+    chalk, upside = _build_lineups(all_proj)
+    result = {"date": date.today().isoformat(), "games": games, "lineups": {"chalk": chalk, "upside": upside}}
+    if cal_bias == 0.0:
+        _cs("slate_v5", result)
     return result
 
 @app.get("/api/picks")
-async def get_picks(gameId: str = Query(...)):
+async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
         return JSONResponse({"error": "Game not found"}, status_code=404)
-    projections = _run_game(game)
+    projections = _run_game(game, cal_bias=cal_bias)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
-    chalk, upside, tiers = _build_lineups(projections)
+    chalk, upside = _build_lineups(projections)
     _save_history(game["label"], chalk)
-    return {"game": game, "lineups": {"chalk": chalk, "upside": upside}, "tiers": tiers}
+    return {"date": date.today().isoformat(), "game": game, "lineups": {"chalk": chalk, "upside": upside}}
 
 @app.get("/api/history")
 async def get_history():
@@ -515,9 +491,58 @@ async def get_history():
     try: return json.loads(HISTORY_FILE.read_text())
     except: return []
 
+CALIBRATION_FILE = DATA_DIR / "calibration.json"
+ACTUALS_FILE = DATA_DIR / "actuals_log.json"
+
+def _load_calibration():
+    if CALIBRATION_FILE.exists():
+        try: return json.loads(CALIBRATION_FILE.read_text())
+        except: pass
+    return {"bias": 0.0, "samples": 0}
+
+def _update_calibration(scores):
+    """Update running calibration bias from uploaded actuals."""
+    cal = _load_calibration()
+    errors = [s["actual_score"] - s["predicted_rating"] for s in scores
+              if s.get("actual_score") is not None and s.get("predicted_rating") is not None]
+    if not errors:
+        return cal
+    new_avg_error = sum(errors) / len(errors)
+    alpha = 0.3
+    if cal["samples"] > 0:
+        cal["bias"] = round(cal["bias"] * (1 - alpha) + new_avg_error * alpha, 3)
+    else:
+        cal["bias"] = round(new_avg_error, 3)
+    cal["samples"] += len(errors)
+    CALIBRATION_FILE.write_text(json.dumps(cal))
+    return cal
+
+@app.post("/api/actuals")
+async def save_actuals(payload: dict = Body(...)):
+    date_str = payload.get("date")
+    scope = payload.get("scope", "slate")
+    scores = payload.get("scores", [])
+    if not date_str or not scores:
+        return JSONResponse({"error": "Missing date or scores"}, status_code=400)
+    for s in scores:
+        val = s.get("actual_score")
+        if val is None or not (0 <= val <= 150):
+            return JSONResponse({"error": f"Invalid score for {s.get('name', '?')}: must be 0-150"}, status_code=400)
+    # Append to actuals log
+    log = []
+    if ACTUALS_FILE.exists():
+        try: log = json.loads(ACTUALS_FILE.read_text())
+        except: pass
+    log.append({"date": date_str, "scope": scope, "scores": scores, "ts": datetime.now().isoformat()})
+    ACTUALS_FILE.write_text(json.dumps(log[-200:], indent=2))
+    # Update calibration
+    cal = _update_calibration(scores)
+    return {"status": "saved", "calibration": cal}
+
 @app.get("/api/evaluate")
 async def evaluate():
-    return {"status": "success"}
+    """Returns current calibration stats."""
+    return _load_calibration()
 
 @app.get("/api/refresh")
 async def refresh():
