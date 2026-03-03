@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-CACHE_DIR = Path("/tmp/nba_real_cache_v5")
+CACHE_DIR = Path("/tmp/nba_real_cache_v6")
 CACHE_DIR.mkdir(exist_ok=True)
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
