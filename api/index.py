@@ -146,11 +146,13 @@ def _fetch_athlete(pid):
             blended["season_min"] = season["min"]
             blended["recent_pts"] = recent["pts"]
             blended["season_pts"] = season["pts"]
+            blended["recent_min"] = recent["min"]
             blended["recent_stl"] = recent["stl"]
             blended["recent_blk"] = recent["blk"]
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
+            blended["recent_min"] = season["min"]
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_stl"] = season["stl"]
@@ -323,6 +325,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
+    # Declining usage penalty: if recent minutes dropped >15% vs season,
+    # scale down production (fewer minutes = fewer counting stats)
+    recent_min = stats.get("recent_min", avg_min)
+    season_min = stats.get("season_min", avg_min)
+    if recent_min < season_min * 0.85 and season_min > 0:
+        decline_factor = recent_min / season_min
+        heuristic *= decline_factor
+
     # Scale heuristic by minute boost from cascade
     if cascade_bonus > 0 and avg_min > 0:
         min_scale = min(proj_min / avg_min, 1.4)  # cap at 40% boost
@@ -353,10 +363,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     hot = round((recent_pts / season_pts) if season_pts > 0 else 1.0, 2)
     hot = min(hot, 2.5)  # cap at 2.5x to prevent outliers
 
-    # Use BASE avg_min for ownership tiers (not cascaded proj_min)
-    # Ownership reflects public perception of the player's role, not our projection
-    om_chalk  = _ownership_mult_chalk(avg_min)
-    om_upside = _ownership_mult_upside(avg_min)
+    # Use the LOWER of blended and recent minutes for ownership tiers
+    # If recent minutes dropped (trade, role change), ownership reflects current role
+    recent_min = stats.get("recent_min", avg_min)
+    ownership_min = min(avg_min, recent_min)
+    om_chalk  = _ownership_mult_chalk(ownership_min)
+    om_upside = _ownership_mult_upside(ownership_min)
 
     # EV scores
     chalk_ev  = round(raw_score * om_chalk  * max(hot, 1.0), 2)
