@@ -343,7 +343,66 @@ async def get_history():
 
 @app.get("/api/evaluate")
 async def evaluate():
-    return {"status": "success"}
+    if not HISTORY_FILE.exists():
+        return {"status": "ok", "updated": 0}
+    try:
+        hist = json.loads(HISTORY_FILE.read_text())
+    except Exception:
+        return {"status": "error", "message": "Could not read history"}
+
+    # Fetch today's scoreboard for box score links
+    sb = _espn_get(f"{ESPN}/scoreboard")
+    events = sb.get("events", [])
+
+    # Build a lookup: player name (lower) → actual DFS score
+    actual_scores = {}
+    for ev in events:
+        event_id = ev.get("id")
+        if not event_id:
+            continue
+        box_url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+                   f"basketball/nba/summary?event={event_id}")
+        box_cache_key = f"box_{event_id}"
+        box = _cg(box_cache_key)
+        if not box:
+            box = _espn_get(box_url)
+            if box:
+                _cs(box_cache_key, box)
+        if not box:
+            continue
+        for bp in box.get("boxscore", {}).get("players", []):
+            for stat_set in bp.get("statistics", []):
+                labels = [l.lower() for l in stat_set.get("labels", [])]
+                for athlete_row in stat_set.get("athletes", []):
+                    name = athlete_row.get("athlete", {}).get("displayName", "")
+                    if not name:
+                        continue
+                    stats_vals = athlete_row.get("stats", [])
+                    s = {}
+                    for lbl, val in zip(labels, stats_vals):
+                        s[lbl] = _safe_float(val)
+                    pts = s.get("pts", 0)
+                    reb = s.get("reb", 0)
+                    ast = s.get("ast", 0)
+                    stl = s.get("stl", 0)
+                    blk = s.get("blk", 0)
+                    tov = s.get("to", s.get("tov", 0))
+                    dfs = (pts + reb + (ast * 1.5)
+                           + (stl * 3.5) + (blk * 3.0) - (tov * 1.2))
+                    actual_scores[name.lower()] = round(dfs / 5.0, 1)
+
+    updated = 0
+    for entry in hist:
+        for p in entry.get("players", []):
+            if p.get("actual_score") is not None:
+                continue
+            key = p["name"].lower()
+            if key in actual_scores:
+                p["actual_score"] = actual_scores[key]
+                updated += 1
+
+    HISTORY_FILE.write_text(json.dumps(hist[-50:], indent=2))
+    return {"status": "ok", "updated": updated}
 
 @app.get("/api/refresh")
 async def refresh():
