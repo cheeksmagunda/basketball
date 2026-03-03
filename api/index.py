@@ -357,12 +357,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Raw projected score (what they'll actually score in Real Sports)
     raw_score = (base * pace_adj * spread_adj * home_adj) / 5.0
 
-    # Hot streak: recent form vs season avg
-    season_pts = stats.get("season_pts", pts)
-    recent_pts = stats.get("recent_pts", pts)
-    hot = round((recent_pts / season_pts) if season_pts > 0 else 1.0, 2)
-    hot = min(hot, 2.5)  # cap at 2.5x to prevent outliers
-
     # Use the LOWER of blended and recent minutes for ownership tiers
     # If recent minutes dropped (trade, role change), ownership reflects current role
     recent_min = stats.get("recent_min", avg_min)
@@ -370,9 +364,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     om_chalk  = _ownership_mult_chalk(ownership_min)
     om_upside = _ownership_mult_upside(ownership_min)
 
-    # EV scores
-    chalk_ev  = round(raw_score * om_chalk  * max(hot, 1.0), 2)
-    upside_ev = round(raw_score * om_upside * max(hot, 1.0) * max(hot, 1.0), 2)  # hot^2 for upside
+    # EV scores (recent form is already captured in the 60/40 blended stats)
+    chalk_ev  = round(raw_score * om_chalk, 2)
+    upside_ev = round(raw_score * om_upside, 2)
 
     # Expected draft points (EDP) = raw_score / 5 * est_mult
     expected_dp = round(raw_score * om_chalk, 1)
@@ -392,7 +386,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "ast":     round(ast, 1),
         "stl":     round(stl, 1),
         "blk":     round(blk, 1),
-        "hot":     hot,
         "est_mult": om_chalk,
         "om":      om_chalk,
         "slot":    "1.0x",

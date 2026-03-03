@@ -629,8 +629,6 @@ function renderCards(picks, containerId, mode) {
       p.ast      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.ast}</b> ast</div>`,
       p.stl      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.stl}</b> stl</div>`,
       p.blk      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.blk}</b> blk</div>`,
-      (isUpside && p.hot >= 1.15) && `<div class="stat-pill" style="color:#f97316"><b>↑${Math.round((p.hot-1)*100)}%</b> form</div>`,
-      (!isUpside && p.hot >= 1.15) && `<div class="stat-pill" style="color:#f97316"><b>↑${Math.round((p.hot-1)*100)}%</b> form</div>`,
     ].filter(Boolean).join('');
 
     return `
@@ -645,7 +643,7 @@ function renderCards(picks, containerId, mode) {
         </div>
         <div class="score-col" style="--score-color:${scoreColor}">
           <div class="score-num">${isUpside ? (p.upside_ev || p.rating) : p.rating}</div>
-          <span class="score-label">${isUpside ? '🔥 rotation' : (p.hot >= 1.15 ? '🔥 hot' : 'projected')}</span>
+          <span class="score-label">${isUpside ? 'rotation' : 'projected'}</span>
           <div class="slot-badge" style="background:${isUpside?'rgba(249,115,22,0.1)':'rgba(79,142,247,0.1)'};border-color:${isUpside?'rgba(249,115,22,0.25)':'rgba(79,142,247,0.25)'}">
             ${p.slot}
           </div>
