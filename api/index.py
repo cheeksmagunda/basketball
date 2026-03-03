@@ -1,3 +1,4 @@
+"""Daily Draft Optimizer – NBA prediction API."""
 import json
 import hashlib
 from datetime import date
