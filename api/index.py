@@ -764,14 +764,13 @@ def _build_lineups(projections):
 
     # STARTING 5: MILP-optimized slot assignments using ADDITIVE formula
     # MILP maximizes: Σ rating_i × (slot_mult_j + card_boost_i)
-    # max_per_team=3 allows stacking bench players from the same team —
-    # March 3 lesson: winner gmoneytb had 3 PHI players (Raynaud, Yabusele,
-    # McCain) all from a blowout loss where bench got extended garbage time.
-    # Strict max=1 ruled out the winning strategy entirely.
+    # No team limit — Real Sports has no per-team restriction. If the best
+    # value is 5 players from the same blowout loss, so be it.
+    # March 3: winner gmoneytb had 3 PHI players from a 40-pt blowout loss.
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult",
-                            max_per_team=3)
+                            max_per_team=0)
 
     # CONTRARIAN: maximize leverage against the field
     chalk_names = {p["name"] for p in chalk}
