@@ -85,9 +85,32 @@ def _espn_get(url):
         return r.json()
     except: return {}
 
+def _fetch_b2b_teams():
+    """Detect teams on the second night of a back-to-back.
+
+    Fetches yesterday's scoreboard and returns a set of team abbreviations
+    that played yesterday. Players on these teams should be penalized —
+    rest-managed players (Robinson, older players) often sit or get
+    reduced minutes on B2Bs.
+    """
+    cache_key = "b2b_teams"
+    c = _cg(cache_key)
+    if c is not None: return set(c)
+    yesterday = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={yesterday}")
+    b2b = set()
+    for ev in data.get("events", []):
+        comp = ev["competitions"][0]
+        for cd in comp.get("competitors", []):
+            abbr = cd.get("team", {}).get("abbreviation", "")
+            if abbr: b2b.add(abbr)
+    _cs(cache_key, list(b2b))
+    return b2b
+
 def fetch_games():
     c = _cg("games")
     if c: return c
+    b2b_teams = _fetch_b2b_teams()
     data = _espn_get(f"{ESPN}/scoreboard")
     games = []
     for ev in data.get("events", []):
@@ -106,6 +129,8 @@ def fetch_games():
             "spread": _safe_float(odds.get("spread"), None),
             "total":  _safe_float(odds.get("overUnder"), None),
             "startTime": ev.get("date", ""),
+            "home_b2b": home["abbr"] in b2b_teams,
+            "away_b2b": away["abbr"] in b2b_teams,
         })
     _cs("games", games)
     return games
@@ -166,7 +191,22 @@ def _fetch_athlete(pid):
             if 10 <= c2["min"] <= 48 and c2["pts"] > 0:
                 recent = c2
         if recent:
+            # Minutes: when recent is significantly lower than season, override
+            # with heavier recent weight. Catches role changes mid-season
+            # (e.g. Drummond 25.7 season → 16.1 recent after Embiid return,
+            #  Love 25.8 → 14.8 after Utah trade, Clarkson 24.2 → 18.8)
+            min_ratio = recent["min"] / max(season["min"], 1)
+            if min_ratio < 0.75:
+                # Major role change: 80% recent, 20% season
+                min_blend = round(season["min"] * 0.2 + recent["min"] * 0.8, 2)
+            elif min_ratio < 0.90:
+                # Moderate decline: 65% recent, 35% season
+                min_blend = round(season["min"] * 0.35 + recent["min"] * 0.65, 2)
+            else:
+                min_blend = round(season["min"] * 0.5 + recent["min"] * 0.5, 2)
+
             blended = {k: round(season[k] * 0.5 + recent[k] * 0.5, 2) for k in season}
+            blended["min"] = min_blend  # Override minutes with smart blend
             blended["season_min"] = season["min"]
             blended["recent_min"] = recent["min"]
             blended["recent_pts"] = recent["pts"]
@@ -405,13 +445,19 @@ def _game_script_label(total):
 
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
-                   cascade_bonus=0.0, cal_bias=0.0):
+                   cascade_bonus=0.0, cal_bias=0.0, is_b2b=False):
     if pinfo.get("is_out"): return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
     # Apply cascade minute boost
     proj_min = avg_min + cascade_bonus
+
+    # Back-to-back penalty: teams on 2nd night of B2B see reduced minutes
+    # and rest-managed players (older, injury-prone) often sit entirely.
+    # Penalize projected minutes by 12% on B2B nights.
+    if is_b2b:
+        proj_min *= 0.88
 
     # Minutes gate: must project to at least 15 minutes
     if proj_min < MIN_GATE: return None
@@ -468,8 +514,20 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Contextual multipliers — game closeness is #1 factor for Real Sports
     pace_adj   = 1.0 + (0.06 * ((total or 222) - 222) / 20)
-    # Stronger spread adjustment: tight games generate exponentially more Real Score
-    spread_adj = 1.0 + (0.04 * (15 - abs(spread or 0)) / 15)
+    # Aggressive spread-based game weighting — this is the GAME SELECTION layer.
+    # In Real Sports, actions in tight games are exponentially more valuable.
+    # Pick'em games (spread ≤2) get a massive boost; blowouts (>8) get crushed.
+    abs_spread = abs(spread or 0)
+    if abs_spread <= 2:
+        spread_adj = 1.15   # Pick'em — maximum Real Score environment
+    elif abs_spread <= 4:
+        spread_adj = 1.08   # Tight game — very good
+    elif abs_spread <= 6:
+        spread_adj = 1.0    # Moderate — neutral
+    elif abs_spread <= 8:
+        spread_adj = 0.88   # Lopsided — penalized
+    else:
+        spread_adj = 0.72   # Projected blowout — severe penalty (PHI-UTA, IND-LAC)
     home_adj   = 1.02 if side == "home" else 1.0
 
     s_base = base * pace_adj * spread_adj * home_adj
@@ -567,8 +625,11 @@ def _run_game(game, cal_bias=0.0):
         if not stats:
             continue
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
+        # Check if this player's team is on a back-to-back
+        b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
         proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
-                              cascade_bonus=cascade_bonus, cal_bias=cal_bias)
+                              cascade_bonus=cascade_bonus, cal_bias=cal_bias,
+                              is_b2b=bool(b2b))
         if proj:
             out.append(proj)
     _cs(cache_key, out)
