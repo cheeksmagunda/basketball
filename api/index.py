@@ -568,9 +568,12 @@ CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
 MOONSHOT_FLOOR = 4.0  # Floor for Moonshot — with neutral ownership, Real Score drives selection
 
 def _build_lineups(projections):
-    # STARTING 5: MILP-optimized slot assignments (maximizes score × slot multiplier)
+    # STARTING 5: MILP-optimized slot assignments
+    # Uses chalk_ev (raw_score × est_card_mult) so the solver accounts for
+    # card advantage — role players with high cards beat unboosted stars
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev")
+    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
+                            rating_key="chalk_ev")
 
     # CONTRARIAN: maximize leverage against the field
     # Targets Top 10% payout tier by fading popular picks and elevating
@@ -674,7 +677,9 @@ def _build_game_lineups(projections, game):
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
 
     # STARTING 5: MILP-optimized, balanced across both teams
-    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev")
+    # rating_key="chalk_ev" so solver uses card-adjusted value, not raw rating
+    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
+                            rating_key="chalk_ev")
 
     # CONTRARIAN: leverage play — no overlap with Starting 5
     chalk_names = {p["name"] for p in chalk}
