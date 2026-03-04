@@ -140,45 +140,44 @@ def _fallback_sort(projections, n, sort_key):
 
 
 def contrarian_score(player, spread=0):
-    """Calculate contrarian value for a player.
+    """Calculate moonshot/contrarian value for the Real Sports App.
 
-    Contrarian value rewards:
-    - Lower projected minutes (bench sweet spot = less popular)
-    - Cascade picks (less known to the field)
-    - Underdog side (field gravitates to favorites)
-    - Higher variance (divergent from consensus)
+    Unlike traditional DFS, contrarian value in Real Sports is NOT about
+    targeting low-minute bench players. The Real Score algorithm rewards:
+    - Close-game environments (high Real Score ceiling)
+    - High-variance/streaky players (momentum bonus potential)
+    - Expanded role opportunities (cascade picks with clutch court time)
+
+    Traditional DFS fades stars based on ownership %. Real Sports rewards
+    stars in tight games because clutch plays generate massive Real Scores.
 
     Args:
-        player: Player dict with rating, predMin, is_cascade_pick, etc.
-        spread: Game spread (used to identify underdogs)
+        player: Player dict with rating, _real_meta, is_cascade_pick, etc.
+        spread: Game spread (used for closeness/underdog assessment)
 
     Returns:
-        Contrarian-adjusted score for ranking
+        Moonshot-adjusted score for ranking
     """
     base_rating = player.get("rating", 0)
-    proj_min = player.get("predMin", 20)
 
-    # Inverse popularity weight: bench players are more contrarian
-    if proj_min >= 33:
-        inv_pop = 0.5     # Stars — everyone picks them, low leverage
-    elif proj_min >= 28:
-        inv_pop = 0.8     # Starters — moderate leverage
-    elif proj_min >= 22:
-        inv_pop = 1.3     # Role players — good leverage
-    elif proj_min >= 15:
-        inv_pop = 2.0     # Bench — high leverage
-    else:
-        inv_pop = 1.5     # Deep bench — very contrarian but risky
+    # Game closeness boost — derived from Real Score metadata
+    # The Real Score engine already computed closeness from Monte Carlo sims
+    meta = player.get("_real_meta", {})
+    closeness = meta.get("c_closeness", 1.3)
+    # Normalize closeness (1.0-2.0 range) to a scoring boost (0.7-1.3)
+    closeness_boost = 0.7 + (closeness - 1.0) * 0.6
 
-    # Cascade bonus: injury-boost picks are under-owned
-    cascade_bonus = 1.4 if player.get("is_cascade_pick") else 1.0
+    # Momentum/variance — streaky players have higher Real Score ceiling
+    momentum = meta.get("m_momentum", 1.0)
 
-    # Underdog bonus: players on unfavored teams are less owned
+    # Cascade bonus: expanded role = more court time for clutch moments
+    cascade_bonus = 1.15 if player.get("is_cascade_pick") else 1.0
+
+    # Underdog side — underdogs in close games generate huge Real Scores
     underdog_bonus = 1.0
-    if abs(spread or 0) > 4:
-        underdog_bonus = 1.2  # General bonus for games with clear favorites
+    game_spread = abs(player.get("_spread", spread) or 0)
+    if 2 < game_spread <= 7:
+        underdog_bonus = 1.1  # Competitive game with clear underdog
 
-    # Contrarian score = base quality × leverage multipliers
-    c_score = base_rating * inv_pop * cascade_bonus * underdog_bonus
-
+    c_score = base_rating * closeness_boost * momentum * cascade_bonus * underdog_bonus
     return round(c_score, 2)

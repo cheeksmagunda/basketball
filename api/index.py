@@ -62,10 +62,14 @@ def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
 def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
 def _is_locked(start_time_iso):
-    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start (or past it)."""
+    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start.
+    Returns False for completed games (>3h past start) to avoid stale ESPN data."""
     try:
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
+        # Completed games (>3h past start) are stale, not locked
+        if now > game_start + timedelta(hours=3):
+            return False
         return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
     except:
         return False
@@ -162,7 +166,7 @@ def _fetch_athlete(pid):
             if 10 <= c2["min"] <= 48 and c2["pts"] > 0:
                 recent = c2
         if recent:
-            blended = {k: round(season[k] * 0.6 + recent[k] * 0.4, 2) for k in season}
+            blended = {k: round(season[k] * 0.5 + recent[k] * 0.5, 2) for k in season}
             blended["season_min"] = season["min"]
             blended["recent_min"] = recent["min"]
             blended["recent_pts"] = recent["pts"]
@@ -264,36 +268,47 @@ def _cascade_minutes(roster, stats_map):
                     cascade_flags[pid] = 0.0
                 cascade_flags[pid] += bonus
 
+    # Cap per-player cascade at 3 minutes to prevent unrealistic projections
+    for pid in cascade_flags:
+        cascade_flags[pid] = min(cascade_flags[pid], 3.0)
+
     return cascade_flags
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# THE CORE MODEL
+# THE CORE MODEL — Optimized for the Real Sports App
 #
-# DFS Scoring Formula: PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
+# The Real Sports App uses a fundamentally different scoring system than
+# traditional DFS. The "Real Score" algorithm:
+#   1. Game Closeness — tight games generate exponentially higher scores
+#   2. Clutch Factor — 4th quarter, lead-changing plays get massive boosts
+#   3. Momentum — streaky, burst production scores higher than steady output
+#   4. Defensive Impact — steals/blocks weighted by win probability impact
 #
-# Real Sports Value = actual_score × slot_multiplier_received
-# The slot multiplier is determined by ownership — high-owned players (stars)
-# always land in low-multiplier slots.
+# Traditional DFS thinking (fade stars, target bench sweet spot) is WRONG here.
+# A star in a pick'em game >> a bench player in a blowout, because the Real
+# Score algorithm exponentially rewards clutch, close-game performances.
 #
-# We estimate ownership via projected minutes (including cascade):
-#   Stars (33+ min)     → everyone drafts them → low slot mult ~0.9x → AVOID
-#   Starters (28-33)    → popular → slot mult ~1.5x
-#   Role players(22-28) → moderate ownership → slot mult ~2.2x
-#   Bench (15-22)       → low ownership, high mult ~2.8x ← SWEET SPOT
-#   Deep bench (<15)    → below minutes gate, filtered out
+# The Real Score engine (Monte Carlo simulation) already handles game-context
+# differentiation through closeness, clutch, and momentum coefficients.
+# We let Real Score drive player selection with a near-neutral ownership tilt.
 #
-# STARTING 5 = best EV at moderate risk (role players + starters)
-# MOONSHOT = 5 different players — lower usage, higher ceiling, higher production floor
+# DFS Base Formula (proxy for raw production):
+#   PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
+#
+# STARTING 5 = highest projected Real Score (game-context weighted)
+# MOONSHOT = 5 different players — high variance, close-game ceiling plays
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ownership_mult_chalk(proj_min):
-    """Moderate inverse-ownership mult. Penalizes stars, rewards role players."""
-    if proj_min < 15:  return 1.8   # deep bench — too risky for chalk
-    if proj_min < 22:  return 2.8   # bench sweet spot (Sheppard, González tier)
-    if proj_min < 28:  return 2.2   # role players
-    if proj_min < 33:  return 1.5   # starters
-    return 0.9                      # stars — everyone drafts them, low mult
+    """Near-neutral multiplier — Real Score engine handles differentiation.
+
+    In the Real Sports App, value comes from game closeness and clutch plays,
+    NOT from targeting low-ownership bench players. A star in a pick'em game
+    generates far more Real Score than a bench player in a blowout.
+    """
+    if proj_min < 15:  return 0.9   # deep bench — too few minutes for clutch opportunity
+    return 1.0                      # let Real Score drive selection
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
@@ -385,7 +400,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Apply cascade minute boost
     proj_min = avg_min + cascade_bonus
-    is_cascade = cascade_bonus >= 2.0  # Flag if cascade added 2+ minutes
+    is_cascade = cascade_bonus >= 2.5  # Flag only significant role expansions
 
     # Minutes gate: must project to at least 15 minutes
     if proj_min < MIN_GATE: return None
@@ -401,34 +416,39 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
-    # Scale heuristic by minute boost from cascade (capped at 1.4x)
+    # Scale heuristic by minute boost from cascade (capped at 1.25x)
     if cascade_bonus > 0 and avg_min > 0:
-        min_scale = min(proj_min / avg_min, 1.4)
+        min_scale = min(proj_min / avg_min, 1.25)
         heuristic *= min_scale
 
-    # Declining usage penalty: if recent minutes dropped >15% vs season,
+    # Declining usage penalty: if recent minutes dropped >10% vs season,
     # scale output proportionally (e.g. Conley post-trade: 26→19 min = 0.73x)
     season_min = stats.get("season_min", avg_min)
     recent_min = stats.get("recent_min", avg_min)
     decline_factor = 1.0
-    if season_min > 0 and recent_min < season_min * 0.85:
+    if season_min > 0 and recent_min < season_min * 0.90:
         decline_factor = recent_min / season_min
         heuristic *= decline_factor
 
-    # AI blend
+    # AI blend — use spread-derived opponent quality instead of hardcoded 112.0
     base = heuristic
     if AI_MODEL is not None:
         try:
             usage = min(max(pts / max(avg_min, 1) * 0.8, 0.9), 1.5)
-            features = np.array([[avg_min, stats.get("season_pts", pts), usage, 112.0]])
+            # Derive opponent defensive quality from spread and side
+            # Negative spread = home favored → away faces tougher D
+            sign = 1.0 if side == "away" else -1.0
+            opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
+            features = np.array([[avg_min, stats.get("season_pts", pts), usage, opp_def_rating]])
             ai_pred = AI_MODEL.predict(features)[0]
             ai_norm = ai_pred * (heuristic / max(ai_pred, 1))
             base = (ai_norm * 0.7) + (heuristic * 0.3)
         except: pass
 
-    # Contextual multipliers (strengthened pace adjustment)
-    pace_adj   = 1.0 + (0.06 * ((total or 222) - 222) / 20)   # doubled from 0.03
-    spread_adj = 1.0 + (0.015 * (15 - abs(spread or 0)) / 15)
+    # Contextual multipliers — game closeness is #1 factor for Real Sports
+    pace_adj   = 1.0 + (0.06 * ((total or 222) - 222) / 20)
+    # Stronger spread adjustment: tight games generate exponentially more Real Score
+    spread_adj = 1.0 + (0.04 * (15 - abs(spread or 0)) / 15)
     home_adj   = 1.02 if side == "home" else 1.0
 
     s_base = base * pace_adj * spread_adj * home_adj
@@ -447,8 +467,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         s_base, spread or 0, total or 222, usage_rate, player_variance, rng
     )
 
-    # Raw projected score — clamped to prevent display anomalies
-    raw_score = min(real_result / 5.0, 15.0)
+    # Raw projected score — generous cap to let stars differentiate
+    raw_score = min(real_result / 5.0, 25.0)
 
     # Apply calibration bias from user-uploaded actuals
     if cal_bias != 0.0:
@@ -482,6 +502,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "om":      om_chalk,
         "slot":    "1.0x",
         "_base":   base,
+        "_spread": spread,
         "is_cascade_pick": is_cascade,
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
@@ -534,7 +555,7 @@ def _run_game(game, cal_bias=0.0):
     return out
 
 CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
-MOONSHOT_FLOOR = 6.0  # Higher floor for Moonshot — filters low-production bench warmers
+MOONSHOT_FLOOR = 4.0  # Floor for Moonshot — with neutral ownership, Real Score drives selection
 
 def _build_lineups(projections):
     # STARTING 5: MILP-optimized slot assignments (maximizes score × slot multiplier)
@@ -566,7 +587,7 @@ def _build_lineups(projections):
 # ─────────────────────────────────────────────────────────────────────────────
 
 GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
-GAME_MOONSHOT_FLOOR = 2.5  # Lower floor for moonshot — wider net for upside plays
+GAME_MOONSHOT_FLOOR = 4.0  # Filter out low-production players
 
 def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
     """Pick n players from pool ensuring at least min_per_team from each team."""
