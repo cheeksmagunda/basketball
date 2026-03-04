@@ -25,9 +25,8 @@ try:
 except ImportError:
     PULP_AVAILABLE = False
 
-# Slot multipliers: these are the Real Sports App draft slot values
-# Mapped to display labels: ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
-SLOT_MULTIPLIERS = [2.0, 1.5, 1.2, 1.0, 1.0]
+# Slot multipliers: Real Sports App draft slot values
+SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]
 SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 
 
@@ -170,8 +169,8 @@ def contrarian_score(player, spread=0):
     else:
         inv_pop = 1.5     # Deep bench — very contrarian but risky
 
-    # Cascade bonus: injury-boost picks are under-owned
-    cascade_bonus = 1.4 if player.get("is_cascade_pick") else 1.0
+    # Cascade benefit is already baked into the rating via minute boost —
+    # no additional multiplier here to avoid double-dipping.
 
     # Underdog bonus: players on unfavored teams are less owned
     underdog_bonus = 1.0
@@ -179,6 +178,6 @@ def contrarian_score(player, spread=0):
         underdog_bonus = 1.2  # General bonus for games with clear favorites
 
     # Contrarian score = base quality × leverage multipliers
-    c_score = base_rating * inv_pop * cascade_bonus * underdog_bonus
+    c_score = base_rating * inv_pop * underdog_bonus
 
     return round(c_score, 2)

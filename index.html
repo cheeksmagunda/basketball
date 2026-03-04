@@ -885,7 +885,7 @@ function renderCards(picks, containerId, mode) {
 
     const statsHtml = [
       multBadge,
-      p.is_cascade_pick && `<span class="cascade-badge">INJ BOOST</span>`,
+      false, // cascade badge removed — boost is baked into the rating
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,

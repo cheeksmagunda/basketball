@@ -539,7 +539,8 @@ MOONSHOT_FLOOR = 6.0  # Higher floor for Moonshot — filters low-production ben
 def _build_lineups(projections):
     # STARTING 5: MILP-optimized slot assignments (maximizes score × slot multiplier)
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev")
+    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
+                            rating_key="chalk_ev")
 
     # CONTRARIAN: maximize leverage against the field
     # Targets Top 10% payout tier by fading popular picks and elevating
@@ -643,7 +644,8 @@ def _build_game_lineups(projections, game):
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
 
     # STARTING 5: MILP-optimized, balanced across both teams
-    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev")
+    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
+                            rating_key="chalk_ev")
 
     # CONTRARIAN: leverage play — no overlap with Starting 5
     chalk_names = {p["name"] for p in chalk}
@@ -713,10 +715,27 @@ async def get_slate(cal_bias: float = Query(0.0)):
     if not games:
         return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
 
-    # Check if slate is locked (5 min before earliest game)
-    start_times = [g["startTime"] for g in games if g.get("startTime")]
-    earliest = min(start_times) if start_times else None
-    locked = _is_locked(earliest) if earliest else False
+    # Check if slate is locked (5 min before earliest UPCOMING game)
+    # Only consider games that haven't started yet — past games from
+    # a previous ESPN day (UTC midnight boundary) should not trigger lock.
+    now = datetime.now(timezone.utc)
+    upcoming_starts = []
+    for g in games:
+        t = g.get("startTime")
+        if not t:
+            continue
+        try:
+            gs = datetime.fromisoformat(t.replace("Z", "+00:00"))
+            if gs > now:
+                upcoming_starts.append(t)
+        except:
+            pass
+    if upcoming_starts:
+        earliest = min(upcoming_starts)
+        locked = _is_locked(earliest)
+    else:
+        # All games already started (or no times available)
+        locked = bool([g for g in games if g.get("startTime")])
 
     if locked:
         lock_cached = _lg("slate_v5_locked")
