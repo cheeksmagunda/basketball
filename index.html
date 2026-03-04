@@ -893,6 +893,7 @@ function renderCards(picks, containerId, mode) {
       p.stl      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.stl}</b> stl</div>`,
       p.blk      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.blk}</b> blk</div>`,
       (p._decline && p._decline < 0.85) && `<div class="stat-pill" style="color:#f43f5e"><b>↓${Math.round((1-p._decline)*100)}%</b> usage</div>`,
+      p.is_questionable && `<div class="stat-pill" style="color:#f59e0b;font-weight:600">⚠ GTD</div>`,
     ].filter(Boolean).join('');
 
     return `

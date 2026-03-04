@@ -113,11 +113,14 @@ def fetch_roster(team_id, team_abbr):
     players = []
     for a in data.get("athletes", []):
         inj = a.get("injuries", [])
-        is_out = inj[0].get("status", "").lower() in ["out", "injured"] if inj else False
+        inj_status = inj[0].get("status", "").lower() if inj else ""
+        is_out = inj_status in ["out", "injured"]
+        is_questionable = inj_status in ["questionable", "doubtful", "day-to-day"]
         players.append({
             "id": a["id"], "name": a["fullName"],
             "pos": a.get("position", {}).get("abbreviation", "G"),
-            "is_out": is_out, "team_abbr": team_abbr,
+            "is_out": is_out, "is_questionable": is_questionable,
+            "team_abbr": team_abbr,
         })
     _cs(f"roster_{team_id}", players)
     return players
@@ -383,6 +386,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
+    # Questionable/doubtful players: heavy penalty — they may not play
+    is_questionable = pinfo.get("is_questionable", False)
+
     # Apply cascade minute boost
     proj_min = avg_min + cascade_bonus
     is_cascade = cascade_bonus >= 2.0  # Flag if cascade added 2+ minutes
@@ -454,6 +460,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if cal_bias != 0.0:
         raw_score += cal_bias
 
+    # Questionable/doubtful players: 50% penalty to score and projected minutes.
+    # These players may not play at all, making them risky picks.
+    if is_questionable:
+        raw_score *= 0.5
+        proj_min *= 0.5
+
     # Use projected minutes (with cascade) for ownership tiers
     om_chalk  = _ownership_mult_chalk(proj_min)
 
@@ -483,6 +495,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_base":   base,
         "is_cascade_pick": is_cascade,
+        "is_questionable": is_questionable,
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
         "_real_meta": real_meta,
@@ -734,8 +747,9 @@ async def get_slate(cal_bias: float = Query(0.0)):
         earliest = min(upcoming_starts)
         locked = _is_locked(earliest)
     else:
-        # All games already started (or no times available)
-        locked = bool([g for g in games if g.get("startTime")])
+        # All games already started (or no times available).
+        # Don't lock — stale/past games shouldn't trigger the lock banner.
+        locked = False
 
     if locked:
         lock_cached = _lg("slate_v5_locked")
@@ -882,6 +896,8 @@ async def refresh():
     cleared = 0
     try:
         for f in CACHE_DIR.glob("*.json"):
+            f.unlink(); cleared += 1
+        for f in LOCK_DIR.glob("*.json"):
             f.unlink(); cleared += 1
     except Exception as e:
         return {"status": "error", "message": str(e)}
