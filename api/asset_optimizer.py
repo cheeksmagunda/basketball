@@ -1,0 +1,184 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MILP SLOT OPTIMIZER — Intelligent Draft Multiplier Assignment
+#
+# The Real Sports App assigns escalating multipliers to draft slots:
+#   MVP (2.0x) > Star (1.5x) > Pro (1.2x) > Utility (1.0x, 1.0x)
+#
+# Simple sort-and-assign (current approach) doesn't truly optimize the
+# compound product of player_score × slot_multiplier across all combinations.
+# This module uses Mixed-Integer Linear Programming (PuLP/CBC) to find the
+# mathematically optimal player-to-slot assignment.
+#
+# The solver maximizes: Σ E(RealScore_i) × SlotMult_j × X[i,j]
+# Subject to: each player in ≤1 slot, each slot exactly 1 player,
+#             optional team balance constraints.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import copy
+
+try:
+    from pulp import (
+        LpProblem, LpMaximize, LpVariable, LpBinary, lpSum, LpStatus,
+        PULP_CBC_CMD,
+    )
+    PULP_AVAILABLE = True
+except ImportError:
+    PULP_AVAILABLE = False
+
+# Slot multipliers: these are the Real Sports App draft slot values
+# Mapped to display labels: ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
+SLOT_MULTIPLIERS = [2.0, 1.5, 1.2, 1.0, 1.0]
+SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
+
+
+def optimize_lineup(projections, n=5, min_per_team=0, sort_key="chalk_ev",
+                    rating_key="rating", time_limit=5):
+    """Find the optimal player-to-slot assignment using MILP.
+
+    If PuLP is not available or solver fails, falls back to simple
+    sort-and-assign (preserving existing behavior).
+
+    Args:
+        projections: List of player dicts with rating and team fields
+        n: Number of lineup slots (default 5)
+        min_per_team: Minimum players per team (0 = no constraint)
+        sort_key: Key to sort by in fallback mode
+        rating_key: Key containing the score to optimize
+        time_limit: Solver time limit in seconds
+
+    Returns:
+        List of n player dicts with slot assignments applied
+    """
+    if not projections or len(projections) < n:
+        # Not enough players; return what we have
+        result = sorted(projections, key=lambda x: x.get(sort_key, 0), reverse=True)[:n]
+        for i, p in enumerate(result):
+            p["slot"] = SLOT_LABELS[i] if i < len(SLOT_LABELS) else "1.0x"
+        return result
+
+    if not PULP_AVAILABLE:
+        return _fallback_sort(projections, n, sort_key)
+
+    try:
+        return _solve_milp(projections, n, min_per_team, rating_key, time_limit)
+    except Exception:
+        return _fallback_sort(projections, n, sort_key)
+
+
+def _solve_milp(projections, n, min_per_team, rating_key, time_limit):
+    """Run the MILP solver to optimize player-slot assignments."""
+    players = list(range(len(projections)))
+    slots = list(range(n))
+    slot_mults = SLOT_MULTIPLIERS[:n]
+
+    prob = LpProblem("DraftSlotOptimizer", LpMaximize)
+
+    # Decision variables: X[i][j] = 1 if player i assigned to slot j
+    x = {
+        (i, j): LpVariable(f"x_{i}_{j}", cat=LpBinary)
+        for i in players for j in slots
+    }
+
+    # Objective: maximize sum of (player_rating × slot_multiplier × assignment)
+    prob += lpSum(
+        projections[i].get(rating_key, 0) * slot_mults[j] * x[i, j]
+        for i in players for j in slots
+    )
+
+    # Constraint: each slot gets exactly one player
+    for j in slots:
+        prob += lpSum(x[i, j] for i in players) == 1
+
+    # Constraint: each player in at most one slot
+    for i in players:
+        prob += lpSum(x[i, j] for j in slots) <= 1
+
+    # Optional: team balance constraint (for per-game drafts)
+    if min_per_team > 0:
+        teams = {}
+        for i, p in enumerate(projections):
+            t = p.get("team", "")
+            teams.setdefault(t, []).append(i)
+
+        for t, player_indices in teams.items():
+            if len(teams) >= 2:  # Only apply if there are 2+ teams
+                prob += lpSum(
+                    x[i, j] for i in player_indices for j in slots
+                ) >= min(min_per_team, len(player_indices))
+
+    # Solve with CBC (bundled with PuLP, no external binary needed)
+    solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
+    prob.solve(solver)
+
+    if LpStatus[prob.status] != "Optimal":
+        # Solver didn't find optimal; fallback
+        return _fallback_sort(projections, n, "chalk_ev")
+
+    # Extract solution
+    result = []
+    for j in slots:
+        for i in players:
+            if x[i, j].varValue and x[i, j].varValue > 0.5:
+                p = copy.deepcopy(projections[i])
+                p["slot"] = SLOT_LABELS[j] if j < len(SLOT_LABELS) else "1.0x"
+                result.append(p)
+                break
+
+    # Sort result by slot multiplier (highest first) for display consistency
+    slot_order = {label: idx for idx, label in enumerate(SLOT_LABELS)}
+    result.sort(key=lambda p: slot_order.get(p.get("slot", "1.0x"), 99))
+
+    return result
+
+
+def _fallback_sort(projections, n, sort_key):
+    """Simple sort-and-assign fallback when MILP is unavailable."""
+    result = sorted(projections, key=lambda x: x.get(sort_key, 0), reverse=True)[:n]
+    for i, p in enumerate(result):
+        p["slot"] = SLOT_LABELS[i] if i < len(SLOT_LABELS) else "1.0x"
+    return result
+
+
+def contrarian_score(player, spread=0):
+    """Calculate contrarian value for a player.
+
+    Contrarian value rewards:
+    - Lower projected minutes (bench sweet spot = less popular)
+    - Cascade picks (less known to the field)
+    - Underdog side (field gravitates to favorites)
+    - Higher variance (divergent from consensus)
+
+    Args:
+        player: Player dict with rating, predMin, is_cascade_pick, etc.
+        spread: Game spread (used to identify underdogs)
+
+    Returns:
+        Contrarian-adjusted score for ranking
+    """
+    base_rating = player.get("rating", 0)
+    proj_min = player.get("predMin", 20)
+
+    # Inverse popularity weight: bench players are more contrarian
+    if proj_min >= 33:
+        inv_pop = 0.5     # Stars — everyone picks them, low leverage
+    elif proj_min >= 28:
+        inv_pop = 0.8     # Starters — moderate leverage
+    elif proj_min >= 22:
+        inv_pop = 1.3     # Role players — good leverage
+    elif proj_min >= 15:
+        inv_pop = 2.0     # Bench — high leverage
+    else:
+        inv_pop = 1.5     # Deep bench — very contrarian but risky
+
+    # Cascade bonus: injury-boost picks are under-owned
+    cascade_bonus = 1.4 if player.get("is_cascade_pick") else 1.0
+
+    # Underdog bonus: players on unfavored teams are less owned
+    underdog_bonus = 1.0
+    if abs(spread or 0) > 4:
+        underdog_bonus = 1.2  # General bonus for games with clear favorites
+
+    # Contrarian score = base quality × leverage multipliers
+    c_score = base_rating * inv_pop * cascade_bonus * underdog_bonus
+
+    return round(c_score, 2)

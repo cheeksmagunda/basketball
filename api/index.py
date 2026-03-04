@@ -11,6 +11,20 @@ from fastapi import FastAPI, Query, Body
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
+# Real Score Ecosystem modules
+try:
+    from api.real_score import real_score_projection, _make_rng
+    from api.asset_optimizer import optimize_lineup, contrarian_score
+    from api.temporal_risk import (
+        lineup_duplication_probability, optimal_lock_time, trav_adjusted_score,
+    )
+except ImportError:
+    from .real_score import real_score_projection, _make_rng
+    from .asset_optimizer import optimize_lineup, contrarian_score
+    from .temporal_risk import (
+        lineup_duplication_probability, optimal_lock_time, trav_adjusted_score,
+    )
+
 load_dotenv()
 app = FastAPI()
 
@@ -417,8 +431,24 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     spread_adj = 1.0 + (0.015 * (15 - abs(spread or 0)) / 15)
     home_adj   = 1.02 if side == "home" else 1.0
 
-    # Raw projected score (what they'll actually score in Real Sports)
-    raw_score = (base * pace_adj * spread_adj * home_adj) / 5.0
+    s_base = base * pace_adj * spread_adj * home_adj
+
+    # ── Real Score Engine ─────────────────────────────────────────────
+    # Apply Monte Carlo-derived coefficients: Closeness, Clutch, Momentum
+    # This replaces the linear volume-based approach with context-aware
+    # Real Score projection aligned to the Real Sports App algorithm.
+    season_pts = stats.get("season_pts", pts)
+    recent_pts = stats.get("recent_pts", pts)
+    player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
+    usage_rate = min(max(pts / max(avg_min, 1) * 0.8, 0.5), 2.0)
+
+    rng = _make_rng(spread or 0, total or 222)
+    real_result, real_meta = real_score_projection(
+        s_base, spread or 0, total or 222, usage_rate, player_variance, rng
+    )
+
+    # Raw projected score — clamped to prevent display anomalies
+    raw_score = min(real_result / 5.0, 15.0)
 
     # Apply calibration bias from user-uploaded actuals
     if cal_bias != 0.0:
@@ -455,6 +485,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "is_cascade_pick": is_cascade,
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
+        "_real_meta": real_meta,
     }
 
 def _run_game(game, cal_bias=0.0):
@@ -506,17 +537,21 @@ CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
 MOONSHOT_FLOOR = 6.0  # Higher floor for Moonshot — filters low-production bench warmers
 
 def _build_lineups(projections):
-    # STARTING 5: sorted by chalk_ev, with production floor filter
+    # STARTING 5: MILP-optimized slot assignments (maximizes score × slot multiplier)
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
-    for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
+    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev")
 
-    # MOONSHOT: 5 totally different players — higher production floor
+    # CONTRARIAN: maximize leverage against the field
+    # Targets Top 10% payout tier by fading popular picks and elevating
+    # low-ownership, high-ceiling assets (cascade picks, underdogs, bench)
     chalk_names = {p["name"] for p in chalk}
-    moonshot_pool = [p for p in projections
-                     if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
-    upside = sorted(moonshot_pool, key=lambda x: x["chalk_ev"], reverse=True)[:5]
-    for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
+    contrarian_pool = [p for p in projections
+                       if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
+    # Score by contrarian value (inverse popularity × quality × leverage)
+    for p in contrarian_pool:
+        p["_contrarian_ev"] = contrarian_score(p)
+    upside = optimize_lineup(contrarian_pool, n=5, sort_key="_contrarian_ev",
+                             rating_key="_contrarian_ev")
 
     return chalk, upside
 
@@ -598,26 +633,45 @@ def _apply_game_script(projections, game):
 def _build_game_lineups(projections, game):
     """Build lineups for a single-game draft with team balance + game script.
 
-    Starting 5: sorted by chalk_ev (ownership-weighted EV) — rewards role players
-                 in low-ownership draft slots. Floor = GAME_CHALK_FLOOR (3.5).
-    Moonshot:   sorted by raw rating (pure ceiling) — rewards stars and high-production
-                 players regardless of ownership. Overlap with Starting 5 is allowed
-                 because the 2-team pool is too small to force 10 unique players.
-                 Floor = GAME_MOONSHOT_FLOOR (2.5) — wider net catches breakout candidates.
+    Starting 5: MILP-optimized slot assignments with team balance (min 2 per team).
+                 Maximizes Real Score × slot multiplier. Floor = GAME_CHALK_FLOOR (3.5).
+    Contrarian: Inverse-ownership leverage play targeting Top 10% payout tier.
+                 Enforces negative correlation with Starting 5 (no overlap, opposite
+                 team weighting). Floor = GAME_MOONSHOT_FLOOR (2.5).
     """
     rescored = _apply_game_script(projections, game)
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
-    moon_eligible = [p for p in rescored if p["rating"] >= GAME_MOONSHOT_FLOOR]
 
-    # STARTING 5: best ownership-weighted EV, balanced across both teams
-    chalk = _pick_balanced(chalk_eligible, 5, min_per_team=2)
-    for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
+    # STARTING 5: MILP-optimized, balanced across both teams
+    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev")
 
-    # MOONSHOT: best raw ceiling, balanced — independent from Starting 5 (overlap OK)
-    moonshot = _pick_balanced(moon_eligible, 5, min_per_team=2, sort_key="rating")
-    for i, p in enumerate(moonshot): p["slot"] = SLOT_VALUES[i]
+    # CONTRARIAN: leverage play — no overlap with Starting 5
+    chalk_names = {p["name"] for p in chalk}
+    contrarian_pool = [p for p in rescored
+                       if p["name"] not in chalk_names and p["rating"] >= GAME_MOONSHOT_FLOOR]
 
-    return chalk, moonshot
+    # Score by contrarian value with game spread awareness
+    game_spread = game.get("spread") or 0
+    for p in contrarian_pool:
+        p["_contrarian_ev"] = contrarian_score(p, spread=game_spread)
+
+    # Determine opposite team weighting for negative correlation
+    chalk_teams = {}
+    for p in chalk:
+        t = p.get("team", "")
+        chalk_teams[t] = chalk_teams.get(t, 0) + 1
+    # If chalk favors one team, contrarian should favor the other
+    if len(chalk_teams) >= 2:
+        dominant_team = max(chalk_teams, key=chalk_teams.get)
+        for p in contrarian_pool:
+            if p.get("team") != dominant_team:
+                p["_contrarian_ev"] *= 1.25  # Boost opposite team
+
+    upside = optimize_lineup(contrarian_pool, n=5, min_per_team=2,
+                             sort_key="_contrarian_ev",
+                             rating_key="_contrarian_ev")
+
+    return chalk, upside
 
 def _get_injuries(game):
     """Get list of OUT players for a game (from cached roster data)."""
@@ -716,12 +770,31 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
     cascade_count = sum(1 for p in chalk + upside if p.get("is_cascade_pick"))
+
+    # ── TRAV: Temporal Risk-Adjusted Value metadata ───────────────────
+    # Calculate lineup duplication probability and optimal lock time.
+    # Attached as extra response key — frontend ignores unknown keys.
+    pool_size = len(projections)
+    dup_prob = lineup_duplication_probability(chalk, pool_size)
+    temporal_meta = optimal_lock_time(
+        game.get("startTime", ""), chalk, pool_size
+    )
+
+    # Annotate players with TRAV-adjusted scores
+    for p in chalk + upside:
+        p["_trav"] = trav_adjusted_score(
+            p.get("rating", 0), dup_prob,
+            temporal_meta.get("tiebreaker_equity_at_optimal", 0.5)
+        )
+        p["_dup_prob"] = dup_prob
+
     result = {"date": date.today().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
               "injuries": injuries,
-              "cascadeCount": cascade_count}
+              "cascadeCount": cascade_count,
+              "temporal": temporal_meta}
     if locked:
         _ls(lock_key, result)
     return result
