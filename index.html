@@ -760,8 +760,16 @@ async function loadSlate() {
     // Use the slate date from API (may be tomorrow if today's slate is over)
     const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
     const todayStr = new Date().toISOString().slice(0, 10);
-    const isNextDay = SLATE.date && SLATE.date !== todayStr;
-    const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    // When locked and showing a past date, advance to next day
+    // (the locked slate is done — show the upcoming one)
+    let displayDate = slateDate;
+    let isNextDay = SLATE.date && SLATE.date !== todayStr;
+    if (SLATE.locked && SLATE.date && SLATE.date < todayStr) {
+      displayDate = new Date(slateDate);
+      displayDate.setDate(displayDate.getDate() + 1);
+      isNextDay = true;
+    }
+    const dateStr = displayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
     let lockChip = '';
     if (SLATE.locked) {
       lockChip = '<div class="lock-chip">Picks Locked</div>';

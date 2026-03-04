@@ -23,7 +23,7 @@ def _today_et():
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v27")
+CACHE_DIR = Path("/tmp/nba_cache_v28")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -630,10 +630,15 @@ def _build_lineups(projections):
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
     # MOONSHOT: 5 different players — sorted by _moon_score (production + variance)
-    # Targets players with close-game upside who actually produce stats
+    # Targets players with close-game upside who actually produce stats.
+    # Hard cap at 30 min — stars (Wemby, Luka, etc.) should NEVER appear in moonshot.
+    # Their raw rating is high enough to leak through even with 0.3x ownership mult.
+    MOONSHOT_MIN_CAP = 30
     chalk_names = {p["name"] for p in chalk}
     moonshot_pool = [p for p in projections
-                     if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
+                     if p["name"] not in chalk_names
+                     and p["rating"] >= MOONSHOT_FLOOR
+                     and p.get("predMin", 99) < MOONSHOT_MIN_CAP]
     upside = sorted(moonshot_pool, key=lambda x: x.get("_moon_score", 0), reverse=True)[:5]
     for i, p in enumerate(upside): p["slot"] = SLOT_VALUES[i]
 
@@ -717,13 +722,39 @@ def _apply_game_script(projections, game):
 def _build_game_lineups(projections, game):
     """Build lineups for a single-game draft with team balance.
 
-    Game script + closeness already applied in project_player, so projections
-    are used directly (no rescoring needed).
+    Game-specific drafts are fundamentally different from full-slate:
+    - Only ~20 eligible players from 2 teams (vs 100+ across 10 games)
+    - Drafted by pro users who know the matchup — ownership is flatter
+    - Popularity/contrarian plays matter much LESS (small pool, smart drafters)
+    - Production and matchup fit matter MORE
+
+    Starting 5 uses raw rating (no ownership mult).
+    Moonshot uses a game-specific score: production + defense + variance,
+    with only a mild ownership tilt (not the aggressive slate-wide curve).
     """
     # Add game script label for display
     total = game.get("total")
     for p in projections:
         p["game_script"] = _game_script_label(total)
+
+    # Compute game-specific moonshot score — de-emphasize ownership,
+    # emphasize production + defensive boom signals
+    for p in projections:
+        proj_min = p.get("predMin", 20)
+        stl = p.get("stl", 0)
+        blk = p.get("blk", 0)
+        reb = p.get("reb", 0)
+        def_upside = (stl + blk) / max(proj_min, 1) * 10
+        board_rate = reb / max(proj_min, 1) * 10
+        # Mild ownership tilt: just slightly favor lower-minute (less obvious) picks
+        # 1.0-1.3x range vs slate-wide 0.3-3.5x range
+        game_om = 1.3 if proj_min < 22 else (1.1 if proj_min < 28 else 1.0)
+        p["_game_moon"] = round(
+            p["rating"] * game_om +       # production with mild ownership tilt
+            def_upside * 5.0 +            # defensive boom potential
+            board_rate * 2.0 +            # rebound variance
+            p.get("_variance", 0) * 3.0   # close-game amplifier
+        , 2)
 
     chalk_eligible = [p for p in projections if p["rating"] >= GAME_CHALK_FLOOR]
     moon_eligible = [p for p in projections if p["rating"] >= GAME_MOONSHOT_FLOOR]
@@ -732,8 +763,8 @@ def _build_game_lineups(projections, game):
     chalk = _pick_balanced(chalk_eligible, 5, min_per_team=2, sort_key="rating")
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # MOONSHOT: best variance-weighted score, balanced (overlap OK in 2-team pool)
-    moonshot = _pick_balanced(moon_eligible, 5, min_per_team=2, sort_key="_moon_score")
+    # MOONSHOT: game-specific score (production + defense, not ownership-driven)
+    moonshot = _pick_balanced(moon_eligible, 5, min_per_team=2, sort_key="_game_moon")
     for i, p in enumerate(moonshot): p["slot"] = SLOT_VALUES[i]
 
     return chalk, moonshot

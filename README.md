@@ -19,15 +19,16 @@ This creates a ~2.2x ratio between the closest and widest-spread games on a slat
 
 Analyzes all games on today's NBA slate and builds two 5-player lineups:
 
-- **Starting 5:** Top 5 players by EV (Real Score × ownership multiplier). Bench players (15-22 min) get 3.0x, role players (22-28 min) get 2.5x, starters get 1.0x, and stars (33+ min) get 0.5x — matching actual draft slot data where low-owned players land in high-multiplier slots.
-- **Moonshot:** 5 different players ranked by a ceiling score that blends production, game variance, recent hot streaks, and defensive upside. Targets role players in close, high-total games who can explode in crunch time or overtime.
+- **Starting 5:** Top 5 players by EV (Real Score × ownership multiplier). Bench players (15-22 min) get 3.0x, role players (22-26 min) get 2.5x, upper role (26-30 min) get 1.5x, starters get 0.8x, and stars (33+ min) get 0.5x — matching actual draft slot data where low-owned players land in high-multiplier slots. Real Score estimation weights REB at 1.4x and BLK at 4.0x (with closeness bonus) to favor bigs, who dominate actual winning lineups.
+- **Moonshot:** 5 different players (hard capped at <30 min — stars never appear) ranked by a ceiling score that blends production, defensive upside (STL/BLK per minute × 7.0), rebound rate (× 3.0), game variance, and recent hot streaks. Targets bench bigs in close games who can boom on boards and blocks.
 
 ### Per-Game Analysis
 
-Single-game drafts with two additions:
+Single-game drafts are built for pro users in small 2-team pools (~20 eligible players). Three key differences from full-slate:
 
 1. **Team Balance:** Guarantees at least 2 players from each team.
-2. **Game Script Engine:** Adjusts stat weights based on the game's over/under:
+2. **Reduced Ownership Weight:** Pro users draft smarter — ownership gradients are flatter in small pools. Starting 5 uses raw production (no ownership mult). Moonshot uses a game-specific score with only a mild ownership tilt (1.0-1.3x range vs slate-wide 0.3-3.5x), emphasizing matchup fit and defensive boom signals over contrarian plays.
+3. **Game Script Engine:** Adjusts stat weights based on the game's over/under:
 
 | O/U Range | Script | Strategy |
 |-----------|--------|----------|
