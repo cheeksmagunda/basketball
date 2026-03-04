@@ -742,27 +742,41 @@ async def get_games():
 @app.get("/api/slate")
 async def get_slate(cal_bias: float = Query(0.0)):
     today_games = fetch_games()
-    slate_date = _today_et()
+
+    # Derive slate date from games' start times, not system clock.
+    # After midnight ET, ESPN still returns in-progress games from "yesterday" —
+    # we want the slate date to reflect the actual games being shown.
+    def _slate_date_from_games(game_list):
+        starts = [g["startTime"] for g in game_list if g.get("startTime")]
+        if starts:
+            try:
+                earliest = min(starts)
+                return datetime.fromisoformat(earliest.replace("Z", "+00:00")).astimezone(ET).date()
+            except Exception:
+                pass
+        return _today_et()
 
     # If today's slate is over, transition to next day
     if today_games and _all_games_ended(today_games):
         tomorrow = _today_et() + timedelta(days=1)
         next_games = fetch_games(for_date=tomorrow)
         if next_games:
-            slate_date = tomorrow
+            slate_date = _slate_date_from_games(next_games)
             games = next_games
         else:
+            slate_date = _slate_date_from_games(today_games)
             games = today_games  # fallback to today if tomorrow has no games yet
     elif not today_games:
         # No games today — check tomorrow
         tomorrow = _today_et() + timedelta(days=1)
         next_games = fetch_games(for_date=tomorrow)
         if next_games:
-            slate_date = tomorrow
+            slate_date = _slate_date_from_games(next_games)
             games = next_games
         else:
-            return {"date": slate_date.isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+            return {"date": _today_et().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
     else:
+        slate_date = _slate_date_from_games(today_games)
         games = today_games
 
     # Check if slate is locked (5 min before earliest game)
