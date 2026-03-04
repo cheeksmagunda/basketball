@@ -51,7 +51,7 @@ for _p in [
         except: pass
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
+SLOT_VALUES = ["2.0x", "1.5x", "1.2x", "1.0x", "1.0x"]
 MIN_GATE = 15  # Minimum projected minutes to qualify
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
@@ -142,11 +142,25 @@ def fetch_roster(team_id, team_abbr):
     players = []
     for a in data.get("athletes", []):
         inj = a.get("injuries", [])
-        is_out = inj[0].get("status", "").lower() in ["out", "injured"] if inj else False
+        inj_status = inj[0].get("status", "").lower() if inj else ""
+        is_out = inj_status in ["out", "injured"]
+        # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
+        injury_label = ""
+        if inj and not is_out:
+            raw = inj[0].get("status", "") or inj[0].get("type", {}).get("description", "")
+            if raw:
+                rl = raw.lower()
+                if "question" in rl:       injury_label = "GTD"
+                elif "day" in rl:          injury_label = "DTD"
+                elif "doubt" in rl:        injury_label = "DOUBT"
+                elif "prob" in rl:         injury_label = ""  # Probable = fine
+                elif rl not in ["active", "healthy", ""]:
+                    injury_label = raw[:8].upper()
         players.append({
             "id": a["id"], "name": a["fullName"],
             "pos": a.get("position", {}).get("abbreviation", "G"),
             "is_out": is_out, "team_abbr": team_abbr,
+            "injury_status": injury_label,
         })
     _cs(f"roster_{team_id}", players)
     return players
@@ -339,32 +353,48 @@ def _cascade_minutes(roster, stats_map):
 # MOONSHOT = 5 different players — close-game ceiling × card advantage
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _est_card_mult(proj_min):
-    """Estimate card advantage multiplier based on player tier.
+def _est_card_boost(proj_min):
+    """Estimate ADDITIVE card boost based on player tier.
 
-    In the Real Sports App, Total Draft Score = Real Score × (Slot + Card).
-    Role/bench players are cheap to upgrade to Epic/Legendary on the marketplace,
-    giving them 3-5x card multipliers vs superstars stuck at 1.0x (General).
+    Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
+    This is ADDITIVE, not multiplicative — slot and card boosts add together.
 
-    Calibrated against actual leaderboard data (winning lineups):
-      Winners: ALL role players with 4.0-4.6x card mults, ZERO stars
-      Role players (18-25 min): +2.0x to +3.0x card boosts
-      Stars (34+ min): +0.2x to +0.6x card boosts (General/Common)
+    Calibrated against actual March 3 leaderboard data:
+      Jaylin Williams:  +2.7 boost (~20 min bench)
+      Maxime Raynaud:   +2.2 boost (~18 min bench)
+      Yabusele:         +3.0 boost (~22 min role)
+      Oso Ighodaro:     +3.0 boost (~18 min bench)
+      Precious Achiuwa: +2.4 boost (~22 min role)
+      Marcus Smart:     +2.5 boost (~25 min role)
+      Aaron Wiggins:    +2.4 boost (~24 min role)
+      Jared McCain:     +3.0 boost (~20 min bench)
+      Anthony Edwards:  +0.3 boost (~37 min star)
+      Paolo Banchero:   +0.6 boost (~34 min star)
+      Bam Adebayo:      +0.7 boost (~34 min star)
+      Ausar Thompson:   +1.5 boost (~28 min starter)
+      Collin Gillespie: +1.2 boost (~26 min starter)
 
-    The card advantage must overcome the ~2.3x base score gap between
-    stars (19+ base) and role players (7-10 base) to match the winning meta.
+    Key insight: slot assignment should favor HIGH RAW SCORE players for the
+    2.0x slot, because the slot benefit is proportional to raw score. Card boost
+    determines WHICH players to include, not which slot they get.
     """
-    if proj_min >= 34:  return 1.0   # Superstars — expensive, most have General (1.0x)
-    if proj_min >= 30:  return 1.1   # Stars — maybe Common card
-    if proj_min >= 26:  return 1.6   # High starters — Uncommon/Rare accessible
+    if proj_min >= 34:  return 0.5   # Superstars — General/Common cards
+    if proj_min >= 30:  return 0.7   # Stars — maybe Common/Uncommon
+    if proj_min >= 26:  return 1.3   # High starters — Rare accessible
     if proj_min >= 22:  return 2.5   # Role players — Epic + booster typical
-    if proj_min >= 18:  return 3.0   # Bench sweet spot — Legendary + booster
-    if proj_min >= 15:  return 2.6   # Deep bench — high cards but limited minutes
-    return 0.9                       # Very deep bench — filtered by minutes gate
+    if proj_min >= 18:  return 2.8   # Bench sweet spot — Legendary + booster
+    if proj_min >= 15:  return 2.8   # Deep bench — high cards, limited minutes
+    return 0.5                       # Very deep bench — filtered by minutes gate
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
-    """Full DFS scoring formula — matches the leaderboard exactly."""
-    return pts + reb + (ast * 1.5) + (stl * 3.5) + (blk * 3.0) - (tov * 1.2)
+    """Real Score-aligned formula — boosted defensive stats.
+
+    Backtest insight: steals and blocks correlate more strongly with Real Score
+    than with traditional DFS. Marcus Smart: 10/3/7/4stl/2blk = 3.4 Real Score
+    despite only 10 pts, because defensive plays in close games are high-impact
+    events in the Real Score algorithm (momentum shifts, clutch stops).
+    """
+    return pts + reb + (ast * 1.5) + (stl * 4.5) + (blk * 4.0) - (tov * 1.2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -473,14 +503,20 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
-    # Clutch potential — playmakers and scorers are more likely to produce
-    # clutch, momentum, and streak events in the Real Score algorithm.
+    # Clutch potential — playmakers, scorers, and defenders are more likely
+    # to produce clutch, momentum, and streak events in the Real Score algorithm.
     # Pure rebounders (Drummond, Robinson, Jordan) inflate DFS base cheaply
-    # but rarely make game-changing plays. Ball handlers with high PTS/MIN
-    # and AST/MIN have far more clutch opportunity.
+    # but rarely make game-changing plays. Ball handlers with high PTS/MIN,
+    # AST/MIN, and defenders with high STL+BLK/MIN generate Real Score events.
+    #
+    # Backtest: Marcus Smart 10/3/7/4stl/2blk = 3.4 Real Score despite only
+    # 10 pts — defensive plays in close games are high-impact Real Score events.
     pts_per_min = pts / max(avg_min, 1)
     ast_per_min = ast / max(avg_min, 1)
-    clutch_potential = 1.0 + min(pts_per_min * 0.12 + ast_per_min * 0.2, 0.35)
+    def_per_min = (stl + blk) / max(avg_min, 1)
+    clutch_potential = 1.0 + min(
+        pts_per_min * 0.10 + ast_per_min * 0.18 + def_per_min * 0.25, 0.40
+    )
     heuristic *= clutch_potential
 
     # Scale heuristic by minute boost from cascade (capped at 1.25x)
@@ -553,14 +589,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if cal_bias != 0.0:
         raw_score += cal_bias
 
-    # Estimated card advantage multiplier based on player tier
-    card_mult = _est_card_mult(proj_min)
+    # Estimated card boost (ADDITIVE, not multiplicative)
+    # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
+    card_boost = _est_card_boost(proj_min)
 
-    # EV score — card-adjusted expected value
-    chalk_ev  = round(raw_score * card_mult, 2)
+    # EV score — card-adjusted expected value using additive formula
+    # Use average slot (1.34) for ranking; MILP uses exact slots
+    avg_slot = 1.34  # weighted avg of [2.0, 1.5, 1.2, 1.0, 1.0]
+    chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
 
-    # Expected draft points = raw_score × card_mult
-    expected_dp = round(raw_score * card_mult, 1)
+    # Expected draft points (assuming best slot 2.0x)
+    expected_dp = round(raw_score * (2.0 + card_boost), 1)
 
     return {
         "id":      pinfo["id"],
@@ -577,14 +616,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "stl":     round(stl, 1),
         "blk":     round(blk, 1),
         "tov":     round(tov, 1),
-        "est_mult": card_mult,
-        "om":      card_mult,
+        "est_mult": card_boost,
+        "om":      card_boost,
         "slot":    "1.0x",
         "_base":   base,
         "_spread": spread,
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
         "_real_meta": real_meta,
+        "injury_status": pinfo.get("injury_status", ""),
     }
 
 def _run_game(game, cal_bias=0.0):
@@ -683,19 +723,21 @@ def _apply_repetition_penalty(projections):
             days_ago = recent[name]
             penalty = penalties.get(days_ago, 0.95)
             p["chalk_ev"] = round(p["chalk_ev"] * penalty, 2)
+            p["rating"] = round(p["rating"] * penalty, 1)
             p["_rep_penalty"] = penalty
 
 def _build_lineups(projections):
     # Anti-repetition: penalize players picked in the last 3 days
     _apply_repetition_penalty(projections)
 
-    # STARTING 5: MILP-optimized slot assignments
-    # Uses chalk_ev (raw_score × est_card_mult × repetition_penalty)
+    # STARTING 5: MILP-optimized slot assignments using ADDITIVE formula
+    # MILP maximizes: Σ rating_i × (slot_mult_j + card_boost_i)
     # max_per_team=1 forces diversification across different games —
     # spreading across 5 games maximizes probability of hitting close-game boosts
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
-                            rating_key="chalk_ev", max_per_team=1)
+                            rating_key="rating", card_boost_key="est_mult",
+                            max_per_team=1)
 
     # CONTRARIAN: maximize leverage against the field
     chalk_names = {p["name"] for p in chalk}
@@ -705,7 +747,8 @@ def _build_lineups(projections):
     for p in contrarian_pool:
         p["_contrarian_ev"] = contrarian_score(p)
     upside = optimize_lineup(contrarian_pool, n=5, sort_key="_contrarian_ev",
-                             rating_key="_contrarian_ev")
+                             rating_key="_contrarian_ev",
+                             card_boost_key="_no_boost")
 
     return chalk, upside
 
@@ -797,9 +840,9 @@ def _build_game_lineups(projections, game):
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
 
     # STARTING 5: MILP-optimized, balanced across both teams
-    # rating_key="chalk_ev" so solver uses card-adjusted value, not raw rating
+    # Uses additive formula: rating × (slot_mult + card_boost)
     chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
-                            rating_key="chalk_ev")
+                            rating_key="rating", card_boost_key="est_mult")
 
     # CONTRARIAN: leverage play — no overlap with Starting 5
     chalk_names = {p["name"] for p in chalk}
@@ -825,7 +868,8 @@ def _build_game_lineups(projections, game):
 
     upside = optimize_lineup(contrarian_pool, n=5, min_per_team=2,
                              sort_key="_contrarian_ev",
-                             rating_key="_contrarian_ev")
+                             rating_key="_contrarian_ev",
+                             card_boost_key="_no_boost")
 
     return chalk, upside
 

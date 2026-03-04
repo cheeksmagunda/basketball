@@ -31,11 +31,16 @@ SLOT_LABELS = ["2.0x", "1.5x", "1.2x", "1.0x", "1.0x"]
 
 
 def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
-                    sort_key="chalk_ev", rating_key="rating", time_limit=5):
+                    sort_key="chalk_ev", rating_key="rating",
+                    card_boost_key="est_mult", time_limit=5):
     """Find the optimal player-to-slot assignment using MILP.
 
-    If PuLP is not available or solver fails, falls back to simple
-    sort-and-assign (preserving existing behavior).
+    Uses the ADDITIVE Real Sports formula:
+      Value = RawScore × (SlotMult + CardBoost)
+
+    The solver maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
+    This correctly assigns the highest RAW SCORE player to the 2.0x slot,
+    since the marginal slot benefit is proportional to raw score.
 
     Args:
         projections: List of player dicts with rating and team fields
@@ -43,7 +48,8 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         min_per_team: Minimum players per team (0 = no constraint)
         max_per_team: Maximum players per team (0 = no constraint)
         sort_key: Key to sort by in fallback mode
-        rating_key: Key containing the score to optimize
+        rating_key: Key containing raw score (for slot assignment)
+        card_boost_key: Key containing additive card boost
         time_limit: Solver time limit in seconds
 
     Returns:
@@ -61,14 +67,18 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
 
     try:
         return _solve_milp(projections, n, min_per_team, max_per_team,
-                           rating_key, time_limit)
+                           rating_key, card_boost_key, time_limit)
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
 def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
-                time_limit):
-    """Run the MILP solver to optimize player-slot assignments."""
+                card_boost_key, time_limit):
+    """Run the MILP solver to optimize player-slot assignments.
+
+    Uses the ADDITIVE Real Sports formula:
+      Value_ij = rating_i × (slot_mult_j + card_boost_i)
+    """
     players = list(range(len(projections)))
     slots = list(range(n))
     slot_mults = SLOT_MULTIPLIERS[:n]
@@ -81,9 +91,11 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
         for i in players for j in slots
     }
 
-    # Objective: maximize sum of (player_rating × slot_multiplier × assignment)
+    # Objective: maximize Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
+    # This is the ADDITIVE Real Sports formula — slot and card boost add together
     prob += lpSum(
-        projections[i].get(rating_key, 0) * slot_mults[j] * x[i, j]
+        projections[i].get(rating_key, 0) *
+        (slot_mults[j] + projections[i].get(card_boost_key, 0)) * x[i, j]
         for i in players for j in slots
     )
 
@@ -166,7 +178,7 @@ def contrarian_score(player, spread=0):
         Moonshot-adjusted score for ranking
     """
     base_rating = player.get("rating", 0)
-    card_mult = player.get("est_mult", 1.0)
+    card_boost = player.get("est_mult", 0.5)
 
     # Game closeness boost — derived from Real Score metadata
     meta = player.get("_real_meta", {})
@@ -183,5 +195,7 @@ def contrarian_score(player, spread=0):
     if 2 < game_spread <= 7:
         underdog_bonus = 1.1  # Competitive game with clear underdog
 
-    c_score = base_rating * card_mult * closeness_boost * momentum * underdog_bonus
+    # Additive formula: rating × (avg_slot + card_boost) × context multipliers
+    avg_slot = 1.34
+    c_score = base_rating * (avg_slot + card_boost) * closeness_boost * momentum * underdog_bonus
     return round(c_score, 2)
