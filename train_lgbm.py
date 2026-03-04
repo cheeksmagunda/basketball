@@ -1,3 +1,14 @@
+# WARNING: This model is trained on traditional DFS scoring (PTS + REB + AST*1.5 + STL*3.5 + BLK*3.0 - TOV*1.2)
+# The Real Sports App uses a proprietary "Real Score" that weights game closeness, clutch plays, and momentum.
+# The model is currently used as a 15% regularizer in the prediction blend (api/index.py).
+#
+# FUTURE: Retrain with closeness-weighted target:
+#   - Add PLUS_MINUS from game logs as a proxy for final game margin
+#   - closeness_mult = 0.50 + 1.00 * exp(-0.08 * abs(PLUS_MINUS)^1.3)
+#   - target = actual_base_score * closeness_mult
+#   - Add game_margin as a feature alongside avg_min, avg_pts, usage_trend
+# This will teach the model to value stats in close games more highly.
+
 import time
 import pandas as pd
 import numpy as np
