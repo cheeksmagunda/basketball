@@ -19,7 +19,7 @@ This creates a ~2.2x ratio between the closest and widest-spread games on a slat
 
 Analyzes all games on today's NBA slate and builds two 5-player lineups:
 
-- **Starting 5:** Top 5 players by projected Real Score (closeness-weighted). Ownership multipliers favor bench/role players (15-28 min) who are under-drafted. Stars get penalized on ownership — everyone picks them.
+- **Starting 5:** Top 5 players by EV (Real Score × ownership multiplier). Bench players (15-22 min) get 3.0x, role players (22-28 min) get 2.5x, starters get 1.0x, and stars (33+ min) get 0.5x — matching actual draft slot data where low-owned players land in high-multiplier slots.
 - **Moonshot:** 5 different players ranked by a ceiling score that blends production, game variance, recent hot streaks, and defensive upside. Targets role players in close, high-total games who can explode in crunch time or overtime.
 
 ### Per-Game Analysis

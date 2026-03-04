@@ -23,7 +23,7 @@ def _today_et():
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v24")
+CACHE_DIR = Path("/tmp/nba_cache_v25")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -237,22 +237,24 @@ def _fetch_athlete(pid):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ownership_mult(proj_min, closeness_coeff=1.0):
-    """Ownership multiplier recalibrated for Real Score with closeness interaction.
+    """Ownership multiplier calibrated to actual draft slot multipliers.
 
-    Base tiers are minute-based (proxy for draft ownership).
+    Real data shows: bench players with few drafts land in 2.5-3.0x slots,
+    stars with thousands of drafts land in 0.3-0.5x slots.
+    Minutes are the best proxy for draft volume (stars = heavily drafted).
+
     Closeness modulates: bench players in close games = goldmine,
-    bench players in blowouts = worthless (ride the bench in garbage time).
-    Stars in blowouts get slight boost (guaranteed minutes, fewer people draft them).
+    bench players in blowouts = ride the bench in garbage time.
     """
-    if proj_min < 15:   base_mult = 1.5
-    elif proj_min < 22: base_mult = 2.5   # bench sweet spot
-    elif proj_min < 28: base_mult = 2.0   # role players
-    elif proj_min < 33: base_mult = 1.4   # starters
-    else:               base_mult = 0.85  # stars — heavily owned
+    if proj_min < 15:   base_mult = 2.0   # deep bench — high mult if they produce
+    elif proj_min < 22: base_mult = 3.0   # bench sweet spot (actual winners: 2.7-3.0x)
+    elif proj_min < 28: base_mult = 2.5   # role players (actual winners: 2.4-2.5x)
+    elif proj_min < 33: base_mult = 1.0   # starters — moderately owned
+    else:               base_mult = 0.5   # stars — everyone drafts them (actual: 0.3x)
 
     if proj_min < 28:  # bench and role players
         if closeness_coeff > 1.1:   return round(base_mult * 1.15, 2)  # close game boost
-        elif closeness_coeff < 0.8: return round(base_mult * 0.80, 2)  # blowout penalty
+        elif closeness_coeff < 0.8: return round(base_mult * 0.75, 2)  # blowout penalty
     else:  # starters and stars
         if closeness_coeff > 1.1:   return round(base_mult * 1.05, 2)  # slight close-game boost
         elif closeness_coeff < 0.8: return round(base_mult * 1.10, 2)  # blowout: stars still play
@@ -491,7 +493,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     pace_adj = 1.0 + (0.04 * ((total or 222) - 222) / 20)
     home_adj = 1.02 if side == "home" else 1.0
 
-    raw_score = (base * pace_adj * home_adj) / 6.0
+    raw_score = (base * pace_adj * home_adj) / 10.0
 
     # Calibration bias
     if cal_bias != 0.0:
@@ -584,8 +586,8 @@ def _run_game(game, cal_bias=0.0):
     _cs(cache_key, out)
     return out
 
-CHALK_FLOOR    = 3.0  # Minimum raw rating for Starting 5 (lowered for new scoring range)
-MOONSHOT_FLOOR = 3.0  # Moonshot production floor — filters out non-producers
+CHALK_FLOOR    = 1.5  # Minimum raw rating for Starting 5
+MOONSHOT_FLOOR = 1.5  # Moonshot production floor — filters out non-producers
 
 def _build_lineups(projections):
     # STARTING 5: sorted by chalk_ev (rating × ownership mult)
@@ -616,8 +618,8 @@ def _build_lineups(projections):
 # - Ownership is more concentrated, so contrarian plays matter more
 # ─────────────────────────────────────────────────────────────────────────────
 
-GAME_CHALK_FLOOR = 2.5    # Starting 5 floor for single-game (lowered for new scoring)
-GAME_MOONSHOT_FLOOR = 1.5  # Moonshot wider net — variance-based ranking does the filtering
+GAME_CHALK_FLOOR = 1.2    # Starting 5 floor for single-game
+GAME_MOONSHOT_FLOOR = 0.8  # Moonshot wider net — variance-based ranking does the filtering
 
 def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
     """Pick n players from pool ensuring at least min_per_team from each team."""
