@@ -15,10 +15,15 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
+ET = timezone(timedelta(hours=-5))
+def _today_et():
+    """Current date in Eastern Time — NBA schedule runs on ET, not UTC."""
+    return datetime.now(ET).date()
+
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v23")
+CACHE_DIR = Path("/tmp/nba_cache_v24")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -46,10 +51,10 @@ EXCLUDED_PLAYERS = {
     "mike conley",
 }
 
-def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
+def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{_today_et().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
 def _cs(k, v): _cp(k).write_text(json.dumps(v))
-def _lp(k): return LOCK_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
+def _lp(k): return LOCK_DIR / f"{hashlib.md5(f'{_today_et().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
 def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
@@ -220,7 +225,7 @@ def _fetch_athlete(pid):
 # The slot multiplier is determined by ownership — high-owned players (stars)
 # always land in low-multiplier slots.
 #
-# We estimate ownership via projected minutes (including cascade):
+# We estimate ownership via projected minutes:
 #   Stars (33+ min)     → everyone drafts them → low slot mult ~0.9x → AVOID
 #   Starters (28-33)    → popular → slot mult ~1.5x
 #   Role players(22-28) → moderate ownership → slot mult ~2.2x
@@ -503,7 +508,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     recent_trend = round(recent_pts / max(season_pts, 1), 2)
     def_upside = (stl + blk) / max(proj_min, 1) * 10
     moon_score = round(
-        raw_score * 1.5 +            # production is king — must actually produce stats
+        chalk_ev * 1.5 +             # ownership-adjusted production — avoids star overfitting
         variance * 4.0 +             # close-game upside (halved from v1)
         recent_trend * 2.0 +         # hot hand
         def_upside * 2.0             # defensive Real Score boost
@@ -583,10 +588,12 @@ CHALK_FLOOR    = 3.0  # Minimum raw rating for Starting 5 (lowered for new scori
 MOONSHOT_FLOOR = 3.0  # Moonshot production floor — filters out non-producers
 
 def _build_lineups(projections):
-    # STARTING 5: sorted by raw rating (projected Real Score)
-    # Real Score is what we're predicting — ownership doesn't factor into it
+    # STARTING 5: sorted by chalk_ev (rating × ownership mult)
+    # Raw rating alone overfits for stars — ownership mult penalizes high-minute
+    # players that everyone drafts (low slot multiplier) and boosts bench/role
+    # players that land in high-multiplier slots
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = sorted(chalk_eligible, key=lambda x: x["rating"], reverse=True)[:5]
+    chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
     # MOONSHOT: 5 different players — sorted by _moon_score (production + variance)
@@ -735,11 +742,11 @@ async def get_games():
 @app.get("/api/slate")
 async def get_slate(cal_bias: float = Query(0.0)):
     today_games = fetch_games()
-    slate_date = date.today()
+    slate_date = _today_et()
 
     # If today's slate is over, transition to next day
     if today_games and _all_games_ended(today_games):
-        tomorrow = date.today() + timedelta(days=1)
+        tomorrow = _today_et() + timedelta(days=1)
         next_games = fetch_games(for_date=tomorrow)
         if next_games:
             slate_date = tomorrow
@@ -748,7 +755,7 @@ async def get_slate(cal_bias: float = Query(0.0)):
             games = today_games  # fallback to today if tomorrow has no games yet
     elif not today_games:
         # No games today — check tomorrow
-        tomorrow = date.today() + timedelta(days=1)
+        tomorrow = _today_et() + timedelta(days=1)
         next_games = fetch_games(for_date=tomorrow)
         if next_games:
             slate_date = tomorrow
@@ -763,7 +770,7 @@ async def get_slate(cal_bias: float = Query(0.0)):
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
-    cache_suffix = f"_{slate_date.isoformat()}" if slate_date != date.today() else ""
+    cache_suffix = f"_{slate_date.isoformat()}" if slate_date != _today_et() else ""
     if locked:
         lock_cached = _lg(f"slate_v5_locked{cache_suffix}")
         if lock_cached:
@@ -815,7 +822,7 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
-    result = {"date": date.today().isoformat(), "game": game,
+    result = {"date": _today_et().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
