@@ -18,7 +18,7 @@ app = FastAPI()
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v20")
+CACHE_DIR = Path("/tmp/nba_cache_v21")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -40,6 +40,11 @@ for _p in [
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 MIN_GATE = 15  # Minimum projected minutes to qualify
+
+# Players to permanently exclude (retired, washed, or known bad data)
+EXCLUDED_PLAYERS = {
+    "mike conley",
+}
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
@@ -315,18 +320,20 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
 def _closeness_coefficient(spread):
     """Game closeness multiplier — the DOMINANT factor in Real Score.
 
-    Real Score exponentially rewards actions in close games.
-    Pick-em (spread 0)  -> ~1.50x multiplier
-    Close (spread 3)    -> ~1.28x
-    Moderate (spread 7) -> ~0.95x (baseline)
-    Blowout (spread 12) -> ~0.65x
-    Mega-blowout (15+)  -> ~0.50x floor
+    Steepened curve calibrated against actual Real Score data:
+    Pick-em (spread 0)  -> ~1.50x
+    Close (spread 3)    -> ~1.07x
+    Moderate (spread 5) -> ~0.79x
+    Large (spread 7)    -> ~0.60x
+    Blowout (spread 10) -> ~0.44x
+    Mega-blowout (15+)  -> ~0.36x floor
 
-    Creates a ~3x ratio between pick-em and blowout games.
+    Creates a ~4x ratio between pick-em and blowout.
+    Validated: Wemby at spread 10 -> 3.7 rating (actual Real Score was 3.6).
     """
     s = abs(spread) if spread is not None else 7.0
-    raw = math.exp(-0.08 * (s ** 1.3))
-    return round(0.50 + 1.00 * raw, 3)
+    raw = math.exp(-0.10 * (s ** 1.4))
+    return round(0.35 + 1.15 * raw, 3)
 
 
 def _blowout_risk(spread, total):
@@ -463,6 +470,7 @@ def _game_script_label(total):
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
                    cascade_bonus=0.0, cal_bias=0.0):
     if pinfo.get("is_out"): return None
+    if pinfo.get("name", "").lower() in EXCLUDED_PLAYERS: return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
@@ -511,9 +519,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         heuristic *= decline_factor
 
     # ── BLOWOUT STAR PENALTY ──
-    # Stars in projected blowouts lose minutes to garbage time
-    if proj_min >= 30 and blowout_prob > 0.3:
-        heuristic *= 1.0 - (blowout_prob * 0.20)
+    # High-minute players in projected blowouts lose minutes to garbage time
+    if proj_min >= 28 and blowout_prob > 0.25:
+        heuristic *= 1.0 - (blowout_prob * 0.30)
 
     # ── AI BLEND (85% heuristic / 15% AI — AI trained on wrong target) ──
     base = heuristic
@@ -541,18 +549,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     chalk_ev = round(raw_score * om_chalk, 2)
     expected_dp = round(raw_score * om_chalk, 1)
 
-    # ── VARIANCE + TREND for moonshot builder ──
+    # ── MOONSHOT SCORE: production-weighted ceiling estimate ──
     recent_pts = stats.get("recent_pts", pts)
     season_pts = stats.get("season_pts", pts)
     recent_trend = round(recent_pts / max(season_pts, 1), 2)
     def_upside = (stl + blk) / max(proj_min, 1) * 10
     cascade_mult = 1.15 if is_cascade else 1.0
     moon_score = round((
-        raw_score * 0.4 +
-        chalk_ev * 0.2 +
-        variance * 8.0 +
-        recent_trend * 3.0 +
-        def_upside * 2.0
+        raw_score * 1.5 +            # production is king — must actually produce stats
+        variance * 4.0 +             # close-game upside (halved from v1)
+        recent_trend * 2.0 +         # hot hand
+        def_upside * 2.0             # defensive Real Score boost
     ) * cascade_mult, 2)
 
     return {
@@ -630,16 +637,17 @@ def _run_game(game, cal_bias=0.0):
     return out
 
 CHALK_FLOOR    = 3.0  # Minimum raw rating for Starting 5 (lowered for new scoring range)
-MOONSHOT_FLOOR = 2.5  # Moonshot uses _moon_score, floor is just a minimum viability gate
+MOONSHOT_FLOOR = 3.0  # Moonshot production floor — filters out non-producers
 
 def _build_lineups(projections):
-    # STARTING 5: sorted by chalk_ev (now closeness-aware)
+    # STARTING 5: sorted by raw rating (projected Real Score)
+    # Real Score is what we're predicting — ownership doesn't factor into it
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = sorted(chalk_eligible, key=lambda x: x["chalk_ev"], reverse=True)[:5]
+    chalk = sorted(chalk_eligible, key=lambda x: x["rating"], reverse=True)[:5]
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
-    # MOONSHOT: 5 different players — sorted by _moon_score (variance-based)
-    # Targets high-variance players in close games who can explode in crunch time
+    # MOONSHOT: 5 different players — sorted by _moon_score (production + variance)
+    # Targets players with close-game upside who actually produce stats
     chalk_names = {p["name"] for p in chalk}
     moonshot_pool = [p for p in projections
                      if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
@@ -737,8 +745,8 @@ def _build_game_lineups(projections, game):
     chalk_eligible = [p for p in projections if p["rating"] >= GAME_CHALK_FLOOR]
     moon_eligible = [p for p in projections if p["rating"] >= GAME_MOONSHOT_FLOOR]
 
-    # STARTING 5: best closeness-aware EV, balanced across both teams
-    chalk = _pick_balanced(chalk_eligible, 5, min_per_team=2)
+    # STARTING 5: best raw Real Score projection, balanced across both teams
+    chalk = _pick_balanced(chalk_eligible, 5, min_per_team=2, sort_key="rating")
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
     # MOONSHOT: best variance-weighted score, balanced (overlap OK in 2-team pool)
