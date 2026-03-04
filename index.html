@@ -991,16 +991,22 @@ function renderDayPicker() {
   const picker = document.getElementById('dayPicker');
   const data = labLoad();
   const days = [];
-  const start = new Date('2025-03-02T12:00:00');
   const today = new Date();
   today.setHours(12, 0, 0, 0);
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+  // Show last 14 days + any older days that have data
+  const recentStart = new Date(today);
+  recentStart.setDate(recentStart.getDate() - 13);
+  const dataDates = new Set(Object.keys(data));
+  for (let d = new Date(recentStart); d <= today; d.setDate(d.getDate() + 1)) {
     days.push(d.toISOString().slice(0, 10));
   }
+  // Add any older dates with saved data
+  dataDates.forEach(dd => { if (!days.includes(dd)) days.push(dd); });
+  days.sort();
   picker.innerHTML = days.map(d => {
     const dayData = data[d];
     const hasData = dayData && Object.keys(dayData).length > 0;
-    const hasActuals = hasData && Object.values(dayData).some(s => s.actuals);
+    const hasActuals = hasData && Object.values(dayData).some(s => s.actuals && s.actuals.length > 0);
     const label = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const cls = [
       'day-chip',
@@ -1350,8 +1356,9 @@ async function submitActuals() {
     console.warn('Backend calibration sync failed:', e);
   }
 
+  const savedDate = MODAL_DATE;
   closeEntryModal();
-  loadDay(MODAL_DATE);
+  loadDay(savedDate);
   renderDayPicker();
 }
 </script>
