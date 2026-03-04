@@ -23,7 +23,7 @@ def _today_et():
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v26")
+CACHE_DIR = Path("/tmp/nba_cache_v27")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -345,20 +345,19 @@ def _blowout_risk(spread, total):
 def _real_score_estimate(pts, reb, ast, stl, blk, tov, closeness):
     """Approximate Real Score using closeness-weighted stat values.
 
-    Unlike flat DFS scoring:
-    - All stats amplified by closeness (close game = more valuable)
-    - STL/BLK get extra closeness boost (defensive plays swing win probability)
-    - AST weight increased to 1.8 (momentum/playmaking valued highly)
-    - TOV penalty scales with closeness (turnovers in close games are devastating)
+    Actual RS winners are disproportionately bigs (F/C) with boards + blocks.
+    REB boosted to 1.4 to better reflect Real Score's valuation of rebounding.
+    BLK boosted to 4.0 — blocks are the highest-variance RS stat and actual
+    winners (Ighodaro, Achiuwa, Williams) are all shot-blockers.
     """
     defensive_bonus = 1.0 + (closeness - 1.0) * 0.5
 
     base = (
         pts * 1.0 +
-        reb * 1.1 +
+        reb * 1.4 +
         ast * 1.8 +
         stl * 4.0 * defensive_bonus +
-        blk * 3.5 * defensive_bonus -
+        blk * 4.0 * defensive_bonus -
         tov * 1.5 * closeness
     )
     return base * closeness
@@ -531,15 +530,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # ── MOONSHOT SCORE: separate ownership curve + boom signals ──
     # Uses its own ultra-contrarian mult so moonshot picks genuinely different
-    # players than Starting 5 (deeper bench, more extreme low-ownership)
+    # players than Starting 5 (deeper bench, more extreme low-ownership).
+    # Heavily favors bigs with defensive stats — actual winners are
+    # disproportionately F/C with REB+BLK (high-variance Real Score stats).
     recent_pts = stats.get("recent_pts", pts)
     season_pts = stats.get("season_pts", pts)
     recent_trend = round(recent_pts / max(season_pts, 1), 2)
     def_upside = (stl + blk) / max(proj_min, 1) * 10
+    board_rate = reb / max(proj_min, 1) * 10      # rebounds per minute — bigs boom on boards
     moon_om = _moonshot_ownership_mult(proj_min, closeness)
     moon_score = round(
         raw_score * moon_om +        # production with ultra-contrarian ownership
-        def_upside * 5.0 +           # steals/blocks per min = boom potential
+        def_upside * 7.0 +           # steals/blocks per min — primary boom signal
+        board_rate * 3.0 +           # rebounders have high RS variance
         variance * 5.0 +             # close games amplify bench production
         recent_trend * 3.0           # hot hand / rising minutes
     , 2)
