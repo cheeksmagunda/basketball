@@ -51,8 +51,8 @@ for _p in [
         except: pass
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-SLOT_VALUES = ["2.0x", "1.5x", "1.2x", "1.0x", "1.0x"]
-MIN_GATE = 15  # Minimum projected minutes to qualify
+MIN_GATE = 15           # Minimum projected minutes to qualify
+DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
@@ -338,18 +338,19 @@ def _cascade_minutes(roster, stats_map):
 # winners had role players with 4.0-4.6x card multipliers (Legendary +
 # booster) beating superstars who only had 1.0-2.3x (General/Common).
 #
+# ADDITIVE formula: Value = Real Score × (Slot_Mult + Card_Boost)
 # Example from actual leaderboard:
-#   Jaylin Williams: 4.1 base × 4.5x card = 18.45  ← WINNER
-#   Anthony Edwards: 6.2 base × 2.3x card = 14.26  ← loses despite higher base
+#   Jaylin Williams: 4.1 base × (2.0 + 2.7) = 4.1 × 4.7 = 19.27  ← WINNER
+#   Anthony Edwards: 6.2 base × (2.0 + 0.3) = 6.2 × 2.3 = 14.26  ← loses
 #
 # Card economics: role players are cheap to upgrade to Epic/Legendary on
-# the marketplace. Stars are expensive and most users have General (1.0x).
-# The est_card_mult estimates what a competitive Real Pro user typically has.
+# the marketplace. Stars are expensive and most users have General (+0.3).
+# The _est_card_boost returns the ADDITIVE card boost (not a multiplier).
 #
-# DFS Base Formula (proxy for raw production):
-#   PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
+# Real Score-aligned formula (proxy for raw production):
+#   PTS + REB + AST×1.5 + STL×4.5 + BLK×4.0 - TOV×1.2
 #
-# STARTING 5 = highest Real Score × est_card_mult (card-adjusted value)
+# STARTING 5 = MILP optimizes Σ rating × (slot + card_boost)
 # MOONSHOT = 5 different players — close-game ceiling × card advantage
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -411,7 +412,7 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
 def _game_script_weights(total, spread):
     """Return per-stat multipliers based on over/under and spread."""
     w = {"pts": 1.0, "reb": 1.0, "ast": 1.0, "stl": 1.0, "blk": 1.0, "tov": 1.0}
-    t = total or 222
+    t = total or DEFAULT_TOTAL
 
     if t < 220:
         # Defensive Grind — steals/blocks are gold, volume stats suppressed
@@ -467,7 +468,7 @@ def _game_script_dfs(stats, total, spread):
 
 def _game_script_label(total):
     """Human-readable game script tier for display."""
-    t = total or 222
+    t = total or DEFAULT_TOTAL
     if t < 220:   return "Defensive Grind"
     if t <= 235:  return "Balanced Pace"
     if t <= 245:  return "Fast-Paced"
@@ -549,7 +550,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         except: pass
 
     # Contextual multipliers — game closeness is #1 factor for Real Sports
-    pace_adj   = 1.0 + (0.06 * ((total or 222) - 222) / 20)
+    pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
     # Aggressive spread-based game weighting — this is the GAME SELECTION layer.
     # In Real Sports, actions in tight games are exponentially more valuable.
     # Pick'em games (spread ≤2) get a massive boost; blowouts (>8) get crushed.
@@ -577,9 +578,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
     usage_rate = min(max(pts / max(avg_min, 1) * 0.8, 0.5), 2.0)
 
-    rng = _make_rng(spread or 0, total or 222)
+    rng = _make_rng(spread or 0, total or DEFAULT_TOTAL)
     real_result, real_meta = real_score_projection(
-        s_base, spread or 0, total or 222, usage_rate, player_variance, rng
+        s_base, spread or 0, total or DEFAULT_TOTAL, usage_rate, player_variance, rng
     )
 
     # Raw projected score — generous cap to let stars differentiate
@@ -598,9 +599,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     avg_slot = 1.34  # weighted avg of [2.0, 1.5, 1.2, 1.0, 1.0]
     chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
 
-    # Expected draft points (assuming best slot 2.0x)
-    expected_dp = round(raw_score * (2.0 + card_boost), 1)
-
     return {
         "id":      pinfo["id"],
         "name":    pinfo["name"],
@@ -608,7 +606,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "team":    team_abbr,
         "rating":  round(raw_score, 1),
         "chalk_ev":chalk_ev,
-        "expected_dp": expected_dp,
         "predMin": round(proj_min, 1),
         "pts":     round(pts, 1),
         "reb":     round(reb, 1),
@@ -617,7 +614,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "blk":     round(blk, 1),
         "tov":     round(tov, 1),
         "est_mult": card_boost,
-        "om":      card_boost,
         "slot":    "1.0x",
         "_base":   base,
         "_spread": spread,
@@ -744,8 +740,10 @@ def _build_lineups(projections):
     contrarian_pool = [p for p in projections
                        if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
     # Score by contrarian value — card-adjusted ceiling × closeness × momentum
+    # Card boost is already baked into contrarian_score, so zero it for MILP
     for p in contrarian_pool:
         p["_contrarian_ev"] = contrarian_score(p)
+        p["_no_boost"] = 0.0
     upside = optimize_lineup(contrarian_pool, n=5, sort_key="_contrarian_ev",
                              rating_key="_contrarian_ev",
                              card_boost_key="_no_boost")
@@ -765,47 +763,9 @@ def _build_lineups(projections):
 GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
 GAME_MOONSHOT_FLOOR = 4.0  # Filter out low-production players
 
-def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
-    """Pick n players from pool ensuring at least min_per_team from each team."""
-    if not pool:
-        return []
-
-    teams = {}
-    for p in pool:
-        t = p["team"]
-        teams.setdefault(t, []).append(p)
-
-    for t in teams:
-        teams[t].sort(key=lambda x: x[sort_key], reverse=True)
-
-    team_list = list(teams.keys())
-    if len(team_list) < 2:
-        return sorted(pool, key=lambda x: x[sort_key], reverse=True)[:n]
-
-    picked = []
-    used = set()
-
-    # Phase 1: guarantee min_per_team from each team (capped by available players)
-    for t in team_list:
-        avail = min(min_per_team, len(teams[t]))
-        for p in teams[t][:avail]:
-            picked.append(p)
-            used.add(p["name"])
-
-    # Phase 2: fill remaining slots from best available across both teams
-    remaining = n - len(picked)
-    if remaining > 0:
-        rest = sorted([p for p in pool if p["name"] not in used],
-                      key=lambda x: x[sort_key], reverse=True)
-        picked.extend(rest[:remaining])
-
-    picked.sort(key=lambda x: x[sort_key], reverse=True)
-    return picked[:n]
-
-
 def _apply_game_script(projections, game):
     """Re-score projections using game script weights. Returns new list (deep copies, no mutation)."""
-    total  = game.get("total") or 222
+    total  = game.get("total") or DEFAULT_TOTAL
     spread = game.get("spread") or 0
     rescored = []
     for p in projections:
@@ -821,7 +781,6 @@ def _apply_game_script(projections, game):
         rp = copy.deepcopy(p)
         rp["rating"]   = new_rating
         rp["chalk_ev"] = new_ev
-        rp["expected_dp"] = round(new_ev, 1)
         rp["game_script"] = _game_script_label(total)
         rescored.append(rp)
     return rescored
@@ -832,9 +791,9 @@ def _build_game_lineups(projections, game):
 
     Starting 5: MILP-optimized slot assignments with team balance (min 2 per team).
                  Maximizes Real Score × slot multiplier. Floor = GAME_CHALK_FLOOR (3.5).
-    Contrarian: Inverse-ownership leverage play targeting Top 10% payout tier.
+    Contrarian: High-card-ceiling leverage play targeting Top 10% payout tier.
                  Enforces negative correlation with Starting 5 (no overlap, opposite
-                 team weighting). Floor = GAME_MOONSHOT_FLOOR (2.5).
+                 team weighting). Floor = GAME_MOONSHOT_FLOOR (4.0).
     """
     rescored = _apply_game_script(projections, game)
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
@@ -850,9 +809,11 @@ def _build_game_lineups(projections, game):
                        if p["name"] not in chalk_names and p["rating"] >= GAME_MOONSHOT_FLOOR]
 
     # Score by contrarian value with game spread awareness
+    # Card boost is already baked into contrarian_score, so zero it for MILP
     game_spread = game.get("spread") or 0
     for p in contrarian_pool:
         p["_contrarian_ev"] = contrarian_score(p, spread=game_spread)
+        p["_no_boost"] = 0.0
 
     # Determine opposite team weighting for negative correlation
     chalk_teams = {}

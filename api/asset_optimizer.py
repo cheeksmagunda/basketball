@@ -165,7 +165,7 @@ def contrarian_score(player, spread=0):
     """Calculate moonshot/contrarian value for the Real Sports App.
 
     Moonshot targets players with high CARD-ADJUSTED ceiling:
-    - Card advantage (est_card_mult from player tier)
+    - Card advantage (est_card_boost from player tier)
     - Close-game environments (high Real Score ceiling)
     - High-variance/streaky players (momentum bonus potential)
     - Underdog side in competitive games
