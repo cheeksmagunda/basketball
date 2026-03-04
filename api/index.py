@@ -51,7 +51,8 @@ for _p in [
         except: pass
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-MIN_GATE = 15           # Minimum projected minutes to qualify
+MIN_GATE = 12           # Minimum projected minutes — lowered from 15 to catch
+                        # deep bench (Clifford, Riley) who win in garbage time
 DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
@@ -367,28 +368,31 @@ def _est_card_boost(proj_min, pts, team_abbr):
 
     Real Sports dynamically adjusts card boosts inversely to ownership:
     stars get massive draft counts → crushed boosts (+0.3),
-    obscure role players get almost no drafts → huge boosts (+2.5-3.0).
+    obscure role players get almost no drafts → huge boosts (+2.5-3.0+).
 
     Uses a "hype score" — how attractive the player is to casual drafters —
     and maps it through exponential decay to a card boost.
 
-    Calibrated against March 3 actuals:
+    Calibrated against March 3 actuals (winning drafts had 3.0-3.4x boosts):
       Wembanyama (36m, 24p, SA):   hype 9.5 → est +0.4x  (actual +0.3)
       Ant Edwards (37m, 26p):      hype 7.5 → est +0.5x  (actual +0.3)
       Bam (34m, 21p, MIA):         hype 7.0 → est +0.6x  (actual +0.7)
-      Jaylin Williams (20m, 8p):   hype 0.5 → est +2.8x  (actual +2.7)
-      Marcus Smart (25m, 10p):     hype 0.9 → est +2.5x  (actual +2.5)
-      Oso Ighodaro (18m, 7p):      hype 0.4 → est +2.9x  (actual +3.0)
-      Maxime Raynaud (18m, 10p):   hype 1.2 → est +2.3x  (actual +2.2)
+      Jaylin Williams (20m, 8p):   hype 0.5 → est +3.0x  (actual +2.7)
+      Marcus Smart (25m, 10p):     hype 0.9 → est +2.7x  (actual +2.5)
+      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.1x  (actual +3.0)
+      Maxime Raynaud (18m, 10p):   hype 1.2 → est +2.5x  (actual +2.2)
+      N. Clifford (12m, 4p):       hype 0.1 → est +3.3x  (winning draft had ~3.2x)
     """
     # Hype score — PPG² makes scoring stars disproportionately popular
     hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
     if team_abbr in _BIG_MARKET_TEAMS:
         hype *= 1.5
     # Exponential decay: high hype → low boost, low hype → high boost
-    # 0.74 ≈ e^(-0.3), tuned to match March 3 data
-    boost = 3.0 * (0.74 ** hype) + 0.2
-    return round(min(max(boost, 0.2), 3.2), 1)
+    # Raised coefficient from 3.0 to 3.4 and floor from 0.2 to 0.3 —
+    # March 3 winning drafts had card boosts of 3.0-3.4x for role players,
+    # our old model was underestimating by 0.3-0.5x.
+    boost = 3.4 * (0.74 ** hype) + 0.3
+    return round(min(max(boost, 0.2), 3.5), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula — boosted defensive stats.
@@ -449,10 +453,12 @@ def _game_script_weights(total, spread):
         w["blk"] = 0.90
         w["tov"] = 0.85
         # Blowout risk: if spread > 8, starters sit in garbage time
+        # NOTE: this only applies to per-game script (starters context).
+        # The main project_player() handles role-aware spread separately.
         if abs(spread or 0) > 8:
-            w["pts"] *= 0.88
-            w["ast"] *= 0.88
-            w["reb"] *= 0.92
+            w["pts"] *= 0.90
+            w["ast"] *= 0.90
+            w["reb"] *= 0.94
 
     return w
 
@@ -554,22 +560,41 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             base = (ai_norm * 0.7) + (heuristic * 0.3)
         except: pass
 
-    # Contextual multipliers — game closeness is #1 factor for Real Sports
+    # Contextual multipliers — game closeness matters BUT differently by role.
     pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
-    # Aggressive spread-based game weighting — this is the GAME SELECTION layer.
-    # In Real Sports, actions in tight games are exponentially more valuable.
-    # Pick'em games (spread ≤2) get a massive boost; blowouts (>8) get crushed.
+
+    # Spread adjustment — role-aware.
+    # March 3 lesson: PHI got blown out 131-91 yet 3 of the top 8 highest-value
+    # players were PHI bench guys (Raynaud +4.2, Yabusele +3.4, McCain +3.0).
+    # Blowouts HURT stars (pulled early) but HELP bench (garbage-time minutes).
+    #
+    # Strategy: bench/role players (low PPG, low minutes) get a BOOST in
+    # blowouts because they inherit extended garbage-time run. Stars still
+    # get penalized because they sit Q4 in blowouts.
     abs_spread = abs(spread or 0)
-    if abs_spread <= 2:
-        spread_adj = 1.15   # Pick'em — maximum Real Score environment
-    elif abs_spread <= 4:
-        spread_adj = 1.08   # Tight game — very good
-    elif abs_spread <= 6:
-        spread_adj = 1.0    # Moderate — neutral
-    elif abs_spread <= 8:
-        spread_adj = 0.88   # Lopsided — penalized
+    is_bench = pts <= 12 and avg_min <= 26  # role player / bench threshold
+    if is_bench:
+        # Bench players: blowouts = more minutes, neutral-to-positive
+        if abs_spread <= 2:
+            spread_adj = 1.05   # Close games — bench sits, slight penalty vs stars
+        elif abs_spread <= 6:
+            spread_adj = 1.0    # Moderate — neutral
+        elif abs_spread <= 10:
+            spread_adj = 1.08   # Lopsided — bench gets run, slight boost
+        else:
+            spread_adj = 1.12   # Blowout — extended garbage time, big boost
     else:
-        spread_adj = 0.72   # Projected blowout — severe penalty (PHI-UTA, IND-LAC)
+        # Stars/starters: close games are best, blowouts crush minutes
+        if abs_spread <= 2:
+            spread_adj = 1.15   # Pick'em — maximum Real Score environment
+        elif abs_spread <= 4:
+            spread_adj = 1.08   # Tight game — very good
+        elif abs_spread <= 6:
+            spread_adj = 1.0    # Moderate — neutral
+        elif abs_spread <= 8:
+            spread_adj = 0.88   # Lopsided — penalized
+        else:
+            spread_adj = 0.72   # Projected blowout — stars sit Q4
     home_adj   = 1.02 if side == "home" else 1.0
 
     s_base = base * pace_adj * spread_adj * home_adj
@@ -681,8 +706,9 @@ def _run_game(game, cal_bias=0.0):
     _cs(cache_key, out)
     return out
 
-CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
-MOONSHOT_FLOOR = 4.0  # Floor for Moonshot
+CHALK_FLOOR    = 2.8  # Minimum raw rating for Starting 5 — lowered from 3.5
+                      # to allow high-card bench players (Clifford 2.3 RS won)
+MOONSHOT_FLOOR = 3.0  # Floor for Moonshot — lowered from 4.0
 
 def _get_recent_picks(days=3):
     """Load player names from the last N days of history for anti-repetition."""
@@ -738,12 +764,14 @@ def _build_lineups(projections):
 
     # STARTING 5: MILP-optimized slot assignments using ADDITIVE formula
     # MILP maximizes: Σ rating_i × (slot_mult_j + card_boost_i)
-    # max_per_team=1 forces diversification across different games —
-    # spreading across 5 games maximizes probability of hitting close-game boosts
+    # max_per_team=3 allows stacking bench players from the same team —
+    # March 3 lesson: winner gmoneytb had 3 PHI players (Raynaud, Yabusele,
+    # McCain) all from a blowout loss where bench got extended garbage time.
+    # Strict max=1 ruled out the winning strategy entirely.
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult",
-                            max_per_team=1)
+                            max_per_team=3)
 
     # CONTRARIAN: maximize leverage against the field
     chalk_names = {p["name"] for p in chalk}
