@@ -10,7 +10,7 @@
   <meta name="application-name" content="The Oracle">
   <meta name="theme-color" content="#060a0f">
   <meta property="og:title" content="The Oracle — NBA Draft Optimizer">
-  <meta property="og:description" content="AI-powered NBA DFS draft optimizer with injury cascade, game script analysis, and calibration feedback.">
+  <meta property="og:description" content="AI-powered NBA draft optimizer with closeness-aware scoring, game script analysis, and calibration feedback.">
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -237,12 +237,6 @@
     }
 
     /* ── CASCADE & MULT BADGES ── */
-    .cascade-badge {
-      background: rgba(251,191,36,0.15); color: #fbbf24;
-      border: 1px solid rgba(251,191,36,0.3);
-      font-size: 0.6rem; font-weight: 700; padding: 2px 6px;
-      border-radius: 4px; letter-spacing: 0.05em;
-    }
     .mult-badge {
       background: rgba(79,142,247,0.1); color: var(--chalk);
       border: 1px solid rgba(79,142,247,0.2);
@@ -847,10 +841,7 @@ async function runAnalysis() {
     const injuries = PICKS_DATA.injuries || [];
     if (injuries.length > 0) {
       const names = injuries.map(inj => `${inj.name} (${inj.team})`).join(', ');
-      const cascadeNote = PICKS_DATA.cascadeCount > 0
-        ? ` — ${PICKS_DATA.cascadeCount} pick${PICKS_DATA.cascadeCount > 1 ? 's' : ''} boosted`
-        : '';
-      injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}${cascadeNote}`;
+      injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}`;
       injBadge.style.display = 'block';
     } else {
       injBadge.style.display = 'none';
@@ -897,7 +888,6 @@ function renderCards(picks, containerId, mode) {
 
     const statsHtml = [
       multBadge,
-      p.is_cascade_pick && `<span class="cascade-badge">INJ BOOST</span>`,
       p.injury_status && `<span class="injury-badge">${p.injury_status}</span>`,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,

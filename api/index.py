@@ -18,7 +18,7 @@ app = FastAPI()
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v22")
+CACHE_DIR = Path("/tmp/nba_cache_v23")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -209,78 +209,6 @@ def _fetch_athlete(pid):
 # Position adjacency: G↔G, F↔F, C↔F (centers share with forwards)
 # ─────────────────────────────────────────────────────────────────────────────
 
-POS_GROUPS = {
-    "PG": "G", "SG": "G", "G": "G",
-    "SF": "F", "PF": "F", "F": "F",
-    "C": "C",
-}
-
-def _pos_group(pos):
-    return POS_GROUPS.get(pos, "G")
-
-def _cascade_minutes(roster, stats_map):
-    """Redistribute minutes from OUT players to eligible teammates."""
-    cascade_flags = {}
-
-    # Group players by team
-    teams = {}
-    for p in roster:
-        team = p.get("team_abbr", "")
-        if team not in teams:
-            teams[team] = []
-        teams[team].append(p)
-
-    for team, team_players in teams.items():
-        # Find OUT players with known minutes
-        out_players = []
-        active_players = []
-        for p in team_players:
-            pid = p["id"]
-            s = stats_map.get(pid)
-            if p.get("is_out") and s and s.get("min", 0) > 0:
-                out_players.append((p, s))
-            elif not p.get("is_out") and s and s.get("min", 0) > 0:
-                active_players.append((p, s))
-
-        if not out_players or not active_players:
-            continue
-
-        # Calculate total minutes freed per position group
-        freed_by_group = {}
-        for op, os in out_players:
-            pg = _pos_group(op["pos"])
-            freed_by_group[pg] = freed_by_group.get(pg, 0) + os.get("min", 0)
-            # Centers also share with forwards
-            if pg == "C":
-                freed_by_group["F"] = freed_by_group.get("F", 0) + os.get("min", 0) * 0.3
-
-        # Distribute freed minutes to active players in same position group
-        for group, freed_min in freed_by_group.items():
-            # Find eligible recipients: same group, sorted by current minutes (lowest first = biggest benefit)
-            recipients = []
-            for ap, astat in active_players:
-                apg = _pos_group(ap["pos"])
-                # G receives G minutes, F receives F minutes, C receives both C and F
-                if apg == group or (apg == "C" and group == "F") or (apg == "F" and group == "C"):
-                    recipients.append((ap, astat))
-
-            if not recipients:
-                continue
-
-            # Sort by minutes ascending — bench players get proportionally more
-            recipients.sort(key=lambda x: x[1].get("min", 0))
-
-            # Weight distribution: lower-minute players get more of the freed minutes
-            total_weight = sum(1.0 / max(r[1].get("min", 1), 1) for r in recipients)
-            for rp, rs in recipients:
-                weight = (1.0 / max(rs.get("min", 1), 1)) / total_weight
-                bonus = freed_min * weight * 0.7  # 70% of freed minutes get redistributed
-                pid = rp["id"]
-                if pid not in cascade_flags:
-                    cascade_flags[pid] = 0.0
-                cascade_flags[pid] += bonus
-
-    return cascade_flags
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -495,15 +423,13 @@ def _game_script_label(total):
 
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
-                   cascade_bonus=0.0, cal_bias=0.0):
+                   cal_bias=0.0):
     if pinfo.get("is_out"): return None
     if pinfo.get("name", "").lower() in EXCLUDED_PLAYERS: return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
-    # Apply cascade minute boost
-    proj_min = avg_min + cascade_bonus
-    is_cascade = cascade_bonus >= 2.0
+    proj_min = avg_min
 
     # Minutes gate
     if proj_min < MIN_GATE: return None
@@ -531,11 +457,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # ── REAL SCORE ESTIMATE (closeness is the dominant factor) ──
     heuristic = _real_score_estimate(adj_pts, adj_reb, adj_ast, adj_stl, adj_blk, adj_tov, closeness)
-
-    # Scale heuristic by minute boost from cascade (capped at 1.4x)
-    if cascade_bonus > 0 and avg_min > 0:
-        min_scale = min(proj_min / avg_min, 1.4)
-        heuristic *= min_scale
 
     # Declining usage penalty
     season_min = stats.get("season_min", avg_min)
@@ -581,13 +502,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     season_pts = stats.get("season_pts", pts)
     recent_trend = round(recent_pts / max(season_pts, 1), 2)
     def_upside = (stl + blk) / max(proj_min, 1) * 10
-    cascade_mult = 1.15 if is_cascade else 1.0
-    moon_score = round((
+    moon_score = round(
         raw_score * 1.5 +            # production is king — must actually produce stats
         variance * 4.0 +             # close-game upside (halved from v1)
         recent_trend * 2.0 +         # hot hand
         def_upside * 2.0             # defensive Real Score boost
-    ) * cascade_mult, 2)
+    , 2)
 
     return {
         "id":      pinfo["id"],
@@ -608,7 +528,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "om":      om_chalk,
         "slot":    "1.0x",
         "_base":   base,
-        "is_cascade_pick": is_cascade,
         "injury_status": pinfo.get("injury_status", ""),
         "_decline": round(decline_factor, 2),
         "_closeness": closeness,
@@ -647,18 +566,14 @@ def _run_game(game, cal_bias=0.0):
             except Exception as e:
                 print(f"fetch err {p['name']}: {e}")
 
-    # Run cascade engine to redistribute minutes from OUT players
-    cascade_flags = _cascade_minutes(all_roster, stats_map)
-
-    # Project all players with cascade-adjusted minutes
+    # Project all active players
     out = []
     for p, ab, sd in players_in:
         stats = stats_map.get(p["id"])
         if not stats:
             continue
-        cascade_bonus = cascade_flags.get(p["id"], 0.0)
         proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
-                              cascade_bonus=cascade_bonus, cal_bias=cal_bias)
+                              cal_bias=cal_bias)
         if proj:
             out.append(proj)
     _cs(cache_key, out)
@@ -900,13 +815,11 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
-    cascade_count = sum(1 for p in chalk + upside if p.get("is_cascade_pick"))
     result = {"date": date.today().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
-              "injuries": injuries,
-              "cascadeCount": cascade_count}
+              "injuries": injuries}
     if locked:
         _ls(lock_key, result)
     return result
