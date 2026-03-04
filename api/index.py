@@ -23,7 +23,7 @@ def _today_et():
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v25")
+CACHE_DIR = Path("/tmp/nba_cache_v26")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -243,13 +243,14 @@ def _ownership_mult(proj_min, closeness_coeff=1.0):
     stars with thousands of drafts land in 0.3-0.5x slots.
     Minutes are the best proxy for draft volume (stars = heavily drafted).
 
-    Closeness modulates: bench players in close games = goldmine,
-    bench players in blowouts = ride the bench in garbage time.
+    Finer granularity in the 22-30 range — a 27 min player gets drafted
+    way more than a 19 min player, so the mult should reflect that.
     """
     if proj_min < 15:   base_mult = 2.0   # deep bench — high mult if they produce
     elif proj_min < 22: base_mult = 3.0   # bench sweet spot (actual winners: 2.7-3.0x)
-    elif proj_min < 28: base_mult = 2.5   # role players (actual winners: 2.4-2.5x)
-    elif proj_min < 33: base_mult = 1.0   # starters — moderately owned
+    elif proj_min < 26: base_mult = 2.5   # role players (actual: 2.4-2.5x)
+    elif proj_min < 30: base_mult = 1.5   # upper role / borderline starters — still drafted a lot
+    elif proj_min < 33: base_mult = 0.8   # starters — heavily owned
     else:               base_mult = 0.5   # stars — everyone drafts them (actual: 0.3x)
 
     if proj_min < 28:  # bench and role players
@@ -258,6 +259,26 @@ def _ownership_mult(proj_min, closeness_coeff=1.0):
     else:  # starters and stars
         if closeness_coeff > 1.1:   return round(base_mult * 1.05, 2)  # slight close-game boost
         elif closeness_coeff < 0.8: return round(base_mult * 1.10, 2)  # blowout: stars still play
+
+    return base_mult
+
+
+def _moonshot_ownership_mult(proj_min, closeness_coeff=1.0):
+    """Ultra-contrarian ownership mult for Moonshot picks.
+
+    Even more extreme than Starting 5 — pushes hard into deep bench territory.
+    15-20 min players are moonshot gold: barely drafted, 3.0x+ actual slots.
+    Anyone above 28 min is basically zeroed out — too many people draft them.
+    """
+    if proj_min < 15:   base_mult = 3.0   # deep deep bench
+    elif proj_min < 20: base_mult = 3.5   # moonshot sweet spot
+    elif proj_min < 25: base_mult = 2.5   # still good
+    elif proj_min < 30: base_mult = 1.0   # meh — too many drafters
+    else:               base_mult = 0.3   # basically never pick stars for moonshot
+
+    if proj_min < 28:
+        if closeness_coeff > 1.1:   return round(base_mult * 1.20, 2)
+        elif closeness_coeff < 0.8: return round(base_mult * 0.70, 2)
 
     return base_mult
 
@@ -465,13 +486,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # ── REAL SCORE ESTIMATE (closeness is the dominant factor) ──
     heuristic = _real_score_estimate(adj_pts, adj_reb, adj_ast, adj_stl, adj_blk, adj_tov, closeness)
 
-    # Declining usage penalty
+    # Usage trend: declining = penalty, rising = boost (injury-driven opportunity)
     season_min = stats.get("season_min", avg_min)
     recent_min = stats.get("recent_min", avg_min)
     decline_factor = 1.0
     if season_min > 0 and recent_min < season_min * 0.85:
         decline_factor = recent_min / season_min
         heuristic *= decline_factor
+    elif season_min > 0 and recent_min > season_min * 1.15:
+        # Rising minutes = opportunity (injuries, rotation change)
+        surge_factor = min(recent_min / season_min, 1.3)  # cap at 30% boost
+        heuristic *= surge_factor
 
     # ── BLOWOUT STAR PENALTY ──
     # High-minute players in projected blowouts lose minutes to garbage time
@@ -504,16 +529,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     chalk_ev = round(raw_score * om_chalk, 2)
     expected_dp = round(raw_score * om_chalk, 1)
 
-    # ── MOONSHOT SCORE: production-weighted ceiling estimate ──
+    # ── MOONSHOT SCORE: separate ownership curve + boom signals ──
+    # Uses its own ultra-contrarian mult so moonshot picks genuinely different
+    # players than Starting 5 (deeper bench, more extreme low-ownership)
     recent_pts = stats.get("recent_pts", pts)
     season_pts = stats.get("season_pts", pts)
     recent_trend = round(recent_pts / max(season_pts, 1), 2)
     def_upside = (stl + blk) / max(proj_min, 1) * 10
+    moon_om = _moonshot_ownership_mult(proj_min, closeness)
     moon_score = round(
-        chalk_ev * 1.5 +             # ownership-adjusted production — avoids star overfitting
-        variance * 4.0 +             # close-game upside (halved from v1)
-        recent_trend * 2.0 +         # hot hand
-        def_upside * 2.0             # defensive Real Score boost
+        raw_score * moon_om +        # production with ultra-contrarian ownership
+        def_upside * 5.0 +           # steals/blocks per min = boom potential
+        variance * 5.0 +             # close games amplify bench production
+        recent_trend * 3.0           # hot hand / rising minutes
     , 2)
 
     return {
