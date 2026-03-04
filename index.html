@@ -838,7 +838,7 @@ async function runAnalysis() {
       const cascadeNote = PICKS_DATA.cascadeCount > 0
         ? ` — ${PICKS_DATA.cascadeCount} pick${PICKS_DATA.cascadeCount > 1 ? 's' : ''} boosted`
         : '';
-      injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}${cascadeNote}`;
+      injBadge.innerHTML = `<b>OUT</b>: ${names}${cascadeNote}`;
       injBadge.style.display = 'block';
     } else {
       injBadge.style.display = 'none';
