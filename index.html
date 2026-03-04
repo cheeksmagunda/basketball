@@ -335,6 +335,16 @@
     }
     .chip b { color: var(--text); }
 
+    .lock-chip {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #22c55e;
+      padding: 5px 10px; border-radius: 6px;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+
     /* ── DIVIDER ── */
     .divider {
       height: 1px;
@@ -586,6 +596,7 @@
       <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🚀 Moonshot</button>
     </div>
     <div id="gameScriptBadge" style="display:none;font-size:0.7rem;color:var(--text-dim);padding:4px 0 2px;text-align:center;letter-spacing:0.5px"></div>
+    <div id="gameLockBadge" style="display:none;font-size:0.7rem;padding:4px 0 2px;text-align:center;letter-spacing:0.5px"></div>
     <div id="picksList"></div>
 
   </div>
@@ -705,7 +716,14 @@ async function initGameSelector() {
     games.forEach(g => {
       const o = document.createElement('option');
       o.value = g.gameId;
-      o.textContent = g.label + (g.total ? ` · O/U ${g.total}` : '');
+      let label = g.label + (g.total ? ` \u00B7 O/U ${g.total}` : '');
+      if (g.startTime) {
+        const start = new Date(g.startTime);
+        const timeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        label += ` \u00B7 ${timeStr}`;
+      }
+      if (g.locked) label += ' \uD83D\uDD12';
+      o.textContent = label;
       sel.appendChild(o);
     });
     sel.onchange = () => { btn.disabled = !sel.value; };
@@ -737,9 +755,14 @@ async function loadSlate() {
     const chips = document.getElementById('slateChips');
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    let lockChip = '';
+    if (SLATE.locked) {
+      lockChip = '<div class="lock-chip">Picks Locked</div>';
+    }
     chips.innerHTML = `
       <div class="chip"><b>${SLATE.games.length}</b> Games</div>
-      <div class="chip">🏀 ${dateStr}</div>
+      <div class="chip">${dateStr}</div>
+      ${lockChip}
     `;
     switchSlate('chalk');
   } catch(e) {
@@ -796,6 +819,15 @@ async function runAnalysis() {
       badge.style.display = 'block';
     } else {
       badge.style.display = 'none';
+    }
+    // Show lock status
+    const lockBadge = document.getElementById('gameLockBadge');
+    if (PICKS_DATA.locked) {
+      lockBadge.innerHTML = 'Picks locked — showing final predictions';
+      lockBadge.style.display = 'block';
+      lockBadge.style.color = '#22c55e';
+    } else {
+      lockBadge.style.display = 'none';
     }
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
 
