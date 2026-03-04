@@ -142,11 +142,13 @@ def _fallback_sort(projections, n, sort_key):
 def contrarian_score(player, spread=0):
     """Calculate contrarian value for a player.
 
-    Contrarian value rewards:
-    - Lower projected minutes (bench sweet spot = less popular)
-    - Cascade picks (less known to the field)
-    - Underdog side (field gravitates to favorites)
-    - Higher variance (divergent from consensus)
+    Production-first contrarian scoring. The previous 0.5–2.0 inv_pop range
+    (4:1 ratio, compounded to 6.7:1 with cascade+underdog) meant bench players
+    always outranked stars regardless of output. Real results show production
+    is the primary driver of DFS value — ownership is a tiebreaker.
+
+    New approach: mild ownership tilt (0.85–1.3) keeps production as the
+    dominant signal while still rewarding contrarian picks at the margin.
 
     Args:
         player: Player dict with rating, predMin, is_cascade_pick, etc.
@@ -158,25 +160,25 @@ def contrarian_score(player, spread=0):
     base_rating = player.get("rating", 0)
     proj_min = player.get("predMin", 20)
 
-    # Inverse popularity weight: bench players are more contrarian
+    # Mild inverse-popularity tilt: production still dominates
     if proj_min >= 33:
-        inv_pop = 0.5     # Stars — everyone picks them, low leverage
+        inv_pop = 0.85    # Stars — slight discount, still high leverage via production
     elif proj_min >= 28:
-        inv_pop = 0.8     # Starters — moderate leverage
+        inv_pop = 1.0     # Starters — neutral
     elif proj_min >= 22:
-        inv_pop = 1.3     # Role players — good leverage
+        inv_pop = 1.15    # Role players — mild edge
     elif proj_min >= 15:
-        inv_pop = 2.0     # Bench — high leverage
+        inv_pop = 1.3     # Bench — moderate contrarian edge
     else:
-        inv_pop = 1.5     # Deep bench — very contrarian but risky
+        inv_pop = 1.1     # Deep bench — some edge but risky
 
-    # Cascade bonus: injury-boost picks are under-owned
-    cascade_bonus = 1.4 if player.get("is_cascade_pick") else 1.0
+    # Cascade bonus: injury-boost picks are under-owned (reduced from 1.4)
+    cascade_bonus = 1.2 if player.get("is_cascade_pick") else 1.0
 
-    # Underdog bonus: players on unfavored teams are less owned
+    # Underdog bonus: players on unfavored teams are less owned (reduced from 1.2)
     underdog_bonus = 1.0
     if abs(spread or 0) > 4:
-        underdog_bonus = 1.2  # General bonus for games with clear favorites
+        underdog_bonus = 1.1  # Mild bonus for clear-favorite games
 
     # Contrarian score = base quality × leverage multipliers
     c_score = base_rating * inv_pop * cascade_bonus * underdog_bonus

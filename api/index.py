@@ -272,28 +272,41 @@ def _cascade_minutes(roster, stats_map):
 #
 # DFS Scoring Formula: PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
 #
-# Real Sports Value = actual_score × slot_multiplier_received
-# The slot multiplier is determined by ownership — high-owned players (stars)
-# always land in low-multiplier slots.
+# Production-first philosophy: raw DFS output is the primary signal.
+# Ownership is a mild tiebreaker, not the dominant factor.
 #
-# We estimate ownership via projected minutes (including cascade):
-#   Stars (33+ min)     → everyone drafts them → low slot mult ~0.9x → AVOID
-#   Starters (28-33)    → popular → slot mult ~1.5x
-#   Role players(22-28) → moderate ownership → slot mult ~2.2x
-#   Bench (15-22)       → low ownership, high mult ~2.8x ← SWEET SPOT
+# Real results show: stars at low multipliers (1.2x) still outvalue bench
+# at high multipliers (2.0x) because the raw production gap (2-3x) dwarfs
+# the slot multiplier range (1.67:1). A bench player needs to OUTSCORE a
+# star to beat them, not just be less-owned.
+#
+# Ownership tilt (1.0–1.3x): mild edge for low-ownership players.
+#   Stars (33+ min)     → 1.0x (neutral — high production carries them)
+#   Starters (28-33)    → 1.1x
+#   Role players(22-28) → 1.2x
+#   Bench (15-22)       → 1.3x (mild edge for low-ownership)
 #   Deep bench (<15)    → below minutes gate, filtered out
 #
-# STARTING 5 = best EV at moderate risk (role players + starters)
-# MOONSHOT = 5 different players — lower usage, higher ceiling, higher production floor
+# STARTING 5 = highest projected producers with mild ownership tilt
+# MOONSHOT = 5 different players — contrarian picks with production floor
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ownership_mult_chalk(proj_min):
-    """Moderate inverse-ownership mult. Penalizes stars, rewards role players."""
-    if proj_min < 15:  return 1.8   # deep bench — too risky for chalk
-    if proj_min < 22:  return 2.8   # bench sweet spot (Sheppard, González tier)
-    if proj_min < 28:  return 2.2   # role players
-    if proj_min < 33:  return 1.5   # starters
-    return 0.9                      # stars — everyone drafts them, low mult
+    """Mild inverse-ownership tilt. Production-first — stars are NOT penalized.
+
+    Previous curve (0.9–2.8) was catastrophically aggressive: a bench player
+    with 3.0 raw rating got chalk_ev=8.4, beating a star with 8.0 (chalk_ev=7.2).
+    Real results show production is king — stars at 1.2x still outvalue bench
+    at 2.0x because the raw output gap (2–3x) dwarfs slot multiplier range (1.67:1).
+
+    New curve (1.0–1.3): mild tilt rewards low-ownership players at the margin
+    without drowning out actual production.
+    """
+    if proj_min < 15:  return 1.1   # deep bench — slight edge, still risky
+    if proj_min < 22:  return 1.3   # bench — mild low-ownership edge
+    if proj_min < 28:  return 1.2   # role players
+    if proj_min < 33:  return 1.1   # starters
+    return 1.0                      # stars — neutral, not penalized
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
@@ -534,7 +547,7 @@ def _run_game(game, cal_bias=0.0):
     return out
 
 CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
-MOONSHOT_FLOOR = 6.0  # Higher floor for Moonshot — filters low-production bench warmers
+MOONSHOT_FLOOR = 5.0  # Production floor for Moonshot — lets mid-tier producers compete
 
 def _build_lineups(projections):
     # STARTING 5: MILP-optimized slot assignments (maximizes score × slot multiplier)
@@ -566,7 +579,7 @@ def _build_lineups(projections):
 # ─────────────────────────────────────────────────────────────────────────────
 
 GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
-GAME_MOONSHOT_FLOOR = 2.5  # Lower floor for moonshot — wider net for upside plays
+GAME_MOONSHOT_FLOOR = 4.0  # Moonshot floor — must project real production to qualify
 
 def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
     """Pick n players from pool ensuring at least min_per_team from each team."""
