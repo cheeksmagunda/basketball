@@ -306,16 +306,20 @@ def _est_card_mult(proj_min):
     Role/bench players are cheap to upgrade to Epic/Legendary on the marketplace,
     giving them 3-5x card multipliers vs superstars stuck at 1.0x (General).
 
-    Calibrated against actual leaderboard data:
-      Role players (18-25 min): winners had +2.0x to +3.0x card boosts
-      Stars (34+ min): winners had +0.2x to +0.6x card boosts (General/Common)
+    Calibrated against actual leaderboard data (winning lineups):
+      Winners: ALL role players with 4.0-4.6x card mults, ZERO stars
+      Role players (18-25 min): +2.0x to +3.0x card boosts
+      Stars (34+ min): +0.2x to +0.6x card boosts (General/Common)
+
+    The card advantage must overcome the ~2.3x base score gap between
+    stars (19+ base) and role players (7-10 base) to match the winning meta.
     """
     if proj_min >= 34:  return 1.0   # Superstars — expensive, most have General (1.0x)
-    if proj_min >= 30:  return 1.15  # Stars — maybe Common card
-    if proj_min >= 26:  return 1.4   # High starters — Uncommon/Rare accessible
-    if proj_min >= 22:  return 2.0   # Role players — Epic card typical
-    if proj_min >= 18:  return 2.5   # Bench sweet spot — Legendary accessible
-    if proj_min >= 15:  return 2.2   # Deep bench — high cards but limited minutes
+    if proj_min >= 30:  return 1.1   # Stars — maybe Common card
+    if proj_min >= 26:  return 1.6   # High starters — Uncommon/Rare accessible
+    if proj_min >= 22:  return 2.5   # Role players — Epic + booster typical
+    if proj_min >= 18:  return 3.0   # Bench sweet spot — Legendary + booster
+    if proj_min >= 15:  return 2.6   # Deep bench — high cards but limited minutes
     return 0.9                       # Very deep bench — filtered by minutes gate
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
