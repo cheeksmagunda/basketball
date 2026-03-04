@@ -597,7 +597,6 @@
     </div>
     <div id="gameScriptBadge" style="display:none;font-size:0.7rem;color:var(--text-dim);padding:4px 0 2px;text-align:center;letter-spacing:0.5px"></div>
     <div id="gameLockBadge" style="display:none;font-size:0.7rem;padding:4px 0 2px;text-align:center;letter-spacing:0.5px"></div>
-    <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:#fbbf24;padding:4px 10px 8px;text-align:center;letter-spacing:0.3px;background:rgba(251,191,36,0.06);border-radius:8px;margin-top:6px"></div>
     <div id="picksList"></div>
 
   </div>
@@ -830,19 +829,6 @@ async function runAnalysis() {
     } else {
       lockBadge.style.display = 'none';
     }
-    // Show injury info
-    const injBadge = document.getElementById('gameInjuryBadge');
-    const injuries = PICKS_DATA.injuries || [];
-    if (injuries.length > 0) {
-      const names = injuries.map(inj => `${inj.name} (${inj.team})`).join(', ');
-      const cascadeNote = PICKS_DATA.cascadeCount > 0
-        ? ` — ${PICKS_DATA.cascadeCount} pick${PICKS_DATA.cascadeCount > 1 ? 's' : ''} boosted`
-        : '';
-      injBadge.innerHTML = `<b>OUT</b>: ${names}${cascadeNote}`;
-      injBadge.style.display = 'block';
-    } else {
-      injBadge.style.display = 'none';
-    }
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
 
     // Auto-save to lab
@@ -885,7 +871,7 @@ function renderCards(picks, containerId, mode) {
 
     const statsHtml = [
       multBadge,
-      p.is_cascade_pick && `<span class="cascade-badge">INJ BOOST</span>`,
+      (p.injury_status && p.injury_status.toLowerCase() !== 'active') && `<span class="cascade-badge">${p.injury_status}</span>`,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,

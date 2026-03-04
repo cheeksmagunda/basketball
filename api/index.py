@@ -99,11 +99,13 @@ def fetch_roster(team_id, team_abbr):
     players = []
     for a in data.get("athletes", []):
         inj = a.get("injuries", [])
-        is_out = inj[0].get("status", "").lower() in ["out", "injured"] if inj else False
+        inj_status = inj[0].get("status", "") if inj else ""
+        is_out = inj_status.lower() in ["out", "injured"] if inj_status else False
         players.append({
             "id": a["id"], "name": a["fullName"],
             "pos": a.get("position", {}).get("abbreviation", "G"),
             "is_out": is_out, "team_abbr": team_abbr,
+            "injury_status": inj_status,
         })
     _cs(f"roster_{team_id}", players)
     return players
@@ -453,6 +455,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_base":   base,
         "is_cascade_pick": is_cascade,
+        "injury_status": pinfo.get("injury_status", ""),
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
     }
