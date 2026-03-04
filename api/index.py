@@ -18,7 +18,7 @@ app = FastAPI()
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
-CACHE_DIR = Path("/tmp/nba_cache_v21")
+CACHE_DIR = Path("/tmp/nba_cache_v22")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -62,6 +62,21 @@ def _is_locked(start_time_iso):
     except:
         return False
 
+def _all_games_ended(games):
+    """Returns True if all games on the slate have likely ended (3+ hours past start)."""
+    now = datetime.now(timezone.utc)
+    for g in games:
+        st = g.get("startTime")
+        if not st:
+            continue
+        try:
+            game_start = datetime.fromisoformat(st.replace("Z", "+00:00"))
+            if now < game_start + timedelta(hours=3):
+                return False
+        except:
+            continue
+    return len(games) > 0
+
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
     except: return default
@@ -73,10 +88,15 @@ def _espn_get(url):
         return r.json()
     except: return {}
 
-def fetch_games():
-    c = _cg("games")
+def fetch_games(for_date=None):
+    """Fetch games from ESPN scoreboard. If for_date is provided, fetch that date's games."""
+    cache_key = f"games_{for_date}" if for_date else "games"
+    c = _cg(cache_key)
     if c: return c
-    data = _espn_get(f"{ESPN}/scoreboard")
+    url = f"{ESPN}/scoreboard"
+    if for_date:
+        url += f"?dates={for_date.strftime('%Y%m%d')}"
+    data = _espn_get(url)
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
@@ -95,7 +115,7 @@ def fetch_games():
             "total":  _safe_float(odds.get("overUnder"), None),
             "startTime": ev.get("date", ""),
         })
-    _cs("games", games)
+    _cs(cache_key, games)
     return games
 
 def fetch_roster(team_id, team_abbr):
@@ -105,11 +125,15 @@ def fetch_roster(team_id, team_abbr):
     players = []
     for a in data.get("athletes", []):
         inj = a.get("injuries", [])
-        is_out = inj[0].get("status", "").lower() in ["out", "injured"] if inj else False
+        inj_status = inj[0].get("status", "").strip() if inj else ""
+        is_out = inj_status.lower() in ["out", "injured"] if inj_status else False
+        # Only surface non-healthy statuses (Questionable, Day-To-Day, Doubtful, etc.)
+        show_status = inj_status if inj_status.lower() not in ("", "active", "healthy") else ""
         players.append({
             "id": a["id"], "name": a["fullName"],
             "pos": a.get("position", {}).get("abbreviation", "G"),
             "is_out": is_out, "team_abbr": team_abbr,
+            "injury_status": show_status,
         })
     _cs(f"roster_{team_id}", players)
     return players
@@ -294,11 +318,11 @@ def _ownership_mult(proj_min, closeness_coeff=1.0):
     else:               base_mult = 0.85  # stars — heavily owned
 
     if proj_min < 28:  # bench and role players
-        if closeness_coeff > 1.2:   return round(base_mult * 1.15, 2)  # close game boost
-        elif closeness_coeff < 0.9: return round(base_mult * 0.80, 2)  # blowout penalty
+        if closeness_coeff > 1.1:   return round(base_mult * 1.15, 2)  # close game boost
+        elif closeness_coeff < 0.8: return round(base_mult * 0.80, 2)  # blowout penalty
     else:  # starters and stars
-        if closeness_coeff > 1.2:   return round(base_mult * 1.05, 2)  # slight close-game boost
-        elif closeness_coeff < 0.9: return round(base_mult * 1.10, 2)  # blowout: stars still play
+        if closeness_coeff > 1.1:   return round(base_mult * 1.05, 2)  # slight close-game boost
+        elif closeness_coeff < 0.8: return round(base_mult * 1.10, 2)  # blowout: stars still play
 
     return base_mult
 
@@ -318,22 +342,25 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _closeness_coefficient(spread):
-    """Game closeness multiplier — the DOMINANT factor in Real Score.
+    """Game closeness multiplier — significant but not extreme.
 
-    Steepened curve calibrated against actual Real Score data:
-    Pick-em (spread 0)  -> ~1.50x
-    Close (spread 3)    -> ~1.07x
-    Moderate (spread 5) -> ~0.79x
-    Large (spread 7)    -> ~0.60x
-    Blowout (spread 10) -> ~0.44x
-    Mega-blowout (15+)  -> ~0.36x floor
+    Calibrated against actual Real Score data (March 3 slate):
+    - Edwards scored 6.2 RS in an 18pt blowout (spread ~5) => closeness still matters
+    - Thompson scored 4.0 in a 28pt blowout (exceptional efficiency)
+    - Banchero 5.4 in 2pt game, Adebayo 5.2 in OT => close games DO boost
 
-    Creates a ~4x ratio between pick-em and blowout.
-    Validated: Wemby at spread 10 -> 3.7 rating (actual Real Score was 3.6).
+    Pick-em (spread 0)  -> ~1.30x boost
+    Close (spread 3)    -> ~1.10x
+    Moderate (spread 5) -> ~0.95x (near baseline)
+    Large (spread 7)    -> ~0.83x
+    Blowout (spread 10) -> ~0.70x
+    Mega-blowout (15+)  -> ~0.58x floor
+
+    Creates a ~2.2x ratio between pick-em and mega-blowout.
     """
     s = abs(spread) if spread is not None else 7.0
-    raw = math.exp(-0.10 * (s ** 1.4))
-    return round(0.35 + 1.15 * raw, 3)
+    raw = math.exp(-0.07 * (s ** 1.3))
+    return round(0.50 + 0.80 * raw, 3)
 
 
 def _blowout_risk(spread, total):
@@ -582,6 +609,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_base":   base,
         "is_cascade_pick": is_cascade,
+        "injury_status": pinfo.get("injury_status", ""),
         "_decline": round(decline_factor, 2),
         "_closeness": closeness,
         "_variance": variance,
@@ -791,27 +819,48 @@ async def get_games():
 
 @app.get("/api/slate")
 async def get_slate(cal_bias: float = Query(0.0)):
-    games = fetch_games()
-    if not games:
-        return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+    today_games = fetch_games()
+    slate_date = date.today()
+
+    # If today's slate is over, transition to next day
+    if today_games and _all_games_ended(today_games):
+        tomorrow = date.today() + timedelta(days=1)
+        next_games = fetch_games(for_date=tomorrow)
+        if next_games:
+            slate_date = tomorrow
+            games = next_games
+        else:
+            games = today_games  # fallback to today if tomorrow has no games yet
+    elif not today_games:
+        # No games today — check tomorrow
+        tomorrow = date.today() + timedelta(days=1)
+        next_games = fetch_games(for_date=tomorrow)
+        if next_games:
+            slate_date = tomorrow
+            games = next_games
+        else:
+            return {"date": slate_date.isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+    else:
+        games = today_games
 
     # Check if slate is locked (5 min before earliest game)
     start_times = [g["startTime"] for g in games if g.get("startTime")]
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
+    cache_suffix = f"_{slate_date.isoformat()}" if slate_date != date.today() else ""
     if locked:
-        lock_cached = _lg("slate_v5_locked")
+        lock_cached = _lg(f"slate_v5_locked{cache_suffix}")
         if lock_cached:
             lock_cached["locked"] = True
             return lock_cached
 
     if cal_bias == 0.0:
-        cached = _cg("slate_v5")
+        cached = _cg(f"slate_v5{cache_suffix}")
         if cached:
             cached["locked"] = locked
             if locked:
-                _ls("slate_v5_locked", cached)
+                _ls(f"slate_v5_locked{cache_suffix}", cached)
             return cached
 
     all_proj = []
@@ -820,12 +869,12 @@ async def get_slate(cal_bias: float = Query(0.0)):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
-    result = {"date": date.today().isoformat(), "games": games,
+    result = {"date": slate_date.isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
     if cal_bias == 0.0:
-        _cs("slate_v5", result)
+        _cs(f"slate_v5{cache_suffix}", result)
     if locked:
-        _ls("slate_v5_locked", result)
+        _ls(f"slate_v5_locked{cache_suffix}", result)
     return result
 
 @app.get("/api/picks")

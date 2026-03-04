@@ -248,6 +248,12 @@
       border: 1px solid rgba(79,142,247,0.2);
       font-size: 0.6rem; padding: 2px 6px; border-radius: 4px;
     }
+    .injury-badge {
+      background: rgba(239,68,68,0.12); color: #ef4444;
+      border: 1px solid rgba(239,68,68,0.25);
+      font-size: 0.55rem; font-weight: 700; padding: 2px 5px;
+      border-radius: 4px; letter-spacing: 0.03em; text-transform: uppercase;
+    }
 
 
 
@@ -698,9 +704,12 @@ function getCalBias() {
 }
 
 // ── INIT ──
+let _slateRefreshTimer = null;
 (async function init() {
   loadSlate();
   initGameSelector();
+  // Auto-refresh slate every 60 minutes (predictions update hourly until locked)
+  _slateRefreshTimer = setInterval(() => { loadSlate(); initGameSelector(); }, 60 * 60 * 1000);
 })();
 
 async function initGameSelector() {
@@ -744,7 +753,7 @@ async function loadSlate() {
     SLATE = await r.json();
     document.getElementById('slateTabs').style.display = 'flex';
 
-    // Auto-save to lab
+    // Auto-save to lab (commits picks for this slate date)
     if (SLATE.date) {
       labSaveDay(SLATE.date, 'slate', {
         chalk: SLATE.lineups.chalk,
@@ -754,15 +763,18 @@ async function loadSlate() {
     }
 
     const chips = document.getElementById('slateChips');
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    // Use the slate date from API (may be tomorrow if today's slate is over)
+    const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const isNextDay = SLATE.date && SLATE.date !== todayStr;
+    const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
     let lockChip = '';
     if (SLATE.locked) {
       lockChip = '<div class="lock-chip">Picks Locked</div>';
     }
     chips.innerHTML = `
       <div class="chip"><b>${SLATE.games.length}</b> Games</div>
-      <div class="chip">${dateStr}</div>
+      <div class="chip">${isNextDay ? 'NEXT: ' : ''}${dateStr}</div>
       ${lockChip}
     `;
     switchSlate('chalk');
@@ -886,6 +898,7 @@ function renderCards(picks, containerId, mode) {
     const statsHtml = [
       multBadge,
       p.is_cascade_pick && `<span class="cascade-badge">INJ BOOST</span>`,
+      p.injury_status && `<span class="injury-badge">${p.injury_status}</span>`,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,
