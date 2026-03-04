@@ -142,26 +142,23 @@ def _fallback_sort(projections, n, sort_key):
 def contrarian_score(player, spread=0):
     """Calculate moonshot/contrarian value for the Real Sports App.
 
-    Unlike traditional DFS, contrarian value in Real Sports is NOT about
-    targeting low-minute bench players. The Real Score algorithm rewards:
+    Moonshot targets players with high CARD-ADJUSTED ceiling:
+    - Card advantage (est_card_mult from player tier)
     - Close-game environments (high Real Score ceiling)
     - High-variance/streaky players (momentum bonus potential)
-    - Expanded role opportunities (cascade picks with clutch court time)
-
-    Traditional DFS fades stars based on ownership %. Real Sports rewards
-    stars in tight games because clutch plays generate massive Real Scores.
+    - Underdog side in competitive games
 
     Args:
-        player: Player dict with rating, _real_meta, is_cascade_pick, etc.
+        player: Player dict with rating, _real_meta, est_mult, etc.
         spread: Game spread (used for closeness/underdog assessment)
 
     Returns:
         Moonshot-adjusted score for ranking
     """
     base_rating = player.get("rating", 0)
+    card_mult = player.get("est_mult", 1.0)
 
     # Game closeness boost — derived from Real Score metadata
-    # The Real Score engine already computed closeness from Monte Carlo sims
     meta = player.get("_real_meta", {})
     closeness = meta.get("c_closeness", 1.3)
     # Normalize closeness (1.0-2.0 range) to a scoring boost (0.7-1.3)
@@ -170,14 +167,11 @@ def contrarian_score(player, spread=0):
     # Momentum/variance — streaky players have higher Real Score ceiling
     momentum = meta.get("m_momentum", 1.0)
 
-    # Cascade bonus: expanded role = more court time for clutch moments
-    cascade_bonus = 1.15 if player.get("is_cascade_pick") else 1.0
-
     # Underdog side — underdogs in close games generate huge Real Scores
     underdog_bonus = 1.0
     game_spread = abs(player.get("_spread", spread) or 0)
     if 2 < game_spread <= 7:
         underdog_bonus = 1.1  # Competitive game with clear underdog
 
-    c_score = base_rating * closeness_boost * momentum * cascade_bonus * underdog_bonus
+    c_score = base_rating * card_mult * closeness_boost * momentum * underdog_bonus
     return round(c_score, 2)

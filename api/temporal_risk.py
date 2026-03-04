@@ -22,11 +22,10 @@ def estimate_ownership(player, pool_size, game_spread=0):
 
     Minutes tiers map to expected ownership rates. Adjusted by:
     - Spread: underdog players get lower ownership (field chases favorites)
-    - Cascade: injury-cascade picks have lower awareness
     - Pool size: larger pools dilute individual ownership
 
     Args:
-        player: Player dict with predMin, team, is_cascade_pick, etc.
+        player: Player dict with predMin, team, etc.
         pool_size: Number of viable players in the draft pool
         game_spread: Point spread (positive = home favored)
 
@@ -54,10 +53,6 @@ def estimate_ownership(player, pool_size, game_spread=0):
         # Determine if player is on underdog side
         # We don't have side info here, so use a general discount
         base_own *= 0.85
-
-    # Cascade discount: injury-boost players are less known to the field
-    if player.get("is_cascade_pick"):
-        base_own *= 0.60
 
     # Pool size normalization: larger pools dilute ownership
     if pool_size > 0:

@@ -278,37 +278,45 @@ def _cascade_minutes(roster, stats_map):
 # ─────────────────────────────────────────────────────────────────────────────
 # THE CORE MODEL — Optimized for the Real Sports App
 #
-# The Real Sports App uses a fundamentally different scoring system than
-# traditional DFS. The "Real Score" algorithm:
-#   1. Game Closeness — tight games generate exponentially higher scores
-#   2. Clutch Factor — 4th quarter, lead-changing plays get massive boosts
-#   3. Momentum — streaky, burst production scores higher than steady output
-#   4. Defensive Impact — steals/blocks weighted by win probability impact
+# Total Draft Score = Σ (Real Score × Card Multiplier × Slot Multiplier)
 #
-# Traditional DFS thinking (fade stars, target bench sweet spot) is WRONG here.
-# A star in a pick'em game >> a bench player in a blowout, because the Real
-# Score algorithm exponentially rewards clutch, close-game performances.
+# Card multipliers are the DOMINANT factor in draft scoring. Yesterday's
+# winners had role players with 4.0-4.6x card multipliers (Legendary +
+# booster) beating superstars who only had 1.0-2.3x (General/Common).
 #
-# The Real Score engine (Monte Carlo simulation) already handles game-context
-# differentiation through closeness, clutch, and momentum coefficients.
-# We let Real Score drive player selection with a near-neutral ownership tilt.
+# Example from actual leaderboard:
+#   Jaylin Williams: 4.1 base × 4.5x card = 18.45  ← WINNER
+#   Anthony Edwards: 6.2 base × 2.3x card = 14.26  ← loses despite higher base
+#
+# Card economics: role players are cheap to upgrade to Epic/Legendary on
+# the marketplace. Stars are expensive and most users have General (1.0x).
+# The est_card_mult estimates what a competitive Real Pro user typically has.
 #
 # DFS Base Formula (proxy for raw production):
 #   PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
 #
-# STARTING 5 = highest projected Real Score (game-context weighted)
-# MOONSHOT = 5 different players — high variance, close-game ceiling plays
+# STARTING 5 = highest Real Score × est_card_mult (card-adjusted value)
+# MOONSHOT = 5 different players — close-game ceiling × card advantage
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _ownership_mult_chalk(proj_min):
-    """Near-neutral multiplier — Real Score engine handles differentiation.
+def _est_card_mult(proj_min):
+    """Estimate card advantage multiplier based on player tier.
 
-    In the Real Sports App, value comes from game closeness and clutch plays,
-    NOT from targeting low-ownership bench players. A star in a pick'em game
-    generates far more Real Score than a bench player in a blowout.
+    In the Real Sports App, Total Draft Score = Real Score × (Slot + Card).
+    Role/bench players are cheap to upgrade to Epic/Legendary on the marketplace,
+    giving them 3-5x card multipliers vs superstars stuck at 1.0x (General).
+
+    Calibrated against actual leaderboard data:
+      Role players (18-25 min): winners had +2.0x to +3.0x card boosts
+      Stars (34+ min): winners had +0.2x to +0.6x card boosts (General/Common)
     """
-    if proj_min < 15:  return 0.9   # deep bench — too few minutes for clutch opportunity
-    return 1.0                      # let Real Score drive selection
+    if proj_min >= 34:  return 1.0   # Superstars — expensive, most have General (1.0x)
+    if proj_min >= 30:  return 1.15  # Stars — maybe Common card
+    if proj_min >= 26:  return 1.4   # High starters — Uncommon/Rare accessible
+    if proj_min >= 22:  return 2.0   # Role players — Epic card typical
+    if proj_min >= 18:  return 2.5   # Bench sweet spot — Legendary accessible
+    if proj_min >= 15:  return 2.2   # Deep bench — high cards but limited minutes
+    return 0.9                       # Very deep bench — filtered by minutes gate
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
@@ -400,7 +408,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Apply cascade minute boost
     proj_min = avg_min + cascade_bonus
-    is_cascade = cascade_bonus >= 2.5  # Flag only significant role expansions
 
     # Minutes gate: must project to at least 15 minutes
     if proj_min < MIN_GATE: return None
@@ -474,14 +481,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if cal_bias != 0.0:
         raw_score += cal_bias
 
-    # Use projected minutes (with cascade) for ownership tiers
-    om_chalk  = _ownership_mult_chalk(proj_min)
+    # Estimated card advantage multiplier based on player tier
+    card_mult = _est_card_mult(proj_min)
 
-    # EV score — ownership-weighted expected value
-    chalk_ev  = round(raw_score * om_chalk, 2)
+    # EV score — card-adjusted expected value
+    chalk_ev  = round(raw_score * card_mult, 2)
 
-    # Expected draft points (EDP) = raw_score * est_mult
-    expected_dp = round(raw_score * om_chalk, 1)
+    # Expected draft points = raw_score × card_mult
+    expected_dp = round(raw_score * card_mult, 1)
 
     return {
         "id":      pinfo["id"],
@@ -498,12 +505,11 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "stl":     round(stl, 1),
         "blk":     round(blk, 1),
         "tov":     round(tov, 1),
-        "est_mult": om_chalk,
-        "om":      om_chalk,
+        "est_mult": card_mult,
+        "om":      card_mult,
         "slot":    "1.0x",
         "_base":   base,
         "_spread": spread,
-        "is_cascade_pick": is_cascade,
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
         "_real_meta": real_meta,
@@ -790,8 +796,6 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
-    cascade_count = sum(1 for p in chalk + upside if p.get("is_cascade_pick"))
-
     # ── TRAV: Temporal Risk-Adjusted Value metadata ───────────────────
     # Calculate lineup duplication probability and optimal lock time.
     # Attached as extra response key — frontend ignores unknown keys.
@@ -814,7 +818,6 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
               "injuries": injuries,
-              "cascadeCount": cascade_count,
               "temporal": temporal_meta}
     if locked:
         _ls(lock_key, result)
