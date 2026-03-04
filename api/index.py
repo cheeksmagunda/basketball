@@ -62,10 +62,17 @@ def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
 def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
 def _is_locked(start_time_iso):
-    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start (or past it)."""
+    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start.
+
+    Returns False for stale/completed games (started >3h ago) — this prevents
+    yesterday's ESPN scoreboard data from locking tomorrow's slate.
+    """
     try:
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
+        # Game started >3h ago = completed, not "locked upcoming"
+        if now > game_start + timedelta(hours=3):
+            return False
         return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
     except:
         return False
@@ -280,11 +287,11 @@ def _cascade_minutes(roster, stats_map):
 # the slot multiplier range (1.67:1). A bench player needs to OUTSCORE a
 # star to beat them, not just be less-owned.
 #
-# Ownership tilt (1.0–1.3x): mild edge for low-ownership players.
+# Ownership tilt (1.0–1.5x): moderate edge for low-ownership players.
 #   Stars (33+ min)     → 1.0x (neutral — high production carries them)
-#   Starters (28-33)    → 1.1x
-#   Role players(22-28) → 1.2x
-#   Bench (15-22)       → 1.3x (mild edge for low-ownership)
+#   Starters (28-33)    → 1.2x
+#   Role players(22-28) → 1.4x
+#   Bench (15-22)       → 1.5x (best expected slot advantage)
 #   Deep bench (<15)    → below minutes gate, filtered out
 #
 # STARTING 5 = highest projected producers with mild ownership tilt
@@ -299,14 +306,15 @@ def _ownership_mult_chalk(proj_min):
     Real results show production is king — stars at 1.2x still outvalue bench
     at 2.0x because the raw output gap (2–3x) dwarfs slot multiplier range (1.67:1).
 
-    New curve (1.0–1.3): mild tilt rewards low-ownership players at the margin
-    without drowning out actual production.
+    New curve (1.0–1.5): moderate tilt rewards low-ownership players at the margin
+    without drowning out actual production. Combined with raised rating cap (25.0),
+    this produces mixed lineups — top stars + productive role players.
     """
-    if proj_min < 15:  return 1.1   # deep bench — slight edge, still risky
-    if proj_min < 22:  return 1.3   # bench — mild low-ownership edge
-    if proj_min < 28:  return 1.2   # role players
-    if proj_min < 33:  return 1.1   # starters
-    return 1.0                      # stars — neutral, not penalized
+    if proj_min < 15:  return 1.2   # deep bench — some edge, still risky
+    if proj_min < 22:  return 1.5   # bench — best expected slot advantage
+    if proj_min < 28:  return 1.4   # role players — solid slot edge
+    if proj_min < 33:  return 1.2   # starters — mild tilt
+    return 1.0                      # stars — neutral, production carries them
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Full DFS scoring formula — matches the leaderboard exactly."""
@@ -398,7 +406,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Apply cascade minute boost
     proj_min = avg_min + cascade_bonus
-    is_cascade = cascade_bonus >= 2.0  # Flag if cascade added 2+ minutes
+    is_cascade = cascade_bonus >= 5.0  # Flag only significant minute boosts (was 2.0)
 
     # Minutes gate: must project to at least 15 minutes
     if proj_min < MIN_GATE: return None
@@ -460,8 +468,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         s_base, spread or 0, total or 222, usage_rate, player_variance, rng
     )
 
-    # Raw projected score — clamped to prevent display anomalies
-    raw_score = min(real_result / 5.0, 15.0)
+    # Raw projected score — scaled and soft-clamped for display
+    # Previous cap (15.0) squished all stars to identical ratings, preventing
+    # the optimizer from differentiating between a superstar and a solid starter.
+    raw_score = min(real_result / 5.0, 25.0)
 
     # Apply calibration bias from user-uploaded actuals
     if cal_bias != 0.0:

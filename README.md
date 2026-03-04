@@ -7,7 +7,7 @@ AI-powered NBA DFS draft optimizer with injury cascade analysis, game script mod
 ### Full Slate (Starting 5 + Moonshot)
 Analyzes all games on today's NBA slate and builds two 5-player lineups:
 
-- **Starting 5:** Highest projected producers with a mild ownership tilt (1.0–1.3x). Stars are NOT penalized — real results show raw production dwarfs slot multiplier differences. A star at 1.2x still outvalues bench at 2.0x because the output gap (2–3x) exceeds the multiplier gap (1.67:1). Ownership is a tiebreaker, not the dominant signal.
+- **Starting 5:** Highest projected producers with a moderate ownership tilt (1.0–1.5x). Stars are NOT penalized below 1.0x — raw production is the primary signal. The raised rating cap (25.0 vs old 15.0) lets the optimizer differentiate between superstars and solid starters, producing mixed lineups of 2-3 stars + 2-3 role players instead of all-star or all-bench extremes.
 - **Moonshot:** 5 completely different players with a production floor (rating >= 5.0). Contrarian scoring uses mild inverse-popularity (0.85–1.3x) to find under-owned producers without sacrificing quality for ownership.
 
 ### Per-Game Analysis
@@ -26,14 +26,20 @@ Single-game drafts use a different model with two key differences:
 ### Ownership Philosophy (Production-First)
 The previous ownership curve (0.9x stars – 2.8x bench) was a 3.1:1 ratio that caused the model to systematically pick low-production bench players over actual producers. Cross-analysis against real results showed 0/10 hit rate — the top performers were always mid-to-high-production players regardless of ownership tier.
 
-**New curve (1.0x – 1.3x):**
+**New curve (1.0x – 1.5x):**
 | Minutes | Tier | Multiplier | Rationale |
 |---------|------|-----------|-----------|
 | 33+ | Stars | 1.0x | Neutral — high output carries them |
-| 28-33 | Starters | 1.1x | Slight edge |
-| 22-28 | Role players | 1.2x | Moderate tilt |
-| 15-22 | Bench | 1.3x | Mild low-ownership edge |
+| 28-33 | Starters | 1.2x | Mild edge |
+| 22-28 | Role players | 1.4x | Solid slot advantage |
+| 15-22 | Bench | 1.5x | Best expected slot |
 | <15 | Deep bench | Filtered | Below minutes gate |
+
+**Rating cap raised** from 15.0 to 25.0 — the old cap squished all stars to identical 15.0 ratings, preventing the optimizer from differentiating between a superstar (18+) and a solid starter (12-14). Combined with the moderate ownership tilt, this naturally produces mixed lineups.
+
+**INJ BOOST threshold raised** from 2.0 to 5.0 cascade minutes — the old threshold flagged nearly every teammate when multiple players were OUT. Now only genuinely significant minute redistributions (backup → starter role) trigger the badge.
+
+**Lock logic fixed** — stale/completed games (started >3h ago) no longer trigger "PICKS LOCKED" on the new slate. This prevented yesterday's ESPN scoreboard data from locking tomorrow's games.
 
 **Contrarian (Moonshot) scoring** similarly flattened from 0.5–2.0 to 0.85–1.3 inv_pop range. Cascade bonus reduced 1.4→1.2, underdog bonus 1.2→1.1. Total effective range went from 6.7:1 to ~1.7:1.
 
