@@ -478,6 +478,8 @@ def _game_script_label(total):
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
                    cascade_bonus=0.0, cal_bias=0.0, is_b2b=False):
     if pinfo.get("is_out"): return None
+    # Skip day-to-day and doubtful players — high scratch risk
+    if pinfo.get("injury_status") in ("DTD", "DOUBT"): return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
@@ -583,8 +585,11 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         s_base, spread or 0, total or DEFAULT_TOTAL, usage_rate, player_variance, rng
     )
 
-    # Raw projected score — generous cap to let stars differentiate
-    raw_score = min(real_result / 5.0, 25.0)
+    # Raw projected score — compressed via power function to match
+    # actual Real Score gaps (~1.5x star vs role, not ~3x linear).
+    # Power of 0.75 compresses 23→11.2, 8→4.8 (ratio 2.3x vs 2.9x linear)
+    raw_linear = real_result / 5.0
+    raw_score = min(raw_linear ** 0.75, 15.0)
 
     # Apply calibration bias from user-uploaded actuals
     if cal_bias != 0.0:
