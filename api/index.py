@@ -4,7 +4,7 @@ import hashlib
 import pickle
 import numpy as np
 import requests
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, Query, Body
@@ -19,6 +19,9 @@ DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "lineup_history.json"
 CACHE_DIR = Path("/tmp/nba_cache_v19")
 CACHE_DIR.mkdir(exist_ok=True)
+LOCK_DIR = Path("/tmp/nba_locks_v1")
+LOCK_DIR.mkdir(exist_ok=True)
+LOCK_BUFFER_MINUTES = 5
 
 AI_MODEL = None
 for _p in [
@@ -40,6 +43,19 @@ MIN_GATE = 15  # Minimum projected minutes to qualify
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
 def _cs(k, v): _cp(k).write_text(json.dumps(v))
+def _lp(k): return LOCK_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
+def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
+def _ls(k, v): _lp(k).write_text(json.dumps(v))
+
+def _is_locked(start_time_iso):
+    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start (or past it)."""
+    try:
+        game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
+    except:
+        return False
+
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
     except: return default
@@ -71,6 +87,7 @@ def fetch_games():
             "home": home, "away": away,
             "spread": _safe_float(odds.get("spread"), None),
             "total":  _safe_float(odds.get("overUnder"), None),
+            "startTime": ev.get("date", ""),
         })
     _cs("games", games)
     return games
@@ -513,7 +530,8 @@ def _build_lineups(projections):
 # - Ownership is more concentrated, so contrarian plays matter more
 # ─────────────────────────────────────────────────────────────────────────────
 
-GAME_CHALK_FLOOR = 4.0  # Slightly higher floor for single-game (smaller pool = less noise)
+GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
+GAME_MOONSHOT_FLOOR = 2.5  # Lower floor for moonshot — wider net for upside plays
 
 def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
     """Pick n players from pool ensuring at least min_per_team from each team."""
@@ -581,23 +599,38 @@ def _build_game_lineups(projections, game):
     """Build lineups for a single-game draft with team balance + game script.
 
     Starting 5: sorted by chalk_ev (ownership-weighted EV) — rewards role players
-                 in low-ownership draft slots.
+                 in low-ownership draft slots. Floor = GAME_CHALK_FLOOR (3.5).
     Moonshot:   sorted by raw rating (pure ceiling) — rewards stars and high-production
                  players regardless of ownership. Overlap with Starting 5 is allowed
                  because the 2-team pool is too small to force 10 unique players.
+                 Floor = GAME_MOONSHOT_FLOOR (2.5) — wider net catches breakout candidates.
     """
     rescored = _apply_game_script(projections, game)
-    eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
+    chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
+    moon_eligible = [p for p in rescored if p["rating"] >= GAME_MOONSHOT_FLOOR]
 
     # STARTING 5: best ownership-weighted EV, balanced across both teams
-    chalk = _pick_balanced(eligible, 5, min_per_team=2)
+    chalk = _pick_balanced(chalk_eligible, 5, min_per_team=2)
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
     # MOONSHOT: best raw ceiling, balanced — independent from Starting 5 (overlap OK)
-    moonshot = _pick_balanced(eligible, 5, min_per_team=2, sort_key="rating")
+    moonshot = _pick_balanced(moon_eligible, 5, min_per_team=2, sort_key="rating")
     for i, p in enumerate(moonshot): p["slot"] = SLOT_VALUES[i]
 
     return chalk, moonshot
+
+def _get_injuries(game):
+    """Get list of OUT players for a game (from cached roster data)."""
+    out_players = []
+    for side in ["home", "away"]:
+        team = game[side]
+        roster = _cg(f"roster_{team['id']}")
+        if not roster:
+            continue
+        for p in roster:
+            if p.get("is_out"):
+                out_players.append({"name": p["name"], "team": team["abbr"], "pos": p["pos"]})
+    return out_players
 
 def _save_history(game_label, players):
     hist = []
@@ -615,25 +648,48 @@ def _save_history(game_label, players):
 
 @app.get("/api/games")
 async def get_games():
-    return fetch_games()
+    games = fetch_games()
+    for g in games:
+        g["locked"] = _is_locked(g.get("startTime")) if g.get("startTime") else False
+    return games
 
 @app.get("/api/slate")
 async def get_slate(cal_bias: float = Query(0.0)):
     games = fetch_games()
     if not games:
-        return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}}
+        return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+
+    # Check if slate is locked (5 min before earliest game)
+    start_times = [g["startTime"] for g in games if g.get("startTime")]
+    earliest = min(start_times) if start_times else None
+    locked = _is_locked(earliest) if earliest else False
+
+    if locked:
+        lock_cached = _lg("slate_v5_locked")
+        if lock_cached:
+            lock_cached["locked"] = True
+            return lock_cached
+
     if cal_bias == 0.0:
         cached = _cg("slate_v5")
-        if cached: return cached
+        if cached:
+            cached["locked"] = locked
+            if locked:
+                _ls("slate_v5_locked", cached)
+            return cached
+
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
         for fut in as_completed({pool.submit(_run_game, g, cal_bias): g for g in games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
-    result = {"date": date.today().isoformat(), "games": games, "lineups": {"chalk": chalk, "upside": upside}}
+    result = {"date": date.today().isoformat(), "games": games,
+              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
     if cal_bias == 0.0:
         _cs("slate_v5", result)
+    if locked:
+        _ls("slate_v5_locked", result)
     return result
 
 @app.get("/api/picks")
@@ -641,15 +697,34 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
         return JSONResponse({"error": "Game not found"}, status_code=404)
+
+    start_time = game.get("startTime")
+    locked = _is_locked(start_time) if start_time else False
+    lock_key = f"picks_locked_{gameId}"
+
+    if locked:
+        lock_cached = _lg(lock_key)
+        if lock_cached:
+            lock_cached["locked"] = True
+            return lock_cached
+
     projections = _run_game(game, cal_bias=cal_bias)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
     chalk, upside = _build_game_lineups(projections, game)
     _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
-    return {"date": date.today().isoformat(), "game": game,
-            "gameScript": script,
-            "lineups": {"chalk": chalk, "upside": upside}}
+    injuries = _get_injuries(game)
+    cascade_count = sum(1 for p in chalk + upside if p.get("is_cascade_pick"))
+    result = {"date": date.today().isoformat(), "game": game,
+              "gameScript": script,
+              "lineups": {"chalk": chalk, "upside": upside},
+              "locked": locked,
+              "injuries": injuries,
+              "cascadeCount": cascade_count}
+    if locked:
+        _ls(lock_key, result)
+    return result
 
 @app.get("/api/history")
 async def get_history():
