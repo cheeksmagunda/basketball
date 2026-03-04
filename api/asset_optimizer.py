@@ -30,8 +30,8 @@ SLOT_MULTIPLIERS = [2.0, 1.5, 1.2, 1.0, 1.0]
 SLOT_LABELS = ["2.0x", "1.5x", "1.2x", "1.0x", "1.0x"]
 
 
-def optimize_lineup(projections, n=5, min_per_team=0, sort_key="chalk_ev",
-                    rating_key="rating", time_limit=5):
+def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
+                    sort_key="chalk_ev", rating_key="rating", time_limit=5):
     """Find the optimal player-to-slot assignment using MILP.
 
     If PuLP is not available or solver fails, falls back to simple
@@ -41,6 +41,7 @@ def optimize_lineup(projections, n=5, min_per_team=0, sort_key="chalk_ev",
         projections: List of player dicts with rating and team fields
         n: Number of lineup slots (default 5)
         min_per_team: Minimum players per team (0 = no constraint)
+        max_per_team: Maximum players per team (0 = no constraint)
         sort_key: Key to sort by in fallback mode
         rating_key: Key containing the score to optimize
         time_limit: Solver time limit in seconds
@@ -59,12 +60,14 @@ def optimize_lineup(projections, n=5, min_per_team=0, sort_key="chalk_ev",
         return _fallback_sort(projections, n, sort_key)
 
     try:
-        return _solve_milp(projections, n, min_per_team, rating_key, time_limit)
+        return _solve_milp(projections, n, min_per_team, max_per_team,
+                           rating_key, time_limit)
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
-def _solve_milp(projections, n, min_per_team, rating_key, time_limit):
+def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
+                time_limit):
     """Run the MILP solver to optimize player-slot assignments."""
     players = list(range(len(projections)))
     slots = list(range(n))
@@ -92,18 +95,26 @@ def _solve_milp(projections, n, min_per_team, rating_key, time_limit):
     for i in players:
         prob += lpSum(x[i, j] for j in slots) <= 1
 
-    # Optional: team balance constraint (for per-game drafts)
-    if min_per_team > 0:
-        teams = {}
-        for i, p in enumerate(projections):
-            t = p.get("team", "")
-            teams.setdefault(t, []).append(i)
+    # Team constraints — build team index once
+    teams = {}
+    for i, p in enumerate(projections):
+        t = p.get("team", "")
+        teams.setdefault(t, []).append(i)
 
+    # Optional: minimum per team (for per-game drafts — ensures both teams represented)
+    if min_per_team > 0:
         for t, player_indices in teams.items():
-            if len(teams) >= 2:  # Only apply if there are 2+ teams
+            if len(teams) >= 2:
                 prob += lpSum(
                     x[i, j] for i in player_indices for j in slots
                 ) >= min(min_per_team, len(player_indices))
+
+    # Optional: maximum per team (for full slate — forces game diversification)
+    if max_per_team > 0:
+        for t, player_indices in teams.items():
+            prob += lpSum(
+                x[i, j] for i in player_indices for j in slots
+            ) <= max_per_team
 
     # Solve with CBC (bundled with PuLP, no external binary needed)
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)

@@ -427,6 +427,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
+    # Clutch potential — playmakers and scorers are more likely to produce
+    # clutch, momentum, and streak events in the Real Score algorithm.
+    # Pure rebounders (Drummond, Robinson, Jordan) inflate DFS base cheaply
+    # but rarely make game-changing plays. Ball handlers with high PTS/MIN
+    # and AST/MIN have far more clutch opportunity.
+    pts_per_min = pts / max(avg_min, 1)
+    ast_per_min = ast / max(avg_min, 1)
+    clutch_potential = 1.0 + min(pts_per_min * 0.12 + ast_per_min * 0.2, 0.35)
+    heuristic *= clutch_potential
+
     # Scale heuristic by minute boost from cascade (capped at 1.25x)
     if cascade_bonus > 0 and avg_min > 0:
         min_scale = min(proj_min / avg_min, 1.25)
@@ -565,23 +575,72 @@ def _run_game(game, cal_bias=0.0):
     return out
 
 CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
-MOONSHOT_FLOOR = 4.0  # Floor for Moonshot — with neutral ownership, Real Score drives selection
+MOONSHOT_FLOOR = 4.0  # Floor for Moonshot
+
+def _get_recent_picks(days=3):
+    """Load player names from the last N days of history for anti-repetition."""
+    recent_names = {}
+    if not HISTORY_FILE.exists():
+        return recent_names
+    try:
+        hist = json.loads(HISTORY_FILE.read_text())
+        today = date.today()
+        for entry in reversed(hist):
+            ts = entry.get("timestamp", "")
+            try:
+                entry_date = datetime.fromisoformat(ts).date()
+            except:
+                continue
+            days_ago = (today - entry_date).days
+            if days_ago > days:
+                break
+            for p in entry.get("players", []):
+                name = p.get("name", "")
+                if name and name not in recent_names:
+                    recent_names[name] = days_ago
+    except:
+        pass
+    return recent_names
+
+def _apply_repetition_penalty(projections):
+    """Penalize players picked in recent lineups to force roster turnover.
+
+    Picked yesterday:   0.82x penalty
+    Picked 2 days ago:  0.90x penalty
+    Picked 3 days ago:  0.95x penalty
+
+    This prevents the same 5 guys every day (Ty Jerome, Scotty Pippen problem).
+    Applied to chalk_ev so MILP sees the penalized value.
+    """
+    recent = _get_recent_picks(days=3)
+    if not recent:
+        return
+    penalties = {0: 0.82, 1: 0.82, 2: 0.90, 3: 0.95}
+    for p in projections:
+        name = p.get("name", "")
+        if name in recent:
+            days_ago = recent[name]
+            penalty = penalties.get(days_ago, 0.95)
+            p["chalk_ev"] = round(p["chalk_ev"] * penalty, 2)
+            p["_rep_penalty"] = penalty
 
 def _build_lineups(projections):
+    # Anti-repetition: penalize players picked in the last 3 days
+    _apply_repetition_penalty(projections)
+
     # STARTING 5: MILP-optimized slot assignments
-    # Uses chalk_ev (raw_score × est_card_mult) so the solver accounts for
-    # card advantage — role players with high cards beat unboosted stars
+    # Uses chalk_ev (raw_score × est_card_mult × repetition_penalty)
+    # max_per_team=1 forces diversification across different games —
+    # spreading across 5 games maximizes probability of hitting close-game boosts
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
-                            rating_key="chalk_ev")
+                            rating_key="chalk_ev", max_per_team=1)
 
     # CONTRARIAN: maximize leverage against the field
-    # Targets Top 10% payout tier by fading popular picks and elevating
-    # low-ownership, high-ceiling assets (cascade picks, underdogs, bench)
     chalk_names = {p["name"] for p in chalk}
     contrarian_pool = [p for p in projections
                        if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
-    # Score by contrarian value (inverse popularity × quality × leverage)
+    # Score by contrarian value — card-adjusted ceiling × closeness × momentum
     for p in contrarian_pool:
         p["_contrarian_ev"] = contrarian_score(p)
     upside = optimize_lineup(contrarian_pool, n=5, sort_key="_contrarian_ev",
