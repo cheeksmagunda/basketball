@@ -530,7 +530,8 @@ def _build_lineups(projections):
 # - Ownership is more concentrated, so contrarian plays matter more
 # ─────────────────────────────────────────────────────────────────────────────
 
-GAME_CHALK_FLOOR = 4.0  # Slightly higher floor for single-game (smaller pool = less noise)
+GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
+GAME_MOONSHOT_FLOOR = 2.5  # Lower floor for moonshot — wider net for upside plays
 
 def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
     """Pick n players from pool ensuring at least min_per_team from each team."""
@@ -598,23 +599,38 @@ def _build_game_lineups(projections, game):
     """Build lineups for a single-game draft with team balance + game script.
 
     Starting 5: sorted by chalk_ev (ownership-weighted EV) — rewards role players
-                 in low-ownership draft slots.
+                 in low-ownership draft slots. Floor = GAME_CHALK_FLOOR (3.5).
     Moonshot:   sorted by raw rating (pure ceiling) — rewards stars and high-production
                  players regardless of ownership. Overlap with Starting 5 is allowed
                  because the 2-team pool is too small to force 10 unique players.
+                 Floor = GAME_MOONSHOT_FLOOR (2.5) — wider net catches breakout candidates.
     """
     rescored = _apply_game_script(projections, game)
-    eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
+    chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
+    moon_eligible = [p for p in rescored if p["rating"] >= GAME_MOONSHOT_FLOOR]
 
     # STARTING 5: best ownership-weighted EV, balanced across both teams
-    chalk = _pick_balanced(eligible, 5, min_per_team=2)
+    chalk = _pick_balanced(chalk_eligible, 5, min_per_team=2)
     for i, p in enumerate(chalk): p["slot"] = SLOT_VALUES[i]
 
     # MOONSHOT: best raw ceiling, balanced — independent from Starting 5 (overlap OK)
-    moonshot = _pick_balanced(eligible, 5, min_per_team=2, sort_key="rating")
+    moonshot = _pick_balanced(moon_eligible, 5, min_per_team=2, sort_key="rating")
     for i, p in enumerate(moonshot): p["slot"] = SLOT_VALUES[i]
 
     return chalk, moonshot
+
+def _get_injuries(game):
+    """Get list of OUT players for a game (from cached roster data)."""
+    out_players = []
+    for side in ["home", "away"]:
+        team = game[side]
+        roster = _cg(f"roster_{team['id']}")
+        if not roster:
+            continue
+        for p in roster:
+            if p.get("is_out"):
+                out_players.append({"name": p["name"], "team": team["abbr"], "pos": p["pos"]})
+    return out_players
 
 def _save_history(game_label, players):
     hist = []
@@ -698,10 +714,14 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
     chalk, upside = _build_game_lineups(projections, game)
     _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
+    injuries = _get_injuries(game)
+    cascade_count = sum(1 for p in chalk + upside if p.get("is_cascade_pick"))
     result = {"date": date.today().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
-              "locked": locked}
+              "locked": locked,
+              "injuries": injuries,
+              "cascadeCount": cascade_count}
     if locked:
         _ls(lock_key, result)
     return result
