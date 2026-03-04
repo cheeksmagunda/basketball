@@ -343,9 +343,9 @@ def _cascade_minutes(roster, stats_map):
 #   Jaylin Williams: 4.1 base × (2.0 + 2.7) = 4.1 × 4.7 = 19.27  ← WINNER
 #   Anthony Edwards: 6.2 base × (2.0 + 0.3) = 6.2 × 2.3 = 14.26  ← loses
 #
-# Card economics: role players are cheap to upgrade to Epic/Legendary on
-# the marketplace. Stars are expensive and most users have General (+0.3).
-# The _est_card_boost returns the ADDITIVE card boost (not a multiplier).
+# Card boost is INVERSELY driven by draft popularity (ownership).
+# Stars get 7,000+ drafts → +0.3x boost. Role players get <50 drafts → +2.5-3.0x.
+# The _est_card_boost uses a "hype score" (PPG², minutes, market) to predict this.
 #
 # Real Score-aligned formula (proxy for raw production):
 #   PTS + REB + AST×1.5 + STL×4.5 + BLK×4.0 - TOV×1.2
@@ -354,38 +354,41 @@ def _cascade_minutes(roster, stats_map):
 # MOONSHOT = 5 different players — close-game ceiling × card advantage
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _est_card_boost(proj_min):
-    """Estimate ADDITIVE card boost based on player tier.
+# Big-market / high-profile teams that casual drafters flock to.
+# These players get MORE drafts → LOWER card boosts.
+_BIG_MARKET_TEAMS = {
+    "LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN",
+    "LAC", "CHI", "SA",  # Wemby effect
+}
 
-    Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
-    This is ADDITIVE, not multiplicative — slot and card boosts add together.
 
-    Calibrated against actual March 3 leaderboard data:
-      Jaylin Williams:  +2.7 boost (~20 min bench)
-      Maxime Raynaud:   +2.2 boost (~18 min bench)
-      Yabusele:         +3.0 boost (~22 min role)
-      Oso Ighodaro:     +3.0 boost (~18 min bench)
-      Precious Achiuwa: +2.4 boost (~22 min role)
-      Marcus Smart:     +2.5 boost (~25 min role)
-      Aaron Wiggins:    +2.4 boost (~24 min role)
-      Jared McCain:     +3.0 boost (~20 min bench)
-      Anthony Edwards:  +0.3 boost (~37 min star)
-      Paolo Banchero:   +0.6 boost (~34 min star)
-      Bam Adebayo:      +0.7 boost (~34 min star)
-      Ausar Thompson:   +1.5 boost (~28 min starter)
-      Collin Gillespie: +1.2 boost (~26 min starter)
+def _est_card_boost(proj_min, pts, team_abbr):
+    """Estimate ADDITIVE card boost based on predicted draft popularity.
 
-    Key insight: slot assignment should favor HIGH RAW SCORE players for the
-    2.0x slot, because the slot benefit is proportional to raw score. Card boost
-    determines WHICH players to include, not which slot they get.
+    Real Sports dynamically adjusts card boosts inversely to ownership:
+    stars get massive draft counts → crushed boosts (+0.3),
+    obscure role players get almost no drafts → huge boosts (+2.5-3.0).
+
+    Uses a "hype score" — how attractive the player is to casual drafters —
+    and maps it through exponential decay to a card boost.
+
+    Calibrated against March 3 actuals:
+      Wembanyama (36m, 24p, SA):   hype 9.5 → est +0.4x  (actual +0.3)
+      Ant Edwards (37m, 26p):      hype 7.5 → est +0.5x  (actual +0.3)
+      Bam (34m, 21p, MIA):         hype 7.0 → est +0.6x  (actual +0.7)
+      Jaylin Williams (20m, 8p):   hype 0.5 → est +2.8x  (actual +2.7)
+      Marcus Smart (25m, 10p):     hype 0.9 → est +2.5x  (actual +2.5)
+      Oso Ighodaro (18m, 7p):      hype 0.4 → est +2.9x  (actual +3.0)
+      Maxime Raynaud (18m, 10p):   hype 1.2 → est +2.3x  (actual +2.2)
     """
-    if proj_min >= 34:  return 0.5   # Superstars — General/Common cards
-    if proj_min >= 30:  return 0.7   # Stars — maybe Common/Uncommon
-    if proj_min >= 26:  return 1.3   # High starters — Rare accessible
-    if proj_min >= 22:  return 2.5   # Role players — Epic + booster typical
-    if proj_min >= 18:  return 2.8   # Bench sweet spot — Legendary + booster
-    if proj_min >= 15:  return 2.8   # Deep bench — high cards, limited minutes
-    return 0.5                       # Very deep bench — filtered by minutes gate
+    # Hype score — PPG² makes scoring stars disproportionately popular
+    hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
+    if team_abbr in _BIG_MARKET_TEAMS:
+        hype *= 1.5
+    # Exponential decay: high hype → low boost, low hype → high boost
+    # 0.74 ≈ e^(-0.3), tuned to match March 3 data
+    boost = 3.0 * (0.74 ** hype) + 0.2
+    return round(min(max(boost, 0.2), 3.2), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula — boosted defensive stats.
@@ -597,7 +600,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
-    card_boost = _est_card_boost(proj_min)
+    # Card boost is INVERSELY proportional to ownership — the app rewards
+    # contrarian picks. Stars get crushed, obscure role players get huge boosts.
+    card_boost = _est_card_boost(proj_min, pts, team_abbr)
 
     # EV score — card-adjusted expected value using additive formula
     # Use average slot (1.34) for ranking; MILP uses exact slots
