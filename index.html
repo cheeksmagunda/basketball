@@ -117,25 +117,29 @@
       display: flex;
       flex: 1;
       padding: 0;
+      align-items: center;
     }
     .tab-nav-track {
       position: relative;
       display: flex;
       width: 100%;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      background: rgba(255,255,255,0.045);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 11px;
       padding: 3px;
-      min-height: 44px;
+      min-height: 38px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
     }
-    /* Sliding pill */
+    /* Sliding pill — Apple glass style */
     .tab-nav-pill {
       position: absolute;
       top: 3px; bottom: 3px;
-      border-radius: 9px;
-      background: var(--chalk);
-      box-shadow: 0 0 18px var(--chalk-glow);
-      transition: left 0.25s cubic-bezier(0.34,1.56,0.64,1), width 0.25s cubic-bezier(0.34,1.56,0.64,1);
+      border-radius: 8px;
+      background: rgba(79,142,247,0.88);
+      border: 1px solid rgba(255,255,255,0.14);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(79,142,247,0.28);
+      transition: left 0.22s cubic-bezier(0.34,1.56,0.64,1), width 0.22s cubic-bezier(0.34,1.56,0.64,1);
       pointer-events: none;
       z-index: 0;
     }
@@ -143,48 +147,48 @@
       position: relative; z-index: 1;
       flex: 1;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.06em;
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em;
       text-transform: uppercase;
-      border: none; background: transparent; color: var(--muted);
-      cursor: pointer; transition: color 0.2s;
-      border-radius: 9px;
-      min-height: 38px;
+      border: none; background: transparent; color: rgba(255,255,255,0.32);
+      cursor: pointer; transition: color 0.18s;
+      border-radius: 8px;
+      min-height: 32px;
       display: flex; align-items: center; justify-content: center; gap: 4px;
     }
-    .tab-btn:hover { color: var(--text-dim); }
+    .tab-btn:hover { color: rgba(255,255,255,0.55); }
     .tab-btn.active { color: #fff; }
     .tab-btn .tab-dot {
-      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-      background: var(--green); margin-left: 3px; flex-shrink: 0;
+      display: inline-block; width: 4px; height: 4px; border-radius: 50%;
+      background: var(--green); margin-left: 2px; flex-shrink: 0;
       opacity: 0; transition: opacity 0.3s;
     }
-    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.9); }
+    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.85); }
     .tab-btn .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
-    .tab-page.active { display: block; padding-top: 18px; }
+    .tab-page.active { display: block; padding-top: 20px; }
 
     /* ── SECTION LABEL ── */
     .section-label {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.65rem; font-weight: 700; letter-spacing: 0.2em;
       text-transform: uppercase; color: var(--muted);
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     /* ── CHALK/UPSIDE TABS ── */
-    .mode-tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+    .mode-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
     .mode-tab {
-      flex: 1; padding: 10px;
+      flex: 1; padding: 9px 12px;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
-      border-radius: 10px; border: 1px solid var(--border);
+      font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+      border-radius: 11px; border: 1px solid var(--border);
       background: var(--surface2); color: var(--muted);
-      cursor: pointer; transition: all 0.25s;
+      cursor: pointer; transition: all 0.22s;
     }
-    .mode-tab.active[data-t="chalk"] { background: rgba(79,142,247,0.12); border-color: var(--chalk); color: var(--chalk); }
-    .mode-tab.active[data-t="upside"] { background: rgba(249,115,22,0.12); border-color: var(--upside); color: var(--upside); }
+    .mode-tab.active[data-t="chalk"] { background: rgba(79,142,247,0.1); border-color: rgba(79,142,247,0.4); color: var(--chalk); }
+    .mode-tab.active[data-t="upside"] { background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.4); color: var(--upside); }
 
     /* ── PLAYER CARD ── */
     .player-card {
@@ -192,11 +196,11 @@
       backdrop-filter: blur(20px);
       border: 1px solid var(--border);
       border-radius: var(--r);
-      padding: 16px 16px 16px 20px;
-      margin-bottom: 10px;
+      padding: 14px 14px 14px 18px;
+      margin-bottom: 8px;
       display: grid;
-      grid-template-columns: 44px 1fr auto;
-      gap: 14px;
+      grid-template-columns: 42px 1fr auto;
+      gap: 12px;
       align-items: center;
       position: relative;
       overflow: hidden;
@@ -227,7 +231,7 @@
     }
 
     .rank-badge {
-      width: 44px; height: 44px;
+      width: 42px; height: 42px;
       border-radius: 10px;
       background: rgba(0,0,0,0.4);
       border: 1px solid var(--border-bright);
@@ -258,8 +262,8 @@
     }
     .player-name {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.2rem; font-weight: 800; line-height: 1;
-      color: #fff; margin-bottom: 8px;
+      font-size: 1.15rem; font-weight: 800; line-height: 1;
+      color: #fff; margin-bottom: 6px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
@@ -277,7 +281,7 @@
     .score-col {
       text-align: right; position: relative; z-index: 1;
       border-left: 1px solid var(--border);
-      padding-left: 14px; min-width: 72px;
+      padding-left: 12px; min-width: 66px;
     }
     .score-num {
       font-family: 'Barlow Condensed', sans-serif;
@@ -328,7 +332,7 @@
     .skel-score { width: 48px; height: 44px; }
 
     /* ── GAME SELECTOR ── */
-    .game-select-wrap { position: relative; margin-bottom: 12px; }
+    .game-select-wrap { position: relative; margin-bottom: 10px; }
     .game-select-wrap::after {
       content: '▾';
       position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
@@ -356,14 +360,14 @@
       background: var(--chalk);
       color: #fff;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1rem; font-weight: 900;
+      font-size: 0.95rem; font-weight: 900;
       letter-spacing: 0.08em; text-transform: uppercase;
-      padding: 15px;
+      padding: 13px;
       border-radius: 12px;
       border: none; cursor: pointer;
       transition: all 0.2s;
-      box-shadow: 0 4px 20px var(--chalk-glow);
-      margin-bottom: 24px;
+      box-shadow: 0 3px 16px var(--chalk-glow);
+      margin-bottom: 16px;
       display: flex; align-items: center; justify-content: center; gap: 8px;
     }
     .analyze-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 6px 24px var(--chalk-glow); }
@@ -388,23 +392,23 @@
     .back-btn:hover { color: var(--text); }
 
     /* ── GAME INFO CHIPS ── */
-    .game-chips { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+    .game-chips { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
     .chip {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
       text-transform: uppercase;
       background: var(--surface2); border: 1px solid var(--border);
-      padding: 5px 10px; border-radius: 6px; color: var(--text-dim);
+      padding: 5px 10px; border-radius: 8px; color: var(--text-dim);
     }
     .chip b { color: var(--text); }
 
     .lock-chip {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
       text-transform: uppercase;
-      background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.3);
+      background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94,0.25);
       color: #22c55e;
-      padding: 5px 10px; border-radius: 6px;
+      padding: 5px 10px; border-radius: 8px;
       display: inline-flex; align-items: center; gap: 5px;
     }
 
@@ -412,17 +416,17 @@
     .divider {
       height: 1px;
       background: linear-gradient(90deg, transparent, var(--border-bright), transparent);
-      margin: 28px 0;
+      margin: 20px 0;
     }
 
     /* ── EMPTY/PLACEHOLDER STATE ── */
     .empty-state {
-      text-align: center; padding: 48px 24px;
+      text-align: center; padding: 36px 20px;
       background: var(--surface2); border: 1px solid var(--border);
       border-radius: var(--r); color: var(--muted);
     }
-    .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
-    .empty-state p { font-size: 0.85rem; line-height: 1.6; }
+    .empty-state .icon { font-size: 2rem; margin-bottom: 10px; display: block; }
+    .empty-state p { font-size: 0.82rem; line-height: 1.55; }
 
     .placeholder-page {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -677,7 +681,7 @@
     .line-pick-card {
       background: var(--surface);
       border: 1px solid rgba(212,166,64,0.3);
-      border-radius: var(--r); padding: 20px;
+      border-radius: var(--r); padding: 16px 18px;
       position: relative; overflow: hidden;
     }
     .line-pick-card::before {
@@ -1046,12 +1050,12 @@
 
 <script>
 const TEAM_COLORS = {
-  ATL:"#e03a3e",BOS:"#007A33",BKN:"#aaaaaa",CHA:"#00788c",CHI:"#ce1141",
-  CLE:"#860038",DAL:"#00538c",DEN:"#fdb927",DET:"#c8102E",GSW:"#1d428a",
-  HOU:"#ce1141",IND:"#fdbb30",LAC:"#c8102E",LAL:"#fdb927",MEM:"#5d76a9",
-  MIA:"#98002E",MIL:"#00471B",MIN:"#0c2340",NOP:"#85714d",NYK:"#f58426",
-  OKC:"#007ac1",ORL:"#0077c0",PHI:"#006bb6",PHX:"#e56020",POR:"#E03A3E",
-  SAC:"#5a2d81",SAS:"#c4ced4",TOR:"#ce1141",UTA:"#f9a01b",WAS:"#002B5C"
+  ATL:"#e03a3e",BOS:"#00A550",BKN:"#b0b0b0",CHA:"#00b4cc",CHI:"#ce1141",
+  CLE:"#FDBB30",DAL:"#00538c",DEN:"#fdb927",DET:"#c8102E",GSW:"#FFC72C",
+  HOU:"#ce1141",IND:"#fdbb30",LAC:"#c8102E",LAL:"#fdb927",MEM:"#6b8fc0",
+  MIA:"#F9A01B",MIL:"#3ECF7E",MIN:"#78BE20",NOP:"#C8A96A",NYK:"#f58426",
+  OKC:"#ef8d2f",ORL:"#0077c0",PHI:"#006bb6",PHX:"#e56020",POR:"#E03A3E",
+  SAC:"#7b4db5",SAS:"#c4ced4",TOR:"#ce1141",UTA:"#f9a01b",WAS:"#E31837"
 };
 
 // ── Global state ──
@@ -1097,18 +1101,18 @@ function movePill(tab) {
 
 // Pill accent color per tab
 const TAB_ACCENT = {
-  predictions: { color: '#4f8ef7', glow: 'rgba(79,142,247,0.25)' },
-  line:        { color: '#d4a640', glow: 'rgba(212,166,64,0.22)' },
-  lab:         { color: '#14b8a6', glow: 'rgba(20,184,166,0.22)' },
-  log:         { color: '#7ba4c8', glow: 'rgba(123,164,200,0.20)' },
+  predictions: { rgb: '79,142,247' },
+  line:        { rgb: '212,166,64' },
+  lab:         { rgb: '20,184,166' },
+  log:         { rgb: '123,164,200' },
 };
 
 function setPillAccent(tab) {
   const a = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
   const pill = document.getElementById('tabPill');
   if (pill) {
-    pill.style.background = a.color;
-    pill.style.boxShadow  = `0 0 18px ${a.glow}`;
+    pill.style.background = `rgba(${a.rgb}, 0.88)`;
+    pill.style.boxShadow  = `0 1px 0 rgba(255,255,255,0.18) inset, 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(${a.rgb}, 0.28)`;
   }
 }
 
