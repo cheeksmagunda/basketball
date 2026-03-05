@@ -150,6 +150,17 @@ def _is_completed(start_time_iso):
     except:
         return False
 
+def _et_date():
+    """Current date in Eastern Time (handles EST/EDT)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date()
+    except ImportError:
+        # Fallback: EST=UTC-5 (Nov–Mar), EDT=UTC-4 (Mar–Nov)
+        now_utc = datetime.now(timezone.utc)
+        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
+        return (now_utc + offset).date()
+
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
     except: return default
@@ -172,7 +183,7 @@ def _fetch_b2b_teams():
     cache_key = "b2b_teams"
     c = _cg(cache_key)
     if c is not None: return set(c)
-    yesterday = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    yesterday = (_et_date() - timedelta(days=1)).strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={yesterday}")
     b2b = set()
     for ev in data.get("events", []):
@@ -184,10 +195,15 @@ def _fetch_b2b_teams():
     return b2b
 
 def fetch_games():
-    c = _cg("games")
+    today_et = _et_date()
+    cache_key = f"games_{today_et}"
+    c = _cg(cache_key)
     if c: return c
     b2b_teams = _fetch_b2b_teams()
-    data = _espn_get(f"{ESPN}/scoreboard")
+    # Pass explicit ET date so ESPN returns the correct day's schedule regardless
+    # of what ESPN considers its internal "current" day (often Pacific time).
+    date_str = today_et.strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={date_str}")
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
@@ -208,7 +224,7 @@ def fetch_games():
             "home_b2b": home["abbr"] in b2b_teams,
             "away_b2b": away["abbr"] in b2b_teams,
         })
-    _cs("games", games)
+    _cs(cache_key, games)
     return games
 
 def fetch_roster(team_id, team_abbr):
@@ -996,7 +1012,7 @@ async def get_games():
 async def get_slate():
     games = fetch_games()
     if not games:
-        return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+        return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
 
     # Only show/project games that are still draftable (not yet past lock window)
     # ESPN returns all games for the day, including already-completed ones.
@@ -1004,21 +1020,28 @@ async def get_slate():
     # the upcoming day's games should be shown instead.
     draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
-    # If ESPN hasn't posted today's games yet (early-morning rollover window),
-    # all games will be completed from the previous night. Tell the user when to check back.
+    # All games for today's ET date are already completed — this shouldn't normally
+    # happen since fetch_games() explicitly requests the ET date from ESPN, but
+    # handle it gracefully if ESPN returns stale data.
     if not draftable_games:
-        now_utc = datetime.now(timezone.utc)
-        noon_et = now_utc.replace(hour=17, minute=0, second=0, microsecond=0)
-        if now_utc >= noon_et:
-            noon_et += timedelta(days=1)
+        # Find the earliest today's game start time to tell the user when to come back
+        earliest_today = min((g["startTime"] for g in games if g.get("startTime")), default=None)
+        available_msg = "later today"
+        if earliest_today:
+            try:
+                gs = datetime.fromisoformat(earliest_today.replace("Z", "+00:00"))
+                et_offset = timedelta(hours=-4 if 3 < gs.month < 11 else -5)
+                gs_et = gs + et_offset
+                available_msg = gs_et.strftime("%-I:%M %p ET")
+            except: pass
         return {
-            "date": date.today().isoformat(),
+            "date": _et_date().isoformat(),
             "games": games,
             "lineups": {"chalk": [], "upside": []},
             "locked": False,
             "no_games_yet": True,
             "draftable_count": 0,
-            "available_after": noon_et.strftime("%-I:%M %p ET"),
+            "available_after": available_msg,
         }
 
     # Lock is based on earliest DRAFTABLE game — completed games don't count
@@ -1038,7 +1061,7 @@ async def get_slate():
             _ls("slate_v5_locked", cached)
             return cached
         # No cache on this instance after lock — return empty rather than recomputing
-        return {"date": date.today().isoformat(), "games": games,
+        return {"date": _et_date().isoformat(), "games": games,
                 "lineups": {"chalk": [], "upside": []}, "locked": True}
 
     cached = _cg("slate_v5")
@@ -1056,7 +1079,7 @@ async def get_slate():
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
-    result = {"date": date.today().isoformat(), "games": games,
+    result = {"date": _et_date().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
               "draftable_count": len(draftable_games)}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
