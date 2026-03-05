@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Andre Drummond,6585,PHI,C,6.7,2.5,22.5,9.5,10.3,1.1,0.9,1.0
+slate,chalk,1.8x,Dyson Daniels,4869342,ATL,G,6.1,2.7,25.8,10.2,5.7,5.0,1.9,0.4
+slate,chalk,1.6x,Josh Hart,3062679,NY,G,6.1,2.5,27.6,11.2,7.2,4.3,1.1,0.3
+slate,chalk,1.4x,Kevin Love,3449,UTAH,F,6.1,2.6,22.7,11.3,7.8,2.1,0.5,0.3
+slate,chalk,1.2x,Cason Wallace,4683692,OKC,G,5.4,3.0,25.6,8.4,3.0,2.5,1.8,0.3
+slate,upside,2.0x,Buddy Hield,2990984,ATL,G,5.4,2.7,19.7,11.2,3.2,1.9,0.8,0.2
+slate,upside,1.8x,Jalen Johnson,4701230,ATL,F,7.6,1.5,24.6,18.2,8.9,5.8,1.1,0.6
+slate,upside,1.6x,Kyle Lowry,3012,PHI,G,5.0,2.9,17.6,7.8,2.4,3.5,0.8,0.2
+slate,upside,1.4x,Brook Lopez,3448,LAC,C,5.9,2.2,22.9,11.3,4.5,1.2,0.6,1.4
+slate,upside,1.2x,Donovan Clingan,5105565,POR,C,5.7,2.7,24.0,10.4,10.6,1.9,0.5,1.6
