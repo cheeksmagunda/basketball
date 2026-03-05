@@ -160,32 +160,46 @@
       text-transform: uppercase; line-height: 1;
     }
 
-    /* Sub-navigation row (secondary tabs above icon row) */
-    .bnav-sub-row {
+    /* Contextual sub-nav — separate floating pill above bottom tab bar */
+    .predict-sub-nav {
+      position: fixed;
+      bottom: 134px;
+      left: 50%;
+      transform: translateX(-50%);
       display: flex;
-      gap: 4px;
-      padding: 2px 4px 10px;
-      justify-content: center;
+      align-items: center;
+      gap: 2px;
+      background: rgba(14, 18, 32, 0.94);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 50px;
+      padding: 4px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.50), 0 1px 0 rgba(255,255,255,0.05) inset;
+      z-index: 999;
     }
-    .bnav-sub-btn {
+    .predict-sub-btn {
       font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 600;
       letter-spacing: 0.01em;
-      padding: 8px 28px;
+      padding: 7px 22px;
       border-radius: 50px;
       border: none;
+      outline: none;
       background: transparent;
-      color: rgba(255,255,255,0.35);
+      color: rgba(255,255,255,0.38);
       cursor: pointer;
       transition: all 0.22s ease;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
     }
-    .bnav-sub-btn.active {
-      background: rgba(255,255,255,0.11);
+    .predict-sub-btn.active {
+      background: rgba(255,255,255,0.13);
       color: #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.08) inset;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.08) inset;
     }
-    .bnav-sub-btn:hover:not(.active) { color: rgba(255,255,255,0.6); }
+    .predict-sub-btn:hover:not(.active) { color: rgba(255,255,255,0.65); }
 
     /* Predict sub-pages */
     .predict-sub-page { display: none; }
@@ -1023,14 +1037,14 @@
     </div>
   </header>
 
+  <!-- Contextual sub-nav: floats independently above the bottom tab bar -->
+  <div class="predict-sub-nav" id="predictSubNav">
+    <button class="predict-sub-btn active" data-sub="slate" onclick="switchPredictSub('slate')">Slate-Wide</button>
+    <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
+  </div>
+
   <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
   <nav class="bottom-nav" id="bottomNav">
-    <!-- Secondary sub-tabs (only visible when Predict is active) -->
-    <div class="bnav-sub-row" id="predictSubNav">
-      <button class="bnav-sub-btn active" data-sub="slate" onclick="switchPredictSub('slate')">Slate-Wide</button>
-      <button class="bnav-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
-    </div>
-
     <!-- Primary icon row -->
     <div class="bnav-icon-row">
       <button class="bnav-icon-btn active" data-tab="predictions" onclick="switchTab('predictions')">
@@ -1316,7 +1330,7 @@ let PREDICT_SUB = 'slate'; // 'slate' | 'game'
 
 function switchPredictSub(sub) {
   PREDICT_SUB = sub;
-  document.querySelectorAll('.bnav-sub-btn').forEach(b =>
+  document.querySelectorAll('.predict-sub-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.sub === sub)
   );
   document.querySelectorAll('.predict-sub-page').forEach(p => {
