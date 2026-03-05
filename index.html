@@ -157,8 +157,7 @@
     }
     .tab-btn:hover { color: rgba(255,255,255,0.55); }
     .tab-btn.active { color: #fff; }
-    .tab-icon { font-size: 0.65rem; opacity: 0.7; flex-shrink: 0; }
-    .tab-btn.active .tab-icon { opacity: 1; }
+
     .tab-btn .tab-dot {
       position: absolute; top: 5px; right: 7px;
       width: 5px; height: 5px; border-radius: 50%;
@@ -1002,10 +1001,10 @@
     <nav class="tab-nav">
       <div class="tab-nav-track" id="tabTrack">
         <div class="tab-nav-pill" id="tabPill"></div>
-        <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')"><span class="tab-icon">◈</span>Predict</button>
-        <button class="tab-btn" data-tab="line" onclick="switchTab('line')"><span class="tab-icon">↑↓</span>Line</button>
-        <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')"><span class="tab-icon">◉</span>Ben</button>
-        <button class="tab-btn" data-tab="log" onclick="switchTab('log')"><span class="tab-icon">◷</span>History<span class="tab-dot" id="logTabDot"></span></button>
+        <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
+        <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
+        <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
+        <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log<span class="tab-dot" id="logTabDot"></span></button>
       </div>
     </nav>
   </header>
