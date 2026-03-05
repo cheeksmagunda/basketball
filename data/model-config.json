@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "updated_at": "2026-03-05T00:00:00Z",
+  "updated_by": "init",
+  "card_boost": {
+    "decay_base": 0.70,
+    "ceiling": 3.0,
+    "floor": 0.2,
+    "base_offset": 0.3,
+    "scalar": 3.4,
+    "big_market_multiplier": 1.5,
+    "big_market_teams": ["LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN", "LAC", "CHI", "SA"]
+  },
+  "game_script": {
+    "defensive_grind_ceiling": 220,
+    "balanced_ceiling": 235,
+    "fast_paced_ceiling": 245,
+    "defensive_grind": {"pts": 0.85, "reb": 0.90, "ast": 0.85, "stl": 1.40, "blk": 1.35, "tov": 1.15},
+    "balanced": {"pts": 1.0, "reb": 1.0, "ast": 1.0, "stl": 1.05, "blk": 1.05, "tov": 1.0},
+    "fast_paced": {"pts": 1.15, "reb": 1.10, "ast": 1.15, "stl": 0.95, "blk": 0.95, "tov": 0.90},
+    "track_meet": {"pts": 1.25, "reb": 1.05, "ast": 1.20, "stl": 0.90, "blk": 0.90, "tov": 0.85},
+    "blowout_spread_threshold": 8,
+    "blowout_pts_penalty": 0.90,
+    "blowout_ast_penalty": 0.90,
+    "blowout_reb_penalty": 0.94
+  },
+  "real_score": {
+    "dfs_weights": {"pts": 1.0, "reb": 1.0, "ast": 1.5, "stl": 4.5, "blk": 4.0, "tov": -1.2}
+  },
+  "cascade": {
+    "redistribution_rate": 0.70,
+    "per_player_cap_minutes": 3.0,
+    "center_forward_share": 0.30
+  },
+  "projection": {
+    "min_gate_minutes": 12,
+    "lock_buffer_minutes": 5,
+    "season_recent_blend": 0.5,
+    "major_role_change_threshold": 0.75,
+    "major_role_change_recent_weight": 0.80,
+    "moderate_decline_threshold": 0.90,
+    "moderate_decline_recent_weight": 0.65
+  },
+  "contrarian": {
+    "closeness_boost_floor": 0.7,
+    "closeness_boost_scalar": 0.6,
+    "underdog_bonus": 1.1,
+    "underdog_spread_min": 2,
+    "underdog_spread_max": 7
+  },
+  "changelog": [
+    {"version": 1, "date": "2026-03-05", "change": "Initial config externalization"}
+  ]
+}

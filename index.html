@@ -32,6 +32,12 @@
       --green: #22c55e;
       --red: #f43f5e;
       --r: 14px;
+      /* Line page accent — gold */
+      --line: #d4a640;
+      --line-glow: rgba(212,166,64,0.22);
+      /* Lab page accent — teal */
+      --lab: #14b8a6;
+      --lab-glow: rgba(20,184,166,0.22);
       /* Log page palette — desaturated/cooler, WCAG AA on dark bg */
       --log-chalk: #7ba4c8;
       --log-chalk-glow: rgba(123,164,200,0.2);
@@ -80,8 +86,8 @@
 
     /* ── HEADER ── */
     header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 0 16px;
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 0;
       border-bottom: 1px solid var(--border);
       margin-bottom: 0;
     }
@@ -91,6 +97,7 @@
       font-size: 1.5rem; font-weight: 900; letter-spacing: 0.04em;
       text-transform: uppercase;
       display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0;
     }
     .logo-icon {
       width: 32px; height: 32px; border-radius: 8px;
@@ -104,30 +111,59 @@
       letter-spacing: 0.15em; display: block; margin-top: 1px;
     }
 
-    /* ── TOP TAB NAVIGATION ── */
+    /* ── TOP TAB NAVIGATION — Segmented Control ── */
     .tab-nav {
-      display: flex; gap: 2px;
-      padding: 10px 0 0;
-      margin-bottom: 24px;
-      border-bottom: 1px solid var(--border);
+      position: relative;
+      display: flex;
+      flex: 1;
+      padding: 0;
+    }
+    .tab-nav-track {
+      position: relative;
+      display: flex;
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 3px;
+      min-height: 44px;
+    }
+    /* Sliding pill */
+    .tab-nav-pill {
+      position: absolute;
+      top: 3px; bottom: 3px;
+      border-radius: 9px;
+      background: var(--chalk);
+      box-shadow: 0 0 18px var(--chalk-glow);
+      transition: left 0.25s cubic-bezier(0.34,1.56,0.64,1), width 0.25s cubic-bezier(0.34,1.56,0.64,1);
+      pointer-events: none;
+      z-index: 0;
     }
     .tab-btn {
+      position: relative; z-index: 1;
+      flex: 1;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em;
+      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 8px 16px 10px;
       border: none; background: transparent; color: var(--muted);
-      cursor: pointer; transition: all 0.2s;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-      border-radius: 4px 4px 0 0;
+      cursor: pointer; transition: color 0.2s;
+      border-radius: 9px;
+      min-height: 38px;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
     }
     .tab-btn:hover { color: var(--text-dim); }
-    .tab-btn.active { color: var(--chalk); border-bottom-color: var(--chalk); }
+    .tab-btn.active { color: #fff; }
+    .tab-btn .tab-dot {
+      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+      background: var(--green); margin-left: 3px; flex-shrink: 0;
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.9); }
+    .tab-btn .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
-    .tab-page.active { display: block; }
+    .tab-page.active { display: block; padding-top: 18px; }
 
     /* ── SECTION LABEL ── */
     .section-label {
@@ -636,6 +672,176 @@
     }
     .winning-draft-player:last-child { border-bottom: none; }
     .winning-draft-player b { color: var(--text); }
+
+    /* ── LINE PAGE ── */
+    .line-pick-card {
+      background: var(--surface);
+      border: 1px solid rgba(212,166,64,0.3);
+      border-radius: var(--r); padding: 20px;
+      position: relative; overflow: hidden;
+    }
+    .line-pick-card::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--line); box-shadow: 2px 0 12px var(--line-glow);
+    }
+    .line-pick-header {
+      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px;
+    }
+    .line-pick-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.4rem; font-weight: 900; letter-spacing: 0.02em; color: var(--text);
+    }
+    .line-pick-team { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+    .line-confidence-badge {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.1rem; font-weight: 900; color: var(--line);
+      text-align: right; line-height: 1;
+    }
+    .line-confidence-sub { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+    .line-direction-row {
+      display: flex; align-items: center; gap: 12px; margin: 14px 0 12px;
+    }
+    .line-direction-pill {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 5px 14px; border-radius: 6px;
+    }
+    .line-direction-pill.over  { background: rgba(212,166,64,0.15); color: var(--line); border: 1px solid rgba(212,166,64,0.35); }
+    .line-direction-pill.under { background: rgba(20,184,166,0.12); color: var(--lab);  border: 1px solid rgba(20,184,166,0.3); }
+    .line-stat-val {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.6rem; font-weight: 900; color: var(--text); line-height: 1;
+    }
+    .line-stat-label { font-size: 0.7rem; color: var(--muted); }
+    .line-proj { font-size: 0.75rem; color: var(--text-dim); }
+    .line-narrative {
+      font-size: 0.78rem; color: var(--text-dim); line-height: 1.5;
+      border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;
+    }
+    .line-signals {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .line-signal-chip {
+      font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 4px;
+      background: rgba(212,166,64,0.1); color: var(--line); border: 1px solid rgba(212,166,64,0.2);
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .line-runner-up {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 16px;
+      opacity: 0.8;
+    }
+    .line-runner-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+    }
+    .line-runner-main {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .line-runner-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem; font-weight: 800; color: var(--text);
+    }
+    .line-runner-dir {
+      font-size: 0.75rem; font-weight: 700; color: var(--muted);
+    }
+    .line-summary-row {
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .line-summary-chip {
+      font-size: 0.68rem; color: var(--muted);
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 10px;
+    }
+    .line-history-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .line-history-row:last-child { border-bottom: none; }
+    .line-history-name { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+    .line-history-sub  { font-size: 0.65rem; color: var(--muted); }
+    .line-result-pill {
+      font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .line-result-pill.hit     { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+    .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
+    .line-result-pill.pending { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── LAB PAGE ── */
+    .lab-action-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 6px 12px;
+      background: transparent; border: 1px solid var(--border-bright);
+      border-radius: 8px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+    }
+    .lab-action-btn:hover { border-color: var(--lab); color: var(--lab); }
+    .lab-quick-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 5px 10px;
+      background: rgba(20,184,166,0.08); border: 1px solid rgba(20,184,166,0.2);
+      border-radius: 6px; color: var(--lab); cursor: pointer; transition: all 0.2s;
+    }
+    .lab-quick-btn:hover { background: rgba(20,184,166,0.15); border-color: var(--lab); }
+    .lab-msg {
+      padding: 12px 14px; border-radius: 12px; max-width: 90%;
+      font-size: 0.82rem; line-height: 1.55; animation: fadeUp 0.25s ease forwards;
+    }
+    .lab-msg.user {
+      align-self: flex-end;
+      background: rgba(20,184,166,0.12); border: 1px solid rgba(20,184,166,0.2);
+      color: var(--text);
+    }
+    .lab-msg.assistant {
+      align-self: flex-start;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .lab-msg.assistant .lab-msg-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--lab); margin-bottom: 6px;
+    }
+    .lab-msg.thinking {
+      align-self: flex-start;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .lab-thinking-dots {
+      display: flex; gap: 4px; align-items: center; padding: 2px 0;
+    }
+    .lab-thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+      animation: labPulse 1.2s ease-in-out infinite;
+    }
+    .lab-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .lab-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes labPulse {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+    .lab-config-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px;
+    }
+    .lab-config-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--lab); margin-bottom: 8px;
+    }
+    .lab-changelog-item {
+      font-size: 0.72rem; color: var(--text-dim); padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .lab-changelog-item:last-child { border-bottom: none; }
+    .lab-changelog-ver {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 800; color: var(--lab); margin-right: 6px;
+    }
+    #labInput { line-height: 1.4; }
+    #labInput:focus { border-color: var(--lab); }
   </style>
 </head>
 <body>
@@ -646,19 +852,20 @@
       <div class="logo-icon">🏀</div>
       <div>
         THE ORACLE
-        <span class="logo-sub">NBA Draft Optimizer</span>
+        <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
-    <div id="predSavedChip" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--green);padding:4px 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px"></div>
+    <!-- ══ TOP TAB NAVIGATION — Segmented Control ══ -->
+    <nav class="tab-nav">
+      <div class="tab-nav-track" id="tabTrack">
+        <div class="tab-nav-pill" id="tabPill"></div>
+        <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
+        <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
+        <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
+        <button class="tab-btn" data-tab="log" onclick="switchTab('log')">History<span class="tab-dot" id="logTabDot"></span></button>
+      </div>
+    </nav>
   </header>
-
-  <!-- ══ TOP TAB NAVIGATION ══ -->
-  <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
-    <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log</button>
-    <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
-    <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Lab</button>
-  </nav>
 
   <!-- ══ TAB: PREDICTIONS ══ -->
   <div id="tab-predictions" class="tab-page active">
@@ -765,21 +972,74 @@
   </div>
 
   <!-- ══ TAB: LINE ══ -->
+  <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
   <div id="tab-line" class="tab-page">
-    <div class="placeholder-page">
-      <div class="pl-icon">📈</div>
-      <h2>Line of the Day</h2>
-      <p>Coming soon</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:4px">
+      <div class="section-label" style="margin-top:0">Line of the Day</div>
+      <button onclick="LINE_LOADED=false;initLinePage()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+    </div>
+    <div id="lineContent">
+      <div id="lineLoading" style="display:none">
+        <div class="skeleton" style="height:140px;border-radius:var(--r);margin-bottom:12px"><div class="skel-block" style="width:100%;height:100%"></div></div>
+        <div class="skeleton" style="height:90px;border-radius:var(--r)"><div class="skel-block" style="width:100%;height:100%"></div></div>
+      </div>
+      <div id="lineEmpty" style="display:none">
+        <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p></div>
+      </div>
+      <div id="linePickWrap" style="display:none">
+        <div id="linePickCard"></div>
+        <div id="lineRunnerUpCard" style="margin-top:10px"></div>
+        <div id="lineSlateSummary" style="margin-top:16px"></div>
+      </div>
+      <div id="lineHistoryWrap" style="margin-top:24px;display:none">
+        <div class="section-label">Recent Picks</div>
+        <div id="lineHistoryList"></div>
+      </div>
     </div>
   </div>
 
   <!-- ══ TAB: LAB ══ -->
   <div id="tab-lab" class="tab-page">
-    <div class="placeholder-page">
-      <div class="pl-icon">🔬</div>
-      <h2>Lab</h2>
-      <p>Coming soon</p>
+    <!-- Locked state -->
+    <div id="labLocked" style="display:none">
+      <div class="empty-state" style="margin-top:32px">
+        <span class="icon" style="font-size:2rem">🔒</span>
+        <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Ben is Locked</h3>
+        <p id="labLockedReason" style="color:var(--text-dim)">Slate in progress</p>
+        <p id="labLockedUnlock" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
+      </div>
+      <div id="labLockedConfig" style="margin-top:24px"></div>
     </div>
+    <!-- Unlocked state -->
+    <div id="labUnlocked" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 14px">
+        <div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Ben</div>
+          <div id="labConfigVersion" style="font-size:0.68rem;color:var(--muted);margin-top:2px"></div>
+        </div>
+      </div>
+      <!-- Chat messages -->
+      <div id="labMessages" style="display:flex;flex-direction:column;gap:10px;padding-bottom:10px"></div>
+      <!-- Input -->
+      <div id="labInputWrap" style="position:sticky;bottom:0;padding:12px 0 4px;background:var(--bg)">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button class="lab-quick-btn" onclick="labSendQuick('Give me a briefing and suggest improvements')">Briefing</button>
+          <button class="lab-quick-btn" onclick="labSendQuick('Run a backtest on the current config')">Backtest</button>
+          <button class="lab-quick-btn" onclick="labViewConfig()">Config</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <textarea id="labInput" placeholder="Ask Ben to analyze, suggest, or apply a change..." rows="1"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
+          ></textarea>
+          <button id="labSendBtn" onclick="labSend()" style="padding:10px 16px;background:var(--lab);border:none;border-radius:10px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.85rem;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer">Send</button>
+        </div>
+      </div>
+    </div>
+    <div id="labLoading" style="display:none">
+      <div class="empty-state"><span class="icon">⏳</span><p>Loading Lab...</p></div>
+    </div>
+    <div id="labPlaceholder" style="display:none"></div>
   </div>
 
 </div>
@@ -797,7 +1057,6 @@ const TEAM_COLORS = {
 // ── Global state ──
 let SLATE = null;
 let PICKS_DATA = null;
-let CURRENT_SLATE_TAB = 'chalk';
 
 // Log state
 const LOG = {
@@ -814,14 +1073,66 @@ const LOG = {
   hindsightLineup: null,
 };
 
-// ── TAB SWITCHING ──
+// ── TAB SWITCHING — Segmented Control ──
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
-  if (tab === 'log' && !LOG.selectedDate) {
-    initLogPage();
+  movePill(tab);
+  setPillAccent(tab);
+  if (tab === 'log' && !LOG.selectedDate) initLogPage();
+  if (tab === 'line') initLinePage();
+  if (tab === 'lab')  initLabPage();
+}
+
+function movePill(tab) {
+  const activeBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  const pill      = document.getElementById('tabPill');
+  const track     = document.getElementById('tabTrack');
+  if (!activeBtn || !pill || !track) return;
+  const trackRect = track.getBoundingClientRect();
+  const btnRect   = activeBtn.getBoundingClientRect();
+  pill.style.left  = (btnRect.left - trackRect.left - 3) + 'px';
+  pill.style.width = btnRect.width + 'px';
+}
+
+// Pill accent color per tab
+const TAB_ACCENT = {
+  predictions: { color: '#4f8ef7', glow: 'rgba(79,142,247,0.25)' },
+  line:        { color: '#d4a640', glow: 'rgba(212,166,64,0.22)' },
+  lab:         { color: '#14b8a6', glow: 'rgba(20,184,166,0.22)' },
+  log:         { color: '#7ba4c8', glow: 'rgba(123,164,200,0.20)' },
+};
+
+function setPillAccent(tab) {
+  const a = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
+  const pill = document.getElementById('tabPill');
+  if (pill) {
+    pill.style.background = a.color;
+    pill.style.boxShadow  = `0 0 18px ${a.glow}`;
   }
 }
+
+// Init pill position after DOM is ready, and reposition on resize
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const pill = document.getElementById('tabPill');
+    // Disable transition for initial placement (no jarring slide from left edge)
+    if (pill) pill.style.transition = 'none';
+    movePill('predictions');
+    setPillAccent('predictions');
+    // Re-enable animation after first placement
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (pill) pill.style.transition = '';
+    }));
+  }, 30);
+});
+window.addEventListener('resize', () => {
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'predictions';
+  const pill = document.getElementById('tabPill');
+  if (pill) pill.style.transition = 'none';
+  movePill(activeTab);
+  requestAnimationFrame(() => { if (pill) pill.style.transition = ''; });
+});
 
 // ── INIT ──
 (async function init() {
@@ -903,7 +1214,6 @@ function switchPicksTab(tab) {
 }
 
 function switchSlate(tab) {
-  CURRENT_SLATE_TAB = tab;
   document.querySelectorAll('#slateTabs .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
   if (SLATE) renderCards(SLATE.lineups[tab] || [], 'slateList', tab);
 }
@@ -1041,9 +1351,10 @@ function renderCards(picks, containerId, mode, opts = {}) {
           <div class="player-name">${p.name}</div>
           <div class="stat-pills">${statsHtml}</div>
         </div>
-        <div class="score-col" style="${isLog ? `--score-color:${scoreColor};` : `--score-color:${scoreColor};`}">
+        <div class="score-col" style="--score-color:${scoreColor};">
           <div class="score-num">${p.rating}</div>
-          <span class="score-label">${isUpside ? 'moonshot' : 'projected'}</span>
+          <span class="score-label">RS</span>
+          ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:var(--muted);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
           <div class="slot-badge" style="background:${isUpside?(isLog?'rgba(184,152,120,0.08)':'rgba(249,115,22,0.1)'):(isLog?'rgba(123,164,200,0.08)':'rgba(79,142,247,0.1)')};border-color:${isUpside?(isLog?'rgba(184,152,120,0.2)':'rgba(249,115,22,0.25)'):(isLog?'rgba(123,164,200,0.2)':'rgba(79,142,247,0.25)')}">
             ${p.slot || '—'}
           </div>
@@ -1069,13 +1380,7 @@ function renderSkeletons(containerId, count) {
 async function savePredictions() {
   try {
     const r = await fetch('/api/save-predictions', { method: 'POST' });
-    if (r.ok) {
-      const result = await r.json();
-      const chip = document.getElementById('predSavedChip');
-      chip.textContent = `Saved ${result.rows} predictions`;
-      chip.style.display = 'inline-block';
-      setTimeout(() => { chip.style.display = 'none'; }, 4000);
-    }
+    // save silently — no UI notification needed
   } catch(e) {
     console.warn('Prediction save failed:', e);
   }
@@ -1097,15 +1402,22 @@ async function initLogPage() {
     if (r.ok) {
       const dates = await r.json();
       dates.forEach(d => LOG.datesWithData.add(d));
+      // Light the dot on the Log tab if there's historical data
+      if (dates.length) {
+        document.getElementById('logTabDot')?.classList.add('visible');
+      }
     }
   } catch(e) { /* non-fatal */ }
 
   // Build chips: today + 29 prior days
+  // Use local date to avoid UTC midnight shift (e.g. 7pm ET = midnight UTC = wrong day)
+  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
   const chips = [];
   for (let i = 0; i < 30; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = toLocalISO(d);
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
     const numLabel = d.getDate();
     const hasData = LOG.datesWithData.has(iso);
@@ -1120,7 +1432,7 @@ async function initLogPage() {
     </button>`).join('');
 
   // Auto-select today
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = toLocalISO(today);
   selectLogDate(todayIso);
 }
 
@@ -1165,7 +1477,7 @@ function renderLogGrid(dateStr) {
 
   // Build game list from scopes
   const scopes = data.scopes || {};
-  const gameScopes = Object.keys(scopes).filter(s => s.startsWith('game_'));
+  const gameScopes = Object.keys(scopes).filter(s => s !== 'slate');
   const hasSlate = 'slate' in scopes;
   const hasActuals = data.has_actuals;
 
@@ -1178,22 +1490,23 @@ function renderLogGrid(dateStr) {
       <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
         <div>
           <div class="log-slate-card-label">Full Slate</div>
-          <div class="log-slate-card-sub">${playerCount} players</div>
-          ${hasActuals ? '<div class="log-has-data">Results available</div>' : ''}
+          <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
         </div>
         <span style="color:var(--chalk);font-size:1.2rem">›</span>
       </div>`;
   }
 
-  // Per-game cards
+  // Per-game cards — scope is now the readable label (e.g. "BOS @ NYK")
   gameScopes.forEach(scope => {
-    const label = scope.replace('game_', '');
     const chalkCount = scopes[scope]?.chalk?.length || 0;
+    const escapedScope = scope.replace(/'/g, "\\'");
     html += `
-      <div class="log-game-card" onclick="openLogDrilldown('${scope}', '${label}')">
-        <div class="log-game-matchup">${label}</div>
-        <div class="log-game-meta">${chalkCount} players</div>
-        ${hasActuals ? '<div class="log-has-data">Results</div>' : ''}
+      <div class="log-game-card" onclick="openLogDrilldown('${escapedScope}', '${escapedScope}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div class="log-game-matchup">${scope}</div>
+          <span style="color:var(--muted);font-size:1rem;margin-left:6px">›</span>
+        </div>
+        <div class="log-game-meta">${chalkCount} players${hasActuals ? ' · Results' : ''}</div>
       </div>`;
   });
 
@@ -1215,6 +1528,7 @@ function openLogDrilldown(scope, gameLabel) {
 
   document.getElementById('logGridView').style.display = 'none';
   document.getElementById('logDrillView').style.display = 'block';
+  window.scrollTo({top: 0, behavior: 'smooth'});
 
   const d = new Date((LOG.selectedDate || '') + 'T12:00:00');
   const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
@@ -1271,7 +1585,7 @@ function renderLogDrillCards() {
     });
   }
 
-  // Normalize player objects from CSV format
+  // Normalize player objects from CSV format (include stat pills if stored)
   const normalized = players.map((p, i) => ({
     name: p.name || p.player_name || '',
     team: p.team || '',
@@ -1279,6 +1593,11 @@ function renderLogDrillCards() {
     rating: parseFloat(p.rating || p.predicted_rs || 0).toFixed(1),
     est_mult: p.est_mult || p.est_card_boost || '',
     predMin: p.predMin || p.pred_min || '',
+    pts:  p.pts  ? parseFloat(p.pts).toFixed(1)  : '',
+    reb:  p.reb  ? parseFloat(p.reb).toFixed(1)  : '',
+    ast:  p.ast  ? parseFloat(p.ast).toFixed(1)  : '',
+    stl:  p.stl  ? parseFloat(p.stl).toFixed(1)  : '',
+    blk:  p.blk  ? parseFloat(p.blk).toFixed(1)  : '',
     slot: p.slot || `${i+1}`,
   }));
 
@@ -1454,6 +1773,517 @@ function renderHindsightOptimal(lineup) {
   });
 
   el.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════
+// ── LINE PAGE ──
+// ════════════════════════════════════════════════════════
+
+let LINE_LOADED = false;
+
+async function initLinePage() {
+  if (LINE_LOADED) return;
+  LINE_LOADED = true;
+  document.getElementById('lineLoading').style.display = 'block';
+  document.getElementById('lineEmpty').style.display = 'none';
+  document.getElementById('linePickWrap').style.display = 'none';
+  document.getElementById('lineHistoryWrap').style.display = 'none';
+  // Reset content
+  document.getElementById('linePickCard').innerHTML = '';
+  document.getElementById('lineRunnerUpCard').innerHTML = '';
+  document.getElementById('lineSlateSummary').innerHTML = '';
+
+  try {
+    const r = await fetch('/api/line-of-the-day');
+    const data = await r.json();
+    document.getElementById('lineLoading').style.display = 'none';
+
+    if (!data.pick) {
+      const msgs = {
+        no_api_key:       'Odds API key not configured — contact admin.',
+        no_games:         'No NBA games on the slate today.',
+        no_edges:         'No strong edges found on today\'s props. Check back closer to tip-off.',
+        odds_unavailable: 'Odds API unavailable. Try refreshing.',
+        no_projections:   'Could not load player projections.',
+      };
+      const icons = {
+        no_games:  '🏀',
+        no_edges:  '📊',
+        no_api_key:'🔑',
+        default:   '📡',
+      };
+      const emptyEl = document.getElementById('lineEmpty');
+      emptyEl.querySelector('.icon').textContent = icons[data.error] || icons.default;
+      document.getElementById('lineEmptyMsg').textContent = msgs[data.error] || 'No line pick available.';
+      emptyEl.style.display = 'flex';
+      return;
+    }
+
+    document.getElementById('linePickWrap').style.display = 'block';
+    document.getElementById('linePickCard').innerHTML = renderLinePickCard(data.pick, true);
+    if (data.runner_up) {
+      document.getElementById('lineRunnerUpCard').innerHTML = renderLineRunnerUp(data.runner_up);
+    }
+    if (data.slate_summary) {
+      document.getElementById('lineSlateSummary').innerHTML = renderLineSummary(data.slate_summary);
+    }
+
+    // Auto-save the pick
+    try {
+      await fetch('/api/save-line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pick: data.pick }),
+      });
+    } catch(e) { /* non-fatal */ }
+
+  } catch(e) {
+    document.getElementById('lineLoading').style.display = 'none';
+    const emptyEl = document.getElementById('lineEmpty');
+    emptyEl.querySelector('.icon').textContent = '📡';
+    document.getElementById('lineEmptyMsg').textContent = 'Couldn\'t load line pick. Check backend.';
+    emptyEl.style.display = 'flex';
+  }
+
+  // Load history
+  try {
+    const hr = await fetch('/api/line-history');
+    if (hr.ok) {
+      const hist = await hr.json();
+      if (hist.picks && hist.picks.length) {
+        document.getElementById('lineHistoryWrap').style.display = 'block';
+        document.getElementById('lineHistoryList').innerHTML = renderLineHistory(hist);
+      }
+    }
+  } catch(e) { /* non-fatal */ }
+}
+
+function renderLinePickCard(pick, isPrimary) {
+  const dir = pick.direction || 'over';
+  const signals = pick.signals || [];
+  const signalChips = signals.slice(0, 3).map(s =>
+    `<span class="line-signal-chip">${s.type.replace(/_/g,' ')}</span>`
+  ).join('');
+
+  return `
+    <div class="line-pick-card">
+      <div class="line-pick-header">
+        <div>
+          <div class="line-pick-name">${pick.player_name}</div>
+          <div class="line-pick-team">${pick.team} · vs ${pick.opponent}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="line-confidence-badge">${pick.confidence}%</div>
+          <div class="line-confidence-sub">Confidence</div>
+        </div>
+      </div>
+      <div class="line-direction-row">
+        <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
+        <div>
+          <div class="line-stat-val">${pick.line} ${pick.stat_type}</div>
+          <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${pick.edge > 0 ? '+' : ''}${pick.edge}</div>
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div>
+          <div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+      ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
+      <div class="line-narrative">${pick.narrative}</div>
+    </div>`;
+}
+
+function renderLineRunnerUp(pick) {
+  const dir = pick.direction || 'over';
+  return `
+    <div class="line-runner-up">
+      <div class="line-runner-label">Runner-Up</div>
+      <div class="line-runner-main">
+        <div>
+          <div class="line-runner-name">${pick.player_name}</div>
+          <div class="line-runner-dir">${dir.toUpperCase()} ${pick.line} ${pick.stat_type} · ${pick.confidence}% conf</div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--muted)">${pick.team} vs ${pick.opponent}</div>
+      </div>
+    </div>`;
+}
+
+function renderLineSummary(summary) {
+  let timeStr = '';
+  if (summary.timestamp) {
+    const ts = new Date(summary.timestamp);
+    timeStr = `<div class="line-summary-chip">${ts.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</div>`;
+  }
+  return `
+    <div class="line-summary-row">
+      <div class="line-summary-chip">${summary.games_evaluated} games</div>
+      <div class="line-summary-chip">${summary.props_scanned} props scanned</div>
+      <div class="line-summary-chip">${summary.edges_found} edges found</div>
+      ${timeStr}
+    </div>`;
+}
+
+function renderLineHistory(hist) {
+  const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
+  const streak  = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
+
+  let html = `
+    <div style="display:flex;gap:16px;margin-bottom:14px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
+      </div>
+      ${streak ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${hist.streak_type==='hit'?'var(--green)':'var(--red)'}">${streak}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
+      </div>` : ''}
+    </div>`;
+
+  hist.picks.slice(0, 10).forEach(p => {
+    const result = p.result || 'pending';
+    html += `
+      <div class="line-history-row">
+        <div>
+          <div class="line-history-name">${p.player_name}</div>
+          <div class="line-history-sub">${(p.direction||'over').toUpperCase()} ${p.line} ${p.stat_type||''} · ${p.date}</div>
+        </div>
+        <span class="line-result-pill ${result}">${result}</span>
+      </div>`;
+  });
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+// ── LAB PAGE ──
+// ════════════════════════════════════════════════════════
+
+const LAB = {
+  messages: [],       // conversation history
+  system: '',         // dynamic system prompt
+  briefing: null,     // latest briefing
+  config: null,       // current config
+  initialized: false,
+  initAt: 0,          // timestamp of last init (ms)
+};
+
+async function initLabPage() {
+  // Re-check status if tab revisited after 10+ minutes (lock state may have changed)
+  const stale = Date.now() - LAB.initAt > 10 * 60 * 1000;
+  if (LAB.initialized && !stale) return;
+  LAB.initialized = true;
+  LAB.initAt = Date.now();
+  // Clear prior messages on stale re-init (lock state may have changed)
+  if (stale) {
+    LAB.messages = [];
+    document.getElementById('labMessages').innerHTML = '';
+  }
+
+  document.getElementById('labLoading').style.display = 'block';
+  document.getElementById('labLocked').style.display   = 'none';
+  document.getElementById('labUnlocked').style.display = 'none';
+
+  try {
+    const r = await fetch('/api/lab/status');
+    const status = await r.json();
+    document.getElementById('labLoading').style.display = 'none';
+
+    if (status.locked) {
+      showLabLocked(status);
+    } else {
+      await showLabUnlocked(status);
+    }
+  } catch(e) {
+    document.getElementById('labLoading').style.display = 'none';
+    document.getElementById('labUnlocked').style.display = 'block';
+    appendLabMessage('assistant', 'Could not connect to the Lab backend. Make sure the API is running.');
+  }
+}
+
+function showLabLocked(status) {
+  document.getElementById('labLocked').style.display = 'block';
+  document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
+  const unlock = status.estimated_unlock
+    ? `Estimated unlock: ${new Date(status.estimated_unlock).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
+    : (status.next_lock_time ? `Locks at ${new Date(status.next_lock_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}` : '');
+  document.getElementById('labLockedUnlock').textContent = unlock;
+
+  // Show config changelog read-only
+  fetch('/api/lab/config-history').then(r=>r.json()).then(data => {
+    const el = document.getElementById('labLockedConfig');
+    const changelog = (data.changelog || []).slice().reverse().slice(0,5);
+    el.innerHTML = `
+      <div class="lab-config-card">
+        <div class="lab-config-label">Config v${data.version} · Changelog</div>
+        ${changelog.map(c => `
+          <div class="lab-changelog-item">
+            <span class="lab-changelog-ver">v${c.version}</span>
+            <span style="color:var(--muted);font-size:0.65rem">${c.date}</span>
+            <br><span>${c.change}</span>
+          </div>`).join('')}
+      </div>`;
+  }).catch(() => {});
+}
+
+async function showLabUnlocked(status) {
+  document.getElementById('labUnlocked').style.display = 'block';
+  document.getElementById('labConfigVersion').textContent = `Config v${status.current_config_version}`;
+
+  // Load briefing + config in parallel (silently — no auto-message)
+  const [briefingRes, configRes] = await Promise.allSettled([
+    fetch('/api/lab/briefing').then(r => r.json()),
+    fetch('/api/lab/config-history').then(r => r.json()),
+  ]);
+
+  if (briefingRes.status === 'fulfilled') LAB.briefing = briefingRes.value;
+  if (configRes.status === 'fulfilled')   LAB.config   = configRes.value;
+
+  // Build system prompt (context is ready; user starts the conversation)
+  LAB.system = buildLabSystemPrompt();
+}
+
+function buildLabSystemPrompt() {
+  const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
+  const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
+
+  return `You are Ben, the model tuning assistant for an NBA draft optimizer called The Oracle.
+Your name is Ben. When users address you or refer to the assistant, you are Ben.
+
+YOUR ROLE:
+- Analyze prediction accuracy and suggest parameter improvements
+- Run backtests to validate changes before applying them
+- Apply approved config changes (only after explicit user approval)
+- You suggest, the user approves. Never apply changes without explicit approval.
+
+SCOPE:
+- You CAN modify: the runtime model config (data/model-config.json)
+- You CANNOT modify: application code, API routes, or frontend
+- If a request requires code changes, explain and direct user to Claude Code
+
+ACTIONS YOU CAN REQUEST:
+- backtest: {"action":"backtest","changes":{"dot.path":value},"description":"..."}
+- update_config: {"action":"update_config","changes":{"dot.path":value},"description":"..."}
+- show_config: {"action":"show_config"}
+- show_history: {"action":"show_history"}
+
+When you want to trigger an action, include the JSON in your response wrapped in <action>...</action> tags.
+The frontend will detect this and call the appropriate endpoint.
+
+CURRENT CONFIG:
+${cfgStr}
+
+LATEST BRIEFING:
+${briefStr}
+
+BEHAVIOR:
+- Be concise and action-oriented. No unnecessary hedging.
+- When suggesting a change, offer to backtest first.
+- When presenting backtest results, state improvement % and recommendation clearly.
+- No unsolicited introductions or summaries — respond to what the user asks.`;
+}
+
+async function labCallClaude() {
+  const thinkId = 'lab-think-' + Date.now();
+  const thinkEl = document.createElement('div');
+  thinkEl.id = thinkId;
+  thinkEl.className = 'lab-msg thinking';
+  thinkEl.innerHTML = '<div class="lab-thinking-dots"><span></span><span></span><span></span></div>';
+  document.getElementById('labMessages').appendChild(thinkEl);
+  thinkEl.scrollIntoView({behavior:'smooth'});
+
+  document.getElementById('labSendBtn').disabled = true;
+
+  try {
+    const r = await fetch('/api/lab/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        // Send all messages (including hidden) — hidden = not shown in UI, but still sent to Claude
+        messages: LAB.messages.map(({ role, content }) => ({ role, content })),
+        system: LAB.system,
+      }),
+    });
+    const data = await r.json();
+    thinkEl.remove();
+
+    if (data.error) {
+      appendLabMessage('assistant', `Error: ${data.error}`);
+      return;
+    }
+
+    const content = data.content || '';
+    await handleLabResponse(content);
+
+  } catch(e) {
+    thinkEl.remove();
+    appendLabMessage('assistant', 'Network error. Please try again.');
+  } finally {
+    document.getElementById('labSendBtn').disabled = false;
+  }
+}
+
+async function handleLabResponse(content) {
+  // Extract and handle any action tags
+  const actionMatch = content.match(/<action>([\s\S]*?)<\/action>/);
+  const displayContent = content.replace(/<action>[\s\S]*?<\/action>/g, '').trim();
+
+  appendLabMessage('assistant', displayContent);
+
+  if (actionMatch) {
+    try {
+      const action = JSON.parse(actionMatch[1]);
+      await executeLabAction(action);
+    } catch(e) {
+      // Not valid JSON in action tag — ignore
+    }
+  }
+}
+
+async function executeLabAction(action) {
+  const type = action.action;
+
+  if (type === 'backtest') {
+    appendLabMessage('assistant', 'Running backtest...', false, true);
+    try {
+      const r = await fetch('/api/lab/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposed_changes: action.changes, description: action.description }),
+      });
+      const result = await r.json();
+      // Feed result back to Claude
+      const summary = `Backtest complete: ${result.slates_tested} slates tested. Current MAE: ${result.current_config_mae}, Proposed MAE: ${result.proposed_config_mae}, Improvement: ${result.improvement_pct}%. ${result.recommendation}`;
+      appendLabMessage('user', `Backtest result: ${JSON.stringify(result)}`, true);
+      await labCallClaude();
+    } catch(e) {
+      appendLabMessage('assistant', 'Backtest failed. Try again.');
+    }
+
+  } else if (type === 'show_config') {
+    try {
+      const r = await fetch('/api/lab/config-history');
+      const data = await r.json();
+      appendLabMessage('user', `Config data: ${JSON.stringify(data)}`, true);
+      await labCallClaude();
+    } catch(e) {}
+
+  } else if (type === 'show_history') {
+    try {
+      const r = await fetch('/api/lab/config-history');
+      const data = await r.json();
+      const changelogStr = (data.changelog || []).map(c => `v${c.version} (${c.date}): ${c.change}`).join('\n');
+      appendLabMessage('assistant', `**Config History:**\n${changelogStr}`);
+    } catch(e) {}
+
+  } else if (type === 'update_config') {
+    // Don't auto-apply — show confirm button
+    const msgEl = document.createElement('div');
+    msgEl.className = 'lab-msg assistant';
+    const descText = action.description || JSON.stringify(action.changes);
+    msgEl.innerHTML = `
+      <div class="lab-msg-label">Ben</div>
+      <div>Ready to apply: <b></b></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="lab-apply-btn"
+          style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
+          Apply
+        </button>
+        <button class="lab-decline-btn"
+          style="background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:6px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
+          Decline
+        </button>
+      </div>`;
+    msgEl.querySelector('div b').textContent = descText;
+    msgEl.querySelector('.lab-apply-btn').addEventListener('click', () => applyLabConfig(action.changes, action.description || '', msgEl));
+    msgEl.querySelector('.lab-decline-btn').addEventListener('click', () => {
+      msgEl.querySelector('div').textContent = 'Change declined.';
+      msgEl.querySelector('div + div').remove();
+    });
+    document.getElementById('labMessages').appendChild(msgEl);
+    msgEl.scrollIntoView({behavior:'smooth'});
+  }
+}
+
+async function applyLabConfig(changes, description, msgEl) {
+  const statusDiv = msgEl.querySelectorAll('div')[1]; // second div = "Ready to apply"
+  const btnDiv    = msgEl.querySelector('.lab-apply-btn')?.parentElement;
+  try {
+    const r = await fetch('/api/lab/update-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ changes, change_description: description }),
+    });
+    const result = await r.json();
+    if (result.error) {
+      if (statusDiv) statusDiv.textContent = `Error: ${result.error}`;
+      return;
+    }
+    if (statusDiv) statusDiv.textContent = `Applied — now config v${result.version}.`;
+    if (btnDiv) btnDiv.remove();
+    document.getElementById('labConfigVersion').textContent = `Config v${result.version}`;
+    appendLabMessage('user', `Config updated to v${result.version}: ${description}`, true);
+    await labCallClaude();
+  } catch(e) {
+    if (statusDiv) statusDiv.textContent = 'Failed to apply config change.';
+  }
+}
+
+function appendLabMessage(role, content, hidden = false, isStatus = false) {
+  LAB.messages.push({ role, content, hidden });
+  if (hidden) return;
+
+  const el = document.createElement('div');
+  el.className = `lab-msg ${role}`;
+
+  if (role === 'assistant') {
+    // Convert basic markdown: code blocks, bold, italic, newlines
+    const formatted = content
+      .replace(/```[\w]*\n?([\s\S]*?)```/g, (_,c) =>
+        `<pre style="background:rgba(0,0,0,0.35);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.74rem;overflow-x:auto;white-space:pre-wrap;margin:6px 0">${c.trim()}</pre>`)
+      .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);border-radius:3px;padding:1px 4px;font-size:0.8em">$1</code>')
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
+      .replace(/\n/g, '<br>');
+    el.innerHTML = `<div class="lab-msg-label">Ben</div><div>${formatted}</div>`;
+  } else {
+    el.textContent = content;
+  }
+
+  document.getElementById('labMessages').appendChild(el);
+  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+async function labSend() {
+  const input = document.getElementById('labInput');
+  const text  = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  appendLabMessage('user', text);
+  await labCallClaude();
+}
+
+function labSendQuick(text) {
+  document.getElementById('labInput').value = text;
+  labSend();
+}
+
+async function labViewConfig() {
+  try {
+    const r = await fetch('/api/lab/config-history');
+    const data = await r.json();
+    const formatted = `Current config (v${data.version}):\n${JSON.stringify(data.config, null, 2)}`;
+    appendLabMessage('user', 'Show me the current config', false);
+    appendLabMessage('assistant', '```\n' + formatted + '\n```');
+  } catch(e) {}
+}
+
+async function labRefreshBriefing() {
+  try {
+    const r = await fetch('/api/lab/briefing');
+    LAB.briefing = await r.json();
+    LAB.system = buildLabSystemPrompt();
+    appendLabMessage('user', 'I refreshed the briefing. What does the latest analysis show?', false);
+    await labCallClaude();
+  } catch(e) {}
 }
 </script>
 </body>

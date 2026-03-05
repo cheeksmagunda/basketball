@@ -16,28 +16,32 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predictions | Log | Line | Lab, vanilla JS)
-api/index.py           — FastAPI backend (all endpoints, projection engine)
+index.html             — 4-tab frontend (Predict | Line | Ben | History, vanilla JS)
+api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
-api/temporal_risk.py   — TRAV (Temporal Risk-Adjusted Value) system
-vercel.json            — Vercel config (routes, crons, 60s timeout)
-server.py              — Local dev server (uvicorn)
+api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
+api/temporal_risk.py   — TRAV module (available, not active in picks)
+data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
 data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
+data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
+vercel.json            — Vercel config (routes, crons, 60s timeout)
+server.py              — Local dev server (uvicorn)
 ```
 
 ## UI Structure
 
-4-tab top navigation: **Predictions | Log | Line | Lab**
+4-tab segmented control navigation: **Predict | Line | Ben | History**
 
-- **Predictions**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis
-- **Log**: Historical drill-down — date strip, game grid, locked prediction cards (desaturated Log palette), screenshot upload, winning drafts display, hindsight optimal lineup
-- **Line**: Placeholder (coming soon)
-- **Lab**: Placeholder (coming soon)
+- **Predict**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis
+- **Line**: Line of the Day — best player prop edge from Odds API (gold accent)
+- **Ben**: Model Lab — Claude-powered model tuning, config management, backtesting (teal accent)
+- **History**: Historical drill-down — date strip, game grid, locked prediction cards, screenshot upload, winning drafts, hindsight optimal lineup
 
 ## Key Endpoints
 
+### Core
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/slate` | GET | Full-slate predictions (all games) |
@@ -47,15 +51,52 @@ data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 | `/api/parse-screenshot` | POST | Upload Real Sports screenshot, Claude Haiku parses it |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV |
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
-| `/api/log/get?date=X` | GET | Predictions + actuals for a given date |
-| `/api/hindsight` | POST | Given actual RS scores, return optimal hindsight lineup |
-| `/api/refresh` | GET | Clear cache (also runs on cron at 7pm/8pm UTC) |
+| `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
+| `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
+| `/api/refresh` | GET | Clear cache + config cache (also runs on cron at 7pm/8pm UTC) |
+
+### Line of the Day
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/line-of-the-day` | GET | Best prop edge (Odds API → edge detection → confidence) |
+| `/api/save-line` | POST | Save daily pick to data/lines/{date}.csv (once/day) |
+| `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
+| `/api/line-history` | GET | Recent picks with streak + hit rate |
+
+### Lab (Ben)
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/lab/status` | GET | Lock status (locked during slate, unlocked after all games final) |
+| `/api/lab/briefing` | GET | Prediction accuracy analysis (MAE, biggest misses, patterns) |
+| `/api/lab/update-config` | POST | Apply dot-notation param changes, increment version |
+| `/api/lab/config-history` | GET | Full config + changelog |
+| `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
+| `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
+| `/api/lab/chat` | POST | Proxy to claude-sonnet-4-6 with Lab system prompt (keeps key server-side) |
 
 ## Environment Variables (Vercel)
 
-- `GITHUB_TOKEN` — GitHub PAT with repo scope (for CSV read/write via Contents API)
+- `GITHUB_TOKEN` — GitHub PAT with repo scope (for CSV + config read/write via Contents API)
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
-- `ANTHROPIC_API_KEY` — For Claude Haiku screenshot parsing
+- `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-sonnet-4-6 (Ben/Lab chat)
+- `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day)
+
+## Runtime Config System
+
+Model parameters are stored in `data/model-config.json` on GitHub. The backend loads this
+file at startup and caches it for 5 minutes. The Lab writes updates via the GitHub Contents API.
+
+- **No redeploy needed** to tune parameters — changes take effect within 5 minutes
+- **Fallback to defaults** if GitHub is unreachable — app never breaks
+- Use `_cfg("dot.path", default)` helper anywhere in `api/index.py` to read config
+- `/api/refresh` also clears the config cache for immediate effect
+
+## Ben (Lab) Lock System
+
+- **Locked** 5 minutes before first game tip-off (slate is in progress)
+- **Unlocked** when ALL games on today's slate reach "Final" status on ESPN
+- During lock: shows read-only config changelog, estimated unlock time
+- During unlock: full chat + backtest + config update capabilities
 
 ## Lock System
 
