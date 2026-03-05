@@ -1026,8 +1026,12 @@ async def get_slate():
 
     cached = _cg("slate_v5")
     if cached:
-        cached["locked"] = locked
-        return cached
+        # Discard cached result if it has empty lineups but we have draftable games.
+        # This clears stale cache written before the roster-fix was deployed.
+        has_players = cached.get("lineups", {}).get("chalk") or cached.get("lineups", {}).get("upside")
+        if has_players or not draftable_games:
+            cached["locked"] = locked
+            return cached
 
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
