@@ -86,29 +86,29 @@
 
     /* ── HEADER ── */
     header {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0;
       border-bottom: 1px solid var(--border);
       margin-bottom: 0;
     }
 
     .logo {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.5rem; font-weight: 900; letter-spacing: 0.04em;
+      font-size: 1.15rem; font-weight: 900; letter-spacing: 0.04em;
       text-transform: uppercase;
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 8px;
       flex-shrink: 0;
     }
     .logo-icon {
-      width: 32px; height: 32px; border-radius: 8px;
+      width: 28px; height: 28px; border-radius: 7px;
       background: var(--chalk);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1rem;
-      box-shadow: 0 0 16px var(--chalk-glow);
+      font-size: 0.85rem;
+      box-shadow: 0 0 12px var(--chalk-glow);
     }
     .logo-sub {
-      font-size: 0.6rem; font-weight: 700; color: var(--muted);
-      letter-spacing: 0.15em; display: block; margin-top: 1px;
+      font-size: 0.55rem; font-weight: 700; color: var(--muted);
+      letter-spacing: 0.14em; display: block; margin-top: 1px;
     }
 
     /* ── TOP TAB NAVIGATION — Segmented Control ── */
@@ -158,11 +158,12 @@
     .tab-btn:hover { color: rgba(255,255,255,0.55); }
     .tab-btn.active { color: #fff; }
     .tab-btn .tab-dot {
-      display: inline-block; width: 4px; height: 4px; border-radius: 50%;
-      background: var(--green); margin-left: 2px; flex-shrink: 0;
+      position: absolute; top: 5px; right: 6px;
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--green);
       opacity: 0; transition: opacity 0.3s;
     }
-    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.85); }
+    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.7); }
     .tab-btn .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
@@ -1187,13 +1188,43 @@
 // ════════════════════════════════════════════════════════════════════
 // CONSTANTS — grep: TEAM_COLORS, team colors, accent bar, tcolor
 // ════════════════════════════════════════════════════════════════════
+// grep: TEAM_COLORS — ESPN abbreviations used by the backend (WSH not WAS, UTAH not UTA)
 const TEAM_COLORS = {
-  ATL:"#e03a3e",BOS:"#00A550",BKN:"#b0b0b0",CHA:"#00b4cc",CHI:"#ce1141",
-  CLE:"#FDBB30",DAL:"#00538c",DEN:"#fdb927",DET:"#c8102E",GSW:"#FFC72C",
-  HOU:"#ce1141",IND:"#fdbb30",LAC:"#c8102E",LAL:"#fdb927",MEM:"#6b8fc0",
-  MIA:"#F9A01B",MIL:"#3ECF7E",MIN:"#78BE20",NOP:"#C8A96A",NYK:"#f58426",
-  OKC:"#ef8d2f",ORL:"#0077c0",PHI:"#006bb6",PHX:"#e56020",POR:"#E03A3E",
-  SAC:"#7b4db5",SAS:"#c4ced4",TOR:"#ce1141",UTA:"#f9a01b",WAS:"#E31837"
+  ATL:"#E03A3E",  // Hawks red
+  BOS:"#00A550",  // Celtics green
+  BKN:"#B8B8B8",  // Nets silver
+  CHA:"#00B4CC",  // Hornets teal
+  CHI:"#CE1141",  // Bulls crimson
+  CLE:"#FDBB30",  // Cavs gold
+  DAL:"#00538C",  // Mavs royal blue
+  DEN:"#FDB927",  // Nuggets gold
+  DET:"#0C6DC4",  // Pistons motor-city blue (distinct from CHI/LAC red)
+  GS:"#FFC72C",   // Warriors gold (ESPN alt abbr)
+  GSW:"#FFC72C",  // Warriors gold
+  HOU:"#FF3A5C",  // Rockets bright red (distinct from CHI crimson)
+  IND:"#FFC843",  // Pacers yellow-gold (lighter than CLE/DEN)
+  LAC:"#C8102E",  // Clippers red
+  LAL:"#FDB927",  // Lakers gold
+  MEM:"#6B8FC0",  // Grizzlies slate blue
+  MIA:"#F9A01B",  // Heat gold-orange
+  MIL:"#3ECF7E",  // Bucks bright green
+  MIN:"#78BE20",  // Wolves lime green
+  NO:"#C8A96A",   // Pelicans gold (ESPN alt abbr)
+  NOP:"#C8A96A",  // Pelicans gold
+  NYK:"#F58426",  // Knicks orange
+  OKC:"#EF8D2F",  // Thunder warm orange
+  ORL:"#0077C0",  // Magic blue
+  PHI:"#006BB6",  // 76ers blue
+  PHX:"#E56020",  // Suns burnt orange
+  POR:"#CB2025",  // Blazers deep red (distinct from ATL bright red)
+  SA:"#C4CED4",   // Spurs silver (ESPN alt abbr)
+  SAC:"#7B4DB5",  // Kings purple
+  SAS:"#C4CED4",  // Spurs silver
+  TOR:"#A8002C",  // Raptors dark wine red (distinct from CHI)
+  UTA:"#F9A01B",  // Jazz gold (fallback key)
+  UTAH:"#F9A01B", // Jazz gold — ESPN returns UTAH not UTA
+  WAS:"#E31837",  // Wizards red (fallback key)
+  WSH:"#E31837",  // Wizards red — ESPN returns WSH not WAS
 };
 
 // ════════════════════════════════════════════════════════════════════
