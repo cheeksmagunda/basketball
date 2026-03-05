@@ -185,6 +185,7 @@ def _cfg(path, default=None):
     return val
 
 AI_MODEL = None
+AI_FEATURES = None  # Feature list saved alongside model to verify alignment
 for _p in [
     Path(__file__).parent.parent / "lgbm_model.pkl",
     Path(__file__).parent / "lgbm_model.pkl",
@@ -193,7 +194,14 @@ for _p in [
     if _p.exists():
         try:
             with open(_p, "rb") as f:
-                AI_MODEL = pickle.load(f)
+                _bundle = pickle.load(f)
+            # Support both new bundle format {"model":..,"features":..} and legacy bare model
+            if isinstance(_bundle, dict) and "model" in _bundle:
+                AI_MODEL    = _bundle["model"]
+                AI_FEATURES = _bundle.get("features")
+            else:
+                AI_MODEL    = _bundle   # legacy bare model (4-feature)
+                AI_FEATURES = None
             break
         except: pass
 
@@ -731,6 +739,22 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     star_players = cb.get("star_players", [])
     is_star = bool(player_name and any(_norm_last(s) == _norm_last(player_name) for s in star_players))
 
+    # Log-formula path: card_boost ≈ 3.2 - 0.45 * log10(predicted_drafts)
+    # Verified against March 3 data. Activated via config once calibrated (50+ actuals).
+    # Parameters: log_a (intercept), log_b (slope), log_ownership_scalar (PPG→drafts)
+    if cb.get("log_formula_active", False):
+        log_a      = cb.get("log_a", 3.2)
+        log_b      = cb.get("log_b", 0.45)
+        own_scalar = cb.get("log_ownership_scalar", 300.0)
+        # Ownership proxy: PPG * minutes-weight * market/star factor
+        hype_factor = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
+        if team_abbr in big_markets or is_star:
+            hype_factor *= bm_mult
+        predicted_drafts = max(1, own_scalar * hype_factor)
+        boost = log_a - log_b * np.log10(predicted_drafts)
+        return round(min(max(boost, floor_val), ceiling), 1)
+
+    # Exponential heuristic (default until log formula is calibrated with actuals)
     hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
     if team_abbr in big_markets or is_star:
         hype *= bm_mult
@@ -900,19 +924,36 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         decline_factor = recent_min / season_min
         heuristic *= decline_factor
 
-    # AI blend — use spread-derived opponent quality instead of hardcoded 112.0
+    # AI blend — 70% LightGBM, 30% heuristic
     base = heuristic
     if AI_MODEL is not None:
         try:
             usage = min(max(pts / max(avg_min, 1) * 0.8, 0.9), 1.5)
-            # Derive opponent defensive quality from spread and side
-            # Negative spread = home favored → away faces tougher D
             sign = 1.0 if side == "away" else -1.0
             opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
-            features = np.array([[avg_min, stats.get("season_pts", pts), usage, opp_def_rating]])
-            ai_pred = AI_MODEL.predict(features)[0]
+
+            # Feature vector — must match train_lgbm.py feature order exactly.
+            # Values not available from ESPN at inference time use neutral defaults.
+            season_pts_   = stats.get("season_pts", pts)
+            ast_rate_     = ast / max(avg_min, 1)
+            def_rate_     = (stl + blk) / max(avg_min, 1)
+            pts_per_min_  = pts / max(avg_min, 1)
+            home_away_    = 1.0 if side == "home" else 0.0
+            rest_days_    = 2.0   # typical NBA schedule; not in ESPN splits
+            recent_3g_    = stats.get("recent_pts", pts) / max(stats.get("season_pts", pts), 1)
+            recent_3g_    = float(np.clip(recent_3g_, 0.5, 2.0))
+            games_played_ = 40.0  # mid-season default; not in ESPN splits
+
+            feat_vec = [avg_min, season_pts_, usage, opp_def_rating,
+                        home_away_, ast_rate_, def_rate_, pts_per_min_,
+                        rest_days_, recent_3g_, games_played_]
+
+            # If the saved model has a known feature list, verify length matches
+            if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
+                raise ValueError(f"Feature mismatch: model expects {len(AI_FEATURES)}, got {len(feat_vec)}")
+
+            ai_pred = AI_MODEL.predict(np.array([feat_vec]))[0]
             # Blend: LightGBM 70%, heuristic 30% — direct blend, no normalization
-            # (Previous ai_norm step was self-referential: ai_pred*(h/ai_pred) = h)
             base = (ai_pred * 0.7) + (heuristic * 0.3)
         except: pass
 
@@ -1436,6 +1477,64 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
         return JSONResponse({"error": f"Screenshot parsing failed: {str(e)}"}, status_code=500)
 
 
+def _compute_audit(date_str):
+    """Compare predictions vs actuals for a date. Returns audit dict or None if no data."""
+    pred_csv, _ = _github_get_file(f"data/predictions/{date_str}.csv")
+    act_csv,  _ = _github_get_file(f"data/actuals/{date_str}.csv")
+    if not pred_csv or not act_csv:
+        return None
+
+    preds   = _parse_csv(pred_csv, PRED_FIELDS)
+    actuals = _parse_csv(act_csv, ACT_FIELDS)
+
+    act_map = {r["player_name"].lower(): r for r in actuals}
+
+    errors, dir_hits, misses = [], [], []
+    for row in preds:
+        pname    = row.get("player_name", "").lower()
+        pred_rs  = _safe_float(row.get("predicted_rs"))
+        if pname not in act_map or pred_rs <= 0:
+            continue
+        a        = act_map[pname]
+        actual_rs = _safe_float(a.get("actual_rs"))
+        if actual_rs <= 0:
+            continue
+        err = actual_rs - pred_rs
+        errors.append(abs(err))
+        dir_hits.append(1 if (err >= 0) == (pred_rs >= 3.0) else 0)  # directional: above/below avg
+        misses.append({
+            "player":       row["player_name"],
+            "team":         row.get("team", ""),
+            "predicted_rs": round(pred_rs, 2),
+            "actual_rs":    round(actual_rs, 2),
+            "error":        round(err, 2),
+            "drafts":       a.get("drafts", ""),
+            "actual_card_boost": a.get("actual_card_boost", ""),
+        })
+
+    if not errors:
+        return None
+
+    misses.sort(key=lambda x: abs(x["error"]), reverse=True)
+    mae = round(sum(errors) / len(errors), 3)
+    dir_acc = round(sum(dir_hits) / len(dir_hits), 3) if dir_hits else None
+
+    # Over- vs under-projection breakdown
+    over  = [e for e in misses if e["error"] < 0]
+    under = [e for e in misses if e["error"] > 0]
+
+    return {
+        "date":               date_str,
+        "players_compared":   len(errors),
+        "mae":                mae,
+        "directional_accuracy": dir_acc,
+        "over_projected":     len(over),
+        "under_projected":    len(under),
+        "biggest_misses":     misses[:8],
+        "generated_at":       datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.post("/api/save-actuals")
 async def save_actuals(payload: dict = Body(...)):
     """Save confirmed actuals to GitHub as CSV."""
@@ -1466,7 +1565,15 @@ async def save_actuals(payload: dict = Body(...)):
     result = _github_write_file(path, csv_content, f"actuals for {date_str}")
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
-    return {"status": "saved", "path": path, "rows": len(rows)}
+
+    # Auto-generate audit JSON — compare actuals against predictions for same date.
+    # Saved to data/audit/{date}.json so Ben always has fresh accuracy data.
+    audit = _compute_audit(date_str)
+    if audit:
+        audit_path = f"data/audit/{date_str}.json"
+        _github_write_file(audit_path, json.dumps(audit, indent=2), f"audit for {date_str}")
+
+    return {"status": "saved", "path": path, "rows": len(rows), "audit": audit}
 
 
 def _parse_csv(content, header_fields):
@@ -1555,6 +1662,22 @@ async def log_get(date: str = Query(None)):
         "scopes": scopes,
         "actuals": actuals,
     }
+
+
+@app.get("/api/audit/get")
+async def audit_get(date: str = Query(None)):
+    """Return pre-computed audit JSON for a date (or compute live if missing)."""
+    date_str = date or _et_date().isoformat()
+    # Try cached audit first
+    cached_json, _ = _github_get_file(f"data/audit/{date_str}.json")
+    if cached_json:
+        try:
+            return json.loads(cached_json)
+        except Exception:
+            pass
+    # Fall back to live computation
+    audit = _compute_audit(date_str)
+    return audit or {"error": "No paired prediction+actuals data for this date"}
 
 
 @app.post("/api/hindsight")
@@ -1924,9 +2047,9 @@ async def lab_status():
 @app.get("/api/lab/briefing")
 async def lab_briefing():
     """Analyze recent prediction accuracy and return structured briefing for the Lab."""
-    pred_items  = _github_list_dir("data/predictions")
-    act_items   = _github_list_dir("data/actuals")
-    act_dates   = {i["name"].replace(".csv","") for i in act_items if i["name"].endswith(".csv")}
+    pred_items = _github_list_dir("data/predictions")
+    act_items  = _github_list_dir("data/actuals")
+    act_dates  = {i["name"].replace(".csv","") for i in act_items if i["name"].endswith(".csv")}
 
     # Find dates with both predictions and actuals
     paired = []
@@ -1937,56 +2060,50 @@ async def lab_briefing():
         if d in act_dates:
             paired.append(d)
 
-    # Use most recent paired date for latest-slate analysis
+    # Gather audits — use pre-computed JSON when cached, else compute live
+    audits = []
+    for d in paired[:10]:
+        cached_json, _ = _github_get_file(f"data/audit/{d}.json")
+        if cached_json:
+            try:
+                audits.append(json.loads(cached_json))
+                continue
+            except Exception:
+                pass
+        a = _compute_audit(d)
+        if a:
+            audits.append(a)
+
     latest_slate = None
     rolling_errors = []
-
-    for d in paired[:10]:  # Max 10 slates
-        pred_csv, _ = _github_get_file(f"data/predictions/{d}.csv")
-        act_csv, _  = _github_get_file(f"data/actuals/{d}.csv")
-        if not pred_csv or not act_csv: continue
-
-        preds   = _parse_csv(pred_csv, PRED_FIELDS)
-        actuals = _parse_csv(act_csv, ACT_FIELDS)
-
-        act_map = {r["player_name"].lower(): _safe_float(r.get("actual_rs")) for r in actuals}
-
-        slate_errors = []
-        misses = []
-        for row in preds:
-            pname = row.get("player_name","").lower()
-            pred_rs = _safe_float(row.get("predicted_rs"))
-            if pname in act_map and pred_rs > 0:
-                actual_rs = act_map[pname]
-                err = abs(pred_rs - actual_rs)
-                slate_errors.append(err)
-                rolling_errors.append(err)
-                misses.append({"player": row["player_name"], "predicted_rs": pred_rs,
-                               "actual_rs": actual_rs, "error": round(actual_rs - pred_rs, 2)})
-
-        if not slate_errors: continue
-
-        mae = round(sum(slate_errors) / len(slate_errors), 2)
-        misses.sort(key=lambda x: abs(x["error"]), reverse=True)
-
+    for a in audits:
+        rolling_errors.extend([a["mae"]] * a.get("players_compared", 1))
         if latest_slate is None:
             latest_slate = {
-                "date": d,
-                "players_predicted": len(preds),
-                "players_with_actuals": len(slate_errors),
-                "mean_absolute_error": mae,
-                "biggest_misses": misses[:5],
+                "date":                  a["date"],
+                "players_with_actuals":  a["players_compared"],
+                "mean_absolute_error":   a["mae"],
+                "directional_accuracy":  a.get("directional_accuracy"),
+                "over_projected":        a.get("over_projected", 0),
+                "under_projected":       a.get("under_projected", 0),
+                "biggest_misses":        a.get("biggest_misses", [])[:5],
             }
 
     overall_mae = round(sum(rolling_errors) / len(rolling_errors), 2) if rolling_errors else None
     cfg = _load_config()
 
-    # Simple pattern detection: check if errors correlate with game script tier
+    # Pattern detection
     patterns = []
     if latest_slate and latest_slate["mean_absolute_error"] > 2.5:
         patterns.append({
             "type": "high_error",
-            "description": f"MAE {latest_slate['mean_absolute_error']} above 2.5 threshold — model may be over-projecting",
+            "description": f"MAE {latest_slate['mean_absolute_error']} above 2.5 — model may be over-projecting",
+            "slates_observed": 1,
+        })
+    if latest_slate and latest_slate.get("over_projected", 0) > latest_slate.get("under_projected", 0) * 1.5:
+        patterns.append({
+            "type": "systematic_over_projection",
+            "description": f"Over-projecting {latest_slate['over_projected']} vs under-projecting {latest_slate['under_projected']} players — scores running lower than model expects",
             "slates_observed": 1,
         })
 

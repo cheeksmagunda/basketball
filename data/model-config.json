@@ -10,7 +10,11 @@
     "scalar": 3.4,
     "big_market_multiplier": 1.5,
     "big_market_teams": ["LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN", "LAC", "CHI"],
-    "star_players": ["Luka Doncic", "Victor Wembanyama", "Giannis Antetokounmpo", "Jayson Tatum", "Shai Gilgeous-Alexander", "Nikola Jokic", "Anthony Edwards", "LeBron James", "Stephen Curry", "Kevin Durant", "Damian Lillard", "Trae Young", "Devin Booker", "Joel Embiid", "Cade Cunningham", "Paolo Banchero", "Zion Williamson", "Karl-Anthony Towns", "Donovan Mitchell", "De'Aaron Fox"]
+    "star_players": ["Luka Doncic", "Victor Wembanyama", "Giannis Antetokounmpo", "Jayson Tatum", "Shai Gilgeous-Alexander", "Nikola Jokic", "Anthony Edwards", "LeBron James", "Stephen Curry", "Kevin Durant", "Damian Lillard", "Trae Young", "Devin Booker", "Joel Embiid", "Cade Cunningham", "Paolo Banchero", "Zion Williamson", "Karl-Anthony Towns", "Donovan Mitchell", "De'Aaron Fox"],
+    "log_formula_active": false,
+    "log_a": 3.2,
+    "log_b": 0.45,
+    "log_ownership_scalar": 300.0
   },
   "game_script": {
     "defensive_grind_ceiling": 220,
