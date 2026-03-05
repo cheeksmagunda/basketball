@@ -2256,6 +2256,7 @@ const LAB = {
   briefing: null,     // latest briefing
   config: null,       // current config
   lineData: null,     // today's Line of the Day
+  slateData: null,    // today's slate projections
   initialized: false,
   initAt: 0,          // timestamp of last init (ms)
 };
@@ -2321,16 +2322,18 @@ function showLabLocked(status) {
 async function showLabUnlocked(status) {
   document.getElementById('labUnlocked').style.display = 'block';
 
-  // Load briefing + config + line data in parallel (silently)
-  const [briefingRes, configRes, lineRes] = await Promise.allSettled([
+  // Load briefing + config + line data + slate in parallel (silently)
+  const [briefingRes, configRes, lineRes, slateRes] = await Promise.allSettled([
     fetch('/api/lab/briefing').then(r => r.json()),
     fetch('/api/lab/config-history').then(r => r.json()),
     fetch('/api/line-of-the-day').then(r => r.json()),
+    fetch('/api/slate').then(r => r.json()),
   ]);
 
   if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
   if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
   if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
+  if (slateRes.status === 'fulfilled')    LAB.slateData = slateRes.value;
 
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
@@ -2351,8 +2354,40 @@ Narrative: ${p.narrative || 'N/A'}`;
       })()
     : 'Line data unavailable.';
 
+  const slateStr = (() => {
+    const s = LAB.slateData;
+    if (!s || !s.lineups) return 'Slate not loaded yet.';
+    const chalk  = s.lineups.chalk  || [];
+    const upside = s.lineups.upside || [];
+    const games  = (s.games || [])
+      .filter(g => !g.completed)
+      .map(g => `  ${g.away?.abbr || '?'} @ ${g.home?.abbr || '?'}${g.spread != null ? ` (spread ${g.spread > 0 ? '+' : ''}${g.spread}, O/U ${g.total})` : ''}`)
+      .join('\n');
+
+    const fmtPlayer = (p, i) => {
+      const stats = [
+        p.pts  != null ? `${parseFloat(p.pts).toFixed(1)}pts` : null,
+        p.reb  != null ? `${parseFloat(p.reb).toFixed(1)}reb` : null,
+        p.ast  != null ? `${parseFloat(p.ast).toFixed(1)}ast` : null,
+      ].filter(Boolean).join('/');
+      const boost = p.est_mult != null ? ` | boost ${parseFloat(p.est_mult).toFixed(2)}x` : '';
+      const mins  = p.predMin  != null ? ` | ${parseFloat(p.predMin).toFixed(0)}min` : '';
+      return `  ${i+1}. ${p.name} (${p.team}, ${p.pos}) — RS: ${parseFloat(p.rating||0).toFixed(1)}${stats ? `, ${stats}` : ''}${mins}${boost}`;
+    };
+
+    return `Date: ${s.date}
+Games:
+${games || '  (none)'}
+
+CHALK LINEUP (Starting 5 — highest projected value):
+${chalk.map(fmtPlayer).join('\n') || '  (none)'}
+
+MOONSHOT LINEUP (High-upside plays):
+${upside.map(fmtPlayer).join('\n') || '  (none)'}`;
+  })();
+
   return `You are Ben — the Oracle's full-service NBA analytics assistant.
-You know everything about today's slate: lineup projections, the Line of the Day prop pick, the model's config parameters, and historical prediction accuracy.
+You have full context on today's slate: games, player projections, lineup picks, Line of the Day, model config, and historical accuracy.
 
 YOUR CAPABILITIES:
 - Answer any question about today's games, players, or picks
@@ -2369,6 +2404,9 @@ ACTIONS YOU CAN REQUEST (use JSON in <action>...</action> tags):
 
 WHAT YOU CANNOT DO:
 - Modify application code, API routes, or frontend (direct user to Claude Code for that)
+
+TODAY'S SLATE:
+${slateStr}
 
 TODAY'S LINE OF THE DAY:
 ${lineStr}
