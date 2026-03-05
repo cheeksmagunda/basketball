@@ -792,6 +792,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "est_mult": card_boost,
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
+        "_cascade_bonus": round(cascade_bonus, 1),
+        # Recent vs season stats — used by line engine for trend detection
+        "season_pts": round(stats.get("season_pts", pts), 1),
+        "recent_pts": round(stats.get("recent_pts", pts), 1),
+        "season_stl": round(stats.get("recent_stl", stl), 1),  # note: blended data
+        "recent_stl": round(stats.get("recent_stl", stl), 1),
+        "recent_blk": round(stats.get("recent_blk", blk), 1),
         "injury_status": pinfo.get("injury_status", ""),
     }
 

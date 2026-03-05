@@ -248,8 +248,14 @@ def _detect_signals(player_proj, game, market, prop_meta):
         gw = _game_script_weights(total, spread)
         stat_weight = gw.get(stat_key, 1.0)
         if (direction == "over" and stat_weight >= 1.10) or (direction == "under" and stat_weight <= 0.90):
-            from api.index import _game_script_label
-            label = _game_script_label(total) if _game_script_label else "current environment"
+            try:
+                try:
+                    from api.index import _game_script_label
+                except ImportError:
+                    from .index import _game_script_label
+                label = _game_script_label(total)
+            except Exception:
+                label = "current environment"
             signals.append({"type": "game_script", "detail": f"{label} (O/U {total}) favors {stat_key} ({stat_weight:.2f}x)"})
             score += 20
 

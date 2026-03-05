@@ -110,31 +110,53 @@
       letter-spacing: 0.15em; display: block; margin-top: 1px;
     }
 
-    /* ── TOP TAB NAVIGATION ── */
+    /* ── TOP TAB NAVIGATION — Segmented Control ── */
     .tab-nav {
-      display: flex; gap: 2px;
-      padding: 10px 0 0;
-      margin-bottom: 24px;
-      border-bottom: 1px solid var(--border);
+      position: relative;
+      display: flex;
+      padding: 14px 0 20px;
+    }
+    .tab-nav-track {
+      position: relative;
+      display: flex;
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 3px;
+      min-height: 44px;
+    }
+    /* Sliding pill */
+    .tab-nav-pill {
+      position: absolute;
+      top: 3px; bottom: 3px;
+      border-radius: 9px;
+      background: var(--chalk);
+      box-shadow: 0 0 18px var(--chalk-glow);
+      transition: left 0.25s cubic-bezier(0.34,1.56,0.64,1), width 0.25s cubic-bezier(0.34,1.56,0.64,1);
+      pointer-events: none;
+      z-index: 0;
     }
     .tab-btn {
+      position: relative; z-index: 1;
+      flex: 1;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em;
+      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 8px 16px 10px;
       border: none; background: transparent; color: var(--muted);
-      cursor: pointer; transition: all 0.2s;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-      border-radius: 4px 4px 0 0;
+      cursor: pointer; transition: color 0.2s;
+      border-radius: 9px;
+      min-height: 38px;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
     }
     .tab-btn:hover { color: var(--text-dim); }
-    .tab-btn.active { color: var(--chalk); border-bottom-color: var(--chalk); }
+    .tab-btn.active { color: #fff; }
     .tab-btn .tab-dot {
       display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-      background: var(--green); margin-left: 5px; vertical-align: middle;
+      background: var(--green); margin-left: 3px; flex-shrink: 0;
       opacity: 0; transition: opacity 0.3s;
     }
+    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.9); }
     .tab-btn .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
@@ -834,12 +856,15 @@
     <div id="predSavedChip" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--green);padding:4px 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px"></div>
   </header>
 
-  <!-- ══ TOP TAB NAVIGATION ══ -->
+  <!-- ══ TOP TAB NAVIGATION — Segmented Control ══ -->
   <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
-    <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log<span class="tab-dot" id="logTabDot"></span></button>
-    <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
-    <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Lab</button>
+    <div class="tab-nav-track" id="tabTrack">
+      <div class="tab-nav-pill" id="tabPill"></div>
+      <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
+      <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
+      <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
+      <button class="tab-btn" data-tab="log" onclick="switchTab('log')">History<span class="tab-dot" id="logTabDot"></span></button>
+    </div>
   </nav>
 
   <!-- ══ TAB: PREDICTIONS ══ -->
@@ -947,6 +972,7 @@
   </div>
 
   <!-- ══ TAB: LINE ══ -->
+  <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
   <div id="tab-line" class="tab-page">
     <div class="section-label" style="margin-top:20px">Line of the Day</div>
     <div id="lineContent">
@@ -975,7 +1001,7 @@
     <div id="labLocked" style="display:none">
       <div class="empty-state" style="margin-top:32px">
         <span class="icon" style="font-size:2rem">🔒</span>
-        <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Lab Locked</h3>
+        <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Ben is Locked</h3>
         <p id="labLockedReason" style="color:var(--text-dim)">Slate in progress</p>
         <p id="labLockedUnlock" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
       </div>
@@ -985,7 +1011,7 @@
     <div id="labUnlocked" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 10px">
         <div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Model Lab</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Ben — Model Lab</div>
           <div id="labConfigVersion" style="font-size:0.68rem;color:var(--muted);margin-top:2px"></div>
         </div>
         <div style="display:flex;gap:8px">
@@ -1049,14 +1075,59 @@ const LOG = {
   hindsightLineup: null,
 };
 
-// ── TAB SWITCHING ──
+// ── TAB SWITCHING — Segmented Control ──
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+  movePill(tab);
   if (tab === 'log' && !LOG.selectedDate) initLogPage();
   if (tab === 'line') initLinePage();
   if (tab === 'lab')  initLabPage();
 }
+
+function movePill(tab) {
+  const activeBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  const pill      = document.getElementById('tabPill');
+  const track     = document.getElementById('tabTrack');
+  if (!activeBtn || !pill || !track) return;
+  const trackRect = track.getBoundingClientRect();
+  const btnRect   = activeBtn.getBoundingClientRect();
+  pill.style.left  = (btnRect.left - trackRect.left - 3) + 'px';
+  pill.style.width = btnRect.width + 'px';
+}
+
+// Pill accent color per tab
+const TAB_ACCENT = {
+  predictions: { color: '#4f8ef7', glow: 'rgba(79,142,247,0.25)' },
+  line:        { color: '#d4a640', glow: 'rgba(212,166,64,0.22)' },
+  lab:         { color: '#14b8a6', glow: 'rgba(20,184,166,0.22)' },
+  log:         { color: '#7ba4c8', glow: 'rgba(123,164,200,0.20)' },
+};
+
+function setPillAccent(tab) {
+  const a = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
+  const pill = document.getElementById('tabPill');
+  if (pill) {
+    pill.style.background = a.color;
+    pill.style.boxShadow  = `0 0 18px ${a.glow}`;
+  }
+}
+
+// Override switchTab to also change accent color
+const _switchTabOrig = switchTab;
+function switchTab(tab) {
+  _switchTabOrig(tab);
+  setPillAccent(tab);
+}
+
+// Init pill position after DOM is ready
+window.addEventListener('load', () => {
+  // Small delay to let layout settle
+  setTimeout(() => {
+    movePill('predictions');
+    setPillAccent('predictions');
+  }, 50);
+});
 
 // ── INIT ──
 (async function init() {
@@ -1944,7 +2015,8 @@ function buildLabSystemPrompt() {
   const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
 
-  return `You are the model tuning assistant for an NBA draft optimizer called The Oracle.
+  return `You are Ben, the model tuning assistant for an NBA draft optimizer called The Oracle.
+Your name is Ben. When users address you or refer to the assistant, you are Ben.
 
 YOUR ROLE:
 - Analyze prediction accuracy and suggest parameter improvements
@@ -2077,7 +2149,7 @@ async function executeLabAction(action) {
     const msgEl = document.createElement('div');
     msgEl.className = 'lab-msg assistant';
     msgEl.innerHTML = `
-      <div class="lab-msg-label">Claude</div>
+      <div class="lab-msg-label">Ben</div>
       <div>Ready to apply: <b>${action.description || JSON.stringify(action.changes)}</b></div>
       <div style="margin-top:10px;display:flex;gap:8px">
         <button onclick="applyLabConfig(${JSON.stringify(action.changes).replace(/"/g,'&quot;')}, '${(action.description||'').replace(/'/g,'')}', this.parentElement.parentElement)"
@@ -2128,7 +2200,7 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
     const formatted = content
       .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
       .replace(/\n/g, '<br>');
-    el.innerHTML = `<div class="lab-msg-label">Claude</div><div>${formatted}</div>`;
+    el.innerHTML = `<div class="lab-msg-label">Ben</div><div>${formatted}</div>`;
   } else {
     el.textContent = content;
   }
