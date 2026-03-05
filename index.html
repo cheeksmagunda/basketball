@@ -1539,6 +1539,7 @@ function openLogDrilldown(scope, gameLabel) {
 
   document.getElementById('logGridView').style.display = 'none';
   document.getElementById('logDrillView').style.display = 'block';
+  window.scrollTo({top: 0, behavior: 'smooth'});
 
   const d = new Date((LOG.selectedDate || '') + 'T12:00:00');
   const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
