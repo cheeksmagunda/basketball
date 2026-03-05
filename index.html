@@ -147,20 +147,23 @@
       position: relative; z-index: 1;
       flex: 1;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em;
+      font-size: 0.78rem; font-weight: 800; letter-spacing: 0.07em;
       text-transform: uppercase;
       border: none; background: transparent; color: rgba(255,255,255,0.32);
       cursor: pointer; transition: color 0.18s;
       border-radius: 8px;
       min-height: 32px;
-      display: flex; align-items: center; justify-content: center; gap: 4px;
+      display: flex; align-items: center; justify-content: center; gap: 3px;
     }
     .tab-btn:hover { color: rgba(255,255,255,0.55); }
     .tab-btn.active { color: #fff; }
+    .tab-icon { font-size: 0.65rem; opacity: 0.7; flex-shrink: 0; }
+    .tab-btn.active .tab-icon { opacity: 1; }
     .tab-btn .tab-dot {
-      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-      background: rgba(255,255,255,0.4); margin-left: 3px; vertical-align: middle;
-      opacity: 0; transition: opacity 0.3s; flex-shrink: 0;
+      position: absolute; top: 5px; right: 7px;
+      width: 5px; height: 5px; border-radius: 50%;
+      background: rgba(255,255,255,0.4);
+      opacity: 0; transition: opacity 0.3s;
     }
     .tab-btn.active .tab-dot { opacity: 0; }
     .tab-btn:not(.active) .tab-dot.visible { opacity: 1; }
@@ -999,10 +1002,10 @@
     <nav class="tab-nav">
       <div class="tab-nav-track" id="tabTrack">
         <div class="tab-nav-pill" id="tabPill"></div>
-        <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
-        <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
-        <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
-        <button class="tab-btn" data-tab="log" onclick="switchTab('log')">History<span class="tab-dot" id="logTabDot"></span></button>
+        <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')"><span class="tab-icon">◈</span>Predict</button>
+        <button class="tab-btn" data-tab="line" onclick="switchTab('line')"><span class="tab-icon">↑↓</span>Line</button>
+        <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')"><span class="tab-icon">◉</span>Ben</button>
+        <button class="tab-btn" data-tab="log" onclick="switchTab('log')"><span class="tab-icon">◷</span>History<span class="tab-dot" id="logTabDot"></span></button>
       </div>
     </nav>
   </header>
@@ -2159,10 +2162,12 @@ function renderLineSummary(summary) {
 }
 
 function renderLineHistory(hist) {
-  const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
-  const streak  = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
+  const streak = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
 
-  let html = `
+  let html = '';
+  if (hist.hit_rate !== null || streak) {
+    const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
+    html += `
     <div style="display:flex;gap:16px;margin-bottom:14px">
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
@@ -2173,6 +2178,7 @@ function renderLineHistory(hist) {
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
       </div>` : ''}
     </div>`;
+  }
 
   hist.picks.slice(0, 10).forEach(p => {
     const result = p.result || 'pending';
@@ -2283,7 +2289,7 @@ function buildLabSystemPrompt() {
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
   const lineStr  = LAB.lineData
     ? (() => {
-        const p = LAB.lineData.primary;
+        const p = LAB.lineData.pick;
         if (!p) return 'No line pick available today.';
         return `Player: ${p.player_name} (${p.team})
 Bet: ${p.direction} ${p.line} ${p.stat_type}
