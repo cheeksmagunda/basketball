@@ -28,45 +28,93 @@ print(f"Total: {len(df)} game logs across {len(SEASONS)} seasons. Engineering fe
 df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'].astype(str).str[:10])
 df = df.sort_values(by=['PLAYER_ID', 'SEASON', 'GAME_DATE'])
 
-# Target Variable: Real Score-aligned formula (boosted defensive stats)
+# ─────────────────────────────────────────────────────────────────────────────
+# TARGET: Real Score-aligned formula (boosted defensive stats)
 # Must match _dfs_score() in api/index.py
+# ─────────────────────────────────────────────────────────────────────────────
 df['actual_base_score'] = (
     df['PTS'] + df['REB'] + (df['AST'] * 1.5) +
     (df['STL'] * 4.5) + (df['BLK'] * 4.0) - (df['TOV'] * 1.2)
 )
 
-# Feature 1 & 2: Season Averages BEFORE the game happened (shift(1))
-# Group by (PLAYER_ID, SEASON) so expanding averages reset at season boundaries
-df['avg_min'] = df.groupby(['PLAYER_ID', 'SEASON'])['MIN'].transform(lambda x: x.expanding().mean().shift(1))
-df['avg_pts'] = df.groupby(['PLAYER_ID', 'SEASON'])['PTS'].transform(lambda x: x.expanding().mean().shift(1))
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURES — all computed as "what was known BEFORE this game" (shift(1))
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Feature 3: Recent Form / Usage Spike (Rolling 5 games before tonight)
-df['recent_min'] = df.groupby(['PLAYER_ID', 'SEASON'])['MIN'].transform(lambda x: x.rolling(5).mean().shift(1))
+g = df.groupby(['PLAYER_ID', 'SEASON'])
 
-# Drop rows without enough history (first 5 games per player per season)
+# Feature 1: Season avg minutes (before this game)
+df['avg_min'] = g['MIN'].transform(lambda x: x.expanding().mean().shift(1))
+
+# Feature 2: Season avg points (before this game)
+df['avg_pts'] = g['PTS'].transform(lambda x: x.expanding().mean().shift(1))
+
+# Feature 3: Recent form — rolling 5-game minutes avg
+df['recent_min'] = g['MIN'].transform(lambda x: x.rolling(5).mean().shift(1))
+
+# Feature 4: Usage trend (recent/season minutes ratio)
 df = df.dropna(subset=['avg_min', 'avg_pts', 'recent_min'])
-
-# Calculate the exact usage_trend multiplier your app uses
 df['usage_trend'] = np.where(df['avg_min'] > 0, df['recent_min'] / df['avg_min'], 1.0)
-df['usage_trend'] = df['usage_trend'].clip(0.90, 1.50) # Cap it
+df['usage_trend'] = df['usage_trend'].clip(0.90, 1.50)
 
-# Feature 4: Opponent Defense Rating
-df['OPP_TEAM'] = df['MATCHUP'].str[-3:].str.strip()
+# Feature 5: Opponent defensive rating — avg points scored against each team
+# (actual points allowed per player, a real measure of defensive permissiveness)
 opp_pts_allowed = df.groupby('OPP_TEAM')['PTS'].mean().to_dict()
 df['opp_def_rating'] = df['OPP_TEAM'].map(opp_pts_allowed)
 
-# ---------------------------------------------------------
-# TRAIN THE MODEL
-# ---------------------------------------------------------
-features = ['avg_min', 'avg_pts', 'usage_trend', 'opp_def_rating']
+# Feature 6: Home/away (home=1, away=0)
+# MATCHUP format: "TEAM vs. OPP" = home, "TEAM @ OPP" = away
+df['home_away'] = df['MATCHUP'].str.contains('vs\.', regex=True).astype(float)
+
+# Feature 7: Assist rate — rolling 5-game AST/MIN (playmaker proxy)
+df['avg_ast'] = g['AST'].transform(lambda x: x.rolling(5).mean().shift(1))
+df['ast_rate'] = np.where(df['recent_min'] > 0, df['avg_ast'] / df['recent_min'], 0.0)
+
+# Feature 8: Defensive rate — rolling 5-game (STL+BLK)/MIN
+df['avg_stl'] = g['STL'].transform(lambda x: x.rolling(5).mean().shift(1))
+df['avg_blk'] = g['BLK'].transform(lambda x: x.rolling(5).mean().shift(1))
+df['def_rate'] = np.where(df['recent_min'] > 0, (df['avg_stl'] + df['avg_blk']) / df['recent_min'], 0.0)
+
+# Feature 9: Points per minute — scoring efficiency
+df['pts_per_min'] = np.where(df['recent_min'] > 0, df['avg_pts'] / df['recent_min'], 0.0)
+
+# Feature 10: Rest days — days since last game (B2B = 1, normal = 2, long rest = 3+)
+df['prev_date'] = g['GAME_DATE'].transform(lambda x: x.shift(1))
+df['rest_days'] = (df['GAME_DATE'] - df['prev_date']).dt.days.fillna(3).clip(1, 7)
+
+# Feature 11: Recent 3-game scoring trend vs 5-game baseline
+df['recent_3g_pts'] = g['PTS'].transform(lambda x: x.rolling(3).mean().shift(1))
+df['recent_5g_pts'] = g['PTS'].transform(lambda x: x.rolling(5).mean().shift(1))
+df['recent_3g_trend'] = np.where(
+    df['recent_5g_pts'] > 0,
+    df['recent_3g_pts'] / df['recent_5g_pts'],
+    1.0
+).clip(0.5, 2.0)
+
+# Feature 12: Games played this season (sample size / reliability proxy)
+df['games_played'] = g.cumcount()  # 0-indexed, represents games BEFORE this one
+
+# Drop rows with NaN in any feature
+features = [
+    'avg_min', 'avg_pts', 'usage_trend', 'opp_def_rating',
+    'home_away', 'ast_rate', 'def_rate', 'pts_per_min',
+    'rest_days', 'recent_3g_trend', 'games_played'
+]
 target = 'actual_base_score'
 
+df = df.dropna(subset=features + [target])
+print(f"After feature engineering: {len(df)} samples with complete features.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRAIN
+# ─────────────────────────────────────────────────────────────────────────────
 X = df[features]
 y = df[target]
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 print(f"2. Training LightGBM on {len(X_train)} samples ({len(SEASONS)} seasons)...")
+print(f"   Features ({len(features)}): {features}")
 model = lgb.LGBMRegressor(
     n_estimators=600,
     learning_rate=0.05,
@@ -76,7 +124,13 @@ model = lgb.LGBMRegressor(
 )
 model.fit(X_train, y_train, eval_set=[(X_test, y_test)])
 
+# Save feature list alongside model so inference can verify alignment
+model_bundle = {"model": model, "features": features}
+
 print("3. Saving AI model to lgbm_model.pkl...")
 with open("lgbm_model.pkl", "wb") as f:
-    pickle.dump(model, f)
+    pickle.dump(model_bundle, f)
 print(f"Done! Model trained on {len(X_train)} samples from seasons: {', '.join(SEASONS)}")
+print(f"Feature importances:")
+for feat, imp in sorted(zip(features, model.feature_importances_), key=lambda x: -x[1]):
+    print(f"  {feat}: {imp}")

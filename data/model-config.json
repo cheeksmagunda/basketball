@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "updated_at": "2026-03-05T12:00:00Z",
   "updated_by": "march4-audit",
   "card_boost": {
@@ -9,7 +9,12 @@
     "base_offset": 0.3,
     "scalar": 3.4,
     "big_market_multiplier": 1.5,
-    "big_market_teams": ["LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN", "LAC", "CHI", "SA"]
+    "big_market_teams": ["LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN", "LAC", "CHI"],
+    "star_players": ["Luka Doncic", "Victor Wembanyama", "Giannis Antetokounmpo", "Jayson Tatum", "Shai Gilgeous-Alexander", "Nikola Jokic", "Anthony Edwards", "LeBron James", "Stephen Curry", "Kevin Durant", "Damian Lillard", "Trae Young", "Devin Booker", "Joel Embiid", "Cade Cunningham", "Paolo Banchero", "Zion Williamson", "Karl-Anthony Towns", "Donovan Mitchell", "De'Aaron Fox"],
+    "log_formula_active": false,
+    "log_a": 3.2,
+    "log_b": 0.45,
+    "log_ownership_scalar": 300.0
   },
   "game_script": {
     "defensive_grind_ceiling": 220,
@@ -33,7 +38,7 @@
     "center_forward_share": 0.30
   },
   "projection": {
-    "min_gate_minutes": 15,
+    "min_gate_minutes": 12,
     "lock_buffer_minutes": 5,
     "season_recent_blend": 0.5,
     "major_role_change_threshold": 0.75,
@@ -53,6 +58,7 @@
   },
   "changelog": [
     {"version": 1, "date": "2026-03-05", "change": "Initial config externalization"},
-    {"version": 2, "date": "2026-03-05", "change": "March 4 audit: raise min_gate 12→15, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"}
+    {"version": 2, "date": "2026-03-05", "change": "March 4 audit: raise min_gate 12→15, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"},
+    {"version": 3, "date": "2026-03-05", "change": "Model improvements: min_gate 15→12 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"}
   ]
 }
