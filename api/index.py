@@ -624,11 +624,12 @@ def _game_script_dfs(stats, total, spread):
 
 
 def _game_script_label(total):
-    """Human-readable game script tier for display."""
-    t = total or DEFAULT_TOTAL
-    if t < 220:   return "Defensive Grind"
-    if t <= 235:  return "Balanced Pace"
-    if t <= 245:  return "Fast-Paced"
+    """Human-readable game script tier for display. Reads ceilings from runtime config."""
+    gs = _cfg("game_script", _CONFIG_DEFAULTS["game_script"])
+    t  = total or DEFAULT_TOTAL
+    if t < gs.get("defensive_grind_ceiling", 220): return "Defensive Grind"
+    if t <= gs.get("balanced_ceiling", 235):        return "Balanced Pace"
+    if t <= gs.get("fast_paced_ceiling", 245):      return "Fast-Paced"
     return "Track Meet"
 
 
