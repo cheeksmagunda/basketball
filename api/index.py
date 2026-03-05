@@ -16,16 +16,12 @@ from dotenv import load_dotenv
 # Real Score Ecosystem modules
 try:
     from api.real_score import real_score_projection, _make_rng
-    from api.asset_optimizer import optimize_lineup, contrarian_score
-    from api.temporal_risk import (
-        lineup_duplication_probability, optimal_lock_time, trav_adjusted_score,
-    )
+    from api.asset_optimizer import optimize_lineup
+    from api.temporal_risk import lineup_duplication_probability, optimal_lock_time, trav_adjusted_score
 except ImportError:
     from .real_score import real_score_projection, _make_rng
-    from .asset_optimizer import optimize_lineup, contrarian_score
-    from .temporal_risk import (
-        lineup_duplication_probability, optimal_lock_time, trav_adjusted_score,
-    )
+    from .asset_optimizer import optimize_lineup
+    from .temporal_risk import lineup_duplication_probability, optimal_lock_time, trav_adjusted_score
 
 load_dotenv()
 app = FastAPI()
@@ -437,26 +433,18 @@ def _cascade_minutes(roster, stats_map):
 # ─────────────────────────────────────────────────────────────────────────────
 # THE CORE MODEL — Optimized for the Real Sports App
 #
-# Total Draft Score = Σ (Real Score × Card Multiplier × Slot Multiplier)
+# ADDITIVE scoring formula: Value = Real Score × (Slot_Mult + Card_Boost)
+#   Jabari Walker: 4.7 RS × (2.0 + 3.0) = 23.5  ← wins
+#   Anthony Edwards: 6.2 RS × (2.0 + 0.3) = 14.3  ← loses
 #
-# Card multipliers are the DOMINANT factor in draft scoring. Yesterday's
-# winners had role players with 4.0-4.6x card multipliers (Legendary +
-# booster) beating superstars who only had 1.0-2.3x (General/Common).
+# Card boost is INVERSELY driven by ownership:
+#   Stars (7k+ drafts) → +0.3x | Role players (<50 drafts) → +2.5-3.0x
 #
-# ADDITIVE formula: Value = Real Score × (Slot_Mult + Card_Boost)
-# Example from actual leaderboard:
-#   Jaylin Williams: 4.1 base × (2.0 + 2.7) = 4.1 × 4.7 = 19.27  ← WINNER
-#   Anthony Edwards: 6.2 base × (2.0 + 0.3) = 6.2 × 2.3 = 14.26  ← loses
+# Real Score proxy: PTS + REB + AST×1.5 + STL×4.5 + BLK×4.0 - TOV×1.2
 #
-# Card boost is INVERSELY driven by draft popularity (ownership).
-# Stars get 7,000+ drafts → +0.3x boost. Role players get <50 drafts → +2.5-3.0x.
-# The _est_card_boost uses a "hype score" (PPG², minutes, market) to predict this.
-#
-# Real Score-aligned formula (proxy for raw production):
-#   PTS + REB + AST×1.5 + STL×4.5 + BLK×4.0 - TOV×1.2
-#
-# STARTING 5 = MILP optimizes Σ rating × (slot + card_boost)
-# MOONSHOT = 5 different players — close-game ceiling × card advantage
+# STARTING 5: MILP optimizes Σ rating × (slot + card_boost)
+# MOONSHOT: same ranking, next 5 players (ranks 6-10) — different exposure,
+#           same methodology. Avoids DNP risks from extreme low-ownership picks.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Big-market / high-profile teams that casual drafters flock to.
@@ -807,84 +795,26 @@ def _run_game(game):
     _cs(cache_key, out)
     return out
 
-CHALK_FLOOR    = 2.8  # Minimum raw rating for Starting 5 — lowered from 3.5
-                      # to allow high-card bench players (Clifford 2.3 RS won)
-MOONSHOT_FLOOR = 3.0  # Floor for Moonshot — lowered from 4.0
-
-def _get_recent_picks(days=3):
-    """Load player names from the last N days of history for anti-repetition."""
-    recent_names = {}
-    if not HISTORY_FILE.exists():
-        return recent_names
-    try:
-        hist = json.loads(HISTORY_FILE.read_text())
-        today = date.today()
-        for entry in reversed(hist):
-            ts = entry.get("timestamp", "")
-            try:
-                entry_date = datetime.fromisoformat(ts).date()
-            except:
-                continue
-            days_ago = (today - entry_date).days
-            if days_ago > days:
-                break
-            for p in entry.get("players", []):
-                name = p.get("name", "")
-                if name and name not in recent_names:
-                    recent_names[name] = days_ago
-    except:
-        pass
-    return recent_names
-
-def _apply_repetition_penalty(projections):
-    """Penalize players picked in recent lineups to force roster turnover.
-
-    Picked yesterday:   0.82x penalty
-    Picked 2 days ago:  0.90x penalty
-    Picked 3 days ago:  0.95x penalty
-
-    This prevents the same 5 guys every day (Ty Jerome, Scotty Pippen problem).
-    Applied to chalk_ev so MILP sees the penalized value.
-    """
-    recent = _get_recent_picks(days=3)
-    if not recent:
-        return
-    penalties = {0: 0.82, 1: 0.82, 2: 0.90, 3: 0.95}
-    for p in projections:
-        name = p.get("name", "")
-        if name in recent:
-            days_ago = recent[name]
-            penalty = penalties.get(days_ago, 0.95)
-            p["chalk_ev"] = round(p["chalk_ev"] * penalty, 2)
-            p["rating"] = round(p["rating"] * penalty, 1)
-            p["_rep_penalty"] = penalty
+CHALK_FLOOR = 2.8  # Minimum raw rating for Starting 5
 
 def _build_lineups(projections):
-    # Anti-repetition: penalize players picked in the last 3 days
-    _apply_repetition_penalty(projections)
-
-    # STARTING 5: MILP-optimized slot assignments using ADDITIVE formula
-    # MILP maximizes: Σ rating_i × (slot_mult_j + card_boost_i)
-    # No team limit — Real Sports has no per-team restriction. If the best
-    # value is 5 players from the same blowout loss, so be it.
-    # March 3: winner gmoneytb had 3 PHI players from a 40-pt blowout loss.
+    # STARTING 5: MILP-optimized for highest chalk_ev = rating × (avg_slot + card_boost)
+    # No team limit — Real Sports has no per-team restriction.
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
 
-    # CONTRARIAN: maximize leverage against the field
+    # MOONSHOT: ranks 6-10 from the same chalk EV ranking.
+    # NOT a separate contrarian algo — just the next-best 5 players.
+    # This avoids picking DNP-risk players with high card boosts but zero production.
+    # Players with real projected RS but lower ownership naturally have high chalk_ev
+    # and will appear here (e.g. Jabari Walker: 4.7 RS × +3.0 boost = 21.6 EV).
     chalk_names = {p["name"] for p in chalk}
-    contrarian_pool = [p for p in projections
-                       if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
-    # Score by contrarian value — card-adjusted ceiling × closeness × momentum
-    # Card boost is already baked into contrarian_score, so zero it for MILP
-    for p in contrarian_pool:
-        p["_contrarian_ev"] = contrarian_score(p)
-        p["_no_boost"] = 0.0
-    upside = optimize_lineup(contrarian_pool, n=5, sort_key="_contrarian_ev",
-                             rating_key="_contrarian_ev",
-                             card_boost_key="_no_boost")
+    moonshot_pool = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    upside = optimize_lineup(moonshot_pool, n=5, sort_key="chalk_ev",
+                             rating_key="rating", card_boost_key="est_mult",
+                             max_per_team=0)
 
     return chalk, upside
 
@@ -898,8 +828,7 @@ def _build_lineups(projections):
 # - Ownership is more concentrated, so contrarian plays matter more
 # ─────────────────────────────────────────────────────────────────────────────
 
-GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
-GAME_MOONSHOT_FLOOR = 4.0  # Filter out low-production players
+GAME_CHALK_FLOOR = 3.5  # Starting 5 floor for single-game
 
 def _apply_game_script(projections, game):
     """Re-score projections using game script weights. Returns new list (deep copies, no mutation)."""
@@ -927,48 +856,20 @@ def _apply_game_script(projections, game):
 def _build_game_lineups(projections, game):
     """Build lineups for a single-game draft with team balance + game script.
 
-    Starting 5: MILP-optimized slot assignments with team balance (min 2 per team).
-                 Maximizes Real Score × slot multiplier. Floor = GAME_CHALK_FLOOR (3.5).
-    Contrarian: High-card-ceiling leverage play targeting Top 10% payout tier.
-                 Enforces negative correlation with Starting 5 (no overlap, opposite
-                 team weighting). Floor = GAME_MOONSHOT_FLOOR (4.0).
+    Starting 5: MILP-optimized with min 2 players per team.
+    Moonshot: Next 5 players by the same chalk_ev ranking (no separate contrarian algo).
     """
     rescored = _apply_game_script(projections, game)
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
 
-    # STARTING 5: MILP-optimized, balanced across both teams
-    # Uses additive formula: rating × (slot_mult + card_boost)
     chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult")
 
-    # CONTRARIAN: leverage play — no overlap with Starting 5
+    # MOONSHOT: next 5 by chalk_ev — same ranking, different players
     chalk_names = {p["name"] for p in chalk}
-    contrarian_pool = [p for p in rescored
-                       if p["name"] not in chalk_names and p["rating"] >= GAME_MOONSHOT_FLOOR]
-
-    # Score by contrarian value with game spread awareness
-    # Card boost is already baked into contrarian_score, so zero it for MILP
-    game_spread = game.get("spread") or 0
-    for p in contrarian_pool:
-        p["_contrarian_ev"] = contrarian_score(p, spread=game_spread)
-        p["_no_boost"] = 0.0
-
-    # Determine opposite team weighting for negative correlation
-    chalk_teams = {}
-    for p in chalk:
-        t = p.get("team", "")
-        chalk_teams[t] = chalk_teams.get(t, 0) + 1
-    # If chalk favors one team, contrarian should favor the other
-    if len(chalk_teams) >= 2:
-        dominant_team = max(chalk_teams, key=chalk_teams.get)
-        for p in contrarian_pool:
-            if p.get("team") != dominant_team:
-                p["_contrarian_ev"] *= 1.25  # Boost opposite team
-
-    upside = optimize_lineup(contrarian_pool, n=5, min_per_team=2,
-                             sort_key="_contrarian_ev",
-                             rating_key="_contrarian_ev",
-                             card_boost_key="_no_boost")
+    moonshot_pool = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    upside = optimize_lineup(moonshot_pool, n=5, min_per_team=2, sort_key="chalk_ev",
+                             rating_key="rating", card_boost_key="est_mult")
 
     return chalk, upside
 
