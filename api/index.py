@@ -985,8 +985,14 @@ async def get_slate():
     if not games:
         return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
 
-    # Check if slate is locked (5 min before earliest game)
-    start_times = [g["startTime"] for g in games if g.get("startTime")]
+    # Only show/project games that are still draftable (not yet past lock window)
+    # ESPN returns all games for the day, including already-completed ones.
+    # At 1 AM EST the completed games from the evening should be invisible;
+    # the upcoming day's games should be shown instead.
+    draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
+
+    # Lock is based on earliest DRAFTABLE game — completed games don't count
+    start_times = [g["startTime"] for g in draftable_games if g.get("startTime")]
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
@@ -1009,9 +1015,6 @@ async def get_slate():
     if cached:
         cached["locked"] = locked
         return cached
-
-    # Only project players from games that haven't started yet
-    draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
