@@ -1116,6 +1116,8 @@ async def parse_screenshot(file: UploadFile = File(...)):
         return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
 
     image_bytes = await file.read()
+    if len(image_bytes) > 10 * 1024 * 1024:
+        return JSONResponse({"error": "Image too large (max 10MB)"}, status_code=413)
     b64_image = base64.b64encode(image_bytes).decode("ascii")
 
     # Determine media type
@@ -1145,6 +1147,7 @@ If this is a Leaderboard screenshot, extract each drafter's lineup:
 
 Return ONLY a JSON array of objects. No markdown, no explanation."""
 
+    text = ""
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",

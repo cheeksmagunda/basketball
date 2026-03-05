@@ -9,7 +9,7 @@
 # This module uses Mixed-Integer Linear Programming (PuLP/CBC) to find the
 # mathematically optimal player-to-slot assignment.
 #
-# The solver maximizes: Σ E(RealScore_i) × SlotMult_j × X[i,j]
+# The solver maximizes: Σ E(RealScore_i) × (SlotMult_j + CardBoost_i) × X[i,j]
 # Subject to: each player in ≤1 slot, each slot exactly 1 player,
 #             optional team balance constraints.
 # ─────────────────────────────────────────────────────────────────────────────
