@@ -1595,7 +1595,7 @@ function renderLogDrillCards() {
     });
   }
 
-  // Normalize player objects from CSV format
+  // Normalize player objects from CSV format (include stat pills if stored)
   const normalized = players.map((p, i) => ({
     name: p.name || p.player_name || '',
     team: p.team || '',
@@ -1603,6 +1603,11 @@ function renderLogDrillCards() {
     rating: parseFloat(p.rating || p.predicted_rs || 0).toFixed(1),
     est_mult: p.est_mult || p.est_card_boost || '',
     predMin: p.predMin || p.pred_min || '',
+    pts:  p.pts  ? parseFloat(p.pts).toFixed(1)  : '',
+    reb:  p.reb  ? parseFloat(p.reb).toFixed(1)  : '',
+    ast:  p.ast  ? parseFloat(p.ast).toFixed(1)  : '',
+    stl:  p.stl  ? parseFloat(p.stl).toFixed(1)  : '',
+    blk:  p.blk  ? parseFloat(p.blk).toFixed(1)  : '',
     slot: p.slot || `${i+1}`,
   }));
 
