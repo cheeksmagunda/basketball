@@ -23,8 +23,6 @@ except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine
 
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
-
 load_dotenv()
 app = FastAPI()
 
@@ -1401,10 +1399,8 @@ LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direc
 
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day():
-    """Detect today's best player prop edge and return it with confidence score."""
-    if not ODDS_API_KEY:
-        return JSONResponse({"pick": None, "error": "no_api_key"}, status_code=200)
-
+    """Detect today's best player prop edge and return it with confidence score.
+    When Odds API is unavailable, returns a model-only pick from ESPN projections."""
     # Serve from cache if already computed today (prevents burning Odds API credits on every page load)
     cached = _cg("line_v1")
     if cached and cached.get("pick"):

@@ -1,355 +1,243 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# LINE ENGINE — Daily Prop Edge Detection for The Oracle
+# LINE ENGINE — Daily Pick powered by ESPN projections + Claude
 #
 # Pipeline:
-#   1. Fetch player props from The Odds API (5 stat categories)
-#   2. Match bookmaker names to ESPN player projections
-#   3. Compute raw edge = projection - consensus_line
-#   4. Score confidence: edge (40%) + signals (30%) + stability (20%) + sharpness (10%)
-#   5. Filter invalid picks, rank by confidence
-#   6. Build template narrative
-#   7. Return pick + runner-up + slate summary
+#   1. Pull today's player projections from the Oracle's projection engine
+#   2. Build structured context (stats, game script, injuries, B2B, spread)
+#   3. Ask Claude Haiku to identify the single best player prop edge
+#   4. Claude returns structured JSON pick + narrative reasoning
+#   5. Falls back to algorithmic model pick if Claude API unavailable
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
-import re
+import json
 import requests
 from datetime import datetime, timezone
 
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
-ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports/basketball_nba"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
-# Stat categories to fetch from Odds API
-PROP_MARKETS = [
-    "player_points",
-    "player_rebounds",
-    "player_assists",
-    "player_steals",
-    "player_blocks",
-]
-
-# Human-readable stat labels
-STAT_LABEL = {
-    "player_points":   "points",
-    "player_rebounds": "rebounds",
-    "player_assists":  "assists",
-    "player_steals":   "steals",
-    "player_blocks":   "blocks",
-}
-
-# Minimum edge required to consider a prop (discard below)
-MIN_EDGE = {
-    "player_points":   2.5,
-    "player_rebounds": 1.5,
-    "player_assists":  1.5,
-    "player_steals":   0.5,
-    "player_blocks":   0.5,
-}
-
-# Normalization divisor for edge component of confidence score
-EDGE_DIVISOR = {
-    "player_points":   5.0,
-    "player_rebounds": 3.0,
-    "player_assists":  3.0,
-    "player_steals":   1.5,
-    "player_blocks":   1.5,
-}
-
-# Which player projection key each market maps to
-PROJ_KEY = {
-    "player_points":   "pts",
-    "player_rebounds": "reb",
-    "player_assists":  "ast",
-    "player_steals":   "stl",
-    "player_blocks":   "blk",
-}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ODDS API HELPERS
+# GAME CONTEXT HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _odds_get(url, params):
-    """GET request to Odds API. Returns parsed JSON or None on failure."""
+def _game_lookup_from_games(games):
+    """Build team abbr -> {opponent, opp_b2b, total, spread} lookup."""
+    lookup = {}
+    for g in games:
+        home_abbr = g["home"]["abbr"]
+        away_abbr = g["away"]["abbr"]
+        lookup[home_abbr] = {
+            "opponent": away_abbr, "opp_b2b": g.get("away_b2b", False),
+            "total": g.get("total", 222), "spread": g.get("spread", 0),
+        }
+        lookup[away_abbr] = {
+            "opponent": home_abbr, "opp_b2b": g.get("home_b2b", False),
+            "total": g.get("total", 222), "spread": g.get("spread", 0),
+        }
+    return lookup
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLAUDE-POWERED ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_claude_prompt(projections, games):
+    """Format ESPN projection data into a structured prompt for Claude."""
+    game_ctx_map = _game_lookup_from_games(games)
+
+    # Sort by biggest projected edge vs season baseline
+    scored = []
+    for p in projections:
+        season_pts = p.get("season_pts", p.get("pts", 0))
+        proj_pts   = p.get("pts", 0)
+        if season_pts < 6 or p.get("predMin", 0) < 15 or proj_pts <= 0:
+            continue
+        scored.append((abs(proj_pts - season_pts), p))
+    scored.sort(reverse=True)
+    top = [p for _, p in scored[:25]]
+
+    # Game slate
+    game_lines = []
+    for g in games:
+        b2b = []
+        if g.get("home_b2b"): b2b.append(f"{g['home']['abbr']} on B2B")
+        if g.get("away_b2b"): b2b.append(f"{g['away']['abbr']} on B2B")
+        b2b_note = f" [{', '.join(b2b)}]" if b2b else ""
+        game_lines.append(
+            f"  {g['away']['abbr']} @ {g['home']['abbr']}: "
+            f"spread {g.get('spread', 0):+.1f}, O/U {g.get('total', 222)}{b2b_note}"
+        )
+
+    # Player projection rows
+    player_lines = []
+    for p in top:
+        season_pts = p.get("season_pts", p.get("pts", 0))
+        recent_pts = p.get("recent_pts", season_pts)
+        gctx       = game_ctx_map.get(p.get("team", ""), {})
+        opp        = gctx.get("opponent", "?")
+        edge       = round(p.get("pts", 0) - season_pts, 1)
+        flags = []
+        cascade = p.get("_cascade_bonus", 0)
+        if cascade > 0:        flags.append(f"cascade+{cascade:.1f}min")
+        if gctx.get("opp_b2b"): flags.append("opp-B2B")
+        inj = p.get("injury_status", "")
+        if inj:                flags.append(inj)
+        flag_str = f" [{', '.join(flags)}]" if flags else ""
+        player_lines.append(
+            f"  {p['name']} ({p.get('team','')}) vs {opp}: "
+            f"proj {p.get('pts',0):.1f}pts/{p.get('reb',0):.1f}reb/{p.get('ast',0):.1f}ast "
+            f"in {p.get('predMin',0):.0f}min | "
+            f"season {season_pts:.1f}pts / recent {recent_pts:.1f}pts | "
+            f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}"
+        )
+
+    return f"""You are The Oracle's line engine. Analyze today's NBA slate and identify the single best player prop bet.
+
+TODAY'S GAMES:
+{chr(10).join(game_lines)}
+
+TOP PLAYER PROJECTIONS (sorted by edge vs season baseline):
+{chr(10).join(player_lines)}
+
+PICK CRITERIA (in priority order):
+1. Cascade bonus — player getting extra minutes because a teammate is OUT
+2. Opponent on B2B — fatigued defense, more easy buckets
+3. High game total (230+) — faster pace, more possessions, more stats
+4. Big recent form spike — player is running hot vs season average
+5. Close spread — starters play full minutes in tight games
+
+AVOID: players on B2B themselves, blowout favorites (team spread >10), injury-doubtful
+
+Set "line" to season average rounded to nearest 0.5 (what books typically set).
+Confidence range: 60-82. Only pick OVER bets where our projection exceeds the baseline.
+
+Respond with ONLY valid JSON, no markdown fences:
+{{
+  "player_name": "Full Name",
+  "team": "ABBR",
+  "opponent": "ABBR",
+  "stat_type": "points",
+  "direction": "over",
+  "line": 22.5,
+  "projection": 26.8,
+  "edge": 4.3,
+  "confidence": 74,
+  "narrative": "2-3 sentences explaining the pick with specific data points",
+  "signals": ["Cascade: +4.2 projected minutes from teammate injury", "Opponent on B2B", "High total (234.5)"]
+}}"""
+
+
+def _call_claude(prompt):
+    """Call Claude Haiku and return parsed JSON pick, or None on failure."""
     try:
-        r = requests.get(url, params={**params, "apiKey": ODDS_API_KEY}, timeout=15)
-        if not r.ok:
-            print(f"[LineEngine] Odds API error: HTTP {r.status_code} {r.reason} — {r.text[:300]}")
-            return None
-        return r.json()
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": 600,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        text = resp.json()["content"][0]["text"].strip()
+        # Strip markdown fences if Claude adds them despite instructions
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        return json.loads(text)
     except Exception as e:
-        print(f"[LineEngine] Odds API error: {e}")
+        print(f"[LineEngine] Claude API error: {e}")
         return None
 
 
-def fetch_nba_events():
-    """Get today's NBA game event IDs from The Odds API."""
-    data = _odds_get(
-        f"{ODDS_API_BASE}/odds/",
-        {"regions": "us", "markets": "h2h", "oddsFormat": "american"},
-    )
-    if not data:
-        return []
-    return [
-        {
-            "event_id":    ev["id"],
-            "home_team":   ev.get("home_team", ""),
-            "away_team":   ev.get("away_team", ""),
-            "commence_time": ev.get("commence_time", ""),
-        }
-        for ev in data
-    ]
+# ─────────────────────────────────────────────────────────────────────────────
+# ALGORITHMIC FALLBACK — pure ESPN model, no external API calls
+# ─────────────────────────────────────────────────────────────────────────────
 
-
-def fetch_event_props(event_id):
-    """Fetch player props for a single NBA event. Returns raw bookmaker data."""
-    markets = ",".join(PROP_MARKETS)
-    data = _odds_get(
-        f"{ODDS_API_BASE}/events/{event_id}/odds",
-        {"regions": "us", "markets": markets, "oddsFormat": "american"},
-    )
-    return data or {}
-
-
-def build_prop_map(events_with_props):
+def run_model_fallback(projections, games):
     """
-    Aggregate bookmaker lines into consensus props.
-    Returns: {(player_name_lower, market): {"line": float, "over_odds": int, "under_odds": int, "books": int}}
+    Algorithmic pick when Claude API is unavailable.
+    Ranks players by projected pts vs season baseline with signal bonuses.
     """
-    props = {}
-    for event_data in events_with_props:
-        for bookmaker in event_data.get("bookmakers", []):
-            for market in bookmaker.get("markets", []):
-                market_key = market.get("key", "")
-                if market_key not in PROP_MARKETS:
-                    continue
-                for outcome in market.get("outcomes", []):
-                    player = outcome.get("description", "").lower().strip()
-                    side = outcome.get("name", "").lower()  # "over" or "under"
-                    point = outcome.get("point")
-                    price = outcome.get("price")
-                    if not player or point is None:
-                        continue
-                    key = (player, market_key)
-                    if key not in props:
-                        props[key] = {"lines": [], "over_odds": [], "under_odds": [], "books": set()}
-                    props[key]["lines"].append(float(point))
-                    props[key]["books"].add(bookmaker["key"])
-                    if "over" in side:
-                        props[key]["over_odds"].append(price)
-                    elif "under" in side:
-                        props[key]["under_odds"].append(price)
+    if not projections:
+        return {"pick": None, "error": "no_projections"}
 
-    # Compute consensus (median line, most-common over/under odds)
-    result = {}
-    for (player, market), data in props.items():
-        if not data["lines"]:
+    game_ctx_map = _game_lookup_from_games(games)
+    candidates = []
+
+    for p in projections:
+        season_pts = p.get("season_pts", 0)
+        proj_pts   = p.get("pts", 0)
+        pred_min   = p.get("predMin", 0)
+        if season_pts < 8.0 or pred_min < 18 or proj_pts <= 0:
             continue
-        lines = sorted(data["lines"])
-        mid = len(lines) // 2
-        consensus_line = lines[mid] if len(lines) % 2 else (lines[mid-1] + lines[mid]) / 2
-        over_odds  = round(sum(data["over_odds"])  / len(data["over_odds"]))  if data["over_odds"]  else -110
-        under_odds = round(sum(data["under_odds"]) / len(data["under_odds"])) if data["under_odds"] else -110
-        result[(player, market)] = {
-            "line":       round(consensus_line, 1),
-            "over_odds":  over_odds,
-            "under_odds": under_odds,
-            "books":      len(data["books"]),
-            "line_spread": max(lines) - min(lines),  # disagreement between books
-        }
-    return result
 
+        line      = round(round(season_pts * 2) / 2, 1)
+        edge      = round(proj_pts - line, 1)
+        direction = "over" if edge > 0 else "under"
+        if abs(edge) < 2.0:
+            continue
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PLAYER NAME MATCHING
-# ─────────────────────────────────────────────────────────────────────────────
+        signals, signal_bonus = [], 0
+        cascade = p.get("_cascade_bonus", 0)
+        if cascade > 0:
+            signals.append({"type": "cascade", "detail": f"Injury upgrade — +{cascade:.1f} projected minutes"})
+            signal_bonus += 15
 
-_SUFFIXES = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b\.?", re.IGNORECASE)
-_PUNCT = re.compile(r"[.\-']")
+        recent_pts = p.get("recent_pts", proj_pts)
+        if direction == "over" and recent_pts > season_pts * 1.08:
+            signals.append({"type": "recent_form", "detail": f"Averaging {recent_pts:.1f} pts recently vs {season_pts:.1f} season"})
+            signal_bonus += 12
+        elif direction == "under" and recent_pts < season_pts * 0.92:
+            signals.append({"type": "recent_form", "detail": f"Averaging {recent_pts:.1f} pts recently vs {season_pts:.1f} season"})
+            signal_bonus += 12
 
-def _normalize_name(name):
-    """Normalize a player name for fuzzy matching."""
-    name = _PUNCT.sub("", name).lower().strip()
-    name = _SUFFIXES.sub("", name).strip()
-    return " ".join(name.split())
+        team_abbr = p.get("team", "")
+        gctx      = game_ctx_map.get(team_abbr, {})
+        opponent  = gctx.get("opponent", "")
+        if gctx.get("opp_b2b"):
+            signals.append({"type": "opp_b2b", "detail": "Opponent on second night of B2B"})
+            signal_bonus += 10
 
-def _match_player(odds_name, espn_players):
-    """Match a bookmaker player name to an ESPN player dict.
-    Returns the matching player dict or None.
-    espn_players: list of dicts with 'name' and 'team' keys.
-    """
-    odds_norm = _normalize_name(odds_name)
-    odds_parts = odds_norm.split()
-    odds_last  = odds_parts[-1] if odds_parts else ""
-    odds_first_init = odds_parts[0][0] if odds_parts else ""
+        edge_score = min(abs(edge) / 5.0 * 40, 40)
+        confidence = round(min(52 + edge_score + signal_bonus, 80))
+        narrative  = (
+            f"Model projects {proj_pts:.1f} pts — a {abs(edge):.1f}-pt edge "
+            f"vs the {line:.1f} season baseline at {confidence}% confidence."
+        )
+        candidates.append({
+            "player_name": p["name"], "player_id": p.get("id", ""),
+            "team": team_abbr, "opponent": opponent,
+            "stat_type": "points", "line": line, "direction": direction,
+            "projection": proj_pts, "edge": edge, "confidence": confidence,
+            "odds_over": None, "odds_under": None, "books_consensus": 0,
+            "model_only": True, "signals": signals, "narrative": narrative,
+        })
 
-    for p in espn_players:
-        espn_norm  = _normalize_name(p["name"])
-        espn_parts = espn_norm.split()
-        espn_last  = espn_parts[-1] if espn_parts else ""
-        espn_first = espn_parts[0]  if espn_parts else ""
+    if not candidates:
+        return {"pick": None, "error": "no_edges"}
 
-        # 1. Exact match
-        if odds_norm == espn_norm:
-            return p
-
-        # 2. Last name + first initial
-        if (odds_last == espn_last and odds_first_init and
-                espn_first and odds_first_init == espn_first[0]):
-            return p
-
-        # 3. Last name only (riskier, only if single result — handled by caller)
-        if odds_last == espn_last and len(odds_parts) == 1:
-            return p  # best effort
-
-    return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SIGNAL DETECTION
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _detect_signals(player_proj, game, market, prop_meta):
-    """
-    Detect positive signals for a prop pick. Returns (score 0-100, list of signal dicts).
-    Signals:
-      - cascade: player received injury cascade bonus (+25)
-      - opp_b2b: opponent on 2nd night of B2B (+20)
-      - game_script: favorable game script for this stat (+20)
-      - recent_form: recent trend aligned with edge direction (+20)
-      - spread_safety: close game, full minutes expected (+15)
-    """
-    signals = []
-    score = 0
-    stat_key = PROJ_KEY.get(market, "pts")
-    direction = prop_meta.get("direction", "over")
-
-    # Cascade bonus
-    cascade_bonus = player_proj.get("_cascade_bonus", 0)
-    if cascade_bonus > 0:
-        signals.append({"type": "cascade", "detail": f"Injury upgrade — +{cascade_bonus:.1f} projected minutes"})
-        score += 25
-
-    # Opponent B2B
-    opp_is_b2b = game.get("opp_b2b", False)
-    if opp_is_b2b:
-        signals.append({"type": "opp_b2b", "detail": f"Opponent on second night of a back-to-back"})
-        score += 20
-
-    # Game script — does the game environment favor this stat?
-    total  = game.get("total", 222)
-    spread = game.get("spread", 0)
-    try:
-        from api.index import _game_script_weights
-    except ImportError:
-        try:
-            from .index import _game_script_weights
-        except ImportError:
-            _game_script_weights = None
-
-    if _game_script_weights:
-        gw = _game_script_weights(total, spread)
-        stat_weight = gw.get(stat_key, 1.0)
-        if (direction == "over" and stat_weight >= 1.10) or (direction == "under" and stat_weight <= 0.90):
-            try:
-                try:
-                    from api.index import _game_script_label
-                except ImportError:
-                    from .index import _game_script_label
-                label = _game_script_label(total)
-            except Exception:
-                label = "current environment"
-            signals.append({"type": "game_script", "detail": f"{label} (O/U {total}) favors {stat_key} ({stat_weight:.2f}x)"})
-            score += 20
-
-    # Recent form alignment
-    recent_stat  = player_proj.get(f"recent_{stat_key}", player_proj.get(stat_key, 0))
-    season_stat  = player_proj.get(f"season_{stat_key}", player_proj.get(stat_key, 0))
-    proj_stat    = player_proj.get(stat_key, 0)
-    if season_stat and recent_stat:
-        trending_up = recent_stat > season_stat
-        if (direction == "over" and trending_up) or (direction == "under" and not trending_up):
-            signals.append({"type": "recent_form", "detail": f"Trending {'up' if trending_up else 'down'}: {recent_stat:.1f} recent vs {season_stat:.1f} season"})
-            score += 20
-
-    # Spread safety — close game means starters play full minutes
-    abs_spread = abs(spread or 0)
-    if abs_spread < 7:
-        signals.append({"type": "spread_safety", "detail": f"Close game expected (spread {spread:+.1f}) — full minutes likely"})
-        score += 15
-
-    return min(score, 100), signals
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIDENCE SCORING
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _score_confidence(market, raw_edge, player_proj, game, prop_meta):
-    """
-    Composite confidence score 0-100.
-    edge: 40% | signals: 30% | stability: 20% | sharpness: 10%
-    """
-    # 1. Normalized edge (40%)
-    divisor = EDGE_DIVISOR.get(market, 3.0)
-    edge_score = min(abs(raw_edge) / divisor, 1.0) * 100
-
-    # 2. Signal stack (30%)
-    signal_score, signals = _detect_signals(player_proj, game, market, prop_meta)
-
-    # 3. Projection stability (20%)
-    stat_key = PROJ_KEY.get(market, "pts")
-    season_stat = player_proj.get(f"season_{stat_key}", player_proj.get(stat_key, 1))
-    recent_stat = player_proj.get(f"recent_{stat_key}", player_proj.get(stat_key, 1))
-    stability = 1.0 - abs(recent_stat - season_stat) / max(abs(season_stat), 1.0)
-    stability_score = max(0.0, min(1.0, stability)) * 100
-
-    # 4. Line sharpness (10%) — how much do books disagree?
-    spread = prop_meta.get("line_spread", 0)
-    books  = prop_meta.get("books", 1)
-    if books <= 1:
-        sharpness = 20
-    elif spread == 0:
-        sharpness = 30
-    elif spread <= 1.0:
-        sharpness = 60
-    else:
-        sharpness = 100
-
-    confidence = (
-        edge_score   * 0.40 +
-        signal_score * 0.30 +
-        stability_score * 0.20 +
-        sharpness * 0.10
-    )
-    return round(min(confidence, 99), 1), signals
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# NARRATIVE GENERATION
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _build_narrative(player_name, team, opponent, market, line, direction,
-                     projection, edge, confidence, signals):
-    """Template-based narrative. No LLM."""
-    stat = STAT_LABEL.get(market, market)
-    unit = "pt" if market == "player_points" else stat[:-1] if stat.endswith("s") else stat
-
-    # Top signals (up to 3)
-    signal_texts = []
-    for s in signals[:3]:
-        t = s["type"]
-        d = s["detail"]
-        signal_texts.append(d)
-
-    signal_str = ". ".join(signal_texts) + ("." if signal_texts else "")
-    direction_upper = direction.upper()
-
-    narrative = (
-        f"{direction_upper} {line} {stat} for {player_name} ({team} vs {opponent}). "
-        f"{signal_str} "
-        f"Model projects {projection:.1f} {stat} — a {abs(edge):.1f}-{unit} edge at {confidence:.0f}% confidence."
-    ).strip()
-    return narrative
+    candidates.sort(key=lambda c: c["confidence"], reverse=True)
+    pick      = candidates[0]
+    runner_up = next((c for c in candidates[1:] if c["player_name"] != pick["player_name"]), None)
+    return {
+        "pick": pick, "runner_up": runner_up,
+        "slate_summary": {
+            "games_evaluated": len(games), "props_scanned": len(candidates),
+            "edges_found": len(candidates), "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model_only": True,
+        },
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -358,164 +246,56 @@ def _build_narrative(player_name, team, opponent, market, line, direction,
 
 def run_line_engine(projections, games):
     """
-    Main entry point. Accepts:
-      projections: flat list of player projection dicts (from /api/slate pipeline)
-      games: list of game dicts (from fetch_games())
-    Returns: {pick, runner_up, slate_summary} or {error: "..."}
+    Main entry point. Uses Claude Haiku to reason about ESPN projection data
+    and pick today's best player prop edge. Falls back to algorithmic model
+    if Claude API is unavailable.
     """
-    if not ODDS_API_KEY:
-        return {"pick": None, "error": "no_api_key"}
     if not games:
         return {"pick": None, "error": "no_games"}
+    if not projections:
+        return {"pick": None, "error": "no_projections"}
 
-    # Build ESPN player lookup: lower(name) -> proj
-    proj_by_name = {}
-    for p in projections:
-        proj_by_name[_normalize_name(p["name"])] = p
+    if not ANTHROPIC_API_KEY:
+        return run_model_fallback(projections, games)
 
-    # Build game lookup: team name -> game info
-    game_by_team = {}
-    for g in games:
-        home_name = g["home"]["name"].lower()
-        away_name = g["away"]["name"].lower()
-        game_by_team[home_name] = {**g, "side": "home", "opp_b2b": g.get("away_b2b", False)}
-        game_by_team[away_name] = {**g, "side": "away", "opp_b2b": g.get("home_b2b", False)}
-        # Also add abbr mapping
-        game_by_team[g["home"]["abbr"].lower()] = game_by_team[home_name]
-        game_by_team[g["away"]["abbr"].lower()] = game_by_team[away_name]
+    prompt    = _build_claude_prompt(projections, games)
+    pick_data = _call_claude(prompt)
 
-    # Fetch events from Odds API
-    odds_events = fetch_nba_events()
-    if not odds_events:
-        return {"pick": None, "error": "odds_unavailable"}
+    if not pick_data or not pick_data.get("player_name"):
+        print("[LineEngine] Claude returned no pick — using algorithmic fallback")
+        return run_model_fallback(projections, games)
 
-    # Fetch props for each event (rate-limit budget: 1 call per event)
-    events_with_props = []
-    props_scanned = 0
-    for ev in odds_events:
-        event_data = fetch_event_props(ev["event_id"])
-        if event_data:
-            event_data["_meta"] = ev
-            events_with_props.append(event_data)
-
-    if not events_with_props:
-        return {"pick": None, "error": "odds_unavailable"}
-
-    prop_map = build_prop_map(events_with_props)
-    props_scanned = len(prop_map)
-
-    # Score all candidate props
-    candidates = []
-
-    for (odds_name, market), prop_meta in prop_map.items():
-        line = prop_meta["line"]
-        stat_key = PROJ_KEY.get(market, "pts")
-
-        # Match to ESPN projection
-        player_proj = None
-        if odds_name in proj_by_name:
-            player_proj = proj_by_name[odds_name]
-        else:
-            # Try all ESPN players
-            for p in projections:
-                matched = _match_player(odds_name, [p])
-                if matched:
-                    player_proj = matched
-                    break
-
-        if not player_proj:
-            continue
-
-        # Filter: injuries and min gate
-        inj = player_proj.get("injury_status", "")
-        if inj in ("GTD", "DTD", "DOUBT"):
-            continue
-        if player_proj.get("predMin", 0) < 15:
-            continue
-
-        # Get projection for this stat
-        proj_stat = player_proj.get(stat_key)
-        if proj_stat is None:
-            continue
-
-        raw_edge = proj_stat - line
-        direction = "over" if raw_edge > 0 else "under"
-        min_edge_req = MIN_EDGE.get(market, 1.0)
-        if abs(raw_edge) < min_edge_req:
-            continue
-
-        # Find game context
-        team_abbr = player_proj.get("team", "").lower()
-        game_ctx  = game_by_team.get(team_abbr) or {}
-
-        # Filter: team favored by 10+
-        spread = game_ctx.get("spread") or 0
-        side   = game_ctx.get("side", "home")
-        player_is_favorite = (side == "home" and spread < -10) or (side == "away" and spread > 10)
-        if player_is_favorite:
-            continue
-
-        prop_meta_enriched = {**prop_meta, "direction": direction}
-        confidence, signals = _score_confidence(market, raw_edge, player_proj, game_ctx, prop_meta_enriched)
-
-        # Build opponent label
-        if game_ctx:
-            opp_team = game_ctx["away"]["abbr"] if side == "home" else game_ctx["home"]["abbr"]
-        else:
-            opp_team = "?"
-
-        candidates.append({
-            "player_name":     player_proj["name"],
-            "player_id":       player_proj.get("id", ""),
-            "team":            player_proj.get("team", ""),
-            "opponent":        opp_team,
-            "stat_type":       STAT_LABEL.get(market, market),
-            "market":          market,
-            "line":            line,
-            "direction":       direction,
-            "projection":      round(float(proj_stat), 1),
-            "edge":            round(raw_edge, 2),
-            "confidence":      confidence,
-            "odds_over":       prop_meta["over_odds"],
-            "odds_under":      prop_meta["under_odds"],
-            "books_consensus": prop_meta["books"],
-            "signals":         signals,
-            "_game_ctx":       game_ctx,
-            "_player_proj":    player_proj,
-        })
-
-    if not candidates:
-        return {"pick": None, "error": "no_edges",
-                "slate_summary": {"games_evaluated": len(odds_events), "props_scanned": props_scanned,
-                                  "edges_found": 0, "timestamp": datetime.now(timezone.utc).isoformat()}}
-
-    # Rank by confidence
-    candidates.sort(key=lambda c: c["confidence"], reverse=True)
-
-    def _finalize(c):
-        """Strip internal keys and build narrative."""
-        game_ctx    = c.pop("_game_ctx", {})
-        player_proj = c.pop("_player_proj", {})
-        c["narrative"] = _build_narrative(
-            c["player_name"], c["team"], c["opponent"],
-            c["market"], c["line"], c["direction"],
-            c["projection"], c["edge"], c["confidence"], c["signals"],
-        )
-        c.pop("market", None)
-        return c
-
-    pick       = _finalize(candidates[0])
-    # Runner-up: first candidate from a different player
-    runner_up_raw = next((c for c in candidates[1:] if c["player_name"] != candidates[0]["player_name"]), None)
-    runner_up  = _finalize(runner_up_raw) if runner_up_raw else None
+    signals = [
+        {"type": s.lower().split(":")[0].strip().replace(" ", "_"), "detail": s}
+        for s in pick_data.get("signals", [])
+    ]
+    pick = {
+        "player_name":     pick_data["player_name"],
+        "player_id":       "",
+        "team":            pick_data.get("team", ""),
+        "opponent":        pick_data.get("opponent", ""),
+        "stat_type":       pick_data.get("stat_type", "points"),
+        "line":            pick_data.get("line", 0),
+        "direction":       pick_data.get("direction", "over"),
+        "projection":      pick_data.get("projection", 0),
+        "edge":            pick_data.get("edge", 0),
+        "confidence":      pick_data.get("confidence", 70),
+        "odds_over":       None,
+        "odds_under":      None,
+        "books_consensus": 0,
+        "model_only":      True,
+        "signals":         signals,
+        "narrative":       pick_data.get("narrative", ""),
+    }
 
     return {
-        "pick":       pick,
-        "runner_up":  runner_up,
+        "pick": pick,
+        "runner_up": None,
         "slate_summary": {
-            "games_evaluated": len(odds_events),
-            "props_scanned":   props_scanned,
-            "edges_found":     len(candidates),
+            "games_evaluated": len(games),
+            "props_scanned":   len(projections),
+            "edges_found":     1,
             "timestamp":       datetime.now(timezone.utc).isoformat(),
+            "model_only":      True,
         },
     }
