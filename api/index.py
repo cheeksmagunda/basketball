@@ -463,6 +463,138 @@ def _fetch_athlete(pid):
     return blended
 
 # ─────────────────────────────────────────────────────────────────────────────
+# LIVE NBA DATA FETCHERS — used by Ben tool use
+# grep: _live_scores, _live_boxscore, _live_player_stats, BEN_TOOL
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _live_scores():
+    """Current NBA scoreboard: scores, quarter, time remaining, game IDs."""
+    try:
+        today_str = _et_date().strftime("%Y%m%d")
+        data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
+        if not data:
+            return "ESPN scoreboard unavailable."
+        lines = []
+        for e in data.get("events", []):
+            game_id = e.get("id", "")
+            comps   = e.get("competitions", [{}])[0]
+            status  = e.get("status", {})
+            detail  = status.get("type", {}).get("shortDetail", "")
+            teams   = comps.get("competitors", [])
+            parts   = []
+            for t in sorted(teams, key=lambda x: x.get("homeAway", ""), reverse=True):
+                abbr  = t.get("team", {}).get("abbreviation", "?")
+                score = t.get("score", "0")
+                parts.append(f"{abbr} {score}")
+            score_str = " - ".join(parts)
+            lines.append(f"{score_str}  [{detail}]  (game_id: {game_id})")
+        return "\n".join(lines) if lines else "No games found today."
+    except Exception as e:
+        return f"Error fetching scores: {e}"
+
+
+def _live_boxscore(game_id):
+    """Live player stats for a specific ESPN game ID."""
+    try:
+        data = _espn_get(f"{ESPN}/summary?event={game_id}")
+        if not data:
+            return "Game summary unavailable."
+        lines = []
+        for team_block in data.get("boxscore", {}).get("players", []):
+            abbr   = team_block.get("team", {}).get("abbreviation", "?")
+            stats  = team_block.get("statistics", [])
+            if not stats:
+                continue
+            labels   = stats[0].get("labels", [])
+            athletes = stats[0].get("athletes", [])
+            want     = {"MIN", "PTS", "REB", "AST", "STL", "BLK", "TO", "+/-"}
+            idx_map  = {l: i for i, l in enumerate(labels) if l in want}
+            lines.append(f"\n{abbr}:")
+            for ath in athletes:
+                name  = ath.get("athlete", {}).get("displayName", "?")
+                vals  = ath.get("stats", [])
+                parts = []
+                for lbl in ["MIN", "PTS", "REB", "AST", "STL", "BLK", "TO"]:
+                    if lbl in idx_map and idx_map[lbl] < len(vals):
+                        parts.append(f"{lbl} {vals[idx_map[lbl]]}")
+                lines.append(f"  {name}: {' | '.join(parts)}")
+        return "\n".join(lines) if lines else "No boxscore data available yet."
+    except Exception as e:
+        return f"Error fetching boxscore: {e}"
+
+
+def _live_player_stats(player_name):
+    """Search all today's games for a specific player's live stats."""
+    try:
+        data = _espn_get(f"{ESPN}/scoreboard")
+        if not data:
+            return "ESPN unavailable."
+        player_lower = player_name.lower().strip()
+        for e in data.get("events", []):
+            game_id   = e.get("id", "")
+            game_name = e.get("name", "")
+            box       = _live_boxscore(game_id)
+            for line in box.split("\n"):
+                if player_lower in line.lower():
+                    return f"{game_name}:\n{line.strip()}"
+        return f"No live stats found for '{player_name}'. They may not be in today's lineup or the game hasn't started."
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# Tool definition passed to Claude in lab_chat
+_BEN_TOOLS = [
+    {
+        "name": "get_live_nba_data",
+        "description": (
+            "Fetch real-time NBA data from ESPN. Call this whenever the user asks about "
+            "live scores, current game status, a player's stats tonight, or any information "
+            "that requires up-to-the-minute data beyond what's in the system prompt."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string",
+                    "enum": ["scores", "boxscore", "player_stats"],
+                    "description": (
+                        "'scores' — current scoreboard for all today's games; "
+                        "'boxscore' — full player stat lines for one game (requires game_id); "
+                        "'player_stats' — find a specific player's live stats (requires player_name)"
+                    ),
+                },
+                "game_id": {
+                    "type": "string",
+                    "description": "ESPN game ID — use for 'boxscore' queries. Get IDs from scores first if needed.",
+                },
+                "player_name": {
+                    "type": "string",
+                    "description": "Full or partial player name — used for 'player_stats' queries.",
+                },
+            },
+            "required": ["data_type"],
+        },
+    }
+]
+
+
+def _execute_ben_tool(name, inp):
+    """Execute a Ben tool call and return a string result."""
+    if name != "get_live_nba_data":
+        return f"Unknown tool: {name}"
+    dt = inp.get("data_type", "scores")
+    if dt == "scores":
+        return _live_scores()
+    if dt == "boxscore":
+        gid = inp.get("game_id", "")
+        return _live_boxscore(gid) if gid else "game_id is required for boxscore queries."
+    if dt == "player_stats":
+        pn = inp.get("player_name", "")
+        return _live_player_stats(pn) if pn else "player_name is required for player_stats queries."
+    return f"Unknown data_type: {dt}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # INJURY CASCADE ENGINE
 # grep: _cascade_minutes, _pos_group, POS_GROUPS, injury redistribution
 #
@@ -2042,7 +2174,7 @@ async def lab_backtest(payload: dict = Body(...)):
 
 @app.post("/api/lab/chat")
 async def lab_chat(payload: dict = Body(...)):
-    """Proxy to Anthropic Messages API with Lab system prompt. Keeps API key server-side."""
+    """Proxy to Anthropic Messages API with Lab system prompt and live NBA tool use."""
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
 
@@ -2052,27 +2184,52 @@ async def lab_chat(payload: dict = Body(...)):
     if not messages:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    base_body = {
+        "model":      "claude-opus-4-6",
+        "max_tokens": 2048,
+        "system":     system,
+        "tools":      _BEN_TOOLS,
+        "messages":   messages,
+    }
+
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model":      "claude-opus-4-6",
-                "max_tokens": 2048,
-                "system":     system,
-                "messages":   messages,
-            },
-            timeout=45,
-        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+                          headers=headers, json=base_body, timeout=45)
         r.raise_for_status()
         resp = r.json()
-        return {
-            "content": resp["content"][0]["text"],
-            "usage":   resp.get("usage", {}),
-        }
+
+        # Handle tool use — execute the tool and send results back for a final answer
+        if resp.get("stop_reason") == "tool_use":
+            tool_results = []
+            for block in resp.get("content", []):
+                if block.get("type") == "tool_use":
+                    result = _execute_ben_tool(block["name"], block.get("input", {}))
+                    tool_results.append({
+                        "type":        "tool_result",
+                        "tool_use_id": block["id"],
+                        "content":     result,
+                    })
+
+            followup_messages = messages + [
+                {"role": "assistant", "content": resp["content"]},
+                {"role": "user",      "content": tool_results},
+            ]
+            r2 = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json={**base_body, "messages": followup_messages},
+                timeout=45,
+            )
+            r2.raise_for_status()
+            resp = r2.json()
+
+        text = next((b["text"] for b in resp.get("content", []) if b.get("type") == "text"), "")
+        return {"content": text, "usage": resp.get("usage", {})}
+
     except Exception as e:
         return JSONResponse({"error": f"Anthropic API error: {str(e)}"}, status_code=500)
