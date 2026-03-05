@@ -9,23 +9,32 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 - Users draft 5 NBA players each day
 - Each player earns a **Real Score** (RS) based on in-game impact (not just box score stats)
 - Each player gets a **Card Boost** inversely proportional to how many people drafted them (popular players get low boosts, obscure players get high boosts)
-- **Total Value = Real Score x (Slot Multiplier + Card Boost)**
+- **Total Value = Real Score × (Slot Multiplier + Card Boost)**
 - Slot multipliers: 2.0x, 1.8x, 1.6x, 1.4x, 1.2x (user manually assigns their 5 picks to slots pre-game)
 - The winning strategy is drafting **high-RS role players with huge card boosts**, not superstars
 
 ## Architecture
 
 ```
-index.html          — Single-page frontend (vanilla JS, no framework)
-api/index.py        — FastAPI backend (all endpoints)
-api/real_score.py   — Monte Carlo Real Score projection engine
+index.html             — 4-tab frontend (Predictions | Log | Line | Lab, vanilla JS)
+api/index.py           — FastAPI backend (all endpoints, projection engine)
+api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
 api/temporal_risk.py   — TRAV (Temporal Risk-Adjusted Value) system
-vercel.json         — Vercel config (routes, crons, 60s timeout)
-server.py           — Local dev server (uvicorn)
-data/predictions/   — Git-tracked daily prediction CSVs (via GitHub API)
-data/actuals/       — Git-tracked daily actual result CSVs (via GitHub API)
+vercel.json            — Vercel config (routes, crons, 60s timeout)
+server.py              — Local dev server (uvicorn)
+data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
+data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 ```
+
+## UI Structure
+
+4-tab top navigation: **Predictions | Log | Line | Lab**
+
+- **Predictions**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis
+- **Log**: Historical drill-down — date strip, game grid, locked prediction cards (desaturated Log palette), screenshot upload, winning drafts display, hindsight optimal lineup
+- **Line**: Placeholder (coming soon)
+- **Lab**: Placeholder (coming soon)
 
 ## Key Endpoints
 
@@ -37,6 +46,9 @@ data/actuals/       — Git-tracked daily actual result CSVs (via GitHub API)
 | `/api/save-predictions` | POST | Save cached predictions to GitHub CSV |
 | `/api/parse-screenshot` | POST | Upload Real Sports screenshot, Claude Haiku parses it |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV |
+| `/api/log/dates` | GET | List dates with stored prediction/actual data |
+| `/api/log/get?date=X` | GET | Predictions + actuals for a given date |
+| `/api/hindsight` | POST | Given actual RS scores, return optimal hindsight lineup |
 | `/api/refresh` | GET | Clear cache (also runs on cron at 7pm/8pm UTC) |
 
 ## Environment Variables (Vercel)
@@ -52,16 +64,14 @@ Predictions lock 5 minutes before the earliest game starts. Once locked:
 - Lock cache (`/tmp/nba_locks_v1/`) survives within a warm Vercel instance
 - On cold start with no cache, returns empty locked response (frontend preserves displayed data)
 
-## Known Limitations
-
-- `/tmp` is ephemeral on Vercel — caches and lineup history don't survive cold starts
-- The repetition penalty system (`_apply_repetition_penalty`) depends on `/tmp` history, so it's unreliable across instances
-- `real-app-production.zip` in repo root is unused bloat
-
 ## Two Lineup Types
 
-- **Starting 5 (chalk)**: MILP-optimized for expected value. Conservative, consistent.
-- **Moonshot (upside/contrarian)**: Different 5 players optimized for ceiling. High card boost leverage, opposite-team correlation to Starting 5.
+- **Starting 5 (chalk)**: MILP-optimized for expected value using `chalk_ev = rating × (avg_slot + card_boost)`. Conservative, consistent.
+- **Moonshot**: The next 5 players by the same chalk_ev ranking (ranks 6-10). Same methodology as chalk — NOT a separate contrarian algorithm. This ensures moonshot picks are always players with real projected RS, avoiding DNP risks from extreme low-ownership targets.
+
+## Known Limitation
+
+`/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side.
 
 ## Development
 
