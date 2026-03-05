@@ -1057,7 +1057,7 @@ async def get_picks(gameId: str = Query(...)):
             _ls(lock_key, reg_cached)
             return reg_cached
         # No cache on this instance after lock — return locked empty
-        return {"date": date.today().isoformat(), "game": game,
+        return {"date": _et_date().isoformat(), "game": game,
                 "gameScript": None,
                 "lineups": {"chalk": [], "upside": []},
                 "locked": True, "injuries": []}
@@ -1069,7 +1069,7 @@ async def get_picks(gameId: str = Query(...)):
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
 
-    result = {"date": date.today().isoformat(), "game": game,
+    result = {"date": _et_date().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
@@ -1081,7 +1081,7 @@ async def get_picks(gameId: str = Query(...)):
 @app.post("/api/save-predictions")
 async def save_predictions():
     """Save current predictions to GitHub as CSV."""
-    today = date.today().isoformat()
+    today = _et_date().isoformat()
     path = f"data/predictions/{today}.csv"
 
     # Gather slate predictions
