@@ -72,7 +72,9 @@ def _odds_get(url, params):
     """GET request to Odds API. Returns parsed JSON or None on failure."""
     try:
         r = requests.get(url, params={**params, "apiKey": ODDS_API_KEY}, timeout=15)
-        r.raise_for_status()
+        if not r.ok:
+            print(f"[LineEngine] Odds API error: HTTP {r.status_code} {r.reason} — {r.text[:300]}")
+            return None
         return r.json()
     except Exception as e:
         print(f"[LineEngine] Odds API error: {e}")

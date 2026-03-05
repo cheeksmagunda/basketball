@@ -158,14 +158,6 @@
     .tab-btn:hover { color: rgba(255,255,255,0.55); }
     .tab-btn.active { color: #fff; }
 
-    .tab-btn .tab-dot {
-      position: absolute; top: 5px; right: 7px;
-      width: 5px; height: 5px; border-radius: 50%;
-      background: rgba(255,255,255,0.4);
-      opacity: 0; transition: opacity 0.3s;
-    }
-    .tab-btn.active .tab-dot { opacity: 0; }
-    .tab-btn:not(.active) .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
@@ -1004,7 +996,7 @@
         <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
         <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
         <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
-        <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log<span class="tab-dot" id="logTabDot"></span></button>
+        <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log</button>
       </div>
     </nav>
   </header>
@@ -1643,10 +1635,7 @@ async function initLogPage() {
     if (r.ok) {
       const dates = await r.json();
       dates.forEach(d => LOG.datesWithData.add(d));
-      // Light the dot on the Log tab if there's historical data
-      if (dates.length) {
-        document.getElementById('logTabDot')?.classList.add('visible');
-      }
+
     }
   } catch(e) { /* non-fatal */ }
 

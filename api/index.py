@@ -1405,6 +1405,11 @@ async def get_line_of_the_day():
     if not ODDS_API_KEY:
         return JSONResponse({"pick": None, "error": "no_api_key"}, status_code=200)
 
+    # Serve from cache if already computed today (prevents burning Odds API credits on every page load)
+    cached = _cg("line_v1")
+    if cached and cached.get("pick"):
+        return JSONResponse(cached)
+
     games = fetch_games()
     draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
     if not draftable:
@@ -1421,6 +1426,8 @@ async def get_line_of_the_day():
         return JSONResponse({"pick": None, "error": "no_projections"}, status_code=200)
 
     result = run_line_engine(all_proj, draftable)
+    if result.get("pick"):
+        _cs("line_v1", result)
     return result
 
 
