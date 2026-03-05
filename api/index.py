@@ -140,6 +140,16 @@ def _is_locked(start_time_iso):
     except:
         return False
 
+def _is_completed(start_time_iso):
+    """Returns True if the game has already passed its lock window (started or about to start).
+    Completed/in-progress games should not appear in draft recommendations."""
+    try:
+        game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
+    except:
+        return False
+
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
     except: return default
@@ -964,7 +974,9 @@ def _save_history(game_label, players):
 async def get_games():
     games = fetch_games()
     for g in games:
-        g["locked"] = _is_locked(g.get("startTime")) if g.get("startTime") else False
+        st = g.get("startTime", "")
+        g["locked"] = _is_locked(st) if st else False
+        g["draftable"] = not _is_completed(st) if st else False
     return games
 
 @app.get("/api/slate")
@@ -998,9 +1010,12 @@ async def get_slate():
         cached["locked"] = locked
         return cached
 
+    # Only project players from games that haven't started yet
+    draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
+
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for fut in as_completed({pool.submit(_run_game, g): g for g in games}):
+        for fut in as_completed({pool.submit(_run_game, g): g for g in draftable_games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
