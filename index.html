@@ -974,7 +974,10 @@
   <!-- ══ TAB: LINE ══ -->
   <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
   <div id="tab-line" class="tab-page">
-    <div class="section-label" style="margin-top:20px">Line of the Day</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:4px">
+      <div class="section-label" style="margin-top:0">Line of the Day</div>
+      <button onclick="LINE_LOADED=false;initLinePage()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+    </div>
     <div id="lineContent">
       <div id="lineLoading" style="display:none">
         <div class="skeleton" style="height:140px;border-radius:var(--r);margin-bottom:12px"><div class="skel-block" style="width:100%;height:100%"></div></div>
@@ -1120,13 +1123,13 @@ function switchTab(tab) {
   setPillAccent(tab);
 }
 
-// Init pill position after DOM is ready
+// Init pill position after DOM is ready, and reposition on resize
 window.addEventListener('load', () => {
-  // Small delay to let layout settle
-  setTimeout(() => {
-    movePill('predictions');
-    setPillAccent('predictions');
-  }, 50);
+  setTimeout(() => { movePill('predictions'); setPillAccent('predictions'); }, 50);
+});
+window.addEventListener('resize', () => {
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'predictions';
+  movePill(activeTab);
 });
 
 // ── INIT ──
@@ -1779,6 +1782,11 @@ async function initLinePage() {
   document.getElementById('lineLoading').style.display = 'block';
   document.getElementById('lineEmpty').style.display = 'none';
   document.getElementById('linePickWrap').style.display = 'none';
+  document.getElementById('lineHistoryWrap').style.display = 'none';
+  // Reset content
+  document.getElementById('linePickCard').innerHTML = '';
+  document.getElementById('lineRunnerUpCard').innerHTML = '';
+  document.getElementById('lineSlateSummary').innerHTML = '';
 
   try {
     const r = await fetch('/api/line-of-the-day');
