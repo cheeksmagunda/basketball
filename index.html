@@ -119,72 +119,71 @@
       transform: translateX(-50%);
       width: calc(100% - 32px);
       max-width: 468px;
-      background: rgba(14, 18, 32, 0.96);
-      border: 1px solid rgba(255,255,255,0.11);
-      border-radius: 22px;
-      padding: 8px;
+      background: rgba(14, 18, 32, 0.97);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 26px;
+      padding: 10px 10px 12px;
       backdrop-filter: blur(28px);
       -webkit-backdrop-filter: blur(28px);
-      box-shadow: 0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.07) inset;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset;
       z-index: 1000;
     }
-    /* Icon row */
+    /* Icon row — acts as a visible "tray" */
     .bnav-icon-row {
       display: flex;
-      gap: 4px;
-      background: rgba(255,255,255,0.04);
-      border-radius: 16px;
-      padding: 4px;
+      gap: 3px;
+      background: rgba(255,255,255,0.055);
+      border-radius: 20px;
+      padding: 5px;
     }
     .bnav-icon-btn {
       flex: 1;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 5px;
-      padding: 10px 8px;
-      border: none; background: transparent; border-radius: 14px;
+      gap: 6px;
+      padding: 14px 8px 12px;
+      border: none; background: transparent; border-radius: 16px;
       cursor: pointer; transition: all 0.25s ease;
-      color: rgba(255,255,255,0.32);
+      color: rgba(255,255,255,0.30);
     }
-    .bnav-icon-btn:hover { color: rgba(255,255,255,0.58); }
+    .bnav-icon-btn:hover { color: rgba(255,255,255,0.55); }
     .bnav-icon-btn.active {
-      background: rgba(255,255,255,0.11);
+      background: rgba(255,255,255,0.13);
       border: none;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.09) inset;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.10) inset;
       color: #fff;
     }
-    .bnav-icon svg { width: 22px; height: 22px; display: block; }
+    .bnav-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+    .bnav-icon svg { width: 26px; height: 26px; display: block; }
     .bnav-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
       text-transform: uppercase; line-height: 1;
     }
-
 
     /* Sub-navigation row (secondary tabs above icon row) */
     .bnav-sub-row {
       display: flex;
-      gap: 6px;
-      padding: 4px 4px 6px;
+      gap: 4px;
+      padding: 2px 4px 10px;
       justify-content: center;
     }
     .bnav-sub-btn {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 6px 20px;
-      border-radius: 10px;
+      font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      padding: 8px 28px;
+      border-radius: 50px;
       border: none;
       background: transparent;
-      color: rgba(255,255,255,0.38);
+      color: rgba(255,255,255,0.35);
       cursor: pointer;
       transition: all 0.22s ease;
     }
     .bnav-sub-btn.active {
-      background: rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.11);
       color: #fff;
-      box-shadow: 0 1px 6px rgba(0,0,0,0.3);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.08) inset;
     }
     .bnav-sub-btn:hover:not(.active) { color: rgba(255,255,255,0.6); }
 
