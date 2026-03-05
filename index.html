@@ -741,7 +741,13 @@ async function loadSlate() {
     const url = bias ? `/api/slate?cal_bias=${bias}` : '/api/slate';
     const r = await fetch(url);
     if (!r.ok) throw new Error('Slate fetch failed');
-    SLATE = await r.json();
+    const slateData = await r.json();
+    // If locked with empty lineups (cold start after lock), keep existing data
+    if (slateData.locked && !slateData.lineups.chalk.length && SLATE) {
+      SLATE.locked = true;
+    } else {
+      SLATE = slateData;
+    }
     document.getElementById('slateTabs').style.display = 'flex';
 
     // Auto-save to lab
@@ -754,8 +760,9 @@ async function loadSlate() {
     }
 
     const chips = document.getElementById('slateChips');
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    // Use the slate date from the API (not browser time) so locked slates show correct date
+    const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
+    const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
     let lockChip = '';
     if (SLATE.locked) {
       lockChip = '<div class="lock-chip">Picks Locked</div>';
@@ -807,7 +814,13 @@ async function runAnalysis() {
       const err = await r.json().catch(() => ({ error: 'Server error' }));
       throw new Error(err.error || `HTTP ${r.status}`);
     }
-    PICKS_DATA = await r.json();
+    const picksData = await r.json();
+    // If locked with empty lineups (cold start after lock), keep existing data
+    if (picksData.locked && !picksData.lineups.chalk.length && PICKS_DATA) {
+      PICKS_DATA.locked = true;
+    } else {
+      PICKS_DATA = picksData;
+    }
     document.getElementById('picksTabsWrap').style.display = 'flex';
     // Reset tab state to Starting 5
     document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t =>

@@ -921,13 +921,20 @@ async def get_slate(cal_bias: float = Query(0.0)):
         if lock_cached:
             lock_cached["locked"] = True
             return lock_cached
+        # Check regular cache and promote to lock cache
+        cached = _cg("slate_v5")
+        if cached:
+            cached["locked"] = True
+            _ls("slate_v5_locked", cached)
+            return cached
+        # No cache on this instance after lock — return empty rather than recomputing
+        return {"date": date.today().isoformat(), "games": games,
+                "lineups": {"chalk": [], "upside": []}, "locked": True}
 
     if cal_bias == 0.0:
         cached = _cg("slate_v5")
         if cached:
             cached["locked"] = locked
-            if locked:
-                _ls("slate_v5_locked", cached)
             return cached
 
     all_proj = []
@@ -959,6 +966,18 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
         if lock_cached:
             lock_cached["locked"] = True
             return lock_cached
+        # Check regular cache and promote to lock cache
+        reg_key = f"picks_{gameId}"
+        reg_cached = _cg(reg_key)
+        if reg_cached:
+            reg_cached["locked"] = True
+            _ls(lock_key, reg_cached)
+            return reg_cached
+        # No cache on this instance after lock — return locked empty
+        return {"date": date.today().isoformat(), "game": game,
+                "gameScript": None,
+                "lineups": {"chalk": [], "upside": []},
+                "locked": True, "injuries": [], "temporal": {}}
 
     projections = _run_game(game, cal_bias=cal_bias)
     if not projections:
@@ -990,8 +1009,9 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
               "locked": locked,
               "injuries": injuries,
               "temporal": temporal_meta}
-    if locked:
-        _ls(lock_key, result)
+    # Cache picks so they survive as lock snapshot if slate locks later
+    if cal_bias == 0.0:
+        _cs(f"picks_{gameId}", result)
     return result
 
 @app.get("/api/history")
