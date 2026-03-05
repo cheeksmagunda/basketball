@@ -128,41 +128,7 @@
       box-shadow: 0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.07) inset;
       z-index: 1000;
     }
-    /* Top text-selector row */
-    .bnav-text-row {
-      position: relative;
-      display: flex;
-      background: rgba(255,255,255,0.04);
-      border-radius: 13px;
-      padding: 3px;
-      margin-bottom: 6px;
-    }
-    .bnav-text-pill {
-      position: absolute;
-      top: 3px; bottom: 3px;
-      border-radius: 10px;
-      background: rgba(255,255,255,0.13);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow: 0 1px 0 rgba(255,255,255,0.1) inset, 0 2px 6px rgba(0,0,0,0.25);
-      transition: left 0.22s cubic-bezier(0.34,1.56,0.64,1), width 0.22s cubic-bezier(0.34,1.56,0.64,1);
-      pointer-events: none;
-      z-index: 0;
-    }
-    .bnav-text-btn {
-      position: relative; z-index: 1;
-      flex: 1;
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.78rem; font-weight: 800; letter-spacing: 0.07em;
-      text-transform: uppercase;
-      border: none; background: transparent; color: rgba(255,255,255,0.28);
-      cursor: pointer; transition: color 0.18s;
-      border-radius: 10px;
-      min-height: 30px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .bnav-text-btn:hover { color: rgba(255,255,255,0.52); }
-    .bnav-text-btn.active { color: rgba(255,255,255,0.92); }
-    /* Bottom icon row */
+    /* Icon row */
     .bnav-icon-row {
       display: flex;
       gap: 4px;
@@ -1029,15 +995,6 @@
 
   <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
   <nav class="bottom-nav" id="bottomNav">
-    <!-- Text selector row -->
-    <div class="bnav-text-row" id="bnavTextRow">
-      <div class="bnav-text-pill" id="bnavTextPill"></div>
-      <button class="bnav-text-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
-      <button class="bnav-text-btn" data-tab="line" onclick="switchTab('line')">Line</button>
-      <button class="bnav-text-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
-      <button class="bnav-text-btn" data-tab="log" onclick="switchTab('log')">Log</button>
-    </div>
-    <!-- Icon row -->
     <div class="bnav-icon-row">
       <button class="bnav-icon-btn active" data-tab="predictions" onclick="switchTab('predictions')">
         <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
@@ -1301,7 +1258,6 @@ const LOG = {
 // TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
-  document.querySelectorAll('.bnav-text-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   movePill(tab);
@@ -1311,16 +1267,7 @@ function switchTab(tab) {
   if (tab === 'lab')  initLabPage();
 }
 
-function movePill(tab) {
-  const activeBtn = document.querySelector(`.bnav-text-btn[data-tab="${tab}"]`);
-  const pill      = document.getElementById('bnavTextPill');
-  const track     = document.getElementById('bnavTextRow');
-  if (!activeBtn || !pill || !track) return;
-  const trackRect = track.getBoundingClientRect();
-  const btnRect   = activeBtn.getBoundingClientRect();
-  pill.style.left  = (btnRect.left - trackRect.left - 3) + 'px';
-  pill.style.width = btnRect.width + 'px';
-}
+function movePill(tab) { /* no pill in icon-only nav */ }
 
 // Pill accent color per tab
 const TAB_ACCENT = {
@@ -1339,26 +1286,9 @@ function setPillAccent(tab) {
   });
 }
 
-// Init pill position after DOM is ready, and reposition on resize
+// Init accent on load
 window.addEventListener('load', () => {
-  setTimeout(() => {
-    const pill = document.getElementById('bnavTextPill');
-    // Disable transition for initial placement (no jarring slide from left edge)
-    if (pill) pill.style.transition = 'none';
-    movePill('predictions');
-    setPillAccent('predictions');
-    // Re-enable animation after first placement
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (pill) pill.style.transition = '';
-    }));
-  }, 30);
-});
-window.addEventListener('resize', () => {
-  const activeTab = document.querySelector('.bnav-text-btn.active')?.dataset?.tab || 'predictions';
-  const pill = document.getElementById('bnavTextPill');
-  if (pill) pill.style.transition = 'none';
-  movePill(activeTab);
-  requestAnimationFrame(() => { if (pill) pill.style.transition = ''; });
+  setTimeout(() => setPillAccent('predictions'), 30);
 });
 
 // ════════════════════════════════════════════════════════════════════

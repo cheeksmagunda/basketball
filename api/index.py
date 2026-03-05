@@ -1409,6 +1409,18 @@ async def get_line_of_the_day():
     games = fetch_games()
     draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
     if not draftable:
+        # Games are locked/completed — try today's saved pick from GitHub before giving up
+        today = _et_date().isoformat()
+        json_path = f"data/lines/{today}_pick.json"
+        saved_raw, _ = _github_get_file(json_path)
+        if saved_raw:
+            try:
+                saved_pick = json.loads(saved_raw)
+                result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
+                _cs("line_v1", result)
+                return JSONResponse(result)
+            except Exception:
+                pass
         return JSONResponse({"pick": None, "error": "no_games"}, status_code=200)
 
     # Fast path: reuse per-game projections already cached by /api/slate
@@ -1461,6 +1473,11 @@ async def save_line(payload: dict = Body(...)):
     result = _github_write_file(path, csv_content, f"line pick for {today}")
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
+
+    # Also save full pick JSON so the endpoint can serve it after games lock (cold start)
+    json_path = f"data/lines/{today}_pick.json"
+    _github_write_file(json_path, json.dumps(pick), f"line pick json for {today}")
+
     return {"status": "saved", "path": path}
 
 
