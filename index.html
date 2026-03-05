@@ -2162,10 +2162,12 @@ function renderLineSummary(summary) {
 }
 
 function renderLineHistory(hist) {
-  const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
-  const streak  = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
+  const streak = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
 
-  let html = `
+  let html = '';
+  if (hist.hit_rate !== null || streak) {
+    const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
+    html += `
     <div style="display:flex;gap:16px;margin-bottom:14px">
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
@@ -2176,6 +2178,7 @@ function renderLineHistory(hist) {
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
       </div>` : ''}
     </div>`;
+  }
 
   hist.picks.slice(0, 10).forEach(p => {
     const result = p.result || 'pending';
@@ -2286,7 +2289,7 @@ function buildLabSystemPrompt() {
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
   const lineStr  = LAB.lineData
     ? (() => {
-        const p = LAB.lineData.primary;
+        const p = LAB.lineData.pick;
         if (!p) return 'No line pick available today.';
         return `Player: ${p.player_name} (${p.team})
 Bet: ${p.direction} ${p.line} ${p.stat_type}
