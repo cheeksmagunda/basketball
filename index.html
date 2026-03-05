@@ -32,6 +32,12 @@
       --green: #22c55e;
       --red: #f43f5e;
       --r: 14px;
+      /* Line page accent — gold */
+      --line: #d4a640;
+      --line-glow: rgba(212,166,64,0.22);
+      /* Lab page accent — teal */
+      --lab: #14b8a6;
+      --lab-glow: rgba(20,184,166,0.22);
       /* Log page palette — desaturated/cooler, WCAG AA on dark bg */
       --log-chalk: #7ba4c8;
       --log-chalk-glow: rgba(123,164,200,0.2);
@@ -642,6 +648,176 @@
     }
     .winning-draft-player:last-child { border-bottom: none; }
     .winning-draft-player b { color: var(--text); }
+
+    /* ── LINE PAGE ── */
+    .line-pick-card {
+      background: var(--surface);
+      border: 1px solid rgba(212,166,64,0.3);
+      border-radius: var(--r); padding: 20px;
+      position: relative; overflow: hidden;
+    }
+    .line-pick-card::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--line); box-shadow: 2px 0 12px var(--line-glow);
+    }
+    .line-pick-header {
+      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px;
+    }
+    .line-pick-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.4rem; font-weight: 900; letter-spacing: 0.02em; color: var(--text);
+    }
+    .line-pick-team { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+    .line-confidence-badge {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.1rem; font-weight: 900; color: var(--line);
+      text-align: right; line-height: 1;
+    }
+    .line-confidence-sub { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+    .line-direction-row {
+      display: flex; align-items: center; gap: 12px; margin: 14px 0 12px;
+    }
+    .line-direction-pill {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 5px 14px; border-radius: 6px;
+    }
+    .line-direction-pill.over  { background: rgba(212,166,64,0.15); color: var(--line); border: 1px solid rgba(212,166,64,0.35); }
+    .line-direction-pill.under { background: rgba(20,184,166,0.12); color: var(--lab);  border: 1px solid rgba(20,184,166,0.3); }
+    .line-stat-val {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.6rem; font-weight: 900; color: var(--text); line-height: 1;
+    }
+    .line-stat-label { font-size: 0.7rem; color: var(--muted); }
+    .line-proj { font-size: 0.75rem; color: var(--text-dim); }
+    .line-narrative {
+      font-size: 0.78rem; color: var(--text-dim); line-height: 1.5;
+      border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;
+    }
+    .line-signals {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .line-signal-chip {
+      font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 4px;
+      background: rgba(212,166,64,0.1); color: var(--line); border: 1px solid rgba(212,166,64,0.2);
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .line-runner-up {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 16px;
+      opacity: 0.8;
+    }
+    .line-runner-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+    }
+    .line-runner-main {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .line-runner-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem; font-weight: 800; color: var(--text);
+    }
+    .line-runner-dir {
+      font-size: 0.75rem; font-weight: 700; color: var(--muted);
+    }
+    .line-summary-row {
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .line-summary-chip {
+      font-size: 0.68rem; color: var(--muted);
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 10px;
+    }
+    .line-history-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .line-history-row:last-child { border-bottom: none; }
+    .line-history-name { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+    .line-history-sub  { font-size: 0.65rem; color: var(--muted); }
+    .line-result-pill {
+      font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .line-result-pill.hit     { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+    .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
+    .line-result-pill.pending { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── LAB PAGE ── */
+    .lab-action-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 6px 12px;
+      background: transparent; border: 1px solid var(--border-bright);
+      border-radius: 8px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+    }
+    .lab-action-btn:hover { border-color: var(--lab); color: var(--lab); }
+    .lab-quick-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 5px 10px;
+      background: rgba(20,184,166,0.08); border: 1px solid rgba(20,184,166,0.2);
+      border-radius: 6px; color: var(--lab); cursor: pointer; transition: all 0.2s;
+    }
+    .lab-quick-btn:hover { background: rgba(20,184,166,0.15); border-color: var(--lab); }
+    .lab-msg {
+      padding: 12px 14px; border-radius: 12px; max-width: 90%;
+      font-size: 0.82rem; line-height: 1.55; animation: fadeUp 0.25s ease forwards;
+    }
+    .lab-msg.user {
+      align-self: flex-end;
+      background: rgba(20,184,166,0.12); border: 1px solid rgba(20,184,166,0.2);
+      color: var(--text);
+    }
+    .lab-msg.assistant {
+      align-self: flex-start;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .lab-msg.assistant .lab-msg-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--lab); margin-bottom: 6px;
+    }
+    .lab-msg.thinking {
+      align-self: flex-start;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .lab-thinking-dots {
+      display: flex; gap: 4px; align-items: center; padding: 2px 0;
+    }
+    .lab-thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+      animation: labPulse 1.2s ease-in-out infinite;
+    }
+    .lab-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .lab-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes labPulse {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+    .lab-config-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px;
+    }
+    .lab-config-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--lab); margin-bottom: 8px;
+    }
+    .lab-changelog-item {
+      font-size: 0.72rem; color: var(--text-dim); padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .lab-changelog-item:last-child { border-bottom: none; }
+    .lab-changelog-ver {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 800; color: var(--lab); margin-right: 6px;
+    }
+    #labInput { line-height: 1.4; }
+    #labInput:focus { border-color: var(--lab); }
   </style>
 </head>
 <body>
@@ -772,20 +948,74 @@
 
   <!-- ══ TAB: LINE ══ -->
   <div id="tab-line" class="tab-page">
-    <div class="placeholder-page">
-      <div class="pl-icon">📈</div>
-      <h2>Line of the Day</h2>
-      <p>Coming soon</p>
+    <div class="section-label" style="margin-top:20px">Line of the Day</div>
+    <div id="lineContent">
+      <div id="lineLoading" style="display:none">
+        <div class="skeleton" style="height:140px;border-radius:var(--r);margin-bottom:12px"><div class="skel-block" style="width:100%;height:100%"></div></div>
+        <div class="skeleton" style="height:90px;border-radius:var(--r)"><div class="skel-block" style="width:100%;height:100%"></div></div>
+      </div>
+      <div id="lineEmpty" style="display:none">
+        <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p></div>
+      </div>
+      <div id="linePickWrap" style="display:none">
+        <div id="linePickCard"></div>
+        <div id="lineRunnerUpCard" style="margin-top:10px"></div>
+        <div id="lineSlateSummary" style="margin-top:16px"></div>
+      </div>
+      <div id="lineHistoryWrap" style="margin-top:24px;display:none">
+        <div class="section-label">Recent Picks</div>
+        <div id="lineHistoryList"></div>
+      </div>
     </div>
   </div>
 
   <!-- ══ TAB: LAB ══ -->
   <div id="tab-lab" class="tab-page">
-    <div class="placeholder-page">
-      <div class="pl-icon">🔬</div>
-      <h2>Lab</h2>
-      <p>Coming soon</p>
+    <!-- Locked state -->
+    <div id="labLocked" style="display:none">
+      <div class="empty-state" style="margin-top:32px">
+        <span class="icon" style="font-size:2rem">🔒</span>
+        <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Lab Locked</h3>
+        <p id="labLockedReason" style="color:var(--text-dim)">Slate in progress</p>
+        <p id="labLockedUnlock" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
+      </div>
+      <div id="labLockedConfig" style="margin-top:24px"></div>
     </div>
+    <!-- Unlocked state -->
+    <div id="labUnlocked" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 10px">
+        <div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Model Lab</div>
+          <div id="labConfigVersion" style="font-size:0.68rem;color:var(--muted);margin-top:2px"></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="lab-action-btn" onclick="labViewConfig()">Config</button>
+          <button class="lab-action-btn" onclick="labRefreshBriefing()">Refresh</button>
+        </div>
+      </div>
+      <!-- Chat messages -->
+      <div id="labMessages" style="display:flex;flex-direction:column;gap:10px;padding-bottom:10px;min-height:200px"></div>
+      <!-- Input -->
+      <div id="labInputWrap" style="position:sticky;bottom:0;padding:12px 0 4px;background:var(--bg)">
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="lab-quick-btn" onclick="labSendQuick('Run a backtest on the current config')">Backtest</button>
+          <button class="lab-quick-btn" onclick="labSendQuick('Show me the current config')">View Config</button>
+          <button class="lab-quick-btn" onclick="labSendQuick('What changes would you recommend based on the briefing?')">Suggestions</button>
+          <button class="lab-quick-btn" onclick="labSendQuick('Show config version history')">History</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <textarea id="labInput" placeholder="Ask Claude to analyze, suggest, or apply a change..." rows="2"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
+          ></textarea>
+          <button id="labSendBtn" onclick="labSend()" style="padding:10px 16px;background:var(--lab);border:none;border-radius:10px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.85rem;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer">Send</button>
+        </div>
+      </div>
+    </div>
+    <div id="labLoading" style="display:none">
+      <div class="empty-state"><span class="icon">⏳</span><p>Loading Lab...</p></div>
+    </div>
+    <div id="labPlaceholder" style="display:none"></div>
   </div>
 
 </div>
@@ -823,9 +1053,9 @@ const LOG = {
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
-  if (tab === 'log' && !LOG.selectedDate) {
-    initLogPage();
-  }
+  if (tab === 'log' && !LOG.selectedDate) initLogPage();
+  if (tab === 'line') initLinePage();
+  if (tab === 'lab')  initLabPage();
 }
 
 // ── INIT ──
@@ -1464,6 +1694,481 @@ function renderHindsightOptimal(lineup) {
   });
 
   el.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════
+// ── LINE PAGE ──
+// ════════════════════════════════════════════════════════
+
+let LINE_LOADED = false;
+
+async function initLinePage() {
+  if (LINE_LOADED) return;
+  LINE_LOADED = true;
+  document.getElementById('lineLoading').style.display = 'block';
+  document.getElementById('lineEmpty').style.display = 'none';
+  document.getElementById('linePickWrap').style.display = 'none';
+
+  try {
+    const r = await fetch('/api/line-of-the-day');
+    const data = await r.json();
+    document.getElementById('lineLoading').style.display = 'none';
+
+    if (!data.pick) {
+      const msgs = {
+        no_api_key:       'Odds API key not configured.',
+        no_games:         'No NBA games on the slate today.',
+        no_edges:         'No strong edges found on today\'s props.',
+        odds_unavailable: 'Odds API is unavailable. Try again later.',
+        no_projections:   'Could not load player projections.',
+      };
+      document.getElementById('lineEmptyMsg').textContent = msgs[data.error] || 'No line pick available.';
+      document.getElementById('lineEmpty').style.display = 'flex';
+      return;
+    }
+
+    document.getElementById('linePickWrap').style.display = 'block';
+    document.getElementById('linePickCard').innerHTML = renderLinePickCard(data.pick, true);
+    if (data.runner_up) {
+      document.getElementById('lineRunnerUpCard').innerHTML = renderLineRunnerUp(data.runner_up);
+    }
+    if (data.slate_summary) {
+      document.getElementById('lineSlateSummary').innerHTML = renderLineSummary(data.slate_summary);
+    }
+
+    // Auto-save the pick
+    try {
+      await fetch('/api/save-line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pick: data.pick }),
+      });
+    } catch(e) { /* non-fatal */ }
+
+  } catch(e) {
+    document.getElementById('lineLoading').style.display = 'none';
+    document.getElementById('lineEmptyMsg').textContent = 'Couldn\'t load line pick. Check backend.';
+    document.getElementById('lineEmpty').style.display = 'flex';
+  }
+
+  // Load history
+  try {
+    const hr = await fetch('/api/line-history');
+    if (hr.ok) {
+      const hist = await hr.json();
+      if (hist.picks && hist.picks.length) {
+        document.getElementById('lineHistoryWrap').style.display = 'block';
+        document.getElementById('lineHistoryList').innerHTML = renderLineHistory(hist);
+      }
+    }
+  } catch(e) { /* non-fatal */ }
+}
+
+function renderLinePickCard(pick, isPrimary) {
+  const dir = pick.direction || 'over';
+  const signals = pick.signals || [];
+  const signalChips = signals.slice(0, 3).map(s =>
+    `<span class="line-signal-chip">${s.type.replace('_',' ')}</span>`
+  ).join('');
+
+  return `
+    <div class="line-pick-card">
+      <div class="line-pick-header">
+        <div>
+          <div class="line-pick-name">${pick.player_name}</div>
+          <div class="line-pick-team">${pick.team} · vs ${pick.opponent}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="line-confidence-badge">${pick.confidence}%</div>
+          <div class="line-confidence-sub">Confidence</div>
+        </div>
+      </div>
+      <div class="line-direction-row">
+        <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
+        <div>
+          <div class="line-stat-val">${pick.line} ${pick.stat_type}</div>
+          <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${pick.edge > 0 ? '+' : ''}${pick.edge}</div>
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div>
+          <div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} books</div>
+        </div>
+      </div>
+      ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
+      <div class="line-narrative">${pick.narrative}</div>
+    </div>`;
+}
+
+function renderLineRunnerUp(pick) {
+  const dir = pick.direction || 'over';
+  return `
+    <div class="line-runner-up">
+      <div class="line-runner-label">Runner-Up</div>
+      <div class="line-runner-main">
+        <div>
+          <div class="line-runner-name">${pick.player_name}</div>
+          <div class="line-runner-dir">${dir.toUpperCase()} ${pick.line} ${pick.stat_type} · ${pick.confidence}% conf</div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--muted)">${pick.team} vs ${pick.opponent}</div>
+      </div>
+    </div>`;
+}
+
+function renderLineSummary(summary) {
+  return `
+    <div class="line-summary-row">
+      <div class="line-summary-chip">${summary.games_evaluated} games</div>
+      <div class="line-summary-chip">${summary.props_scanned} props scanned</div>
+      <div class="line-summary-chip">${summary.edges_found} edges found</div>
+    </div>`;
+}
+
+function renderLineHistory(hist) {
+  const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
+  const streak  = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
+
+  let html = `
+    <div style="display:flex;gap:16px;margin-bottom:14px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
+      </div>
+      ${streak ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${hist.streak_type==='hit'?'var(--green)':'var(--red)'}">${streak}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
+      </div>` : ''}
+    </div>`;
+
+  hist.picks.slice(0, 10).forEach(p => {
+    const result = p.result || 'pending';
+    html += `
+      <div class="line-history-row">
+        <div>
+          <div class="line-history-name">${p.player_name}</div>
+          <div class="line-history-sub">${p.direction?.toUpperCase()} ${p.line} ${p.stat_type} · ${p.date}</div>
+        </div>
+        <span class="line-result-pill ${result}">${result}</span>
+      </div>`;
+  });
+  return html;
+}
+
+// ════════════════════════════════════════════════════════
+// ── LAB PAGE ──
+// ════════════════════════════════════════════════════════
+
+const LAB = {
+  messages: [],       // conversation history
+  system: '',         // dynamic system prompt
+  briefing: null,     // latest briefing
+  config: null,       // current config
+  initialized: false,
+};
+
+async function initLabPage() {
+  if (LAB.initialized) return;
+  LAB.initialized = true;
+
+  document.getElementById('labLoading').style.display = 'block';
+  document.getElementById('labLocked').style.display   = 'none';
+  document.getElementById('labUnlocked').style.display = 'none';
+
+  try {
+    const r = await fetch('/api/lab/status');
+    const status = await r.json();
+    document.getElementById('labLoading').style.display = 'none';
+
+    if (status.locked) {
+      showLabLocked(status);
+    } else {
+      await showLabUnlocked(status);
+    }
+  } catch(e) {
+    document.getElementById('labLoading').style.display = 'none';
+    document.getElementById('labUnlocked').style.display = 'block';
+    appendLabMessage('assistant', 'Could not connect to the Lab backend. Make sure the API is running.');
+  }
+}
+
+function showLabLocked(status) {
+  document.getElementById('labLocked').style.display = 'block';
+  document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
+  const unlock = status.estimated_unlock
+    ? `Estimated unlock: ${new Date(status.estimated_unlock).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
+    : (status.next_lock_time ? `Locks at ${new Date(status.next_lock_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}` : '');
+  document.getElementById('labLockedUnlock').textContent = unlock;
+
+  // Show config changelog read-only
+  fetch('/api/lab/config-history').then(r=>r.json()).then(data => {
+    const el = document.getElementById('labLockedConfig');
+    const changelog = (data.changelog || []).slice().reverse().slice(0,5);
+    el.innerHTML = `
+      <div class="lab-config-card">
+        <div class="lab-config-label">Config v${data.version} · Changelog</div>
+        ${changelog.map(c => `
+          <div class="lab-changelog-item">
+            <span class="lab-changelog-ver">v${c.version}</span>
+            <span style="color:var(--muted);font-size:0.65rem">${c.date}</span>
+            <br><span>${c.change}</span>
+          </div>`).join('')}
+      </div>`;
+  }).catch(() => {});
+}
+
+async function showLabUnlocked(status) {
+  document.getElementById('labUnlocked').style.display = 'block';
+  document.getElementById('labConfigVersion').textContent = `Config v${status.current_config_version}`;
+
+  // Load briefing + config in parallel
+  const [briefingRes, configRes] = await Promise.allSettled([
+    fetch('/api/lab/briefing').then(r => r.json()),
+    fetch('/api/lab/config-history').then(r => r.json()),
+  ]);
+
+  if (briefingRes.status === 'fulfilled') LAB.briefing = briefingRes.value;
+  if (configRes.status === 'fulfilled')   LAB.config   = configRes.value;
+
+  // Build system prompt
+  LAB.system = buildLabSystemPrompt();
+
+  // Send opening briefing message from Claude
+  const openingPrompt = LAB.briefing
+    ? 'Please give me a concise briefing based on the data. Then suggest 1-2 specific parameter improvements with reasoning.'
+    : 'Introduce yourself and explain what you can help with in the Lab.';
+
+  appendLabMessage('user', openingPrompt, true); // hidden=true, don't show in UI
+  await labCallClaude();
+}
+
+function buildLabSystemPrompt() {
+  const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
+  const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
+
+  return `You are the model tuning assistant for an NBA draft optimizer called The Oracle.
+
+YOUR ROLE:
+- Analyze prediction accuracy and suggest parameter improvements
+- Run backtests to validate changes before applying them
+- Apply approved config changes (only after explicit user approval)
+- You suggest, the user approves. Never apply changes without explicit approval.
+
+SCOPE:
+- You CAN modify: the runtime model config (data/model-config.json)
+- You CANNOT modify: application code, API routes, or frontend
+- If a request requires code changes, explain and direct user to Claude Code
+
+ACTIONS YOU CAN REQUEST:
+- backtest: {"action":"backtest","changes":{"dot.path":value},"description":"..."}
+- update_config: {"action":"update_config","changes":{"dot.path":value},"description":"..."}
+- show_config: {"action":"show_config"}
+- show_history: {"action":"show_history"}
+
+When you want to trigger an action, include the JSON in your response wrapped in <action>...</action> tags.
+The frontend will detect this and call the appropriate endpoint.
+
+CURRENT CONFIG:
+${cfgStr}
+
+LATEST BRIEFING:
+${briefStr}
+
+BEHAVIOR:
+- Open with a conversational briefing summary (2-3 sentences max)
+- Proactively suggest 1-2 improvements based on patterns
+- When suggesting a change, offer to backtest first
+- When presenting backtest results, state improvement % and recommendation clearly
+- Be concise and action-oriented. No unnecessary hedging.`;
+}
+
+async function labCallClaude() {
+  const thinkId = 'lab-think-' + Date.now();
+  const thinkEl = document.createElement('div');
+  thinkEl.id = thinkId;
+  thinkEl.className = 'lab-msg thinking';
+  thinkEl.innerHTML = '<div class="lab-thinking-dots"><span></span><span></span><span></span></div>';
+  document.getElementById('labMessages').appendChild(thinkEl);
+  thinkEl.scrollIntoView({behavior:'smooth'});
+
+  document.getElementById('labSendBtn').disabled = true;
+
+  try {
+    const r = await fetch('/api/lab/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: LAB.messages.filter(m => !m.hidden),
+        system: LAB.system,
+      }),
+    });
+    const data = await r.json();
+    thinkEl.remove();
+
+    if (data.error) {
+      appendLabMessage('assistant', `Error: ${data.error}`);
+      return;
+    }
+
+    const content = data.content || '';
+    await handleLabResponse(content);
+
+  } catch(e) {
+    thinkEl.remove();
+    appendLabMessage('assistant', 'Network error. Please try again.');
+  } finally {
+    document.getElementById('labSendBtn').disabled = false;
+  }
+}
+
+async function handleLabResponse(content) {
+  // Extract and handle any action tags
+  const actionMatch = content.match(/<action>([\s\S]*?)<\/action>/);
+  const displayContent = content.replace(/<action>[\s\S]*?<\/action>/g, '').trim();
+
+  appendLabMessage('assistant', displayContent);
+
+  if (actionMatch) {
+    try {
+      const action = JSON.parse(actionMatch[1]);
+      await executeLabAction(action);
+    } catch(e) {
+      // Not valid JSON in action tag — ignore
+    }
+  }
+}
+
+async function executeLabAction(action) {
+  const type = action.action;
+
+  if (type === 'backtest') {
+    appendLabMessage('assistant', 'Running backtest...', false, true);
+    try {
+      const r = await fetch('/api/lab/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposed_changes: action.changes, description: action.description }),
+      });
+      const result = await r.json();
+      // Feed result back to Claude
+      const summary = `Backtest complete: ${result.slates_tested} slates tested. Current MAE: ${result.current_config_mae}, Proposed MAE: ${result.proposed_config_mae}, Improvement: ${result.improvement_pct}%. ${result.recommendation}`;
+      appendLabMessage('user', `Backtest result: ${JSON.stringify(result)}`, true);
+      await labCallClaude();
+    } catch(e) {
+      appendLabMessage('assistant', 'Backtest failed. Try again.');
+    }
+
+  } else if (type === 'show_config') {
+    try {
+      const r = await fetch('/api/lab/config-history');
+      const data = await r.json();
+      appendLabMessage('user', `Config data: ${JSON.stringify(data)}`, true);
+      await labCallClaude();
+    } catch(e) {}
+
+  } else if (type === 'show_history') {
+    try {
+      const r = await fetch('/api/lab/config-history');
+      const data = await r.json();
+      const changelogStr = (data.changelog || []).map(c => `v${c.version} (${c.date}): ${c.change}`).join('\n');
+      appendLabMessage('assistant', `**Config History:**\n${changelogStr}`);
+    } catch(e) {}
+
+  } else if (type === 'update_config') {
+    // Don't auto-apply — show confirm button
+    const msgEl = document.createElement('div');
+    msgEl.className = 'lab-msg assistant';
+    msgEl.innerHTML = `
+      <div class="lab-msg-label">Claude</div>
+      <div>Ready to apply: <b>${action.description || JSON.stringify(action.changes)}</b></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button onclick="applyLabConfig(${JSON.stringify(action.changes).replace(/"/g,'&quot;')}, '${(action.description||'').replace(/'/g,'')}', this.parentElement.parentElement)"
+          style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
+          Apply
+        </button>
+        <button onclick="this.parentElement.parentElement.querySelector('div').textContent='Change declined.'"
+          style="background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:6px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
+          Decline
+        </button>
+      </div>`;
+    document.getElementById('labMessages').appendChild(msgEl);
+    msgEl.scrollIntoView({behavior:'smooth'});
+  }
+}
+
+async function applyLabConfig(changes, description, msgEl) {
+  try {
+    const r = await fetch('/api/lab/update-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ changes, change_description: description }),
+    });
+    const result = await r.json();
+    if (result.error) {
+      msgEl.querySelector('div').textContent = `Error: ${result.error}`;
+      return;
+    }
+    msgEl.querySelector('div').textContent = `Applied — now config v${result.version}.`;
+    msgEl.querySelector('div + div').remove();
+    document.getElementById('labConfigVersion').textContent = `Config v${result.version}`;
+    appendLabMessage('user', `Config updated to v${result.version}: ${description}`, true);
+    await labCallClaude();
+  } catch(e) {
+    msgEl.querySelector('div').textContent = 'Failed to apply config change.';
+  }
+}
+
+function appendLabMessage(role, content, hidden = false, isStatus = false) {
+  LAB.messages.push({ role, content, hidden });
+  if (hidden) return;
+
+  const el = document.createElement('div');
+  el.className = `lab-msg ${role}`;
+
+  if (role === 'assistant') {
+    // Convert basic markdown (bold, newlines)
+    const formatted = content
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\n/g, '<br>');
+    el.innerHTML = `<div class="lab-msg-label">Claude</div><div>${formatted}</div>`;
+  } else {
+    el.textContent = content;
+  }
+
+  document.getElementById('labMessages').appendChild(el);
+  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+async function labSend() {
+  const input = document.getElementById('labInput');
+  const text  = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  appendLabMessage('user', text);
+  await labCallClaude();
+}
+
+function labSendQuick(text) {
+  document.getElementById('labInput').value = text;
+  labSend();
+}
+
+async function labViewConfig() {
+  try {
+    const r = await fetch('/api/lab/config-history');
+    const data = await r.json();
+    const formatted = `Current config (v${data.version}):\n${JSON.stringify(data.config, null, 2)}`;
+    appendLabMessage('user', 'Show me the current config', false);
+    appendLabMessage('assistant', '```\n' + formatted + '\n```');
+  } catch(e) {}
+}
+
+async function labRefreshBriefing() {
+  try {
+    const r = await fetch('/api/lab/briefing');
+    LAB.briefing = await r.json();
+    LAB.system = buildLabSystemPrompt();
+    appendLabMessage('user', 'I refreshed the briefing. What does the latest analysis show?', false);
+    await labCallClaude();
+  } catch(e) {}
 }
 </script>
 </body>

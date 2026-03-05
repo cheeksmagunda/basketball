@@ -17,9 +17,13 @@ from dotenv import load_dotenv
 try:
     from api.real_score import real_score_projection, _make_rng
     from api.asset_optimizer import optimize_lineup
+    from api.line_engine import run_line_engine
 except ImportError:
     from .real_score import real_score_projection, _make_rng
     from .asset_optimizer import optimize_lineup
+    from .line_engine import run_line_engine
+
+ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 
 load_dotenv()
 app = FastAPI()
@@ -104,7 +108,77 @@ CACHE_DIR = Path("/tmp/nba_cache_v19")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
-LOCK_BUFFER_MINUTES = 5
+
+CONFIG_CACHE_DIR = Path("/tmp/nba_config_v1")
+CONFIG_CACHE_DIR.mkdir(exist_ok=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RUNTIME CONFIG — Loaded from data/model-config.json on GitHub.
+# Falls back to hardcoded defaults if GitHub is unreachable or file missing.
+# The Lab (Phase 3) writes config updates here; changes take effect within 5 min.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CONFIG_DEFAULTS = {
+    "version": 1,
+    "card_boost": {
+        "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
+        "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
+        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SA"],
+    },
+    "game_script": {
+        "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
+        "defensive_grind": {"pts":0.85,"reb":0.90,"ast":0.85,"stl":1.40,"blk":1.35,"tov":1.15},
+        "balanced":        {"pts":1.0, "reb":1.0, "ast":1.0, "stl":1.05,"blk":1.05,"tov":1.0},
+        "fast_paced":      {"pts":1.15,"reb":1.10,"ast":1.15,"stl":0.95,"blk":0.95,"tov":0.90},
+        "track_meet":      {"pts":1.25,"reb":1.05,"ast":1.20,"stl":0.90,"blk":0.90,"tov":0.85},
+        "blowout_spread_threshold":8,"blowout_pts_penalty":0.90,
+        "blowout_ast_penalty":0.90,"blowout_reb_penalty":0.94,
+    },
+    "real_score": {"dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2}},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
+    "projection": {
+        "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,
+        "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
+        "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
+    },
+    "contrarian": {
+        "closeness_boost_floor":0.7,"closeness_boost_scalar":0.6,
+        "underdog_bonus":1.1,"underdog_spread_min":2,"underdog_spread_max":7,
+    },
+}
+
+def _load_config():
+    """Load model config from GitHub (data/model-config.json), cache 5 min.
+    Falls back to _CONFIG_DEFAULTS if unreachable or file missing — never breaks."""
+    cache_file = CONFIG_CACHE_DIR / "model_config.json"
+    # 5-minute TTL
+    if cache_file.exists():
+        try:
+            age = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
+            if age < 300:
+                return json.loads(cache_file.read_text())
+        except: pass
+    try:
+        content, _ = _github_get_file("data/model-config.json")
+        if content:
+            cfg = json.loads(content)
+            cache_file.write_text(json.dumps(cfg))
+            return cfg
+    except: pass
+    return _CONFIG_DEFAULTS
+
+def _cfg(path, default=None):
+    """Read a dot-notation path from the loaded config with a default fallback.
+    e.g. _cfg('card_boost.decay_base', 0.70)"""
+    cfg = _load_config()
+    keys = path.split(".")
+    val = cfg
+    for k in keys:
+        if isinstance(val, dict) and k in val:
+            val = val[k]
+        else:
+            return default
+    return val
 
 AI_MODEL = None
 for _p in [
@@ -132,25 +206,25 @@ def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
 def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
 def _is_locked(start_time_iso):
-    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start.
+    """Returns True if current UTC time is within lock_buffer_minutes of game start.
     Returns False for completed games (>3h past start) to avoid stale ESPN data."""
     try:
+        lock_buf = _cfg("projection.lock_buffer_minutes", 5)
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
-        # Completed games (>3h past start) are stale, not locked
         if now > game_start + timedelta(hours=3):
             return False
-        return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
+        return now >= game_start - timedelta(minutes=lock_buf)
     except:
         return False
 
 def _is_completed(start_time_iso):
-    """Returns True if the game has already passed its lock window (started or about to start).
-    Completed/in-progress games should not appear in draft recommendations."""
+    """Returns True if the game has already passed its lock window."""
     try:
+        lock_buf = _cfg("projection.lock_buffer_minutes", 5)
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
-        return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
+        return now >= game_start - timedelta(minutes=lock_buf)
     except:
         return False
 
@@ -318,17 +392,22 @@ def _fetch_athlete(pid):
             # with heavier recent weight. Catches role changes mid-season
             # (e.g. Drummond 25.7 season → 16.1 recent after Embiid return,
             #  Love 25.8 → 14.8 after Utah trade, Clarkson 24.2 → 18.8)
-            min_ratio = recent["min"] / max(season["min"], 1)
-            if min_ratio < 0.75:
-                # Major role change: 80% recent, 20% season
-                min_blend = round(season["min"] * 0.2 + recent["min"] * 0.8, 2)
-            elif min_ratio < 0.90:
-                # Moderate decline: 65% recent, 35% season
-                min_blend = round(season["min"] * 0.35 + recent["min"] * 0.65, 2)
-            else:
-                min_blend = round(season["min"] * 0.5 + recent["min"] * 0.5, 2)
+            proj = _cfg("projection", _CONFIG_DEFAULTS["projection"])
+            major_thr   = proj.get("major_role_change_threshold", 0.75)
+            major_w     = proj.get("major_role_change_recent_weight", 0.80)
+            mod_thr     = proj.get("moderate_decline_threshold", 0.90)
+            mod_w       = proj.get("moderate_decline_recent_weight", 0.65)
+            blend_w     = proj.get("season_recent_blend", 0.5)
 
-            blended = {k: round(season[k] * 0.5 + recent[k] * 0.5, 2) for k in season}
+            min_ratio = recent["min"] / max(season["min"], 1)
+            if min_ratio < major_thr:
+                min_blend = round(season["min"] * (1 - major_w) + recent["min"] * major_w, 2)
+            elif min_ratio < mod_thr:
+                min_blend = round(season["min"] * (1 - mod_w) + recent["min"] * mod_w, 2)
+            else:
+                min_blend = round(season["min"] * (1 - blend_w) + recent["min"] * blend_w, 2)
+
+            blended = {k: round(season[k] * (1 - blend_w) + recent[k] * blend_w, 2) for k in season}
             blended["min"] = min_blend  # Override minutes with smart blend
             blended["season_min"] = season["min"]
             blended["recent_min"] = recent["min"]
@@ -403,7 +482,8 @@ def _cascade_minutes(roster, stats_map):
             freed_by_group[pg] = freed_by_group.get(pg, 0) + os.get("min", 0)
             # Centers also share with forwards
             if pg == "C":
-                freed_by_group["F"] = freed_by_group.get("F", 0) + os.get("min", 0) * 0.3
+                cf_share = _cfg("cascade.center_forward_share", 0.30)
+                freed_by_group["F"] = freed_by_group.get("F", 0) + os.get("min", 0) * cf_share
 
         # Distribute freed minutes to active players in same position group
         for group, freed_min in freed_by_group.items():
@@ -425,15 +505,17 @@ def _cascade_minutes(roster, stats_map):
             total_weight = sum(1.0 / max(r[1].get("min", 1), 1) for r in recipients)
             for rp, rs in recipients:
                 weight = (1.0 / max(rs.get("min", 1), 1)) / total_weight
-                bonus = freed_min * weight * 0.7  # 70% of freed minutes get redistributed
+                redist_rate = _cfg("cascade.redistribution_rate", 0.70)
+                bonus = freed_min * weight * redist_rate
                 pid = rp["id"]
                 if pid not in cascade_flags:
                     cascade_flags[pid] = 0.0
                 cascade_flags[pid] += bonus
 
-    # Cap per-player cascade at 3 minutes to prevent unrealistic projections
+    # Cap per-player cascade (config: cascade.per_player_cap_minutes)
+    cap_min = _cfg("cascade.per_player_cap_minutes", 3.0)
     for pid in cascade_flags:
-        cascade_flags[pid] = min(cascade_flags[pid], 3.0)
+        cascade_flags[pid] = min(cascade_flags[pid], cap_min)
 
     return cascade_flags
 
@@ -455,57 +537,32 @@ def _cascade_minutes(roster, stats_map):
 #           same methodology. Avoids DNP risks from extreme low-ownership picks.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Big-market / high-profile teams that casual drafters flock to.
-# These players get MORE drafts → LOWER card boosts.
-_BIG_MARKET_TEAMS = {
-    "LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN",
-    "LAC", "CHI", "SA",  # Wemby effect
-}
-
-
 def _est_card_boost(proj_min, pts, team_abbr):
     """Estimate ADDITIVE card boost based on predicted draft popularity.
-
-    Real Sports dynamically adjusts card boosts inversely to ownership:
-    stars get massive draft counts → crushed boosts (+0.3),
-    obscure role players get almost no drafts → huge boosts (+2.5-3.0+).
-
-    Uses a "hype score" — how attractive the player is to casual drafters —
-    and maps it through exponential decay to a card boost.
-
-    Calibrated against March 3 + March 4 actuals:
-      Wembanyama (36m, 24p, SA):   hype 9.5 → est +0.4x  (actual +0.3)
-      Ant Edwards (37m, 26p):      hype 7.5 → est +0.5x  (actual +0.3)
-      Bam (34m, 21p, MIA):         hype 7.0 → est +0.6x  (actual +0.7)
-      Jrue Holiday (30m, 16p, BOS):hype 3.84→ est +1.0x  (actual +1.0) ✓
-      Jaylin Williams (20m, 8p):   hype 0.5 → est +2.9x  (actual +2.7)
-      Marcus Smart (25m, 10p):     hype 0.9 → est +2.6x  (actual +2.5)
-      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.0x  (actual +3.0) ✓
-      Walter Clayton Jr (28m,14p): hype 1.79→ est +2.1x  (actual +3.0) — under
-      N. Clifford (12m, 4p):       hype 0.1 → est +3.0x  (winning draft ~3.2x)
-
-    Cap is +3.0x (confirmed max in-game). Decay base tuned from 0.74→0.70
-    to differentiate stars from mid-tier players more sharply.
+    All parameters read from runtime config (data/model-config.json).
+    Falls back to calibrated defaults if config unavailable.
     """
-    # Hype score — PPG² makes scoring stars disproportionately popular
+    cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
+    decay_base     = cb.get("decay_base", 0.70)
+    ceiling        = cb.get("ceiling", 3.0)
+    floor_val      = cb.get("floor", 0.2)
+    base_offset    = cb.get("base_offset", 0.3)
+    scalar         = cb.get("scalar", 3.4)
+    bm_mult        = cb.get("big_market_multiplier", 1.5)
+    big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SA"]))
+
     hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
-    if team_abbr in _BIG_MARKET_TEAMS:
-        hype *= 1.5
-    # Exponential decay: high hype → low boost, low hype → high boost
-    # Decay base 0.70 (was 0.74) sharpens drop-off for mid-tier popularity.
-    # Cap 3.0 (was 3.5) matches confirmed max observed in-game.
-    boost = 3.4 * (0.70 ** hype) + 0.3
-    return round(min(max(boost, 0.2), 3.0), 1)
+    if team_abbr in big_markets:
+        hype *= bm_mult
+    boost = scalar * (decay_base ** hype) + base_offset
+    return round(min(max(boost, floor_val), ceiling), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
-    """Real Score-aligned formula — boosted defensive stats.
-
-    Backtest insight: steals and blocks correlate more strongly with Real Score
-    than with traditional DFS. Marcus Smart: 10/3/7/4stl/2blk = 3.4 Real Score
-    despite only 10 pts, because defensive plays in close games are high-impact
-    events in the Real Score algorithm (momentum shifts, clutch stops).
-    """
-    return pts + reb + (ast * 1.5) + (stl * 4.5) + (blk * 4.0) - (tov * 1.2)
+    """Real Score-aligned formula. Weights read from runtime config."""
+    w = _cfg("real_score.dfs_weights", {"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2})
+    return (pts * w.get("pts", 1.0) + reb * w.get("reb", 1.0) +
+            ast * w.get("ast", 1.5) + stl * w.get("stl", 4.5) +
+            blk * w.get("blk", 4.0) + tov * w.get("tov", -1.2))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -520,48 +577,32 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _game_script_weights(total, spread):
-    """Return per-stat multipliers based on over/under and spread."""
-    w = {"pts": 1.0, "reb": 1.0, "ast": 1.0, "stl": 1.0, "blk": 1.0, "tov": 1.0}
+    """Return per-stat multipliers based on over/under and spread. Reads from runtime config."""
+    gs = _cfg("game_script", _CONFIG_DEFAULTS["game_script"])
     t = total or DEFAULT_TOTAL
 
-    if t < 220:
-        # Defensive Grind — steals/blocks are gold, volume stats suppressed
-        w["pts"] = 0.85
-        w["reb"] = 0.90
-        w["ast"] = 0.85
-        w["stl"] = 1.40
-        w["blk"] = 1.35
-        w["tov"] = 1.15   # turnovers hurt more in slow games
-    elif t <= 235:
-        # Balanced — slight lean toward matchup, essentially neutral
-        w["pts"] = 1.0
-        w["reb"] = 1.0
-        w["ast"] = 1.0
-        w["stl"] = 1.05
-        w["blk"] = 1.05
-    elif t <= 245:
-        # Fast-Paced — scorers and playmakers thrive, shot volume is up
-        w["pts"] = 1.15
-        w["reb"] = 1.10
-        w["ast"] = 1.15
-        w["stl"] = 0.95
-        w["blk"] = 0.95
-        w["tov"] = 0.90   # turnovers less costly in high-scoring games
+    dg_ceil  = gs.get("defensive_grind_ceiling", 220)
+    bal_ceil = gs.get("balanced_ceiling", 235)
+    fp_ceil  = gs.get("fast_paced_ceiling", 245)
+    blow_thr = gs.get("blowout_spread_threshold", 8)
+
+    if t < dg_ceil:
+        tier = "defensive_grind"
+    elif t <= bal_ceil:
+        tier = "balanced"
+    elif t <= fp_ceil:
+        tier = "fast_paced"
     else:
-        # Track Meet (> 245) — huge scoring upside
-        w["pts"] = 1.25
-        w["ast"] = 1.20
-        w["reb"] = 1.05
-        w["stl"] = 0.90
-        w["blk"] = 0.90
-        w["tov"] = 0.85
-        # Blowout risk: if spread > 8, starters sit in garbage time
-        # NOTE: this only applies to per-game script (starters context).
-        # The main project_player() handles role-aware spread separately.
-        if abs(spread or 0) > 8:
-            w["pts"] *= 0.90
-            w["ast"] *= 0.90
-            w["reb"] *= 0.94
+        tier = "track_meet"
+
+    defaults = _CONFIG_DEFAULTS["game_script"][tier]
+    tier_cfg = gs.get(tier, defaults)
+    w = {k: tier_cfg.get(k, defaults.get(k, 1.0)) for k in ["pts","reb","ast","stl","blk","tov"]}
+
+    if tier == "track_meet" and abs(spread or 0) > blow_thr:
+        w["pts"] *= gs.get("blowout_pts_penalty", 0.90)
+        w["ast"] *= gs.get("blowout_ast_penalty", 0.90)
+        w["reb"] *= gs.get("blowout_reb_penalty", 0.94)
 
     return w
 
@@ -605,7 +646,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         proj_min *= 0.88
 
     # Minutes gate: must project to at least 15 minutes
-    if proj_min < MIN_GATE: return None
+    min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
+    if proj_min < min_gate: return None
 
     pts = stats["pts"]
     reb = stats["reb"]
@@ -1286,4 +1328,588 @@ async def refresh():
             f.unlink(); cleared += 1
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    # Also clear config cache on refresh
+    try:
+        cfg_cache = CONFIG_CACHE_DIR / "model_config.json"
+        if cfg_cache.exists():
+            cfg_cache.unlink()
+    except: pass
     return {"status": "ok", "cleared": cleared, "ts": datetime.now().isoformat()}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PHASE 2: LINE OF THE DAY
+# ═════════════════════════════════════════════════════════════════════════════
+
+LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
+
+@app.get("/api/line-of-the-day")
+async def get_line_of_the_day():
+    """Detect today's best player prop edge and return it with confidence score."""
+    if not ODDS_API_KEY:
+        return JSONResponse({"pick": None, "error": "no_api_key"}, status_code=200)
+
+    games = fetch_games()
+    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    if not draftable:
+        return JSONResponse({"pick": None, "error": "no_games"}, status_code=200)
+
+    # Gather all projections via the same pipeline used by /api/slate
+    all_proj = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
+            try: all_proj.extend(fut.result())
+            except Exception as e: print(f"line proj err: {e}")
+
+    if not all_proj:
+        return JSONResponse({"pick": None, "error": "no_projections"}, status_code=200)
+
+    result = run_line_engine(all_proj, draftable)
+    return result
+
+
+LINE_FIELDS = LINE_CSV_HEADER.split(",")
+
+@app.post("/api/save-line")
+async def save_line(payload: dict = Body(...)):
+    """Save today's Line of the Day pick to data/lines/{date}.csv. Saves once per day."""
+    today = _et_date().isoformat()
+    path = f"data/lines/{today}.csv"
+
+    # Check if already saved today
+    existing, _ = _github_get_file(path)
+    if existing:
+        return {"status": "already_saved", "path": path}
+
+    pick = payload.get("pick")
+    if not pick:
+        return JSONResponse({"error": "No pick provided"}, status_code=400)
+
+    row = ",".join(_csv_escape(str(pick.get(k, ""))) for k in [
+        "player_name", "player_id", "team", "opponent", "stat_type",
+        "line", "direction", "projection", "edge", "confidence", "narrative",
+    ])
+    row = f"{today}," + row + ",pending,"  # result=pending, actual_stat=empty
+
+    csv_content = LINE_CSV_HEADER + "\n" + row + "\n"
+    result = _github_write_file(path, csv_content, f"line pick for {today}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+    return {"status": "saved", "path": path}
+
+
+@app.post("/api/resolve-line")
+async def resolve_line(payload: dict = Body(...)):
+    """Mark today's line pick as hit or miss given the actual stat."""
+    date_str = payload.get("date", _et_date().isoformat())
+    actual   = payload.get("actual_stat")
+    if actual is None:
+        return JSONResponse({"error": "actual_stat required"}, status_code=400)
+
+    path = f"data/lines/{date_str}.csv"
+    existing, sha = _github_get_file(path)
+    if not existing:
+        return JSONResponse({"error": "No line pick found for this date"}, status_code=404)
+
+    lines = existing.strip().split("\n")
+    if len(lines) < 2:
+        return JSONResponse({"error": "Empty line file"}, status_code=400)
+
+    # Parse the pick row
+    rows = _parse_csv(existing, LINE_FIELDS)
+    if not rows:
+        return JSONResponse({"error": "Could not parse line file"}, status_code=400)
+
+    row = rows[0]
+    direction = row.get("direction", "over")
+    line_val  = _safe_float(row.get("line", 0))
+    actual_f  = _safe_float(actual)
+    if direction == "over":
+        result = "hit" if actual_f > line_val else "miss"
+    else:
+        result = "hit" if actual_f < line_val else "miss"
+
+    # Rewrite CSV with result filled in
+    fields_out = list(LINE_FIELDS)
+    updated_row = dict(row)
+    updated_row["result"]      = result
+    updated_row["actual_stat"] = str(actual_f)
+
+    new_row = ",".join(_csv_escape(str(updated_row.get(k, ""))) for k in fields_out)
+    csv_content = LINE_CSV_HEADER + "\n" + new_row + "\n"
+    _github_write_file(path, csv_content, f"line result for {date_str}: {result}")
+    return {"status": "resolved", "result": result, "actual": actual_f}
+
+
+@app.get("/api/line-history")
+async def line_history():
+    """Return recent Line of the Day picks with results."""
+    items = _github_list_dir("data/lines")
+    results = []
+    for item in sorted(items, key=lambda x: x.get("name", ""), reverse=True)[:30]:
+        name = item.get("name", "")
+        if not name.endswith(".csv"):
+            continue
+        content, _ = _github_get_file(f"data/lines/{name}")
+        if not content:
+            continue
+        rows = _parse_csv(content, LINE_FIELDS)
+        if rows:
+            results.append(rows[0])
+
+    # Compute streak + hit rate
+    hits   = [r for r in results if r.get("result") == "hit"]
+    misses = [r for r in results if r.get("result") == "miss"]
+    total_resolved = len(hits) + len(misses)
+    hit_rate = round(len(hits) / total_resolved * 100, 1) if total_resolved else None
+
+    # Streak: consecutive same result from most recent
+    streak = 0
+    streak_type = None
+    for r in results:
+        res = r.get("result", "pending")
+        if res == "pending":
+            continue
+        if streak_type is None:
+            streak_type = res
+            streak = 1
+        elif res == streak_type:
+            streak += 1
+        else:
+            break
+
+    return {
+        "picks":        results,
+        "hit_rate":     hit_rate,
+        "total_picks":  len(results),
+        "resolved":     total_resolved,
+        "streak":       streak,
+        "streak_type":  streak_type,
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PHASE 3: LAB
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _all_games_final(games):
+    """Check ESPN scoreboard to see if all today's games are completed."""
+    if not games:
+        return True, 0, len(games)
+    today_str = _et_date().strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
+    finals = 0
+    remaining = 0
+    for ev in data.get("events", []):
+        status = ev.get("status", {}).get("type", {}).get("completed", False)
+        if status:
+            finals += 1
+        else:
+            remaining += 1
+    all_final = remaining == 0 and finals > 0
+    return all_final, remaining, finals
+
+
+@app.get("/api/lab/status")
+async def lab_status():
+    """Return Lab lock status based on slate state and game completion."""
+    games = fetch_games()
+    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+
+    # If games are currently in progress (slate locked, games not yet final)
+    start_times = [g["startTime"] for g in games if g.get("startTime")]
+    earliest = min(start_times) if start_times else None
+    slate_locked = _is_locked(earliest) if earliest else False
+
+    all_final, remaining, finals = _all_games_final(games)
+
+    cfg = _load_config()
+    cfg_version = cfg.get("version", 1)
+    last_change = (cfg.get("changelog") or [{}])[-1]
+
+    if all_final or not games:
+        # Unlocked: all games done or no games today
+        next_lock = None
+        if draftable:
+            lock_buf = _cfg("projection.lock_buffer_minutes", 5)
+            ns = min(g["startTime"] for g in draftable if g.get("startTime"))
+            gs = datetime.fromisoformat(ns.replace("Z", "+00:00"))
+            next_lock = (gs - timedelta(minutes=lock_buf)).isoformat()
+        return {
+            "locked": False,
+            "reason": "All games final" if games else "No games today",
+            "current_config_version": cfg_version,
+            "games_remaining": 0,
+            "games_final": finals,
+            "next_lock_time": next_lock,
+        }
+    elif slate_locked:
+        # Estimate unlock: assume ~2.5h per game from earliest start
+        est_unlock = None
+        if earliest:
+            try:
+                gs = datetime.fromisoformat(earliest.replace("Z", "+00:00"))
+                est_unlock = (gs + timedelta(hours=2, minutes=30)).isoformat()
+            except: pass
+        return {
+            "locked": True,
+            "reason": f"Slate in progress — {remaining} game{'s' if remaining != 1 else ''} remaining",
+            "current_config_version": cfg_version,
+            "games_remaining": remaining,
+            "games_final": finals,
+            "estimated_unlock": est_unlock,
+        }
+    else:
+        # Pre-slate — lab is open
+        return {
+            "locked": False,
+            "reason": "Pre-slate window",
+            "current_config_version": cfg_version,
+            "games_remaining": 0,
+            "games_final": 0,
+            "next_lock_time": None,
+        }
+
+
+@app.get("/api/lab/briefing")
+async def lab_briefing():
+    """Analyze recent prediction accuracy and return structured briefing for the Lab."""
+    pred_items  = _github_list_dir("data/predictions")
+    act_items   = _github_list_dir("data/actuals")
+    act_dates   = {i["name"].replace(".csv","") for i in act_items if i["name"].endswith(".csv")}
+
+    # Find dates with both predictions and actuals
+    paired = []
+    for item in sorted(pred_items, key=lambda x: x.get("name",""), reverse=True):
+        name = item.get("name","")
+        if not name.endswith(".csv"): continue
+        d = name[:-4]
+        if d in act_dates:
+            paired.append(d)
+
+    # Use most recent paired date for latest-slate analysis
+    latest_slate = None
+    rolling_errors = []
+
+    for d in paired[:10]:  # Max 10 slates
+        pred_csv, _ = _github_get_file(f"data/predictions/{d}.csv")
+        act_csv, _  = _github_get_file(f"data/actuals/{d}.csv")
+        if not pred_csv or not act_csv: continue
+
+        preds   = _parse_csv(pred_csv, PRED_FIELDS)
+        actuals = _parse_csv(act_csv, ACT_FIELDS)
+
+        act_map = {r["player_name"].lower(): _safe_float(r.get("actual_rs")) for r in actuals}
+
+        slate_errors = []
+        misses = []
+        for row in preds:
+            pname = row.get("player_name","").lower()
+            pred_rs = _safe_float(row.get("predicted_rs"))
+            if pname in act_map and pred_rs > 0:
+                actual_rs = act_map[pname]
+                err = abs(pred_rs - actual_rs)
+                slate_errors.append(err)
+                rolling_errors.append(err)
+                misses.append({"player": row["player_name"], "predicted_rs": pred_rs,
+                               "actual_rs": actual_rs, "error": round(actual_rs - pred_rs, 2)})
+
+        if not slate_errors: continue
+
+        mae = round(sum(slate_errors) / len(slate_errors), 2)
+        misses.sort(key=lambda x: abs(x["error"]), reverse=True)
+
+        if latest_slate is None:
+            latest_slate = {
+                "date": d,
+                "players_predicted": len(preds),
+                "players_with_actuals": len(slate_errors),
+                "mean_absolute_error": mae,
+                "biggest_misses": misses[:5],
+            }
+
+    overall_mae = round(sum(rolling_errors) / len(rolling_errors), 2) if rolling_errors else None
+    cfg = _load_config()
+
+    # Simple pattern detection: check if errors correlate with game script tier
+    patterns = []
+    if latest_slate and latest_slate["mean_absolute_error"] > 2.5:
+        patterns.append({
+            "type": "high_error",
+            "description": f"MAE {latest_slate['mean_absolute_error']} above 2.5 threshold — model may be over-projecting",
+            "slates_observed": 1,
+        })
+
+    return {
+        "latest_slate":    latest_slate,
+        "rolling_accuracy": {
+            "slates_with_data": len(paired),
+            "overall_mae": overall_mae,
+        },
+        "patterns":     patterns,
+        "current_config": {
+            "version":         cfg.get("version", 1),
+            "last_change":     (cfg.get("changelog") or [{}])[-1].get("change",""),
+            "last_change_date": (cfg.get("changelog") or [{}])[-1].get("date",""),
+        },
+    }
+
+
+def _deep_set(d, keys, value):
+    """Set a nested dict value via a list of keys."""
+    for k in keys[:-1]:
+        d = d.setdefault(k, {})
+    d[keys[-1]] = value
+
+
+@app.post("/api/lab/update-config")
+async def lab_update_config(payload: dict = Body(...)):
+    """Apply parameter changes to the runtime config. Increments version + appends changelog."""
+    changes     = payload.get("changes", {})
+    description = payload.get("change_description", "Lab update")
+    if not changes:
+        return JSONResponse({"error": "No changes provided"}, status_code=400)
+
+    cfg = _load_config()
+    old_version = cfg.get("version", 1)
+    new_version = old_version + 1
+
+    for dot_path, value in changes.items():
+        keys = dot_path.split(".")
+        _deep_set(cfg, keys, value)
+
+    cfg["version"]    = new_version
+    cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
+    cfg["updated_by"] = "lab"
+
+    changelog = cfg.get("changelog", [])
+    changelog.append({
+        "version": new_version,
+        "date":    _et_date().isoformat(),
+        "change":  description,
+    })
+    cfg["changelog"] = changelog
+
+    content = json.dumps(cfg, indent=2)
+    result  = _github_write_file("data/model-config.json", content, f"Lab config v{new_version}: {description}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+
+    # Clear config cache so new values take effect immediately
+    try:
+        (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
+    except: pass
+
+    return {"status": "applied", "version": new_version, "changes": changes}
+
+
+@app.get("/api/lab/config-history")
+async def lab_config_history():
+    """Return current config + full changelog."""
+    cfg = _load_config()
+    return {
+        "version":   cfg.get("version", 1),
+        "config":    cfg,
+        "changelog": cfg.get("changelog", []),
+    }
+
+
+@app.post("/api/lab/rollback")
+async def lab_rollback(payload: dict = Body(...)):
+    """Revert to a previous config version (creates new version with old values)."""
+    target = payload.get("target_version")
+    if target is None:
+        return JSONResponse({"error": "target_version required"}, status_code=400)
+
+    cfg = _load_config()
+    changelog = cfg.get("changelog", [])
+    # Find the config state at target version — we can reconstruct from the current file
+    # (Full git history rollback is complex; for now we just restore defaults and note in changelog)
+    # In practice: the Lab chat explains what changed and the user re-applies manually if needed.
+    current_version = cfg.get("version", 1)
+    if int(target) >= current_version:
+        return JSONResponse({"error": "Target must be earlier than current version"}, status_code=400)
+
+    new_version = current_version + 1
+    changelog.append({
+        "version": new_version,
+        "date":    _et_date().isoformat(),
+        "change":  f"Rollback requested to v{target} — manual parameter review needed",
+    })
+    cfg["version"]    = new_version
+    cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
+    cfg["updated_by"] = "lab-rollback"
+    cfg["changelog"]  = changelog
+
+    content = json.dumps(cfg, indent=2)
+    result  = _github_write_file("data/model-config.json", content, f"Lab rollback to v{target}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+
+    try:
+        (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
+    except: pass
+
+    return {"status": "rollback_noted", "new_version": new_version,
+            "note": "Parameters were not automatically reverted — review changelog and apply changes via /api/lab/update-config"}
+
+
+@app.post("/api/lab/backtest")
+async def lab_backtest(payload: dict = Body(...)):
+    """Replay historical slates with proposed parameter changes and compare MAE."""
+    proposed_changes = payload.get("proposed_changes", {})
+    description      = payload.get("description", "Backtest")
+    if not proposed_changes:
+        return JSONResponse({"error": "proposed_changes required"}, status_code=400)
+
+    pred_items = _github_list_dir("data/predictions")
+    act_items  = _github_list_dir("data/actuals")
+    act_dates  = {i["name"].replace(".csv","") for i in act_items if i["name"].endswith(".csv")}
+
+    # Build proposed config
+    current_cfg  = _load_config()
+    proposed_cfg = json.loads(json.dumps(current_cfg))  # deep copy
+    for dot_path, value in proposed_changes.items():
+        keys = dot_path.split(".")
+        _deep_set(proposed_cfg, keys, value)
+
+    current_mae_all  = []
+    proposed_mae_all = []
+    per_slate        = []
+    affected_sample  = []
+
+    for item in sorted(pred_items, key=lambda x: x.get("name",""), reverse=True)[:10]:
+        name = item.get("name","")
+        if not name.endswith(".csv"): continue
+        d = name[:-4]
+        if d not in act_dates: continue
+
+        pred_csv, _ = _github_get_file(f"data/predictions/{d}.csv")
+        act_csv, _  = _github_get_file(f"data/actuals/{d}.csv")
+        if not pred_csv or not act_csv: continue
+
+        preds   = _parse_csv(pred_csv, PRED_FIELDS)
+        actuals = _parse_csv(act_csv, ACT_FIELDS)
+        act_map = {r["player_name"].lower(): _safe_float(r.get("actual_rs")) for r in actuals}
+
+        cur_errs  = []
+        prop_errs = []
+
+        for row in preds:
+            pname    = row.get("player_name","").lower()
+            pred_rs  = _safe_float(row.get("predicted_rs"))
+            pts      = _safe_float(row.get("pts"))
+            reb      = _safe_float(row.get("reb"))
+            ast      = _safe_float(row.get("ast"))
+            stl      = _safe_float(row.get("stl"))
+            blk      = _safe_float(row.get("blk"))
+
+            if pname not in act_map or pred_rs <= 0: continue
+            actual_rs = act_map[pname]
+
+            cur_errs.append(abs(pred_rs - actual_rs))
+
+            # Recalculate with proposed DFS weights if changed
+            if "real_score.dfs_weights" in proposed_changes or any(
+                k.startswith("real_score") for k in proposed_changes
+            ):
+                w = proposed_cfg.get("real_score",{}).get("dfs_weights",
+                    {"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2})
+                new_dfs = (pts*w.get("pts",1.0) + reb*w.get("reb",1.0) +
+                           ast*w.get("ast",1.5) + stl*w.get("stl",4.5) +
+                           blk*w.get("blk",4.0))
+                # Scale proposed RS proportionally
+                if pred_rs > 0:
+                    old_w = current_cfg.get("real_score",{}).get("dfs_weights",
+                        {"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2})
+                    old_dfs = (pts*old_w.get("pts",1.0) + reb*old_w.get("reb",1.0) +
+                               ast*old_w.get("ast",1.5) + stl*old_w.get("stl",4.5) +
+                               blk*old_w.get("blk",4.0))
+                    if old_dfs > 0:
+                        proposed_rs = pred_rs * (new_dfs / old_dfs)
+                    else:
+                        proposed_rs = pred_rs
+                else:
+                    proposed_rs = pred_rs
+            else:
+                proposed_rs = pred_rs  # No change for non-scoring params
+
+            prop_err = abs(proposed_rs - actual_rs)
+            prop_errs.append(prop_err)
+
+            if len(affected_sample) < 5:
+                improved = prop_err < abs(pred_rs - actual_rs)
+                affected_sample.append({
+                    "player": row.get("player_name",""),
+                    "date":   d,
+                    "current_projection": round(pred_rs, 2),
+                    "proposed_projection": round(proposed_rs, 2),
+                    "actual": round(actual_rs, 2),
+                    "improved": improved,
+                })
+
+        if cur_errs:
+            cm = sum(cur_errs)  / len(cur_errs)
+            pm = sum(prop_errs) / len(prop_errs)
+            current_mae_all.extend(cur_errs)
+            proposed_mae_all.extend(prop_errs)
+            per_slate.append({"date": d, "current_mae": round(cm,2), "proposed_mae": round(pm,2)})
+
+    if not current_mae_all:
+        return {"slates_tested": 0, "error": "No historical slates with both predictions and actuals"}
+
+    cur_mae  = round(sum(current_mae_all)  / len(current_mae_all), 3)
+    prop_mae = round(sum(proposed_mae_all) / len(proposed_mae_all), 3)
+    improvement = round((cur_mae - prop_mae) / max(cur_mae, 0.001) * 100, 1)
+
+    rec = "Proposed change reduces MAE." if improvement > 2 else \
+          "Marginal improvement — may not be worth applying." if improvement > 0 else \
+          "Proposed change worsens MAE — do not apply."
+
+    return {
+        "slates_tested":         len(per_slate),
+        "current_config_mae":    cur_mae,
+        "proposed_config_mae":   prop_mae,
+        "improvement_pct":       improvement,
+        "per_slate_comparison":  per_slate,
+        "affected_players_sample": affected_sample,
+        "recommendation":        rec,
+    }
+
+
+@app.post("/api/lab/chat")
+async def lab_chat(payload: dict = Body(...)):
+    """Proxy to Anthropic Messages API with Lab system prompt. Keeps API key server-side."""
+    if not ANTHROPIC_API_KEY:
+        return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
+
+    messages = payload.get("messages", [])
+    system   = payload.get("system", "")
+
+    if not messages:
+        return JSONResponse({"error": "No messages provided"}, status_code=400)
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model":      "claude-sonnet-4-6",
+                "max_tokens": 2048,
+                "system":     system,
+                "messages":   messages,
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        resp = r.json()
+        return {
+            "content": resp["content"][0]["text"],
+            "usage":   resp.get("usage", {}),
+        }
+    except Exception as e:
+        return JSONResponse({"error": f"Anthropic API error: {str(e)}"}, status_code=500)
