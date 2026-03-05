@@ -846,9 +846,113 @@
     }
     #labInput { line-height: 1.4; }
     #labInput:focus { border-color: var(--lab); }
+
+    /* ── MAGIC 8-BALL LOADER ── */
+    #oracleLoader {
+      position: fixed; inset: 0; z-index: 999;
+      background: rgba(6,10,15,0.94);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 24px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    #oracleLoader.visible { opacity: 1; pointer-events: all; }
+
+    .magic8-ball {
+      width: 130px; height: 130px; border-radius: 50%;
+      background: radial-gradient(circle at 38% 34%, #1e2235 0%, #090c14 60%, #030508 100%);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.06),
+        0 8px 40px rgba(0,0,0,0.8),
+        0 0 60px rgba(79,142,247,0.08),
+        inset 4px 4px 14px rgba(255,255,255,0.055),
+        inset -4px -4px 14px rgba(0,0,0,0.6);
+      position: relative;
+      animation: ballFloat 3.2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    /* Shine highlight */
+    .magic8-ball::before {
+      content: '';
+      position: absolute; top: 14px; left: 22px;
+      width: 28px; height: 16px;
+      background: radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, transparent 70%);
+      border-radius: 50%; transform: rotate(-30deg);
+    }
+
+    /* The 8 circle */
+    .magic8-num {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -62%);
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.3rem; font-weight: 900; color: rgba(255,255,255,0.7);
+      letter-spacing: 0;
+    }
+
+    /* Triangle window at bottom */
+    .magic8-window {
+      position: absolute; bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      width: 70px; height: 60px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .magic8-window::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% 80%, #0a1628 0%, #060a10 100%);
+      clip-path: polygon(50% 2%, 100% 100%, 0% 100%);
+      border: 1px solid rgba(79,142,247,0.25);
+    }
+    .magic8-text {
+      position: relative; z-index: 1;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.5rem; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--chalk);
+      text-align: center; line-height: 1.2;
+      padding-top: 20px; width: 56px;
+      animation: textFadeIn 0.4s ease forwards;
+    }
+
+    .oracle-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
+      text-transform: uppercase; color: var(--muted);
+      animation: textPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes ballFloat {
+      0%, 100% { transform: translateY(0px) rotate(-1.5deg); }
+      50%       { transform: translateY(-16px) rotate(1.5deg); }
+    }
+    @keyframes textFadeIn {
+      from { opacity: 0; } to { opacity: 1; }
+    }
+    @keyframes textPulse {
+      0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; }
+    }
   </style>
 </head>
 <body>
+
+<!-- ══ MAGIC 8-BALL ORACLE LOADER ══ -->
+<div id="oracleLoader">
+  <div class="magic8-ball">
+    <div class="magic8-num">8</div>
+    <div class="magic8-window">
+      <div class="magic8-text" id="oracleMsg">READING THE GAME</div>
+    </div>
+  </div>
+  <div class="oracle-label">The Oracle is thinking...</div>
+</div>
+
 <div class="app">
 
   <header>
@@ -1024,15 +1128,10 @@
       </div>
       <!-- Chat messages -->
       <div id="labMessages" style="display:flex;flex-direction:column;gap:10px;padding-bottom:10px"></div>
-      <!-- Input -->
-      <div id="labInputWrap" style="position:sticky;bottom:0;padding:12px 0 4px;background:var(--bg)">
-        <div style="display:flex;gap:6px;margin-bottom:8px">
-          <button class="lab-quick-btn" onclick="labSendQuick('Give me a briefing and suggest improvements')">Briefing</button>
-          <button class="lab-quick-btn" onclick="labSendQuick('Run a backtest on the current config')">Backtest</button>
-          <button class="lab-quick-btn" onclick="labViewConfig()">Config</button>
-        </div>
+      <!-- Input — pure chat, no quick buttons -->
+      <div id="labInputWrap" style="position:sticky;bottom:0;padding:10px 0 4px;background:var(--bg)">
         <div style="display:flex;gap:8px">
-          <textarea id="labInput" placeholder="Ask Ben to analyze, suggest, or apply a change..." rows="1"
+          <textarea id="labInput" placeholder="Ask Ben anything..." rows="1"
             style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
           ></textarea>
@@ -1049,6 +1148,9 @@
 </div>
 
 <script>
+// ════════════════════════════════════════════════════════════════════
+// CONSTANTS — grep: TEAM_COLORS, team colors, accent bar, tcolor
+// ════════════════════════════════════════════════════════════════════
 const TEAM_COLORS = {
   ATL:"#e03a3e",BOS:"#00A550",BKN:"#b0b0b0",CHA:"#00b4cc",CHI:"#ce1141",
   CLE:"#FDBB30",DAL:"#00538c",DEN:"#fdb927",DET:"#c8102E",GSW:"#FFC72C",
@@ -1058,11 +1160,13 @@ const TEAM_COLORS = {
   SAC:"#7b4db5",SAS:"#c4ced4",TOR:"#ce1141",UTA:"#f9a01b",WAS:"#E31837"
 };
 
-// ── Global state ──
-let SLATE = null;
-let PICKS_DATA = null;
+// ════════════════════════════════════════════════════════════════════
+// GLOBAL STATE — grep: SLATE, PICKS_DATA, LOG, LAB, LINE_LOADED
+// ════════════════════════════════════════════════════════════════════
+let SLATE = null;       // Cached slate response from /api/slate
+let PICKS_DATA = null;  // Cached per-game picks from /api/picks
 
-// Log state
+// Log page state — grep: LOG state, history page, drill-down
 const LOG = {
   selectedDate: null,
   view: 'grid',          // 'grid' | 'drill'
@@ -1077,7 +1181,9 @@ const LOG = {
   hindsightLineup: null,
 };
 
-// ── TAB SWITCHING — Segmented Control ──
+// ════════════════════════════════════════════════════════════════════
+// TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
+// ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
@@ -1138,13 +1244,58 @@ window.addEventListener('resize', () => {
   requestAnimationFrame(() => { if (pill) pill.style.transition = ''; });
 });
 
-// ── INIT ──
+// ════════════════════════════════════════════════════════════════════
+// MAGIC 8-BALL LOADER — grep: showLoader, hideLoader, oracleLoader, oracleMsg
+// Shown during loadSlate() and runAnalysis() API calls
+// ════════════════════════════════════════════════════════════════════
+const ORACLE_MSGS = [
+  'READING THE GAME',
+  'CONSULTING THE ORACLE',
+  'CALCULATING EDGE',
+  'SEEKING THE LINE',
+  'ANALYZING THE SLATE',
+  'SENSING THE FIELD',
+  'FOLLOWING THE MONEY',
+];
+let _oracleMsgIdx = 0;
+let _oracleMsgTimer = null;
+
+function showLoader() {
+  const el = document.getElementById('oracleLoader');
+  const msg = document.getElementById('oracleMsg');
+  if (!el) return;
+  // Rotate messages every 1.8s while visible
+  _oracleMsgIdx = Math.floor(Math.random() * ORACLE_MSGS.length);
+  if (msg) msg.textContent = ORACLE_MSGS[_oracleMsgIdx];
+  _oracleMsgTimer = setInterval(() => {
+    _oracleMsgIdx = (_oracleMsgIdx + 1) % ORACLE_MSGS.length;
+    if (msg) {
+      msg.style.animation = 'none';
+      msg.offsetHeight; // reflow to restart animation
+      msg.style.animation = '';
+      msg.textContent = ORACLE_MSGS[_oracleMsgIdx];
+    }
+  }, 1800);
+  el.classList.add('visible');
+}
+
+function hideLoader() {
+  clearInterval(_oracleMsgTimer);
+  const el = document.getElementById('oracleLoader');
+  if (el) el.classList.remove('visible');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// APP INIT — grep: DOMContentLoaded, initGameSelector, loadSlate, startup
+// ════════════════════════════════════════════════════════════════════
 (async function init() {
   loadSlate();
   initGameSelector();
 })();
 
-// ── GAME SELECTOR ──
+// ════════════════════════════════════════════════════════════════════
+// GAME SELECTOR — grep: initGameSelector, gameSel, game dropdown, /api/games
+// ════════════════════════════════════════════════════════════════════
 async function initGameSelector() {
   const sel = document.getElementById('gameSel');
   const btn = document.getElementById('analyzeBtn');
@@ -1174,11 +1325,15 @@ async function initGameSelector() {
   }
 }
 
-// ── SLATE ──
+// ════════════════════════════════════════════════════════════════════
+// SLATE — grep: loadSlate, /api/slate, slateList, Starting 5, Moonshot
+// ════════════════════════════════════════════════════════════════════
 async function loadSlate() {
+  showLoader();
   renderSkeletons('slateList', 5);
   try {
     const r = await fetch('/api/slate');
+    hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
     if (slateData.locked && !slateData.lineups.chalk.length && SLATE) {
@@ -1204,6 +1359,7 @@ async function loadSlate() {
     switchSlate('chalk');
     savePredictions();
   } catch(e) {
+    hideLoader();
     document.getElementById('slateList').innerHTML = `
       <div class="empty-state">
         <span class="icon">📡</span>
@@ -1222,7 +1378,9 @@ function switchSlate(tab) {
   if (SLATE) renderCards(SLATE.lineups[tab] || [], 'slateList', tab);
 }
 
-// ── ANALYSIS ──
+// ════════════════════════════════════════════════════════════════════
+// PER-GAME ANALYSIS — grep: runAnalysis, /api/picks, analyzeBtn, game analysis
+// ════════════════════════════════════════════════════════════════════
 async function runAnalysis() {
   const sel = document.getElementById('gameSel');
   const btn = document.getElementById('analyzeBtn');
@@ -1234,9 +1392,11 @@ async function runAnalysis() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Analyzing...';
   renderSkeletons('picksList', 5);
+  showLoader();
 
   try {
     const r = await fetch(`/api/picks?gameId=${gameId}`);
+    hideLoader();
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: 'Server error' }));
       throw new Error(err.error || `HTTP ${r.status}`);
@@ -1282,6 +1442,7 @@ async function runAnalysis() {
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
     savePredictions();
   } catch(e) {
+    hideLoader();
     document.getElementById('picksList').innerHTML = '';
     banner.textContent = `⚠ ${e.message}`;
     banner.style.display = 'block';
@@ -1291,7 +1452,9 @@ async function runAnalysis() {
   }
 }
 
-// ── RENDER CARDS ──
+// ════════════════════════════════════════════════════════════════════
+// CARD RENDERING — grep: renderCards, player-card, TEAM_COLORS, tcolor, rank-badge
+// ════════════════════════════════════════════════════════════════════
 function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
@@ -1367,7 +1530,9 @@ function renderCards(picks, containerId, mode, opts = {}) {
   }).join('');
 }
 
-// ── SKELETON ──
+// ════════════════════════════════════════════════════════════════════
+// SKELETON LOADING — grep: renderSkeletons, skel-block, shimmer, loading state
+// ════════════════════════════════════════════════════════════════════
 function renderSkeletons(containerId, count) {
   document.getElementById(containerId).innerHTML = Array.from({length: count}, (_, i) => `
     <div class="skeleton" style="animation-delay:${i*0.07}s">
@@ -1380,7 +1545,9 @@ function renderSkeletons(containerId, count) {
     </div>`).join('');
 }
 
-// ── SAVE PREDICTIONS TO GIT ──
+// ════════════════════════════════════════════════════════════════════
+// PREDICTION PERSISTENCE — grep: savePredictions, /api/save-predictions, GitHub CSV
+// ════════════════════════════════════════════════════════════════════
 let _predSavedToday = false;
 async function savePredictions() {
   if (_predSavedToday) return; // only fire once per session
