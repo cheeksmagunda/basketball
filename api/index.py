@@ -215,29 +215,42 @@ def fetch_roster(team_id, team_abbr):
     c = _cg(f"roster_{team_id}")
     if c: return c
     data = _espn_get(f"{ESPN}/teams/{team_id}/roster")
+    # ESPN sometimes returns athletes grouped by position:
+    # {"athletes": [{"position": "Guard", "items": [...]}, ...]}
+    # Flatten to a single list of athlete objects before iterating.
+    raw = data.get("athletes", [])
+    flat = []
+    for item in raw:
+        if "items" in item:
+            flat.extend(item["items"])
+        else:
+            flat.append(item)
     players = []
-    for a in data.get("athletes", []):
-        inj = a.get("injuries", [])
-        inj_status = inj[0].get("status", "").lower() if inj else ""
-        is_out = inj_status in ["out", "injured"]
-        # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
-        injury_label = ""
-        if inj and not is_out:
-            raw = inj[0].get("status", "") or inj[0].get("type", {}).get("description", "")
-            if raw:
-                rl = raw.lower()
-                if "question" in rl:       injury_label = "GTD"
-                elif "day" in rl:          injury_label = "DTD"
-                elif "doubt" in rl:        injury_label = "DOUBT"
-                elif "prob" in rl:         injury_label = ""  # Probable = fine
-                elif rl not in ["active", "healthy", ""]:
-                    injury_label = raw[:8].upper()
-        players.append({
-            "id": a["id"], "name": a["fullName"],
-            "pos": a.get("position", {}).get("abbreviation", "G"),
-            "is_out": is_out, "team_abbr": team_abbr,
-            "injury_status": injury_label,
-        })
+    for a in flat:
+        try:
+            inj = a.get("injuries", [])
+            inj_status = inj[0].get("status", "").lower() if inj else ""
+            is_out = inj_status in ["out", "injured"]
+            # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
+            injury_label = ""
+            if inj and not is_out:
+                raw_s = inj[0].get("status", "") or inj[0].get("type", {}).get("description", "")
+                if raw_s:
+                    rl = raw_s.lower()
+                    if "question" in rl:       injury_label = "GTD"
+                    elif "day" in rl:          injury_label = "DTD"
+                    elif "doubt" in rl:        injury_label = "DOUBT"
+                    elif "prob" in rl:         injury_label = ""  # Probable = fine
+                    elif rl not in ["active", "healthy", ""]:
+                        injury_label = raw_s[:8].upper()
+            players.append({
+                "id": a["id"], "name": a["fullName"],
+                "pos": a.get("position", {}).get("abbreviation", "G"),
+                "is_out": is_out, "team_abbr": team_abbr,
+                "injury_status": injury_label,
+            })
+        except (KeyError, TypeError):
+            continue
     _cs(f"roster_{team_id}", players)
     return players
 
@@ -1024,7 +1037,8 @@ async def get_slate():
     chalk, upside = _build_lineups(all_proj)
     result = {"date": date.today().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
-    _cs("slate_v5", result)
+    if chalk or upside:  # Don't cache empty results — allow retry on next request
+        _cs("slate_v5", result)
     if locked:
         _ls("slate_v5_locked", result)
     return result
