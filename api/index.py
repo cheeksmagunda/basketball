@@ -135,9 +135,13 @@ _CONFIG_DEFAULTS = {
     "real_score": {"dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2}},
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
     "projection": {
-        "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,
+        "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
         "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
+        # DNP / reliability guards (added after March 4th audit)
+        "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
+        "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
+        "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
     },
     "contrarian": {
         "closeness_boost_floor":0.7,"closeness_boost_scalar":0.6,
@@ -362,13 +366,14 @@ def _parse_split(names, split):
     s = {"min": 0.0, "pts": 0.0, "reb": 0.0, "ast": 0.0, "stl": 0.0, "blk": 0.0, "tov": 0.0}
     for name, val in zip(names, split.get("stats", [])):
         k = name.lower()
-        if   "min" in k:                   s["min"] = _safe_float(val)
-        elif "pts" in k or "point" in k:   s["pts"] = _safe_float(val)
-        elif "reb" in k or "rebound" in k: s["reb"] = _safe_float(val)
-        elif "ast" in k or "assist" in k:  s["ast"] = _safe_float(val)
-        elif "stl" in k or "steal" in k:   s["stl"] = _safe_float(val)
-        elif "blk" in k or "block" in k:   s["blk"] = _safe_float(val)
-        elif "tov" in k or "turnover" in k:s["tov"] = _safe_float(val)
+        if   "min" in k:                      s["min"] = _safe_float(val)
+        elif "pts" in k or "point" in k:      s["pts"] = _safe_float(val)
+        elif "reb" in k or "rebound" in k:    s["reb"] = _safe_float(val)
+        elif "ast" in k or "assist" in k:     s["ast"] = _safe_float(val)
+        elif "stl" in k or "steal" in k:      s["stl"] = _safe_float(val)
+        elif "blk" in k or "block" in k:      s["blk"] = _safe_float(val)
+        elif "tov" in k or "turnover" in k:   s["tov"] = _safe_float(val)
+        elif k in ("gp", "g", "gamesplayed"): s["gp"]  = _safe_float(val)
     return s
 
 def _fetch_athlete(pid):
@@ -386,17 +391,21 @@ def _fetch_athlete(pid):
         season = _parse_split(names, splits[0])
         if season["min"] <= 0: return None
         recent = None
+        recent_raw_min = None  # Raw recent avg min — captured even if below usable threshold
         for split in splits[1:]:
             label = (str(split.get("displayName","")) + str(split.get("type",""))).lower()
             if any(kw in label for kw in ["last","recent","l5","l10","l3"]):
                 c2 = _parse_split(names, split)
+                recent_raw_min = c2.get("min", 0)  # Always capture, even if < 10
                 if c2["min"] >= 10:
                     recent = c2
-                    break
+                break
         if recent is None and len(splits) > 1:
             c2 = _parse_split(names, splits[1])
             if 10 <= c2["min"] <= 48 and c2["pts"] > 0:
                 recent = c2
+            elif recent_raw_min is None:
+                recent_raw_min = c2.get("min", 0)
         if recent:
             # Minutes: when recent is significantly lower than season, override
             # with heavier recent weight. Catches role changes mid-season
@@ -437,6 +446,16 @@ def _fetch_athlete(pid):
             blended["season_stl"] = season["stl"]
             blended["recent_blk"] = season["blk"]
             blended["season_blk"] = season["blk"]
+
+        # DNP risk flag: if the most recent split showed very low avg minutes,
+        # the player has been near-inactive lately (rest management, rotation bubble,
+        # coach's decision). High card boost + DNP risk = the trap that lost March 4th.
+        # Threshold is configurable; default 8 min = effectively on bench/DNP.
+        proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
+        dnp_thresh = proj_cfg.get("dnp_risk_min_threshold", 8.0)
+        if recent_raw_min is not None and recent_raw_min < dnp_thresh:
+            blended["dnp_risk"] = True
+
     except Exception as e:
         print(f"Stat parse error pid={pid}: {e}")
         return None
@@ -660,6 +679,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if pinfo.get("is_out"): return None
     # Skip day-to-day and doubtful players — high scratch risk
     if pinfo.get("injury_status") in ("DTD", "DOUBT"): return None
+
+    # DNP risk: player averaged very few minutes in recent games (rotation bubble,
+    # rest management, or coach's decision). March 4th lesson: Hield/Harris/Sochan
+    # all went RS=0 while the model projected them at season averages.
+    # Skip unless a cascade bonus exists (teammate OUT = specific reason to play more).
+    if stats.get("dnp_risk") and not cascade_bonus:
+        return None
+
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
@@ -671,6 +698,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Penalize projected minutes by 12% on B2B nights.
     if is_b2b:
         proj_min *= 0.88
+
+    # GTD (game-time decision) — apply minute reduction to account for scratch risk.
+    # GTD players are confirmed questionable; ~30-40% sit on any given night.
+    # Reduce projected minutes rather than skip entirely (they might play).
+    proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
+    if pinfo.get("injury_status") == "GTD":
+        proj_min *= proj_cfg.get("gtd_minute_penalty", 0.75)
 
     # Minutes gate: must project to at least 15 minutes
     min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
@@ -800,7 +834,22 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # EV score — card-adjusted expected value using additive formula
     # Use average slot (1.6) for ranking; MILP uses exact slots
     avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
-    chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
+
+    # Reliability multiplier — prevents high-boost/low-reliability players from
+    # dominating the lineup. March 4th lesson: picking players for their card boost
+    # only works if they ACTUALLY PLAY. Penalize minute-inconsistent and GTD players.
+    season_min_for_rel = stats.get("season_min", avg_min)
+    recent_min_for_rel = stats.get("recent_min", avg_min)
+    reliability = 1.0
+    if season_min_for_rel > 0:
+        min_ratio = recent_min_for_rel / season_min_for_rel
+        if min_ratio < 0.90:
+            rel_floor = proj_cfg.get("reliability_floor", 0.70)
+            reliability = max(min_ratio, rel_floor)
+    if pinfo.get("injury_status") == "GTD":
+        reliability *= 0.82  # GTD compounds minute inconsistency risk
+
+    chalk_ev  = round(raw_score * (avg_slot + card_boost) * reliability, 2)
 
     return {
         "id":      pinfo["id"],
