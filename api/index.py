@@ -1,6 +1,7 @@
 import json
 import copy
 import hashlib
+import unicodedata
 import pickle
 import os
 import base64
@@ -121,7 +122,8 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
         "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
-        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SA"],
+        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
+        "star_players": ["Luka Doncic","Victor Wembanyama","Giannis Antetokounmpo","Jayson Tatum","Shai Gilgeous-Alexander","Nikola Jokic","Anthony Edwards","LeBron James","Stephen Curry","Kevin Durant","Damian Lillard","Trae Young","Devin Booker","Joel Embiid","Cade Cunningham","Paolo Banchero","Zion Williamson","Karl-Anthony Towns","Donovan Mitchell","De'Aaron Fox"],
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -706,7 +708,12 @@ def _cascade_minutes(roster, stats_map):
 #           same methodology. Avoids DNP risks from extreme low-ownership picks.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _est_card_boost(proj_min, pts, team_abbr):
+def _norm_last(name):
+    """Normalize last name for star player matching (strips accents, lowercases)."""
+    last = name.strip().split()[-1] if name.strip() else name
+    return unicodedata.normalize('NFKD', last).encode('ascii', 'ignore').decode().lower()
+
+def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     """Estimate ADDITIVE card boost based on predicted draft popularity.
     All parameters read from runtime config (data/model-config.json).
     Falls back to calibrated defaults if config unavailable.
@@ -720,8 +727,12 @@ def _est_card_boost(proj_min, pts, team_abbr):
     bm_mult        = cb.get("big_market_multiplier", 1.5)
     big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SA"]))
 
+    # Stars drive high ownership regardless of team market — treat like big market
+    star_players = cb.get("star_players", [])
+    is_star = bool(player_name and any(_norm_last(s) == _norm_last(player_name) for s in star_players))
+
     hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
-    if team_abbr in big_markets:
+    if team_abbr in big_markets or is_star:
         hype *= bm_mult
     boost = scalar * (decay_base ** hype) + base_offset
     return round(min(max(boost, floor_val), ceiling), 1)
@@ -838,9 +849,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if pinfo.get("injury_status") == "GTD":
         proj_min *= proj_cfg.get("gtd_minute_penalty", 0.75)
 
-    # Minutes gate: must project to at least 15 minutes
+    # Minutes gate — boost-aware: low-PPG contrarians get a lower threshold
+    # because high card boost EV compensates for DNP risk.
+    # Formula: effective_gate = max(8, min_gate - (rough_boost - 1.5) * 3)
+    # rough_boost proxy: low-PPG players are low-ownership = higher card boost
     min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
-    if proj_min < min_gate: return None
+    _pts_for_gate = stats.get("pts", 0)
+    _rough_boost = max(0.2, 3.0 - _pts_for_gate * 0.12)
+    effective_gate = max(8, min_gate - max(0, (_rough_boost - 1.5) * 3))
+    if proj_min < effective_gate: return None
 
     pts = stats["pts"]
     reb = stats["reb"]
@@ -894,8 +911,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
             features = np.array([[avg_min, stats.get("season_pts", pts), usage, opp_def_rating]])
             ai_pred = AI_MODEL.predict(features)[0]
-            ai_norm = ai_pred * (heuristic / max(ai_pred, 1))
-            base = (ai_norm * 0.7) + (heuristic * 0.3)
+            # Blend: LightGBM 70%, heuristic 30% — direct blend, no normalization
+            # (Previous ai_norm step was self-referential: ai_pred*(h/ai_pred) = h)
+            base = (ai_pred * 0.7) + (heuristic * 0.3)
         except: pass
 
     # Contextual multipliers — game closeness matters BUT differently by role.
@@ -912,27 +930,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     abs_spread = abs(spread or 0)
     is_bench = pts <= 12 and avg_min <= 26  # role player / bench threshold
     if is_bench:
-        # Bench players: blowouts = more minutes, neutral-to-positive
-        if abs_spread <= 2:
-            spread_adj = 1.05   # Close games — bench sits, slight penalty vs stars
-        elif abs_spread <= 6:
-            spread_adj = 1.0    # Moderate — neutral
-        elif abs_spread <= 10:
-            spread_adj = 1.08   # Lopsided — bench gets run, slight boost
+        # Bench players: continuous rise as blowout probability increases.
+        # Neutral in close-to-moderate games; bonus grows past spread 4.
+        if abs_spread <= 4:
+            spread_adj = 1.0
         else:
-            spread_adj = 1.12   # Blowout — extended garbage time, big boost
+            spread_adj = min(1.15, 1.0 + (abs_spread - 4) * 0.02)
     else:
-        # Stars/starters: close games are best, blowouts crush minutes
-        if abs_spread <= 2:
-            spread_adj = 1.15   # Pick'em — maximum Real Score environment
-        elif abs_spread <= 4:
-            spread_adj = 1.08   # Tight game — very good
-        elif abs_spread <= 6:
-            spread_adj = 1.0    # Moderate — neutral
-        elif abs_spread <= 8:
-            spread_adj = 0.88   # Lopsided — penalized
+        # Stars/starters: continuous decay from pick'em peak; steep drop past spread 6.
+        # Eliminates the 7% discontinuity cliff between spread 2.0 and 2.1.
+        if abs_spread <= 6:
+            spread_adj = 1.15 - (abs_spread * 0.025)   # 1.15 at 0 → 1.0 at 6
         else:
-            spread_adj = 0.72   # Projected blowout — stars sit Q4
+            spread_adj = max(0.70, 1.0 - (abs_spread - 6) * 0.07)  # steep decay past 6
     home_adj   = 1.02 if side == "home" else 1.0
 
     s_base = base * pace_adj * spread_adj * home_adj
@@ -961,7 +971,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
     # Card boost is INVERSELY proportional to ownership — the app rewards
     # contrarian picks. Stars get crushed, obscure role players get huge boosts.
-    card_boost = _est_card_boost(proj_min, pts, team_abbr)
+    card_boost = _est_card_boost(proj_min, pts, team_abbr, player_name=pinfo["name"])
 
     # EV score — card-adjusted expected value using additive formula
     # Use average slot (1.6) for ranking; MILP uses exact slots
@@ -984,8 +994,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     chalk_ev  = round(raw_score * (avg_slot + card_boost) * reliability, 2)
 
     return {
-        "id":      pinfo["id"],
-        "name":    pinfo["name"],
+        "id":           pinfo["id"],
+        "name":         pinfo["name"],
+        "player_variance": round(player_variance, 3),
         "pos":     pinfo["pos"],
         "team":    team_abbr,
         "rating":  round(raw_score, 1),
@@ -1073,14 +1084,18 @@ def _build_lineups(projections):
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
 
-    # MOONSHOT: ranks 6-10 from the same chalk EV ranking.
-    # NOT a separate contrarian algo — just the next-best 5 players.
-    # This avoids picking DNP-risk players with high card boosts but zero production.
-    # Players with real projected RS but lower ownership naturally have high chalk_ev
-    # and will appear here (e.g. Jabari Walker: 4.7 RS × +3.0 boost = 21.6 EV).
+    # MOONSHOT: high-ceiling, low-ownership targets.
+    # Uses moonshot_ev = rating × (avg_slot + card_boost * 1.5) × variance_bonus
+    # This weights card boost 1.5x and rewards inconsistent players who could boom.
+    # Unlike chalk (which optimizes EV), moonshot maximizes ceiling × contrarian upside.
     chalk_names = {p["name"] for p in chalk}
-    moonshot_pool = [p for p in chalk_eligible if p["name"] not in chalk_names]
-    upside = optimize_lineup(moonshot_pool, n=5, sort_key="chalk_ev",
+    moonshot_pool_raw = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    moonshot_pool = []
+    for p in moonshot_pool_raw:
+        variance_bonus = 1 + p.get("player_variance", 0) * 0.8
+        moonshot_ev = round(p["rating"] * (avg_slot + p["est_mult"] * 1.5) * variance_bonus, 2)
+        moonshot_pool.append({**p, "moonshot_ev": moonshot_ev})
+    upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                              rating_key="rating", card_boost_key="est_mult",
                              max_per_team=0)
 
@@ -1133,10 +1148,16 @@ def _build_game_lineups(projections, game):
     chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult")
 
-    # MOONSHOT: next 5 by chalk_ev — same ranking, different players
+    # MOONSHOT: high-ceiling, low-ownership targets (game-level, with team balance).
     chalk_names = {p["name"] for p in chalk}
-    moonshot_pool = [p for p in chalk_eligible if p["name"] not in chalk_names]
-    upside = optimize_lineup(moonshot_pool, n=5, min_per_team=2, sort_key="chalk_ev",
+    moonshot_pool_raw = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    moonshot_pool = []
+    avg_slot = 1.6
+    for p in moonshot_pool_raw:
+        variance_bonus = 1 + p.get("player_variance", 0) * 0.8
+        moonshot_ev = round(p["rating"] * (avg_slot + p["est_mult"] * 1.5) * variance_bonus, 2)
+        moonshot_pool.append({**p, "moonshot_ev": moonshot_ev})
+    upside = optimize_lineup(moonshot_pool, n=5, min_per_team=2, sort_key="moonshot_ev",
                              rating_key="rating", card_boost_key="est_mult")
 
     return chalk, upside
