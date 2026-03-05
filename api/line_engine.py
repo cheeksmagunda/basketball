@@ -353,6 +353,130 @@ def _build_narrative(player_name, team, opponent, market, line, direction,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# MODEL FALLBACK — when Odds API is unavailable, generate a pick from
+# our own ESPN projections using season_pts as the synthetic baseline line.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _game_lookup_from_games(games):
+    """Build team abbr -> {opponent, opp_b2b, total, spread} lookup."""
+    lookup = {}
+    for g in games:
+        home_abbr = g["home"]["abbr"]
+        away_abbr = g["away"]["abbr"]
+        lookup[home_abbr] = {
+            "opponent": away_abbr, "opp_b2b": g.get("away_b2b", False),
+            "total": g.get("total", 222), "spread": g.get("spread", 0),
+        }
+        lookup[away_abbr] = {
+            "opponent": home_abbr, "opp_b2b": g.get("home_b2b", False),
+            "total": g.get("total", 222), "spread": g.get("spread", 0),
+        }
+    return lookup
+
+
+def run_model_fallback(projections, games):
+    """
+    Generate a line pick purely from ESPN projection data (no Odds API).
+    Uses season_pts as the synthetic line — what books typically set for role players.
+    Returns same response structure as run_line_engine so the frontend renders unchanged.
+    """
+    from datetime import datetime, timezone as _tz
+    if not projections:
+        return {"pick": None, "error": "no_projections"}
+
+    game_ctx_map = _game_lookup_from_games(games)
+    candidates = []
+
+    for p in projections:
+        season_pts = p.get("season_pts", 0)
+        proj_pts   = p.get("pts", 0)
+        pred_min   = p.get("predMin", 0)
+
+        # Only meaningful starters and rotation players
+        if season_pts < 8.0 or pred_min < 18 or proj_pts <= 0:
+            continue
+
+        # Synthetic line: round season average to nearest 0.5 (how books typically set props)
+        line      = round(round(season_pts * 2) / 2, 1)
+        edge      = round(proj_pts - line, 1)
+        direction = "over" if edge > 0 else "under"
+
+        if abs(edge) < 2.0:
+            continue
+
+        # Build signals from what we already know
+        signals = []
+        signal_bonus = 0
+
+        cascade_bonus = p.get("_cascade_bonus", 0)
+        if cascade_bonus > 0:
+            signals.append({"type": "cascade", "detail": f"Injury upgrade — +{cascade_bonus:.1f} projected minutes"})
+            signal_bonus += 15
+
+        recent_pts = p.get("recent_pts", proj_pts)
+        if direction == "over" and recent_pts > season_pts * 1.08:
+            signals.append({"type": "recent_form", "detail": f"Averaging {recent_pts:.1f} pts recently vs {season_pts:.1f} season"})
+            signal_bonus += 12
+        elif direction == "under" and recent_pts < season_pts * 0.92:
+            signals.append({"type": "recent_form", "detail": f"Averaging {recent_pts:.1f} pts recently vs {season_pts:.1f} season"})
+            signal_bonus += 12
+
+        team_abbr = p.get("team", "")
+        gctx      = game_ctx_map.get(team_abbr, {})
+        opponent  = gctx.get("opponent", "")
+        if gctx.get("opp_b2b"):
+            signals.append({"type": "opp_b2b", "detail": "Opponent on second night of B2B"})
+            signal_bonus += 10
+
+        edge_score = min(abs(edge) / 5.0 * 40, 40)
+        confidence = round(min(52 + edge_score + signal_bonus, 80))
+
+        narrative = (
+            f"Model projects {proj_pts:.1f} pts — a {abs(edge):.1f}-pt edge "
+            f"vs the {line:.1f} season baseline at {confidence}% confidence. "
+            f"No market line available — ESPN model pick."
+        )
+
+        candidates.append({
+            "player_name":     p["name"],
+            "player_id":       p.get("id", ""),
+            "team":            team_abbr,
+            "opponent":        opponent,
+            "stat_type":       "points",
+            "line":            line,
+            "direction":       direction,
+            "projection":      proj_pts,
+            "edge":            edge,
+            "confidence":      confidence,
+            "odds_over":       None,
+            "odds_under":      None,
+            "books_consensus": 0,
+            "model_only":      True,
+            "signals":         signals,
+            "narrative":       narrative,
+        })
+
+    if not candidates:
+        return {"pick": None, "error": "no_edges"}
+
+    candidates.sort(key=lambda c: c["confidence"], reverse=True)
+    pick      = candidates[0]
+    runner_up = next((c for c in candidates[1:] if c["player_name"] != pick["player_name"]), None)
+
+    return {
+        "pick":      pick,
+        "runner_up": runner_up,
+        "slate_summary": {
+            "games_evaluated": len(games),
+            "props_scanned":   len(candidates),
+            "edges_found":     len(candidates),
+            "timestamp":       datetime.now(_tz.utc).isoformat(),
+            "model_only":      True,
+        },
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MAIN ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -362,11 +486,14 @@ def run_line_engine(projections, games):
       projections: flat list of player projection dicts (from /api/slate pipeline)
       games: list of game dicts (from fetch_games())
     Returns: {pick, runner_up, slate_summary} or {error: "..."}
+    Falls back to model-only pick when Odds API is unavailable.
     """
-    if not ODDS_API_KEY:
-        return {"pick": None, "error": "no_api_key"}
     if not games:
         return {"pick": None, "error": "no_games"}
+
+    # Without Odds API key, generate a model-only pick from ESPN projections
+    if not ODDS_API_KEY:
+        return run_model_fallback(projections, games)
 
     # Build ESPN player lookup: lower(name) -> proj
     proj_by_name = {}
@@ -384,10 +511,10 @@ def run_line_engine(projections, games):
         game_by_team[g["home"]["abbr"].lower()] = game_by_team[home_name]
         game_by_team[g["away"]["abbr"].lower()] = game_by_team[away_name]
 
-    # Fetch events from Odds API
+    # Fetch events from Odds API — fall back to model pick if unavailable
     odds_events = fetch_nba_events()
     if not odds_events:
-        return {"pick": None, "error": "odds_unavailable"}
+        return run_model_fallback(projections, games)
 
     # Fetch props for each event (rate-limit budget: 1 call per event)
     events_with_props = []
@@ -399,7 +526,7 @@ def run_line_engine(projections, games):
             events_with_props.append(event_data)
 
     if not events_with_props:
-        return {"pick": None, "error": "odds_unavailable"}
+        return run_model_fallback(projections, games)
 
     prop_map = build_prop_map(events_with_props)
     props_scanned = len(prop_map)
