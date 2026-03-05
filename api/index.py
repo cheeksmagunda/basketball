@@ -1603,9 +1603,9 @@ async def get_line_of_the_day():
     if cached and cached.get("pick"):
         return JSONResponse(cached)
 
-    # Always check for a pick already saved today — avoids re-running the
-    # slow pipeline on cold starts and prevents Vercel timeout (60s limit).
     today = _et_date().isoformat()
+
+    # Check for pick saved today as JSON (fast path, avoids projection pipeline).
     json_path = f"data/lines/{today}_pick.json"
     saved_raw, _ = _github_get_file(json_path)
     if saved_raw:
@@ -1614,6 +1614,38 @@ async def get_line_of_the_day():
             result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
             _cs("line_v1", result)
             return JSONResponse(result)
+        except Exception:
+            pass
+
+    # CSV fallback — JSON may not exist if save-line wrote the CSV but not the JSON
+    # (happens when the CSV already existed on the first call and the endpoint returned early).
+    csv_path = f"data/lines/{today}.csv"
+    csv_raw, _ = _github_get_file(csv_path)
+    if csv_raw:
+        try:
+            rows = _parse_csv(csv_raw, LINE_FIELDS)
+            if rows:
+                r = rows[0]
+                saved_pick = {
+                    "player_name": r.get("player_name", ""),
+                    "player_id":   r.get("player_id", ""),
+                    "team":        r.get("team", ""),
+                    "opponent":    r.get("opponent", ""),
+                    "stat_type":   r.get("stat_type", "points"),
+                    "line":        _safe_float(r.get("line", 0)),
+                    "direction":   r.get("direction", "over"),
+                    "projection":  _safe_float(r.get("projection", 0)),
+                    "edge":        _safe_float(r.get("edge", 0)),
+                    "confidence":  int(_safe_float(r.get("confidence", 70))),
+                    "narrative":   r.get("narrative", ""),
+                    "signals":     [],
+                    "model_only":  True,
+                }
+                result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
+                _cs("line_v1", result)
+                # Back-fill the missing JSON so future cold starts skip the pipeline
+                _github_write_file(json_path, json.dumps(saved_pick), f"backfill line pick json {today}")
+                return JSONResponse(result)
         except Exception:
             pass
 
@@ -1649,35 +1681,37 @@ LINE_FIELDS = LINE_CSV_HEADER.split(",")
 
 @app.post("/api/save-line")
 async def save_line(payload: dict = Body(...)):
-    """Save today's Line of the Day pick to data/lines/{date}.csv. Saves once per day."""
+    """Save today's Line of the Day pick to data/lines/{date}.csv and a companion JSON."""
     today = _et_date().isoformat()
-    path = f"data/lines/{today}.csv"
-
-    # Check if already saved today
-    existing, _ = _github_get_file(path)
-    if existing:
-        return {"status": "already_saved", "path": path}
+    csv_path  = f"data/lines/{today}.csv"
+    json_path = f"data/lines/{today}_pick.json"
 
     pick = payload.get("pick")
     if not pick:
         return JSONResponse({"error": "No pick provided"}, status_code=400)
 
-    row = ",".join(_csv_escape(str(pick.get(k, ""))) for k in [
-        "player_name", "player_id", "team", "opponent", "stat_type",
-        "line", "direction", "projection", "edge", "confidence", "narrative",
-    ])
-    row = f"{today}," + row + ",pending,"  # result=pending, actual_stat=empty
+    # Dedup on JSON — CSV may exist without JSON (legacy bug), so always ensure JSON is written.
+    existing_json, _ = _github_get_file(json_path)
+    if existing_json:
+        return {"status": "already_saved", "path": json_path}
 
-    csv_content = LINE_CSV_HEADER + "\n" + row + "\n"
-    result = _github_write_file(path, csv_content, f"line pick for {today}")
-    if result.get("error"):
-        return JSONResponse({"error": result["error"]}, status_code=500)
+    # Write CSV if not already present
+    existing_csv, _ = _github_get_file(csv_path)
+    if not existing_csv:
+        row = ",".join(_csv_escape(str(pick.get(k, ""))) for k in [
+            "player_name", "player_id", "team", "opponent", "stat_type",
+            "line", "direction", "projection", "edge", "confidence", "narrative",
+        ])
+        row = f"{today}," + row + ",pending,"
+        csv_content = LINE_CSV_HEADER + "\n" + row + "\n"
+        result = _github_write_file(csv_path, csv_content, f"line pick for {today}")
+        if result.get("error"):
+            return JSONResponse({"error": result["error"]}, status_code=500)
 
-    # Also save full pick JSON so the endpoint can serve it after games lock (cold start)
-    json_path = f"data/lines/{today}_pick.json"
+    # Always write the JSON (the critical file for cold-start recovery)
     _github_write_file(json_path, json.dumps(pick), f"line pick json for {today}")
 
-    return {"status": "saved", "path": path}
+    return {"status": "saved", "path": json_path}
 
 
 @app.post("/api/resolve-line")
