@@ -25,25 +25,31 @@ try:
 except ImportError:
     PULP_AVAILABLE = False
 
-# Slot multipliers: these are the Real Sports App draft slot values
-# Mapped to display labels: ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
+# Slot multipliers: Real Sports App draft slot values
 SLOT_MULTIPLIERS = [2.0, 1.5, 1.2, 1.0, 1.0]
-SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
+SLOT_LABELS = ["2.0x", "1.5x", "1.2x", "1.0x", "1.0x"]
 
 
-def optimize_lineup(projections, n=5, min_per_team=0, sort_key="chalk_ev",
-                    rating_key="rating", time_limit=5):
+def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
+                    sort_key="chalk_ev", rating_key="rating",
+                    card_boost_key="est_mult", time_limit=5):
     """Find the optimal player-to-slot assignment using MILP.
 
-    If PuLP is not available or solver fails, falls back to simple
-    sort-and-assign (preserving existing behavior).
+    Uses the ADDITIVE Real Sports formula:
+      Value = RawScore × (SlotMult + CardBoost)
+
+    The solver maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
+    This correctly assigns the highest RAW SCORE player to the 2.0x slot,
+    since the marginal slot benefit is proportional to raw score.
 
     Args:
         projections: List of player dicts with rating and team fields
         n: Number of lineup slots (default 5)
         min_per_team: Minimum players per team (0 = no constraint)
+        max_per_team: Maximum players per team (0 = no constraint)
         sort_key: Key to sort by in fallback mode
-        rating_key: Key containing the score to optimize
+        rating_key: Key containing raw score (for slot assignment)
+        card_boost_key: Key containing additive card boost
         time_limit: Solver time limit in seconds
 
     Returns:
@@ -60,13 +66,19 @@ def optimize_lineup(projections, n=5, min_per_team=0, sort_key="chalk_ev",
         return _fallback_sort(projections, n, sort_key)
 
     try:
-        return _solve_milp(projections, n, min_per_team, rating_key, time_limit)
+        return _solve_milp(projections, n, min_per_team, max_per_team,
+                           rating_key, card_boost_key, time_limit)
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
-def _solve_milp(projections, n, min_per_team, rating_key, time_limit):
-    """Run the MILP solver to optimize player-slot assignments."""
+def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
+                card_boost_key, time_limit):
+    """Run the MILP solver to optimize player-slot assignments.
+
+    Uses the ADDITIVE Real Sports formula:
+      Value_ij = rating_i × (slot_mult_j + card_boost_i)
+    """
     players = list(range(len(projections)))
     slots = list(range(n))
     slot_mults = SLOT_MULTIPLIERS[:n]
@@ -79,9 +91,11 @@ def _solve_milp(projections, n, min_per_team, rating_key, time_limit):
         for i in players for j in slots
     }
 
-    # Objective: maximize sum of (player_rating × slot_multiplier × assignment)
+    # Objective: maximize Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
+    # This is the ADDITIVE Real Sports formula — slot and card boost add together
     prob += lpSum(
-        projections[i].get(rating_key, 0) * slot_mults[j] * x[i, j]
+        projections[i].get(rating_key, 0) *
+        (slot_mults[j] + projections[i].get(card_boost_key, 0)) * x[i, j]
         for i in players for j in slots
     )
 
@@ -93,18 +107,26 @@ def _solve_milp(projections, n, min_per_team, rating_key, time_limit):
     for i in players:
         prob += lpSum(x[i, j] for j in slots) <= 1
 
-    # Optional: team balance constraint (for per-game drafts)
-    if min_per_team > 0:
-        teams = {}
-        for i, p in enumerate(projections):
-            t = p.get("team", "")
-            teams.setdefault(t, []).append(i)
+    # Team constraints — build team index once
+    teams = {}
+    for i, p in enumerate(projections):
+        t = p.get("team", "")
+        teams.setdefault(t, []).append(i)
 
+    # Optional: minimum per team (for per-game drafts — ensures both teams represented)
+    if min_per_team > 0:
         for t, player_indices in teams.items():
-            if len(teams) >= 2:  # Only apply if there are 2+ teams
+            if len(teams) >= 2:
                 prob += lpSum(
                     x[i, j] for i in player_indices for j in slots
                 ) >= min(min_per_team, len(player_indices))
+
+    # Optional: maximum per team (for full slate — forces game diversification)
+    if max_per_team > 0:
+        for t, player_indices in teams.items():
+            prob += lpSum(
+                x[i, j] for i in player_indices for j in slots
+            ) <= max_per_team
 
     # Solve with CBC (bundled with PuLP, no external binary needed)
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
@@ -140,45 +162,40 @@ def _fallback_sort(projections, n, sort_key):
 
 
 def contrarian_score(player, spread=0):
-    """Calculate contrarian value for a player.
+    """Calculate moonshot/contrarian value for the Real Sports App.
 
-    Contrarian value rewards:
-    - Lower projected minutes (bench sweet spot = less popular)
-    - Cascade picks (less known to the field)
-    - Underdog side (field gravitates to favorites)
-    - Higher variance (divergent from consensus)
+    Moonshot targets players with high CARD-ADJUSTED ceiling:
+    - Card advantage (est_card_boost from player tier)
+    - Close-game environments (high Real Score ceiling)
+    - High-variance/streaky players (momentum bonus potential)
+    - Underdog side in competitive games
 
     Args:
-        player: Player dict with rating, predMin, is_cascade_pick, etc.
-        spread: Game spread (used to identify underdogs)
+        player: Player dict with rating, _real_meta, est_mult, etc.
+        spread: Game spread (used for closeness/underdog assessment)
 
     Returns:
-        Contrarian-adjusted score for ranking
+        Moonshot-adjusted score for ranking
     """
     base_rating = player.get("rating", 0)
-    proj_min = player.get("predMin", 20)
+    card_boost = player.get("est_mult", 0.5)
 
-    # Inverse popularity weight: bench players are more contrarian
-    if proj_min >= 33:
-        inv_pop = 0.5     # Stars — everyone picks them, low leverage
-    elif proj_min >= 28:
-        inv_pop = 0.8     # Starters — moderate leverage
-    elif proj_min >= 22:
-        inv_pop = 1.3     # Role players — good leverage
-    elif proj_min >= 15:
-        inv_pop = 2.0     # Bench — high leverage
-    else:
-        inv_pop = 1.5     # Deep bench — very contrarian but risky
+    # Game closeness boost — derived from Real Score metadata
+    meta = player.get("_real_meta", {})
+    closeness = meta.get("c_closeness", 1.3)
+    # Normalize closeness (1.0-2.0 range) to a scoring boost (0.7-1.3)
+    closeness_boost = 0.7 + (closeness - 1.0) * 0.6
 
-    # Cascade bonus: injury-boost picks are under-owned
-    cascade_bonus = 1.4 if player.get("is_cascade_pick") else 1.0
+    # Momentum/variance — streaky players have higher Real Score ceiling
+    momentum = meta.get("m_momentum", 1.0)
 
-    # Underdog bonus: players on unfavored teams are less owned
+    # Underdog side — underdogs in close games generate huge Real Scores
     underdog_bonus = 1.0
-    if abs(spread or 0) > 4:
-        underdog_bonus = 1.2  # General bonus for games with clear favorites
+    game_spread = abs(player.get("_spread", spread) or 0)
+    if 2 < game_spread <= 7:
+        underdog_bonus = 1.1  # Competitive game with clear underdog
 
-    # Contrarian score = base quality × leverage multipliers
-    c_score = base_rating * inv_pop * cascade_bonus * underdog_bonus
-
+    # Additive formula: rating × (avg_slot + card_boost) × context multipliers
+    avg_slot = 1.34
+    c_score = base_rating * (avg_slot + card_boost) * closeness_boost * momentum * underdog_bonus
     return round(c_score, 2)

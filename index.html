@@ -10,7 +10,7 @@
   <meta name="application-name" content="The Oracle">
   <meta name="theme-color" content="#060a0f">
   <meta property="og:title" content="The Oracle — NBA Draft Optimizer">
-  <meta property="og:description" content="AI-powered NBA DFS draft optimizer with injury cascade, game script analysis, and calibration feedback.">
+  <meta property="og:description" content="AI-powered NBA draft optimizer for the Real Sports App with game script analysis and calibration feedback.">
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -192,6 +192,12 @@
       background: var(--border-bright); border-radius: 3px;
       padding: 1px 5px; font-size: 0.6rem;
     }
+    .injury-badge {
+      background: rgba(244,63,94,0.15); color: #f43f5e;
+      border: 1px solid rgba(244,63,94,0.3); border-radius: 3px;
+      padding: 1px 5px; font-size: 0.55rem; font-weight: 800;
+      letter-spacing: 0.08em;
+    }
     .player-name {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1.2rem; font-weight: 800; line-height: 1;
@@ -236,13 +242,7 @@
       display: inline-block; margin-top: 4px;
     }
 
-    /* ── CASCADE & MULT BADGES ── */
-    .cascade-badge {
-      background: rgba(251,191,36,0.15); color: #fbbf24;
-      border: 1px solid rgba(251,191,36,0.3);
-      font-size: 0.6rem; font-weight: 700; padding: 2px 6px;
-      border-radius: 4px; letter-spacing: 0.05em;
-    }
+    /* ── MULT BADGES ── */
     .mult-badge {
       background: rgba(79,142,247,0.1); color: var(--chalk);
       border: 1px solid rgba(79,142,247,0.2);
@@ -359,57 +359,6 @@
     .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
     .empty-state p { font-size: 0.85rem; line-height: 1.6; }
 
-    /* ── LAB / HISTORY ── */
-    .lab-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
-    .lab-title {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.4rem; font-weight: 900; letter-spacing: 0.03em;
-    }
-    .sync-btn {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
-      background: var(--surface2); color: var(--text-dim);
-      border: 1px solid var(--border-bright);
-      padding: 7px 14px; border-radius: 8px; cursor: pointer;
-      transition: all 0.2s;
-    }
-    .sync-btn:hover { border-color: var(--chalk); color: var(--chalk); }
-
-    .history-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r);
-      padding: 18px;
-      margin-bottom: 12px;
-    }
-    .history-card-header {
-      display: flex; justify-content: space-between;
-      margin-bottom: 14px;
-    }
-    .history-game {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.9rem; font-weight: 800; color: var(--text);
-    }
-    .history-date { font-size: 0.7rem; color: var(--muted); font-weight: 500; }
-
-    .history-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .history-row:last-child { border-bottom: none; padding-bottom: 0; }
-    .history-player { font-size: 0.85rem; font-weight: 600; }
-    .history-player span { font-size: 0.65rem; color: var(--muted); font-weight: 500; }
-    .history-scores { display: flex; align-items: center; gap: 8px; }
-    .projected-score { font-size: 0.75rem; color: var(--muted); }
-    .actual-score {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.1rem; font-weight: 900;
-    }
-    .actual-score.hit { color: var(--green); }
-    .actual-score.miss { color: var(--red); }
-    .actual-score.pending { color: var(--muted); }
-
     /* ── ERROR TOAST ── */
     .error-banner {
       background: rgba(244,63,94,0.1);
@@ -422,80 +371,6 @@
     }
 
     .hidden { display: none !important; }
-
-    /* ── LAB: DAY PICKER ── */
-    .day-picker {
-      display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 14px;
-      -webkit-overflow-scrolling: touch; scrollbar-width: none;
-    }
-    .day-picker::-webkit-scrollbar { display: none; }
-    .day-chip {
-      flex-shrink: 0; padding: 7px 12px;
-      font-family: 'Barlow Condensed', sans-serif; font-size: 0.7rem; font-weight: 700;
-      letter-spacing: 0.06em; text-transform: uppercase;
-      border-radius: 8px; border: 1px solid var(--border); background: var(--surface2);
-      color: var(--muted); cursor: pointer; transition: all 0.2s; position: relative;
-      white-space: nowrap;
-    }
-    .day-chip:hover { border-color: var(--border-bright); color: var(--text-dim); }
-    .day-chip.active { background: rgba(79,142,247,0.12); border-color: var(--chalk); color: var(--chalk); }
-    .day-chip.has-actuals::after {
-      content: ''; position: absolute; top: 4px; right: 4px;
-      width: 6px; height: 6px; border-radius: 50%; background: var(--green);
-    }
-    .day-chip.no-data { opacity: 0.4; }
-
-    /* ── LAB: DAY DETAIL ── */
-    .day-title {
-      font-family: 'Barlow Condensed', sans-serif; font-size: 1.1rem; font-weight: 800;
-      letter-spacing: 0.03em; margin-bottom: 14px; color: var(--text);
-    }
-    .scope-tabs { display: flex; gap: 4px; margin-bottom: 14px; overflow-x: auto; }
-    .scope-tab {
-      flex-shrink: 0; padding: 6px 12px;
-      font-family: 'Barlow Condensed', sans-serif; font-size: 0.7rem; font-weight: 700;
-      letter-spacing: 0.05em; text-transform: uppercase;
-      border-radius: 7px; border: 1px solid var(--border); background: var(--surface2);
-      color: var(--muted); cursor: pointer; transition: all 0.2s;
-    }
-    .scope-tab.active { background: rgba(79,142,247,0.12); border-color: var(--chalk); color: var(--chalk); }
-    .scope-tab.has-actuals::after {
-      content: ''; position: absolute; top: 3px; right: 3px;
-      width: 5px; height: 5px; border-radius: 50%; background: var(--green);
-    }
-    .scope-tab { position: relative; }
-
-    .enter-results-btn {
-      width: 100%; padding: 12px; margin-top: 14px;
-      font-family: 'Barlow Condensed', sans-serif; font-size: 0.85rem; font-weight: 800;
-      letter-spacing: 0.08em; text-transform: uppercase;
-      border-radius: 10px; border: 1px solid var(--border-bright); background: var(--surface2);
-      color: var(--text-dim); cursor: pointer; transition: all 0.2s;
-    }
-    .enter-results-btn:hover { border-color: var(--chalk); color: var(--chalk); }
-    .enter-results-btn.done { border-color: var(--green); color: var(--green); pointer-events: none; }
-
-    /* ── LAB: COMPARISON ROW ── */
-    .comp-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 0; border-bottom: 1px solid var(--border);
-    }
-    .comp-row:last-child { border-bottom: none; }
-    .comp-name { font-size: 0.85rem; font-weight: 600; }
-    .comp-scores { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
-    .comp-pred { color: var(--muted); }
-    .comp-arrow { color: var(--text-dim); font-size: 0.7rem; }
-    .comp-actual { font-weight: 700; }
-    .comp-actual.hit { color: var(--green); }
-    .comp-actual.miss { color: var(--red); }
-    .comp-section-label {
-      font-size: 0.7rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase;
-      letter-spacing: 0.5px; padding: 6px 0 4px; margin-top: 4px;
-    }
-    .comp-summary {
-      display: flex; gap: 12px; flex-wrap: wrap; padding: 12px 0; font-size: 0.75rem; color: var(--text-dim);
-      border-top: 1px solid var(--border); margin-top: 8px;
-    }
 
     /* ── MODAL ── */
     .modal-overlay {
@@ -559,10 +434,7 @@
         <span class="logo-sub">NBA Draft Optimizer</span>
       </div>
     </div>
-    <nav class="nav">
-      <button class="nav-btn active" id="navOptimizer" onclick="switchNav('optimizer')">Optimizer</button>
-      <button class="nav-btn" id="navLab" onclick="switchNav('lab')">Lab</button>
-    </nav>
+    <div id="predSavedChip" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--green);padding:4px 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px"></div>
   </header>
 
   <!-- ══ OPTIMIZER VIEW ══ -->
@@ -600,39 +472,56 @@
     <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:#fbbf24;padding:6px 12px;text-align:center;letter-spacing:0.3px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;margin-bottom:14px"></div>
     <div id="picksList"></div>
 
+    <div class="divider"></div>
+
+    <!-- Upload Results -->
+    <div class="section-label">Track Results</div>
+    <button class="analyze-btn" style="background:var(--upside);box-shadow:0 4px 20px var(--upside-glow)" onclick="openUploadModal()">
+      Upload Draft Results
+    </button>
+    <div id="uploadStatus" style="display:none;font-size:0.75rem;color:var(--green);text-align:center;margin-top:-16px;margin-bottom:16px"></div>
+
   </div>
 
-  <!-- ══ LAB VIEW ══ -->
-  <div id="viewLab" class="hidden">
-    <div class="lab-header">
-      <span class="lab-title">History</span>
-    </div>
+  <!-- ══ SCREENSHOT UPLOAD MODAL ══ -->
+  <div class="modal-overlay hidden" id="uploadModal">
+    <div class="modal-box">
+      <div class="modal-header">Upload Draft Results</div>
+      <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
+        Upload a screenshot of your Daily Draft Stats from the Real Sports app. The AI will extract player data automatically.
+      </p>
 
-    <!-- Day Picker -->
-    <div class="day-picker" id="dayPicker"></div>
-
-    <!-- Day Detail -->
-    <div id="dayDetail"></div>
-
-    <!-- Score Entry Modal -->
-    <div class="modal-overlay hidden" id="entryModal">
-      <div class="modal-box">
-        <div class="modal-header" id="modalHeader">Enter Actual Scores</div>
-        <div id="screenshotPreview" style="display:none;margin-bottom:12px">
-          <img id="screenshotImg" style="width:100%;border-radius:8px;border:1px solid var(--border)">
+      <!-- Step 1: Upload -->
+      <div id="uploadStep1">
+        <div id="uploadPreview" style="display:none;margin-bottom:12px">
+          <img id="uploadImg" style="width:100%;border-radius:8px;border:1px solid var(--border)">
         </div>
-        <label class="attach-btn" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.75rem;color:var(--text-dim);margin-bottom:14px">
-          <input type="file" accept="image/*" id="screenshotInput" style="display:none" onchange="previewScreenshot(this)">
-          📷 Attach screenshot for reference
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:24px;border:2px dashed var(--border-bright);border-radius:12px;color:var(--text-dim);font-size:0.85rem;transition:border-color 0.2s;margin-bottom:14px"
+               onmouseover="this.style.borderColor='var(--chalk)'" onmouseout="this.style.borderColor='var(--border-bright)'">
+          <input type="file" accept="image/*" id="uploadFileInput" style="display:none" onchange="handleUploadFile(this)">
+          Select screenshot
         </label>
-        <div id="modalScoreRows"></div>
-        <button type="button" id="addPlayerBtn" onclick="addResultRow('', null)" style="display:none;background:none;border:1px dashed var(--border-bright);border-radius:8px;padding:8px;width:100%;color:var(--text-dim);font-size:0.8rem;cursor:pointer;margin-top:6px;transition:border-color 0.15s">+ Add Player</button>
-        <div id="modalError" style="color:var(--red);font-size:0.75rem;margin:8px 0;display:none"></div>
+        <button class="modal-submit" id="parseBtn" disabled onclick="parseScreenshot()" style="width:100%">Parse Screenshot</button>
+      </div>
+
+      <!-- Step 2: Review parsed data -->
+      <div id="uploadStep2" style="display:none">
+        <div id="parsedResults"></div>
+        <div id="parseError" style="color:var(--red);font-size:0.75rem;margin:8px 0;display:none"></div>
         <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="modal-cancel" onclick="closeEntryModal()">Cancel</button>
-          <button class="modal-submit" id="modalSubmitBtn" disabled onclick="submitActuals()">Submit Results</button>
+          <button class="modal-cancel" onclick="backToUpload()">Back</button>
+          <button class="modal-submit" id="saveToGitBtn" onclick="saveActualsToGit()">Save to Git</button>
         </div>
       </div>
+
+      <!-- Step 3: Success -->
+      <div id="uploadStep3" style="display:none;text-align:center;padding:24px 0">
+        <div style="font-size:2rem;margin-bottom:12px">&#10003;</div>
+        <div style="font-size:0.9rem;font-weight:600;color:var(--green);margin-bottom:8px">Results saved to Git!</div>
+        <div id="savedFilePath" style="font-size:0.72rem;color:var(--text-dim)"></div>
+      </div>
+
+      <button class="modal-cancel" onclick="closeUploadModal()" style="width:100%;margin-top:14px">Close</button>
     </div>
   </div>
 
@@ -651,51 +540,7 @@ const TEAM_COLORS = {
 let SLATE = null;
 let PICKS_DATA = null;
 let CURRENT_SLATE_TAB = 'chalk';
-let LAB_ACTIVE_DATE = null;
-let LAB_ACTIVE_SCOPE = null;
-let MODAL_DATE = null;
-let MODAL_SCOPE = null;
-let MODAL_ROW_COUNT = 0;
-let LAB_DAY_DATA = null;  // in-memory dayData including auto-generated game tabs
-
-// ── LOCALSTORAGE HELPERS ──
-const LAB_KEY = 'nba_lab_history';
-const CAL_KEY = 'nba_calibration';
-
-function labLoad() {
-  try { return JSON.parse(localStorage.getItem(LAB_KEY)) || {}; }
-  catch { return {}; }
-}
-function labSave(data) {
-  try { localStorage.setItem(LAB_KEY, JSON.stringify(data)); }
-  catch(e) { console.warn('Lab save failed:', e); }
-}
-function labSaveDay(date, scope, predictions) {
-  const data = labLoad();
-  if (!data[date]) data[date] = {};
-  data[date][scope] = { predictions, savedAt: new Date().toISOString() };
-  labSave(data);
-}
-function labSaveActuals(date, scope, actuals) {
-  const data = labLoad();
-  if (!data[date]) data[date] = {};
-  if (!data[date][scope]) data[date][scope] = {};
-  data[date][scope].actuals = actuals;
-  data[date][scope].actualsAt = new Date().toISOString();
-  labSave(data);
-}
-function calLoad() {
-  try { return JSON.parse(localStorage.getItem(CAL_KEY)) || { bias: 0, samples: 0 }; }
-  catch { return { bias: 0, samples: 0 }; }
-}
-function calSave(cal) {
-  try { localStorage.setItem(CAL_KEY, JSON.stringify(cal)); }
-  catch(e) { console.warn('Cal save failed:', e); }
-}
-function getCalBias() {
-  const cal = calLoad();
-  return cal.samples >= 5 ? cal.bias : 0;
-}
+let PARSED_PLAYERS = null;  // parsed screenshot data awaiting confirmation
 
 // ── INIT ──
 (async function init() {
@@ -737,25 +582,19 @@ async function initGameSelector() {
 async function loadSlate() {
   renderSkeletons('slateList', 5);
   try {
-    const bias = getCalBias();
-    const url = bias ? `/api/slate?cal_bias=${bias}` : '/api/slate';
-    const r = await fetch(url);
+    const r = await fetch('/api/slate');
     if (!r.ok) throw new Error('Slate fetch failed');
-    SLATE = await r.json();
+    const slateData = await r.json();
+    if (slateData.locked && !slateData.lineups.chalk.length && SLATE) {
+      SLATE.locked = true;
+    } else {
+      SLATE = slateData;
+    }
     document.getElementById('slateTabs').style.display = 'flex';
 
-    // Auto-save to lab
-    if (SLATE.date) {
-      labSaveDay(SLATE.date, 'slate', {
-        chalk: SLATE.lineups.chalk,
-        upside: SLATE.lineups.upside,
-        games: SLATE.games
-      });
-    }
-
     const chips = document.getElementById('slateChips');
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
+    const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
     let lockChip = '';
     if (SLATE.locked) {
       lockChip = '<div class="lock-chip">Picks Locked</div>';
@@ -766,6 +605,9 @@ async function loadSlate() {
       ${lockChip}
     `;
     switchSlate('chalk');
+
+    // Auto-save predictions to GitHub
+    savePredictions();
   } catch(e) {
     document.getElementById('slateList').innerHTML = `
       <div class="empty-state">
@@ -800,14 +642,18 @@ async function runAnalysis() {
   renderSkeletons('picksList', 5);
 
   try {
-    const bias = getCalBias();
-    const biasParam = bias ? `&cal_bias=${bias}` : '';
-    const r = await fetch(`/api/picks?gameId=${gameId}${biasParam}`);
+    const r = await fetch(`/api/picks?gameId=${gameId}`);
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: 'Server error' }));
       throw new Error(err.error || `HTTP ${r.status}`);
     }
-    PICKS_DATA = await r.json();
+    const picksData = await r.json();
+    // If locked with empty lineups (cold start after lock), keep existing data
+    if (picksData.locked && !picksData.lineups.chalk.length && PICKS_DATA) {
+      PICKS_DATA.locked = true;
+    } else {
+      PICKS_DATA = picksData;
+    }
     document.getElementById('picksTabsWrap').style.display = 'flex';
     // Reset tab state to Starting 5
     document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t =>
@@ -835,25 +681,15 @@ async function runAnalysis() {
     const injuries = PICKS_DATA.injuries || [];
     if (injuries.length > 0) {
       const names = injuries.map(inj => `${inj.name} (${inj.team})`).join(', ');
-      const cascadeNote = PICKS_DATA.cascadeCount > 0
-        ? ` — ${PICKS_DATA.cascadeCount} pick${PICKS_DATA.cascadeCount > 1 ? 's' : ''} boosted`
-        : '';
-      injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}${cascadeNote}`;
+      injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}`;
       injBadge.style.display = 'block';
     } else {
       injBadge.style.display = 'none';
     }
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
 
-    // Auto-save to lab
-    if (PICKS_DATA.date) {
-      const label = sel.options[sel.selectedIndex].textContent;
-      labSaveDay(PICKS_DATA.date, `game_${gameId}`, {
-        chalk: PICKS_DATA.lineups.chalk,
-        upside: PICKS_DATA.lineups.upside,
-        gameLabel: label
-      });
-    }
+    // Auto-save predictions to GitHub (includes this game now)
+    savePredictions();
   } catch(e) {
     document.getElementById('picksList').innerHTML = '';
     banner.textContent = `⚠ ${e.message}`;
@@ -881,11 +717,10 @@ function renderCards(picks, containerId, mode) {
       ? `rgba(${parseInt(tc.slice(1,3),16)},${parseInt(tc.slice(3,5),16)},${parseInt(tc.slice(5,7),16)},0.08)`
       : 'rgba(79,142,247,0.08)';
 
-    const multBadge = p.est_mult ? `<span class="mult-badge">${p.est_mult}x est</span>` : '';
+    const multBadge = p.est_mult ? `<span class="mult-badge">+${p.est_mult}x card</span>` : '';
 
     const statsHtml = [
       multBadge,
-      p.is_cascade_pick && `<span class="cascade-badge">INJ BOOST</span>`,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,
@@ -900,7 +735,7 @@ function renderCards(picks, containerId, mode) {
         <div class="rank-badge">${p.slot}</div>
         <div class="player-info">
           <div class="player-meta">
-            ${p.team || '—'} <span class="pos-pill">${p.pos}</span>
+            ${p.team || '—'} <span class="pos-pill">${p.pos}</span>${p.injury_status ? ` <span class="injury-badge">${p.injury_status}</span>` : ''}
           </div>
           <div class="player-name">${p.name}</div>
           <div class="stat-pills">${statsHtml}</div>
@@ -929,437 +764,163 @@ function renderSkeletons(containerId, count) {
     </div>`).join('');
 }
 
-// ── NAV ──
-function switchNav(view) {
-  const isLab = view === 'lab';
-  document.getElementById('viewOptimizer').classList.toggle('hidden', isLab);
-  document.getElementById('viewLab').classList.toggle('hidden', !isLab);
-  document.getElementById('navOptimizer').classList.toggle('active', !isLab);
-  document.getElementById('navLab').classList.toggle('active', isLab);
-  if (isLab) initLab();
-}
-
-// ── LAB ──
-async function initLab() {
-  await migrateHistory();
-  renderDayPicker();
-  const data = labLoad();
-  const dates = Object.keys(data).sort().reverse();
-  if (dates.length > 0) {
-    loadDay(LAB_ACTIVE_DATE && data[LAB_ACTIVE_DATE] ? LAB_ACTIVE_DATE : dates[0]);
-  } else {
-    document.getElementById('dayDetail').innerHTML =
-      '<div class="empty-state"><span class="icon">📋</span><p>No predictions saved yet.<br>Run an analysis from the Optimizer to start tracking.</p></div>';
-  }
-}
-
-async function migrateHistory() {
-  if (localStorage.getItem('nba_lab_migrated')) return;
+// ── SAVE PREDICTIONS TO GIT ──
+async function savePredictions() {
   try {
-    const r = await fetch('/api/history');
-    const history = await r.json();
-    if (!Array.isArray(history) || !history.length) {
-      localStorage.setItem('nba_lab_migrated', '1');
-      return;
+    const r = await fetch('/api/save-predictions', { method: 'POST' });
+    if (r.ok) {
+      const result = await r.json();
+      const chip = document.getElementById('predSavedChip');
+      chip.textContent = `Saved ${result.rows} predictions`;
+      chip.style.display = 'inline-block';
+      setTimeout(() => { chip.style.display = 'none'; }, 4000);
     }
-    const data = labLoad();
-    history.forEach(h => {
-      const date = (h.timestamp || '').slice(0, 10);
-      if (!date) return;
-      const gameKey = h.game ? `game_${h.game.replace(/\s/g, '_')}` : 'slate';
-      if (!data[date]) data[date] = {};
-      if (!data[date][gameKey]) {
-        data[date][gameKey] = {
-          predictions: {
-            chalk: (h.players || []).map(p => ({
-              name: p.name, rating: p.rating, team: p.team || '', pos: p.pos || ''
-            })),
-            gameLabel: h.game || 'Slate'
-          },
-          savedAt: h.timestamp
-        };
-      }
-    });
-    labSave(data);
-    localStorage.setItem('nba_lab_migrated', '1');
   } catch(e) {
-    console.warn('History migration failed:', e);
+    console.warn('Prediction save failed:', e);
   }
 }
 
-function renderDayPicker() {
-  const picker = document.getElementById('dayPicker');
-  const data = labLoad();
-  const days = [];
-  const today = new Date();
-  today.setHours(12, 0, 0, 0);
-  // Show last 14 days + any older days that have data
-  const recentStart = new Date(today);
-  recentStart.setDate(recentStart.getDate() - 13);
-  const dataDates = new Set(Object.keys(data));
-  for (let d = new Date(recentStart); d <= today; d.setDate(d.getDate() + 1)) {
-    days.push(d.toISOString().slice(0, 10));
-  }
-  // Add any older dates with saved data
-  dataDates.forEach(dd => { if (!days.includes(dd)) days.push(dd); });
-  days.sort();
-  picker.innerHTML = days.map(d => {
-    const dayData = data[d];
-    const hasData = dayData && Object.keys(dayData).length > 0;
-    const hasActuals = hasData && Object.values(dayData).some(s => s.actuals && s.actuals.length > 0);
-    const label = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const cls = [
-      'day-chip',
-      d === LAB_ACTIVE_DATE ? 'active' : '',
-      hasActuals ? 'has-actuals' : ''
-    ].filter(Boolean).join(' ');
-    return `<button class="${cls}" onclick="loadDay('${d}')">${label}</button>`;
-  }).reverse().join('');
+// ── SCREENSHOT UPLOAD FLOW ──
+function openUploadModal() {
+  PARSED_PLAYERS = null;
+  document.getElementById('uploadStep1').style.display = 'block';
+  document.getElementById('uploadStep2').style.display = 'none';
+  document.getElementById('uploadStep3').style.display = 'none';
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('uploadFileInput').value = '';
+  document.getElementById('parseBtn').disabled = true;
+  document.getElementById('uploadModal').classList.remove('hidden');
 }
 
-function loadDay(date) {
-  LAB_ACTIVE_DATE = date;
-  renderDayPicker();
-
-  const data = labLoad();
-  const dayData = data[date] || {};
-  const detail = document.getElementById('dayDetail');
-  LAB_DAY_DATA = dayData;
-
-  if (Object.keys(dayData).length === 0) {
-    const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-    detail.innerHTML = `
-      <div class="day-title">${dateLabel}</div>
-      <div class="empty-state" style="margin-bottom:14px">
-        <span class="icon">📋</span>
-        <p>No predictions saved for this day.</p>
-      </div>
-      <button class="enter-results-btn" onclick="openEntryModal('${date}','manual')">Enter Results Manually</button>
-    `;
-    return;
-  }
-
-  // Auto-generate per-game tabs from slate's games list
-  const slateGames = dayData['slate']?.predictions?.games;
-  if (slateGames && Array.isArray(slateGames)) {
-    slateGames.forEach(g => {
-      const gameKey = `game_${g.gameId}`;
-      if (!dayData[gameKey]) {
-        dayData[gameKey] = {
-          predictions: { chalk: [], gameLabel: g.label || 'Game' },
-          savedAt: dayData['slate']?.savedAt
-        };
-      }
-    });
-  }
-
-  const scopes = Object.keys(dayData);
-  const activeScope = LAB_ACTIVE_SCOPE && scopes.includes(LAB_ACTIVE_SCOPE) ? LAB_ACTIVE_SCOPE : scopes[0];
-  LAB_ACTIVE_SCOPE = activeScope;
-
-  const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-
-  const tabsHtml = scopes.map(s => {
-    let label;
-    if (s === 'slate') label = 'Full Slate';
-    else if (s === 'manual') label = 'Manual';
-    else label = dayData[s].predictions?.gameLabel || s.replace('game_', '');
-    const hasActuals = dayData[s]?.actuals?.length > 0;
-    const active = s === activeScope ? 'active' : '';
-    return `<button class="scope-tab ${active}${hasActuals ? ' has-actuals' : ''}" onclick="switchLabScope('${date}','${s}')">${label}</button>`;
-  }).join('');
-
-  detail.innerHTML = `
-    <div class="day-title">${dateLabel}</div>
-    <div class="scope-tabs">${tabsHtml}</div>
-    <div id="labScopeContent"></div>
-  `;
-  renderLabScope(date, activeScope);
+function closeUploadModal() {
+  document.getElementById('uploadModal').classList.add('hidden');
 }
 
-function switchLabScope(date, scope) {
-  LAB_ACTIVE_SCOPE = scope;
-  loadDay(date);
-}
-
-function renderLabScope(date, scope) {
-  const data = labLoad();
-  // Try localStorage first, fall back to in-memory dayData (auto-generated game tabs)
-  const scopeData = data[date]?.[scope] || LAB_DAY_DATA?.[scope];
-  const el = document.getElementById('labScopeContent');
-
-  if (!scopeData) {
-    el.innerHTML = `
-      <div class="empty-state" style="margin-bottom:14px"><span class="icon">📋</span><p>No predictions for this game.</p></div>
-      <button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Results</button>`;
-    return;
-  }
-
-  const preds = scopeData.predictions || {};
-  const actuals = scopeData.actuals;
-  const players = preds.chalk || [];
-
-  if (actuals && actuals.length) {
-    // Comparison view — Our Picks + Leaderboard Players
-    let html = '<div style="margin-bottom:12px">';
-
-    // Our Picks section (only if we had predictions)
-    if (players.length > 0) {
-      html += '<div class="comp-section-label">Our Picks</div>';
-      players.forEach(p => {
-        const actual = actuals.find(a => a.name === p.name);
-        const score = actual?.score;
-        const diff = score != null ? score - p.rating : null;
-        const cls = diff != null ? (diff >= 0 ? 'hit' : 'miss') : '';
-        html += `
-          <div class="comp-row">
-            <div class="comp-name">${p.name}${!actual ? ' <span style="opacity:0.4;font-size:0.75rem">not in results</span>' : ''}</div>
-            <div class="comp-scores">
-              <span class="comp-pred">proj ${p.rating}</span>
-              <span class="comp-arrow">&rarr;</span>
-              <span class="comp-actual ${cls}">${score != null ? score : '—'}</span>
-            </div>
-          </div>`;
-      });
-    }
-
-    // Leaderboard Players (ones we didn't predict)
-    const predNames = new Set(players.map(p => p.name));
-    const extras = actuals.filter(a => !predNames.has(a.name));
-    if (extras.length > 0) {
-      html += '<div class="comp-section-label" style="margin-top:12px">Leaderboard Players</div>';
-      extras.sort((a, b) => (b.score || 0) - (a.score || 0));
-      extras.forEach(a => {
-        html += `
-          <div class="comp-row">
-            <div class="comp-name">${a.name}</div>
-            <div class="comp-scores">
-              <span class="comp-actual">${a.score != null ? a.score : '—'}</span>
-            </div>
-          </div>`;
-      });
-    }
-
-    // Summary
-    const scored = actuals.filter(a => a.score != null);
-    if (scored.length) {
-      const totalActual = scored.reduce((s, a) => s + a.score, 0);
-      const matchedPicks = players.filter(p => actuals.find(a => a.name === p.name && a.score != null));
-      const totalPred = matchedPicks.reduce((s, p) => s + p.rating, 0);
-      const hits = matchedPicks.filter(p => {
-        const a = actuals.find(a => a.name === p.name);
-        return a && a.score >= p.rating;
-      }).length;
-      html += `
-        <div class="comp-summary">
-          ${matchedPicks.length > 0 ? `<span>Predicted: <b>${totalPred.toFixed(1)}</b></span>` : ''}
-          <span>Total actual: <b>${totalActual.toFixed(1)}</b></span>
-          ${matchedPicks.length > 0 ? `<span>Hit rate: <b>${hits}/${matchedPicks.length}</b></span>` : ''}
-          <span>Players: <b>${scored.length}</b></span>
-        </div>`;
-    }
-    html += '</div>';
-    html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Edit Results</button>`;
-    el.innerHTML = html;
-  } else {
-    // Show predictions + enter results button
-    if (players.length > 0) {
-      let html = '<div id="labCardsList"></div>';
-      html += `<button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Actual Results</button>`;
-      el.innerHTML = html;
-      renderCards(players, 'labCardsList', 'chalk');
-    } else {
-      el.innerHTML = `
-        <div class="empty-state" style="margin-bottom:14px"><span class="icon">📋</span><p>No predictions for this view.</p></div>
-        <button class="enter-results-btn" onclick="openEntryModal('${date}','${scope}')">Enter Results</button>`;
-    }
-  }
-}
-
-// ── SCORE ENTRY MODAL ──
-function openEntryModal(date, scope) {
-  MODAL_DATE = date;
-  MODAL_SCOPE = scope;
-  MODAL_ROW_COUNT = 0;
-
-  const data = labLoad();
-  const scopeData = data[date]?.[scope] || LAB_DAY_DATA?.[scope];
-  const preds = scopeData?.predictions;
-  const players = preds?.chalk || [];
-  const existing = scopeData?.actuals;
-
-  const header = document.getElementById('modalHeader');
-  const rows = document.getElementById('modalScoreRows');
-  header.textContent = scope === 'slate' ? 'Enter Slate Results'
-    : scope === 'manual' ? 'Enter Results'
-    : `Enter Results — ${preds?.gameLabel || 'Game'}`;
-
-  rows.innerHTML = '';
-
-  // If re-editing, pre-fill from existing actuals
-  if (existing && existing.length) {
-    existing.forEach(a => {
-      const pred = players.find(p => p.name === a.name);
-      addResultRow(a.name, pred?.rating || null, a.score);
-    });
-  } else if (players.length > 0) {
-    // Pre-fill with our predictions
-    players.forEach(p => addResultRow(p.name, p.rating, null));
-    // Add empty rows for leaderboard players we didn't predict
-    for (let i = 0; i < 3; i++) addResultRow('', null, null);
-  } else {
-    // No predictions — all blank rows
-    for (let i = 0; i < 5; i++) addResultRow('', null, null);
-  }
-
-  document.getElementById('addPlayerBtn').style.display = 'block';
-  document.getElementById('modalError').style.display = 'none';
-  document.getElementById('screenshotPreview').style.display = 'none';
-  document.getElementById('screenshotInput').value = '';
-  document.getElementById('modalSubmitBtn').disabled = true;
-  document.getElementById('entryModal').classList.remove('hidden');
-  validateResultInputs();
-}
-
-function addResultRow(name, projRating, existingScore) {
-  const idx = MODAL_ROW_COUNT++;
-  const rows = document.getElementById('modalScoreRows');
-  const row = document.createElement('div');
-  row.className = 'score-row';
-  row.id = `resultRow_${idx}`;
-  row.style.gridTemplateColumns = '1fr auto 70px 28px';
-  row.innerHTML = `
-    <input type="text" value="${name || ''}" placeholder="Player name" id="resultName_${idx}"
-           oninput="validateResultInputs()">
-    ${projRating ? `<span class="score-row-pred">proj ${projRating}</span>` : '<span></span>'}
-    <input type="number" min="0" max="150" step="0.1" placeholder="Score"
-           id="resultScore_${idx}" value="${existingScore != null ? existingScore : ''}"
-           oninput="validateResultInputs()">
-    <button type="button" class="remove-row-btn" onclick="removeResultRow(${idx})" title="Remove">&times;</button>
-  `;
-  rows.appendChild(row);
-}
-
-function removeResultRow(idx) {
-  const row = document.getElementById(`resultRow_${idx}`);
-  if (row) row.remove();
-  validateResultInputs();
-}
-
-function closeEntryModal() {
-  document.getElementById('entryModal').classList.add('hidden');
-  document.getElementById('addPlayerBtn').style.display = 'none';
-  MODAL_DATE = null;
-  MODAL_SCOPE = null;
-}
-
-function previewScreenshot(input) {
+function handleUploadFile(input) {
   if (input.files && input.files[0]) {
     const reader = new FileReader();
     reader.onload = (e) => {
-      document.getElementById('screenshotImg').src = e.target.result;
-      document.getElementById('screenshotPreview').style.display = 'block';
+      document.getElementById('uploadImg').src = e.target.result;
+      document.getElementById('uploadPreview').style.display = 'block';
+      document.getElementById('parseBtn').disabled = false;
     };
     reader.readAsDataURL(input.files[0]);
   }
 }
 
-function validateResultInputs() {
-  const rowEls = document.querySelectorAll('[id^="resultRow_"]');
-  let filledCount = 0;
-  let hasInvalid = false;
+async function parseScreenshot() {
+  const btn = document.getElementById('parseBtn');
+  const file = document.getElementById('uploadFileInput').files[0];
+  if (!file) return;
 
-  rowEls.forEach(row => {
-    const idx = row.id.replace('resultRow_', '');
-    const nameEl = document.getElementById(`resultName_${idx}`);
-    const scoreEl = document.getElementById(`resultScore_${idx}`);
-    const name = nameEl.value.trim();
-    const val = scoreEl.value.trim();
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Parsing...';
 
-    // Both empty = skip (ok)
-    if (!name && !val) {
-      scoreEl.classList.remove('invalid');
-      return;
-    }
-    // One filled, one empty = incomplete
-    if (!name || !val) { hasInvalid = true; scoreEl.classList.remove('invalid'); return; }
-    // Both filled — validate score
-    const num = parseFloat(val);
-    if (isNaN(num) || num < 0 || num > 150) {
-      scoreEl.classList.add('invalid');
-      hasInvalid = true;
-    } else {
-      scoreEl.classList.remove('invalid');
-      filledCount++;
-    }
-  });
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const r = await fetch('/api/parse-screenshot', { method: 'POST', body: form });
+    const data = await r.json();
 
-  const valid = filledCount >= 1 && !hasInvalid;
-  document.getElementById('modalSubmitBtn').disabled = !valid;
-  const err = document.getElementById('modalError');
-  err.style.display = hasInvalid ? 'block' : 'none';
-  err.textContent = hasInvalid ? 'Fill both name and score (0-150) for each row, or leave both empty.' : '';
+    if (!r.ok) throw new Error(data.error || 'Parse failed');
+    if (!data.players || !data.players.length) throw new Error('No players found in screenshot');
+
+    PARSED_PLAYERS = data.players;
+    renderParsedResults(PARSED_PLAYERS);
+    document.getElementById('uploadStep1').style.display = 'none';
+    document.getElementById('uploadStep2').style.display = 'block';
+  } catch(e) {
+    const err = document.getElementById('parseError');
+    err.textContent = e.message;
+    err.style.display = 'block';
+    document.getElementById('uploadStep2').style.display = 'block';
+    document.getElementById('uploadStep1').style.display = 'none';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Parse Screenshot';
+  }
 }
 
-async function submitActuals() {
-  // Collect all filled rows
-  const rowEls = document.querySelectorAll('[id^="resultRow_"]');
-  const data = labLoad();
-  const scopeData = data[MODAL_DATE]?.[MODAL_SCOPE] || LAB_DAY_DATA?.[MODAL_SCOPE];
-  const players = scopeData?.predictions?.chalk || [];
+function renderParsedResults(players) {
+  const el = document.getElementById('parsedResults');
+  let html = '<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px">Review parsed data — edit any incorrect values:</div>';
 
-  const actuals = [];
-  rowEls.forEach(row => {
-    const idx = row.id.replace('resultRow_', '');
-    const name = document.getElementById(`resultName_${idx}`).value.trim();
-    const val = document.getElementById(`resultScore_${idx}`).value.trim();
-    if (!name || !val) return;
-    const score = parseFloat(val);
-    const pred = players.find(p => p.name === name);
-    actuals.push({
-      name,
-      predicted_rating: pred?.rating || 0,
-      actual_score: score,
-      score
-    });
+  players.forEach((p, i) => {
+    const src = p.source === 'my_draft' ? 'My Draft' : p.source === 'highest_value' ? 'Top Value' : p.source || '';
+    html += `
+      <div class="score-row" style="grid-template-columns:1fr 55px 55px 55px;gap:6px">
+        <input type="text" value="${p.player_name || ''}" id="pName_${i}" style="font-size:0.78rem">
+        <input type="number" value="${p.actual_rs ?? ''}" id="pRS_${i}" placeholder="RS" step="0.1" style="font-size:0.78rem">
+        <input type="number" value="${p.actual_card_boost ?? ''}" id="pBoost_${i}" placeholder="Boost" step="0.1" style="font-size:0.78rem">
+        <input type="number" value="${p.drafts ?? ''}" id="pDrafts_${i}" placeholder="Drafts" style="font-size:0.78rem">
+      </div>`;
   });
 
-  if (!actuals.length) return;
+  el.innerHTML = html;
+}
 
-  // Ensure scope exists in localStorage
-  if (!data[MODAL_DATE]) data[MODAL_DATE] = {};
-  if (!data[MODAL_DATE][MODAL_SCOPE]) {
-    data[MODAL_DATE][MODAL_SCOPE] = {
-      predictions: scopeData?.predictions || {
-        chalk: actuals.map(a => ({ name: a.name, rating: a.predicted_rating, team: '', pos: '' })),
-        gameLabel: scopeData?.predictions?.gameLabel || (MODAL_SCOPE === 'slate' ? 'Slate' : 'Game')
-      },
-      savedAt: new Date().toISOString()
-    };
+function backToUpload() {
+  document.getElementById('uploadStep1').style.display = 'block';
+  document.getElementById('uploadStep2').style.display = 'none';
+  document.getElementById('parseError').style.display = 'none';
+}
+
+async function saveActualsToGit() {
+  const btn = document.getElementById('saveToGitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Saving...';
+
+  // Collect edited data from form
+  const players = [];
+  if (PARSED_PLAYERS) {
+    PARSED_PLAYERS.forEach((p, i) => {
+      const name = document.getElementById(`pName_${i}`)?.value?.trim();
+      const rs = document.getElementById(`pRS_${i}`)?.value;
+      const boost = document.getElementById(`pBoost_${i}`)?.value;
+      const drafts = document.getElementById(`pDrafts_${i}`)?.value;
+      if (!name) return;
+      players.push({
+        player_name: name,
+        actual_rs: rs ? parseFloat(rs) : '',
+        actual_card_boost: boost ? parseFloat(boost) : '',
+        drafts: drafts ? parseInt(drafts) : '',
+        avg_finish: p.avg_finish || '',
+        total_value: p.total_value || '',
+        source: p.source || '',
+      });
+    });
   }
-  data[MODAL_DATE][MODAL_SCOPE].actuals = actuals;
-  data[MODAL_DATE][MODAL_SCOPE].actualsAt = new Date().toISOString();
-  labSave(data);
 
-  // Send to backend for calibration
+  if (!players.length) {
+    btn.disabled = false;
+    btn.innerHTML = 'Save to Git';
+    return;
+  }
+
   try {
-    const r = await fetch('/api/actuals', {
+    const r = await fetch('/api/save-actuals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: MODAL_DATE, scope: MODAL_SCOPE, scores: actuals })
+      body: JSON.stringify({ players }),
     });
-    if (r.ok) {
-      const result = await r.json();
-      if (result.calibration) calSave(result.calibration);
-    }
-  } catch(e) {
-    console.warn('Backend calibration sync failed:', e);
-  }
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
 
-  const savedDate = MODAL_DATE;
-  closeEntryModal();
-  loadDay(savedDate);
-  renderDayPicker();
+    document.getElementById('uploadStep2').style.display = 'none';
+    document.getElementById('uploadStep3').style.display = 'block';
+    document.getElementById('savedFilePath').textContent = data.path;
+
+    const status = document.getElementById('uploadStatus');
+    status.textContent = `Results saved: ${data.path}`;
+    status.style.display = 'block';
+  } catch(e) {
+    const err = document.getElementById('parseError');
+    err.textContent = e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Save to Git';
+  }
 }
 </script>
 </body>

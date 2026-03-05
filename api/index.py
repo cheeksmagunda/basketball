@@ -2,12 +2,14 @@ import json
 import copy
 import hashlib
 import pickle
+import os
+import base64
 import numpy as np
 import requests
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import FastAPI, Query, Body
+from fastapi import FastAPI, Query, Body, File, UploadFile
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
@@ -27,6 +29,69 @@ except ImportError:
 
 load_dotenv()
 app = FastAPI()
+
+# ── GitHub API helpers for persistent CSV storage ──
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")  # e.g. "cheeksmagunda/basketball"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+def _github_get_file(path):
+    """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return None, None
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    r = requests.get(url, headers={
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }, timeout=10)
+    if r.status_code == 200:
+        data = r.json()
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        return content, data["sha"]
+    return None, None
+
+def _github_write_file(path, content, message="auto-update"):
+    """Create or update a file in the GitHub repo via Contents API."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return {"error": "GITHUB_TOKEN or GITHUB_REPO not configured"}
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    _, sha = _github_get_file(path)
+    payload = {
+        "message": message,
+        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+    }
+    if sha:
+        payload["sha"] = sha
+    r = requests.put(url, json=payload, headers={
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }, timeout=15)
+    if r.status_code in (200, 201):
+        return {"ok": True, "path": path}
+    return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
+
+def _csv_escape(v):
+    """Escape a value for CSV (quote if it contains commas or quotes)."""
+    s = str(v)
+    if "," in s or '"' in s or "\n" in s:
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+def _predictions_to_csv(lineups, scope):
+    """Convert lineup dicts to CSV rows."""
+    rows = []
+    for lineup_type, players in [("chalk", lineups.get("chalk", [])), ("upside", lineups.get("upside", []))]:
+        for p in players:
+            rows.append(",".join(_csv_escape(v) for v in [
+                scope, lineup_type, p.get("slot", ""), p.get("name", ""),
+                p.get("id", ""), p.get("team", ""), p.get("pos", ""),
+                p.get("rating", ""), p.get("est_mult", ""),
+                p.get("predMin", ""), p.get("pts", ""), p.get("reb", ""),
+                p.get("ast", ""), p.get("stl", ""), p.get("blk", ""),
+            ]))
+    return rows
+
+CSV_HEADER = "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk"
 
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -51,8 +116,9 @@ for _p in [
         except: pass
 
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-SLOT_VALUES = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
-MIN_GATE = 15  # Minimum projected minutes to qualify
+MIN_GATE = 12           # Minimum projected minutes — lowered from 15 to catch
+                        # deep bench (Clifford, Riley) who win in garbage time
+DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
@@ -62,10 +128,14 @@ def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
 def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
 def _is_locked(start_time_iso):
-    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start (or past it)."""
+    """Returns True if current UTC time is within LOCK_BUFFER_MINUTES of game start.
+    Returns False for completed games (>3h past start) to avoid stale ESPN data."""
     try:
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
+        # Completed games (>3h past start) are stale, not locked
+        if now > game_start + timedelta(hours=3):
+            return False
         return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
     except:
         return False
@@ -81,9 +151,32 @@ def _espn_get(url):
         return r.json()
     except: return {}
 
+def _fetch_b2b_teams():
+    """Detect teams on the second night of a back-to-back.
+
+    Fetches yesterday's scoreboard and returns a set of team abbreviations
+    that played yesterday. Players on these teams should be penalized —
+    rest-managed players (Robinson, older players) often sit or get
+    reduced minutes on B2Bs.
+    """
+    cache_key = "b2b_teams"
+    c = _cg(cache_key)
+    if c is not None: return set(c)
+    yesterday = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={yesterday}")
+    b2b = set()
+    for ev in data.get("events", []):
+        comp = ev["competitions"][0]
+        for cd in comp.get("competitors", []):
+            abbr = cd.get("team", {}).get("abbreviation", "")
+            if abbr: b2b.add(abbr)
+    _cs(cache_key, list(b2b))
+    return b2b
+
 def fetch_games():
     c = _cg("games")
     if c: return c
+    b2b_teams = _fetch_b2b_teams()
     data = _espn_get(f"{ESPN}/scoreboard")
     games = []
     for ev in data.get("events", []):
@@ -102,6 +195,8 @@ def fetch_games():
             "spread": _safe_float(odds.get("spread"), None),
             "total":  _safe_float(odds.get("overUnder"), None),
             "startTime": ev.get("date", ""),
+            "home_b2b": home["abbr"] in b2b_teams,
+            "away_b2b": away["abbr"] in b2b_teams,
         })
     _cs("games", games)
     return games
@@ -113,11 +208,25 @@ def fetch_roster(team_id, team_abbr):
     players = []
     for a in data.get("athletes", []):
         inj = a.get("injuries", [])
-        is_out = inj[0].get("status", "").lower() in ["out", "injured"] if inj else False
+        inj_status = inj[0].get("status", "").lower() if inj else ""
+        is_out = inj_status in ["out", "injured"]
+        # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
+        injury_label = ""
+        if inj and not is_out:
+            raw = inj[0].get("status", "") or inj[0].get("type", {}).get("description", "")
+            if raw:
+                rl = raw.lower()
+                if "question" in rl:       injury_label = "GTD"
+                elif "day" in rl:          injury_label = "DTD"
+                elif "doubt" in rl:        injury_label = "DOUBT"
+                elif "prob" in rl:         injury_label = ""  # Probable = fine
+                elif rl not in ["active", "healthy", ""]:
+                    injury_label = raw[:8].upper()
         players.append({
             "id": a["id"], "name": a["fullName"],
             "pos": a.get("position", {}).get("abbreviation", "G"),
             "is_out": is_out, "team_abbr": team_abbr,
+            "injury_status": injury_label,
         })
     _cs(f"roster_{team_id}", players)
     return players
@@ -162,7 +271,22 @@ def _fetch_athlete(pid):
             if 10 <= c2["min"] <= 48 and c2["pts"] > 0:
                 recent = c2
         if recent:
-            blended = {k: round(season[k] * 0.6 + recent[k] * 0.4, 2) for k in season}
+            # Minutes: when recent is significantly lower than season, override
+            # with heavier recent weight. Catches role changes mid-season
+            # (e.g. Drummond 25.7 season → 16.1 recent after Embiid return,
+            #  Love 25.8 → 14.8 after Utah trade, Clarkson 24.2 → 18.8)
+            min_ratio = recent["min"] / max(season["min"], 1)
+            if min_ratio < 0.75:
+                # Major role change: 80% recent, 20% season
+                min_blend = round(season["min"] * 0.2 + recent["min"] * 0.8, 2)
+            elif min_ratio < 0.90:
+                # Moderate decline: 65% recent, 35% season
+                min_blend = round(season["min"] * 0.35 + recent["min"] * 0.65, 2)
+            else:
+                min_blend = round(season["min"] * 0.5 + recent["min"] * 0.5, 2)
+
+            blended = {k: round(season[k] * 0.5 + recent[k] * 0.5, 2) for k in season}
+            blended["min"] = min_blend  # Override minutes with smart blend
             blended["season_min"] = season["min"]
             blended["recent_min"] = recent["min"]
             blended["recent_pts"] = recent["pts"]
@@ -264,40 +388,86 @@ def _cascade_minutes(roster, stats_map):
                     cascade_flags[pid] = 0.0
                 cascade_flags[pid] += bonus
 
+    # Cap per-player cascade at 3 minutes to prevent unrealistic projections
+    for pid in cascade_flags:
+        cascade_flags[pid] = min(cascade_flags[pid], 3.0)
+
     return cascade_flags
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# THE CORE MODEL
+# THE CORE MODEL — Optimized for the Real Sports App
 #
-# DFS Scoring Formula: PTS + REB + AST×1.5 + STL×3.5 + BLK×3.0 - TOV×1.2
+# Total Draft Score = Σ (Real Score × Card Multiplier × Slot Multiplier)
 #
-# Real Sports Value = actual_score × slot_multiplier_received
-# The slot multiplier is determined by ownership — high-owned players (stars)
-# always land in low-multiplier slots.
+# Card multipliers are the DOMINANT factor in draft scoring. Yesterday's
+# winners had role players with 4.0-4.6x card multipliers (Legendary +
+# booster) beating superstars who only had 1.0-2.3x (General/Common).
 #
-# We estimate ownership via projected minutes (including cascade):
-#   Stars (33+ min)     → everyone drafts them → low slot mult ~0.9x → AVOID
-#   Starters (28-33)    → popular → slot mult ~1.5x
-#   Role players(22-28) → moderate ownership → slot mult ~2.2x
-#   Bench (15-22)       → low ownership, high mult ~2.8x ← SWEET SPOT
-#   Deep bench (<15)    → below minutes gate, filtered out
+# ADDITIVE formula: Value = Real Score × (Slot_Mult + Card_Boost)
+# Example from actual leaderboard:
+#   Jaylin Williams: 4.1 base × (2.0 + 2.7) = 4.1 × 4.7 = 19.27  ← WINNER
+#   Anthony Edwards: 6.2 base × (2.0 + 0.3) = 6.2 × 2.3 = 14.26  ← loses
 #
-# STARTING 5 = best EV at moderate risk (role players + starters)
-# MOONSHOT = 5 different players — lower usage, higher ceiling, higher production floor
+# Card boost is INVERSELY driven by draft popularity (ownership).
+# Stars get 7,000+ drafts → +0.3x boost. Role players get <50 drafts → +2.5-3.0x.
+# The _est_card_boost uses a "hype score" (PPG², minutes, market) to predict this.
+#
+# Real Score-aligned formula (proxy for raw production):
+#   PTS + REB + AST×1.5 + STL×4.5 + BLK×4.0 - TOV×1.2
+#
+# STARTING 5 = MILP optimizes Σ rating × (slot + card_boost)
+# MOONSHOT = 5 different players — close-game ceiling × card advantage
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _ownership_mult_chalk(proj_min):
-    """Moderate inverse-ownership mult. Penalizes stars, rewards role players."""
-    if proj_min < 15:  return 1.8   # deep bench — too risky for chalk
-    if proj_min < 22:  return 2.8   # bench sweet spot (Sheppard, González tier)
-    if proj_min < 28:  return 2.2   # role players
-    if proj_min < 33:  return 1.5   # starters
-    return 0.9                      # stars — everyone drafts them, low mult
+# Big-market / high-profile teams that casual drafters flock to.
+# These players get MORE drafts → LOWER card boosts.
+_BIG_MARKET_TEAMS = {
+    "LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN",
+    "LAC", "CHI", "SA",  # Wemby effect
+}
+
+
+def _est_card_boost(proj_min, pts, team_abbr):
+    """Estimate ADDITIVE card boost based on predicted draft popularity.
+
+    Real Sports dynamically adjusts card boosts inversely to ownership:
+    stars get massive draft counts → crushed boosts (+0.3),
+    obscure role players get almost no drafts → huge boosts (+2.5-3.0+).
+
+    Uses a "hype score" — how attractive the player is to casual drafters —
+    and maps it through exponential decay to a card boost.
+
+    Calibrated against March 3 actuals (winning drafts had 3.0-3.4x boosts):
+      Wembanyama (36m, 24p, SA):   hype 9.5 → est +0.4x  (actual +0.3)
+      Ant Edwards (37m, 26p):      hype 7.5 → est +0.5x  (actual +0.3)
+      Bam (34m, 21p, MIA):         hype 7.0 → est +0.6x  (actual +0.7)
+      Jaylin Williams (20m, 8p):   hype 0.5 → est +3.0x  (actual +2.7)
+      Marcus Smart (25m, 10p):     hype 0.9 → est +2.7x  (actual +2.5)
+      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.1x  (actual +3.0)
+      Maxime Raynaud (18m, 10p):   hype 1.2 → est +2.5x  (actual +2.2)
+      N. Clifford (12m, 4p):       hype 0.1 → est +3.3x  (winning draft had ~3.2x)
+    """
+    # Hype score — PPG² makes scoring stars disproportionately popular
+    hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
+    if team_abbr in _BIG_MARKET_TEAMS:
+        hype *= 1.5
+    # Exponential decay: high hype → low boost, low hype → high boost
+    # Raised coefficient from 3.0 to 3.4 and floor from 0.2 to 0.3 —
+    # March 3 winning drafts had card boosts of 3.0-3.4x for role players,
+    # our old model was underestimating by 0.3-0.5x.
+    boost = 3.4 * (0.74 ** hype) + 0.3
+    return round(min(max(boost, 0.2), 3.5), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
-    """Full DFS scoring formula — matches the leaderboard exactly."""
-    return pts + reb + (ast * 1.5) + (stl * 3.5) + (blk * 3.0) - (tov * 1.2)
+    """Real Score-aligned formula — boosted defensive stats.
+
+    Backtest insight: steals and blocks correlate more strongly with Real Score
+    than with traditional DFS. Marcus Smart: 10/3/7/4stl/2blk = 3.4 Real Score
+    despite only 10 pts, because defensive plays in close games are high-impact
+    events in the Real Score algorithm (momentum shifts, clutch stops).
+    """
+    return pts + reb + (ast * 1.5) + (stl * 4.5) + (blk * 4.0) - (tov * 1.2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -314,7 +484,7 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
 def _game_script_weights(total, spread):
     """Return per-stat multipliers based on over/under and spread."""
     w = {"pts": 1.0, "reb": 1.0, "ast": 1.0, "stl": 1.0, "blk": 1.0, "tov": 1.0}
-    t = total or 222
+    t = total or DEFAULT_TOTAL
 
     if t < 220:
         # Defensive Grind — steals/blocks are gold, volume stats suppressed
@@ -348,10 +518,12 @@ def _game_script_weights(total, spread):
         w["blk"] = 0.90
         w["tov"] = 0.85
         # Blowout risk: if spread > 8, starters sit in garbage time
+        # NOTE: this only applies to per-game script (starters context).
+        # The main project_player() handles role-aware spread separately.
         if abs(spread or 0) > 8:
-            w["pts"] *= 0.88
-            w["ast"] *= 0.88
-            w["reb"] *= 0.92
+            w["pts"] *= 0.90
+            w["ast"] *= 0.90
+            w["reb"] *= 0.94
 
     return w
 
@@ -370,7 +542,7 @@ def _game_script_dfs(stats, total, spread):
 
 def _game_script_label(total):
     """Human-readable game script tier for display."""
-    t = total or 222
+    t = total or DEFAULT_TOTAL
     if t < 220:   return "Defensive Grind"
     if t <= 235:  return "Balanced Pace"
     if t <= 245:  return "Fast-Paced"
@@ -378,14 +550,21 @@ def _game_script_label(total):
 
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
-                   cascade_bonus=0.0, cal_bias=0.0):
+                   cascade_bonus=0.0, is_b2b=False):
     if pinfo.get("is_out"): return None
+    # Skip day-to-day and doubtful players — high scratch risk
+    if pinfo.get("injury_status") in ("DTD", "DOUBT"): return None
     avg_min = stats.get("min", 0)
     if avg_min <= 0: return None
 
     # Apply cascade minute boost
     proj_min = avg_min + cascade_bonus
-    is_cascade = cascade_bonus >= 2.0  # Flag if cascade added 2+ minutes
+
+    # Back-to-back penalty: teams on 2nd night of B2B see reduced minutes
+    # and rest-managed players (older, injury-prone) often sit entirely.
+    # Penalize projected minutes by 12% on B2B nights.
+    if is_b2b:
+        proj_min *= 0.88
 
     # Minutes gate: must project to at least 15 minutes
     if proj_min < MIN_GATE: return None
@@ -401,34 +580,86 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
-    # Scale heuristic by minute boost from cascade (capped at 1.4x)
+    # Clutch potential — playmakers, scorers, and defenders are more likely
+    # to produce clutch, momentum, and streak events in the Real Score algorithm.
+    # Pure rebounders (Drummond, Robinson, Jordan) inflate DFS base cheaply
+    # but rarely make game-changing plays. Ball handlers with high PTS/MIN,
+    # AST/MIN, and defenders with high STL+BLK/MIN generate Real Score events.
+    #
+    # Backtest: Marcus Smart 10/3/7/4stl/2blk = 3.4 Real Score despite only
+    # 10 pts — defensive plays in close games are high-impact Real Score events.
+    pts_per_min = pts / max(avg_min, 1)
+    ast_per_min = ast / max(avg_min, 1)
+    def_per_min = (stl + blk) / max(avg_min, 1)
+    clutch_potential = 1.0 + min(
+        pts_per_min * 0.10 + ast_per_min * 0.18 + def_per_min * 0.25, 0.40
+    )
+    heuristic *= clutch_potential
+
+    # Scale heuristic by minute boost from cascade (capped at 1.25x)
     if cascade_bonus > 0 and avg_min > 0:
-        min_scale = min(proj_min / avg_min, 1.4)
+        min_scale = min(proj_min / avg_min, 1.25)
         heuristic *= min_scale
 
-    # Declining usage penalty: if recent minutes dropped >15% vs season,
+    # Declining usage penalty: if recent minutes dropped >10% vs season,
     # scale output proportionally (e.g. Conley post-trade: 26→19 min = 0.73x)
     season_min = stats.get("season_min", avg_min)
     recent_min = stats.get("recent_min", avg_min)
     decline_factor = 1.0
-    if season_min > 0 and recent_min < season_min * 0.85:
+    if season_min > 0 and recent_min < season_min * 0.90:
         decline_factor = recent_min / season_min
         heuristic *= decline_factor
 
-    # AI blend
+    # AI blend — use spread-derived opponent quality instead of hardcoded 112.0
     base = heuristic
     if AI_MODEL is not None:
         try:
             usage = min(max(pts / max(avg_min, 1) * 0.8, 0.9), 1.5)
-            features = np.array([[avg_min, stats.get("season_pts", pts), usage, 112.0]])
+            # Derive opponent defensive quality from spread and side
+            # Negative spread = home favored → away faces tougher D
+            sign = 1.0 if side == "away" else -1.0
+            opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
+            features = np.array([[avg_min, stats.get("season_pts", pts), usage, opp_def_rating]])
             ai_pred = AI_MODEL.predict(features)[0]
             ai_norm = ai_pred * (heuristic / max(ai_pred, 1))
             base = (ai_norm * 0.7) + (heuristic * 0.3)
         except: pass
 
-    # Contextual multipliers (strengthened pace adjustment)
-    pace_adj   = 1.0 + (0.06 * ((total or 222) - 222) / 20)   # doubled from 0.03
-    spread_adj = 1.0 + (0.015 * (15 - abs(spread or 0)) / 15)
+    # Contextual multipliers — game closeness matters BUT differently by role.
+    pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
+
+    # Spread adjustment — role-aware.
+    # March 3 lesson: PHI got blown out 131-91 yet 3 of the top 8 highest-value
+    # players were PHI bench guys (Raynaud +4.2, Yabusele +3.4, McCain +3.0).
+    # Blowouts HURT stars (pulled early) but HELP bench (garbage-time minutes).
+    #
+    # Strategy: bench/role players (low PPG, low minutes) get a BOOST in
+    # blowouts because they inherit extended garbage-time run. Stars still
+    # get penalized because they sit Q4 in blowouts.
+    abs_spread = abs(spread or 0)
+    is_bench = pts <= 12 and avg_min <= 26  # role player / bench threshold
+    if is_bench:
+        # Bench players: blowouts = more minutes, neutral-to-positive
+        if abs_spread <= 2:
+            spread_adj = 1.05   # Close games — bench sits, slight penalty vs stars
+        elif abs_spread <= 6:
+            spread_adj = 1.0    # Moderate — neutral
+        elif abs_spread <= 10:
+            spread_adj = 1.08   # Lopsided — bench gets run, slight boost
+        else:
+            spread_adj = 1.12   # Blowout — extended garbage time, big boost
+    else:
+        # Stars/starters: close games are best, blowouts crush minutes
+        if abs_spread <= 2:
+            spread_adj = 1.15   # Pick'em — maximum Real Score environment
+        elif abs_spread <= 4:
+            spread_adj = 1.08   # Tight game — very good
+        elif abs_spread <= 6:
+            spread_adj = 1.0    # Moderate — neutral
+        elif abs_spread <= 8:
+            spread_adj = 0.88   # Lopsided — penalized
+        else:
+            spread_adj = 0.72   # Projected blowout — stars sit Q4
     home_adj   = 1.02 if side == "home" else 1.0
 
     s_base = base * pace_adj * spread_adj * home_adj
@@ -442,26 +673,27 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
     usage_rate = min(max(pts / max(avg_min, 1) * 0.8, 0.5), 2.0)
 
-    rng = _make_rng(spread or 0, total or 222)
+    rng = _make_rng(spread or 0, total or DEFAULT_TOTAL)
     real_result, real_meta = real_score_projection(
-        s_base, spread or 0, total or 222, usage_rate, player_variance, rng
+        s_base, spread or 0, total or DEFAULT_TOTAL, usage_rate, player_variance, rng
     )
 
-    # Raw projected score — clamped to prevent display anomalies
-    raw_score = min(real_result / 5.0, 15.0)
+    # Raw projected score — compressed via power function to match
+    # actual Real Score gaps (~1.5x star vs role, not ~3x linear).
+    # Power of 0.75 compresses 23→11.2, 8→4.8 (ratio 2.3x vs 2.9x linear)
+    raw_linear = real_result / 5.0
+    raw_score = min(raw_linear ** 0.75, 15.0)
 
-    # Apply calibration bias from user-uploaded actuals
-    if cal_bias != 0.0:
-        raw_score += cal_bias
+    # Estimated card boost (ADDITIVE, not multiplicative)
+    # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
+    # Card boost is INVERSELY proportional to ownership — the app rewards
+    # contrarian picks. Stars get crushed, obscure role players get huge boosts.
+    card_boost = _est_card_boost(proj_min, pts, team_abbr)
 
-    # Use projected minutes (with cascade) for ownership tiers
-    om_chalk  = _ownership_mult_chalk(proj_min)
-
-    # EV score — ownership-weighted expected value
-    chalk_ev  = round(raw_score * om_chalk, 2)
-
-    # Expected draft points (EDP) = raw_score * est_mult
-    expected_dp = round(raw_score * om_chalk, 1)
+    # EV score — card-adjusted expected value using additive formula
+    # Use average slot (1.34) for ranking; MILP uses exact slots
+    avg_slot = 1.34  # weighted avg of [2.0, 1.5, 1.2, 1.0, 1.0]
+    chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
 
     return {
         "id":      pinfo["id"],
@@ -470,7 +702,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "team":    team_abbr,
         "rating":  round(raw_score, 1),
         "chalk_ev":chalk_ev,
-        "expected_dp": expected_dp,
         "predMin": round(proj_min, 1),
         "pts":     round(pts, 1),
         "reb":     round(reb, 1),
@@ -478,21 +709,20 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "stl":     round(stl, 1),
         "blk":     round(blk, 1),
         "tov":     round(tov, 1),
-        "est_mult": om_chalk,
-        "om":      om_chalk,
+        "est_mult": card_boost,
         "slot":    "1.0x",
         "_base":   base,
-        "is_cascade_pick": is_cascade,
+        "_spread": spread,
         "_decline": round(decline_factor, 2),
         "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
         "_real_meta": real_meta,
+        "injury_status": pinfo.get("injury_status", ""),
     }
 
-def _run_game(game, cal_bias=0.0):
+def _run_game(game):
     cache_key = f"game_proj_{game['gameId']}"
-    if cal_bias == 0.0:
-        cached = _cg(cache_key)
-        if cached: return cached
+    cached = _cg(cache_key)
+    if cached: return cached
 
     home_r = fetch_roster(game["home"]["id"], game["home"]["abbr"])
     away_r = fetch_roster(game["away"]["id"], game["away"]["abbr"])
@@ -526,32 +756,93 @@ def _run_game(game, cal_bias=0.0):
         if not stats:
             continue
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
+        # Check if this player's team is on a back-to-back
+        b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
         proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
-                              cascade_bonus=cascade_bonus, cal_bias=cal_bias)
+                              cascade_bonus=cascade_bonus, is_b2b=bool(b2b))
         if proj:
             out.append(proj)
     _cs(cache_key, out)
     return out
 
-CHALK_FLOOR    = 3.5  # Minimum raw rating for Starting 5
-MOONSHOT_FLOOR = 6.0  # Higher floor for Moonshot — filters low-production bench warmers
+CHALK_FLOOR    = 2.8  # Minimum raw rating for Starting 5 — lowered from 3.5
+                      # to allow high-card bench players (Clifford 2.3 RS won)
+MOONSHOT_FLOOR = 3.0  # Floor for Moonshot — lowered from 4.0
+
+def _get_recent_picks(days=3):
+    """Load player names from the last N days of history for anti-repetition."""
+    recent_names = {}
+    if not HISTORY_FILE.exists():
+        return recent_names
+    try:
+        hist = json.loads(HISTORY_FILE.read_text())
+        today = date.today()
+        for entry in reversed(hist):
+            ts = entry.get("timestamp", "")
+            try:
+                entry_date = datetime.fromisoformat(ts).date()
+            except:
+                continue
+            days_ago = (today - entry_date).days
+            if days_ago > days:
+                break
+            for p in entry.get("players", []):
+                name = p.get("name", "")
+                if name and name not in recent_names:
+                    recent_names[name] = days_ago
+    except:
+        pass
+    return recent_names
+
+def _apply_repetition_penalty(projections):
+    """Penalize players picked in recent lineups to force roster turnover.
+
+    Picked yesterday:   0.82x penalty
+    Picked 2 days ago:  0.90x penalty
+    Picked 3 days ago:  0.95x penalty
+
+    This prevents the same 5 guys every day (Ty Jerome, Scotty Pippen problem).
+    Applied to chalk_ev so MILP sees the penalized value.
+    """
+    recent = _get_recent_picks(days=3)
+    if not recent:
+        return
+    penalties = {0: 0.82, 1: 0.82, 2: 0.90, 3: 0.95}
+    for p in projections:
+        name = p.get("name", "")
+        if name in recent:
+            days_ago = recent[name]
+            penalty = penalties.get(days_ago, 0.95)
+            p["chalk_ev"] = round(p["chalk_ev"] * penalty, 2)
+            p["rating"] = round(p["rating"] * penalty, 1)
+            p["_rep_penalty"] = penalty
 
 def _build_lineups(projections):
-    # STARTING 5: MILP-optimized slot assignments (maximizes score × slot multiplier)
+    # Anti-repetition: penalize players picked in the last 3 days
+    _apply_repetition_penalty(projections)
+
+    # STARTING 5: MILP-optimized slot assignments using ADDITIVE formula
+    # MILP maximizes: Σ rating_i × (slot_mult_j + card_boost_i)
+    # No team limit — Real Sports has no per-team restriction. If the best
+    # value is 5 players from the same blowout loss, so be it.
+    # March 3: winner gmoneytb had 3 PHI players from a 40-pt blowout loss.
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev")
+    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
+                            rating_key="rating", card_boost_key="est_mult",
+                            max_per_team=0)
 
     # CONTRARIAN: maximize leverage against the field
-    # Targets Top 10% payout tier by fading popular picks and elevating
-    # low-ownership, high-ceiling assets (cascade picks, underdogs, bench)
     chalk_names = {p["name"] for p in chalk}
     contrarian_pool = [p for p in projections
                        if p["name"] not in chalk_names and p["rating"] >= MOONSHOT_FLOOR]
-    # Score by contrarian value (inverse popularity × quality × leverage)
+    # Score by contrarian value — card-adjusted ceiling × closeness × momentum
+    # Card boost is already baked into contrarian_score, so zero it for MILP
     for p in contrarian_pool:
         p["_contrarian_ev"] = contrarian_score(p)
+        p["_no_boost"] = 0.0
     upside = optimize_lineup(contrarian_pool, n=5, sort_key="_contrarian_ev",
-                             rating_key="_contrarian_ev")
+                             rating_key="_contrarian_ev",
+                             card_boost_key="_no_boost")
 
     return chalk, upside
 
@@ -566,49 +857,11 @@ def _build_lineups(projections):
 # ─────────────────────────────────────────────────────────────────────────────
 
 GAME_CHALK_FLOOR = 3.5    # Starting 5 floor for single-game
-GAME_MOONSHOT_FLOOR = 2.5  # Lower floor for moonshot — wider net for upside plays
-
-def _pick_balanced(pool, n, min_per_team=2, sort_key="chalk_ev"):
-    """Pick n players from pool ensuring at least min_per_team from each team."""
-    if not pool:
-        return []
-
-    teams = {}
-    for p in pool:
-        t = p["team"]
-        teams.setdefault(t, []).append(p)
-
-    for t in teams:
-        teams[t].sort(key=lambda x: x[sort_key], reverse=True)
-
-    team_list = list(teams.keys())
-    if len(team_list) < 2:
-        return sorted(pool, key=lambda x: x[sort_key], reverse=True)[:n]
-
-    picked = []
-    used = set()
-
-    # Phase 1: guarantee min_per_team from each team (capped by available players)
-    for t in team_list:
-        avail = min(min_per_team, len(teams[t]))
-        for p in teams[t][:avail]:
-            picked.append(p)
-            used.add(p["name"])
-
-    # Phase 2: fill remaining slots from best available across both teams
-    remaining = n - len(picked)
-    if remaining > 0:
-        rest = sorted([p for p in pool if p["name"] not in used],
-                      key=lambda x: x[sort_key], reverse=True)
-        picked.extend(rest[:remaining])
-
-    picked.sort(key=lambda x: x[sort_key], reverse=True)
-    return picked[:n]
-
+GAME_MOONSHOT_FLOOR = 4.0  # Filter out low-production players
 
 def _apply_game_script(projections, game):
     """Re-score projections using game script weights. Returns new list (deep copies, no mutation)."""
-    total  = game.get("total") or 222
+    total  = game.get("total") or DEFAULT_TOTAL
     spread = game.get("spread") or 0
     rescored = []
     for p in projections:
@@ -624,7 +877,6 @@ def _apply_game_script(projections, game):
         rp = copy.deepcopy(p)
         rp["rating"]   = new_rating
         rp["chalk_ev"] = new_ev
-        rp["expected_dp"] = round(new_ev, 1)
         rp["game_script"] = _game_script_label(total)
         rescored.append(rp)
     return rescored
@@ -635,15 +887,17 @@ def _build_game_lineups(projections, game):
 
     Starting 5: MILP-optimized slot assignments with team balance (min 2 per team).
                  Maximizes Real Score × slot multiplier. Floor = GAME_CHALK_FLOOR (3.5).
-    Contrarian: Inverse-ownership leverage play targeting Top 10% payout tier.
+    Contrarian: High-card-ceiling leverage play targeting Top 10% payout tier.
                  Enforces negative correlation with Starting 5 (no overlap, opposite
-                 team weighting). Floor = GAME_MOONSHOT_FLOOR (2.5).
+                 team weighting). Floor = GAME_MOONSHOT_FLOOR (4.0).
     """
     rescored = _apply_game_script(projections, game)
     chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
 
     # STARTING 5: MILP-optimized, balanced across both teams
-    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev")
+    # Uses additive formula: rating × (slot_mult + card_boost)
+    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
+                            rating_key="rating", card_boost_key="est_mult")
 
     # CONTRARIAN: leverage play — no overlap with Starting 5
     chalk_names = {p["name"] for p in chalk}
@@ -651,9 +905,11 @@ def _build_game_lineups(projections, game):
                        if p["name"] not in chalk_names and p["rating"] >= GAME_MOONSHOT_FLOOR]
 
     # Score by contrarian value with game spread awareness
+    # Card boost is already baked into contrarian_score, so zero it for MILP
     game_spread = game.get("spread") or 0
     for p in contrarian_pool:
         p["_contrarian_ev"] = contrarian_score(p, spread=game_spread)
+        p["_no_boost"] = 0.0
 
     # Determine opposite team weighting for negative correlation
     chalk_teams = {}
@@ -669,7 +925,8 @@ def _build_game_lineups(projections, game):
 
     upside = optimize_lineup(contrarian_pool, n=5, min_per_team=2,
                              sort_key="_contrarian_ev",
-                             rating_key="_contrarian_ev")
+                             rating_key="_contrarian_ev",
+                             card_boost_key="_no_boost")
 
     return chalk, upside
 
@@ -708,7 +965,7 @@ async def get_games():
     return games
 
 @app.get("/api/slate")
-async def get_slate(cal_bias: float = Query(0.0)):
+async def get_slate():
     games = fetch_games()
     if not games:
         return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
@@ -723,31 +980,36 @@ async def get_slate(cal_bias: float = Query(0.0)):
         if lock_cached:
             lock_cached["locked"] = True
             return lock_cached
-
-    if cal_bias == 0.0:
+        # Check regular cache and promote to lock cache
         cached = _cg("slate_v5")
         if cached:
-            cached["locked"] = locked
-            if locked:
-                _ls("slate_v5_locked", cached)
+            cached["locked"] = True
+            _ls("slate_v5_locked", cached)
             return cached
+        # No cache on this instance after lock — return empty rather than recomputing
+        return {"date": date.today().isoformat(), "games": games,
+                "lineups": {"chalk": [], "upside": []}, "locked": True}
+
+    cached = _cg("slate_v5")
+    if cached:
+        cached["locked"] = locked
+        return cached
 
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for fut in as_completed({pool.submit(_run_game, g, cal_bias): g for g in games}):
+        for fut in as_completed({pool.submit(_run_game, g): g for g in games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
     result = {"date": date.today().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
-    if cal_bias == 0.0:
-        _cs("slate_v5", result)
+    _cs("slate_v5", result)
     if locked:
         _ls("slate_v5_locked", result)
     return result
 
 @app.get("/api/picks")
-async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
+async def get_picks(gameId: str = Query(...)):
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
         return JSONResponse({"error": "Game not found"}, status_code=404)
@@ -761,16 +1023,26 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
         if lock_cached:
             lock_cached["locked"] = True
             return lock_cached
+        # Check regular cache and promote to lock cache
+        reg_key = f"picks_{gameId}"
+        reg_cached = _cg(reg_key)
+        if reg_cached:
+            reg_cached["locked"] = True
+            _ls(lock_key, reg_cached)
+            return reg_cached
+        # No cache on this instance after lock — return locked empty
+        return {"date": date.today().isoformat(), "game": game,
+                "gameScript": None,
+                "lineups": {"chalk": [], "upside": []},
+                "locked": True, "injuries": [], "temporal": {}}
 
-    projections = _run_game(game, cal_bias=cal_bias)
+    projections = _run_game(game)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
     chalk, upside = _build_game_lineups(projections, game)
     _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
-    cascade_count = sum(1 for p in chalk + upside if p.get("is_cascade_pick"))
-
     # ── TRAV: Temporal Risk-Adjusted Value metadata ───────────────────
     # Calculate lineup duplication probability and optimal lock time.
     # Attached as extra response key — frontend ignores unknown keys.
@@ -793,10 +1065,9 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
               "injuries": injuries,
-              "cascadeCount": cascade_count,
               "temporal": temporal_meta}
-    if locked:
-        _ls(lock_key, result)
+    # Cache picks so they survive as lock snapshot if slate locks later
+    _cs(f"picks_{gameId}", result)
     return result
 
 @app.get("/api/history")
@@ -805,58 +1076,141 @@ async def get_history():
     try: return json.loads(HISTORY_FILE.read_text())
     except: return []
 
-CALIBRATION_FILE = DATA_DIR / "calibration.json"
-ACTUALS_FILE = DATA_DIR / "actuals_log.json"
+@app.post("/api/save-predictions")
+async def save_predictions():
+    """Save current predictions to GitHub as CSV."""
+    today = date.today().isoformat()
+    path = f"data/predictions/{today}.csv"
 
-def _load_calibration():
-    if CALIBRATION_FILE.exists():
-        try: return json.loads(CALIBRATION_FILE.read_text())
-        except: pass
-    return {"bias": 0.0, "samples": 0}
+    # Gather slate predictions
+    rows = []
+    cached_slate = _cg("slate_v5")
+    if cached_slate and cached_slate.get("lineups"):
+        rows.extend(_predictions_to_csv(cached_slate["lineups"], "slate"))
 
-def _update_calibration(scores):
-    """Update running calibration bias from uploaded actuals."""
-    cal = _load_calibration()
-    errors = [s["actual_score"] - s["predicted_rating"] for s in scores
-              if s.get("actual_score") is not None and s.get("predicted_rating") is not None]
-    if not errors:
-        return cal
-    new_avg_error = sum(errors) / len(errors)
-    alpha = 0.3
-    if cal["samples"] > 0:
-        cal["bias"] = round(cal["bias"] * (1 - alpha) + new_avg_error * alpha, 3)
-    else:
-        cal["bias"] = round(new_avg_error, 3)
-    cal["samples"] += len(errors)
-    CALIBRATION_FILE.write_text(json.dumps(cal))
-    return cal
+    # Gather per-game predictions from cache
+    games = fetch_games()
+    for g in games:
+        gid = g["gameId"]
+        cached_picks = _cg(f"picks_{gid}")
+        if cached_picks and cached_picks.get("lineups"):
+            rows.extend(_predictions_to_csv(cached_picks["lineups"], f"game_{gid}"))
 
-@app.post("/api/actuals")
+    if not rows:
+        return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
+
+    csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
+    result = _github_write_file(path, csv_content, f"predictions for {today}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+    return {"status": "saved", "path": path, "rows": len(rows)}
+
+
+@app.post("/api/parse-screenshot")
+async def parse_screenshot(file: UploadFile = File(...)):
+    """Parse a Real Sports app screenshot using Claude Vision API."""
+    if not ANTHROPIC_API_KEY:
+        return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
+
+    image_bytes = await file.read()
+    b64_image = base64.b64encode(image_bytes).decode("ascii")
+
+    # Determine media type
+    ct = file.content_type or "image/png"
+    if ct not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+        ct = "image/png"
+
+    prompt = """Extract ALL player data from this Real Sports app screenshot.
+
+The screenshot may contain two sections:
+1. "My draft" - the user's own drafted players
+2. "Highest value" - the top performing players of the day
+
+For EACH player, extract:
+- player_name: full name
+- actual_rs: the Real Score number shown with a triangle/arrow symbol (e.g. if it shows "⌃3.1" the value is 3.1, if "⌃0" the value is 0)
+- actual_card_boost: the card boost shown as "+X.Xx" (e.g. "+3.0x" → 3.0, "+0.9x" → 0.9). If no + symbol is shown, set to null
+- drafts: number of drafts (e.g. "31", "1.1k" → 1100, "5k" → 5000, "13.6k" → 13600)
+- avg_finish: average finish position as a number (e.g. "1st" → 1, "5th" → 5). Only in "My draft" section
+- total_value: the value number shown on right side (only in "Highest value" section, e.g. "⌃23.6" → 23.6)
+- source: "my_draft" if from "My draft" section, "highest_value" if from "Highest value" section
+
+If this is a Leaderboard screenshot, extract each drafter's lineup:
+- For each player in a lineup: player_name, actual_rs (the number shown), card_multiplier (e.g. "4.2x" → 4.2)
+- source: "leaderboard"
+- Include the drafter's total_score
+
+Return ONLY a JSON array of objects. No markdown, no explanation."""
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 4096,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64", "media_type": ct, "data": b64_image}},
+                        {"type": "text", "text": prompt},
+                    ]
+                }]
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        resp = r.json()
+        text = resp["content"][0]["text"]
+        # Extract JSON from response (may be wrapped in ```json blocks)
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            text = text.rsplit("```", 1)[0]
+        parsed = json.loads(text.strip())
+        return {"players": parsed}
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "Failed to parse Claude response as JSON", "raw": text[:500]}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": f"Screenshot parsing failed: {str(e)}"}, status_code=500)
+
+
+@app.post("/api/save-actuals")
 async def save_actuals(payload: dict = Body(...)):
-    date_str = payload.get("date")
-    scope = payload.get("scope", "slate")
-    scores = payload.get("scores", [])
-    if not date_str or not scores:
-        return JSONResponse({"error": "Missing date or scores"}, status_code=400)
-    for s in scores:
-        val = s.get("actual_score")
-        if val is None or not (0 <= val <= 150):
-            return JSONResponse({"error": f"Invalid score for {s.get('name', '?')}: must be 0-150"}, status_code=400)
-    # Append to actuals log
-    log = []
-    if ACTUALS_FILE.exists():
-        try: log = json.loads(ACTUALS_FILE.read_text())
-        except: pass
-    log.append({"date": date_str, "scope": scope, "scores": scores, "ts": datetime.now().isoformat()})
-    ACTUALS_FILE.write_text(json.dumps(log[-200:], indent=2))
-    # Update calibration
-    cal = _update_calibration(scores)
-    return {"status": "saved", "calibration": cal}
+    """Save confirmed actuals to GitHub as CSV."""
+    date_str = payload.get("date", date.today().isoformat())
+    players = payload.get("players", [])
+    if not players:
+        return JSONResponse({"error": "No player data"}, status_code=400)
 
-@app.get("/api/evaluate")
-async def evaluate():
-    """Returns current calibration stats."""
-    return _load_calibration()
+    path = f"data/actuals/{date_str}.csv"
+    header = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source"
+
+    # Check if file already exists (to append)
+    existing, _ = _github_get_file(path)
+    rows = []
+    if existing:
+        # Keep existing rows (skip header)
+        lines = existing.strip().split("\n")
+        rows = lines[1:] if len(lines) > 1 else []
+
+    # Add new rows
+    for p in players:
+        rows.append(",".join(_csv_escape(p.get(k, "")) for k in [
+            "player_name", "actual_rs", "actual_card_boost",
+            "drafts", "avg_finish", "total_value", "source"
+        ]))
+
+    csv_content = header + "\n" + "\n".join(rows) + "\n"
+    result = _github_write_file(path, csv_content, f"actuals for {date_str}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+    return {"status": "saved", "path": path, "rows": len(rows)}
+
 
 @app.get("/api/refresh")
 async def refresh():

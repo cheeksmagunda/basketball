@@ -28,10 +28,11 @@ print(f"Total: {len(df)} game logs across {len(SEASONS)} seasons. Engineering fe
 df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'].astype(str).str[:10])
 df = df.sort_values(by=['PLAYER_ID', 'SEASON', 'GAME_DATE'])
 
-# Target Variable: This is the exact DFS formula your app uses
+# Target Variable: Real Score-aligned formula (boosted defensive stats)
+# Must match _dfs_score() in api/index.py
 df['actual_base_score'] = (
     df['PTS'] + df['REB'] + (df['AST'] * 1.5) +
-    (df['STL'] * 3.5) + (df['BLK'] * 3.0) - (df['TOV'] * 1.2)
+    (df['STL'] * 4.5) + (df['BLK'] * 4.0) - (df['TOV'] * 1.2)
 )
 
 # Feature 1 & 2: Season Averages BEFORE the game happened (shift(1))
