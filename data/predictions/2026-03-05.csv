@@ -1,11 +1,11 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Jalen Duren,4433621,DET,C,7.2,1.8,27.6,15.8,10.6,1.9,0.8,0.8
+slate,chalk,2.0x,Jalen Duren,4433621,DET,C,7.3,1.8,27.6,15.8,10.6,1.9,0.8,0.8
 slate,chalk,1.8x,Rudy Gobert,3032976,MIN,C,6.5,2.4,31.4,11.7,11.6,1.6,0.8,1.8
-slate,chalk,1.6x,Kadary Richmond,4701845,WSH,G,5.9,3.0,25.0,8.3,3.3,2.7,2.7,0.3
-slate,chalk,1.4x,Ausar Thompson,4684742,DET,G,5.6,2.7,25.2,10.1,5.9,2.7,1.7,0.8
+slate,chalk,1.6x,Kadary Richmond,4701845,WSH,G,6.0,3.0,25.0,8.3,3.3,2.7,2.7,0.3
+slate,chalk,1.4x,Kevin Love,3449,UTAH,F,5.8,2.6,22.7,11.3,7.8,2.1,0.5,0.3
 slate,chalk,1.2x,Clint Capela,3102529,HOU,C,5.3,3.0,21.5,7.5,7.3,0.8,0.6,1.1
-slate,upside,2.0x,Russell Westbrook,3468,SAC,G,7.9,1.3,32.4,18.1,6.2,7.1,1.4,0.2
-slate,upside,1.8x,Jonas Valanciunas,6477,DEN,C,5.9,2.3,22.4,10.8,7.2,1.3,0.3,0.8
-slate,upside,1.6x,Kevin Love,3449,UTAH,F,5.7,2.6,22.7,11.3,7.8,2.1,0.5,0.3
-slate,upside,1.4x,Caris LeVert,2991043,DET,G,5.4,2.7,23.2,10.4,2.6,3.3,0.9,0.6
-slate,upside,1.2x,Mike Conley,3195,MIN,G,5.1,2.9,24.4,8.9,2.3,4.2,0.9,0.2
+slate,upside,2.0x,Nikola Jokic,3112335,DEN,C,10.7,0.4,36.2,25.4,11.8,8.8,1.3,0.8
+slate,upside,1.8x,Alondes Williams,4592216,WSH,G,5.7,2.5,27.7,11.0,6.3,3.0,0.8,0.8
+slate,upside,1.6x,Ausar Thompson,4684742,DET,G,5.6,2.7,25.2,10.1,5.9,2.7,1.7,0.8
+slate,upside,1.4x,Isaiah Collier,4683766,UTAH,G,5.4,2.7,25.3,10.4,2.8,7.0,1.1,0.3
+slate,upside,1.2x,Caris LeVert,2991043,DET,G,5.4,2.7,23.2,10.4,2.6,3.3,0.9,0.6
