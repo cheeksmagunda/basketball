@@ -1500,9 +1500,12 @@ async def line_history():
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _all_games_final(games):
-    """Check ESPN scoreboard to see if all today's games are completed."""
+    """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min."""
     if not games:
-        return True, 0, len(games)
+        return True, 0, 0
+    cached = _cg("lab_games_final")
+    if cached is not None:
+        return tuple(cached)
     today_str = _et_date().strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
     finals = 0
@@ -1514,7 +1517,13 @@ def _all_games_final(games):
         else:
             remaining += 1
     all_final = remaining == 0 and finals > 0
-    return all_final, remaining, finals
+    result = (all_final, remaining, finals)
+    # Cache for 3 minutes (games take time to be marked final)
+    # Use a short-lived cache via filename with minute granularity
+    try:
+        _cs("lab_games_final", list(result))
+    except: pass
+    return result
 
 
 @app.get("/api/lab/status")
