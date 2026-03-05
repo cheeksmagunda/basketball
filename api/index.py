@@ -1172,13 +1172,24 @@ async def save_predictions():
     if cached_slate and cached_slate.get("lineups"):
         rows.extend(_predictions_to_csv(cached_slate["lineups"], "slate"))
 
-    # Gather per-game predictions from cache
+    # Gather per-game predictions from cache.
+    # Prefer explicit Game Analysis picks; fall back to slate projections built
+    # into lineups so per-game cards always appear in the Log tab.
     games = fetch_games()
     for g in games:
         gid = g["gameId"]
+        label = g.get("label", f"game_{gid}")
         cached_picks = _cg(f"picks_{gid}")
         if cached_picks and cached_picks.get("lineups"):
-            rows.extend(_predictions_to_csv(cached_picks["lineups"], g.get("label", f"game_{gid}")))
+            rows.extend(_predictions_to_csv(cached_picks["lineups"], label))
+        else:
+            game_proj = _cg(f"game_proj_{gid}")
+            if game_proj:
+                try:
+                    chalk, upside = _build_lineups(game_proj)
+                    rows.extend(_predictions_to_csv({"chalk": chalk, "upside": upside}, label))
+                except Exception as e:
+                    print(f"save-predictions game lineup err {gid}: {e}")
 
     if not rows:
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
@@ -1377,6 +1388,11 @@ async def log_get(date: str = Query(None)):
             "rating": row.get("predicted_rs", ""),
             "est_mult": row.get("est_card_boost", ""),
             "predMin": row.get("pred_min", ""),
+            "pts": row.get("pts", ""),
+            "reb": row.get("reb", ""),
+            "ast": row.get("ast", ""),
+            "stl": row.get("stl", ""),
+            "blk": row.get("blk", ""),
         })
 
     return {
@@ -1455,21 +1471,23 @@ async def get_line_of_the_day():
     if cached and cached.get("pick"):
         return JSONResponse(cached)
 
+    # Always check for a pick already saved today — avoids re-running the
+    # slow pipeline on cold starts and prevents Vercel timeout (60s limit).
+    today = _et_date().isoformat()
+    json_path = f"data/lines/{today}_pick.json"
+    saved_raw, _ = _github_get_file(json_path)
+    if saved_raw:
+        try:
+            saved_pick = json.loads(saved_raw)
+            result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
+            _cs("line_v1", result)
+            return JSONResponse(result)
+        except Exception:
+            pass
+
     games = fetch_games()
     draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
     if not draftable:
-        # Games are locked/completed — try today's saved pick from GitHub before giving up
-        today = _et_date().isoformat()
-        json_path = f"data/lines/{today}_pick.json"
-        saved_raw, _ = _github_get_file(json_path)
-        if saved_raw:
-            try:
-                saved_pick = json.loads(saved_raw)
-                result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
-                _cs("line_v1", result)
-                return JSONResponse(result)
-            except Exception:
-                pass
         return JSONResponse({"pick": None, "error": "no_games"}, status_code=200)
 
     # Fast path: reuse per-game projections already cached by /api/slate
