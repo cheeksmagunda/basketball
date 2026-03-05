@@ -1128,7 +1128,6 @@
       </div>
       <div id="linePickWrap" style="display:none">
         <div id="linePickCard"></div>
-        <div id="lineRunnerUpCard" style="margin-top:10px"></div>
         <div id="lineSlateSummary" style="margin-top:16px"></div>
       </div>
       <div id="lineHistoryWrap" style="margin-top:24px;display:none">
@@ -2030,7 +2029,6 @@ async function initLinePage() {
   document.getElementById('lineHistoryWrap').style.display = 'none';
   // Reset content
   document.getElementById('linePickCard').innerHTML = '';
-  document.getElementById('lineRunnerUpCard').innerHTML = '';
   document.getElementById('lineSlateSummary').innerHTML = '';
 
   try {
@@ -2061,9 +2059,6 @@ async function initLinePage() {
 
     document.getElementById('linePickWrap').style.display = 'block';
     document.getElementById('linePickCard').innerHTML = renderLinePickCard(data.pick, true);
-    if (data.runner_up) {
-      document.getElementById('lineRunnerUpCard').innerHTML = renderLineRunnerUp(data.runner_up);
-    }
     if (data.slate_summary) {
       document.getElementById('lineSlateSummary').innerHTML = renderLineSummary(data.slate_summary);
     }
