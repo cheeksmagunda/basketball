@@ -1187,7 +1187,7 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
 @app.post("/api/save-actuals")
 async def save_actuals(payload: dict = Body(...)):
     """Save confirmed actuals to GitHub as CSV."""
-    date_str = payload.get("date", date.today().isoformat())
+    date_str = payload.get("date", _et_date().isoformat())
     players = payload.get("players", [])
     if not players:
         return JSONResponse({"error": "No player data"}, status_code=400)

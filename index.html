@@ -1421,11 +1421,14 @@ async function initLogPage() {
   } catch(e) { /* non-fatal */ }
 
   // Build chips: today + 29 prior days
+  // Use local date to avoid UTC midnight shift (e.g. 7pm ET = midnight UTC = wrong day)
+  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
   const chips = [];
   for (let i = 0; i < 30; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = toLocalISO(d);
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
     const numLabel = d.getDate();
     const hasData = LOG.datesWithData.has(iso);
@@ -1440,7 +1443,7 @@ async function initLogPage() {
     </button>`).join('');
 
   // Auto-select today
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = toLocalISO(today);
   selectLogDate(todayIso);
 }
 
