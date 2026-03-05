@@ -2,12 +2,14 @@ import json
 import copy
 import hashlib
 import pickle
+import os
+import base64
 import numpy as np
 import requests
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import FastAPI, Query, Body
+from fastapi import FastAPI, Query, Body, File, UploadFile
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
@@ -27,6 +29,62 @@ except ImportError:
 
 load_dotenv()
 app = FastAPI()
+
+# ── GitHub API helpers for persistent CSV storage ──
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")  # e.g. "cheeksmagunda/basketball"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+def _github_get_file(path):
+    """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return None, None
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    r = requests.get(url, headers={
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }, timeout=10)
+    if r.status_code == 200:
+        data = r.json()
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        return content, data["sha"]
+    return None, None
+
+def _github_write_file(path, content, message="auto-update"):
+    """Create or update a file in the GitHub repo via Contents API."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return {"error": "GITHUB_TOKEN or GITHUB_REPO not configured"}
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    _, sha = _github_get_file(path)
+    payload = {
+        "message": message,
+        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+    }
+    if sha:
+        payload["sha"] = sha
+    r = requests.put(url, json=payload, headers={
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }, timeout=15)
+    if r.status_code in (200, 201):
+        return {"ok": True, "path": path}
+    return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
+
+def _predictions_to_csv(lineups, scope):
+    """Convert lineup dicts to CSV rows."""
+    rows = []
+    for lineup_type, players in [("chalk", lineups.get("chalk", [])), ("upside", lineups.get("upside", []))]:
+        for p in players:
+            rows.append(",".join(str(v) for v in [
+                scope, lineup_type, p.get("slot", ""), p.get("name", ""),
+                p.get("id", ""), p.get("team", ""), p.get("pos", ""),
+                p.get("rating", ""), p.get("est_mult", ""),
+                p.get("predMin", ""), p.get("pts", ""), p.get("reb", ""),
+                p.get("ast", ""), p.get("stl", ""), p.get("blk", ""),
+            ]))
+    return rows
+
+CSV_HEADER = "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk"
 
 DATA_DIR = Path("/tmp/nba_data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -1020,58 +1078,141 @@ async def get_history():
     try: return json.loads(HISTORY_FILE.read_text())
     except: return []
 
-CALIBRATION_FILE = DATA_DIR / "calibration.json"
-ACTUALS_FILE = DATA_DIR / "actuals_log.json"
+@app.post("/api/save-predictions")
+async def save_predictions():
+    """Save current predictions to GitHub as CSV."""
+    today = date.today().isoformat()
+    path = f"data/predictions/{today}.csv"
 
-def _load_calibration():
-    if CALIBRATION_FILE.exists():
-        try: return json.loads(CALIBRATION_FILE.read_text())
-        except: pass
-    return {"bias": 0.0, "samples": 0}
+    # Gather slate predictions
+    rows = []
+    cached_slate = _cg("slate_v5")
+    if cached_slate and cached_slate.get("lineups"):
+        rows.extend(_predictions_to_csv(cached_slate["lineups"], "slate"))
 
-def _update_calibration(scores):
-    """Update running calibration bias from uploaded actuals."""
-    cal = _load_calibration()
-    errors = [s["actual_score"] - s["predicted_rating"] for s in scores
-              if s.get("actual_score") is not None and s.get("predicted_rating") is not None]
-    if not errors:
-        return cal
-    new_avg_error = sum(errors) / len(errors)
-    alpha = 0.3
-    if cal["samples"] > 0:
-        cal["bias"] = round(cal["bias"] * (1 - alpha) + new_avg_error * alpha, 3)
-    else:
-        cal["bias"] = round(new_avg_error, 3)
-    cal["samples"] += len(errors)
-    CALIBRATION_FILE.write_text(json.dumps(cal))
-    return cal
+    # Gather per-game predictions from cache
+    games = fetch_games()
+    for g in games:
+        gid = g["gameId"]
+        cached_picks = _cg(f"picks_{gid}")
+        if cached_picks and cached_picks.get("lineups"):
+            rows.extend(_predictions_to_csv(cached_picks["lineups"], f"game_{gid}"))
 
-@app.post("/api/actuals")
+    if not rows:
+        return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
+
+    csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
+    result = _github_write_file(path, csv_content, f"predictions for {today}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+    return {"status": "saved", "path": path, "rows": len(rows)}
+
+
+@app.post("/api/parse-screenshot")
+async def parse_screenshot(file: UploadFile = File(...)):
+    """Parse a Real Sports app screenshot using Claude Vision API."""
+    if not ANTHROPIC_API_KEY:
+        return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
+
+    image_bytes = await file.read()
+    b64_image = base64.b64encode(image_bytes).decode("ascii")
+
+    # Determine media type
+    ct = file.content_type or "image/png"
+    if ct not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+        ct = "image/png"
+
+    prompt = """Extract ALL player data from this Real Sports app screenshot.
+
+The screenshot may contain two sections:
+1. "My draft" - the user's own drafted players
+2. "Highest value" - the top performing players of the day
+
+For EACH player, extract:
+- player_name: full name
+- actual_rs: the Real Score number shown with a triangle/arrow symbol (e.g. if it shows "⌃3.1" the value is 3.1, if "⌃0" the value is 0)
+- actual_card_boost: the card boost shown as "+X.Xx" (e.g. "+3.0x" → 3.0, "+0.9x" → 0.9). If no + symbol is shown, set to null
+- drafts: number of drafts (e.g. "31", "1.1k" → 1100, "5k" → 5000, "13.6k" → 13600)
+- avg_finish: average finish position as a number (e.g. "1st" → 1, "5th" → 5). Only in "My draft" section
+- total_value: the value number shown on right side (only in "Highest value" section, e.g. "⌃23.6" → 23.6)
+- source: "my_draft" if from "My draft" section, "highest_value" if from "Highest value" section
+
+If this is a Leaderboard screenshot, extract each drafter's lineup:
+- For each player in a lineup: player_name, actual_rs (the number shown), card_multiplier (e.g. "4.2x" → 4.2)
+- source: "leaderboard"
+- Include the drafter's total_score
+
+Return ONLY a JSON array of objects. No markdown, no explanation."""
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 4096,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64", "media_type": ct, "data": b64_image}},
+                        {"type": "text", "text": prompt},
+                    ]
+                }]
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        resp = r.json()
+        text = resp["content"][0]["text"]
+        # Extract JSON from response (may be wrapped in ```json blocks)
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            text = text.rsplit("```", 1)[0]
+        parsed = json.loads(text.strip())
+        return {"players": parsed}
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "Failed to parse Claude response as JSON", "raw": text[:500]}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": f"Screenshot parsing failed: {str(e)}"}, status_code=500)
+
+
+@app.post("/api/save-actuals")
 async def save_actuals(payload: dict = Body(...)):
-    date_str = payload.get("date")
-    scope = payload.get("scope", "slate")
-    scores = payload.get("scores", [])
-    if not date_str or not scores:
-        return JSONResponse({"error": "Missing date or scores"}, status_code=400)
-    for s in scores:
-        val = s.get("actual_score")
-        if val is None or not (0 <= val <= 150):
-            return JSONResponse({"error": f"Invalid score for {s.get('name', '?')}: must be 0-150"}, status_code=400)
-    # Append to actuals log
-    log = []
-    if ACTUALS_FILE.exists():
-        try: log = json.loads(ACTUALS_FILE.read_text())
-        except: pass
-    log.append({"date": date_str, "scope": scope, "scores": scores, "ts": datetime.now().isoformat()})
-    ACTUALS_FILE.write_text(json.dumps(log[-200:], indent=2))
-    # Update calibration
-    cal = _update_calibration(scores)
-    return {"status": "saved", "calibration": cal}
+    """Save confirmed actuals to GitHub as CSV."""
+    date_str = payload.get("date", date.today().isoformat())
+    players = payload.get("players", [])
+    if not players:
+        return JSONResponse({"error": "No player data"}, status_code=400)
 
-@app.get("/api/evaluate")
-async def evaluate():
-    """Returns current calibration stats."""
-    return _load_calibration()
+    path = f"data/actuals/{date_str}.csv"
+    header = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source"
+
+    # Check if file already exists (to append)
+    existing, _ = _github_get_file(path)
+    rows = []
+    if existing:
+        # Keep existing rows (skip header)
+        lines = existing.strip().split("\n")
+        rows = lines[1:] if len(lines) > 1 else []
+
+    # Add new rows
+    for p in players:
+        rows.append(",".join(str(p.get(k, "")) for k in [
+            "player_name", "actual_rs", "actual_card_boost",
+            "drafts", "avg_finish", "total_value", "source"
+        ]))
+
+    csv_content = header + "\n" + "\n".join(rows) + "\n"
+    result = _github_write_file(path, csv_content, f"actuals for {date_str}")
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=500)
+    return {"status": "saved", "path": path, "rows": len(rows)}
+
 
 @app.get("/api/refresh")
 async def refresh():
