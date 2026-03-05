@@ -1399,9 +1399,9 @@ LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direc
 
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day():
-    """Detect today's best player prop edge and return it with confidence score.
-    When Odds API is unavailable, returns a model-only pick from ESPN projections."""
-    # Serve from cache if already computed today (prevents burning Odds API credits on every page load)
+    """Best player prop pick for today. Uses cached per-game projections when
+    available (fast path after PREDICT tab loads). Falls back to running the
+    full projection pipeline if no cache exists yet."""
     cached = _cg("line_v1")
     if cached and cached.get("pick"):
         return JSONResponse(cached)
@@ -1411,12 +1411,19 @@ async def get_line_of_the_day():
     if not draftable:
         return JSONResponse({"pick": None, "error": "no_games"}, status_code=200)
 
-    # Gather all projections via the same pipeline used by /api/slate
+    # Fast path: reuse per-game projections already cached by /api/slate
     all_proj = []
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
-            try: all_proj.extend(fut.result())
-            except Exception as e: print(f"line proj err: {e}")
+    for g in draftable:
+        gp = _cg(f"game_proj_{g['gameId']}")
+        if gp:
+            all_proj.extend(gp)
+
+    # Slow path: run projections now (cold start — PREDICT tab not yet loaded)
+    if not all_proj:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
+                try: all_proj.extend(fut.result())
+                except Exception as e: print(f"line proj err: {e}")
 
     if not all_proj:
         return JSONResponse({"pick": None, "error": "no_projections"}, status_code=200)
