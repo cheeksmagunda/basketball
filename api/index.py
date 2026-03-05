@@ -140,6 +140,27 @@ def _is_locked(start_time_iso):
     except:
         return False
 
+def _is_completed(start_time_iso):
+    """Returns True if the game has already passed its lock window (started or about to start).
+    Completed/in-progress games should not appear in draft recommendations."""
+    try:
+        game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        return now >= game_start - timedelta(minutes=LOCK_BUFFER_MINUTES)
+    except:
+        return False
+
+def _et_date():
+    """Current date in Eastern Time (handles EST/EDT)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date()
+    except ImportError:
+        # Fallback: EST=UTC-5 (Nov–Mar), EDT=UTC-4 (Mar–Nov)
+        now_utc = datetime.now(timezone.utc)
+        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
+        return (now_utc + offset).date()
+
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
     except: return default
@@ -162,7 +183,7 @@ def _fetch_b2b_teams():
     cache_key = "b2b_teams"
     c = _cg(cache_key)
     if c is not None: return set(c)
-    yesterday = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    yesterday = (_et_date() - timedelta(days=1)).strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={yesterday}")
     b2b = set()
     for ev in data.get("events", []):
@@ -174,10 +195,15 @@ def _fetch_b2b_teams():
     return b2b
 
 def fetch_games():
-    c = _cg("games")
+    today_et = _et_date()
+    cache_key = f"games_{today_et}"
+    c = _cg(cache_key)
     if c: return c
     b2b_teams = _fetch_b2b_teams()
-    data = _espn_get(f"{ESPN}/scoreboard")
+    # Pass explicit ET date so ESPN returns the correct day's schedule regardless
+    # of what ESPN considers its internal "current" day (often Pacific time).
+    date_str = today_et.strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={date_str}")
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
@@ -198,36 +224,49 @@ def fetch_games():
             "home_b2b": home["abbr"] in b2b_teams,
             "away_b2b": away["abbr"] in b2b_teams,
         })
-    _cs("games", games)
+    _cs(cache_key, games)
     return games
 
 def fetch_roster(team_id, team_abbr):
     c = _cg(f"roster_{team_id}")
     if c: return c
     data = _espn_get(f"{ESPN}/teams/{team_id}/roster")
+    # ESPN sometimes returns athletes grouped by position:
+    # {"athletes": [{"position": "Guard", "items": [...]}, ...]}
+    # Flatten to a single list of athlete objects before iterating.
+    raw = data.get("athletes", [])
+    flat = []
+    for item in raw:
+        if "items" in item:
+            flat.extend(item["items"])
+        else:
+            flat.append(item)
     players = []
-    for a in data.get("athletes", []):
-        inj = a.get("injuries", [])
-        inj_status = inj[0].get("status", "").lower() if inj else ""
-        is_out = inj_status in ["out", "injured"]
-        # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
-        injury_label = ""
-        if inj and not is_out:
-            raw = inj[0].get("status", "") or inj[0].get("type", {}).get("description", "")
-            if raw:
-                rl = raw.lower()
-                if "question" in rl:       injury_label = "GTD"
-                elif "day" in rl:          injury_label = "DTD"
-                elif "doubt" in rl:        injury_label = "DOUBT"
-                elif "prob" in rl:         injury_label = ""  # Probable = fine
-                elif rl not in ["active", "healthy", ""]:
-                    injury_label = raw[:8].upper()
-        players.append({
-            "id": a["id"], "name": a["fullName"],
-            "pos": a.get("position", {}).get("abbreviation", "G"),
-            "is_out": is_out, "team_abbr": team_abbr,
-            "injury_status": injury_label,
-        })
+    for a in flat:
+        try:
+            inj = a.get("injuries", [])
+            inj_status = inj[0].get("status", "").lower() if inj else ""
+            is_out = inj_status in ["out", "injured"]
+            # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
+            injury_label = ""
+            if inj and not is_out:
+                raw_s = inj[0].get("status", "") or inj[0].get("type", {}).get("description", "")
+                if raw_s:
+                    rl = raw_s.lower()
+                    if "question" in rl:       injury_label = "GTD"
+                    elif "day" in rl:          injury_label = "DTD"
+                    elif "doubt" in rl:        injury_label = "DOUBT"
+                    elif "prob" in rl:         injury_label = ""  # Probable = fine
+                    elif rl not in ["active", "healthy", ""]:
+                        injury_label = raw_s[:8].upper()
+            players.append({
+                "id": a["id"], "name": a["fullName"],
+                "pos": a.get("position", {}).get("abbreviation", "G"),
+                "is_out": is_out, "team_abbr": team_abbr,
+                "injury_status": injury_label,
+            })
+        except (KeyError, TypeError):
+            continue
     _cs(f"roster_{team_id}", players)
     return players
 
@@ -438,26 +477,29 @@ def _est_card_boost(proj_min, pts, team_abbr):
     Uses a "hype score" — how attractive the player is to casual drafters —
     and maps it through exponential decay to a card boost.
 
-    Calibrated against March 3 actuals (winning drafts had 3.0-3.4x boosts):
+    Calibrated against March 3 + March 4 actuals:
       Wembanyama (36m, 24p, SA):   hype 9.5 → est +0.4x  (actual +0.3)
       Ant Edwards (37m, 26p):      hype 7.5 → est +0.5x  (actual +0.3)
       Bam (34m, 21p, MIA):         hype 7.0 → est +0.6x  (actual +0.7)
-      Jaylin Williams (20m, 8p):   hype 0.5 → est +3.0x  (actual +2.7)
-      Marcus Smart (25m, 10p):     hype 0.9 → est +2.7x  (actual +2.5)
-      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.1x  (actual +3.0)
-      Maxime Raynaud (18m, 10p):   hype 1.2 → est +2.5x  (actual +2.2)
-      N. Clifford (12m, 4p):       hype 0.1 → est +3.3x  (winning draft had ~3.2x)
+      Jrue Holiday (30m, 16p, BOS):hype 3.84→ est +1.0x  (actual +1.0) ✓
+      Jaylin Williams (20m, 8p):   hype 0.5 → est +2.9x  (actual +2.7)
+      Marcus Smart (25m, 10p):     hype 0.9 → est +2.6x  (actual +2.5)
+      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.0x  (actual +3.0) ✓
+      Walter Clayton Jr (28m,14p): hype 1.79→ est +2.1x  (actual +3.0) — under
+      N. Clifford (12m, 4p):       hype 0.1 → est +3.0x  (winning draft ~3.2x)
+
+    Cap is +3.0x (confirmed max in-game). Decay base tuned from 0.74→0.70
+    to differentiate stars from mid-tier players more sharply.
     """
     # Hype score — PPG² makes scoring stars disproportionately popular
     hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
     if team_abbr in _BIG_MARKET_TEAMS:
         hype *= 1.5
     # Exponential decay: high hype → low boost, low hype → high boost
-    # Raised coefficient from 3.0 to 3.4 and floor from 0.2 to 0.3 —
-    # March 3 winning drafts had card boosts of 3.0-3.4x for role players,
-    # our old model was underestimating by 0.3-0.5x.
-    boost = 3.4 * (0.74 ** hype) + 0.3
-    return round(min(max(boost, 0.2), 3.5), 1)
+    # Decay base 0.70 (was 0.74) sharpens drop-off for mid-tier popularity.
+    # Cap 3.0 (was 3.5) matches confirmed max observed in-game.
+    boost = 3.4 * (0.70 ** hype) + 0.3
+    return round(min(max(boost, 0.2), 3.0), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula — boosted defensive stats.
@@ -691,8 +733,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     card_boost = _est_card_boost(proj_min, pts, team_abbr)
 
     # EV score — card-adjusted expected value using additive formula
-    # Use average slot (1.34) for ranking; MILP uses exact slots
-    avg_slot = 1.34  # weighted avg of [2.0, 1.5, 1.2, 1.0, 1.0]
+    # Use average slot (1.6) for ranking; MILP uses exact slots
+    avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
     chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
 
     return {
@@ -961,17 +1003,49 @@ def _save_history(game_label, players):
 async def get_games():
     games = fetch_games()
     for g in games:
-        g["locked"] = _is_locked(g.get("startTime")) if g.get("startTime") else False
+        st = g.get("startTime", "")
+        g["locked"] = _is_locked(st) if st else False
+        g["draftable"] = not _is_completed(st) if st else False
     return games
 
 @app.get("/api/slate")
 async def get_slate():
     games = fetch_games()
     if not games:
-        return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+        return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
 
-    # Check if slate is locked (5 min before earliest game)
-    start_times = [g["startTime"] for g in games if g.get("startTime")]
+    # Only show/project games that are still draftable (not yet past lock window)
+    # ESPN returns all games for the day, including already-completed ones.
+    # At 1 AM EST the completed games from the evening should be invisible;
+    # the upcoming day's games should be shown instead.
+    draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
+
+    # All games for today's ET date are already completed — this shouldn't normally
+    # happen since fetch_games() explicitly requests the ET date from ESPN, but
+    # handle it gracefully if ESPN returns stale data.
+    if not draftable_games:
+        # Find the earliest today's game start time to tell the user when to come back
+        earliest_today = min((g["startTime"] for g in games if g.get("startTime")), default=None)
+        available_msg = "later today"
+        if earliest_today:
+            try:
+                gs = datetime.fromisoformat(earliest_today.replace("Z", "+00:00"))
+                et_offset = timedelta(hours=-4 if 3 < gs.month < 11 else -5)
+                gs_et = gs + et_offset
+                available_msg = gs_et.strftime("%-I:%M %p ET")
+            except: pass
+        return {
+            "date": _et_date().isoformat(),
+            "games": games,
+            "lineups": {"chalk": [], "upside": []},
+            "locked": False,
+            "no_games_yet": True,
+            "draftable_count": 0,
+            "available_after": available_msg,
+        }
+
+    # Lock is based on earliest DRAFTABLE game — completed games don't count
+    start_times = [g["startTime"] for g in draftable_games if g.get("startTime")]
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
@@ -987,23 +1061,29 @@ async def get_slate():
             _ls("slate_v5_locked", cached)
             return cached
         # No cache on this instance after lock — return empty rather than recomputing
-        return {"date": date.today().isoformat(), "games": games,
+        return {"date": _et_date().isoformat(), "games": games,
                 "lineups": {"chalk": [], "upside": []}, "locked": True}
 
     cached = _cg("slate_v5")
     if cached:
-        cached["locked"] = locked
-        return cached
+        # Discard cached result if it has empty lineups but we have draftable games.
+        # This clears stale cache written before the roster-fix was deployed.
+        has_players = cached.get("lineups", {}).get("chalk") or cached.get("lineups", {}).get("upside")
+        if has_players or not draftable_games:
+            cached["locked"] = locked
+            return cached
 
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for fut in as_completed({pool.submit(_run_game, g): g for g in games}):
+        for fut in as_completed({pool.submit(_run_game, g): g for g in draftable_games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
-    result = {"date": date.today().isoformat(), "games": games,
-              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
-    _cs("slate_v5", result)
+    result = {"date": _et_date().isoformat(), "games": games,
+              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
+              "draftable_count": len(draftable_games)}
+    if chalk or upside:  # Don't cache empty results — allow retry on next request
+        _cs("slate_v5", result)
     if locked:
         _ls("slate_v5_locked", result)
     return result
@@ -1113,6 +1193,8 @@ async def parse_screenshot(file: UploadFile = File(...)):
         return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
 
     image_bytes = await file.read()
+    if len(image_bytes) > 10 * 1024 * 1024:
+        return JSONResponse({"error": "Image too large (max 10MB)"}, status_code=413)
     b64_image = base64.b64encode(image_bytes).decode("ascii")
 
     # Determine media type
@@ -1142,6 +1224,7 @@ If this is a Leaderboard screenshot, extract each drafter's lineup:
 
 Return ONLY a JSON array of objects. No markdown, no explanation."""
 
+    text = ""
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
