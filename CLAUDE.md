@@ -25,8 +25,11 @@ api/temporal_risk.py   — TRAV module (available, not active in picks)
 data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
 data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
+data/audit/            — Git-tracked daily audit JSONs (auto-generated on save-actuals)
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
-vercel.json            — Vercel config (routes, crons, 60s timeout)
+lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
+train_lgbm.py          — Training script (11 features, run locally or via GitHub Actions)
+vercel.json            — Vercel config (routes, crons, 300s timeout on Pro plan)
 server.py              — Local dev server (uvicorn)
 ```
 
@@ -77,7 +80,8 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/games` | GET | Today's games with lock status |
 | `/api/save-predictions` | POST | Save cached predictions to GitHub CSV (deduped — skips commit if unchanged) |
 | `/api/parse-screenshot` | POST | Upload Real Sports screenshot, Claude Haiku parses it |
-| `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV |
+| `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV + auto-generates audit JSON |
+| `/api/audit/get?date=X` | GET | Pre-computed accuracy audit for a date (MAE, directional acc, misses) |
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
@@ -156,8 +160,31 @@ Predictions lock 5 minutes before the earliest game starts. Once locked:
 
 ## Two Lineup Types
 
-- **Starting 5 (chalk)**: MILP-optimized for expected value using `chalk_ev = rating × (avg_slot + card_boost)`. Conservative, consistent.
-- **Moonshot**: The next 5 players by the same chalk_ev ranking (ranks 6-10). Same methodology as chalk — NOT a separate contrarian algorithm. This ensures moonshot picks are always players with real projected RS, avoiding DNP risks from extreme low-ownership targets.
+- **Starting 5 (chalk)**: MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent.
+- **Moonshot**: MILP-optimized for `moonshot_ev = rating × (avg_slot + card_boost × 1.5) × variance_bonus`. Weights card boost 1.5× and rewards inconsistent players who could boom. Excludes chalk picks. Always real projections — no garbage-time DNP traps.
+
+## Model Improvements (deployed)
+
+### LightGBM (11 features, `lgbm_model.pkl`)
+Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_3g_trend, games_played`
+
+- Model bundle format: `{"model": lgb.LGBMRegressor, "features": [...]}` — legacy bare-model pkl still supported.
+- `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits).
+- Retrained nightly by GitHub Actions (`retrain-model.yml`). Retrain manually: `python train_lgbm.py`.
+
+### Card Boost (`_est_card_boost`)
+- Default: exponential heuristic `scalar × decay_base^hype + base_offset`.
+- Log-formula path (calibrated, off by default): `log_a - log_b × log10(predicted_drafts)`. Activate with `card_boost.log_formula_active: true` in config once 50+ actuals collected.
+- Star player list in `card_boost.star_players` config (treated like big-market teams for ownership).
+
+### Spread Adjustment (continuous, no cliff edges)
+- Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
+- Stars/starters: peak 1.15× at pick'em, continuous decay, floors at 0.70× for heavy favorites.
+
+### Audit Pipeline
+- `save-actuals` auto-writes `data/audit/{date}.json` with MAE, directional accuracy, over/under counts, top-8 misses.
+- `GET /api/audit/get?date=X` returns pre-computed audit (falls back to live computation).
+- `lab_briefing` uses cached audits when available; adds over-projection pattern detection.
 
 ## Known Limitation
 
@@ -170,7 +197,6 @@ Predictions lock 5 minutes before the earliest game starts. Once locked:
 pip install -r requirements.txt
 uvicorn server:app --reload
 
-# Deploy
-git push origin main  # Vercel auto-deploys from main
-# Our work lives on: claude/analyze-sports-app-KNSuB (merge to main to deploy)
+# Deploy — push to feature branch; auto-merge-to-main.yml merges → main → Vercel
+git push -u origin claude/auto-merge-to-main-ZwBZw
 ```

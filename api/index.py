@@ -1118,6 +1118,7 @@ def _run_game(game):
 CHALK_FLOOR = 2.8  # Minimum raw rating for Starting 5
 
 def _build_lineups(projections):
+    avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
     # STARTING 5: MILP-optimized for highest chalk_ev = rating × (avg_slot + card_boost)
     # No team limit — Real Sports has no per-team restriction.
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
