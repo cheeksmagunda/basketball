@@ -1012,28 +1012,23 @@
     </div>
     <!-- Unlocked state -->
     <div id="labUnlocked" style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 14px">
         <div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Ben — Model Lab</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Ben</div>
           <div id="labConfigVersion" style="font-size:0.68rem;color:var(--muted);margin-top:2px"></div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="lab-action-btn" onclick="labViewConfig()">Config</button>
-          <button class="lab-action-btn" onclick="labRefreshBriefing()">Refresh</button>
         </div>
       </div>
       <!-- Chat messages -->
-      <div id="labMessages" style="display:flex;flex-direction:column;gap:10px;padding-bottom:10px;min-height:200px"></div>
+      <div id="labMessages" style="display:flex;flex-direction:column;gap:10px;padding-bottom:10px"></div>
       <!-- Input -->
       <div id="labInputWrap" style="position:sticky;bottom:0;padding:12px 0 4px;background:var(--bg)">
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button class="lab-quick-btn" onclick="labSendQuick('Give me a briefing and suggest improvements')">Briefing</button>
           <button class="lab-quick-btn" onclick="labSendQuick('Run a backtest on the current config')">Backtest</button>
-          <button class="lab-quick-btn" onclick="labSendQuick('Show me the current config')">View Config</button>
-          <button class="lab-quick-btn" onclick="labSendQuick('What changes would you recommend based on the briefing?')">Suggestions</button>
-          <button class="lab-quick-btn" onclick="labSendQuick('Show config version history')">History</button>
+          <button class="lab-quick-btn" onclick="labViewConfig()">Config</button>
         </div>
         <div style="display:flex;gap:8px">
-          <textarea id="labInput" placeholder="Ask Claude to analyze, suggest, or apply a change..." rows="2"
+          <textarea id="labInput" placeholder="Ask Ben to analyze, suggest, or apply a change..." rows="1"
             style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
           ></textarea>
@@ -2039,7 +2034,7 @@ async function showLabUnlocked(status) {
   document.getElementById('labUnlocked').style.display = 'block';
   document.getElementById('labConfigVersion').textContent = `Config v${status.current_config_version}`;
 
-  // Load briefing + config in parallel
+  // Load briefing + config in parallel (silently — no auto-message)
   const [briefingRes, configRes] = await Promise.allSettled([
     fetch('/api/lab/briefing').then(r => r.json()),
     fetch('/api/lab/config-history').then(r => r.json()),
@@ -2048,16 +2043,8 @@ async function showLabUnlocked(status) {
   if (briefingRes.status === 'fulfilled') LAB.briefing = briefingRes.value;
   if (configRes.status === 'fulfilled')   LAB.config   = configRes.value;
 
-  // Build system prompt
+  // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
-
-  // Send opening briefing message from Claude
-  const openingPrompt = LAB.briefing
-    ? 'Please give me a concise briefing based on the data. Then suggest 1-2 specific parameter improvements with reasoning.'
-    : 'Introduce yourself and explain what you can help with in the Lab.';
-
-  appendLabMessage('user', openingPrompt, true); // hidden=true, don't show in UI
-  await labCallClaude();
 }
 
 function buildLabSystemPrompt() {
@@ -2094,11 +2081,10 @@ LATEST BRIEFING:
 ${briefStr}
 
 BEHAVIOR:
-- Open with a conversational briefing summary (2-3 sentences max)
-- Proactively suggest 1-2 improvements based on patterns
-- When suggesting a change, offer to backtest first
-- When presenting backtest results, state improvement % and recommendation clearly
-- Be concise and action-oriented. No unnecessary hedging.`;
+- Be concise and action-oriented. No unnecessary hedging.
+- When suggesting a change, offer to backtest first.
+- When presenting backtest results, state improvement % and recommendation clearly.
+- No unsolicited introductions or summaries — respond to what the user asks.`;
 }
 
 async function labCallClaude() {
