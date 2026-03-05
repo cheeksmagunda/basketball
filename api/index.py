@@ -1923,7 +1923,7 @@ async def lab_chat(payload: dict = Body(...)):
                 "system":     system,
                 "messages":   messages,
             },
-            timeout=60,
+            timeout=45,
         )
         r.raise_for_status()
         resp = r.json()

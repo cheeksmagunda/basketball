@@ -2102,7 +2102,8 @@ async function labCallClaude() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: LAB.messages.filter(m => !m.hidden),
+        // Send all messages (including hidden) — hidden = not shown in UI, but still sent to Claude
+        messages: LAB.messages.map(({ role, content }) => ({ role, content })),
         system: LAB.system,
       }),
     });
