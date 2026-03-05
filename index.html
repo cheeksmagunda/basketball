@@ -158,13 +158,12 @@
     .tab-btn:hover { color: rgba(255,255,255,0.55); }
     .tab-btn.active { color: #fff; }
     .tab-btn .tab-dot {
-      position: absolute; top: 5px; right: 6px;
-      width: 4px; height: 4px; border-radius: 50%;
-      background: var(--green);
-      opacity: 0; transition: opacity 0.3s;
+      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+      background: rgba(255,255,255,0.4); margin-left: 3px; vertical-align: middle;
+      opacity: 0; transition: opacity 0.3s; flex-shrink: 0;
     }
-    .tab-btn.active .tab-dot { background: rgba(255,255,255,0.7); }
-    .tab-btn .tab-dot.visible { opacity: 1; }
+    .tab-btn.active .tab-dot { opacity: 0; }
+    .tab-btn:not(.active) .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
