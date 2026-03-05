@@ -20,7 +20,7 @@ index.html             — 4-tab frontend (Predictions | Log | Line | Lab, vanil
 api/index.py           — FastAPI backend (all endpoints, projection engine)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
-api/temporal_risk.py   — TRAV (Temporal Risk-Adjusted Value) system
+api/temporal_risk.py   — TRAV module (ownership/duplication math — available, not currently used in picks)
 vercel.json            — Vercel config (routes, crons, 60s timeout)
 server.py              — Local dev server (uvicorn)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
@@ -47,8 +47,8 @@ data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 | `/api/parse-screenshot` | POST | Upload Real Sports screenshot, Claude Haiku parses it |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV |
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
-| `/api/log/get?date=X` | GET | Predictions + actuals for a given date |
-| `/api/hindsight` | POST | Given actual RS scores, return optimal hindsight lineup |
+| `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
+| `/api/hindsight` | POST | POST `{players:[{name,actual_rs,actual_card_boost}]}` → optimal 5-player hindsight lineup |
 | `/api/refresh` | GET | Clear cache (also runs on cron at 7pm/8pm UTC) |
 
 ## Environment Variables (Vercel)

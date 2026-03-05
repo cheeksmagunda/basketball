@@ -17,11 +17,9 @@ from dotenv import load_dotenv
 try:
     from api.real_score import real_score_projection, _make_rng
     from api.asset_optimizer import optimize_lineup
-    from api.temporal_risk import lineup_duplication_probability, optimal_lock_time, trav_adjusted_score
 except ImportError:
     from .real_score import real_score_projection, _make_rng
     from .asset_optimizer import optimize_lineup
-    from .temporal_risk import lineup_duplication_probability, optimal_lock_time, trav_adjusted_score
 
 load_dotenv()
 app = FastAPI()
@@ -102,9 +100,6 @@ def _predictions_to_csv(lineups, scope):
 
 CSV_HEADER = "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk"
 
-DATA_DIR = Path("/tmp/nba_data")
-DATA_DIR.mkdir(exist_ok=True)
-HISTORY_FILE = DATA_DIR / "lineup_history.json"
 CACHE_DIR = Path("/tmp/nba_cache_v19")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
@@ -754,11 +749,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "tov":     round(tov, 1),
         "est_mult": card_boost,
         "slot":    "1.0x",
-        "_base":   base,
-        "_spread": spread,
         "_decline": round(decline_factor, 2),
-        "_features": {"avg_min": round(avg_min, 1), "season_pts": round(stats.get("season_pts", pts), 1)},
-        "_real_meta": real_meta,
         "injury_status": pinfo.get("injury_status", ""),
     }
 
@@ -899,20 +890,6 @@ def _get_injuries(game):
                 out_players.append({"name": p["name"], "team": team["abbr"], "pos": p["pos"]})
     return out_players
 
-def _save_history(game_label, players):
-    hist = []
-    if HISTORY_FILE.exists():
-        try: hist = json.loads(HISTORY_FILE.read_text())
-        except: pass
-    hist.append({
-        "game": game_label,
-        "timestamp": datetime.now().isoformat(),
-        "players": [{"name": p["name"], "rating": p["rating"],
-                     "team": p["team"], "pos": p["pos"], "actual_score": None}
-                    for p in players]
-    })
-    HISTORY_FILE.write_text(json.dumps(hist[-50:], indent=2))
-
 @app.get("/api/games")
 async def get_games():
     games = fetch_games()
@@ -1028,47 +1005,23 @@ async def get_picks(gameId: str = Query(...)):
         return {"date": date.today().isoformat(), "game": game,
                 "gameScript": None,
                 "lineups": {"chalk": [], "upside": []},
-                "locked": True, "injuries": [], "temporal": {}}
+                "locked": True, "injuries": []}
 
     projections = _run_game(game)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
     chalk, upside = _build_game_lineups(projections, game)
-    _save_history(game["label"], chalk)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
-    # ── TRAV: Temporal Risk-Adjusted Value metadata ───────────────────
-    # Calculate lineup duplication probability and optimal lock time.
-    # Attached as extra response key — frontend ignores unknown keys.
-    pool_size = len(projections)
-    dup_prob = lineup_duplication_probability(chalk, pool_size)
-    temporal_meta = optimal_lock_time(
-        game.get("startTime", ""), chalk, pool_size
-    )
-
-    # Annotate players with TRAV-adjusted scores
-    for p in chalk + upside:
-        p["_trav"] = trav_adjusted_score(
-            p.get("rating", 0), dup_prob,
-            temporal_meta.get("tiebreaker_equity_at_optimal", 0.5)
-        )
-        p["_dup_prob"] = dup_prob
 
     result = {"date": date.today().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
-              "injuries": injuries,
-              "temporal": temporal_meta}
+              "injuries": injuries}
     # Cache picks so they survive as lock snapshot if slate locks later
     _cs(f"picks_{gameId}", result)
     return result
-
-@app.get("/api/history")
-async def get_history():
-    if not HISTORY_FILE.exists(): return []
-    try: return json.loads(HISTORY_FILE.read_text())
-    except: return []
 
 @app.post("/api/save-predictions")
 async def save_predictions():
@@ -1088,7 +1041,7 @@ async def save_predictions():
         gid = g["gameId"]
         cached_picks = _cg(f"picks_{gid}")
         if cached_picks and cached_picks.get("lineups"):
-            rows.extend(_predictions_to_csv(cached_picks["lineups"], f"game_{gid}"))
+            rows.extend(_predictions_to_csv(cached_picks["lineups"], g.get("label", f"game_{gid}")))
 
     if not rows:
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)

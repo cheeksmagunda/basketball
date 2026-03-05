@@ -124,6 +124,12 @@
     }
     .tab-btn:hover { color: var(--text-dim); }
     .tab-btn.active { color: var(--chalk); border-bottom-color: var(--chalk); }
+    .tab-btn .tab-dot {
+      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+      background: var(--green); margin-left: 5px; vertical-align: middle;
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .tab-btn .tab-dot.visible { opacity: 1; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
@@ -655,7 +661,7 @@
   <!-- ══ TOP TAB NAVIGATION ══ -->
   <nav class="tab-nav">
     <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
-    <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log</button>
+    <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log<span class="tab-dot" id="logTabDot"></span></button>
     <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
     <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Lab</button>
   </nav>
@@ -797,7 +803,6 @@ const TEAM_COLORS = {
 // ── Global state ──
 let SLATE = null;
 let PICKS_DATA = null;
-let CURRENT_SLATE_TAB = 'chalk';
 
 // Log state
 const LOG = {
@@ -903,7 +908,6 @@ function switchPicksTab(tab) {
 }
 
 function switchSlate(tab) {
-  CURRENT_SLATE_TAB = tab;
   document.querySelectorAll('#slateTabs .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
   if (SLATE) renderCards(SLATE.lineups[tab] || [], 'slateList', tab);
 }
@@ -1041,9 +1045,10 @@ function renderCards(picks, containerId, mode, opts = {}) {
           <div class="player-name">${p.name}</div>
           <div class="stat-pills">${statsHtml}</div>
         </div>
-        <div class="score-col" style="${isLog ? `--score-color:${scoreColor};` : `--score-color:${scoreColor};`}">
+        <div class="score-col" style="--score-color:${scoreColor};">
           <div class="score-num">${p.rating}</div>
-          <span class="score-label">${isUpside ? 'moonshot' : 'projected'}</span>
+          <span class="score-label">RS</span>
+          ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:var(--muted);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
           <div class="slot-badge" style="background:${isUpside?(isLog?'rgba(184,152,120,0.08)':'rgba(249,115,22,0.1)'):(isLog?'rgba(123,164,200,0.08)':'rgba(79,142,247,0.1)')};border-color:${isUpside?(isLog?'rgba(184,152,120,0.2)':'rgba(249,115,22,0.25)'):(isLog?'rgba(123,164,200,0.2)':'rgba(79,142,247,0.25)')}">
             ${p.slot || '—'}
           </div>
@@ -1097,6 +1102,10 @@ async function initLogPage() {
     if (r.ok) {
       const dates = await r.json();
       dates.forEach(d => LOG.datesWithData.add(d));
+      // Light the dot on the Log tab if there's historical data
+      if (dates.length) {
+        document.getElementById('logTabDot')?.classList.add('visible');
+      }
     }
   } catch(e) { /* non-fatal */ }
 
@@ -1165,7 +1174,7 @@ function renderLogGrid(dateStr) {
 
   // Build game list from scopes
   const scopes = data.scopes || {};
-  const gameScopes = Object.keys(scopes).filter(s => s.startsWith('game_'));
+  const gameScopes = Object.keys(scopes).filter(s => s !== 'slate');
   const hasSlate = 'slate' in scopes;
   const hasActuals = data.has_actuals;
 
@@ -1178,22 +1187,23 @@ function renderLogGrid(dateStr) {
       <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
         <div>
           <div class="log-slate-card-label">Full Slate</div>
-          <div class="log-slate-card-sub">${playerCount} players</div>
-          ${hasActuals ? '<div class="log-has-data">Results available</div>' : ''}
+          <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
         </div>
         <span style="color:var(--chalk);font-size:1.2rem">›</span>
       </div>`;
   }
 
-  // Per-game cards
+  // Per-game cards — scope is now the readable label (e.g. "BOS @ NYK")
   gameScopes.forEach(scope => {
-    const label = scope.replace('game_', '');
     const chalkCount = scopes[scope]?.chalk?.length || 0;
+    const escapedScope = scope.replace(/'/g, "\\'");
     html += `
-      <div class="log-game-card" onclick="openLogDrilldown('${scope}', '${label}')">
-        <div class="log-game-matchup">${label}</div>
-        <div class="log-game-meta">${chalkCount} players</div>
-        ${hasActuals ? '<div class="log-has-data">Results</div>' : ''}
+      <div class="log-game-card" onclick="openLogDrilldown('${escapedScope}', '${escapedScope}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div class="log-game-matchup">${scope}</div>
+          <span style="color:var(--muted);font-size:1rem;margin-left:6px">›</span>
+        </div>
+        <div class="log-game-meta">${chalkCount} players${hasActuals ? ' · Results' : ''}</div>
       </div>`;
   });
 
