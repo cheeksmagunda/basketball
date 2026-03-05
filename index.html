@@ -773,58 +773,81 @@
     .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
     .line-result-pill.pending { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
 
-    /* ── LAB PAGE ── */
-    .lab-action-btn {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em;
-      text-transform: uppercase; padding: 6px 12px;
-      background: transparent; border: 1px solid var(--border-bright);
-      border-radius: 8px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+    /* ── LAB / BEN PAGE ── */
+    .lab-chat-header {
+      display: flex; align-items: center; gap: 11px;
+      padding: 14px 0 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
     }
-    .lab-action-btn:hover { border-color: var(--lab); color: var(--lab); }
-    .lab-quick-btn {
+    .lab-avatar {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, rgba(20,184,166,0.25), rgba(20,184,166,0.1));
+      border: 1px solid rgba(20,184,166,0.35);
+      display: flex; align-items: center; justify-content: center;
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.06em;
-      text-transform: uppercase; padding: 5px 10px;
-      background: rgba(20,184,166,0.08); border: 1px solid rgba(20,184,166,0.2);
-      border-radius: 6px; color: var(--lab); cursor: pointer; transition: all 0.2s;
+      font-size: 1rem; font-weight: 900; color: var(--lab);
     }
-    .lab-quick-btn:hover { background: rgba(20,184,166,0.15); border-color: var(--lab); }
+    .lab-chat-meta { display: flex; flex-direction: column; gap: 3px; }
+    .lab-chat-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem; font-weight: 900; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--text); line-height: 1;
+    }
+    .lab-status {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 0.63rem; color: var(--lab); font-weight: 600; letter-spacing: 0.04em;
+    }
+    .lab-status-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--lab); box-shadow: 0 0 6px var(--lab);
+      animation: statusPulse 2.5s ease-in-out infinite;
+    }
+    @keyframes statusPulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--lab); }
+      50% { opacity: 0.55; box-shadow: 0 0 2px var(--lab); }
+    }
     .lab-msg {
-      padding: 12px 14px; border-radius: 12px; max-width: 90%;
-      font-size: 0.82rem; line-height: 1.55; animation: fadeUp 0.25s ease forwards;
+      padding: 10px 14px; max-width: 86%;
+      font-size: 0.84rem; line-height: 1.58; animation: fadeUp 0.22s ease forwards;
     }
     .lab-msg.user {
-      align-self: flex-end;
-      background: rgba(20,184,166,0.12); border: 1px solid rgba(20,184,166,0.2);
+      align-self: flex-end; max-width: 78%;
+      background: linear-gradient(145deg, rgba(20,184,166,0.22) 0%, rgba(14,130,120,0.14) 100%);
+      border: 1px solid rgba(20,184,166,0.28);
+      border-radius: 16px 16px 4px 16px;
       color: var(--text);
     }
     .lab-msg.assistant {
       align-self: flex-start;
-      background: var(--surface); border: 1px solid var(--border);
+      background: rgba(10,16,26,0.85);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-top: 1px solid rgba(20,184,166,0.2);
+      border-radius: 4px 16px 16px 16px;
       color: var(--text);
     }
     .lab-msg.assistant .lab-msg-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--lab); margin-bottom: 6px;
+      font-size: 0.58rem; font-weight: 800; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--lab);
+      margin-bottom: 7px; display: block;
     }
     .lab-msg.thinking {
       align-self: flex-start;
-      background: var(--surface2); border: 1px solid var(--border);
+      background: rgba(10,16,26,0.85);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 4px 16px 16px 16px;
     }
-    .lab-thinking-dots {
-      display: flex; gap: 4px; align-items: center; padding: 2px 0;
-    }
+    .lab-thinking-dots { display: flex; gap: 5px; align-items: center; padding: 3px 2px; }
     .lab-thinking-dots span {
-      width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
-      animation: labPulse 1.2s ease-in-out infinite;
+      width: 6px; height: 6px; border-radius: 50%; background: var(--lab);
+      animation: labPulse 1.3s ease-in-out infinite;
     }
-    .lab-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-    .lab-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    .lab-thinking-dots span:nth-child(2) { animation-delay: 0.22s; }
+    .lab-thinking-dots span:nth-child(3) { animation-delay: 0.44s; }
     @keyframes labPulse {
-      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-      40% { opacity: 1; transform: scale(1); }
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.75); }
+      40% { opacity: 1; transform: scale(1.1); }
     }
     .lab-config-card {
       background: var(--surface2); border: 1px solid var(--border);
@@ -846,6 +869,15 @@
     }
     #labInput { line-height: 1.4; }
     #labInput:focus { border-color: var(--lab); }
+    .lab-send-btn {
+      width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
+      background: var(--lab); border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.18s;
+      box-shadow: 0 2px 10px rgba(20,184,166,0.3);
+    }
+    .lab-send-btn:hover:not(:disabled) { filter: brightness(1.12); transform: scale(1.05); }
+    .lab-send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
     /* ── MAGIC 8-BALL LOADER ── */
     #oracleLoader {
@@ -1120,22 +1152,26 @@
     </div>
     <!-- Unlocked state -->
     <div id="labUnlocked" style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 14px">
-        <div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text)">Ben</div>
-          <div id="labConfigVersion" style="font-size:0.68rem;color:var(--muted);margin-top:2px"></div>
+      <!-- Chat header — avatar, name, status -->
+      <div class="lab-chat-header">
+        <div class="lab-avatar">B</div>
+        <div class="lab-chat-meta">
+          <span class="lab-chat-name">Ben</span>
+          <span class="lab-status"><span class="lab-status-dot"></span>Ready</span>
         </div>
       </div>
       <!-- Chat messages -->
-      <div id="labMessages" style="display:flex;flex-direction:column;gap:10px;padding-bottom:10px"></div>
-      <!-- Input — pure chat, no quick buttons -->
+      <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px"></div>
+      <!-- Input — pure chat -->
       <div id="labInputWrap" style="position:sticky;bottom:0;padding:10px 0 4px;background:var(--bg)">
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
           <textarea id="labInput" placeholder="Ask Ben anything..." rows="1"
-            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
           ></textarea>
-          <button id="labSendBtn" onclick="labSend()" style="padding:10px 16px;background:var(--lab);border:none;border-radius:10px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.85rem;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer">Send</button>
+          <button id="labSendBtn" class="lab-send-btn" onclick="labSend()">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 13V2M2 7l5.5-5.5L13 7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
       </div>
     </div>
@@ -2136,6 +2172,7 @@ const LAB = {
   system: '',         // dynamic system prompt
   briefing: null,     // latest briefing
   config: null,       // current config
+  lineData: null,     // today's Line of the Day
   initialized: false,
   initAt: 0,          // timestamp of last init (ms)
 };
@@ -2200,16 +2237,17 @@ function showLabLocked(status) {
 
 async function showLabUnlocked(status) {
   document.getElementById('labUnlocked').style.display = 'block';
-  document.getElementById('labConfigVersion').textContent = `Config v${status.current_config_version}`;
 
-  // Load briefing + config in parallel (silently — no auto-message)
-  const [briefingRes, configRes] = await Promise.allSettled([
+  // Load briefing + config + line data in parallel (silently)
+  const [briefingRes, configRes, lineRes] = await Promise.allSettled([
     fetch('/api/lab/briefing').then(r => r.json()),
     fetch('/api/lab/config-history').then(r => r.json()),
+    fetch('/api/line-of-the-day').then(r => r.json()),
   ]);
 
-  if (briefingRes.status === 'fulfilled') LAB.briefing = briefingRes.value;
-  if (configRes.status === 'fulfilled')   LAB.config   = configRes.value;
+  if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
+  if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
+  if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
 
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
@@ -2218,41 +2256,51 @@ async function showLabUnlocked(status) {
 function buildLabSystemPrompt() {
   const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
+  const lineStr  = LAB.lineData
+    ? (() => {
+        const p = LAB.lineData.primary;
+        if (!p) return 'No line pick available today.';
+        return `Player: ${p.player_name} (${p.team})
+Bet: ${p.direction} ${p.line} ${p.stat_type}
+Projection: ${p.projection} | Edge: ${p.edge > 0 ? '+' : ''}${p.edge}
+Confidence: ${p.confidence}/100
+Narrative: ${p.narrative || 'N/A'}`;
+      })()
+    : 'Line data unavailable.';
 
-  return `You are Ben, the model tuning assistant for an NBA draft optimizer called The Oracle.
-Your name is Ben. When users address you or refer to the assistant, you are Ben.
+  return `You are Ben — the Oracle's full-service NBA analytics assistant.
+You know everything about today's slate: lineup projections, the Line of the Day prop pick, the model's config parameters, and historical prediction accuracy.
 
-YOUR ROLE:
-- Analyze prediction accuracy and suggest parameter improvements
-- Run backtests to validate changes before applying them
-- Apply approved config changes (only after explicit user approval)
-- You suggest, the user approves. Never apply changes without explicit approval.
+YOUR CAPABILITIES:
+- Answer any question about today's games, players, or picks
+- Discuss the Line of the Day — the best prop bet edge for today
+- Analyze prediction accuracy and suggest model parameter improvements
+- Run backtests to validate config changes before applying them
+- Apply config changes (only after explicit user approval — you suggest, user approves)
 
-SCOPE:
-- You CAN modify: the runtime model config (data/model-config.json)
-- You CANNOT modify: application code, API routes, or frontend
-- If a request requires code changes, explain and direct user to Claude Code
-
-ACTIONS YOU CAN REQUEST:
+ACTIONS YOU CAN REQUEST (use JSON in <action>...</action> tags):
 - backtest: {"action":"backtest","changes":{"dot.path":value},"description":"..."}
 - update_config: {"action":"update_config","changes":{"dot.path":value},"description":"..."}
 - show_config: {"action":"show_config"}
 - show_history: {"action":"show_history"}
 
-When you want to trigger an action, include the JSON in your response wrapped in <action>...</action> tags.
-The frontend will detect this and call the appropriate endpoint.
+WHAT YOU CANNOT DO:
+- Modify application code, API routes, or frontend (direct user to Claude Code for that)
 
-CURRENT CONFIG:
+TODAY'S LINE OF THE DAY:
+${lineStr}
+
+CURRENT MODEL CONFIG:
 ${cfgStr}
 
-LATEST BRIEFING:
+LATEST ACCURACY BRIEFING:
 ${briefStr}
 
 BEHAVIOR:
-- Be concise and action-oriented. No unnecessary hedging.
-- When suggesting a change, offer to backtest first.
-- When presenting backtest results, state improvement % and recommendation clearly.
-- No unsolicited introductions or summaries — respond to what the user asks.`;
+- Be direct and concise. Answer what's asked.
+- For lineup/pick questions, draw on your full context above.
+- For model changes, offer to backtest first; state improvement % clearly.
+- No unsolicited introductions or summaries.`;
 }
 
 async function labCallClaude() {
@@ -2393,7 +2441,6 @@ async function applyLabConfig(changes, description, msgEl) {
     }
     if (statusDiv) statusDiv.textContent = `Applied — now config v${result.version}.`;
     if (btnDiv) btnDiv.remove();
-    document.getElementById('labConfigVersion').textContent = `Config v${result.version}`;
     appendLabMessage('user', `Config updated to v${result.version}: ${description}`, true);
     await labCallClaude();
   } catch(e) {
