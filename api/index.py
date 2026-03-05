@@ -1102,6 +1102,12 @@ async def save_predictions():
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
 
     csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
+
+    # Skip commit if content is identical to what's already stored (avoids unnecessary Vercel redeploys)
+    existing, _ = _github_get_file(path)
+    if existing and existing.strip() == csv_content.strip():
+        return {"status": "unchanged", "path": path, "rows": len(rows)}
+
     result = _github_write_file(path, csv_content, f"predictions for {today}")
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)

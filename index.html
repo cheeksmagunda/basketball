@@ -1377,11 +1377,14 @@ function renderSkeletons(containerId, count) {
 }
 
 // ── SAVE PREDICTIONS TO GIT ──
+let _predSavedToday = false;
 async function savePredictions() {
+  if (_predSavedToday) return; // only fire once per session
+  _predSavedToday = true;
   try {
-    const r = await fetch('/api/save-predictions', { method: 'POST' });
-    // save silently — no UI notification needed
+    await fetch('/api/save-predictions', { method: 'POST' });
   } catch(e) {
+    _predSavedToday = false; // allow retry on network error
     console.warn('Prediction save failed:', e);
   }
 }
