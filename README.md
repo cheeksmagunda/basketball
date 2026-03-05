@@ -25,7 +25,7 @@ ESPN API (daily game data, spreads, totals, injuries)
   → LightGBM AI Model (70% weight, with spread-derived opponent quality)
   → Contextual Adjustments (pace, spread closeness, home/away)
   → Monte Carlo Real Score Engine (closeness C_c, clutch C_k, momentum M_m)
-  → MILP Slot Optimizer (assigns players to 2.0x/1.5x/1.2x/1.0x/1.0x slots)
+  → MILP Slot Optimizer (assigns players to 2.0x/1.8x/1.6x/1.4x/1.2x slots)
 ```
 
 ### Full Slate (Starting 5 + Moonshot)
@@ -50,7 +50,7 @@ Single-game drafts with team balance (min 2 per team) and game script adjustment
 | Cascade cap | +3 min/player max | Prevents unrealistic bench projections |
 | Cascade badge threshold | +2.5 min | Only flags genuine role expansions |
 | Decline trigger | Recent < 90% of season min | Catches declining usage earlier |
-| Raw score cap | 25.0 | Lets stars differentiate (vs 15.0 before) |
+| Raw score cap | 15.0 | Power-compressed to match actual Real Score gaps |
 | Spread adjustment | 4% range | Stronger boost for tight games |
 | Opponent quality | Derived from spread | Not hardcoded (was 112.0 for all games) |
 
@@ -58,7 +58,7 @@ Single-game drafts with team balance (min 2 per team) and game script adjustment
 When a player is OUT, their minutes redistribute to teammates at same position group. Bench players get proportionally more. Capped at +3 min per player to prevent unrealistic projections.
 
 ### Calibration Feedback Loop
-After entering actual results in the Lab, the backend calculates prediction bias and adjusts future projections via exponential moving average (alpha=0.3).
+After entering actual results via the screenshot uploader, the data is saved to `data/actuals/` in the GitHub repo as a CSV. These CSVs can be diffed against `data/predictions/` to evaluate model accuracy over time.
 
 ## Architecture
 
@@ -68,7 +68,7 @@ After entering actual results in the Lab, the backend calculates prediction bias
 - **AI Model:** LightGBM (`lgbm_model.pkl`) blended 70/30 with heuristic scoring.
 - **Real Score Engine:** Monte Carlo simulation (closeness, clutch, momentum coefficients).
 - **Optimizer:** PuLP/CBC MILP solver for slot assignment.
-- **Storage:** LocalStorage for Lab history, `/tmp` for server-side caching.
+- **Storage:** GitHub Contents API for persistent CSVs (`data/predictions/`, `data/actuals/`); `/tmp` for ephemeral server-side caching (lost on Vercel cold start).
 
 ## Local Development
 

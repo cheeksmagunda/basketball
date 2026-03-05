@@ -608,7 +608,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if is_b2b:
         proj_min *= 0.88
 
-    # Minutes gate: must project to at least 15 minutes
+    # Minutes gate: must project to at least MIN_GATE minutes
     if proj_min < MIN_GATE: return None
 
     pts = stats["pts"]
@@ -818,7 +818,7 @@ def _get_recent_picks(days=3):
         return recent_names
     try:
         hist = json.loads(HISTORY_FILE.read_text())
-        today = date.today()
+        today = _et_date()
         for entry in reversed(hist):
             ts = entry.get("timestamp", "")
             try:
@@ -992,7 +992,7 @@ def _save_history(game_label, players):
         except: pass
     hist.append({
         "game": game_label,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "players": [{"name": p["name"], "rating": p["rating"],
                      "team": p["team"], "pos": p["pos"], "actual_score": None}
                     for p in players]
@@ -1014,10 +1014,9 @@ async def get_slate():
     if not games:
         return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
 
-    # Only show/project games that are still draftable (not yet past lock window)
-    # ESPN returns all games for the day, including already-completed ones.
-    # At 1 AM EST the completed games from the evening should be invisible;
-    # the upcoming day's games should be shown instead.
+    # Filter to games that haven't started yet — completed/in-progress games
+    # are not draftable. fetch_games() requests today's ET date explicitly
+    # from ESPN, so this normally only removes games that have already tipped.
     draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
     # All games for today's ET date are already completed — this shouldn't normally
@@ -1111,7 +1110,7 @@ async def get_picks(gameId: str = Query(...)):
             _ls(lock_key, reg_cached)
             return reg_cached
         # No cache on this instance after lock — return locked empty
-        return {"date": date.today().isoformat(), "game": game,
+        return {"date": _et_date().isoformat(), "game": game,
                 "gameScript": None,
                 "lineups": {"chalk": [], "upside": []},
                 "locked": True, "injuries": [], "temporal": {}}
@@ -1140,7 +1139,7 @@ async def get_picks(gameId: str = Query(...)):
         )
         p["_dup_prob"] = dup_prob
 
-    result = {"date": date.today().isoformat(), "game": game,
+    result = {"date": _et_date().isoformat(), "game": game,
               "gameScript": script,
               "lineups": {"chalk": chalk, "upside": upside},
               "locked": locked,
@@ -1159,7 +1158,7 @@ async def get_history():
 @app.post("/api/save-predictions")
 async def save_predictions():
     """Save current predictions to GitHub as CSV."""
-    today = date.today().isoformat()
+    today = _et_date().isoformat()
     path = f"data/predictions/{today}.csv"
 
     # Gather slate predictions
