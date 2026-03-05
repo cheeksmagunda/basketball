@@ -23,8 +23,6 @@ except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine
 
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
-
 load_dotenv()
 app = FastAPI()
 
