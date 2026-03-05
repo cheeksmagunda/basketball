@@ -865,7 +865,6 @@
         <button class="tab-btn" data-tab="log" onclick="switchTab('log')">History<span class="tab-dot" id="logTabDot"></span></button>
       </div>
     </nav>
-    <div id="predSavedChip" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--green);padding:4px 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px;flex-shrink:0"></div>
   </header>
 
   <!-- ══ TAB: PREDICTIONS ══ -->
@@ -1381,13 +1380,7 @@ function renderSkeletons(containerId, count) {
 async function savePredictions() {
   try {
     const r = await fetch('/api/save-predictions', { method: 'POST' });
-    if (r.ok) {
-      const result = await r.json();
-      const chip = document.getElementById('predSavedChip');
-      chip.textContent = `Saved ${result.rows} predictions`;
-      chip.style.display = 'inline-block';
-      setTimeout(() => { chip.style.display = 'none'; }, 4000);
-    }
+    // save silently — no UI notification needed
   } catch(e) {
     console.warn('Prediction save failed:', e);
   }
