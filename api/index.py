@@ -46,6 +46,19 @@ def _github_get_file(path):
         return content, data["sha"]
     return None, None
 
+def _github_list_dir(path):
+    """List files in a GitHub repo directory. Returns list of {name, path} dicts."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return []
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    r = requests.get(url, headers={
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }, timeout=10)
+    if r.status_code == 200:
+        return r.json()
+    return []
+
 def _github_write_file(path, content, message="auto-update"):
     """Create or update a file in the GitHub repo via Contents API."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
@@ -1194,6 +1207,122 @@ async def save_actuals(payload: dict = Body(...)):
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
     return {"status": "saved", "path": path, "rows": len(rows)}
+
+
+def _parse_csv(content, header_fields):
+    """Parse a simple CSV string into list of dicts using given header fields."""
+    rows = []
+    if not content:
+        return rows
+    lines = content.strip().split("\n")
+    # Skip header line
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        # Simple CSV split (handles quoted fields)
+        fields = []
+        current = ""
+        in_quotes = False
+        for ch in line:
+            if ch == '"':
+                in_quotes = not in_quotes
+            elif ch == ',' and not in_quotes:
+                fields.append(current)
+                current = ""
+            else:
+                current += ch
+        fields.append(current)
+        # Pad to expected length
+        while len(fields) < len(header_fields):
+            fields.append("")
+        rows.append(dict(zip(header_fields, fields[:len(header_fields)])))
+    return rows
+
+
+PRED_FIELDS = ["scope","lineup_type","slot","player_name","player_id","team","pos",
+               "predicted_rs","est_card_boost","pred_min","pts","reb","ast","stl","blk"]
+ACT_FIELDS = ["player_name","actual_rs","actual_card_boost","drafts","avg_finish","total_value","source"]
+
+
+@app.get("/api/log/dates")
+async def log_dates():
+    """Return sorted list of dates that have stored prediction or actual data."""
+    dates = set()
+    for prefix in ["data/predictions", "data/actuals"]:
+        items = _github_list_dir(prefix)
+        for item in items:
+            name = item.get("name", "")
+            if name.endswith(".csv"):
+                dates.add(name[:-4])
+    return sorted(dates, reverse=True)
+
+
+@app.get("/api/log/get")
+async def log_get(date: str = Query(None)):
+    """Get stored predictions and actuals for a date."""
+    date_str = date or _et_date().isoformat()
+
+    pred_csv, _ = _github_get_file(f"data/predictions/{date_str}.csv")
+    act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
+
+    predictions = _parse_csv(pred_csv, PRED_FIELDS) if pred_csv else []
+    actuals = _parse_csv(act_csv, ACT_FIELDS) if act_csv else []
+
+    # Group predictions by scope → lineup_type → players
+    scopes = {}
+    for row in predictions:
+        scope = row.get("scope", "")
+        lt = row.get("lineup_type", "chalk")
+        scopes.setdefault(scope, {"chalk": [], "upside": []})[lt].append({
+            "slot": row.get("slot", ""),
+            "name": row.get("player_name", ""),
+            "team": row.get("team", ""),
+            "pos": row.get("pos", ""),
+            "rating": row.get("predicted_rs", ""),
+            "est_mult": row.get("est_card_boost", ""),
+            "predMin": row.get("pred_min", ""),
+        })
+
+    return {
+        "date": date_str,
+        "has_predictions": bool(predictions),
+        "has_actuals": bool(actuals),
+        "scopes": scopes,
+        "actuals": actuals,
+    }
+
+
+@app.post("/api/hindsight")
+async def hindsight(payload: dict = Body(...)):
+    """Given actual player RS scores, return the optimal hindsight lineup."""
+    players = payload.get("players", [])
+    if not players:
+        return JSONResponse({"error": "No players provided"}, status_code=400)
+
+    projections = []
+    for p in players:
+        rs = _safe_float(p.get("actual_rs"), 0)
+        boost = _safe_float(p.get("actual_card_boost"), 0.3)
+        if rs <= 0:
+            continue
+        avg_slot = 1.6
+        projections.append({
+            "name": p.get("name", p.get("player_name", "")),
+            "rating": rs,
+            "est_mult": boost,
+            "chalk_ev": rs * (avg_slot + boost),
+            "team": p.get("team", ""),
+            "pos": p.get("pos", ""),
+            "slot": "",
+        })
+
+    if not projections:
+        return JSONResponse({"error": "No players with valid RS scores"}, status_code=400)
+
+    lineup = optimize_lineup(projections, n=min(5, len(projections)),
+                             sort_key="chalk_ev", rating_key="rating",
+                             card_boost_key="est_mult")
+    return {"lineup": lineup}
 
 
 @app.get("/api/refresh")

@@ -16,7 +16,7 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 ## Architecture
 
 ```
-index.html             — Single-page frontend (vanilla JS, no framework)
+index.html             — 4-tab frontend (Predictions | Log | Line | Lab, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
@@ -26,6 +26,15 @@ server.py              — Local dev server (uvicorn)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
 data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 ```
+
+## UI Structure
+
+4-tab top navigation: **Predictions | Log | Line | Lab**
+
+- **Predictions**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis
+- **Log**: Historical drill-down — date strip, game grid, locked prediction cards (desaturated Log palette), screenshot upload, winning drafts display, hindsight optimal lineup
+- **Line**: Placeholder (coming soon)
+- **Lab**: Placeholder (coming soon)
 
 ## Key Endpoints
 
@@ -37,6 +46,9 @@ data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 | `/api/save-predictions` | POST | Save cached predictions to GitHub CSV |
 | `/api/parse-screenshot` | POST | Upload Real Sports screenshot, Claude Haiku parses it |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV |
+| `/api/log/dates` | GET | List dates with stored prediction/actual data |
+| `/api/log/get?date=X` | GET | Predictions + actuals for a given date |
+| `/api/hindsight` | POST | Given actual RS scores, return optimal hindsight lineup |
 | `/api/refresh` | GET | Clear cache (also runs on cron at 7pm/8pm UTC) |
 
 ## Environment Variables (Vercel)

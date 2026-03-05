@@ -32,6 +32,15 @@
       --green: #22c55e;
       --red: #f43f5e;
       --r: 14px;
+      /* Log page palette — desaturated/cooler, WCAG AA on dark bg */
+      --log-chalk: #7ba4c8;
+      --log-chalk-glow: rgba(123,164,200,0.2);
+      --log-upside: #b89878;
+      --log-upside-glow: rgba(184,152,120,0.2);
+      --log-win: #d4a640;
+      --log-win-glow: rgba(212,166,64,0.2);
+      --log-opt: #9b80c8;
+      --log-opt-glow: rgba(155,128,200,0.2);
     }
 
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -56,7 +65,7 @@
       z-index: 0;
     }
 
-    /* Ambient glow blobs */
+    /* Ambient glow blob */
     body::after {
       content: '';
       position: fixed;
@@ -72,9 +81,9 @@
     /* ── HEADER ── */
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 28px 0 24px;
+      padding: 20px 0 16px;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 28px;
+      margin-bottom: 0;
     }
 
     .logo {
@@ -95,15 +104,30 @@
       letter-spacing: 0.15em; display: block; margin-top: 1px;
     }
 
-    .nav { display: flex; gap: 4px; background: var(--surface2); padding: 4px; border-radius: 10px; border: 1px solid var(--border); }
-    .nav-btn {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em;
-      text-transform: uppercase; padding: 6px 14px;
-      border: none; background: transparent; color: var(--muted);
-      border-radius: 7px; cursor: pointer; transition: all 0.2s;
+    /* ── TOP TAB NAVIGATION ── */
+    .tab-nav {
+      display: flex; gap: 2px;
+      padding: 10px 0 0;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
     }
-    .nav-btn.active { background: var(--chalk); color: #fff; box-shadow: 0 2px 8px var(--chalk-glow); }
+    .tab-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 8px 16px 10px;
+      border: none; background: transparent; color: var(--muted);
+      cursor: pointer; transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      border-radius: 4px 4px 0 0;
+    }
+    .tab-btn:hover { color: var(--text-dim); }
+    .tab-btn.active { color: var(--chalk); border-bottom-color: var(--chalk); }
+
+    /* ── TAB PAGES ── */
+    .tab-page { display: none; }
+    .tab-page.active { display: block; }
 
     /* ── SECTION LABEL ── */
     .section-label {
@@ -114,9 +138,7 @@
     }
 
     /* ── CHALK/UPSIDE TABS ── */
-    .mode-tabs {
-      display: flex; gap: 6px; margin-bottom: 18px;
-    }
+    .mode-tabs { display: flex; gap: 6px; margin-bottom: 18px; }
     .mode-tab {
       flex: 1; padding: 10px;
       font-family: 'Barlow Condensed', sans-serif;
@@ -205,7 +227,6 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* Stat pills row */
     .stat-pills { display: flex; gap: 8px; flex-wrap: wrap; }
     .stat-pill {
       font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
@@ -217,7 +238,6 @@
       background: var(--tcolor, var(--chalk)); opacity: 0.5;
     }
 
-    /* Score column */
     .score-col {
       text-align: right; position: relative; z-index: 1;
       border-left: 1px solid var(--border);
@@ -242,7 +262,6 @@
       display: inline-block; margin-top: 4px;
     }
 
-    /* ── MULT BADGES ── */
     .mult-badge {
       background: rgba(79,142,247,0.1); color: var(--chalk);
       border: 1px solid rgba(79,142,247,0.2);
@@ -295,7 +314,7 @@
     }
     select:focus { border-color: var(--chalk); }
 
-    /* ── ANALYZE BUTTON ── */
+    /* ── BUTTONS ── */
     .analyze-btn {
       width: 100%;
       background: var(--chalk);
@@ -321,6 +340,16 @@
       animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .back-btn {
+      background: none; border: none; color: var(--text-dim);
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; cursor: pointer; padding: 4px 0 16px;
+      display: flex; align-items: center; gap: 6px;
+      transition: color 0.2s;
+    }
+    .back-btn:hover { color: var(--text); }
 
     /* ── GAME INFO CHIPS ── */
     .game-chips { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -350,7 +379,7 @@
       margin: 28px 0;
     }
 
-    /* ── EMPTY STATE ── */
+    /* ── EMPTY/PLACEHOLDER STATE ── */
     .empty-state {
       text-align: center; padding: 48px 24px;
       background: var(--surface2); border: 1px solid var(--border);
@@ -359,7 +388,19 @@
     .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
     .empty-state p { font-size: 0.85rem; line-height: 1.6; }
 
-    /* ── ERROR TOAST ── */
+    .placeholder-page {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 40vh; text-align: center; padding: 48px 24px;
+    }
+    .placeholder-page .pl-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.3; }
+    .placeholder-page h2 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.4rem; font-weight: 900; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+    }
+    .placeholder-page p { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── ERROR BANNER ── */
     .error-banner {
       background: rgba(244,63,94,0.1);
       border: 1px solid rgba(244,63,94,0.3);
@@ -397,16 +438,7 @@
       outline: none; width: 100%;
     }
     .score-row input:focus { border-color: var(--chalk); }
-    .score-row input.invalid { border-color: var(--red); }
-    .score-row input[type="text"] {
-      text-align: left; font-weight: 400;
-    }
-    .remove-row-btn {
-      background: none; border: none; color: var(--text-dim);
-      font-size: 1.2rem; cursor: pointer; padding: 0 4px;
-      opacity: 0.3; transition: opacity 0.15s;
-    }
-    .remove-row-btn:hover { opacity: 1; color: var(--red); }
+    .score-row input[type="text"] { text-align: left; font-weight: 400; }
     .modal-cancel {
       flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
       background: transparent; color: var(--muted); cursor: pointer;
@@ -421,6 +453,189 @@
       letter-spacing: 0.06em; transition: all 0.2s;
     }
     .modal-submit:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── LOG PAGE SPECIFIC ── */
+
+    /* Date strip */
+    .date-strip {
+      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;
+      scrollbar-width: none;
+    }
+    .date-strip::-webkit-scrollbar { display: none; }
+    .date-chip {
+      flex-shrink: 0;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      padding: 8px 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; cursor: pointer; transition: all 0.2s;
+      min-width: 52px;
+    }
+    .date-chip:hover { border-color: var(--border-bright); }
+    .date-chip.active {
+      background: rgba(79,142,247,0.12);
+      border-color: var(--chalk);
+    }
+    .date-chip-day {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .date-chip.active .date-chip-day { color: var(--chalk); }
+    .date-chip-num {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.1rem; font-weight: 900; color: var(--text-dim); line-height: 1;
+    }
+    .date-chip.active .date-chip-num { color: var(--chalk); }
+    .date-chip-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--log-win); opacity: 0.8;
+    }
+    .date-chip-dot.hidden-dot { opacity: 0; }
+
+    /* Log game grid */
+    .log-game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
+    .log-slate-card {
+      grid-column: 1 / -1;
+      background: rgba(79,142,247,0.06);
+      border: 1px solid rgba(79,142,247,0.2);
+      border-radius: var(--r); padding: 16px 20px;
+      cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .log-slate-card:hover { border-color: rgba(79,142,247,0.4); background: rgba(79,142,247,0.1); }
+    .log-slate-card-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem; font-weight: 900; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--chalk);
+    }
+    .log-slate-card-sub { font-size: 0.7rem; color: var(--text-dim); margin-top: 3px; }
+
+    .log-game-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .log-game-card:hover { border-color: var(--border-bright); }
+    .log-game-matchup {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.95rem; font-weight: 800;
+      color: var(--text); margin-bottom: 4px;
+    }
+    .log-game-meta { font-size: 0.68rem; color: var(--muted); }
+    .log-has-data { color: var(--log-win); font-size: 0.65rem; font-weight: 700; margin-top: 4px; }
+
+    /* Log drill-down */
+    .log-drill-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;
+    }
+    .log-drill-title {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.3rem; font-weight: 900; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--text);
+    }
+    .log-date-label {
+      font-size: 0.7rem; color: var(--muted); margin-top: 2px;
+    }
+
+    /* Log prediction cards — shifted palette */
+    .player-card.log-card::before { background: var(--tcolor, var(--log-chalk)); box-shadow: 2px 0 12px var(--tcolor, var(--log-chalk)); }
+    .player-card.log-card .rank-badge { color: var(--tcolor, var(--log-chalk)); }
+    .player-card.log-card .score-num { color: var(--log-score-color, var(--log-chalk)); }
+    .player-card.log-card .slot-badge {
+      color: var(--log-score-color, var(--log-chalk));
+      background: rgba(123,164,200,0.08);
+      border-color: rgba(123,164,200,0.2);
+    }
+    .player-card.log-card .mult-badge {
+      background: rgba(123,164,200,0.08); color: var(--log-chalk);
+      border-color: rgba(123,164,200,0.2);
+    }
+
+    /* Actual RS overlay on log cards */
+    .actual-rs-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 0.68rem; font-weight: 700; padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .actual-rs-pill.hit { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+    .actual-rs-pill.miss { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
+
+    /* Upload section in log drill-down */
+    .log-upload-section {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px; margin-bottom: 16px;
+    }
+    .log-upload-title {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px;
+    }
+    .log-upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .log-upload-btn {
+      padding: 12px 10px;
+      background: var(--surface); border: 1px solid var(--border-bright);
+      border-radius: 10px; cursor: pointer; transition: all 0.2s; text-align: center;
+    }
+    .log-upload-btn:hover { border-color: var(--log-chalk); }
+    .log-upload-btn.done { border-color: var(--green); background: rgba(34,197,94,0.06); }
+    .log-upload-btn-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 2px;
+    }
+    .log-upload-btn.done .log-upload-btn-label { color: var(--green); }
+    .log-upload-btn-sub { font-size: 0.62rem; color: var(--muted); }
+    .log-upload-solo {
+      width: 100%;
+      padding: 12px;
+      background: var(--surface); border: 1px solid var(--border-bright);
+      border-radius: 10px; cursor: pointer; transition: all 0.2s;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.82rem; font-weight: 800;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+    }
+    .log-upload-solo:hover { border-color: var(--log-chalk); }
+    .log-upload-solo.done { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.06); }
+    input[type="file"].hidden-file { display: none; }
+
+    /* Result cards */
+    .result-section-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.75rem; font-weight: 800; letter-spacing: 0.15em;
+      text-transform: uppercase; color: var(--text-dim);
+      display: flex; align-items: center; gap: 8px; margin: 20px 0 12px;
+    }
+    .result-badge {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 4px;
+    }
+    .result-badge.win { background: rgba(212,166,64,0.15); color: var(--log-win); border: 1px solid rgba(212,166,64,0.3); }
+    .result-badge.opt { background: rgba(155,128,200,0.15); color: var(--log-opt); border: 1px solid rgba(155,128,200,0.3); }
+
+    .winning-draft-card {
+      background: var(--surface);
+      border: 1px solid rgba(212,166,64,0.25);
+      border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px;
+      opacity: 0; transform: translateY(12px);
+      animation: fadeUp 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
+    }
+    .winning-draft-rank {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--log-win); margin-bottom: 8px;
+    }
+    .winning-draft-score {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.6rem; font-weight: 900; color: var(--log-win); float: right;
+    }
+    .winning-draft-player {
+      font-size: 0.78rem; color: var(--text-dim); padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+    }
+    .winning-draft-player:last-child { border-bottom: none; }
+    .winning-draft-player b { color: var(--text); }
   </style>
 </head>
 <body>
@@ -437,8 +652,16 @@
     <div id="predSavedChip" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--green);padding:4px 10px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px"></div>
   </header>
 
-  <!-- ══ OPTIMIZER VIEW ══ -->
-  <div id="viewOptimizer">
+  <!-- ══ TOP TAB NAVIGATION ══ -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
+    <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log</button>
+    <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
+    <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Lab</button>
+  </nav>
+
+  <!-- ══ TAB: PREDICTIONS ══ -->
+  <div id="tab-predictions" class="tab-page active">
 
     <!-- Today's Top 5 (slate) -->
     <div class="section-label">Today's Top 5</div>
@@ -472,56 +695,90 @@
     <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:#fbbf24;padding:6px 12px;text-align:center;letter-spacing:0.3px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;margin-bottom:14px"></div>
     <div id="picksList"></div>
 
-    <div class="divider"></div>
+  </div>
 
-    <!-- Upload Results -->
-    <div class="section-label">Track Results</div>
-    <button class="analyze-btn" style="background:var(--upside);box-shadow:0 4px 20px var(--upside-glow)" onclick="openUploadModal()">
-      Upload Draft Results
-    </button>
-    <div id="uploadStatus" style="display:none;font-size:0.75rem;color:var(--green);text-align:center;margin-top:-16px;margin-bottom:16px"></div>
+  <!-- ══ TAB: LOG ══ -->
+  <div id="tab-log" class="tab-page">
+
+    <!-- Date strip -->
+    <div class="date-strip" id="logDateStrip"></div>
+
+    <!-- Grid view -->
+    <div id="logGridView">
+      <div class="section-label" id="logGridLabel">Games</div>
+      <div class="log-game-grid" id="logGameGrid">
+        <div class="empty-state" style="grid-column:1/-1">
+          <span class="icon">📅</span>
+          <p>Select a date to view game log.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drill-down view -->
+    <div id="logDrillView" style="display:none">
+      <button class="back-btn" onclick="closeLogDrilldown()">← Back</button>
+      <div class="log-drill-header">
+        <div>
+          <div class="log-drill-title" id="logDrillTitle">Full Slate</div>
+          <div class="log-date-label" id="logDrillDate"></div>
+        </div>
+      </div>
+
+      <!-- Prediction cards (log palette) -->
+      <div class="mode-tabs" id="logDrillTabs">
+        <button class="mode-tab active" data-t="chalk" onclick="switchLogTab('chalk')">⚡ Starting 5</button>
+        <button class="mode-tab" data-t="upside" onclick="switchLogTab('upside')">🚀 Moonshot</button>
+      </div>
+      <div id="logPredCards"></div>
+
+      <!-- Upload section -->
+      <div class="log-upload-section" id="logUploadSection">
+        <div class="log-upload-title">Upload Results</div>
+        <div id="logUploadSlate" style="display:none">
+          <div class="log-upload-grid">
+            <div class="log-upload-btn" id="logUploadRSBtn" onclick="triggerLogUpload('real_scores')">
+              <span class="log-upload-btn-label">Real Scores</span>
+              <span class="log-upload-btn-sub">Daily draft stats screenshot</span>
+            </div>
+            <div class="log-upload-btn" id="logUploadWinBtn" onclick="triggerLogUpload('winning_drafts')">
+              <span class="log-upload-btn-label">Top Drafts</span>
+              <span class="log-upload-btn-sub">Leaderboard screenshot</span>
+            </div>
+          </div>
+        </div>
+        <div id="logUploadGame" style="display:none">
+          <button class="log-upload-solo" id="logUploadGameBtn" onclick="triggerLogUpload('winning_drafts')">
+            Upload Winning Drafts
+          </button>
+        </div>
+        <div id="logUploadStatus" style="display:none;font-size:0.72rem;color:var(--text-dim);margin-top:10px;text-align:center"></div>
+      </div>
+
+      <!-- Hidden file inputs -->
+      <input type="file" accept="image/*" id="logFileInputRS" class="hidden-file" onchange="handleLogFile(this,'real_scores')">
+      <input type="file" accept="image/*" id="logFileInputWin" class="hidden-file" onchange="handleLogFile(this,'winning_drafts')">
+
+      <!-- Results section -->
+      <div id="logResultSection"></div>
+    </div>
 
   </div>
 
-  <!-- ══ SCREENSHOT UPLOAD MODAL ══ -->
-  <div class="modal-overlay hidden" id="uploadModal">
-    <div class="modal-box">
-      <div class="modal-header">Upload Draft Results</div>
-      <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
-        Upload a screenshot of your Daily Draft Stats from the Real Sports app. The AI will extract player data automatically.
-      </p>
+  <!-- ══ TAB: LINE ══ -->
+  <div id="tab-line" class="tab-page">
+    <div class="placeholder-page">
+      <div class="pl-icon">📈</div>
+      <h2>Line of the Day</h2>
+      <p>Coming soon</p>
+    </div>
+  </div>
 
-      <!-- Step 1: Upload -->
-      <div id="uploadStep1">
-        <div id="uploadPreview" style="display:none;margin-bottom:12px">
-          <img id="uploadImg" style="width:100%;border-radius:8px;border:1px solid var(--border)">
-        </div>
-        <label style="display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:24px;border:2px dashed var(--border-bright);border-radius:12px;color:var(--text-dim);font-size:0.85rem;transition:border-color 0.2s;margin-bottom:14px"
-               onmouseover="this.style.borderColor='var(--chalk)'" onmouseout="this.style.borderColor='var(--border-bright)'">
-          <input type="file" accept="image/*" id="uploadFileInput" style="display:none" onchange="handleUploadFile(this)">
-          Select screenshot
-        </label>
-        <button class="modal-submit" id="parseBtn" disabled onclick="parseScreenshot()" style="width:100%">Parse Screenshot</button>
-      </div>
-
-      <!-- Step 2: Review parsed data -->
-      <div id="uploadStep2" style="display:none">
-        <div id="parsedResults"></div>
-        <div id="parseError" style="color:var(--red);font-size:0.75rem;margin:8px 0;display:none"></div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="modal-cancel" onclick="backToUpload()">Back</button>
-          <button class="modal-submit" id="saveToGitBtn" onclick="saveActualsToGit()">Save to Git</button>
-        </div>
-      </div>
-
-      <!-- Step 3: Success -->
-      <div id="uploadStep3" style="display:none;text-align:center;padding:24px 0">
-        <div style="font-size:2rem;margin-bottom:12px">&#10003;</div>
-        <div style="font-size:0.9rem;font-weight:600;color:var(--green);margin-bottom:8px">Results saved to Git!</div>
-        <div id="savedFilePath" style="font-size:0.72rem;color:var(--text-dim)"></div>
-      </div>
-
-      <button class="modal-cancel" onclick="closeUploadModal()" style="width:100%;margin-top:14px">Close</button>
+  <!-- ══ TAB: LAB ══ -->
+  <div id="tab-lab" class="tab-page">
+    <div class="placeholder-page">
+      <div class="pl-icon">🔬</div>
+      <h2>Lab</h2>
+      <p>Coming soon</p>
     </div>
   </div>
 
@@ -537,10 +794,34 @@ const TEAM_COLORS = {
   SAC:"#5a2d81",SAS:"#c4ced4",TOR:"#ce1141",UTA:"#f9a01b",WAS:"#002B5C"
 };
 
+// ── Global state ──
 let SLATE = null;
 let PICKS_DATA = null;
 let CURRENT_SLATE_TAB = 'chalk';
-let PARSED_PLAYERS = null;  // parsed screenshot data awaiting confirmation
+
+// Log state
+const LOG = {
+  selectedDate: null,
+  view: 'grid',          // 'grid' | 'drill'
+  scope: null,           // 'slate' | 'game_XXXX'
+  gameLabel: null,
+  datesWithData: new Set(),
+  data: null,            // {date, scopes, actuals}
+  currentTab: 'chalk',
+  uploadType: null,      // 'real_scores' | 'winning_drafts'
+  parsedRS: null,        // parsed real scores array
+  parsedWin: null,       // parsed winning drafts array
+  hindsightLineup: null,
+};
+
+// ── TAB SWITCHING ──
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+  if (tab === 'log' && !LOG.selectedDate) {
+    initLogPage();
+  }
+}
 
 // ── INIT ──
 (async function init() {
@@ -548,6 +829,7 @@ let PARSED_PLAYERS = null;  // parsed screenshot data awaiting confirmation
   initGameSelector();
 })();
 
+// ── GAME SELECTOR ──
 async function initGameSelector() {
   const sel = document.getElementById('gameSel');
   const btn = document.getElementById('analyzeBtn');
@@ -565,8 +847,7 @@ async function initGameSelector() {
       let label = g.label + (g.total ? ` \u00B7 O/U ${g.total}` : '');
       if (g.startTime) {
         const start = new Date(g.startTime);
-        const timeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        label += ` \u00B7 ${timeStr}`;
+        label += ` \u00B7 ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
       }
       if (g.locked) label += ' \uD83D\uDD12';
       o.textContent = label;
@@ -606,8 +887,6 @@ async function loadSlate() {
       ${lockChip}
     `;
     switchSlate('chalk');
-
-    // Auto-save predictions to GitHub
     savePredictions();
   } catch(e) {
     document.getElementById('slateList').innerHTML = `
@@ -649,17 +928,15 @@ async function runAnalysis() {
       throw new Error(err.error || `HTTP ${r.status}`);
     }
     const picksData = await r.json();
-    // If locked with empty lineups (cold start after lock), keep existing data
     if (picksData.locked && !picksData.lineups.chalk.length && PICKS_DATA) {
       PICKS_DATA.locked = true;
     } else {
       PICKS_DATA = picksData;
     }
     document.getElementById('picksTabsWrap').style.display = 'flex';
-    // Reset tab state to Starting 5
     document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t =>
       t.classList.toggle('active', t.dataset.t === 'chalk'));
-    // Show game script badge
+
     const badge = document.getElementById('gameScriptBadge');
     if (PICKS_DATA.gameScript) {
       const total = PICKS_DATA.game?.total;
@@ -668,7 +945,7 @@ async function runAnalysis() {
     } else {
       badge.style.display = 'none';
     }
-    // Show lock status
+
     const lockBadge = document.getElementById('gameLockBadge');
     if (PICKS_DATA.locked) {
       lockBadge.innerHTML = 'Picks locked — showing final predictions';
@@ -677,7 +954,7 @@ async function runAnalysis() {
     } else {
       lockBadge.style.display = 'none';
     }
-    // Show injury info
+
     const injBadge = document.getElementById('gameInjuryBadge');
     const injuries = PICKS_DATA.injuries || [];
     if (injuries.length > 0) {
@@ -687,9 +964,8 @@ async function runAnalysis() {
     } else {
       injBadge.style.display = 'none';
     }
-    renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
 
-    // Auto-save predictions to GitHub (includes this game now)
+    renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
     savePredictions();
   } catch(e) {
     document.getElementById('picksList').innerHTML = '';
@@ -702,7 +978,7 @@ async function runAnalysis() {
 }
 
 // ── RENDER CARDS ──
-function renderCards(picks, containerId, mode) {
+function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
     const msg = SLATE?.no_games_yet
@@ -713,18 +989,36 @@ function renderCards(picks, containerId, mode) {
   }
 
   const isUpside = mode === 'upside';
-  const scoreColor = isUpside ? 'var(--upside)' : 'var(--chalk)';
+  const isLog = opts.log || false;
+  const scoreColor = isLog
+    ? (isUpside ? 'var(--log-upside)' : 'var(--log-chalk)')
+    : (isUpside ? 'var(--upside)' : 'var(--chalk)');
+  const actualsMap = opts.actualsMap || {};
 
   el.innerHTML = picks.map((p, i) => {
-    const tc = TEAM_COLORS[p.team] || '#4f8ef7';
-    const tcAlpha = tc.replace('#', '').match(/.{2}/g)
-      ? `rgba(${parseInt(tc.slice(1,3),16)},${parseInt(tc.slice(3,5),16)},${parseInt(tc.slice(5,7),16)},0.08)`
-      : 'rgba(79,142,247,0.08)';
+    const tc = TEAM_COLORS[p.team] || (isLog ? '#7ba4c8' : '#4f8ef7');
+    const tcAlpha = (() => {
+      const hex = tc.replace('#','');
+      const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
+      return `rgba(${r},${g},${b},0.06)`;
+    })();
 
     const multBadge = p.est_mult ? `<span class="mult-badge">+${p.est_mult}x card</span>` : '';
 
+    // Actual RS pill for log cards
+    let actualPill = '';
+    if (isLog) {
+      const act = actualsMap[p.name];
+      if (act !== undefined) {
+        const pred = parseFloat(p.rating) || 0;
+        const cls = act >= pred * 0.85 ? 'hit' : 'miss';
+        actualPill = `<span class="actual-rs-pill ${cls}">RS ${act}</span>`;
+      }
+    }
+
     const statsHtml = [
       multBadge,
+      actualPill,
       p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
       p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
       p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,
@@ -734,21 +1028,24 @@ function renderCards(picks, containerId, mode) {
       (p._decline && p._decline < 0.85) && `<div class="stat-pill" style="color:#f43f5e"><b>↓${Math.round((1-p._decline)*100)}%</b> usage</div>`,
     ].filter(Boolean).join('');
 
+    const logCardClass = isLog ? ' log-card' : '';
+    const logScoreColorVar = isLog ? `--log-score-color:${scoreColor};` : '';
+
     return `
-      <div class="player-card" style="--tcolor:${tc};--tcolor-alpha:${tcAlpha};animation-delay:${i*0.06}s">
-        <div class="rank-badge">${p.slot}</div>
+      <div class="player-card${logCardClass}" style="--tcolor:${tc};--tcolor-alpha:${tcAlpha};${logScoreColorVar}${!isLog ? `--score-color:${scoreColor};` : ''}animation-delay:${i*0.06}s">
+        <div class="rank-badge">${p.slot || (i+1)}</div>
         <div class="player-info">
           <div class="player-meta">
-            ${p.team || '—'} <span class="pos-pill">${p.pos}</span>${p.injury_status ? ` <span class="injury-badge">${p.injury_status}</span>` : ''}
+            ${p.team || '—'} <span class="pos-pill">${p.pos || '—'}</span>${p.injury_status ? ` <span class="injury-badge">${p.injury_status}</span>` : ''}
           </div>
           <div class="player-name">${p.name}</div>
           <div class="stat-pills">${statsHtml}</div>
         </div>
-        <div class="score-col" style="--score-color:${scoreColor}">
+        <div class="score-col" style="${isLog ? `--score-color:${scoreColor};` : `--score-color:${scoreColor};`}">
           <div class="score-num">${p.rating}</div>
           <span class="score-label">${isUpside ? 'moonshot' : 'projected'}</span>
-          <div class="slot-badge" style="background:${isUpside?'rgba(249,115,22,0.1)':'rgba(79,142,247,0.1)'};border-color:${isUpside?'rgba(249,115,22,0.25)':'rgba(79,142,247,0.25)'}">
-            ${p.slot}
+          <div class="slot-badge" style="background:${isUpside?(isLog?'rgba(184,152,120,0.08)':'rgba(249,115,22,0.1)'):(isLog?'rgba(123,164,200,0.08)':'rgba(79,142,247,0.1)')};border-color:${isUpside?(isLog?'rgba(184,152,120,0.2)':'rgba(249,115,22,0.25)'):(isLog?'rgba(123,164,200,0.2)':'rgba(79,142,247,0.25)')}">
+            ${p.slot || '—'}
           </div>
         </div>
       </div>`;
@@ -784,147 +1081,379 @@ async function savePredictions() {
   }
 }
 
-// ── SCREENSHOT UPLOAD FLOW ──
-function openUploadModal() {
-  PARSED_PLAYERS = null;
-  document.getElementById('uploadStep1').style.display = 'block';
-  document.getElementById('uploadStep2').style.display = 'none';
-  document.getElementById('uploadStep3').style.display = 'none';
-  document.getElementById('uploadPreview').style.display = 'none';
-  document.getElementById('uploadFileInput').value = '';
-  document.getElementById('parseBtn').disabled = true;
-  document.getElementById('uploadModal').classList.remove('hidden');
+// ════════════════════════════════════════════════════════
+// ── LOG PAGE ──
+// ════════════════════════════════════════════════════════
+
+async function initLogPage() {
+  // Build date strip for last 30 days
+  const today = new Date();
+  const strip = document.getElementById('logDateStrip');
+  strip.innerHTML = '';
+
+  // Load dates with data
+  try {
+    const r = await fetch('/api/log/dates');
+    if (r.ok) {
+      const dates = await r.json();
+      dates.forEach(d => LOG.datesWithData.add(d));
+    }
+  } catch(e) { /* non-fatal */ }
+
+  // Build chips: today + 29 prior days
+  const chips = [];
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const iso = d.toISOString().slice(0, 10);
+    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
+    const numLabel = d.getDate();
+    const hasData = LOG.datesWithData.has(iso);
+    chips.push({ iso, dayLabel, numLabel, hasData, isToday: i === 0 });
+  }
+
+  strip.innerHTML = chips.map(c => `
+    <button class="date-chip${c.isToday ? ' active' : ''}" data-date="${c.iso}" onclick="selectLogDate('${c.iso}')">
+      <span class="date-chip-day">${c.dayLabel}</span>
+      <span class="date-chip-num">${c.numLabel}</span>
+      <span class="date-chip-dot${c.hasData ? '' : ' hidden-dot'}"></span>
+    </button>`).join('');
+
+  // Auto-select today
+  const todayIso = today.toISOString().slice(0, 10);
+  selectLogDate(todayIso);
 }
 
-function closeUploadModal() {
-  document.getElementById('uploadModal').classList.add('hidden');
+async function selectLogDate(dateStr) {
+  // Update strip selection
+  document.querySelectorAll('.date-chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.date === dateStr));
+
+  LOG.selectedDate = dateStr;
+  LOG.data = null;
+  closeLogDrilldown();
+
+  // Load data
+  const grid = document.getElementById('logGameGrid');
+  grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">⏳</span><p>Loading...</p></div>`;
+
+  try {
+    const r = await fetch(`/api/log/get?date=${dateStr}`);
+    if (!r.ok) throw new Error('Failed to load log data');
+    LOG.data = await r.json();
+  } catch(e) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📡</span><p>Couldn't load data for this date.</p></div>`;
+    return;
+  }
+
+  renderLogGrid(dateStr);
 }
 
-function handleUploadFile(input) {
-  if (input.files && input.files[0]) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      document.getElementById('uploadImg').src = e.target.result;
-      document.getElementById('uploadPreview').style.display = 'block';
-      document.getElementById('parseBtn').disabled = false;
-    };
-    reader.readAsDataURL(input.files[0]);
+function renderLogGrid(dateStr) {
+  const data = LOG.data;
+  const grid = document.getElementById('logGameGrid');
+  const label = document.getElementById('logGridLabel');
+
+  const d = new Date(dateStr + 'T12:00:00');
+  const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+  label.textContent = dateLabel;
+
+  if (!data || !data.has_predictions) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>`;
+    return;
+  }
+
+  // Build game list from scopes
+  const scopes = data.scopes || {};
+  const gameScopes = Object.keys(scopes).filter(s => s.startsWith('game_'));
+  const hasSlate = 'slate' in scopes;
+  const hasActuals = data.has_actuals;
+
+  let html = '';
+
+  // Full Slate card
+  if (hasSlate) {
+    const playerCount = (scopes['slate']?.chalk?.length || 0) + (scopes['slate']?.upside?.length || 0);
+    html += `
+      <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
+        <div>
+          <div class="log-slate-card-label">Full Slate</div>
+          <div class="log-slate-card-sub">${playerCount} players</div>
+          ${hasActuals ? '<div class="log-has-data">Results available</div>' : ''}
+        </div>
+        <span style="color:var(--chalk);font-size:1.2rem">›</span>
+      </div>`;
+  }
+
+  // Per-game cards
+  gameScopes.forEach(scope => {
+    const label = scope.replace('game_', '');
+    const chalkCount = scopes[scope]?.chalk?.length || 0;
+    html += `
+      <div class="log-game-card" onclick="openLogDrilldown('${scope}', '${label}')">
+        <div class="log-game-matchup">${label}</div>
+        <div class="log-game-meta">${chalkCount} players</div>
+        ${hasActuals ? '<div class="log-has-data">Results</div>' : ''}
+      </div>`;
+  });
+
+  if (!html) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No data for this date.</p></div>`;
+    return;
+  }
+
+  grid.innerHTML = html;
+}
+
+function openLogDrilldown(scope, gameLabel) {
+  LOG.scope = scope;
+  LOG.gameLabel = gameLabel;
+  LOG.currentTab = 'chalk';
+  LOG.parsedRS = null;
+  LOG.parsedWin = null;
+  LOG.hindsightLineup = null;
+
+  document.getElementById('logGridView').style.display = 'none';
+  document.getElementById('logDrillView').style.display = 'block';
+
+  const d = new Date((LOG.selectedDate || '') + 'T12:00:00');
+  const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+
+  document.getElementById('logDrillTitle').textContent = gameLabel || scope;
+  document.getElementById('logDrillDate').textContent = dateLabel;
+
+  // Configure upload section
+  const isSlate = scope === 'slate';
+  document.getElementById('logUploadSlate').style.display = isSlate ? 'block' : 'none';
+  document.getElementById('logUploadGame').style.display = isSlate ? 'none' : 'block';
+
+  // Reset upload button states
+  document.getElementById('logUploadRSBtn')?.classList.remove('done');
+  document.getElementById('logUploadWinBtn')?.classList.remove('done');
+  document.getElementById('logUploadGameBtn')?.classList.remove('done');
+  document.getElementById('logUploadStatus').style.display = 'none';
+  document.getElementById('logResultSection').innerHTML = '';
+
+  renderLogDrillCards();
+}
+
+function closeLogDrilldown() {
+  document.getElementById('logGridView').style.display = 'block';
+  document.getElementById('logDrillView').style.display = 'none';
+}
+
+function switchLogTab(tab) {
+  LOG.currentTab = tab;
+  document.querySelectorAll('#logDrillTabs .mode-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.t === tab));
+  renderLogDrillCards();
+}
+
+function renderLogDrillCards() {
+  const data = LOG.data;
+  const scope = LOG.scope;
+  const tab = LOG.currentTab;
+
+  if (!data || !data.scopes || !data.scopes[scope]) {
+    document.getElementById('logPredCards').innerHTML = `<div class="empty-state"><span class="icon">📭</span><p>No predictions saved for this scope.</p></div>`;
+    return;
+  }
+
+  const players = data.scopes[scope][tab] || [];
+
+  // Build actuals map: player_name → actual_rs
+  const actualsMap = {};
+  if (data.actuals) {
+    data.actuals.forEach(a => {
+      if (a.player_name && a.actual_rs) {
+        actualsMap[a.player_name] = parseFloat(a.actual_rs);
+      }
+    });
+  }
+
+  // Normalize player objects from CSV format
+  const normalized = players.map((p, i) => ({
+    name: p.name || p.player_name || '',
+    team: p.team || '',
+    pos: p.pos || '',
+    rating: parseFloat(p.rating || p.predicted_rs || 0).toFixed(1),
+    est_mult: p.est_mult || p.est_card_boost || '',
+    predMin: p.predMin || p.pred_min || '',
+    slot: p.slot || `${i+1}`,
+  }));
+
+  renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap });
+}
+
+// ── LOG UPLOAD ──
+function triggerLogUpload(type) {
+  LOG.uploadType = type;
+  if (type === 'real_scores') {
+    document.getElementById('logFileInputRS').click();
+  } else {
+    document.getElementById('logFileInputWin').click();
   }
 }
 
-async function parseScreenshot() {
-  const btn = document.getElementById('parseBtn');
-  const file = document.getElementById('uploadFileInput').files[0];
+async function handleLogFile(input, type) {
+  const file = input.files?.[0];
   if (!file) return;
 
-  btn.disabled = true;
-  btn.innerHTML = '<div class="spinner"></div> Parsing...';
+  const statusEl = document.getElementById('logUploadStatus');
+  statusEl.textContent = 'Parsing screenshot...';
+  statusEl.style.display = 'block';
 
   try {
     const form = new FormData();
     form.append('file', file);
     const r = await fetch('/api/parse-screenshot', { method: 'POST', body: form });
     const data = await r.json();
-
     if (!r.ok) throw new Error(data.error || 'Parse failed');
-    if (!data.players || !data.players.length) throw new Error('No players found in screenshot');
+    if (!data.players?.length) throw new Error('No players found');
 
-    PARSED_PLAYERS = data.players;
-    renderParsedResults(PARSED_PLAYERS);
-    document.getElementById('uploadStep1').style.display = 'none';
-    document.getElementById('uploadStep2').style.display = 'block';
+    if (type === 'real_scores') {
+      LOG.parsedRS = data.players;
+      document.getElementById('logUploadRSBtn')?.classList.add('done');
+      // Save actuals to GitHub
+      await saveLogActuals(data.players);
+      // Update cards with actuals
+      if (LOG.data) {
+        LOG.data.actuals = data.players.map(p => ({
+          player_name: p.player_name || p.name || '',
+          actual_rs: p.actual_rs ?? '',
+        }));
+      }
+      renderLogDrillCards();
+      // Try hindsight if slate
+      if (LOG.scope === 'slate') {
+        await computeHindsight(data.players);
+      }
+    } else {
+      LOG.parsedWin = data.players;
+      document.getElementById('logUploadWinBtn')?.classList.add('done');
+      document.getElementById('logUploadGameBtn')?.classList.add('done');
+      renderWinningDrafts(data.players);
+    }
+
+    statusEl.textContent = 'Uploaded successfully';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
   } catch(e) {
-    const err = document.getElementById('parseError');
-    err.textContent = e.message;
-    err.style.display = 'block';
-    document.getElementById('uploadStep2').style.display = 'block';
-    document.getElementById('uploadStep1').style.display = 'none';
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Parse Screenshot';
+    statusEl.textContent = `Error: ${e.message}`;
   }
+
+  input.value = '';
 }
 
-function renderParsedResults(players) {
-  const el = document.getElementById('parsedResults');
-  let html = '<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px">Review parsed data — edit any incorrect values:</div>';
+async function saveLogActuals(players) {
+  try {
+    await fetch('/api/save-actuals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: LOG.selectedDate, players }),
+    });
+  } catch(e) { /* non-fatal */ }
+}
 
-  players.forEach((p, i) => {
-    const src = p.source === 'my_draft' ? 'My Draft' : p.source === 'highest_value' ? 'Top Value' : p.source || '';
-    html += `
-      <div class="score-row" style="grid-template-columns:1fr 55px 55px 55px;gap:6px">
-        <input type="text" value="${p.player_name || ''}" id="pName_${i}" style="font-size:0.78rem">
-        <input type="number" value="${p.actual_rs ?? ''}" id="pRS_${i}" placeholder="RS" step="0.1" style="font-size:0.78rem">
-        <input type="number" value="${p.actual_card_boost ?? ''}" id="pBoost_${i}" placeholder="Boost" step="0.1" style="font-size:0.78rem">
-        <input type="number" value="${p.drafts ?? ''}" id="pDrafts_${i}" placeholder="Drafts" style="font-size:0.78rem">
-      </div>`;
-  });
+async function computeHindsight(players) {
+  const hindsightPlayers = players
+    .filter(p => p.actual_rs != null && p.actual_rs > 0)
+    .map(p => ({
+      name: p.player_name || p.name || '',
+      actual_rs: p.actual_rs,
+      actual_card_boost: p.actual_card_boost || 0.3,
+    }));
+
+  if (hindsightPlayers.length < 5) return;
+
+  try {
+    const r = await fetch('/api/hindsight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ players: hindsightPlayers }),
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    LOG.hindsightLineup = data.lineup;
+    renderHindsightOptimal(data.lineup);
+  } catch(e) { /* non-fatal */ }
+}
+
+function renderWinningDrafts(players) {
+  const el = document.getElementById('logResultSection');
+  let html = el.innerHTML || '';
+
+  // Group by drafter if leaderboard, otherwise show flat list
+  const leaderboard = players.filter(p => p.source === 'leaderboard');
+
+  if (!leaderboard.length) {
+    // Flat list — top players by total_value
+    const sorted = [...players].sort((a,b) => (b.total_value||0) - (a.total_value||0)).slice(0,5);
+    html += `<div class="result-section-label"><span class="result-badge win">Top Drafts</span></div>`;
+    sorted.forEach((p, i) => {
+      html += `
+        <div class="winning-draft-card" style="animation-delay:${i*0.07}s">
+          <div class="winning-draft-rank">#${i+1} ${p.player_name || '—'}</div>
+          <div class="winning-draft-player" style="border-bottom:none">
+            <span>Total Value</span>
+            <b>${p.total_value || '—'}</b>
+          </div>
+        </div>`;
+    });
+  } else {
+    // Group by implied drafter — consecutive records
+    // (Claude parses leaderboard as flat; group by runs)
+    html += `<div class="result-section-label"><span class="result-badge win">Top 3 Winning Drafts</span></div>`;
+    // Attempt to group by total_score changes
+    const groups = [];
+    let cur = null;
+    leaderboard.forEach(p => {
+      if (p.total_score !== undefined && (!cur || p.total_score !== cur.score)) {
+        if (cur) groups.push(cur);
+        cur = { score: p.total_score, players: [p] };
+      } else if (cur) {
+        cur.players.push(p);
+      } else {
+        cur = { score: null, players: [p] };
+      }
+    });
+    if (cur) groups.push(cur);
+
+    groups.slice(0,3).forEach((g, gi) => {
+      html += `
+        <div class="winning-draft-card" style="animation-delay:${gi*0.08}s">
+          <div class="winning-draft-rank">#${gi+1} Draft${g.score ? ` — <span style="color:var(--log-win)">${g.score}</span>` : ''}</div>
+          ${g.players.map(p => `
+            <div class="winning-draft-player">
+              <b>${p.player_name || '—'}</b>
+              <span>RS ${p.actual_rs ?? '—'} × ${p.card_multiplier ?? '—'}</span>
+            </div>`).join('')}
+        </div>`;
+    });
+  }
 
   el.innerHTML = html;
 }
 
-function backToUpload() {
-  document.getElementById('uploadStep1').style.display = 'block';
-  document.getElementById('uploadStep2').style.display = 'none';
-  document.getElementById('parseError').style.display = 'none';
-}
+function renderHindsightOptimal(lineup) {
+  const el = document.getElementById('logResultSection');
+  if (!lineup || !lineup.length) return;
 
-async function saveActualsToGit() {
-  const btn = document.getElementById('saveToGitBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<div class="spinner"></div> Saving...';
+  let html = el.innerHTML || '';
+  html += `<div class="result-section-label"><span class="result-badge opt">Hindsight Optimal Draft</span></div>`;
 
-  // Collect edited data from form
-  const players = [];
-  if (PARSED_PLAYERS) {
-    PARSED_PLAYERS.forEach((p, i) => {
-      const name = document.getElementById(`pName_${i}`)?.value?.trim();
-      const rs = document.getElementById(`pRS_${i}`)?.value;
-      const boost = document.getElementById(`pBoost_${i}`)?.value;
-      const drafts = document.getElementById(`pDrafts_${i}`)?.value;
-      if (!name) return;
-      players.push({
-        player_name: name,
-        actual_rs: rs ? parseFloat(rs) : '',
-        actual_card_boost: boost ? parseFloat(boost) : '',
-        drafts: drafts ? parseInt(drafts) : '',
-        avg_finish: p.avg_finish || '',
-        total_value: p.total_value || '',
-        source: p.source || '',
-      });
-    });
-  }
+  lineup.forEach((p, i) => {
+    const tc = TEAM_COLORS[p.team] || '#9b80c8';
+    html += `
+      <div class="winning-draft-card" style="border-color:rgba(155,128,200,0.25);animation-delay:${i*0.06}s">
+        <div class="winning-draft-rank" style="color:var(--log-opt)">${p.slot} — ${p.name}</div>
+        <div class="winning-draft-player" style="border-bottom:none">
+          <span>Actual RS</span>
+          <b style="color:var(--log-opt)">${p.rating}</b>
+        </div>
+      </div>`;
+  });
 
-  if (!players.length) {
-    btn.disabled = false;
-    btn.innerHTML = 'Save to Git';
-    return;
-  }
-
-  try {
-    const r = await fetch('/api/save-actuals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ players }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Save failed');
-
-    document.getElementById('uploadStep2').style.display = 'none';
-    document.getElementById('uploadStep3').style.display = 'block';
-    document.getElementById('savedFilePath').textContent = data.path;
-
-    const status = document.getElementById('uploadStatus');
-    status.textContent = `Results saved: ${data.path}`;
-    status.style.display = 'block';
-  } catch(e) {
-    const err = document.getElementById('parseError');
-    err.textContent = e.message;
-    err.style.display = 'block';
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Save to Git';
-  }
+  el.innerHTML = html;
 }
 </script>
 </body>
