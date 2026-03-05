@@ -15,7 +15,7 @@ import requests
 from datetime import datetime, timezone
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_MODEL = "claude-opus-4-6"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
