@@ -2,7 +2,7 @@
 # MILP SLOT OPTIMIZER — Intelligent Draft Multiplier Assignment
 #
 # The Real Sports App assigns escalating multipliers to draft slots:
-#   MVP (2.0x) > Star (1.5x) > Pro (1.2x) > Utility (1.0x, 1.0x)
+#   Slot 1 (2.0x) > Slot 2 (1.8x) > Slot 3 (1.6x) > Slot 4 (1.4x) > Slot 5 (1.2x)
 #
 # Simple sort-and-assign (current approach) doesn't truly optimize the
 # compound product of player_score × slot_multiplier across all combinations.
@@ -26,8 +26,8 @@ except ImportError:
     PULP_AVAILABLE = False
 
 # Slot multipliers: Real Sports App draft slot values
-SLOT_MULTIPLIERS = [2.0, 1.5, 1.2, 1.0, 1.0]
-SLOT_LABELS = ["2.0x", "1.5x", "1.2x", "1.0x", "1.0x"]
+SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]
+SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 
 
 def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
@@ -196,6 +196,6 @@ def contrarian_score(player, spread=0):
         underdog_bonus = 1.1  # Competitive game with clear underdog
 
     # Additive formula: rating × (avg_slot + card_boost) × context multipliers
-    avg_slot = 1.34
+    avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
     c_score = base_rating * (avg_slot + card_boost) * closeness_boost * momentum * underdog_bonus
     return round(c_score, 2)

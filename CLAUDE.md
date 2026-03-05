@@ -10,7 +10,7 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 - Each player earns a **Real Score** (RS) based on in-game impact (not just box score stats)
 - Each player gets a **Card Boost** inversely proportional to how many people drafted them (popular players get low boosts, obscure players get high boosts)
 - **Total Value = Real Score x (Slot Multiplier + Card Boost)**
-- Slot multipliers: 2.0x, 1.5x, 1.2x, 1.0x, 1.0x (assigned to your 5 picks)
+- Slot multipliers: 2.0x, 1.8x, 1.6x, 1.4x, 1.2x (user manually assigns their 5 picks to slots pre-game)
 - The winning strategy is drafting **high-RS role players with huge card boosts**, not superstars
 
 ## Architecture

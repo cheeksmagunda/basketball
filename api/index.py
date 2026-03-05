@@ -438,26 +438,29 @@ def _est_card_boost(proj_min, pts, team_abbr):
     Uses a "hype score" — how attractive the player is to casual drafters —
     and maps it through exponential decay to a card boost.
 
-    Calibrated against March 3 actuals (winning drafts had 3.0-3.4x boosts):
+    Calibrated against March 3 + March 4 actuals:
       Wembanyama (36m, 24p, SA):   hype 9.5 → est +0.4x  (actual +0.3)
       Ant Edwards (37m, 26p):      hype 7.5 → est +0.5x  (actual +0.3)
       Bam (34m, 21p, MIA):         hype 7.0 → est +0.6x  (actual +0.7)
-      Jaylin Williams (20m, 8p):   hype 0.5 → est +3.0x  (actual +2.7)
-      Marcus Smart (25m, 10p):     hype 0.9 → est +2.7x  (actual +2.5)
-      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.1x  (actual +3.0)
-      Maxime Raynaud (18m, 10p):   hype 1.2 → est +2.5x  (actual +2.2)
-      N. Clifford (12m, 4p):       hype 0.1 → est +3.3x  (winning draft had ~3.2x)
+      Jrue Holiday (30m, 16p, BOS):hype 3.84→ est +1.0x  (actual +1.0) ✓
+      Jaylin Williams (20m, 8p):   hype 0.5 → est +2.9x  (actual +2.7)
+      Marcus Smart (25m, 10p):     hype 0.9 → est +2.6x  (actual +2.5)
+      Oso Ighodaro (18m, 7p):      hype 0.4 → est +3.0x  (actual +3.0) ✓
+      Walter Clayton Jr (28m,14p): hype 1.79→ est +2.1x  (actual +3.0) — under
+      N. Clifford (12m, 4p):       hype 0.1 → est +3.0x  (winning draft ~3.2x)
+
+    Cap is +3.0x (confirmed max in-game). Decay base tuned from 0.74→0.70
+    to differentiate stars from mid-tier players more sharply.
     """
     # Hype score — PPG² makes scoring stars disproportionately popular
     hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
     if team_abbr in _BIG_MARKET_TEAMS:
         hype *= 1.5
     # Exponential decay: high hype → low boost, low hype → high boost
-    # Raised coefficient from 3.0 to 3.4 and floor from 0.2 to 0.3 —
-    # March 3 winning drafts had card boosts of 3.0-3.4x for role players,
-    # our old model was underestimating by 0.3-0.5x.
-    boost = 3.4 * (0.74 ** hype) + 0.3
-    return round(min(max(boost, 0.2), 3.5), 1)
+    # Decay base 0.70 (was 0.74) sharpens drop-off for mid-tier popularity.
+    # Cap 3.0 (was 3.5) matches confirmed max observed in-game.
+    boost = 3.4 * (0.70 ** hype) + 0.3
+    return round(min(max(boost, 0.2), 3.0), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula — boosted defensive stats.
@@ -691,8 +694,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     card_boost = _est_card_boost(proj_min, pts, team_abbr)
 
     # EV score — card-adjusted expected value using additive formula
-    # Use average slot (1.34) for ranking; MILP uses exact slots
-    avg_slot = 1.34  # weighted avg of [2.0, 1.5, 1.2, 1.0, 1.0]
+    # Use average slot (1.6) for ranking; MILP uses exact slots
+    avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
     chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
 
     return {
