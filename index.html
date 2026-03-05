@@ -82,12 +82,12 @@
       z-index: 0;
     }
 
-    .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 80px; }
+    .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 170px; }
 
     /* ── HEADER ── */
     header {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 0;
+      padding: 14px 0 12px;
       border-bottom: 1px solid var(--border);
       margin-bottom: 0;
     }
@@ -111,52 +111,88 @@
       letter-spacing: 0.14em; display: block; margin-top: 1px;
     }
 
-    /* ── TOP TAB NAVIGATION — Segmented Control ── */
-    .tab-nav {
-      position: relative;
-      display: flex;
-      flex: 1;
-      padding: 0;
-      align-items: center;
+    /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
+    .bottom-nav {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 32px);
+      max-width: 468px;
+      background: rgba(14, 18, 32, 0.96);
+      border: 1px solid rgba(255,255,255,0.11);
+      border-radius: 22px;
+      padding: 8px;
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.07) inset;
+      z-index: 1000;
     }
-    .tab-nav-track {
+    /* Top text-selector row */
+    .bnav-text-row {
       position: relative;
       display: flex;
-      width: 100%;
-      background: rgba(255,255,255,0.045);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 11px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 13px;
       padding: 3px;
-      min-height: 38px;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      margin-bottom: 6px;
     }
-    /* Sliding pill — Apple glass style */
-    .tab-nav-pill {
+    .bnav-text-pill {
       position: absolute;
       top: 3px; bottom: 3px;
-      border-radius: 8px;
-      background: rgba(79,142,247,0.88);
-      border: 1px solid rgba(255,255,255,0.14);
-      box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(79,142,247,0.28);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.13);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.1) inset, 0 2px 6px rgba(0,0,0,0.25);
       transition: left 0.22s cubic-bezier(0.34,1.56,0.64,1), width 0.22s cubic-bezier(0.34,1.56,0.64,1);
       pointer-events: none;
       z-index: 0;
     }
-    .tab-btn {
+    .bnav-text-btn {
       position: relative; z-index: 1;
       flex: 1;
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.78rem; font-weight: 800; letter-spacing: 0.07em;
       text-transform: uppercase;
-      border: none; background: transparent; color: rgba(255,255,255,0.32);
+      border: none; background: transparent; color: rgba(255,255,255,0.28);
       cursor: pointer; transition: color 0.18s;
-      border-radius: 8px;
-      min-height: 32px;
-      display: flex; align-items: center; justify-content: center; gap: 3px;
+      border-radius: 10px;
+      min-height: 30px;
+      display: flex; align-items: center; justify-content: center;
     }
-    .tab-btn:hover { color: rgba(255,255,255,0.55); }
-    .tab-btn.active { color: #fff; }
+    .bnav-text-btn:hover { color: rgba(255,255,255,0.52); }
+    .bnav-text-btn.active { color: rgba(255,255,255,0.92); }
+    /* Bottom icon row */
+    .bnav-icon-row {
+      display: flex;
+      gap: 4px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 16px;
+      padding: 4px;
+    }
+    .bnav-icon-btn {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 5px;
+      padding: 10px 8px;
+      border: none; background: transparent; border-radius: 12px;
+      cursor: pointer; transition: all 0.2s;
+      color: rgba(255,255,255,0.32);
+      border: 1px solid transparent;
+    }
+    .bnav-icon-btn:hover { color: rgba(255,255,255,0.58); }
+    .bnav-icon-btn.active {
+      background: rgba(255,255,255,0.09);
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.1) inset;
+      color: #fff;
+    }
+    .bnav-icon svg { width: 22px; height: 22px; display: block; }
+    .bnav-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; line-height: 1;
+    }
 
 
     /* ── TAB PAGES ── */
@@ -989,17 +1025,38 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
-    <!-- ══ TOP TAB NAVIGATION — Segmented Control ══ -->
-    <nav class="tab-nav">
-      <div class="tab-nav-track" id="tabTrack">
-        <div class="tab-nav-pill" id="tabPill"></div>
-        <button class="tab-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
-        <button class="tab-btn" data-tab="line" onclick="switchTab('line')">Line</button>
-        <button class="tab-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
-        <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log</button>
-      </div>
-    </nav>
   </header>
+
+  <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
+  <nav class="bottom-nav" id="bottomNav">
+    <!-- Text selector row -->
+    <div class="bnav-text-row" id="bnavTextRow">
+      <div class="bnav-text-pill" id="bnavTextPill"></div>
+      <button class="bnav-text-btn active" data-tab="predictions" onclick="switchTab('predictions')">Predict</button>
+      <button class="bnav-text-btn" data-tab="line" onclick="switchTab('line')">Line</button>
+      <button class="bnav-text-btn" data-tab="lab" onclick="switchTab('lab')">Ben</button>
+      <button class="bnav-text-btn" data-tab="log" onclick="switchTab('log')">Log</button>
+    </div>
+    <!-- Icon row -->
+    <div class="bnav-icon-row">
+      <button class="bnav-icon-btn active" data-tab="predictions" onclick="switchTab('predictions')">
+        <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <span class="bnav-label">Predict</span>
+      </button>
+      <button class="bnav-icon-btn" data-tab="line" onclick="switchTab('line')">
+        <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+        <span class="bnav-label">Line</span>
+      </button>
+      <button class="bnav-icon-btn" data-tab="lab" onclick="switchTab('lab')">
+        <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <span class="bnav-label">Ben</span>
+      </button>
+      <button class="bnav-icon-btn" data-tab="log" onclick="switchTab('log')">
+        <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <span class="bnav-label">Log</span>
+      </button>
+    </div>
+  </nav>
 
   <!-- ══ TAB: PREDICTIONS ══ -->
   <div id="tab-predictions" class="tab-page active">
@@ -1244,7 +1301,8 @@ const LOG = {
 // TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.bnav-text-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   movePill(tab);
   setPillAccent(tab);
@@ -1254,9 +1312,9 @@ function switchTab(tab) {
 }
 
 function movePill(tab) {
-  const activeBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
-  const pill      = document.getElementById('tabPill');
-  const track     = document.getElementById('tabTrack');
+  const activeBtn = document.querySelector(`.bnav-text-btn[data-tab="${tab}"]`);
+  const pill      = document.getElementById('bnavTextPill');
+  const track     = document.getElementById('bnavTextRow');
   if (!activeBtn || !pill || !track) return;
   const trackRect = track.getBoundingClientRect();
   const btnRect   = activeBtn.getBoundingClientRect();
@@ -1274,17 +1332,17 @@ const TAB_ACCENT = {
 
 function setPillAccent(tab) {
   const a = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
-  const pill = document.getElementById('tabPill');
-  if (pill) {
-    pill.style.background = `rgba(${a.rgb}, 0.88)`;
-    pill.style.boxShadow  = `0 1px 0 rgba(255,255,255,0.18) inset, 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(${a.rgb}, 0.28)`;
-  }
+  // Color the active icon tile with a subtle accent glow
+  document.querySelectorAll('.bnav-icon-btn.active').forEach(btn => {
+    btn.style.boxShadow = `0 2px 10px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.1) inset, 0 0 12px rgba(${a.rgb}, 0.18)`;
+    btn.style.borderColor = `rgba(${a.rgb}, 0.25)`;
+  });
 }
 
 // Init pill position after DOM is ready, and reposition on resize
 window.addEventListener('load', () => {
   setTimeout(() => {
-    const pill = document.getElementById('tabPill');
+    const pill = document.getElementById('bnavTextPill');
     // Disable transition for initial placement (no jarring slide from left edge)
     if (pill) pill.style.transition = 'none';
     movePill('predictions');
@@ -1296,8 +1354,8 @@ window.addEventListener('load', () => {
   }, 30);
 });
 window.addEventListener('resize', () => {
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'predictions';
-  const pill = document.getElementById('tabPill');
+  const activeTab = document.querySelector('.bnav-text-btn.active')?.dataset?.tab || 'predictions';
+  const pill = document.getElementById('bnavTextPill');
   if (pill) pill.style.transition = 'none';
   movePill(activeTab);
   requestAnimationFrame(() => { if (pill) pill.style.transition = ''; });
