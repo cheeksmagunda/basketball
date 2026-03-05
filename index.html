@@ -1083,6 +1083,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   movePill(tab);
+  setPillAccent(tab);
   if (tab === 'log' && !LOG.selectedDate) initLogPage();
   if (tab === 'line') initLinePage();
   if (tab === 'lab')  initLabPage();
@@ -1114,13 +1115,6 @@ function setPillAccent(tab) {
     pill.style.background = a.color;
     pill.style.boxShadow  = `0 0 18px ${a.glow}`;
   }
-}
-
-// Override switchTab to also change accent color
-const _switchTabOrig = switchTab;
-function switchTab(tab) {
-  _switchTabOrig(tab);
-  setPillAccent(tab);
 }
 
 // Init pill position after DOM is ready, and reposition on resize
@@ -1847,8 +1841,10 @@ async function initLinePage() {
 
   } catch(e) {
     document.getElementById('lineLoading').style.display = 'none';
+    const emptyEl = document.getElementById('lineEmpty');
+    emptyEl.querySelector('.icon').textContent = '📡';
     document.getElementById('lineEmptyMsg').textContent = 'Couldn\'t load line pick. Check backend.';
-    document.getElementById('lineEmpty').style.display = 'flex';
+    emptyEl.style.display = 'flex';
   }
 
   // Load history
@@ -1868,7 +1864,7 @@ function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const signals = pick.signals || [];
   const signalChips = signals.slice(0, 3).map(s =>
-    `<span class="line-signal-chip">${s.type.replace('_',' ')}</span>`
+    `<span class="line-signal-chip">${s.type.replace(/_/g,' ')}</span>`
   ).join('');
 
   return `
@@ -1963,11 +1959,20 @@ const LAB = {
   briefing: null,     // latest briefing
   config: null,       // current config
   initialized: false,
+  initAt: 0,          // timestamp of last init (ms)
 };
 
 async function initLabPage() {
-  if (LAB.initialized) return;
+  // Re-check status if tab revisited after 10+ minutes (lock state may have changed)
+  const stale = Date.now() - LAB.initAt > 10 * 60 * 1000;
+  if (LAB.initialized && !stale) return;
   LAB.initialized = true;
+  LAB.initAt = Date.now();
+  // Clear prior messages on stale re-init (lock state may have changed)
+  if (stale) {
+    LAB.messages = [];
+    document.getElementById('labMessages').innerHTML = '';
+  }
 
   document.getElementById('labLoading').style.display = 'block';
   document.getElementById('labLocked').style.display   = 'none';
@@ -2177,25 +2182,34 @@ async function executeLabAction(action) {
     // Don't auto-apply — show confirm button
     const msgEl = document.createElement('div');
     msgEl.className = 'lab-msg assistant';
+    const descText = action.description || JSON.stringify(action.changes);
     msgEl.innerHTML = `
       <div class="lab-msg-label">Ben</div>
-      <div>Ready to apply: <b>${action.description || JSON.stringify(action.changes)}</b></div>
+      <div>Ready to apply: <b></b></div>
       <div style="margin-top:10px;display:flex;gap:8px">
-        <button onclick="applyLabConfig(${JSON.stringify(action.changes).replace(/"/g,'&quot;')}, '${(action.description||'').replace(/'/g,'')}', this.parentElement.parentElement)"
+        <button class="lab-apply-btn"
           style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
           Apply
         </button>
-        <button onclick="this.parentElement.parentElement.querySelector('div').textContent='Change declined.'"
+        <button class="lab-decline-btn"
           style="background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:6px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
           Decline
         </button>
       </div>`;
+    msgEl.querySelector('div b').textContent = descText;
+    msgEl.querySelector('.lab-apply-btn').addEventListener('click', () => applyLabConfig(action.changes, action.description || '', msgEl));
+    msgEl.querySelector('.lab-decline-btn').addEventListener('click', () => {
+      msgEl.querySelector('div').textContent = 'Change declined.';
+      msgEl.querySelector('div + div').remove();
+    });
     document.getElementById('labMessages').appendChild(msgEl);
     msgEl.scrollIntoView({behavior:'smooth'});
   }
 }
 
 async function applyLabConfig(changes, description, msgEl) {
+  const statusDiv = msgEl.querySelectorAll('div')[1]; // second div = "Ready to apply"
+  const btnDiv    = msgEl.querySelector('.lab-apply-btn')?.parentElement;
   try {
     const r = await fetch('/api/lab/update-config', {
       method: 'POST',
@@ -2204,16 +2218,16 @@ async function applyLabConfig(changes, description, msgEl) {
     });
     const result = await r.json();
     if (result.error) {
-      msgEl.querySelector('div').textContent = `Error: ${result.error}`;
+      if (statusDiv) statusDiv.textContent = `Error: ${result.error}`;
       return;
     }
-    msgEl.querySelector('div').textContent = `Applied — now config v${result.version}.`;
-    msgEl.querySelector('div + div').remove();
+    if (statusDiv) statusDiv.textContent = `Applied — now config v${result.version}.`;
+    if (btnDiv) btnDiv.remove();
     document.getElementById('labConfigVersion').textContent = `Config v${result.version}`;
     appendLabMessage('user', `Config updated to v${result.version}: ${description}`, true);
     await labCallClaude();
   } catch(e) {
-    msgEl.querySelector('div').textContent = 'Failed to apply config change.';
+    if (statusDiv) statusDiv.textContent = 'Failed to apply config change.';
   }
 }
 
@@ -2225,9 +2239,13 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
   el.className = `lab-msg ${role}`;
 
   if (role === 'assistant') {
-    // Convert basic markdown (bold, newlines)
+    // Convert basic markdown: code blocks, bold, italic, newlines
     const formatted = content
+      .replace(/```[\w]*\n?([\s\S]*?)```/g, (_,c) =>
+        `<pre style="background:rgba(0,0,0,0.35);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.74rem;overflow-x:auto;white-space:pre-wrap;margin:6px 0">${c.trim()}</pre>`)
+      .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);border-radius:3px;padding:1px 4px;font-size:0.8em">$1</code>')
       .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
       .replace(/\n/g, '<br>');
     el.innerHTML = `<div class="lab-msg-label">Ben</div><div>${formatted}</div>`;
   } else {

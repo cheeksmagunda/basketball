@@ -1499,13 +1499,15 @@ async def line_history():
 # PHASE 3: LAB
 # ═════════════════════════════════════════════════════════════════════════════
 
+_GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0}
+
 def _all_games_final(games):
     """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min."""
     if not games:
         return True, 0, 0
-    cached = _cg("lab_games_final")
-    if cached is not None:
-        return tuple(cached)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if _GAMES_FINAL_CACHE["result"] is not None and now_ts - _GAMES_FINAL_CACHE["ts"] < 180:
+        return tuple(_GAMES_FINAL_CACHE["result"])
     today_str = _et_date().strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
     finals = 0
@@ -1518,11 +1520,8 @@ def _all_games_final(games):
             remaining += 1
     all_final = remaining == 0 and finals > 0
     result = (all_final, remaining, finals)
-    # Cache for 3 minutes (games take time to be marked final)
-    # Use a short-lived cache via filename with minute granularity
-    try:
-        _cs("lab_games_final", list(result))
-    except: pass
+    _GAMES_FINAL_CACHE["result"] = list(result)
+    _GAMES_FINAL_CACHE["ts"] = now_ts
     return result
 
 
