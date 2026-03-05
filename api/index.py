@@ -70,12 +70,19 @@ def _github_write_file(path, content, message="auto-update"):
         return {"ok": True, "path": path}
     return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
 
+def _csv_escape(v):
+    """Escape a value for CSV (quote if it contains commas or quotes)."""
+    s = str(v)
+    if "," in s or '"' in s or "\n" in s:
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
 def _predictions_to_csv(lineups, scope):
     """Convert lineup dicts to CSV rows."""
     rows = []
     for lineup_type, players in [("chalk", lineups.get("chalk", [])), ("upside", lineups.get("upside", []))]:
         for p in players:
-            rows.append(",".join(str(v) for v in [
+            rows.append(",".join(_csv_escape(v) for v in [
                 scope, lineup_type, p.get("slot", ""), p.get("name", ""),
                 p.get("id", ""), p.get("team", ""), p.get("pos", ""),
                 p.get("rating", ""), p.get("est_mult", ""),
@@ -543,7 +550,7 @@ def _game_script_label(total):
 
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
-                   cascade_bonus=0.0, cal_bias=0.0, is_b2b=False):
+                   cascade_bonus=0.0, is_b2b=False):
     if pinfo.get("is_out"): return None
     # Skip day-to-day and doubtful players — high scratch risk
     if pinfo.get("injury_status") in ("DTD", "DOUBT"): return None
@@ -677,10 +684,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     raw_linear = real_result / 5.0
     raw_score = min(raw_linear ** 0.75, 15.0)
 
-    # Apply calibration bias from user-uploaded actuals
-    if cal_bias != 0.0:
-        raw_score += cal_bias
-
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
     # Card boost is INVERSELY proportional to ownership — the app rewards
@@ -716,11 +719,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "injury_status": pinfo.get("injury_status", ""),
     }
 
-def _run_game(game, cal_bias=0.0):
+def _run_game(game):
     cache_key = f"game_proj_{game['gameId']}"
-    if cal_bias == 0.0:
-        cached = _cg(cache_key)
-        if cached: return cached
+    cached = _cg(cache_key)
+    if cached: return cached
 
     home_r = fetch_roster(game["home"]["id"], game["home"]["abbr"])
     away_r = fetch_roster(game["away"]["id"], game["away"]["abbr"])
@@ -757,8 +759,7 @@ def _run_game(game, cal_bias=0.0):
         # Check if this player's team is on a back-to-back
         b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
         proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
-                              cascade_bonus=cascade_bonus, cal_bias=cal_bias,
-                              is_b2b=bool(b2b))
+                              cascade_bonus=cascade_bonus, is_b2b=bool(b2b))
         if proj:
             out.append(proj)
     _cs(cache_key, out)
@@ -964,7 +965,7 @@ async def get_games():
     return games
 
 @app.get("/api/slate")
-async def get_slate(cal_bias: float = Query(0.0)):
+async def get_slate():
     games = fetch_games()
     if not games:
         return {"date": date.today().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
@@ -989,28 +990,26 @@ async def get_slate(cal_bias: float = Query(0.0)):
         return {"date": date.today().isoformat(), "games": games,
                 "lineups": {"chalk": [], "upside": []}, "locked": True}
 
-    if cal_bias == 0.0:
-        cached = _cg("slate_v5")
-        if cached:
-            cached["locked"] = locked
-            return cached
+    cached = _cg("slate_v5")
+    if cached:
+        cached["locked"] = locked
+        return cached
 
     all_proj = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for fut in as_completed({pool.submit(_run_game, g, cal_bias): g for g in games}):
+        for fut in as_completed({pool.submit(_run_game, g): g for g in games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
     result = {"date": date.today().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
-    if cal_bias == 0.0:
-        _cs("slate_v5", result)
+    _cs("slate_v5", result)
     if locked:
         _ls("slate_v5_locked", result)
     return result
 
 @app.get("/api/picks")
-async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
+async def get_picks(gameId: str = Query(...)):
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
         return JSONResponse({"error": "Game not found"}, status_code=404)
@@ -1037,7 +1036,7 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
                 "lineups": {"chalk": [], "upside": []},
                 "locked": True, "injuries": [], "temporal": {}}
 
-    projections = _run_game(game, cal_bias=cal_bias)
+    projections = _run_game(game)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
     chalk, upside = _build_game_lineups(projections, game)
@@ -1068,8 +1067,7 @@ async def get_picks(gameId: str = Query(...), cal_bias: float = Query(0.0)):
               "injuries": injuries,
               "temporal": temporal_meta}
     # Cache picks so they survive as lock snapshot if slate locks later
-    if cal_bias == 0.0:
-        _cs(f"picks_{gameId}", result)
+    _cs(f"picks_{gameId}", result)
     return result
 
 @app.get("/api/history")
@@ -1202,7 +1200,7 @@ async def save_actuals(payload: dict = Body(...)):
 
     # Add new rows
     for p in players:
-        rows.append(",".join(str(p.get(k, "")) for k in [
+        rows.append(",".join(_csv_escape(p.get(k, "")) for k in [
             "player_name", "actual_rs", "actual_card_boost",
             "drafts", "avg_finish", "total_value", "source"
         ]))
