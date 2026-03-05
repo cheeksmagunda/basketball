@@ -414,7 +414,9 @@ def _fetch_athlete(pid):
             blended["recent_pts"] = recent["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_stl"] = recent["stl"]
+            blended["season_stl"] = season["stl"]
             blended["recent_blk"] = recent["blk"]
+            blended["season_blk"] = season["blk"]
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
@@ -422,7 +424,9 @@ def _fetch_athlete(pid):
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_stl"] = season["stl"]
+            blended["season_stl"] = season["stl"]
             blended["recent_blk"] = season["blk"]
+            blended["season_blk"] = season["blk"]
     except Exception as e:
         print(f"Stat parse error pid={pid}: {e}")
         return None
@@ -796,8 +800,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         # Recent vs season stats — used by line engine for trend detection
         "season_pts": round(stats.get("season_pts", pts), 1),
         "recent_pts": round(stats.get("recent_pts", pts), 1),
-        "season_stl": round(stats.get("recent_stl", stl), 1),  # note: blended data
+        "season_stl": round(stats.get("season_stl", stl), 1),
         "recent_stl": round(stats.get("recent_stl", stl), 1),
+        "season_blk": round(stats.get("season_blk", blk), 1),
         "recent_blk": round(stats.get("recent_blk", blk), 1),
         "injury_status": pinfo.get("injury_status", ""),
     }
