@@ -1125,11 +1125,24 @@ function switchTab(tab) {
 
 // Init pill position after DOM is ready, and reposition on resize
 window.addEventListener('load', () => {
-  setTimeout(() => { movePill('predictions'); setPillAccent('predictions'); }, 50);
+  setTimeout(() => {
+    const pill = document.getElementById('tabPill');
+    // Disable transition for initial placement (no jarring slide from left edge)
+    if (pill) pill.style.transition = 'none';
+    movePill('predictions');
+    setPillAccent('predictions');
+    // Re-enable animation after first placement
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (pill) pill.style.transition = '';
+    }));
+  }, 30);
 });
 window.addEventListener('resize', () => {
   const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'predictions';
+  const pill = document.getElementById('tabPill');
+  if (pill) pill.style.transition = 'none';
   movePill(activeTab);
+  requestAnimationFrame(() => { if (pill) pill.style.transition = ''; });
 });
 
 // ── INIT ──
@@ -1795,14 +1808,22 @@ async function initLinePage() {
 
     if (!data.pick) {
       const msgs = {
-        no_api_key:       'Odds API key not configured.',
+        no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',
-        no_edges:         'No strong edges found on today\'s props.',
-        odds_unavailable: 'Odds API is unavailable. Try again later.',
+        no_edges:         'No strong edges found on today\'s props. Check back closer to tip-off.',
+        odds_unavailable: 'Odds API unavailable. Try refreshing.',
         no_projections:   'Could not load player projections.',
       };
+      const icons = {
+        no_games:  '🏀',
+        no_edges:  '📊',
+        no_api_key:'🔑',
+        default:   '📡',
+      };
+      const emptyEl = document.getElementById('lineEmpty');
+      emptyEl.querySelector('.icon').textContent = icons[data.error] || icons.default;
       document.getElementById('lineEmptyMsg').textContent = msgs[data.error] || 'No line pick available.';
-      document.getElementById('lineEmpty').style.display = 'flex';
+      emptyEl.style.display = 'flex';
       return;
     }
 
