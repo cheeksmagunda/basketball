@@ -32,12 +32,40 @@ server.py              — Local dev server (uvicorn)
 
 ## UI Structure
 
-4-tab segmented control navigation: **Predict | Line | Ben | History**
+4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | History**
 
-- **Predict**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis
+- **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation
 - **Line**: Line of the Day — best player prop edge from Odds API (gold accent)
-- **Ben**: Model Lab — Claude-powered model tuning, config management, backtesting (teal accent)
+- **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
 - **History**: Historical drill-down — date strip, game grid, locked prediction cards, screenshot upload, winning drafts, hindsight optimal lineup
+
+## Codebase Navigation (grep tags)
+
+All major sections in `api/index.py` and `index.html` are tagged with `# grep:` comments for fast searching:
+
+```
+grep: TEAM_COLORS              — team color hex map in index.html
+grep: GLOBAL STATE             — SLATE, PICKS_DATA, LOG, LAB state objects
+grep: TAB NAVIGATION           — switchTab, movePill, setPillAccent
+grep: SLATE                    — loadSlate, /api/slate, Starting 5, Moonshot
+grep: PER-GAME ANALYSIS        — runAnalysis, /api/picks
+grep: CARD RENDERING           — renderCards, player-card, tcolor
+grep: PREDICTION PERSISTENCE   — savePredictions, dedup guard
+grep: LOG PAGE                 — initLogPage, selectLogDate, drill-down
+grep: LINE PAGE                — initLinePage, renderLinePickCard
+grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude
+grep: github_storage           — _github_get_file, _github_write_file
+grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
+grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
+grep: INJURY CASCADE           — _cascade_minutes, _pos_group
+grep: CARD BOOST               — _est_card_boost, _dfs_score
+grep: GAME SCRIPT              — _game_script_weights, _game_script_label
+grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
+grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
+grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks
+grep: LINE OF THE DAY ENGINE   — /api/line-of-the-day, run_line_engine
+grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
+```
 
 ## Key Endpoints
 
@@ -47,7 +75,7 @@ server.py              — Local dev server (uvicorn)
 | `/api/slate` | GET | Full-slate predictions (all games) |
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
-| `/api/save-predictions` | POST | Save cached predictions to GitHub CSV |
+| `/api/save-predictions` | POST | Save cached predictions to GitHub CSV (deduped — skips commit if unchanged) |
 | `/api/parse-screenshot` | POST | Upload Real Sports screenshot, Claude Haiku parses it |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV |
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
@@ -91,12 +119,33 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 - Use `_cfg("dot.path", default)` helper anywhere in `api/index.py` to read config
 - `/api/refresh` also clears the config cache for immediate effect
 
-## Ben (Lab) Lock System
+## Ben (Lab) Interface
 
+Ben is a **pure chat interface** — no quick-action buttons. The user types naturally and Ben:
+- Auto-loads the briefing and config context silently on open (hidden messages)
+- Offers to run backtests, apply config changes, analyze accuracy — all via conversation
+- Decision history and config changes are stored in `LAB.messages` and `data/model-config.json`
+- The chat prompt includes full system context (briefing data, config state, backtest capability)
+
+### Lock System
 - **Locked** 5 minutes before first game tip-off (slate is in progress)
-- **Unlocked** when ALL games on today's slate reach "Final" status on ESPN
-- During lock: shows read-only config changelog, estimated unlock time
-- During unlock: full chat + backtest + config update capabilities
+- **Unlocked** when ALL games on today's slate reach "Final" status on ESPN (3-min TTL cache)
+- During lock: shows read-only locked state with estimated unlock time
+- During unlock: full chat capabilities
+
+## Loading Animation
+
+A **Magic 8-ball** animation plays on app load and during API calls (slate fetch, game analysis).
+- Dark floating sphere with "8" and a triangle window showing rotating oracle messages
+- CSS keyframe animation: `ballFloat` (3s ease loop), `ballShake` on load
+- Controlled by `showLoader()` / `hideLoader()` in JS
+- Messages cycle: "READING THE GAME", "CONSULTING THE ORACLE", "CALCULATING EDGE", etc.
+
+## Prediction Save Deduplication
+
+`savePredictions()` fires at most **once per session** (frontend flag) and the backend compares
+the new CSV content against what's already stored — skipping the GitHub commit if unchanged.
+This prevents the commit → Vercel redeploy cascade that was triggering 6+ redeploys per visit.
 
 ## Lock System
 
@@ -123,4 +172,5 @@ uvicorn server:app --reload
 
 # Deploy
 git push origin main  # Vercel auto-deploys from main
+# Our work lives on: claude/analyze-sports-app-KNSuB (merge to main to deploy)
 ```

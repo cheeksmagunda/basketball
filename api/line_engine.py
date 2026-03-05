@@ -503,7 +503,9 @@ def run_line_engine(projections, games):
         return c
 
     pick       = _finalize(candidates[0])
-    runner_up  = _finalize(candidates[1]) if len(candidates) > 1 else None
+    # Runner-up: first candidate from a different player
+    runner_up_raw = next((c for c in candidates[1:] if c["player_name"] != candidates[0]["player_name"]), None)
+    runner_up  = _finalize(runner_up_raw) if runner_up_raw else None
 
     return {
         "pick":       pick,

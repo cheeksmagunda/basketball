@@ -193,6 +193,12 @@ for _p in [
             break
         except: pass
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTANTS & CACHE UTILITIES
+# grep: ESPN, MIN_GATE, DEFAULT_TOTAL, _cp, _cg, _cs, _lp, _lg, _ls
+# _cg/cs = prediction cache (date-keyed, /tmp)
+# _lg/ls = lock cache (persists within warm Vercel instance)
+# ─────────────────────────────────────────────────────────────────────────────
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 MIN_GATE = 12           # Minimum projected minutes — lowered from 15 to catch
                         # deep bench (Clifford, Riley) who win in garbage time
@@ -239,6 +245,12 @@ def _et_date():
         offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
         return (now_utc + offset).date()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ESPN DATA FETCHERS
+# grep: _espn_get, fetch_games, fetch_roster, _fetch_athlete, _fetch_b2b_teams
+# _fetch_athlete: returns blended season+recent stats dict for a player
+# fetch_games: returns today's game list with lock/complete status
+# ─────────────────────────────────────────────────────────────────────────────
 def _safe_float(v, default=0.0):
     try: return float(v) if v is not None else default
     except: return default
@@ -435,6 +447,7 @@ def _fetch_athlete(pid):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # INJURY CASCADE ENGINE
+# grep: _cascade_minutes, _pos_group, POS_GROUPS, injury redistribution
 #
 # When a player is OUT, their avg minutes get redistributed to remaining
 # teammates at the same position (or adjacent positions).
@@ -525,6 +538,9 @@ def _cascade_minutes(roster, stats_map):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CARD BOOST & DFS SCORING
+# grep: _est_card_boost, _dfs_score, card boost, ownership, Real Score formula
+#
 # THE CORE MODEL — Optimized for the Real Sports App
 #
 # ADDITIVE scoring formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -570,7 +586,9 @@ def _dfs_score(pts, reb, ast, stl, blk, tov):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GAME SCRIPT ENGINE (per-game only — does NOT affect full slate)
+# GAME SCRIPT ENGINE
+# grep: _game_script_weights, _game_script_dfs, _game_script_label, game pace
+# Per-game only — does NOT affect full slate projections.
 #
 # Over/under tiers adjust which stat categories get boosted:
 #   < 220  → Defensive Grind: boost STL/BLK, suppress PTS/AST/REB volume
@@ -633,6 +651,12 @@ def _game_script_label(total):
     return "Track Meet"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAYER PROJECTION ENGINE
+# grep: project_player, pinfo, stats, spread, total, rating, est_mult, blk, stl
+# Returns projection dict: {name, team, pos, rating (RS), est_mult (card boost),
+#   predMin, pts, reb, ast, stl, blk, season_*/recent_* raw stats, signals}
+# ─────────────────────────────────────────────────────────────────────────────
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
                    cascade_bonus=0.0, is_b2b=False):
     if pinfo.get("is_out"): return None
@@ -808,6 +832,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "injury_status": pinfo.get("injury_status", ""),
     }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GAME RUNNER & LINEUP BUILDER
+# grep: _run_game, _build_lineups, _build_game_lineups, chalk_ev, Moonshot
+# _run_game: fetches rosters, runs cascade, projects all players for one game
+# _build_lineups: top-5 chalk (MILP) + moonshot (ranks 6-10 same EV)
+# ─────────────────────────────────────────────────────────────────────────────
 def _run_game(game):
     cache_key = f"game_proj_{game['gameId']}"
     cached = _cg(cache_key)
@@ -945,6 +975,11 @@ def _get_injuries(game):
                 out_players.append({"name": p["name"], "team": team["abbr"], "pos": p["pos"]})
     return out_players
 
+# ═════════════════════════════════════════════════════════════════════════════
+# CORE API ENDPOINTS
+# grep: /api/games, /api/slate, /api/picks, /api/save-predictions, /api/refresh
+# /api/hindsight, /api/log, /api/parse-screenshot, /api/save-actuals
+# ═════════════════════════════════════════════════════════════════════════════
 @app.get("/api/games")
 async def get_games():
     games = fetch_games()
@@ -1102,6 +1137,12 @@ async def save_predictions():
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
 
     csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
+
+    # Skip commit if content is identical to what's already stored (avoids unnecessary Vercel redeploys)
+    existing, _ = _github_get_file(path)
+    if existing and existing.strip() == csv_content.strip():
+        return {"status": "unchanged", "path": path, "rows": len(rows)}
+
     result = _github_write_file(path, csv_content, f"predictions for {today}")
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
@@ -1351,7 +1392,9 @@ async def refresh():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PHASE 2: LINE OF THE DAY
+# LINE OF THE DAY ENGINE — Phase 2
+# grep: /api/line-of-the-day, /api/save-line, /api/resolve-line, /api/line-history
+# grep: LINE_CSV_HEADER, run_line_engine, line_engine, Odds API, prop edge
 # ═════════════════════════════════════════════════════════════════════════════
 
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
@@ -1501,6 +1544,11 @@ async def line_history():
     }
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# BEN / LAB ENGINE — Phase 3
+# grep: /api/lab/status, /api/lab/briefing, /api/lab/update-config, /api/lab/chat
+# grep: /api/lab/backtest, /api/lab/rollback, _all_games_final, Lab lock system
+# grep: _GAMES_FINAL_CACHE, buildLabSystemPrompt, claude-sonnet-4-6, Ben
 # ═════════════════════════════════════════════════════════════════════════════
 # PHASE 3: LAB
 # ═════════════════════════════════════════════════════════════════════════════
