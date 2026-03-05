@@ -910,6 +910,19 @@
     }
     #labInput { line-height: 1.4; font-size: 16px; }
     #labInput:focus { border-color: var(--lab); }
+    /* Ben tab: flex column so input is always pinned at the bottom */
+    #tab-lab.active {
+      display: flex; flex-direction: column;
+      height: calc(100dvh - 80px); /* 80px ≈ header height */
+      padding-top: 0; overflow: hidden;
+    }
+    #labUnlocked {
+      display: flex; flex-direction: column;
+      flex: 1; padding-top: 20px; overflow: hidden;
+      min-height: 0;
+    }
+    #labMessages { flex: 1; overflow-y: auto; }
+    #labInputWrap { flex-shrink: 0; position: static !important; padding-bottom: 120px; }
     .lab-send-btn {
       width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
       background: var(--lab); border: none;
@@ -2293,7 +2306,7 @@ async function initLabPage() {
     }
   } catch(e) {
     document.getElementById('labLoading').style.display = 'none';
-    document.getElementById('labUnlocked').style.display = 'block';
+    document.getElementById('labUnlocked').style.display = 'flex';
     appendLabMessage('assistant', 'Could not connect to the Lab backend. Make sure the API is running.');
   }
 }
@@ -2324,7 +2337,7 @@ function showLabLocked(status) {
 }
 
 async function showLabUnlocked(status) {
-  document.getElementById('labUnlocked').style.display = 'block';
+  document.getElementById('labUnlocked').style.display = 'flex';
 
   // Load briefing + config + line data + slate in parallel (silently)
   const [briefingRes, configRes, lineRes, slateRes] = await Promise.allSettled([
