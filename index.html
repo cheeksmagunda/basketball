@@ -203,7 +203,8 @@
 
     /* Predict sub-pages */
     .predict-sub-page { display: none; }
-    .predict-sub-page.active { display: block; }
+    /* padding-bottom clears fixed bottom nav (~80px) + sub-nav (~50px) + breathing room */
+    .predict-sub-page.active { display: block; padding-bottom: 180px; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
@@ -1352,9 +1353,12 @@ const TAB_ACCENT = {
 
 function setPillAccent(tab) {
   const a = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
-  // Color the active icon tile with a subtle accent glow
-  document.querySelectorAll('.bnav-icon-btn.active').forEach(btn => {
-    btn.style.boxShadow = `0 2px 12px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.09) inset, 0 0 12px rgba(${a.rgb}, 0.18)`;
+  document.querySelectorAll('.bnav-icon-btn').forEach(btn => {
+    if (btn.classList.contains('active')) {
+      btn.style.boxShadow = `0 2px 12px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.09) inset, 0 0 12px rgba(${a.rgb}, 0.18)`;
+    } else {
+      btn.style.boxShadow = ''; // Clear any lingering inline shadow from previous active state
+    }
   });
 }
 
