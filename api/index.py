@@ -1004,6 +1004,23 @@ async def get_slate():
     # the upcoming day's games should be shown instead.
     draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
+    # If ESPN hasn't posted today's games yet (early-morning rollover window),
+    # all games will be completed from the previous night. Tell the user when to check back.
+    if not draftable_games:
+        now_utc = datetime.now(timezone.utc)
+        noon_et = now_utc.replace(hour=17, minute=0, second=0, microsecond=0)
+        if now_utc >= noon_et:
+            noon_et += timedelta(days=1)
+        return {
+            "date": date.today().isoformat(),
+            "games": games,
+            "lineups": {"chalk": [], "upside": []},
+            "locked": False,
+            "no_games_yet": True,
+            "draftable_count": 0,
+            "available_after": noon_et.strftime("%-I:%M %p ET"),
+        }
+
     # Lock is based on earliest DRAFTABLE game — completed games don't count
     start_times = [g["startTime"] for g in draftable_games if g.get("startTime")]
     earliest = min(start_times) if start_times else None
@@ -1040,7 +1057,8 @@ async def get_slate():
             except Exception as e: print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
     result = {"date": date.today().isoformat(), "games": games,
-              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked}
+              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
+              "draftable_count": len(draftable_games)}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
     if locked:
