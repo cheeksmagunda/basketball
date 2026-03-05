@@ -1887,7 +1887,7 @@ function renderLinePickCard(pick, isPrimary) {
         </div>
         <div style="margin-left:auto;text-align:right">
           <div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div>
-          <div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} books</div>
+          <div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>
         </div>
       </div>
       ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
@@ -1911,11 +1911,17 @@ function renderLineRunnerUp(pick) {
 }
 
 function renderLineSummary(summary) {
+  let timeStr = '';
+  if (summary.timestamp) {
+    const ts = new Date(summary.timestamp);
+    timeStr = `<div class="line-summary-chip">${ts.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</div>`;
+  }
   return `
     <div class="line-summary-row">
       <div class="line-summary-chip">${summary.games_evaluated} games</div>
       <div class="line-summary-chip">${summary.props_scanned} props scanned</div>
       <div class="line-summary-chip">${summary.edges_found} edges found</div>
+      ${timeStr}
     </div>`;
 }
 
@@ -1941,7 +1947,7 @@ function renderLineHistory(hist) {
       <div class="line-history-row">
         <div>
           <div class="line-history-name">${p.player_name}</div>
-          <div class="line-history-sub">${p.direction?.toUpperCase()} ${p.line} ${p.stat_type} · ${p.date}</div>
+          <div class="line-history-sub">${(p.direction||'over').toUpperCase()} ${p.line} ${p.stat_type||''} · ${p.date}</div>
         </div>
         <span class="line-result-pill ${result}">${result}</span>
       </div>`;
