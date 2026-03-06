@@ -1266,7 +1266,7 @@
             style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
           ></textarea>
-          <button id="labSendBtn" class="lab-send-btn" onclick="labSend()">
+          <button id="labSendBtn" class="lab-send-btn" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="labSend()">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 13V2M2 7l5.5-5.5L13 7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
@@ -2936,6 +2936,7 @@ async function labSend() {
   const img   = LAB.pendingImage;
   if (!text && !img) return;
   input.value = '';
+  input.focus();
   if (img) _labClearPhoto();
 
   const displayText = text || 'What do you see in this screenshot?';
