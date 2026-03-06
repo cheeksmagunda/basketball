@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>The Oracle — NBA Draft Optimizer</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -57,7 +57,7 @@
       font-family: 'Barlow', sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
+      min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
     }
@@ -856,6 +856,7 @@
     #tab-lab.active {
       display: flex; flex-direction: column;
       height: calc(100dvh - 80px - 150px);
+      transition: height 0.15s ease;
       padding-top: 0; overflow: hidden;
     }
     /* When keyboard opens (labInput focused): nav hidden, JS sets exact height via visualViewport */
@@ -1220,7 +1221,7 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="file" id="labPhotoInput" accept="image/*" tabindex="-1" style="display:none" onchange="_labAttachPhoto(this.files[0]);this.value=''">
-          <button id="labPhotoBtn" onclick="document.getElementById('labPhotoInput').click()" title="Attach screenshot"
+          <button id="labPhotoBtn" tabindex="-1" onclick="document.getElementById('labPhotoInput').click()" title="Attach screenshot"
             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:background 0.15s">
             📷
           </button>
@@ -1235,7 +1236,7 @@
             onkeydown="if(event.key==='Enter'){event.preventDefault();labSend()}"
             oninput="const s=document.getElementById('labSendBtn');s.disabled=!this.value.trim();s.style.opacity=this.value.trim()?'1':'0.4';"
           />
-          <button id="labSendBtn" onclick="labSend()" title="Send" disabled
+          <button id="labSendBtn" tabindex="-1" onclick="labSend()" title="Send" disabled
             style="background:var(--lab);border:none;border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.2rem;color:#fff;opacity:0.4;transition:opacity 0.15s">
             ↑
           </button>
@@ -2953,6 +2954,17 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', _applyKbHeight);
     window.visualViewport.addEventListener('scroll', _applyKbHeight);
+  }
+
+  // P4: MutationObserver — auto-scroll #labMessages whenever new content is added
+  // (covers Claude streaming tokens and new messages). Only scrolls if user is already
+  // near the bottom (within 120px), so manually scrolling up to read history isn't hijacked.
+  const msgs = document.getElementById('labMessages');
+  if (msgs && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => {
+      const distFromBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight;
+      if (distFromBottom < 120) msgs.scrollTop = msgs.scrollHeight;
+    }).observe(msgs, { childList: true, subtree: true, characterData: true });
   }
 
   input.addEventListener('focus', () => {
