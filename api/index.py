@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, Query, Body, File, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
 # Real Score Ecosystem modules
@@ -3090,9 +3090,23 @@ RULES:
         }
 
 
+def _tool_status_label(name: str, inputs: dict) -> str:
+    """Human-readable status label for a Ben tool call."""
+    if name == "get_live_nba_data":
+        dt = inputs.get("data_type", "")
+        if dt == "scores":
+            return "Checking live scores..."
+        if dt == "boxscore":
+            return "Reading box score..."
+        if dt == "player_stats":
+            player = inputs.get("player_name", "player")
+            return f"Looking up {player} stats..."
+    return "Fetching data..."
+
+
 @app.post("/api/lab/chat")
 async def lab_chat(payload: dict = Body(...)):
-    """Proxy to Anthropic Messages API with Lab system prompt and live NBA tool use."""
+    """Proxy to Anthropic Messages API — streams SSE events so the UI can show live status."""
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
 
@@ -3115,39 +3129,47 @@ async def lab_chat(payload: dict = Body(...)):
         "messages":   messages,
     }
 
-    try:
-        r = requests.post("https://api.anthropic.com/v1/messages",
-                          headers=headers, json=base_body, timeout=45)
-        r.raise_for_status()
-        resp = r.json()
+    def _sse(obj) -> str:
+        return f"data: {json.dumps(obj)}\n\n"
 
-        # Handle tool use — execute the tool and send results back for a final answer
-        if resp.get("stop_reason") == "tool_use":
-            tool_results = []
-            for block in resp.get("content", []):
-                if block.get("type") == "tool_use":
-                    result = _execute_ben_tool(block["name"], block.get("input", {}))
-                    tool_results.append({
-                        "type":        "tool_result",
-                        "tool_use_id": block["id"],
-                        "content":     result,
-                    })
+    def event_stream():
+        try:
+            r = requests.post("https://api.anthropic.com/v1/messages",
+                              headers=headers, json=base_body, timeout=45)
+            r.raise_for_status()
+            resp = r.json()
 
-            followup_messages = messages + [
-                {"role": "assistant", "content": resp["content"]},
-                {"role": "user",      "content": tool_results},
-            ]
-            r2 = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers=headers,
-                json={**base_body, "messages": followup_messages},
-                timeout=45,
-            )
-            r2.raise_for_status()
-            resp = r2.json()
+            # Tool use — emit a status event per tool, then follow up
+            if resp.get("stop_reason") == "tool_use":
+                tool_results = []
+                for block in resp.get("content", []):
+                    if block.get("type") == "tool_use":
+                        status = _tool_status_label(block["name"], block.get("input", {}))
+                        yield _sse({"type": "status", "text": status})
+                        result = _execute_ben_tool(block["name"], block.get("input", {}))
+                        tool_results.append({
+                            "type":        "tool_result",
+                            "tool_use_id": block["id"],
+                            "content":     result,
+                        })
 
-        text = next((b["text"] for b in resp.get("content", []) if b.get("type") == "text"), "")
-        return {"content": text, "usage": resp.get("usage", {})}
+                followup_messages = messages + [
+                    {"role": "assistant", "content": resp["content"]},
+                    {"role": "user",      "content": tool_results},
+                ]
+                r2 = requests.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers=headers,
+                    json={**base_body, "messages": followup_messages},
+                    timeout=45,
+                )
+                r2.raise_for_status()
+                resp = r2.json()
 
-    except Exception as e:
-        return JSONResponse({"error": f"Anthropic API error: {str(e)}"}, status_code=500)
+            text = next((b["text"] for b in resp.get("content", []) if b.get("type") == "text"), "")
+            yield _sse({"type": "content", "text": text})
+
+        except Exception as e:
+            yield _sse({"type": "content", "error": f"Anthropic API error: {str(e)}", "text": ""})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
