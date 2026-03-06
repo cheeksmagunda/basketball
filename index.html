@@ -2555,27 +2555,32 @@ function showLabLocked(status) {
 async function showLabUnlocked(status) {
   document.getElementById('labUnlocked').style.display = 'flex';
 
-  // Load briefing + config + line data + slate in parallel (silently)
-  const [briefingRes, configRes, lineRes, slateRes] = await Promise.allSettled([
+  // Load briefing + config + line data + slate + today's log in parallel (silently)
+  const [briefingRes, configRes, lineRes, slateRes, logRes] = await Promise.allSettled([
     fetch('/api/lab/briefing').then(r => r.json()),
     fetch('/api/lab/config-history').then(r => r.json()),
     fetch('/api/line-of-the-day').then(r => r.json()),
     fetch('/api/slate').then(r => r.json()),
+    fetch(`/api/log/get?date=${_etToday()}`).then(r => r.json()),
   ]);
 
   if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
   if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
   if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
   if (slateRes.status === 'fulfilled')    LAB.slateData = slateRes.value;
+  const _todayLog = logRes.status === 'fulfilled' ? logRes.value : null;
 
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
 
   // Show upload banner only if today's actuals haven't been uploaded yet.
-  // briefing.latest_slate.date matches today when save-actuals already ran.
+  // Check log directly (has_actuals) as the reliable signal — briefing only
+  // includes dates with paired predictions+actuals, which can miss today if
+  // predictions weren't committed to GitHub.
   const _ub = document.getElementById('benUploadBanner');
   if (_ub) {
-    const _hasActualsToday = LAB.briefing?.latest_slate?.date === _etToday();
+    const _hasActualsToday = _todayLog?.has_actuals === true
+      || LAB.briefing?.latest_slate?.date === _etToday();
     _ub.style.display = _hasActualsToday ? 'none' : 'block';
   }
   // Also trigger EOD chat bubble + hindsight once games are actually final
