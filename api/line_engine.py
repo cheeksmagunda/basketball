@@ -51,7 +51,7 @@ _STAT_META = {
 }
 
 
-def _build_claude_prompt(projections, games, stat_focus="points"):
+def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None):
     """Format ESPN projection data into a structured prompt for Claude for a given stat type."""
     meta         = _STAT_META[stat_focus]
     game_ctx_map = _game_lookup_from_games(games)
@@ -104,6 +104,13 @@ def _build_claude_prompt(projections, games, stat_focus="points"):
             f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}"
         )
 
+    direction_instruction = (
+        f"Your pick MUST be {force_direction.upper()}. Find only the best {force_direction.upper()} edge — do not suggest the other direction."
+        if force_direction else
+        "You may pick OVER or UNDER based on which direction has the strongest edge."
+    )
+    direction_value = force_direction or "over"
+
     return f"""You are The Oracle's line engine. Analyze today's NBA slate and identify the single best player prop bet for {stat_focus.upper()}.
 
 TODAY'S GAMES:
@@ -119,7 +126,7 @@ PICK CRITERIA (in priority order):
 4. Big recent form spike or slump vs season average
 5. Close spread — starters play full minutes in tight games
 
-You may pick OVER or UNDER based on which direction has the strongest edge.
+{direction_instruction}
 AVOID: players on B2B themselves, blowout favorites (team spread >10), injury-doubtful
 
 Set "line" to season average rounded to nearest 0.5 (what books typically set).
@@ -131,7 +138,7 @@ Respond with ONLY valid JSON, no markdown fences:
   "team": "ABBR",
   "opponent": "ABBR",
   "stat_type": "{stat_focus}",
-  "direction": "over",
+  "direction": "{direction_value}",
   "line": 22.5,
   "projection": 26.8,
   "edge": 4.3,
@@ -176,43 +183,48 @@ def _call_claude(prompt, stat_focus="points"):
         return None
 
 
-def _call_claude_for_stat(projections, games, stat_focus):
-    """Build prompt and call Claude for a single stat type. Returns (confidence, pick) or None."""
-    prompt = _build_claude_prompt(projections, games, stat_focus)
+def _call_claude_for_stat(projections, games, stat_focus, force_direction=None):
+    """Build prompt and call Claude for a single stat type + direction. Returns (confidence, pick) or None."""
+    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction)
     pick   = _call_claude(prompt, stat_focus)
     if pick and pick.get("player_name") and pick.get("confidence", 0) > 0:
+        # Enforce direction if forced (Claude occasionally ignores instruction)
+        if force_direction:
+            pick["direction"] = force_direction
         return (pick.get("confidence", 0), pick)
     return None
 
 
 def _run_parallel_claude(projections, games):
     """
-    Run Claude in parallel for points, rebounds, and assists.
-    Returns the highest-confidence pick across all three stat types.
+    Run Claude in parallel for points/rebounds/assists × over/under (6 calls).
+    Returns (best_over_pick, best_under_pick) independently.
     """
     stat_types = ["points", "rebounds", "assists"]
-    best_pick  = None
-    best_conf  = 0
+    directions = ["over", "under"]
+    best_over, best_under = None, None
+    best_over_conf, best_under_conf = 0, 0
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(_call_claude_for_stat, projections, games, s): s
-            for s in stat_types
+            executor.submit(_call_claude_for_stat, projections, games, s, d): (s, d)
+            for s in stat_types for d in directions
         }
         for future in as_completed(futures):
-            stat = futures[future]
+            stat, direction = futures[future]
             try:
                 result = future.result()
                 if result:
                     conf, pick = result
-                    print(f"[LineEngine] {stat}: conf={conf}, player={pick.get('player_name','?')}")
-                    if conf > best_conf:
-                        best_conf = conf
-                        best_pick = pick
+                    print(f"[LineEngine] {stat}/{direction}: conf={conf}, player={pick.get('player_name','?')}")
+                    if direction == "over" and conf > best_over_conf:
+                        best_over_conf, best_over = conf, pick
+                    elif direction == "under" and conf > best_under_conf:
+                        best_under_conf, best_under = conf, pick
             except Exception as e:
-                print(f"[LineEngine] parallel call failed ({stat}): {e}")
+                print(f"[LineEngine] parallel call failed ({stat}/{direction}): {e}")
 
-    return best_pick
+    return best_over, best_under
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,13 +300,16 @@ def run_model_fallback(projections, games):
             })
 
     if not candidates:
-        return {"pick": None, "error": "no_edges"}
+        return {"pick": None, "over_pick": None, "under_pick": None, "error": "no_edges"}
 
     candidates.sort(key=lambda c: c["confidence"], reverse=True)
-    pick      = candidates[0]
-    runner_up = next((c for c in candidates[1:] if c["player_name"] != pick["player_name"]), None)
+    over_candidates  = [c for c in candidates if c["direction"] == "over"]
+    under_candidates = [c for c in candidates if c["direction"] == "under"]
+    over_pick  = over_candidates[0]  if over_candidates  else None
+    under_pick = under_candidates[0] if under_candidates else None
+    primary    = over_pick if (over_pick and (not under_pick or over_pick["confidence"] >= under_pick["confidence"])) else under_pick
     return {
-        "pick": pick, "runner_up": runner_up,
+        "pick": primary, "over_pick": over_pick, "under_pick": under_pick, "runner_up": None,
         "slate_summary": {
             "games_evaluated": len(games), "props_scanned": len(candidates),
             "edges_found": len(candidates), "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -321,42 +336,60 @@ def run_line_engine(projections, games):
     if not ANTHROPIC_API_KEY:
         return run_model_fallback(projections, games)
 
-    pick_data = _run_parallel_claude(projections, games)
+    over_data, under_data = _run_parallel_claude(projections, games)
 
-    if not pick_data or not pick_data.get("player_name"):
-        print("[LineEngine] Claude returned no pick — using algorithmic fallback")
+    if not over_data and not under_data:
+        print("[LineEngine] Claude returned no picks — using algorithmic fallback")
         return run_model_fallback(projections, games)
 
-    signals = [
-        {"type": s.lower().split(":")[0].strip().replace(" ", "_"), "detail": s}
-        for s in pick_data.get("signals", [])
-    ]
-    pick = {
-        "player_name":     pick_data["player_name"],
-        "player_id":       "",
-        "team":            pick_data.get("team", ""),
-        "opponent":        pick_data.get("opponent", ""),
-        "stat_type":       pick_data.get("stat_type", "points"),
-        "line":            pick_data.get("line", 0),
-        "direction":       pick_data.get("direction", "over"),
-        "projection":      pick_data.get("projection", 0),
-        "edge":            pick_data.get("edge", 0),
-        "confidence":      pick_data.get("confidence", 70),
-        "odds_over":       None,
-        "odds_under":      None,
-        "books_consensus": 0,
-        "model_only":      True,
-        "signals":         signals,
-        "narrative":       pick_data.get("narrative", ""),
-    }
+    def _build_pick(pd):
+        if not pd:
+            return None
+        signals = [
+            {"type": s.lower().split(":")[0].strip().replace(" ", "_"), "detail": s}
+            for s in pd.get("signals", [])
+        ]
+        return {
+            "player_name":     pd["player_name"],
+            "player_id":       "",
+            "team":            pd.get("team", ""),
+            "opponent":        pd.get("opponent", ""),
+            "stat_type":       pd.get("stat_type", "points"),
+            "line":            pd.get("line", 0),
+            "direction":       pd.get("direction", "over"),
+            "projection":      pd.get("projection", 0),
+            "edge":            pd.get("edge", 0),
+            "confidence":      pd.get("confidence", 70),
+            "odds_over":       None,
+            "odds_under":      None,
+            "books_consensus": 0,
+            "model_only":      True,
+            "signals":         signals,
+            "narrative":       pd.get("narrative", ""),
+        }
+
+    over_pick  = _build_pick(over_data)
+    under_pick = _build_pick(under_data)
+
+    # Fill missing direction from algorithmic fallback
+    if not over_pick or not under_pick:
+        fallback = run_model_fallback(projections, games)
+        if not over_pick:
+            over_pick = fallback.get("over_pick")
+        if not under_pick:
+            under_pick = fallback.get("under_pick")
+
+    primary = over_pick if (over_pick and (not under_pick or over_pick.get("confidence", 0) >= under_pick.get("confidence", 0))) else under_pick
 
     return {
-        "pick": pick,
-        "runner_up": None,
+        "pick":       primary,
+        "over_pick":  over_pick,
+        "under_pick": under_pick,
+        "runner_up":  None,
         "slate_summary": {
             "games_evaluated": len(games),
             "props_scanned":   len(projections),
-            "edges_found":     1,
+            "edges_found":     2,
             "timestamp":       datetime.now(timezone.utc).isoformat(),
             "model_only":      True,
         },
