@@ -2053,29 +2053,25 @@ async function _handleBenUpload(file, type, source) {
       _markDone('benBannerRSBtn', '✓ Real Scores');
       _checkBannerDone();
 
-      // Compute hindsight
-      const hindsightPlayers = data.players
-        .filter(p => p.actual_rs != null && p.actual_rs > 0)
-        .map(p => ({ name: p.player_name || p.name || '', actual_rs: p.actual_rs, actual_card_boost: p.actual_card_boost || 0.3 }));
-      let hindsightStr = '';
-      if (hindsightPlayers.length >= 5) {
-        try {
-          const hr = await fetch('/api/hindsight', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ players: hindsightPlayers }),
-          });
-          if (hr.ok) {
-            const hd = await hr.json();
-            if (hd.lineup?.length) {
-              hindsightStr = ' Hindsight optimal lineup: ' + hd.lineup.map((p,i) => `${i+1}. ${p.name} (${p.rating} RS)`).join(', ') + '.';
+      // Pull the audit that save-actuals auto-generated (predictions vs actuals)
+      let auditStr = '';
+      try {
+        const ar = await fetch(`/api/audit/get?date=${today}`);
+        if (ar.ok) {
+          const ad = await ar.json();
+          if (ad.mae != null) {
+            const dirAcc = ad.directional_accuracy != null ? Math.round(ad.directional_accuracy * 100) + '%' : 'N/A';
+            auditStr = ` Model accuracy — MAE: ${ad.mae}, directional: ${dirAcc}, over-projected: ${ad.over_projected}, under-projected: ${ad.under_projected}.`;
+            if (ad.biggest_misses?.length) {
+              auditStr += ' Biggest misses: ' + ad.biggest_misses.slice(0, 5).map(m => `${m.player} (pred ${m.predicted_rs} vs actual ${m.actual_rs})`).join(', ') + '.';
             }
           }
-        } catch(e) {}
-      }
+        }
+      } catch(e) {}
 
-      const summary = `Real Scores uploaded for ${today}. Players: ${data.players.map(p => `${p.player_name||p.name}: ${p.actual_rs} RS`).join(', ')}.${hindsightStr}`;
-      appendLabMessage('user', summary, true);
+      const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
+      const summary = `Real Scores uploaded for ${today}. Players: ${playerList}.${auditStr}`;
+      appendLabMessage('user', summary);
       await labCallClaude();
 
     } else {
@@ -2100,7 +2096,7 @@ async function _handleBenUpload(file, type, source) {
       _markDone2('benBannerWinBtn', '✓ Top Drafts');
       _checkBannerDone();
       const summary = `Top Drafts uploaded for ${today}. Winners: ${data.players.slice(0,6).map(p => `${p.player_name||p.name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')}.`;
-      appendLabMessage('user', summary, true);
+      appendLabMessage('user', summary);
       await labCallClaude();
     }
 
