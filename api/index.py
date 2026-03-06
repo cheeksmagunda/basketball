@@ -1,5 +1,7 @@
 import json
 import copy
+import csv
+import io
 import hashlib
 import unicodedata
 import pickle
@@ -1877,8 +1879,11 @@ async def save_actuals(payload: dict = Body(...)):
         for line in (lines[1:] if len(lines) > 1 else []):
             if not line.strip():
                 continue
-            # player_name is first CSV field — may be quoted
-            first_field = line.split(",")[0].strip().strip('"').lower()
+            # Use csv.reader so quoted names containing commas parse correctly
+            try:
+                first_field = next(csv.reader(io.StringIO(line)))[0].strip().lower()
+            except Exception:
+                first_field = line.split(",")[0].strip().strip('"').lower()
             if first_field not in new_names:
                 rows.append(line)
 
@@ -2731,11 +2736,25 @@ async def lab_update_config(payload: dict = Body(...)):
     cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
     cfg["updated_by"] = "lab"
 
+    # Snapshot the pre-change param values for the keys being modified,
+    # so rollback can restore them without needing git history.
+    snapshot = {}
+    for dot_path in changes:
+        keys = dot_path.split(".")
+        v = cfg
+        try:
+            for k in keys:
+                v = v[k]
+            snapshot[dot_path] = v
+        except (KeyError, TypeError):
+            pass  # key didn't exist before — rollback will just unset it
+
     changelog = cfg.get("changelog", [])
     changelog.append({
-        "version": new_version,
-        "date":    _et_date().isoformat(),
-        "change":  description,
+        "version":  new_version,
+        "date":     _et_date().isoformat(),
+        "change":   description,
+        "snapshot": snapshot,   # previous values — used by lab/rollback
     })
     cfg["changelog"] = changelog
 
@@ -2772,23 +2791,40 @@ async def lab_rollback(payload: dict = Body(...)):
 
     cfg = _load_config()
     changelog = cfg.get("changelog", [])
-    # Find the config state at target version — we can reconstruct from the current file
-    # (Full git history rollback is complex; for now we just restore defaults and note in changelog)
-    # In practice: the Lab chat explains what changed and the user re-applies manually if needed.
     current_version = cfg.get("version", 1)
     if int(target) >= current_version:
         return JSONResponse({"error": "Target must be earlier than current version"}, status_code=400)
 
+    # Find the changelog entry FOR the target version — its snapshot holds the
+    # pre-change values that were overwritten when that version was applied.
+    # We want to restore those values (i.e., what existed at v{target-1}).
+    target_entry = next((e for e in changelog if e.get("version") == int(target) + 1), None)
+    snapshot = target_entry.get("snapshot") if target_entry else None
+
+    if not snapshot:
+        return JSONResponse({
+            "error": (
+                f"No snapshot available for v{target} — it predates snapshot tracking. "
+                "Manually apply the previous values via /api/lab/update-config."
+            )
+        }, status_code=400)
+
+    # Apply the snapshot (restores the values that were in effect before v{target} was applied)
+    for dot_path, value in snapshot.items():
+        keys = dot_path.split(".")
+        _deep_set(cfg, keys, value)
+
     new_version = current_version + 1
-    changelog.append({
-        "version": new_version,
-        "date":    _et_date().isoformat(),
-        "change":  f"Rollback requested to v{target} — manual parameter review needed",
-    })
     cfg["version"]    = new_version
     cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
     cfg["updated_by"] = "lab-rollback"
-    cfg["changelog"]  = changelog
+    changelog.append({
+        "version":  new_version,
+        "date":     _et_date().isoformat(),
+        "change":   f"Rollback to v{target}: restored {list(snapshot.keys())}",
+        "snapshot": {k: cfg_val for k, cfg_val in snapshot.items()},
+    })
+    cfg["changelog"] = changelog
 
     content = json.dumps(cfg, indent=2)
     result  = _github_write_file("data/model-config.json", content, f"Lab rollback to v{target}")
@@ -2799,8 +2835,8 @@ async def lab_rollback(payload: dict = Body(...)):
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
     except Exception: pass
 
-    return {"status": "rollback_noted", "new_version": new_version,
-            "note": "Parameters were not automatically reverted — review changelog and apply changes via /api/lab/update-config"}
+    return {"status": "rolled_back", "new_version": new_version,
+            "restored": snapshot, "from_version": target}
 
 
 @app.post("/api/lab/backtest")
@@ -2810,6 +2846,26 @@ async def lab_backtest(payload: dict = Body(...)):
     description      = payload.get("description", "Backtest")
     if not proposed_changes:
         return JSONResponse({"error": "proposed_changes required"}, status_code=400)
+
+    # Card boost and other non-RS params don't affect predicted_rs — they control
+    # lineup selection EV (which players get picked), not projection accuracy.
+    # MAE backtest is the wrong tool here; return an explanatory response instead.
+    rs_params = [k for k in proposed_changes if k.startswith("real_score")]
+    non_rs_only = rs_params == [] and proposed_changes
+    card_boost_only = all(k.startswith("card_boost") or k.startswith("moonshot")
+                          or k.startswith("projection") for k in proposed_changes)
+    if non_rs_only or (card_boost_only and not rs_params):
+        affected = list(proposed_changes.keys())
+        return {
+            "slates_tested": 0,
+            "note": (
+                f"MAE backtest does not apply to {', '.join(affected)}. "
+                "These params control lineup selection EV (which players get chosen), "
+                "not RS projection accuracy — changing them won't move MAE. "
+                "Apply the change and evaluate results from the next slate instead."
+            ),
+            "recommendation": "Apply and evaluate on next slate — MAE backtest not applicable here.",
+        }
 
     pred_items = _github_list_dir("data/predictions")
     act_items  = _github_list_dir("data/actuals")
