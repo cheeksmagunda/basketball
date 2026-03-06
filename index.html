@@ -1712,6 +1712,9 @@ function renderSkeletons(containerId, count) {
 let _predSavedToday = false;
 async function savePredictions() {
   if (_predSavedToday) return; // only fire once per session
+  // Only save when the slate is locked — predictions are finalized at that point.
+  // If called pre-lock, skip without consuming the flag so it can fire on next call.
+  if (!SLATE || !SLATE.locked) return;
   _predSavedToday = true;
   try {
     await fetch('/api/save-predictions', { method: 'POST' });

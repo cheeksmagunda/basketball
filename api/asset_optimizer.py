@@ -25,6 +25,16 @@ try:
 except ImportError:
     PULP_AVAILABLE = False
 
+# Position group map — same buckets as index.py POS_GROUPS
+_POS_GROUPS = {
+    "PG": "G", "SG": "G", "G": "G",
+    "SF": "F", "PF": "F", "F": "F",
+    "C": "C",
+}
+
+def _pos_group(pos):
+    return _POS_GROUPS.get(pos, "F")
+
 # Slot multipliers: Real Sports App draft slot values
 SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]
 SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
@@ -109,6 +119,19 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in player_indices for j in slots
             ) <= max_per_team
+
+    # Position-per-team constraint: at most 1 player per (team, pos_group) in lineup.
+    # Prevents two centers (or two guards, two forwards) from the same team both
+    # appearing — they share a real-world role and the pick looks redundant.
+    pos_team_groups = {}
+    for i, p in enumerate(projections):
+        key = (p.get("team", ""), _pos_group(p.get("pos", "")))
+        pos_team_groups.setdefault(key, []).append(i)
+    for player_indices in pos_team_groups.values():
+        if len(player_indices) >= 2:
+            prob += lpSum(
+                x[i, j] for i in player_indices for j in slots
+            ) <= 1
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)
