@@ -746,26 +746,6 @@
       background: rgba(212,166,64,0.1); color: var(--line); border: 1px solid rgba(212,166,64,0.2);
       text-transform: uppercase; letter-spacing: 0.06em;
     }
-    .line-runner-up {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 14px 16px;
-      opacity: 0.8;
-    }
-    .line-runner-label {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
-    }
-    .line-runner-main {
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .line-runner-name {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1rem; font-weight: 800; color: var(--text);
-    }
-    .line-runner-dir {
-      font-size: 0.75rem; font-weight: 700; color: var(--muted);
-    }
     .line-summary-row {
       display: flex; gap: 8px; flex-wrap: wrap;
     }
@@ -2310,21 +2290,6 @@ function renderLinePickCard(pick, isPrimary) {
         <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Result</span>
         <span class="line-result-pill ${pick.result}">${pick.result.toUpperCase()}${pick.actual_stat != null ? ` · ${pick.actual_stat} actual` : ''}</span>
       </div>` : ''}
-    </div>`;
-}
-
-function renderLineRunnerUp(pick) {
-  const dir = pick.direction || 'over';
-  return `
-    <div class="line-runner-up">
-      <div class="line-runner-label">Runner-Up</div>
-      <div class="line-runner-main">
-        <div>
-          <div class="line-runner-name">${pick.player_name}</div>
-          <div class="line-runner-dir">${dir.toUpperCase()} ${pick.line} ${pick.stat_type} · ${pick.confidence}% conf</div>
-        </div>
-        <div style="font-size:0.75rem;color:var(--muted)">${pick.team} vs ${pick.opponent}</div>
-      </div>
     </div>`;
 }
 
