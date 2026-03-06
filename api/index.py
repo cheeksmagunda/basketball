@@ -7,7 +7,7 @@ import os
 import base64
 import numpy as np
 import requests
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, Query, Body, File, UploadFile
@@ -154,6 +154,10 @@ _CONFIG_DEFAULTS = {
         "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
         "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
         "star_players": ["Luka Doncic","Victor Wembanyama","Giannis Antetokounmpo","Jayson Tatum","Shai Gilgeous-Alexander","Nikola Jokic","Anthony Edwards","LeBron James","Stephen Curry","Kevin Durant","Damian Lillard","Trae Young","Devin Booker","Joel Embiid","Cade Cunningham","Paolo Banchero","Zion Williamson","Karl-Anthony Towns","Donovan Mitchell","De'Aaron Fox"],
+        "log_formula_active": False,    # use log-formula for card boost (activate after 50+ actuals)
+        "log_a": 3.2,                   # log-formula intercept
+        "log_b": 0.45,                  # log-formula slope
+        "log_ownership_scalar": 300.0,  # scales predicted drafts for log-formula
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -167,14 +171,14 @@ _CONFIG_DEFAULTS = {
     "real_score": {"dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2}},
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
     "projection": {
-        "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,
+        "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
         "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
         # DNP / reliability guards (added after March 4th audit)
         "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
-        "chalk_boost_cap":1.0,          # max card boost counted toward chalk_ev (moonshot uses full boost)
+        "chalk_boost_cap":1.5,          # max card boost counted toward chalk_ev (moonshot uses full boost)
     },
     "contrarian": {
         "closeness_boost_floor":0.7,"closeness_boost_scalar":0.6,
@@ -198,14 +202,14 @@ def _load_config():
             age = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
             if age < 300:
                 return json.loads(cache_file.read_text())
-        except: pass
+        except Exception: pass
     try:
         content, _ = _github_get_file("data/model-config.json")
         if content:
             cfg = json.loads(content)
             cache_file.write_text(json.dumps(cfg))
             return cfg
-    except: pass
+    except Exception: pass
     return _CONFIG_DEFAULTS
 
 def _cfg(path, default=None):
@@ -240,7 +244,7 @@ for _p in [
                 AI_MODEL    = _bundle   # legacy bare model (4-feature)
                 AI_FEATURES = None
             break
-        except: pass
+        except Exception: pass
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -272,7 +276,7 @@ def _is_locked(start_time_iso):
         if now > game_start + timedelta(hours=6):
             return False
         return now >= game_start - timedelta(minutes=lock_buf)
-    except:
+    except Exception:
         return False
 
 def _is_completed(start_time_iso):
@@ -282,7 +286,7 @@ def _is_completed(start_time_iso):
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
         return now >= game_start - timedelta(minutes=lock_buf)
-    except:
+    except Exception:
         return False
 
 def _et_date():
@@ -750,7 +754,7 @@ def _execute_ben_tool(name, inp):
                 # Code change — clear all caches so next request uses new code
                 for f in CACHE_DIR.glob("*.json"):
                     f.unlink()
-        except: pass
+        except Exception: pass
         return f"Written successfully: {path} — deploy triggered if code file."
 
     return f"Unknown tool: {name}"
@@ -1107,7 +1111,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             ai_pred = AI_MODEL.predict(np.array([feat_vec]))[0]
             # Blend: LightGBM 70%, heuristic 30% — direct blend, no normalization
             base = (ai_pred * 0.7) + (heuristic * 0.3)
-        except: pass
+        except Exception: pass
 
     # Contextual multipliers — game closeness matters BUT differently by role.
     pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
@@ -1557,7 +1561,7 @@ async def get_slate():
                 et_offset = timedelta(hours=-4 if 3 < gs.month < 11 else -5)
                 gs_et = gs + et_offset
                 available_msg = gs_et.strftime("%-I:%M %p ET")
-            except: pass
+            except Exception: pass
         return {
             "date": _et_date().isoformat(), "games": games,
             "lineups": {"chalk": [], "upside": []},
@@ -2063,17 +2067,17 @@ async def refresh():
     try:
         for f in LOCK_DIR.glob("*.json"):
             f.unlink(missing_ok=True); cleared += 1
-    except: pass
+    except Exception: pass
     # Also clear config cache on refresh
     try:
         cfg_cache = CONFIG_CACHE_DIR / "model_config.json"
         if cfg_cache.exists():
             cfg_cache.unlink()
-    except: pass
+    except Exception: pass
     # Clear RotoWire cache so next slate load gets fresh lineup data
     try:
         _rw_clear()
-    except: pass
+    except Exception: pass
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
@@ -2446,7 +2450,7 @@ async def auto_resolve_line():
         line_cache = _cp("line_v1")
         if line_cache.exists():
             line_cache.unlink()
-    except: pass
+    except Exception: pass
 
     return {"status": "resolved", "result": result, "actual_stat": actual,
             "player": player_name, "line": line_val, "direction": direction}
@@ -2601,7 +2605,7 @@ async def lab_status():
             try:
                 gs = datetime.fromisoformat(anchor.replace("Z", "+00:00"))
                 est_unlock = (gs + timedelta(hours=2, minutes=30)).isoformat()
-            except: pass
+            except Exception: pass
         return {
             "locked": True,
             "reason": f"Slate in progress — {remaining} game{'s' if remaining != 1 else ''} remaining",
@@ -2743,7 +2747,7 @@ async def lab_update_config(payload: dict = Body(...)):
     # Clear config cache so new values take effect immediately
     try:
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
-    except: pass
+    except Exception: pass
 
     return {"status": "applied", "version": new_version, "changes": changes}
 
@@ -2793,7 +2797,7 @@ async def lab_rollback(payload: dict = Body(...)):
 
     try:
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
-    except: pass
+    except Exception: pass
 
     return {"status": "rollback_noted", "new_version": new_version,
             "note": "Parameters were not automatically reverted — review changelog and apply changes via /api/lab/update-config"}
