@@ -1217,8 +1217,16 @@
         <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p></div>
       </div>
       <div id="linePickWrap" style="display:none">
+        <div id="lineResolvedToday" style="display:none;margin-bottom:12px"></div>
         <div id="linePickCard"></div>
         <div id="lineSlateSummary" style="margin-top:16px"></div>
+      </div>
+      <!-- Pick detail bottom sheet -->
+      <div id="linePickModal" onclick="closeLinePickModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:flex-end">
+        <div onclick="event.stopPropagation()" style="background:var(--surface2);border-radius:18px 18px 0 0;padding:20px 16px 36px;width:100%;max-height:80vh;overflow-y:auto">
+          <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px"></div>
+          <div id="linePickModalContent"></div>
+        </div>
       </div>
       <div id="lineHistoryWrap" style="margin-top:24px;display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -2189,11 +2197,27 @@ async function initLinePage() {
     const data = await r.json();
     document.getElementById('lineLoading').style.display = 'none';
 
+    // Show resolved-today banner when we've rotated to tomorrow's pick
+    const resolvedToday = data.resolved_today;
+    const resolvedTodayEl = document.getElementById('lineResolvedToday');
+    if (resolvedToday && resolvedToday.result && resolvedToday.result !== 'pending') {
+      resolvedTodayEl.style.display = 'block';
+      resolvedTodayEl.innerHTML = renderResolvedTodayBanner(resolvedToday);
+    } else {
+      resolvedTodayEl.style.display = 'none';
+    }
+
     if (!data.pick) {
+      // Special case: today resolved, tomorrow's slate not posted yet
+      if (data.error === 'next_slate_pending') {
+        document.getElementById('linePickWrap').style.display = 'block';
+        document.getElementById('linePickCard').innerHTML = renderNextSlatePending();
+        return;
+      }
       const msgs = {
         no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',
-        no_edges:         'No strong edges found on today\'s props. Check back closer to tip-off.',
+        no_edges:         "No strong edges found on today's props. Check back closer to tip-off.",
         odds_unavailable: 'Odds API unavailable. Try refreshing.',
         no_projections:   'Could not load player projections.',
       };
@@ -2358,7 +2382,7 @@ function renderLineHistoryRows(picks, dirFilter) {
     const result = p.result || 'pending';
     const dir    = p.direction || 'over';
     html += `
-      <div class="line-history-row">
+      <div class="line-history-row" style="cursor:pointer" onclick='openLinePickModal(${JSON.stringify(p)})'>
         <div style="display:flex;align-items:center;gap:7px;min-width:0">
           <span class="line-hist-dir-pill ${dir}">${dir.toUpperCase()}</span>
           <div style="min-width:0">
@@ -2374,6 +2398,40 @@ function renderLineHistoryRows(picks, dirFilter) {
   }
   return html;
 }
+
+function openLinePickModal(pick) {
+  document.getElementById('linePickModalContent').innerHTML = renderLinePickCard(pick, false);
+  const modal = document.getElementById('linePickModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLinePickModal() {
+  document.getElementById('linePickModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function renderResolvedTodayBanner(pick) {
+  const dir = pick.direction || 'over';
+  const res = pick.result || '';
+  const actual = pick.actual_stat ? ' · ' + pick.actual_stat + ' actual' : '';
+  return '<div style="opacity:0.6;margin-bottom:4px">'
+    + '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Yesterday's Pick</div>'
+    + renderLinePickCard(pick, false)
+    + '</div>';
+}
+
+function renderNextSlatePending() {
+  return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center">'
+    + '<div style="font-size:1.4rem;margin-bottom:10px">🏀</div>'
+    + '<div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">TOMORROW'S PICK COMING SOON</div>'
+    + '<div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Check back once the slate drops</div>'
+    + '</div>';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeLinePickModal();
+});
 
 function filterLineHistory(dir) {
   if (!LINE_HIST_DATA) return;
