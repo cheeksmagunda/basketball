@@ -1757,13 +1757,21 @@ async def save_actuals(payload: dict = Body(...)):
     path = f"data/actuals/{date_str}.csv"
     header = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source"
 
-    # Check if file already exists (to append)
+    # Check if file already exists (to append / overwrite with dedup)
     existing, _ = _github_get_file(path)
     rows = []
     if existing:
-        # Keep existing rows (skip header)
+        # Keep existing rows, but drop any row whose player_name matches a new upload
+        # (prevents duplicates if user uploads the same screenshot twice)
+        new_names = {str(p.get("player_name", "")).strip().lower() for p in players}
         lines = existing.strip().split("\n")
-        rows = lines[1:] if len(lines) > 1 else []
+        for line in (lines[1:] if len(lines) > 1 else []):
+            if not line.strip():
+                continue
+            # player_name is first CSV field — may be quoted
+            first_field = line.split(",")[0].strip().strip('"').lower()
+            if first_field not in new_names:
+                rows.append(line)
 
     # Add new rows
     for p in players:

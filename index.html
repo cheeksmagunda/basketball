@@ -2039,8 +2039,24 @@ async function _handleBenUpload(file, type) {
       await labCallClaude();
 
     } else {
+      // Persist leaderboard data to GitHub so Ben can reference it in future sessions
+      const today = _etToday();
+      const leaderboardPlayers = data.players.filter(p => p.player_name || p.name).map(p => ({
+        ...p,
+        player_name: p.player_name || p.name || '',
+        source: 'leaderboard',
+      }));
+      if (leaderboardPlayers.length) {
+        try {
+          await fetch('/api/save-actuals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date: today, players: leaderboardPlayers }),
+          });
+        } catch(e) { /* persist failure is non-fatal */ }
+      }
       if (btn) { btn.textContent = '✓ Top Drafts'; btn.style.background = 'rgba(34,197,94,0.2)'; btn.style.border = '1px solid var(--green)'; btn.style.color = 'var(--green)'; }
-      const summary = `Top Drafts uploaded. Winners: ${data.players.slice(0,6).map(p => `${p.player_name||p.name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')}.`;
+      const summary = `Top Drafts uploaded for ${today}. Winners: ${data.players.slice(0,6).map(p => `${p.player_name||p.name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')}.`;
       appendLabMessage('user', summary, true);
       await labCallClaude();
     }
@@ -2514,8 +2530,8 @@ async function showLabUnlocked(status) {
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
 
-  // Auto-prompt upload when Ben first unlocks (games just went final) and no messages yet
-  if (LAB.messages.length === 0 && LAB.slateData?.games?.length) {
+  // Auto-prompt upload only when games have actually finished today (not pre-game)
+  if (LAB.messages.length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
     _renderBenEodPrompt();
   }
 }
