@@ -1556,11 +1556,36 @@ async function loadSlate() {
     }
     document.getElementById('slateTabs').style.display = 'flex';
 
+    // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
+    // so the "Picks Locked" chip appears without the user having to manually refresh.
+    if (!SLATE.locked) {
+      const now = Date.now();
+      const startMs = (SLATE.games || [])
+        .map(g => g.startTime ? new Date(g.startTime).getTime() : Infinity)
+        .filter(t => isFinite(t));
+      if (startMs.length) {
+        const lockAt = Math.min(...startMs) - 5 * 60 * 1000; // 5 min before first tipoff
+        const delay = lockAt - now;
+        if (delay > 0 && delay < 4 * 60 * 60 * 1000) { // only arm if ≤ 4 hours out
+          setTimeout(() => { if (!SLATE.locked) loadSlate(); }, delay + 2000);
+        }
+      }
+    }
+
     const chips = document.getElementById('slateChips');
     const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
     const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+
+    // Authoritative lock: server flag OR client-side check (catches case where API was
+    // called just before the 5-min window and the page wasn't refreshed).
+    const _lockNow = Date.now();
+    const clientLocked = (SLATE.games || []).some(g =>
+      g.startTime && (new Date(g.startTime).getTime() - _lockNow) < 5 * 60 * 1000
+    );
+    const isLocked = SLATE.locked || SLATE.all_complete || clientLocked;
+
     let lockChip = '';
-    if (SLATE.locked || SLATE.all_complete) {
+    if (isLocked) {
       lockChip = '<div class="lock-chip">Picks Locked</div>';
     }
     // draftable_count is always present now; fall back to games.length only for legacy cache.
@@ -1568,7 +1593,7 @@ async function loadSlate() {
     const totalGames = (SLATE.games || []).length;
     // Show total game count (X Games) when locked/complete so user knows the slate size.
     // Show draftable count when slate is open so user knows how many are still pickable.
-    const gameCount = (SLATE.locked || SLATE.all_complete) ? totalGames : draftable;
+    const gameCount = isLocked ? totalGames : draftable;
     chips.innerHTML = `
       <div class="chip"><b>${gameCount}</b> Game${gameCount !== 1 ? 's' : ''}</div>
       <div class="chip">${dateStr}</div>
@@ -1876,20 +1901,33 @@ function renderLogGrid(dateStr) {
   const gameScopes = Object.keys(scopes).filter(s => s !== 'slate');
   const hasSlate = 'slate' in scopes;
   const hasActuals = data.has_actuals;
+  const isToday = dateStr === _etToday();
 
   let html = '';
 
-  // Full Slate card
+  // Full Slate card — only show once all games are done (actuals exist).
+  // While today's games are still in progress, show a placeholder instead.
   if (hasSlate) {
-    const playerCount = (scopes['slate']?.chalk?.length || 0) + (scopes['slate']?.upside?.length || 0);
-    html += `
-      <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
-        <div>
-          <div class="log-slate-card-label">Full Slate</div>
-          <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
-        </div>
-        <span style="color:var(--chalk);font-size:1.2rem">›</span>
-      </div>`;
+    if (isToday && !hasActuals) {
+      html += `
+        <div class="log-slate-card" style="opacity:0.55;cursor:default">
+          <div>
+            <div class="log-slate-card-label">Full Slate</div>
+            <div class="log-slate-card-sub">Games in progress — results after final</div>
+          </div>
+          <span style="color:var(--muted);font-size:1.2rem">⏳</span>
+        </div>`;
+    } else {
+      const playerCount = (scopes['slate']?.chalk?.length || 0) + (scopes['slate']?.upside?.length || 0);
+      html += `
+        <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
+          <div>
+            <div class="log-slate-card-label">Full Slate</div>
+            <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
+          </div>
+          <span style="color:var(--chalk);font-size:1.2rem">›</span>
+        </div>`;
+    }
   }
 
   // Per-game cards — scope is now the readable label (e.g. "BOS @ NYK")
@@ -2229,7 +2267,11 @@ async function initLinePage() {
     // Show resolved-today banner when we've rotated to tomorrow's pick
     const resolvedToday = data.resolved_today;
     const resolvedTodayEl = document.getElementById('lineResolvedToday');
-    if (resolvedToday && resolvedToday.result && resolvedToday.result !== 'pending') {
+    // Suppress the resolved banner if the rotation picked the same player again —
+    // showing both cards simultaneously creates the confusing "Over AND Under" duplicate.
+    const samePlayerRotation = resolvedToday && data.pick &&
+      (resolvedToday.player_name || '').toLowerCase() === (data.pick.player_name || '').toLowerCase();
+    if (resolvedToday && resolvedToday.result && resolvedToday.result !== 'pending' && !samePlayerRotation) {
       resolvedTodayEl.style.display = 'block';
       resolvedTodayEl.innerHTML = renderResolvedTodayBanner(resolvedToday);
     } else {
