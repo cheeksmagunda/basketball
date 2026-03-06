@@ -1220,7 +1220,7 @@
       <!-- Chat messages -->
       <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px"></div>
       <!-- Input — pure chat -->
-      <div id="labInputWrap" style="padding:10px 0 4px;background:var(--bg)">
+      <div id="labInputWrap" style="background:var(--bg)">
         <!-- Photo preview pill (shown when image is attached) -->
         <div id="labPhotoPreview" style="display:none;align-items:center;gap:8px;margin-bottom:8px;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:8px 10px">
           <img id="labPhotoThumb" src="" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0">
@@ -1315,9 +1315,17 @@ const LOG = {
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   closeLinePickModal();
-  document.body.style.overflow = '';
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+
+  // Ben tab needs fixed layout — prevent body scroll and snap to top
+  // Other tabs: restore body scroll
+  if (tab === 'lab') {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
+  }
 
   // Show/hide contextual sub-navs
   document.getElementById('predictSubNav').style.display = (tab === 'predictions') ? 'flex' : 'none';
