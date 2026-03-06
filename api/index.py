@@ -2071,7 +2071,8 @@ async def get_line_of_the_day():
         cached_pick = cached["pick"]
         pick_date = cached_pick.get("date", today_str)
         already_resolved = cached_pick.get("result") not in (None, "", "pending")
-        if not already_resolved and pick_date == today_str:
+        both_directions = cached.get("over_pick") and cached.get("under_pick")
+        if not already_resolved and pick_date == today_str and both_directions:
             return JSONResponse(cached)
 
     today = _et_date()
@@ -2114,8 +2115,24 @@ async def get_line_of_the_day():
         except Exception: pass
         return JSONResponse(eng_result)
 
-    # Today's picks exist and are not resolved — serve them
+    # Today's picks exist — serve if both directions present, else fill missing direction
     if today_picks:
+        missing_over  = not today_picks.get("over_pick")
+        missing_under = not today_picks.get("under_pick")
+        if missing_over or missing_under:
+            # One direction missing (legacy single-pick) — run engine to fill the gap
+            eng_result, err = await _run_line_engine_for_date(today)
+            if not err and eng_result:
+                if missing_over and eng_result.get("over_pick"):
+                    today_picks["over_pick"] = eng_result["over_pick"]
+                if missing_under and eng_result.get("under_pick"):
+                    today_picks["under_pick"] = eng_result["under_pick"]
+                # Persist updated dual-pick JSON
+                try:
+                    json_path = f"data/lines/{today_str}_pick.json"
+                    _github_write_file(json_path, json.dumps(today_picks),
+                                       f"backfill missing direction for {today_str}")
+                except Exception: pass
         result = _picks_response(today_picks, from_github=True, slate_summary=None)
         _cs("line_v1", result)
         return JSONResponse(result)
