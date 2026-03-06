@@ -412,10 +412,10 @@ def _fetch_athlete(pid):
                 break
         if recent is None and len(splits) > 1:
             c2 = _parse_split(names, splits[1])
+            if recent_raw_min is None:
+                recent_raw_min = c2.get("min", 0)
             if 10 <= c2["min"] <= 48 and c2["pts"] > 0:
                 recent = c2
-            elif recent_raw_min is None:
-                recent_raw_min = c2.get("min", 0)
         if recent:
             # Minutes: when recent is significantly lower than season, override
             # with heavier recent weight. Catches role changes mid-season
@@ -442,6 +442,10 @@ def _fetch_athlete(pid):
             blended["recent_min"] = recent["min"]
             blended["recent_pts"] = recent["pts"]
             blended["season_pts"] = season["pts"]
+            blended["recent_reb"] = recent["reb"]
+            blended["season_reb"] = season["reb"]
+            blended["recent_ast"] = recent["ast"]
+            blended["season_ast"] = season["ast"]
             blended["recent_stl"] = recent["stl"]
             blended["season_stl"] = season["stl"]
             blended["recent_blk"] = recent["blk"]
@@ -452,6 +456,10 @@ def _fetch_athlete(pid):
             blended["recent_min"] = season["min"]
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
+            blended["recent_reb"] = season["reb"]
+            blended["season_reb"] = season["reb"]
+            blended["recent_ast"] = season["ast"]
+            blended["season_ast"] = season["ast"]
             blended["recent_stl"] = season["stl"]
             blended["season_stl"] = season["stl"]
             blended["recent_blk"] = season["blk"]
@@ -1056,6 +1064,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         # Recent vs season stats — used by line engine for trend detection
         "season_pts": round(stats.get("season_pts", pts), 1),
         "recent_pts": round(stats.get("recent_pts", pts), 1),
+        "season_reb": round(stats.get("season_reb", reb), 1),
+        "recent_reb": round(stats.get("recent_reb", reb), 1),
+        "season_ast": round(stats.get("season_ast", ast), 1),
+        "recent_ast": round(stats.get("recent_ast", ast), 1),
         "season_stl": round(stats.get("season_stl", stl), 1),
         "recent_stl": round(stats.get("recent_stl", stl), 1),
         "season_blk": round(stats.get("season_blk", blk), 1),

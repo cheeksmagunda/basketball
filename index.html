@@ -813,6 +813,21 @@
     .line-result-pill.hit     { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
     .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
     .line-result-pill.pending { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+    .line-hist-tab {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px;
+      border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .line-hist-tab.active      { background: var(--surface2); color: var(--text); border-color: var(--border); }
+    .line-hist-tab.active.over { background: rgba(212,166,64,0.15); color: var(--line); border-color: rgba(212,166,64,0.4); }
+    .line-hist-tab.active.under{ background: rgba(20,184,166,0.12); color: var(--lab);  border-color: rgba(20,184,166,0.3); }
+    .line-hist-dir-pill {
+      font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
+    }
+    .line-hist-dir-pill.over  { background: rgba(212,166,64,0.15); color: var(--line); border: 1px solid rgba(212,166,64,0.3); }
+    .line-hist-dir-pill.under { background: rgba(20,184,166,0.12); color: var(--lab);  border: 1px solid rgba(20,184,166,0.25); }
 
     /* ── LAB / BEN PAGE ── */
     .lab-chat-header {
@@ -922,7 +937,7 @@
       min-height: 0;
     }
     #labMessages { flex: 1; overflow-y: auto; }
-    #labInputWrap { flex-shrink: 0; position: static !important; padding-bottom: 120px; }
+    #labInputWrap { flex-shrink: 0; padding: 10px 0 max(8px, env(safe-area-inset-bottom, 8px)); }
     .lab-send-btn {
       width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
       background: var(--lab); border: none;
@@ -1206,7 +1221,15 @@
         <div id="lineSlateSummary" style="margin-top:16px"></div>
       </div>
       <div id="lineHistoryWrap" style="margin-top:24px;display:none">
-        <div class="section-label">Recent Picks</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="section-label" style="margin-top:0;margin-bottom:0">Recent Picks</div>
+          <div style="display:flex;gap:4px">
+            <button class="line-hist-tab active" data-dir="all" onclick="filterLineHistory('all')">All</button>
+            <button class="line-hist-tab" data-dir="over" onclick="filterLineHistory('over')">Over</button>
+            <button class="line-hist-tab" data-dir="under" onclick="filterLineHistory('under')">Under</button>
+          </div>
+        </div>
+        <div id="lineHistoryStats"></div>
         <div id="lineHistoryList"></div>
       </div>
     </div>
@@ -2157,7 +2180,7 @@ async function initLinePage() {
       const hist = await hr.json();
       if (hist.picks && hist.picks.length) {
         document.getElementById('lineHistoryWrap').style.display = 'block';
-        document.getElementById('lineHistoryList').innerHTML = renderLineHistory(hist);
+        renderLineHistory(hist);
       }
     }
   } catch(e) { /* non-fatal */ }
@@ -2230,13 +2253,16 @@ function renderLineSummary(summary) {
     </div>`;
 }
 
+let LINE_HIST_DATA = null;
+
 function renderLineHistory(hist) {
+  LINE_HIST_DATA = hist;
   const streak = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
 
-  let html = '';
+  let statsHtml = '';
   if (hist.hit_rate !== null || streak) {
     const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
-    html += `
+    statsHtml = `
     <div style="display:flex;gap:16px;margin-bottom:14px">
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
@@ -2249,18 +2275,44 @@ function renderLineHistory(hist) {
     </div>`;
   }
 
-  hist.picks.slice(0, 10).forEach(p => {
+  document.getElementById('lineHistoryStats').innerHTML = statsHtml;
+  document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(hist.picks, 'all');
+}
+
+function renderLineHistoryRows(picks, dirFilter) {
+  let html = '';
+  const filtered = dirFilter === 'all' ? picks : picks.filter(p => (p.direction || 'over') === dirFilter);
+  filtered.slice(0, 10).forEach(p => {
     const result = p.result || 'pending';
+    const dir    = p.direction || 'over';
     html += `
       <div class="line-history-row">
-        <div>
-          <div class="line-history-name">${p.player_name}</div>
-          <div class="line-history-sub">${(p.direction||'over').toUpperCase()} ${p.line} ${p.stat_type||''} · ${p.date}</div>
+        <div style="display:flex;align-items:center;gap:7px;min-width:0">
+          <span class="line-hist-dir-pill ${dir}">${dir.toUpperCase()}</span>
+          <div style="min-width:0">
+            <div class="line-history-name">${p.player_name}</div>
+            <div class="line-history-sub">${p.line} ${p.stat_type||'pts'} · ${p.date}</div>
+          </div>
         </div>
-        <span class="line-result-pill ${result}">${result}</span>
+        <span class="line-result-pill ${result}" style="flex-shrink:0">${result}</span>
       </div>`;
   });
+  if (!filtered.length) {
+    html = `<div style="font-size:0.75rem;color:var(--muted);text-align:center;padding:16px 0">No ${dirFilter === 'all' ? '' : dirFilter + ' '}picks yet</div>`;
+  }
   return html;
+}
+
+function filterLineHistory(dir) {
+  if (!LINE_HIST_DATA) return;
+  // Update active tab styling
+  document.querySelectorAll('.line-hist-tab').forEach(btn => {
+    const isActive = btn.dataset.dir === dir;
+    btn.classList.toggle('active', isActive);
+    btn.classList.remove('over', 'under');
+    if (isActive && dir !== 'all') btn.classList.add(dir);
+  });
+  document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA.picks, dir);
 }
 
 // ════════════════════════════════════════════════════════
