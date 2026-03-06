@@ -908,18 +908,17 @@
     }
     #labMessages {
       flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-      /* flex column so ::before spacer can push messages to bottom */
       display: flex; flex-direction: column;
+      min-height: 0;
+      position: relative;
     }
     /* Spacer: grows when few messages, pushes them to the bottom like a real chat UI */
     #labMessages::before { content: ''; flex: 1; }
-    /* Empty state — absolutely centered in labUnlocked, hidden once messages exist */
-    #labUnlocked { position: relative; }
+    /* Empty state — absolutely centered in #labMessages scroll area */
     #labEmptyState {
       position: absolute; inset: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 10px; padding: 40px 24px; text-align: center; pointer-events: none;
-      z-index: 0;
     }
     #labEmptyState .les-icon {
       width: 56px; height: 56px; border-radius: 18px;
@@ -935,7 +934,7 @@
     #labEmptyState .les-sub {
       font-size: 0.78rem; color: var(--muted); line-height: 1.5; max-width: 220px;
     }
-    #labUnlocked:has(.lab-msg) #labEmptyState { display: none; }
+    #labMessages:has(.lab-msg) #labEmptyState { display: none; }
     #labInputWrap { flex-shrink: 0; padding: 10px 0 max(8px, env(safe-area-inset-bottom, 8px)); }
     .lab-send-btn {
       width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
@@ -1242,12 +1241,13 @@
         </div>
       </div>
       <!-- Chat messages -->
-      <div id="labEmptyState">
-        <div class="les-icon">🔮</div>
-        <div class="les-title">Ask Ben anything</div>
-        <div class="les-sub">Today's slate is loaded. Ask about players, projections, card boosts, or trends.</div>
+      <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px">
+        <div id="labEmptyState">
+          <div class="les-icon">🔮</div>
+          <div class="les-title">Ask Ben anything</div>
+          <div class="les-sub">Today's slate is loaded. Ask about players, projections, card boosts, or trends.</div>
+        </div>
       </div>
-      <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px"></div>
       <!-- Input — pure chat -->
       <div id="labInputWrap" style="background:var(--bg)">
         <!-- Photo preview pill (shown when image is attached) -->
@@ -2492,7 +2492,7 @@ async function initLabPage() {
   // Clear prior messages on stale re-init (lock state may have changed)
   if (stale) {
     LAB.messages = [];
-    document.getElementById('labMessages').innerHTML = '';
+    document.getElementById('labMessages').innerHTML = '<div id="labEmptyState"><div class="les-icon">🔮</div><div class="les-title">Ask Ben anything</div><div class="les-sub">Today\'s slate is loaded. Ask about players, projections, card boosts, or trends.</div></div>';
   }
 
   document.getElementById('labLoading').style.display = 'block';
