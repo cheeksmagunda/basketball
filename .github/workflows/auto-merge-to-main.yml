@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - claude/auto-merge-to-main-ZwBZw
+      - claude/codebase-analysis-e3rsW
 
 jobs:
   merge:
@@ -22,7 +23,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
-          git merge --ff-only origin/claude/auto-merge-to-main-ZwBZw || \
-            git merge -m "chore: auto-merge from claude/auto-merge-to-main-ZwBZw" origin/claude/auto-merge-to-main-ZwBZw
+          git merge --ff-only origin/${{ github.ref_name }} || \
+            git merge -m "chore: auto-merge from ${{ github.ref_name }}" origin/${{ github.ref_name }}
           git push origin main
 # Auto-merge test 2026-03-05T21:18:09Z
