@@ -2674,7 +2674,7 @@ async function labCallClaude(attachedImage = null) {
   labMsgs.appendChild(thinkEl);
   labMsgs.scrollTop = labMsgs.scrollHeight;
 
-  document.getElementById('labSendBtn')?.disabled = true;
+  const _sendBtn = document.getElementById('labSendBtn'); if (_sendBtn) _sendBtn.disabled = true;
 
   try {
     // Build API messages — image only injected into the last user message (not stored in history)
@@ -2712,7 +2712,7 @@ async function labCallClaude(attachedImage = null) {
     thinkEl.remove();
     appendLabMessage('assistant', 'Network error. Please try again.');
   } finally {
-    document.getElementById('labSendBtn')?.disabled = false;
+    const _sendBtnF = document.getElementById('labSendBtn'); if (_sendBtnF) _sendBtnF.disabled = false;
   }
 }
 
