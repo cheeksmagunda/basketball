@@ -38,7 +38,7 @@ server.py              — Local dev server (uvicorn)
 4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | History**
 
 - **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation
-- **Line**: Line of the Day — best player prop edge from Odds API (gold accent)
+- **Line**: Line of the Day — best player prop edge from Odds API (gold accent). Over/Under sub-nav filters both history AND the main pick card.
 - **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
 - **History**: Historical drill-down — date strip, game grid, locked prediction cards, screenshot upload, winning drafts, hindsight optimal lineup
 
@@ -137,6 +137,11 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - During lock: shows read-only locked state with estimated unlock time
 - During unlock: full chat capabilities
 
+### Keyboard / Nav Behavior (Ben tab)
+- On **mobile**: focusing `#labInput` hides the bottom nav and expands `#tab-lab` to fill freed keyboard space via `lab-kb-open` CSS class. Blur restores everything.
+- On **desktop**: keyboard handler is skipped entirely via `window.matchMedia('(hover: none) and (pointer: coarse)')` — no nav hiding.
+- CSS class `#tab-lab.active` uses `height: calc(100dvh - 80px - 120px)` (leaves room for nav). `#tab-lab.active.lab-kb-open` expands to `calc(100dvh - 80px)` (nav hidden).
+
 ## Loading Animation
 
 A **Magic 8-ball** animation plays on app load and during API calls (slate fetch, game analysis).
@@ -186,6 +191,24 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `GET /api/audit/get?date=X` returns pre-computed audit (falls back to live computation).
 - `lab_briefing` uses cached audits when available; adds over-projection pattern detection.
 
+## Line Page — Direction Filter
+
+The Over/Under floating pill (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
+
+- `LINE_PICK_DIR` (global) is set when the pick loads — tracks today's actual pick direction
+- `switchLineDir(dir)`: if `dir !== LINE_PICK_DIR`, hides `#linePickCard` + `#lineSlateSummary`, shows `#lineNoPickMsg` with explanation text. Restores on match.
+- Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` (not in `LINE_CSV_HEADER`). These render as `MODEL` label. Only picks generated fresh from the engine include full odds data.
+
+## z-index Hierarchy (fixed elements)
+
+| Element | z-index |
+|---------|---------|
+| `#linePickModal` (bottom sheet) | 1001 |
+| `.bottom-nav` | 1000 |
+| `.predict-sub-nav` / `#lineSubNav` | 999 |
+
+`switchTab()` calls `closeLinePickModal()` + resets `document.body.style.overflow` on every tab switch to prevent scroll lock leaking between tabs.
+
 ## Known Limitation
 
 `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side.
@@ -200,3 +223,16 @@ uvicorn server:app --reload
 # Deploy — push to feature branch; auto-merge-to-main.yml merges → main → Vercel
 git push -u origin claude/auto-merge-to-main-ZwBZw
 ```
+
+## Starting a New Claude Code Session
+
+When starting fresh in a new chat, Claude Code automatically reads this file for context.
+Provide the following to the new session to orient it quickly:
+
+1. **Branch**: `claude/auto-merge-to-main-ZwBZw` (always develop here, push triggers auto-merge → main → Vercel)
+2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
+3. **No test suite to run** — deploy triggers automatically on push; verify on `basketball-chi-cyan.vercel.app`
+4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
+5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LOG`, `LAB`, `LINE_DIR`, `LINE_PICK_DIR`, `LINE_LOADED_DATE`
+6. **Cache**: `/tmp/nba_cache_v19/` (daily, keyed by ET date). `/api/refresh` clears all caches + config.
+7. **Config**: `data/model-config.json` on GitHub — Ben/Lab writes here, backend reads with 5-min TTL.
