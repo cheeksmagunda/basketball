@@ -2175,6 +2175,11 @@ async def line_history():
         if rows:
             results.append(rows[0])
 
+    # Exclude today's pick if it's still pending — it's already shown as the main card above
+    # the history section. Showing it again as the top history row creates a confusing duplicate.
+    today_str = _et_date().isoformat()
+    results = [r for r in results if not (r.get("date") == today_str and r.get("result", "pending") == "pending")]
+
     # Deduplicate by player_name: keep only the most recent pick per player.
     # Prevents same player appearing twice with different directions on consecutive days.
     seen_players: set = set()
