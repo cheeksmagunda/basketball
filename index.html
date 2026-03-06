@@ -2378,11 +2378,13 @@ function renderLineHistory(hist) {
 function renderLineHistoryRows(picks, dirFilter) {
   let html = '';
   const filtered = dirFilter === 'all' ? picks : picks.filter(p => (p.direction || 'over') === dirFilter);
+  const _picks = [];
   filtered.slice(0, 10).forEach(p => {
     const result = p.result || 'pending';
     const dir    = p.direction || 'over';
+    const idx    = _picks.push(p) - 1;
     html += `
-      <div class="line-history-row" style="cursor:pointer" onclick='openLinePickModal(${JSON.stringify(p)})'>
+      <div class="line-history-row" style="cursor:pointer" data-pick-idx="${idx}" onclick="openLinePickModalByIdx(this)">
         <div style="display:flex;align-items:center;gap:7px;min-width:0">
           <span class="line-hist-dir-pill ${dir}">${dir.toUpperCase()}</span>
           <div style="min-width:0">
@@ -2393,6 +2395,12 @@ function renderLineHistoryRows(picks, dirFilter) {
         <span class="line-result-pill ${result}" style="flex-shrink:0">${result}</span>
       </div>`;
   });
+  // Attach picks to rendered nodes after inserting into DOM (deferred via timeout)
+  setTimeout(() => {
+    document.querySelectorAll('.line-history-row[data-pick-idx]').forEach(el => {
+      el._linePick = _picks[parseInt(el.dataset.pickIdx)];
+    });
+  }, 0);
   if (!filtered.length) {
     html = `<div style="font-size:0.75rem;color:var(--muted);text-align:center;padding:16px 0">No ${dirFilter === 'all' ? '' : dirFilter + ' '}picks yet</div>`;
   }
@@ -2400,10 +2408,15 @@ function renderLineHistoryRows(picks, dirFilter) {
 }
 
 function openLinePickModal(pick) {
+  if (!pick) return;
   document.getElementById('linePickModalContent').innerHTML = renderLinePickCard(pick, false);
   const modal = document.getElementById('linePickModal');
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+}
+
+function openLinePickModalByIdx(el) {
+  openLinePickModal(el._linePick);
 }
 
 function closeLinePickModal() {
@@ -2412,11 +2425,8 @@ function closeLinePickModal() {
 }
 
 function renderResolvedTodayBanner(pick) {
-  const dir = pick.direction || 'over';
-  const res = pick.result || '';
-  const actual = pick.actual_stat ? ' · ' + pick.actual_stat + ' actual' : '';
   return '<div style="opacity:0.6;margin-bottom:4px">'
-    + '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Yesterday's Pick</div>'
+    + '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Yesterday&rsquo;s Pick</div>'
     + renderLinePickCard(pick, false)
     + '</div>';
 }
