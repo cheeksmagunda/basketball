@@ -2095,7 +2095,10 @@ async function _handleBenUpload(file, type, source) {
       _markDone2('benUploadWinBtn', '✓ Top Drafts');
       _markDone2('benBannerWinBtn', '✓ Top Drafts');
       _checkBannerDone();
-      const summary = `Top Drafts uploaded for ${today}. Winners: ${leaderboardPlayers.slice(0,6).map(p => `${p.player_name || '?'}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')}.`;
+      const winnerStr = leaderboardPlayers.length
+        ? leaderboardPlayers.slice(0,6).map(p => `${p.player_name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')
+        : `${data.players.length} entries parsed`;
+      const summary = `Top Drafts uploaded for ${today}. ${leaderboardPlayers.length ? 'Winners: ' + winnerStr : winnerStr}.`;
       appendLabMessage('user', summary);
       await labCallClaude();
     }
