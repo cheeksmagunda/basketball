@@ -1498,12 +1498,30 @@ async function loadSlate() {
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
     const isEmptyLocked = slateData.locked && !slateData.lineups.chalk.length;
-    if (isEmptyLocked && SLATE) {
-      // Cold-start after lock: no picks in response — keep displayed picks, update flags.
-      SLATE.locked = true;
-      SLATE.all_complete = slateData.all_complete || false;
+    if (isEmptyLocked) {
+      // Cold-start after lock: server has no cache. Try in-memory SLATE first, then localStorage.
+      const lsKey = `slate_${slateData.date || ''}`;
+      let restored = SLATE;
+      if (!restored || !restored.lineups?.chalk?.length) {
+        try {
+          const raw = localStorage.getItem(lsKey);
+          if (raw) restored = JSON.parse(raw);
+        } catch(e) {}
+      }
+      if (restored && restored.lineups?.chalk?.length) {
+        SLATE = { ...restored, locked: true, all_complete: slateData.all_complete || false };
+      } else {
+        SLATE = slateData;
+      }
     } else {
       SLATE = slateData;
+      // Persist valid slate to localStorage for cold-start recovery after lock.
+      if (slateData.lineups?.chalk?.length || slateData.lineups?.upside?.length) {
+        try {
+          const lsKey = `slate_${slateData.date || ''}`;
+          localStorage.setItem(lsKey, JSON.stringify(slateData));
+        } catch(e) {}
+      }
     }
     document.getElementById('slateTabs').style.display = 'flex';
 
@@ -2176,6 +2194,38 @@ async function initLinePage() {
       });
     } catch(e) { /* non-fatal */ }
 
+    // Auto-resolve: if the pick is still pending and games are final, fetch the actual
+    // stat from ESPN and mark hit/miss without requiring manual input.
+    const pickResult = data.pick.result;
+    if (!pickResult || pickResult === 'pending') {
+      try {
+        const ar = await fetch('/api/auto-resolve-line');
+        if (ar.ok) {
+          const arData = await ar.json();
+          if (arData.status === 'resolved' || arData.status === 'already_resolved') {
+            // Re-render the pick card with the resolved result baked in
+            const resolvedPick = {
+              ...data.pick,
+              result: arData.result,
+              actual_stat: arData.actual_stat,
+            };
+            document.getElementById('linePickCard').innerHTML = renderLinePickCard(resolvedPick, true);
+            // Reload history so the history row updates too
+            LINE_LOADED = false;
+            const hr2 = await fetch('/api/line-history');
+            if (hr2.ok) {
+              const hist2 = await hr2.json();
+              if (hist2.picks && hist2.picks.length) {
+                document.getElementById('lineHistoryWrap').style.display = 'block';
+                renderLineHistory(hist2);
+              }
+            }
+            LINE_LOADED = true;
+          }
+        }
+      } catch(e) { /* non-fatal */ }
+    }
+
   } catch(e) {
     document.getElementById('lineLoading').style.display = 'none';
     const emptyEl = document.getElementById('lineEmpty');
@@ -2231,6 +2281,11 @@ function renderLinePickCard(pick, isPrimary) {
       </div>
       ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
       <div class="line-narrative">${pick.narrative}</div>
+      ${pick.result && pick.result !== 'pending' ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Result</span>
+        <span class="line-result-pill ${pick.result}">${pick.result.toUpperCase()}${pick.actual_stat != null ? ` · ${pick.actual_stat} actual` : ''}</span>
+      </div>` : ''}
     </div>`;
 }
 
