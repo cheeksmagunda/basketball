@@ -1267,7 +1267,7 @@ async def get_slate():
         # All today's games have passed tipoff. Two sub-cases:
         # (a) Games happened today (finals > 0) → show locked state with cached picks
         # (b) No games played yet today (early morning) → tell user when to come back
-        all_final, remaining, finals = _all_games_final(games)
+        all_final, remaining, finals, _lrs = _all_games_final(games)
         if finals > 0 or all_final:
             # Sub-case (a): today's games are in progress or final — serve locked picks.
             lock_cached = _lg("slate_v5_locked")
@@ -2023,7 +2023,7 @@ async def auto_resolve_line():
 
     # Check if all today's games are final
     games = fetch_games()
-    all_final, remaining, finals = _all_games_final(games)
+    all_final, remaining, finals, _lrs = _all_games_final(games)
     if not all_final:
         return {"status": "not_final", "remaining": remaining, "finals": finals}
 
@@ -2116,9 +2116,11 @@ async def line_history():
 _GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0}
 
 def _all_games_final(games):
-    """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min."""
+    """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min.
+    Returns (all_final, remaining, finals, latest_remaining_start_iso).
+    latest_remaining_start_iso is the ESPN date of the latest non-final game, or None."""
     if not games:
-        return True, 0, 0
+        return True, 0, 0, None
     now_ts = datetime.now(timezone.utc).timestamp()
     if _GAMES_FINAL_CACHE["result"] is not None and now_ts - _GAMES_FINAL_CACHE["ts"] < 180:
         return tuple(_GAMES_FINAL_CACHE["result"])
@@ -2126,14 +2128,18 @@ def _all_games_final(games):
     data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
     finals = 0
     remaining = 0
+    latest_remaining = None  # latest scheduled start among non-final games
     for ev in data.get("events", []):
-        status = ev.get("status", {}).get("type", {}).get("completed", False)
-        if status:
+        completed = ev.get("status", {}).get("type", {}).get("completed", False)
+        start = ev.get("date", "")
+        if completed:
             finals += 1
         else:
             remaining += 1
+            if start and (latest_remaining is None or start > latest_remaining):
+                latest_remaining = start
     all_final = remaining == 0 and finals > 0
-    result = (all_final, remaining, finals)
+    result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE["result"] = list(result)
     _GAMES_FINAL_CACHE["ts"] = now_ts
     return result
@@ -2150,7 +2156,7 @@ async def lab_status():
     earliest = min(start_times) if start_times else None
     slate_locked = _is_locked(earliest) if earliest else False
 
-    all_final, remaining, finals = _all_games_final(games)
+    all_final, remaining, finals, latest_remaining_start = _all_games_final(games)
 
     cfg = _load_config()
     cfg_version = cfg.get("version", 1)
@@ -2173,11 +2179,14 @@ async def lab_status():
             "next_lock_time": next_lock,
         }
     elif slate_locked:
-        # Estimate unlock: assume ~2.5h per game from earliest start
+        # Estimate unlock: latest non-final game start + 2.5h.
+        # Using earliest start produced times already in the past (e.g. 6pm+2.5h=8:30pm
+        # shown at 9pm). Use the latest remaining game's start instead.
         est_unlock = None
-        if earliest:
+        anchor = latest_remaining_start or earliest
+        if anchor:
             try:
-                gs = datetime.fromisoformat(earliest.replace("Z", "+00:00"))
+                gs = datetime.fromisoformat(anchor.replace("Z", "+00:00"))
                 est_unlock = (gs + timedelta(hours=2, minutes=30)).isoformat()
             except: pass
         return {
