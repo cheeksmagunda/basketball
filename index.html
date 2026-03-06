@@ -1221,7 +1221,18 @@
       <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px"></div>
       <!-- Input — pure chat -->
       <div id="labInputWrap" style="padding:10px 0 4px;background:var(--bg)">
+        <!-- Photo preview pill (shown when image is attached) -->
+        <div id="labPhotoPreview" style="display:none;align-items:center;gap:8px;margin-bottom:8px;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:8px 10px">
+          <img id="labPhotoThumb" src="" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0">
+          <span style="flex:1;font-size:0.72rem;color:var(--text-dim);font-family:'Barlow',sans-serif">Screenshot attached</span>
+          <button onclick="_labClearPhoto()" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
+          <input type="file" id="labPhotoInput" accept="image/*" style="display:none" onchange="_labAttachPhoto(this.files[0]);this.value=''">
+          <button id="labPhotoBtn" onclick="document.getElementById('labPhotoInput').click()" title="Attach screenshot"
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:background 0.15s">
+            📷
+          </button>
           <textarea id="labInput" placeholder="Ask Ben anything..." rows="1"
             style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
@@ -2430,6 +2441,7 @@ const LAB = {
   initialized: false,
   initAt: 0,          // timestamp of last init (ms)
   _lockPoll: null,    // setInterval id for locked-state polling
+  pendingImage: null, // {base64, mediaType, dataUrl} — attached to next send, cleared after
 };
 
 async function initLabPage() {
@@ -2600,6 +2612,7 @@ DATA PIPELINE:
 
 CAPABILITIES:
 - Answer questions about today's slate, games, picks, or line
+- Analyze any screenshot the user attaches — ownership screens, leaderboards, draft stats, RS results, anything
 - Read any file: use read_repo_file (CSVs, audit JSONs, code, config, line history)
 - Browse directories: use list_repo_directory to discover available dates/files
 - Modify code: write_repo_file for api/*.py or index.html (Vercel redeploy ~2 min)
@@ -2638,7 +2651,7 @@ BEHAVIOR:
 - One change per response unless explicitly asked for more.`;
 }
 
-async function labCallClaude() {
+async function labCallClaude(attachedImage = null) {
   const thinkId = 'lab-think-' + Date.now();
   const thinkEl = document.createElement('div');
   thinkEl.id = thinkId;
@@ -2651,14 +2664,25 @@ async function labCallClaude() {
   document.getElementById('labSendBtn').disabled = true;
 
   try {
+    // Build API messages — image only injected into the last user message (not stored in history)
+    const rawMsgs = LAB.messages.filter(m => !m.hidden);
+    const apiMessages = rawMsgs.map((m, i) => {
+      if (attachedImage && i === rawMsgs.length - 1 && m.role === 'user') {
+        return {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: attachedImage.mediaType, data: attachedImage.base64 } },
+            { type: 'text', text: m.content },
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
     const r = await fetch('/api/lab/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        // Send all messages (including hidden) — hidden = not shown in UI, but still sent to Claude
-        messages: LAB.messages.map(({ role, content }) => ({ role, content })),
-        system: LAB.system,
-      }),
+      body: JSON.stringify({ messages: apiMessages, system: LAB.system }),
     });
     const data = await r.json();
     thinkEl.remove();
@@ -2784,7 +2808,7 @@ async function applyLabConfig(changes, description, msgEl) {
   }
 }
 
-function appendLabMessage(role, content, hidden = false, isStatus = false) {
+function appendLabMessage(role, content, hidden = false, isStatus = false, imageSrc = null) {
   LAB.messages.push({ role, content, hidden });
   if (hidden) return;
 
@@ -2801,13 +2825,15 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
       .replace(/\*(.*?)\*/g, '<i>$1</i>')
       .replace(/\n/g, '<br>');
     el.innerHTML = `<div class="lab-msg-label">Ben</div><div>${formatted}</div>`;
+  } else if (imageSrc) {
+    // User message with attached image — show thumbnail + text
+    el.innerHTML = `<img src="${imageSrc}" style="width:100%;max-width:220px;border-radius:8px;display:block;margin-bottom:6px;opacity:0.9">${content ? `<div style="margin-top:2px">${content}</div>` : ''}`;
   } else {
     el.textContent = content;
   }
 
   const msgs = document.getElementById('labMessages');
   msgs.appendChild(el);
-  // Scroll to bottom of the messages container (not the page)
   msgs.scrollTop = msgs.scrollHeight;
 }
 
@@ -2844,13 +2870,36 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
   });
 })();
 
+function _labAttachPhoto(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    LAB.pendingImage = { base64: dataUrl.split(',')[1], mediaType: file.type || 'image/jpeg', dataUrl };
+    document.getElementById('labPhotoThumb').src = dataUrl;
+    document.getElementById('labPhotoPreview').style.display = 'flex';
+    document.getElementById('labPhotoBtn').style.background = 'rgba(20,184,166,0.18)';
+  };
+  reader.readAsDataURL(file);
+}
+
+function _labClearPhoto() {
+  LAB.pendingImage = null;
+  document.getElementById('labPhotoPreview').style.display = 'none';
+  document.getElementById('labPhotoBtn').style.background = '';
+}
+
 async function labSend() {
   const input = document.getElementById('labInput');
   const text  = input.value.trim();
-  if (!text) return;
+  const img   = LAB.pendingImage;
+  if (!text && !img) return;
   input.value = '';
-  appendLabMessage('user', text);
-  await labCallClaude();
+  if (img) _labClearPhoto();
+
+  const displayText = text || 'What do you see in this screenshot?';
+  appendLabMessage('user', displayText, false, false, img?.dataUrl);
+  await labCallClaude(img);
 }
 
 </script>
