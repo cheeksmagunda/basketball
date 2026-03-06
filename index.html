@@ -2492,11 +2492,14 @@ async function initLabPage() {
   if (LAB.initialized && !stale) return;
   LAB.initialized = true;
   LAB.initAt = Date.now();
-  // Clear prior messages on stale re-init (lock state may have changed)
-  if (stale) {
+  // Only clear messages when the date has rolled over — not just because we've been
+  // away 10+ min. Conversations persist until page refresh or a new day.
+  const today = _etToday();
+  if (LAB.initDate && LAB.initDate !== today) {
     LAB.messages = [];
     document.getElementById('labMessages').innerHTML = '<div id="labEmptyState"><div class="les-icon">🔮</div><div class="les-title">Ask Ben anything</div><div class="les-sub">Today\'s slate is loaded. Ask about players, projections, card boosts, or trends.</div></div>';
   }
+  LAB.initDate = today;
 
   document.getElementById('labLoading').style.display = 'block';
   document.getElementById('labLocked').style.display   = 'none';
