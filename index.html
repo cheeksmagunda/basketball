@@ -1497,8 +1497,11 @@ async function loadSlate() {
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
-    if (slateData.locked && !slateData.lineups.chalk.length && SLATE) {
+    const isEmptyLocked = slateData.locked && !slateData.lineups.chalk.length;
+    if (isEmptyLocked && SLATE) {
+      // Cold-start after lock: no picks in response — keep displayed picks, update flags.
       SLATE.locked = true;
+      SLATE.all_complete = slateData.all_complete || false;
     } else {
       SLATE = slateData;
     }
@@ -1508,12 +1511,17 @@ async function loadSlate() {
     const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
     const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
     let lockChip = '';
-    if (SLATE.locked) {
+    if (SLATE.locked || SLATE.all_complete) {
       lockChip = '<div class="lock-chip">Picks Locked</div>';
     }
-    const gameCount = SLATE.draftable_count ?? SLATE.games.length;
+    // draftable_count is always present now; fall back to games.length only for legacy cache.
+    const draftable = SLATE.draftable_count != null ? SLATE.draftable_count : (SLATE.games || []).length;
+    const totalGames = (SLATE.games || []).length;
+    // Show total game count (X Games) when locked/complete so user knows the slate size.
+    // Show draftable count when slate is open so user knows how many are still pickable.
+    const gameCount = (SLATE.locked || SLATE.all_complete) ? totalGames : draftable;
     chips.innerHTML = `
-      <div class="chip"><b>${gameCount}</b> Games</div>
+      <div class="chip"><b>${gameCount}</b> Game${gameCount !== 1 ? 's' : ''}</div>
       <div class="chip">${dateStr}</div>
       ${lockChip}
     `;
