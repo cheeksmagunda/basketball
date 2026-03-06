@@ -925,18 +925,29 @@
     }
     #labInput { line-height: 1.4; font-size: 16px; }
     #labInput:focus { border-color: var(--lab); }
-    /* Ben tab: flex column so input is always pinned at the bottom */
+    /* Ben tab: fixed-height flex column — messages scroll, input always visible */
     #tab-lab.active {
       display: flex; flex-direction: column;
-      height: calc(100dvh - 80px); /* 80px ≈ header height */
+      /* Subtract header (~80px) + bottom nav clearance (~120px: nav height 104px + 16px margin) */
+      height: calc(100dvh - 80px - 120px);
       padding-top: 0; overflow: hidden;
+    }
+    /* When keyboard opens (labInput focused): nav hidden, expand to fill the freed space */
+    #tab-lab.active.lab-kb-open {
+      height: calc(100dvh - 80px);
     }
     #labUnlocked {
       display: flex; flex-direction: column;
       flex: 1; padding-top: 20px; overflow: hidden;
       min-height: 0;
     }
-    #labMessages { flex: 1; overflow-y: auto; }
+    #labMessages {
+      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      /* flex column so ::before spacer can push messages to bottom */
+      display: flex; flex-direction: column;
+    }
+    /* Spacer: grows when few messages, pushes them to the bottom like a real chat UI */
+    #labMessages::before { content: ''; flex: 1; }
     #labInputWrap { flex-shrink: 0; padding: 10px 0 max(8px, env(safe-area-inset-bottom, 8px)); }
     .lab-send-btn {
       width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
@@ -1273,7 +1284,7 @@
       <!-- Chat messages -->
       <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px"></div>
       <!-- Input — pure chat -->
-      <div id="labInputWrap" style="position:sticky;bottom:0;padding:10px 0 4px;background:var(--bg)">
+      <div id="labInputWrap" style="padding:10px 0 4px;background:var(--bg)">
         <div style="display:flex;gap:8px;align-items:center">
           <textarea id="labInput" placeholder="Ask Ben anything..." rows="1"
             style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
@@ -2696,8 +2707,9 @@ async function labCallClaude() {
   thinkEl.id = thinkId;
   thinkEl.className = 'lab-msg thinking';
   thinkEl.innerHTML = '<div class="lab-thinking-dots"><span></span><span></span><span></span></div>';
-  document.getElementById('labMessages').appendChild(thinkEl);
-  thinkEl.scrollIntoView({behavior:'smooth'});
+  const labMsgs = document.getElementById('labMessages');
+  labMsgs.appendChild(thinkEl);
+  labMsgs.scrollTop = labMsgs.scrollHeight;
 
   document.getElementById('labSendBtn').disabled = true;
 
@@ -2856,9 +2868,39 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
     el.textContent = content;
   }
 
-  document.getElementById('labMessages').appendChild(el);
-  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+  const msgs = document.getElementById('labMessages');
+  msgs.appendChild(el);
+  // Scroll to bottom of the messages container (not the page)
+  msgs.scrollTop = msgs.scrollHeight;
 }
+
+// ── Ben keyboard / nav management ──
+// When the keyboard opens on mobile, the fixed bottom nav floats between the
+// input and the keyboard. Hide it while Ben's input is focused and restore on blur.
+// Also swap the CSS class that controls #tab-lab height so it fills the freed space.
+(function setupBenKeyboard() {
+  const input  = document.getElementById('labInput');
+  const nav    = document.getElementById('bottomNav');
+  const tabLab = document.getElementById('tab-lab');
+  input.addEventListener('focus', () => {
+    tabLab.classList.add('lab-kb-open');
+    nav.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+    nav.style.opacity = '0';
+    nav.style.transform = 'translateX(-50%) translateY(16px)';
+    nav.style.pointerEvents = 'none';
+    // After height expands, scroll messages to bottom so latest is visible
+    requestAnimationFrame(() => {
+      const msgs = document.getElementById('labMessages');
+      msgs.scrollTop = msgs.scrollHeight;
+    });
+  });
+  input.addEventListener('blur', () => {
+    tabLab.classList.remove('lab-kb-open');
+    nav.style.opacity = '';
+    nav.style.transform = '';
+    nav.style.pointerEvents = '';
+  });
+})();
 
 async function labSend() {
   const input = document.getElementById('labInput');
