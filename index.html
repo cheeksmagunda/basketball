@@ -2394,6 +2394,7 @@ const LAB = {
   slateData: null,    // today's slate projections
   initialized: false,
   initAt: 0,          // timestamp of last init (ms)
+  _lockPoll: null,    // setInterval id for locked-state polling
 };
 
 async function initLabPage() {
@@ -2429,29 +2430,49 @@ async function initLabPage() {
   }
 }
 
+function _updateLabLockedStatus(status) {
+  document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
+  const estUnlock = status.estimated_unlock
+    ? 'Estimated unlock: ' + new Date(status.estimated_unlock).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})
+    : (status.next_lock_time ? 'Locks at ' + new Date(status.next_lock_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '');
+  document.getElementById('labLockedUnlock').textContent = estUnlock;
+}
+
 function showLabLocked(status) {
   document.getElementById('labLocked').style.display = 'block';
-  document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
-  const unlock = status.estimated_unlock
-    ? `Estimated unlock: ${new Date(status.estimated_unlock).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
-    : (status.next_lock_time ? `Locks at ${new Date(status.next_lock_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}` : '');
-  document.getElementById('labLockedUnlock').textContent = unlock;
+  _updateLabLockedStatus(status);
 
   // Show config changelog read-only
   fetch('/api/lab/config-history').then(r=>r.json()).then(data => {
     const el = document.getElementById('labLockedConfig');
     const changelog = (data.changelog || []).slice().reverse().slice(0,5);
-    el.innerHTML = `
-      <div class="lab-config-card">
-        <div class="lab-config-label">Config v${data.version} · Changelog</div>
-        ${changelog.map(c => `
-          <div class="lab-changelog-item">
-            <span class="lab-changelog-ver">v${c.version}</span>
-            <span style="color:var(--muted);font-size:0.65rem">${c.date}</span>
-            <br><span>${c.change}</span>
-          </div>`).join('')}
-      </div>`;
-  }).catch(() => {});
+    el.innerHTML = '<div class="lab-config-card"><div class="lab-config-label">Config v' + data.version + ' \xb7 Changelog</div>'
+      + changelog.map(c => '<div class="lab-changelog-item"><span class="lab-changelog-ver">v' + c.version + '</span>'
+        + '<span style="color:var(--muted);font-size:0.65rem">' + c.date + '</span>'
+        + '<br><span>' + c.change + '</span></div>').join('')
+      + '</div>';
+  }).catch(function() {});
+
+  // Poll every 3 min while locked: update games remaining + unlock estimate,
+  // and automatically flip to unlocked view when all games finish.
+  if (LAB._lockPoll) clearInterval(LAB._lockPoll);
+  LAB._lockPoll = setInterval(function() {
+    if (document.getElementById('labLocked').style.display === 'none') {
+      clearInterval(LAB._lockPoll); LAB._lockPoll = null; return;
+    }
+    fetch('/api/lab/status').then(function(r) { return r.json(); }).then(async function(s) {
+      if (!s.locked) {
+        clearInterval(LAB._lockPoll); LAB._lockPoll = null;
+        LAB.initialized = false;
+        document.getElementById('labLocked').style.display = 'none';
+        document.getElementById('labLoading').style.display = 'block';
+        await showLabUnlocked(s);
+        document.getElementById('labLoading').style.display = 'none';
+      } else {
+        _updateLabLockedStatus(s);
+      }
+    }).catch(function() {});
+  }, 3 * 60 * 1000);
 }
 
 async function showLabUnlocked(status) {
