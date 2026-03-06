@@ -1,12 +1,12 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Nikola Jokic,3112335,DEN,C,11.4,0.4,36.2,25.4,11.8,8.8,1.3,0.8
-slate,chalk,1.8x,Jalen Duren,4433621,DET,C,7.2,1.8,27.6,15.8,10.6,1.9,0.8,0.8
+slate,chalk,2.0x,Nikola Jokic,3112335,DEN,C,11.3,0.4,36.2,25.4,11.8,8.8,1.3,0.8
+slate,chalk,1.8x,Jalen Duren,4433621,DET,C,7.1,1.8,27.6,15.8,10.6,1.9,0.8,0.8
 slate,chalk,1.6x,Rudy Gobert,3032976,MIN,C,6.3,2.4,31.4,11.7,11.6,1.6,0.8,1.8
 slate,chalk,1.4x,Jonas Valanciunas,6477,DEN,C,6.2,2.3,22.4,10.8,7.2,1.3,0.3,0.8
 slate,chalk,1.2x,Ausar Thompson,4684742,DET,G,5.6,2.7,25.2,10.1,5.9,2.7,1.7,0.8
-slate,upside,2.0x,Victor Wembanyama,5104157,SA,F,10.1,0.5,31.8,23.1,11.0,3.2,1.1,3.2
+slate,upside,2.0x,Victor Wembanyama,5104157,SA,F,10.0,0.5,31.8,23.1,11.0,3.2,1.1,3.2
 slate,upside,1.8x,Russell Westbrook,3468,SAC,G,8.0,1.3,32.4,18.1,6.2,7.1,1.4,0.2
-slate,upside,1.6x,Caris LeVert,2991043,DET,G,5.5,2.7,23.2,10.4,2.6,3.3,0.9,0.6
+slate,upside,1.6x,Caris LeVert,2991043,DET,G,5.4,2.7,23.2,10.4,2.6,3.3,0.9,0.6
 slate,upside,1.4x,Mike Conley,3195,MIN,G,5.1,2.9,24.4,8.9,2.3,4.2,0.9,0.2
 slate,upside,1.2x,DeAndre Jordan,3442,NO,C,5.0,3.0,20.6,6.5,8.3,0.8,0.5,1.1
 TOR @ MIN,chalk,2.0x,Scottie Barnes,4433134,TOR,F,7.3,1.2,35.3,18.2,7.8,5.2,1.3,1.4
@@ -19,43 +19,43 @@ TOR @ MIN,upside,1.8x,Naz Reid,4396971,MIN,C,4.7,2.3,23.7,12.9,5.8,1.9,0.8,0.9
 TOR @ MIN,upside,1.6x,Donte DiVincenzo,3934673,MIN,G,4.7,2.4,27.9,11.9,4.3,3.7,1.3,0.3
 TOR @ MIN,upside,1.4x,Kyle Anderson,2993874,MIN,F,4.3,3.0,21.3,7.0,3.8,2.7,1.1,0.6
 TOR @ MIN,upside,1.2x,Trayce Jackson-Davis,4431684,TOR,F,4.2,3.0,15.4,5.2,3.8,1.1,0.4,0.7
-DET @ SA,chalk,2.0x,Victor Wembanyama,5104157,SA,F,10.1,0.5,31.8,23.1,11.0,3.2,1.1,3.2
-DET @ SA,chalk,1.8x,Jalen Duren,4433621,DET,C,7.2,1.8,27.6,15.8,10.6,1.9,0.8,0.8
-DET @ SA,chalk,1.6x,Stephon Castle,4845367,SA,G,6.6,1.7,28.6,15.9,4.5,6.0,1.2,0.3
-DET @ SA,chalk,1.4x,Ausar Thompson,4684742,DET,G,5.6,2.7,25.2,10.1,5.9,2.7,1.7,0.8
-DET @ SA,chalk,1.2x,Caris LeVert,2991043,DET,G,5.5,2.7,23.2,10.4,2.6,3.3,0.9,0.6
-DET @ SA,upside,2.0x,Tobias Harris,6440,DET,F,6.0,1.9,29.9,14.7,5.7,2.4,0.9,0.4
-DET @ SA,upside,1.8x,Keldon Johnson,4395723,SA,F,5.8,2.0,28.0,14.1,5.5,1.6,0.7,0.1
-DET @ SA,upside,1.6x,Kevin Huerter,4066372,DET,G,4.8,2.6,24.9,10.8,3.5,2.6,0.8,0.5
-DET @ SA,upside,1.4x,Isaiah Stewart,4432810,DET,F,4.7,2.9,23.8,9.3,6.0,1.2,0.3,1.4
-DET @ SA,upside,1.2x,Kelly Olynyk,2489663,SA,F,4.6,3.0,18.5,6.6,3.4,1.8,0.6,0.2
+DET @ SA,chalk,2.0x,Victor Wembanyama,5104157,SA,F,10.0,0.5,31.8,23.1,11.0,3.2,1.1,3.2
+DET @ SA,chalk,1.8x,Jalen Duren,4433621,DET,C,7.1,1.8,27.6,15.8,10.6,1.9,0.8,0.8
+DET @ SA,chalk,1.6x,Ausar Thompson,4684742,DET,G,5.6,2.7,25.2,10.1,5.9,2.7,1.7,0.8
+DET @ SA,chalk,1.4x,Caris LeVert,2991043,DET,G,5.4,2.7,23.2,10.4,2.6,3.3,0.9,0.6
+DET @ SA,chalk,1.2x,Isaiah Stewart,4432810,DET,F,4.7,2.9,23.8,9.3,6.0,1.2,0.3,1.4
+DET @ SA,upside,2.0x,Stephon Castle,4845367,SA,G,6.5,1.7,28.6,15.9,4.5,6.0,1.2,0.3
+DET @ SA,upside,1.8x,Tobias Harris,6440,DET,F,5.9,1.9,29.9,14.7,5.7,2.4,0.9,0.4
+DET @ SA,upside,1.6x,Keldon Johnson,4395723,SA,F,5.7,2.0,28.0,14.1,5.5,1.6,0.7,0.1
+DET @ SA,upside,1.4x,Kevin Huerter,4066372,DET,G,4.7,2.6,24.9,10.8,3.5,2.6,0.8,0.5
+DET @ SA,upside,1.2x,Kelly Olynyk,2489663,SA,F,4.5,3.0,18.5,6.6,3.4,1.8,0.6,0.2
 CHI @ PHX,chalk,2.0x,Tre Jones,4395626,CHI,G,4.5,2.2,26.8,10.6,2.8,5.2,1.1,0.1
 CHI @ PHX,chalk,1.8x,Yuki Kawamura,5159895,CHI,G,3.9,3.0,18.4,4.0,3.2,4.4,1.2,0.0
-CHI @ PHX,chalk,1.6x,Oso Ighodaro,4601023,PHX,F,3.7,3.0,22.6,5.4,4.5,1.8,0.8,0.6
-CHI @ PHX,chalk,1.4x,Nick Richards,4278076,CHI,C,3.6,3.0,17.9,5.9,5.0,0.5,0.2,0.7
-CHI @ PHX,chalk,1.2x,Ryan Dunn,4888725,PHX,F,3.5,3.0,22.6,6.2,4.0,1.3,0.8,0.5
+CHI @ PHX,chalk,1.6x,Oso Ighodaro,4601023,PHX,F,3.8,3.0,22.6,5.4,4.5,1.8,0.8,0.6
+CHI @ PHX,chalk,1.4x,Nick Richards,4278076,CHI,C,3.7,3.0,17.9,5.9,5.0,0.5,0.2,0.7
+CHI @ PHX,chalk,1.2x,Ryan Dunn,4888725,PHX,F,3.6,3.0,22.6,6.2,4.0,1.3,0.8,0.5
 CHI @ PHX,upside,2.0x,Collin Gillespie,4278585,PHX,G,4.0,2.1,23.5,11.5,3.5,4.0,1.1,0.2
 CHI @ PHX,upside,1.8x,Jamaree Bouyea,4280245,PHX,G,3.3,3.0,16.7,5.8,1.9,1.8,0.8,0.3
 CHI @ PHX,upside,1.6x,Haywood Highsmith,4291678,PHX,F,3.2,3.0,25.3,6.9,3.4,1.2,0.8,0.5
 CHI @ PHX,upside,1.4x,Mac McClung,4397071,CHI,G,3.2,3.0,15.1,5.7,1.6,1.0,0.9,0.4
 CHI @ PHX,upside,1.2x,Guerschon Yabusele,4017844,CHI,F,3.1,3.0,16.9,5.2,3.2,0.9,0.3,0.2
-LAL @ DEN,chalk,2.0x,Nikola Jokic,3112335,DEN,C,11.4,0.4,36.2,25.4,11.8,8.8,1.3,0.8
-LAL @ DEN,chalk,1.8x,Luka Doncic,3945274,LAL,G,10.1,0.3,35.2,30.7,8.1,8.4,1.4,0.5
-LAL @ DEN,chalk,1.6x,Jonas Valanciunas,6477,DEN,C,6.2,2.3,22.4,10.8,7.2,1.3,0.3,0.8
-LAL @ DEN,chalk,1.4x,Marcus Smart,2990992,LAL,G,5.1,2.3,28.8,10.0,3.1,3.6,1.4,0.4
+LAL @ DEN,chalk,2.0x,Nikola Jokic,3112335,DEN,C,11.3,0.4,36.2,25.4,11.8,8.8,1.3,0.8
+LAL @ DEN,chalk,1.8x,Jonas Valanciunas,6477,DEN,C,6.2,2.3,22.4,10.8,7.2,1.3,0.3,0.8
+LAL @ DEN,chalk,1.6x,Marcus Smart,2990992,LAL,G,5.1,2.3,28.8,10.0,3.1,3.6,1.4,0.4
+LAL @ DEN,chalk,1.4x,Bruce Brown,4065670,DEN,G,4.6,2.7,26.2,8.2,4.1,2.3,1.0,0.3
 LAL @ DEN,chalk,1.2x,Tyus Jones,3135046,DEN,G,4.4,3.0,19.8,5.2,1.5,3.5,0.8,0.1
-LAL @ DEN,upside,2.0x,LeBron James,1966,LAL,F,9.0,0.4,35.4,24.2,6.6,7.2,1.2,0.7
-LAL @ DEN,upside,1.8x,Deandre Ayton,4278129,LAL,C,6.3,1.4,29.1,14.4,9.2,1.2,0.7,0.9
-LAL @ DEN,upside,1.6x,Bruce Brown,4065670,DEN,G,4.6,2.7,26.2,8.2,4.1,2.3,1.0,0.3
+LAL @ DEN,upside,2.0x,Luka Doncic,3945274,LAL,G,10.0,0.3,35.2,30.7,8.1,8.4,1.4,0.5
+LAL @ DEN,upside,1.8x,LeBron James,1966,LAL,F,8.9,0.4,35.4,24.2,6.6,7.2,1.2,0.7
+LAL @ DEN,upside,1.6x,Deandre Ayton,4278129,LAL,C,6.3,1.4,29.1,14.4,9.2,1.2,0.7,0.9
 LAL @ DEN,upside,1.4x,KJ Simpson,4683834,DEN,G,4.1,3.0,19.1,6.1,2.4,2.7,0.9,0.1
 LAL @ DEN,upside,1.2x,Jarred Vanderbilt,4278077,LAL,F,3.9,3.0,19.1,5.2,5.3,1.3,0.9,0.3
 NO @ SAC,chalk,2.0x,Russell Westbrook,3468,SAC,G,8.0,1.3,32.4,18.1,6.2,7.1,1.4,0.2
-NO @ SAC,chalk,1.8x,Derik Queen,4869780,NO,C,5.6,2.4,25.6,12.0,7.2,3.9,1.0,0.9
+NO @ SAC,chalk,1.8x,Derik Queen,4869780,NO,C,5.5,2.4,25.6,12.0,7.2,3.9,1.0,0.9
 NO @ SAC,chalk,1.6x,DeAndre Jordan,3442,NO,C,5.0,3.0,20.6,6.5,8.3,0.8,0.5,1.1
 NO @ SAC,chalk,1.4x,Herbert Jones,4277813,NO,F,5.0,2.8,29.6,9.3,3.7,2.7,1.6,0.6
-NO @ SAC,chalk,1.2x,Yves Missi,5061589,NO,C,4.8,3.0,21.2,6.7,6.3,1.2,0.3,1.4
-NO @ SAC,upside,2.0x,Jeremiah Fears,5144091,NO,G,5.2,2.2,27.4,13.3,3.7,3.2,1.2,0.4
-NO @ SAC,upside,1.8x,Maxime Raynaud,4898371,SAC,C,4.9,2.6,27.5,10.7,7.2,1.2,0.5,0.5
-NO @ SAC,upside,1.6x,Precious Achiuwa,4431679,SAC,PF,4.7,3.0,23.9,8.0,5.8,1.1,0.8,0.6
-NO @ SAC,upside,1.4x,Killian Hayes,4683024,SAC,G,4.7,3.0,21.7,5.1,2.1,4.2,0.8,0.2
-NO @ SAC,upside,1.2x,Isaiah Stevens,4432117,SAC,G,4.1,3.0,17.3,3.3,1.0,3.3,1.7,0.0
+NO @ SAC,chalk,1.2x,Precious Achiuwa,4431679,SAC,PF,4.7,3.0,23.9,8.0,5.8,1.1,0.8,0.6
+NO @ SAC,upside,2.0x,Jeremiah Fears,5144091,NO,G,5.1,2.2,27.4,13.3,3.7,3.2,1.2,0.4
+NO @ SAC,upside,1.8x,Maxime Raynaud,4898371,SAC,C,4.8,2.6,27.5,10.7,7.2,1.2,0.5,0.5
+NO @ SAC,upside,1.6x,Yves Missi,5061589,NO,C,4.7,3.0,21.2,6.7,6.3,1.2,0.3,1.4
+NO @ SAC,upside,1.4x,Killian Hayes,4683024,SAC,G,4.6,3.0,21.7,5.1,2.1,4.2,0.8,0.2
+NO @ SAC,upside,1.2x,Isaiah Stevens,4432117,SAC,G,4.0,3.0,17.3,3.3,1.0,3.3,1.7,0.0
