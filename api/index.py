@@ -2049,7 +2049,7 @@ async def refresh():
     auto_saved = False
     try:
         games = fetch_games()
-        draftable = [g for g in games if g.get("startTime") and not g.get("complete")]
+        draftable = [g for g in games if g.get("startTime")]
         start_times = [g["startTime"] for g in draftable]
         if start_times and _is_locked(min(start_times)):
             await save_predictions()

@@ -3,14 +3,48 @@
   "updated_at": "2026-03-06T14:00:00Z",
   "updated_by": "march6-audit",
   "card_boost": {
-    "decay_base": 0.70,
+    "decay_base": 0.7,
     "ceiling": 3.0,
     "floor": 0.2,
     "base_offset": 0.3,
     "scalar": 3.4,
     "big_market_multiplier": 1.5,
-    "big_market_teams": ["LAL", "GSW", "BOS", "NYK", "PHI", "MIL", "DAL", "PHX", "MIA", "DEN", "LAC", "CHI"],
-    "star_players": ["Luka Doncic", "Victor Wembanyama", "Giannis Antetokounmpo", "Jayson Tatum", "Shai Gilgeous-Alexander", "Nikola Jokic", "Anthony Edwards", "LeBron James", "Stephen Curry", "Kevin Durant", "Damian Lillard", "Trae Young", "Devin Booker", "Joel Embiid", "Cade Cunningham", "Paolo Banchero", "Zion Williamson", "Karl-Anthony Towns", "Donovan Mitchell", "De'Aaron Fox"],
+    "big_market_teams": [
+      "LAL",
+      "GSW",
+      "BOS",
+      "NYK",
+      "PHI",
+      "MIL",
+      "DAL",
+      "PHX",
+      "MIA",
+      "DEN",
+      "LAC",
+      "CHI"
+    ],
+    "star_players": [
+      "Luka Doncic",
+      "Victor Wembanyama",
+      "Giannis Antetokounmpo",
+      "Jayson Tatum",
+      "Shai Gilgeous-Alexander",
+      "Nikola Jokic",
+      "Anthony Edwards",
+      "LeBron James",
+      "Stephen Curry",
+      "Kevin Durant",
+      "Damian Lillard",
+      "Trae Young",
+      "Devin Booker",
+      "Joel Embiid",
+      "Cade Cunningham",
+      "Paolo Banchero",
+      "Zion Williamson",
+      "Karl-Anthony Towns",
+      "Donovan Mitchell",
+      "De'Aaron Fox"
+    ],
     "log_formula_active": false,
     "log_a": 3.2,
     "log_b": 0.45,
@@ -20,34 +54,69 @@
     "defensive_grind_ceiling": 220,
     "balanced_ceiling": 235,
     "fast_paced_ceiling": 245,
-    "defensive_grind": {"pts": 0.85, "reb": 0.90, "ast": 0.85, "stl": 1.40, "blk": 1.35, "tov": 1.15},
-    "balanced": {"pts": 1.0, "reb": 1.0, "ast": 1.0, "stl": 1.05, "blk": 1.05, "tov": 1.0},
-    "fast_paced": {"pts": 1.15, "reb": 1.10, "ast": 1.15, "stl": 0.95, "blk": 0.95, "tov": 0.90},
-    "track_meet": {"pts": 1.25, "reb": 1.05, "ast": 1.20, "stl": 0.90, "blk": 0.90, "tov": 0.85},
+    "defensive_grind": {
+      "pts": 0.85,
+      "reb": 0.9,
+      "ast": 0.85,
+      "stl": 1.4,
+      "blk": 1.35,
+      "tov": 1.15
+    },
+    "balanced": {
+      "pts": 1.0,
+      "reb": 1.0,
+      "ast": 1.0,
+      "stl": 1.05,
+      "blk": 1.05,
+      "tov": 1.0
+    },
+    "fast_paced": {
+      "pts": 1.15,
+      "reb": 1.1,
+      "ast": 1.15,
+      "stl": 0.95,
+      "blk": 0.95,
+      "tov": 0.9
+    },
+    "track_meet": {
+      "pts": 1.25,
+      "reb": 1.05,
+      "ast": 1.2,
+      "stl": 0.9,
+      "blk": 0.9,
+      "tov": 0.85
+    },
     "blowout_spread_threshold": 8,
-    "blowout_pts_penalty": 0.90,
-    "blowout_ast_penalty": 0.90,
+    "blowout_pts_penalty": 0.9,
+    "blowout_ast_penalty": 0.9,
     "blowout_reb_penalty": 0.94
   },
   "real_score": {
-    "dfs_weights": {"pts": 1.0, "reb": 1.0, "ast": 1.5, "stl": 4.5, "blk": 4.0, "tov": -1.2}
+    "dfs_weights": {
+      "pts": 1.0,
+      "reb": 1.0,
+      "ast": 1.5,
+      "stl": 4.5,
+      "blk": 4.0,
+      "tov": -1.2
+    }
   },
   "cascade": {
-    "redistribution_rate": 0.70,
+    "redistribution_rate": 0.7,
     "per_player_cap_minutes": 3.0,
-    "center_forward_share": 0.30
+    "center_forward_share": 0.3
   },
   "projection": {
     "min_gate_minutes": 12,
     "lock_buffer_minutes": 5,
     "season_recent_blend": 0.5,
     "major_role_change_threshold": 0.75,
-    "major_role_change_recent_weight": 0.80,
-    "moderate_decline_threshold": 0.90,
+    "major_role_change_recent_weight": 0.8,
+    "moderate_decline_threshold": 0.9,
     "moderate_decline_recent_weight": 0.65,
     "gtd_minute_penalty": 0.75,
     "dnp_risk_min_threshold": 8.0,
-    "reliability_floor": 0.70,
+    "reliability_floor": 0.7,
     "chalk_boost_cap": 1.5
   },
   "contrarian": {
@@ -57,9 +126,20 @@
     "underdog_spread_min": 2,
     "underdog_spread_max": 7
   },
-  "development_teams": ["UTA", "IND", "BKN", "CHI", "NOP", "SAC", "MEM", "WAS", "DAL"],
+  "development_teams": [
+    "UTA",
+    "IND",
+    "BKN",
+    "CHI",
+    "NOP",
+    "SAC",
+    "MEM",
+    "WAS",
+    "DAL"
+  ],
   "moonshot": {
     "min_minutes_floor": 20,
+    "min_card_boost": 1.0,
     "dev_team_boost": 1.25,
     "card_boost_weight": 2.0,
     "minutes_weight": 1.0,
@@ -67,10 +147,30 @@
     "max_ownership_pct": 3.0
   },
   "changelog": [
-    {"version": 1, "date": "2026-03-05", "change": "Initial config externalization"},
-    {"version": 2, "date": "2026-03-05", "change": "March 4 audit: raise min_gate 12→15, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"},
-    {"version": 3, "date": "2026-03-05", "change": "Model improvements: min_gate 15→12 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"},
-    {"version": 4, "date": "2026-03-06", "change": "March 5 audit: added development_teams list (UTA/IND/BKN/CHI/NOP/SAC/MEM/WAS/DAL), moonshot overhaul (20-min floor, minutes*boost ranking, RotoWire lineup clearance), RotoWire scraper integration for lineup confirmations"},
-    {"version": 5, "date": "2026-03-06", "change": "March 6 audit (Mar 5 results): chalk_boost_cap 1.0→1.5 (Bailey 187 drafts RS 5.9 +2.1x beat Wemby 1.4k drafts RS 7.1 +0.3x — cap was preventing high-boost role players from chalk); RotoWire check added to chalk lineup (fixes OUT/questionable players appearing in Starting 5)"}
+    {
+      "version": 1,
+      "date": "2026-03-05",
+      "change": "Initial config externalization"
+    },
+    {
+      "version": 2,
+      "date": "2026-03-05",
+      "change": "March 4 audit: raise min_gate 12\u219215, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"
+    },
+    {
+      "version": 3,
+      "date": "2026-03-05",
+      "change": "Model improvements: min_gate 15\u219212 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"
+    },
+    {
+      "version": 4,
+      "date": "2026-03-06",
+      "change": "March 5 audit: added development_teams list (UTA/IND/BKN/CHI/NOP/SAC/MEM/WAS/DAL), moonshot overhaul (20-min floor, minutes*boost ranking, RotoWire lineup clearance), RotoWire scraper integration for lineup confirmations"
+    },
+    {
+      "version": 5,
+      "date": "2026-03-06",
+      "change": "March 6 audit (Mar 5 results): chalk_boost_cap 1.0\u21921.5 (Bailey 187 drafts RS 5.9 +2.1x beat Wemby 1.4k drafts RS 7.1 +0.3x \u2014 cap was preventing high-boost role players from chalk); RotoWire check added to chalk lineup (fixes OUT/questionable players appearing in Starting 5)"
+    }
   ]
 }

@@ -21,6 +21,7 @@
 import re
 import json
 import hashlib
+import unicodedata
 import requests
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -75,7 +76,6 @@ def _normalize_name(name):
     'P.J. Washington' → 'pj washington'
     'Marcus Morris Sr.' → 'marcus morris'
     """
-    import unicodedata
     n = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode()
     n = n.lower().strip()
     n = n.replace(".", "").replace("'", "").replace("-", " ")
@@ -175,8 +175,6 @@ def _parse_lineups_html(html):
 
     # Extract team abbreviations from game headers
     # Pattern: "TEAM @ TEAM" or "TEAM vs TEAM"
-    game_blocks = re.split(r'<div[^>]*class="[^"]*lineup__matchup[^"]*"', html)
-
     # Extract individual player entries
     # RotoWire player links typically look like:
     # <a href="/basketball/player/..." class="lineup__player">Name</a>
@@ -212,8 +210,6 @@ def _parse_lineups_html(html):
 
     # If we can't parse structured blocks, fall back to a simpler approach:
     # Find all player names and try to determine their status from context
-    all_names = player_pattern.findall(html)
-
     # Also try to extract from the more modern RotoWire format
     # which uses data attributes
     data_player_pattern = re.compile(
