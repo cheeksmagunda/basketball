@@ -1206,7 +1206,7 @@
   <div id="tab-line" class="tab-page">
     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:4px">
       <div class="section-label" style="margin-top:0">Line of the Day</div>
-      <button onclick="LINE_LOADED=false;initLinePage()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      <button onclick="LINE_LOADED_DATE='';initLinePage()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <div id="lineContent">
       <div id="lineLoading" style="display:none">
@@ -1509,11 +1509,18 @@ async function loadSlate() {
     if (isEmptyLocked) {
       // Cold-start after lock: server has no cache. Try in-memory SLATE first, then localStorage.
       const lsKey = `slate_${slateData.date || ''}`;
+      const todayET = _etToday();
       let restored = SLATE;
+      // Discard in-memory SLATE if it's from a different ET date
+      if (restored && restored.date && restored.date !== todayET) restored = null;
       if (!restored || !restored.lineups?.chalk?.length) {
         try {
           const raw = localStorage.getItem(lsKey);
-          if (raw) restored = JSON.parse(raw);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            // Only restore if the stored slate is for today (ET date)
+            restored = (parsed?.date === todayET) ? parsed : null;
+          }
         } catch(e) {}
       }
       if (restored && restored.lineups?.chalk?.length) {
@@ -1743,17 +1750,21 @@ function renderSkeletons(containerId, count) {
 // ════════════════════════════════════════════════════════════════════
 // PREDICTION PERSISTENCE — grep: savePredictions, /api/save-predictions, GitHub CSV
 // ════════════════════════════════════════════════════════════════════
-let _predSavedToday = false;
+let _predSavedDate = '';
+function _etToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
 async function savePredictions() {
-  if (_predSavedToday) return; // only fire once per session
+  const today = _etToday();
+  if (_predSavedDate === today) return; // only fire once per ET day
   // Only save when the slate is locked — predictions are finalized at that point.
   // If called pre-lock, skip without consuming the flag so it can fire on next call.
   if (!SLATE || !SLATE.locked) return;
-  _predSavedToday = true;
+  _predSavedDate = today;
   try {
     await fetch('/api/save-predictions', { method: 'POST' });
   } catch(e) {
-    _predSavedToday = false; // allow retry on network error
+    _predSavedDate = ''; // allow retry on network error
     console.warn('Prediction save failed:', e);
   }
 }
@@ -2148,7 +2159,7 @@ function renderHindsightOptimal(lineup) {
 // ── LINE PAGE ──
 // ════════════════════════════════════════════════════════
 
-let LINE_LOADED = false;
+let LINE_LOADED_DATE = '';
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 
 async function _tryAutoResolveLine(pick) {
@@ -2166,7 +2177,7 @@ async function _tryAutoResolveLine(pick) {
         const hist2 = await hr2.json();
         if (hist2.picks && hist2.picks.length) {
           document.getElementById('lineHistoryWrap').style.display = 'block';
-          LINE_LOADED = false; renderLineHistory(hist2); LINE_LOADED = true;
+          LINE_LOADED_DATE = ''; renderLineHistory(hist2); LINE_LOADED_DATE = _etToday();
         }
       }
     } else if (arData.status === 'game_not_final') {
@@ -2182,8 +2193,9 @@ async function _tryAutoResolveLine(pick) {
 }
 
 async function initLinePage() {
-  if (LINE_LOADED) return;
-  LINE_LOADED = true;
+  const todayET = _etToday();
+  if (LINE_LOADED_DATE === todayET) return;
+  LINE_LOADED_DATE = todayET;
   document.getElementById('lineLoading').style.display = 'block';
   document.getElementById('lineEmpty').style.display = 'none';
   document.getElementById('linePickWrap').style.display = 'none';

@@ -16,12 +16,24 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 import numpy as np
-from datetime import date
+from datetime import datetime, timezone, timedelta
+
+
+def _et_today():
+    """Current date in Eastern Time as ISO string — matches api/index.py logic."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    except ImportError:
+        now_utc = datetime.now(timezone.utc)
+        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
+        return (now_utc + offset).date().isoformat()
 
 
 def _make_rng(spread, total, seed_date=None):
-    """Deterministic RNG seeded by game parameters + date for cache stability."""
-    d = seed_date or date.today().isoformat()
+    """Deterministic RNG seeded by game parameters + ET date for cache stability.
+    Uses ET date (not UTC) so the seed stays consistent for the full NBA evening."""
+    d = seed_date or _et_today()
     seed = hash((d, round(spread, 1), round(total, 1))) % (2**31)
     return np.random.default_rng(seed)
 
