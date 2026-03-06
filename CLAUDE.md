@@ -106,13 +106,13 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
 | `/api/lab/auto-improve` | GET | **Cron endpoint** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% improvement |
-| `/api/lab/chat` | POST | Proxy to claude-sonnet-4-6 with Lab system prompt (keeps key server-side) |
+| `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt (keeps key server-side) |
 
 ## Environment Variables (Vercel)
 
 - `GITHUB_TOKEN` — GitHub PAT with repo scope (for CSV + config read/write via Contents API)
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
-- `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-sonnet-4-6 (Ben/Lab chat)
+- `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
 - `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day)
 
 ## Runtime Config System
