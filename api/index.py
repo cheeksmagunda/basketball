@@ -2800,6 +2800,170 @@ async def lab_backtest(payload: dict = Body(...)):
     }
 
 
+@app.get("/api/lab/auto-improve")
+async def lab_auto_improve():
+    """
+    Autonomous model improvement cron endpoint.
+    1. Fetches briefing data to assess current accuracy
+    2. If MAE > 2.0 or patterns detected, asks Claude Haiku to propose config changes
+    3. Backtests proposed changes against historical data
+    4. Auto-applies if improvement >= 3%
+    5. Returns a log of actions taken (safe to run even if no data yet)
+    """
+    if not ANTHROPIC_API_KEY:
+        return {"status": "skipped", "reason": "ANTHROPIC_API_KEY not configured"}
+
+    # Step 1: Get briefing
+    try:
+        briefing = await lab_briefing()
+    except Exception as e:
+        return {"status": "error", "reason": f"Briefing failed: {e}"}
+
+    latest = briefing.get("latest_slate")
+    patterns = briefing.get("patterns", [])
+    rolling = briefing.get("rolling_accuracy", {})
+    current_cfg = briefing.get("current_config", {})
+
+    # Skip if no data or accuracy is already good
+    mae = latest.get("mean_absolute_error") if latest else None
+    overall_mae = rolling.get("overall_mae")
+    effective_mae = mae or overall_mae
+
+    action_log = {
+        "ran_at": datetime.now(timezone.utc).isoformat(),
+        "latest_mae": mae,
+        "overall_mae": overall_mae,
+        "patterns_detected": len(patterns),
+    }
+
+    if effective_mae is None:
+        return {"status": "skipped", "reason": "No historical data yet", "log": action_log}
+
+    if effective_mae <= 1.8 and len(patterns) == 0:
+        action_log["decision"] = f"MAE {effective_mae} is good — no changes needed"
+        return {"status": "skipped", "reason": "Model accuracy is satisfactory", "log": action_log}
+
+    # Step 2: Ask Claude Haiku to propose changes
+    cfg = _load_config()
+    dfs_weights = cfg.get("real_score", {}).get("dfs_weights", {})
+    card_boost_cfg = cfg.get("card_boost", {})
+
+    haiku_prompt = f"""You are an NBA fantasy model optimizer. Analyze the accuracy data and propose ONE specific parameter change.
+
+CURRENT ACCURACY:
+- Latest slate MAE: {mae}
+- Overall rolling MAE: {overall_mae}
+- Over-projected players: {latest.get('over_projected', 'N/A') if latest else 'N/A'}
+- Under-projected players: {latest.get('under_projected', 'N/A') if latest else 'N/A'}
+- Patterns: {json.dumps(patterns)}
+
+CURRENT CONFIG:
+- DFS weights: {json.dumps(dfs_weights)}
+- Card boost scalar: {card_boost_cfg.get('scalar', 'N/A')}
+- Card boost decay: {card_boost_cfg.get('decay_base', 'N/A')}
+- Model version: {current_cfg.get('version', 1)}
+
+Biggest misses from latest slate: {json.dumps(latest.get('biggest_misses', []) if latest else [])}
+
+RULES:
+- Propose exactly ONE change to ONE parameter using dot notation
+- Valid paths: real_score.dfs_weights.pts, real_score.dfs_weights.reb, real_score.dfs_weights.ast, real_score.dfs_weights.stl, real_score.dfs_weights.blk, card_boost.scalar, card_boost.decay_base
+- Keep changes small: ±5-10% max from current values
+- If over-projecting consistently, suggest reducing a weight. If under-projecting, increase.
+- Respond ONLY with valid JSON in this exact format:
+{{"dot_path": "real_score.dfs_weights.pts", "new_value": 1.05, "reasoning": "Brief reason"}}"""
+
+    try:
+        haiku_resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 256,
+                "messages": [{"role": "user", "content": haiku_prompt}],
+            },
+            timeout=30,
+        )
+        haiku_resp.raise_for_status()
+        haiku_data = haiku_resp.json()
+        raw_text = next(
+            (b["text"] for b in haiku_data.get("content", []) if b.get("type") == "text"), ""
+        ).strip()
+
+        # Parse JSON from response (may be wrapped in ```json ... ```)
+        if "```" in raw_text:
+            raw_text = raw_text.split("```")[1]
+            if raw_text.startswith("json"):
+                raw_text = raw_text[4:]
+        proposal = json.loads(raw_text.strip())
+        dot_path = proposal["dot_path"]
+        new_value = proposal["new_value"]
+        reasoning = proposal.get("reasoning", "Auto-improve suggestion")
+
+    except Exception as e:
+        action_log["decision"] = f"Claude proposal failed: {e}"
+        return {"status": "error", "reason": f"Haiku proposal error: {e}", "log": action_log}
+
+    action_log["proposed_change"] = {dot_path: new_value}
+    action_log["reasoning"] = reasoning
+
+    # Step 3: Backtest the proposed change
+    try:
+        backtest_payload = {
+            "proposed_changes": {dot_path: new_value},
+            "description": f"Auto-improve: {reasoning}",
+        }
+        backtest_result = await lab_backtest(backtest_payload)
+    except Exception as e:
+        action_log["decision"] = f"Backtest failed: {e}"
+        return {"status": "error", "reason": f"Backtest error: {e}", "log": action_log}
+
+    improvement_pct = backtest_result.get("improvement_pct", 0)
+    current_mae_bt = backtest_result.get("current_config_mae")
+    proposed_mae_bt = backtest_result.get("proposed_config_mae")
+
+    action_log["backtest"] = {
+        "current_mae": current_mae_bt,
+        "proposed_mae": proposed_mae_bt,
+        "improvement_pct": improvement_pct,
+    }
+
+    # Step 4: Apply if improvement >= 3%
+    IMPROVEMENT_THRESHOLD = 3.0
+    if improvement_pct >= IMPROVEMENT_THRESHOLD:
+        try:
+            update_payload = {
+                "changes": {dot_path: new_value},
+                "change_description": f"[auto-improve] {reasoning} (backtest: {improvement_pct:.1f}% MAE improvement)",
+            }
+            update_result = await lab_update_config(update_payload)
+            action_log["decision"] = "applied"
+            action_log["new_version"] = update_result.get("version")
+            return {
+                "status": "applied",
+                "change": {dot_path: new_value},
+                "improvement_pct": improvement_pct,
+                "reasoning": reasoning,
+                "log": action_log,
+            }
+        except Exception as e:
+            action_log["decision"] = f"Apply failed: {e}"
+            return {"status": "error", "reason": f"Config update error: {e}", "log": action_log}
+    else:
+        action_log["decision"] = f"Improvement {improvement_pct:.1f}% below threshold {IMPROVEMENT_THRESHOLD}% — not applied"
+        return {
+            "status": "no_change",
+            "reason": f"Backtest improvement {improvement_pct:.1f}% below {IMPROVEMENT_THRESHOLD}% threshold",
+            "proposed_change": {dot_path: new_value},
+            "reasoning": reasoning,
+            "log": action_log,
+        }
+
+
 @app.post("/api/lab/chat")
 async def lab_chat(payload: dict = Body(...)):
     """Proxy to Anthropic Messages API with Lab system prompt and live NBA tool use."""

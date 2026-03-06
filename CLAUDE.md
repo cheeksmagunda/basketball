@@ -41,7 +41,7 @@ server.py              — Local dev server (uvicorn)
 - **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation
 - **Line**: Line of the Day — best player prop edge from Odds API (gold accent)
 - **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
-- **History**: Historical drill-down — date strip, game grid, locked prediction cards, screenshot upload, winning drafts, hindsight optimal lineup
+- **History**: Historical drill-down — date strip, game grid, read-only prediction cards vs actuals (no user input — upload happens through Ben)
 
 ## Codebase Navigation (grep tags)
 
@@ -91,8 +91,8 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 ### Line of the Day
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/line-of-the-day` | GET | Best prop edge (Odds API → edge detection → confidence) |
-| `/api/save-line` | POST | Save daily pick to data/lines/{date}.csv (once/day) |
+| `/api/line-of-the-day` | GET | **Both** Over + Under picks (6 parallel Haiku calls: 3 stats × 2 dirs); returns `{over_pick, under_pick, pick}` |
+| `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
 | `/api/line-history` | GET | Recent picks with streak + hit rate |
 
@@ -105,6 +105,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/lab/config-history` | GET | Full config + changelog |
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
+| `/api/lab/auto-improve` | GET | **Cron endpoint** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% improvement |
 | `/api/lab/chat` | POST | Proxy to claude-sonnet-4-6 with Lab system prompt (keeps key server-side) |
 
 ## Environment Variables (Vercel)
@@ -132,11 +133,19 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - Decision history and config changes are stored in `LAB.messages` and `data/model-config.json`
 - The chat prompt includes full system context (briefing data, config state, backtest capability)
 
+### End-of-Day Upload Flow (in Ben)
+After all games are final and Ben unlocks, if no messages yet:
+- Ben auto-prompts with a message containing two upload buttons: **📸 Real Scores** and **🏆 Top Drafts**
+- Tapping a button opens the device file picker (dynamic `createElement('input')` — no HTML needed)
+- `_handleBenUpload()` runs the full pipeline: `parse-screenshot → save-actuals → hindsight → hidden message → labCallClaude()`
+- Ben responds with analysis + hindsight lineup, buttons turn green (✓) on success
+- History page is now **read-only** — no upload UI there
+
 ### Lock System
 - **Locked** 5 minutes before first game tip-off (slate is in progress)
 - **Unlocked** when ALL games on today's slate reach "Final" status on ESPN (3-min TTL cache)
 - During lock: shows read-only locked state with estimated unlock time
-- During unlock: full chat capabilities
+- During unlock: full chat capabilities + end-of-day upload prompt (if first session open)
 
 ## Loading Animation
 
@@ -193,6 +202,26 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `GET /api/audit/get?date=X` returns pre-computed audit (falls back to live computation).
 - `lab_briefing` uses cached audits when available; adds over-projection pattern detection.
 
+## Autonomous Model Improvement
+
+`/api/lab/auto-improve` runs daily at 9am UTC via Vercel cron (after overnight games wrap up):
+1. Fetches `lab_briefing` — skips if MAE ≤ 1.8 and no patterns (model already healthy)
+2. Calls Claude Haiku with briefing + current config → proposes ONE parameter change (dot-notation)
+3. Runs `lab_backtest` with proposed change against last 10 slates
+4. If improvement ≥ 3%, calls `lab_update_config` to apply — changelog entry shows it was auto-applied
+5. Returns JSON log of decision (can be monitored via Vercel function logs)
+
+This means the model self-tunes nightly without any IDE pushes. Ben's chat still lets you apply changes manually or override auto-improve decisions.
+
+## Line of the Day — Dual Direction Picks
+
+The line engine generates **both Over and Under** picks daily:
+- 6 parallel Claude Haiku calls (3 stats × 2 directions)
+- Each direction's best pick is saved as `{over_pick, under_pick}` in `data/lines/{date}.json`
+- Frontend Line tab has **Over / Under sub-nav** defaulting to **Under** (sharper bets tend to be fades)
+- Legacy single-pick JSON files are backward-compatible (detected by field presence)
+- If saved pick has only one direction, endpoint runs engine on-demand to fill the missing one
+
 ## Known Limitation
 
 `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side.
@@ -205,5 +234,5 @@ pip install -r requirements.txt
 uvicorn server:app --reload
 
 # Deploy — push to feature branch; auto-merge-to-main.yml merges → main → Vercel
-git push -u origin claude/auto-merge-to-main-ZwBZw
+git push -u origin claude/codebase-analysis-e3rsW
 ```
