@@ -1955,6 +1955,108 @@ async def resolve_line(payload: dict = Body(...)):
     return {"status": "resolved", "result": result, "actual": actual_f}
 
 
+def _fetch_player_final_stat(player_name: str, stat_type: str) -> float | None:
+    """Fetch a player's final boxscore stat from ESPN for today's games.
+    stat_type is the line pick type: 'points', 'rebounds', 'assists', etc.
+    Returns the numeric value or None if not found / game not final."""
+    label_map = {
+        "points": "PTS", "pts": "PTS",
+        "rebounds": "REB", "reb": "REB",
+        "assists": "AST", "ast": "AST",
+        "steals": "STL", "stl": "STL",
+        "blocks": "BLK", "blk": "BLK",
+        "turnovers": "TO", "tov": "TO",
+    }
+    espn_label = label_map.get(stat_type.lower(), "PTS")
+    player_lower = player_name.lower().strip()
+
+    today_str = _et_date().strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
+    for ev in data.get("events", []):
+        # Only use completed games
+        completed = ev.get("status", {}).get("type", {}).get("completed", False)
+        if not completed:
+            continue
+        game_id = ev.get("id", "")
+        box = _espn_get(f"{ESPN}/summary?event={game_id}")
+        for team_block in box.get("boxscore", {}).get("players", []):
+            stats = team_block.get("statistics", [])
+            if not stats:
+                continue
+            labels = stats[0].get("labels", [])
+            if espn_label not in labels:
+                continue
+            idx = labels.index(espn_label)
+            for ath in stats[0].get("athletes", []):
+                name = ath.get("athlete", {}).get("displayName", "")
+                if player_lower in name.lower() or name.lower() in player_lower:
+                    vals = ath.get("stats", [])
+                    if idx < len(vals):
+                        try:
+                            return float(vals[idx])
+                        except (ValueError, TypeError):
+                            return None
+    return None
+
+
+@app.get("/api/auto-resolve-line")
+async def auto_resolve_line():
+    """Auto-resolve today's pending line pick when all games are final.
+    Fetches the player's actual stat from ESPN boxscore and marks hit/miss."""
+    today = _et_date().isoformat()
+    csv_path  = f"data/lines/{today}.csv"
+    json_path = f"data/lines/{today}_pick.json"
+
+    existing, _ = _github_get_file(csv_path)
+    if not existing:
+        return {"status": "no_pick"}
+
+    rows = _parse_csv(existing, LINE_FIELDS)
+    if not rows:
+        return {"status": "no_pick"}
+
+    row = rows[0]
+    if row.get("result") and row["result"] not in ("pending", ""):
+        # Already resolved — return current result
+        return {"status": "already_resolved", "result": row["result"],
+                "actual_stat": _safe_float(row.get("actual_stat", 0))}
+
+    # Check if all today's games are final
+    games = fetch_games()
+    all_final, remaining, finals = _all_games_final(games)
+    if not all_final:
+        return {"status": "not_final", "remaining": remaining, "finals": finals}
+
+    # Fetch the player's actual stat from ESPN boxscore
+    player_name = row.get("player_name", "")
+    stat_type   = row.get("stat_type", "points")
+    actual      = _fetch_player_final_stat(player_name, stat_type)
+    if actual is None:
+        return {"status": "stat_not_found", "player": player_name, "stat_type": stat_type}
+
+    direction = row.get("direction", "over")
+    line_val  = _safe_float(row.get("line", 0))
+    result    = "hit" if (actual > line_val if direction == "over" else actual < line_val) else "miss"
+
+    # Rewrite CSV with result
+    updated_row = dict(row)
+    updated_row["result"]      = result
+    updated_row["actual_stat"] = str(actual)
+    new_row = ",".join(_csv_escape(str(updated_row.get(k, ""))) for k in LINE_FIELDS)
+    csv_content = LINE_CSV_HEADER + "\n" + new_row + "\n"
+    _github_write_file(csv_path, csv_content, f"auto-resolve line {today}: {result} ({player_name} {actual} vs {line_val})")
+
+    # Also bust the line cache so the next /api/line-of-the-day returns the resolved pick
+    try:
+        line_cache = _cp("line_v1")
+        if line_cache.exists():
+            line_cache.unlink()
+    except: pass
+
+    return {"status": "resolved", "result": result, "actual_stat": actual,
+            "player": player_name, "line": line_val, "direction": direction}
+
+
 @app.get("/api/line-history")
 async def line_history():
     """Return recent Line of the Day picks with results."""
