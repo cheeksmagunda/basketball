@@ -144,6 +144,7 @@ _CONFIG_DEFAULTS = {
         "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
+        "chalk_boost_cap":1.0,          # max card boost counted toward chalk_ev (moonshot uses full boost)
     },
     "contrarian": {
         "closeness_boost_floor":0.7,"closeness_boost_scalar":0.6,
@@ -1131,10 +1132,17 @@ CHALK_FLOOR = 2.8  # Minimum raw rating for Starting 5
 
 def _build_lineups(projections):
     avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
-    # STARTING 5: MILP-optimized for highest chalk_ev = rating × (avg_slot + card_boost)
-    # No team limit — Real Sports has no per-team restriction.
+    # STARTING 5: MILP-optimized for chalk_ev with card boost capped.
+    # Chalk = conservative, high-floor picks. Full card boost (high ownership gap)
+    # belongs in Moonshot. Capping prevents backup centers/bench guys with huge
+    # boosts from crowding out legitimate starters.
+    proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
+    boost_cap = proj_cfg.get("chalk_boost_cap", 1.0)
     chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev",
+    for p in chalk_eligible:
+        capped_boost = min(p["est_mult"], boost_cap)
+        p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
+    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
 
@@ -1728,6 +1736,20 @@ async def hindsight(payload: dict = Body(...)):
 
 @app.get("/api/refresh")
 async def refresh():
+    # Auto-save predictions BEFORE clearing cache, if the slate is currently locked.
+    # Cron safety net: ensures predictions persist even if no user visits at lock time.
+    # Must run first — save_predictions() reads from _cg("slate_v5") which gets wiped below.
+    auto_saved = False
+    try:
+        games = fetch_games()
+        draftable = [g for g in games if g.get("startTime") and not g.get("complete")]
+        start_times = [g["startTime"] for g in draftable]
+        if start_times and _is_locked(min(start_times)):
+            await save_predictions()
+            auto_saved = True
+    except Exception as e:
+        print(f"[refresh] auto-save skipped: {e}")
+
     cleared = 0
     try:
         for f in CACHE_DIR.glob("*.json"):
@@ -1740,7 +1762,7 @@ async def refresh():
         if cfg_cache.exists():
             cfg_cache.unlink()
     except: pass
-    return {"status": "ok", "cleared": cleared, "ts": datetime.now().isoformat()}
+    return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
