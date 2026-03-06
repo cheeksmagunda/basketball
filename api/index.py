@@ -226,12 +226,14 @@ def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
 def _is_locked(start_time_iso):
     """Returns True if current UTC time is within lock_buffer_minutes of game start.
-    Returns False for completed games (>3h past start) to avoid stale ESPN data."""
+    Returns False only for games >6h past start (well past any possible final buzzer)."""
     try:
         lock_buf = _cfg("projection.lock_buffer_minutes", 5)
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
-        if now > game_start + timedelta(hours=3):
+        # 6h ceiling: longest possible NBA game (regulation + multiple OTs) < 4h.
+        # The old 3h ceiling was causing games to appear "unlocked" while still live.
+        if now > game_start + timedelta(hours=6):
             return False
         return now >= game_start - timedelta(minutes=lock_buf)
     except:
@@ -1255,19 +1257,36 @@ async def get_games():
 async def get_slate():
     games = fetch_games()
     if not games:
-        return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []}, "locked": False}
+        return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []},
+                "locked": False, "draftable_count": 0}
 
-    # Only show/project games that are still draftable (not yet past lock window)
-    # ESPN returns all games for the day, including already-completed ones.
-    # At 1 AM EST the completed games from the evening should be invisible;
-    # the upcoming day's games should be shown instead.
+    # Only project games that are still draftable (not yet past lock window).
     draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
-    # All games for today's ET date are already completed — this shouldn't normally
-    # happen since fetch_games() explicitly requests the ET date from ESPN, but
-    # handle it gracefully if ESPN returns stale data.
     if not draftable_games:
-        # Find the earliest today's game start time to tell the user when to come back
+        # All today's games have passed tipoff. Two sub-cases:
+        # (a) Games happened today (finals > 0) → show locked state with cached picks
+        # (b) No games played yet today (early morning) → tell user when to come back
+        all_final, remaining, finals = _all_games_final(games)
+        if finals > 0 or all_final:
+            # Sub-case (a): today's games are in progress or final — serve locked picks.
+            lock_cached = _lg("slate_v5_locked")
+            if lock_cached:
+                lock_cached["locked"] = True
+                lock_cached["all_complete"] = all_final
+                lock_cached.setdefault("draftable_count", 0)
+                return lock_cached
+            reg_cached = _cg("slate_v5")
+            if reg_cached:
+                reg_cached["locked"] = True
+                reg_cached["all_complete"] = all_final
+                reg_cached.setdefault("draftable_count", 0)
+                _ls("slate_v5_locked", reg_cached)
+                return reg_cached
+            return {"date": _et_date().isoformat(), "games": games,
+                    "lineups": {"chalk": [], "upside": []},
+                    "locked": True, "all_complete": all_final, "draftable_count": 0}
+        # Sub-case (b): no games started yet today — tell user when to come back
         earliest_today = min((g["startTime"] for g in games if g.get("startTime")), default=None)
         available_msg = "later today"
         if earliest_today:
@@ -1278,12 +1297,9 @@ async def get_slate():
                 available_msg = gs_et.strftime("%-I:%M %p ET")
             except: pass
         return {
-            "date": _et_date().isoformat(),
-            "games": games,
+            "date": _et_date().isoformat(), "games": games,
             "lineups": {"chalk": [], "upside": []},
-            "locked": False,
-            "no_games_yet": True,
-            "draftable_count": 0,
+            "locked": False, "no_games_yet": True, "draftable_count": 0,
             "available_after": available_msg,
         }
 
@@ -1296,24 +1312,27 @@ async def get_slate():
         lock_cached = _lg("slate_v5_locked")
         if lock_cached:
             lock_cached["locked"] = True
+            lock_cached.setdefault("draftable_count", len(draftable_games))
             return lock_cached
         # Check regular cache and promote to lock cache
         cached = _cg("slate_v5")
         if cached:
             cached["locked"] = True
+            cached.setdefault("draftable_count", len(draftable_games))
             _ls("slate_v5_locked", cached)
             return cached
         # No cache on this instance after lock — return empty rather than recomputing
         return {"date": _et_date().isoformat(), "games": games,
-                "lineups": {"chalk": [], "upside": []}, "locked": True}
+                "lineups": {"chalk": [], "upside": []},
+                "locked": True, "draftable_count": len(draftable_games)}
 
     cached = _cg("slate_v5")
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
-        # This clears stale cache written before the roster-fix was deployed.
         has_players = cached.get("lineups", {}).get("chalk") or cached.get("lineups", {}).get("upside")
         if has_players or not draftable_games:
             cached["locked"] = locked
+            cached.setdefault("draftable_count", len(draftable_games))
             return cached
 
     all_proj = []
