@@ -642,42 +642,6 @@
     .actual-rs-pill.hit { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
     .actual-rs-pill.miss { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
 
-    /* Upload section in log drill-down */
-    .log-upload-section {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 16px; margin-bottom: 16px;
-    }
-    .log-upload-title {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px;
-    }
-    .log-upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .log-upload-btn {
-      padding: 12px 10px;
-      background: var(--surface); border: 1px solid var(--border-bright);
-      border-radius: 10px; cursor: pointer; transition: all 0.2s; text-align: center;
-    }
-    .log-upload-btn:hover { border-color: var(--log-chalk); }
-    .log-upload-btn.done { border-color: var(--green); background: rgba(34,197,94,0.06); }
-    .log-upload-btn-label {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 2px;
-    }
-    .log-upload-btn.done .log-upload-btn-label { color: var(--green); }
-    .log-upload-btn-sub { font-size: 0.62rem; color: var(--muted); }
-    .log-upload-solo {
-      width: 100%;
-      padding: 12px;
-      background: var(--surface); border: 1px solid var(--border-bright);
-      border-radius: 10px; cursor: pointer; transition: all 0.2s;
-      font-family: 'Barlow Condensed', sans-serif; font-size: 0.82rem; font-weight: 800;
-      letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
-    }
-    .log-upload-solo:hover { border-color: var(--log-chalk); }
-    .log-upload-solo.done { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.06); }
-    input[type="file"].hidden-file { display: none; }
 
     /* Result cards */
     .result-section-label {
@@ -1184,35 +1148,6 @@
       </div>
       <div id="logPredCards"></div>
 
-      <!-- Upload section -->
-      <div class="log-upload-section" id="logUploadSection">
-        <div class="log-upload-title">Upload Results</div>
-        <div id="logUploadSlate" style="display:none">
-          <div class="log-upload-grid">
-            <div class="log-upload-btn" id="logUploadRSBtn" onclick="triggerLogUpload('real_scores')">
-              <span class="log-upload-btn-label">Real Scores</span>
-              <span class="log-upload-btn-sub">Daily draft stats screenshot</span>
-            </div>
-            <div class="log-upload-btn" id="logUploadWinBtn" onclick="triggerLogUpload('winning_drafts')">
-              <span class="log-upload-btn-label">Top Drafts</span>
-              <span class="log-upload-btn-sub">Leaderboard screenshot</span>
-            </div>
-          </div>
-        </div>
-        <div id="logUploadGame" style="display:none">
-          <button class="log-upload-solo" id="logUploadGameBtn" onclick="triggerLogUpload('winning_drafts')">
-            Upload Winning Drafts
-          </button>
-        </div>
-        <div id="logUploadStatus" style="display:none;font-size:0.72rem;color:var(--text-dim);margin-top:10px;text-align:center"></div>
-      </div>
-
-      <!-- Hidden file inputs -->
-      <input type="file" accept="image/*" id="logFileInputRS" class="hidden-file" onchange="handleLogFile(this,'real_scores')">
-      <input type="file" accept="image/*" id="logFileInputWin" class="hidden-file" onchange="handleLogFile(this,'winning_drafts')">
-
-      <!-- Results section -->
-      <div id="logResultSection"></div>
     </div>
 
   </div>
@@ -1363,10 +1298,6 @@ const LOG = {
   datesWithData: new Set(),
   data: null,            // {date, scopes, actuals}
   currentTab: 'chalk',
-  uploadType: null,      // 'real_scores' | 'winning_drafts'
-  parsedRS: null,        // parsed real scores array
-  parsedWin: null,       // parsed winning drafts array
-  hindsightLineup: null,
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -1959,9 +1890,6 @@ function openLogDrilldown(scope, gameLabel) {
   LOG.scope = scope;
   LOG.gameLabel = gameLabel;
   LOG.currentTab = 'chalk';
-  LOG.parsedRS = null;
-  LOG.parsedWin = null;
-  LOG.hindsightLineup = null;
 
   document.getElementById('logGridView').style.display = 'none';
   document.getElementById('logDrillView').style.display = 'block';
@@ -1972,18 +1900,6 @@ function openLogDrilldown(scope, gameLabel) {
 
   document.getElementById('logDrillTitle').textContent = gameLabel || scope;
   document.getElementById('logDrillDate').textContent = dateLabel;
-
-  // Configure upload section
-  const isSlate = scope === 'slate';
-  document.getElementById('logUploadSlate').style.display = isSlate ? 'block' : 'none';
-  document.getElementById('logUploadGame').style.display = isSlate ? 'none' : 'block';
-
-  // Reset upload button states
-  document.getElementById('logUploadRSBtn')?.classList.remove('done');
-  document.getElementById('logUploadWinBtn')?.classList.remove('done');
-  document.getElementById('logUploadGameBtn')?.classList.remove('done');
-  document.getElementById('logUploadStatus').style.display = 'none';
-  document.getElementById('logResultSection').innerHTML = '';
 
   renderLogDrillCards();
 }
@@ -2041,175 +1957,98 @@ function renderLogDrillCards() {
   renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap });
 }
 
-// ── LOG UPLOAD ──
-function triggerLogUpload(type) {
-  LOG.uploadType = type;
-  if (type === 'real_scores') {
-    document.getElementById('logFileInputRS').click();
-  } else {
-    document.getElementById('logFileInputWin').click();
-  }
+// ── BEN UPLOAD (moved from Log page) ──
+// Renders end-of-day upload prompt in Ben chat when all games are final.
+function _renderBenEodPrompt() {
+  if (document.getElementById('benEodPrompt')) return; // already shown
+  const el = document.createElement('div');
+  el.className = 'lab-msg assistant';
+  el.id = 'benEodPrompt';
+  el.innerHTML = `
+    <div class="lab-msg-label">Ben</div>
+    <div>Games are wrapped up. Upload your screenshots to log today's results — I'll compute the hindsight optimal lineup and break down what the model got right.</div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button id="benUploadRSBtn" onclick="_benTriggerUpload('real_scores')"
+        style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+        📸 Real Scores
+      </button>
+      <button id="benUploadWinBtn" onclick="_benTriggerUpload('top_drafts')"
+        style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+        🏆 Top Drafts
+      </button>
+    </div>`;
+  const msgs = document.getElementById('labMessages');
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
 }
 
-async function handleLogFile(input, type) {
-  const file = input.files?.[0];
-  if (!file) return;
+function _benTriggerUpload(type) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = () => _handleBenUpload(input.files[0], type);
+  input.click();
+}
 
-  const statusEl = document.getElementById('logUploadStatus');
-  statusEl.textContent = 'Parsing screenshot...';
-  statusEl.style.display = 'block';
+async function _handleBenUpload(file, type) {
+  if (!file) return;
+  const btnId = type === 'real_scores' ? 'benUploadRSBtn' : 'benUploadWinBtn';
+  const btn = document.getElementById(btnId);
+  const origText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
 
   try {
     const form = new FormData();
     form.append('file', file);
     const r = await fetch('/api/parse-screenshot', { method: 'POST', body: form });
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Parse failed');
-    if (!data.players?.length) throw new Error('No players found');
+    if (!r.ok || !data.players?.length) throw new Error(data.error || 'No players found');
 
     if (type === 'real_scores') {
-      LOG.parsedRS = data.players;
-      document.getElementById('logUploadRSBtn')?.classList.add('done');
-      // Save actuals to GitHub
-      await saveLogActuals(data.players);
-      // Update cards with actuals
-      if (LOG.data) {
-        LOG.data.actuals = data.players.map(p => ({
-          player_name: p.player_name || p.name || '',
-          actual_rs: p.actual_rs ?? '',
-        }));
+      const today = _etToday();
+      await fetch('/api/save-actuals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: today, players: data.players }),
+      });
+      if (btn) { btn.textContent = '✓ Real Scores'; btn.style.background = 'rgba(34,197,94,0.2)'; btn.style.border = '1px solid var(--green)'; btn.style.color = 'var(--green)'; }
+
+      // Compute hindsight
+      const hindsightPlayers = data.players
+        .filter(p => p.actual_rs != null && p.actual_rs > 0)
+        .map(p => ({ name: p.player_name || p.name || '', actual_rs: p.actual_rs, actual_card_boost: p.actual_card_boost || 0.3 }));
+      let hindsightStr = '';
+      if (hindsightPlayers.length >= 5) {
+        try {
+          const hr = await fetch('/api/hindsight', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ players: hindsightPlayers }),
+          });
+          if (hr.ok) {
+            const hd = await hr.json();
+            if (hd.lineup?.length) {
+              hindsightStr = ' Hindsight optimal lineup: ' + hd.lineup.map((p,i) => `${i+1}. ${p.name} (${p.rating} RS)`).join(', ') + '.';
+            }
+          }
+        } catch(e) {}
       }
-      renderLogDrillCards();
-      // Try hindsight if slate
-      if (LOG.scope === 'slate') {
-        await computeHindsight(data.players);
-      }
+
+      const summary = `Real Scores uploaded for ${today}. Players: ${data.players.map(p => `${p.player_name||p.name}: ${p.actual_rs} RS`).join(', ')}.${hindsightStr}`;
+      appendLabMessage('user', summary, true);
+      await labCallClaude();
+
     } else {
-      LOG.parsedWin = data.players;
-      document.getElementById('logUploadWinBtn')?.classList.add('done');
-      document.getElementById('logUploadGameBtn')?.classList.add('done');
-      renderWinningDrafts(data.players);
+      if (btn) { btn.textContent = '✓ Top Drafts'; btn.style.background = 'rgba(34,197,94,0.2)'; btn.style.border = '1px solid var(--green)'; btn.style.color = 'var(--green)'; }
+      const summary = `Top Drafts uploaded. Winners: ${data.players.slice(0,6).map(p => `${p.player_name||p.name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')}.`;
+      appendLabMessage('user', summary, true);
+      await labCallClaude();
     }
 
-    statusEl.textContent = 'Uploaded successfully';
-    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
   } catch(e) {
-    statusEl.textContent = `Error: ${e.message}`;
+    appendLabMessage('assistant', `Upload failed: ${e.message}. Try again.`);
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
-
-  input.value = '';
-}
-
-async function saveLogActuals(players) {
-  try {
-    await fetch('/api/save-actuals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: LOG.selectedDate, players }),
-    });
-  } catch(e) { /* non-fatal */ }
-}
-
-async function computeHindsight(players) {
-  const hindsightPlayers = players
-    .filter(p => p.actual_rs != null && p.actual_rs > 0)
-    .map(p => ({
-      name: p.player_name || p.name || '',
-      actual_rs: p.actual_rs,
-      actual_card_boost: p.actual_card_boost || 0.3,
-    }));
-
-  if (hindsightPlayers.length < 5) return;
-
-  try {
-    const r = await fetch('/api/hindsight', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ players: hindsightPlayers }),
-    });
-    if (!r.ok) return;
-    const data = await r.json();
-    LOG.hindsightLineup = data.lineup;
-    renderHindsightOptimal(data.lineup);
-  } catch(e) { /* non-fatal */ }
-}
-
-function renderWinningDrafts(players) {
-  const el = document.getElementById('logResultSection');
-  let html = el.innerHTML || '';
-
-  // Group by drafter if leaderboard, otherwise show flat list
-  const leaderboard = players.filter(p => p.source === 'leaderboard');
-
-  if (!leaderboard.length) {
-    // Flat list — top players by total_value
-    const sorted = [...players].sort((a,b) => (b.total_value||0) - (a.total_value||0)).slice(0,5);
-    html += `<div class="result-section-label"><span class="result-badge win">Top Drafts</span></div>`;
-    sorted.forEach((p, i) => {
-      html += `
-        <div class="winning-draft-card" style="animation-delay:${i*0.07}s">
-          <div class="winning-draft-rank">#${i+1} ${p.player_name || '—'}</div>
-          <div class="winning-draft-player" style="border-bottom:none">
-            <span>Total Value</span>
-            <b>${p.total_value || '—'}</b>
-          </div>
-        </div>`;
-    });
-  } else {
-    // Group by implied drafter — consecutive records
-    // (Claude parses leaderboard as flat; group by runs)
-    html += `<div class="result-section-label"><span class="result-badge win">Top 3 Winning Drafts</span></div>`;
-    // Attempt to group by total_score changes
-    const groups = [];
-    let cur = null;
-    leaderboard.forEach(p => {
-      if (p.total_score !== undefined && (!cur || p.total_score !== cur.score)) {
-        if (cur) groups.push(cur);
-        cur = { score: p.total_score, players: [p] };
-      } else if (cur) {
-        cur.players.push(p);
-      } else {
-        cur = { score: null, players: [p] };
-      }
-    });
-    if (cur) groups.push(cur);
-
-    groups.slice(0,3).forEach((g, gi) => {
-      html += `
-        <div class="winning-draft-card" style="animation-delay:${gi*0.08}s">
-          <div class="winning-draft-rank">#${gi+1} Draft${g.score ? ` — <span style="color:var(--log-win)">${g.score}</span>` : ''}</div>
-          ${g.players.map(p => `
-            <div class="winning-draft-player">
-              <b>${p.player_name || '—'}</b>
-              <span>RS ${p.actual_rs ?? '—'} × ${p.card_multiplier ?? '—'}</span>
-            </div>`).join('')}
-        </div>`;
-    });
-  }
-
-  el.innerHTML = html;
-}
-
-function renderHindsightOptimal(lineup) {
-  const el = document.getElementById('logResultSection');
-  if (!lineup || !lineup.length) return;
-
-  let html = el.innerHTML || '';
-  html += `<div class="result-section-label"><span class="result-badge opt">Hindsight Optimal Draft</span></div>`;
-
-  lineup.forEach((p, i) => {
-    const tc = TEAM_COLORS[p.team] || '#9b80c8';
-    html += `
-      <div class="winning-draft-card" style="border-color:rgba(155,128,200,0.25);animation-delay:${i*0.06}s">
-        <div class="winning-draft-rank" style="color:var(--log-opt)">${p.slot} — ${p.name}</div>
-        <div class="winning-draft-player" style="border-bottom:none">
-          <span>Actual RS</span>
-          <b style="color:var(--log-opt)">${p.rating}</b>
-        </div>
-      </div>`;
-  });
-
-  el.innerHTML = html;
 }
 
 // ════════════════════════════════════════════════════════
@@ -2674,6 +2513,11 @@ async function showLabUnlocked(status) {
 
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
+
+  // Auto-prompt upload when Ben first unlocks (games just went final) and no messages yet
+  if (LAB.messages.length === 0 && LAB.slateData?.games?.length) {
+    _renderBenEodPrompt();
+  }
 }
 
 function buildLabSystemPrompt() {
