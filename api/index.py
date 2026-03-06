@@ -182,7 +182,7 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":20, "dev_team_boost":1.25,
+        "min_minutes_floor":20, "min_card_boost":1.0, "dev_team_boost":1.25,
         "card_boost_weight":2.0, "minutes_weight":1.0,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
@@ -1228,6 +1228,10 @@ def _build_lineups(projections):
         if p.get("predMin", 0) < min_floor:
             continue
 
+        # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
+        if p.get("est_mult", 0) < min_boost:
+            continue
+
         # RotoWire clearance — skip players flagged OUT or questionable
         if use_rotowire and rw_statuses:
             if not is_safe_to_draft(p["name"]):
@@ -1317,6 +1321,7 @@ def _build_game_lineups(projections, game):
     # Per-game version enforces team balance (min 2 per side).
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
     min_floor = moon_cfg.get("min_minutes_floor", 20)
+    min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.0)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
@@ -1336,6 +1341,8 @@ def _build_game_lineups(projections, game):
         if p["name"] in chalk_names:
             continue
         if p.get("predMin", 0) < min_floor:
+            continue
+        if p.get("est_mult", 0) < min_boost:
             continue
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
