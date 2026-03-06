@@ -1170,16 +1170,35 @@ CHALK_FLOOR = 2.8  # Minimum raw rating for Starting 5
 
 def _build_lineups(projections):
     avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
-    # STARTING 5: MILP-optimized for chalk_ev with card boost capped.
-    # Chalk = conservative, high-floor picks. Full card boost (high ownership gap)
-    # belongs in Moonshot. Capping prevents backup centers/bench guys with huge
-    # boosts from crowding out legitimate starters.
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
-    boost_cap = proj_cfg.get("chalk_boost_cap", 1.0)
-    chalk_eligible = [p for p in projections if p["rating"] >= CHALK_FLOOR]
-    for p in chalk_eligible:
+    boost_cap = proj_cfg.get("chalk_boost_cap", 1.5)
+
+    moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
+    use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
+
+    # Fetch RotoWire lineup statuses once — shared by chalk AND moonshot
+    rw_statuses = {}
+    if use_rotowire:
+        try:
+            rw_statuses = get_all_statuses()
+        except Exception as e:
+            print(f"RotoWire fetch failed, proceeding without: {e}")
+
+    # STARTING 5: MILP-optimized for chalk_ev with card boost capped.
+    # chalk_boost_cap=1.5: rewards moderate-ownership role players without going full moonshot.
+    # Mar 5 insight: Ace Bailey (RS 5.9 × boost 2.1) >>> Wemby (RS 7.1 × boost 0.3).
+    # RotoWire filter applied here too — chalk can't include OUT/questionable players.
+    chalk_eligible = []
+    for p in projections:
+        if p["rating"] < CHALK_FLOOR:
+            continue
+        # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
+        if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
+            continue
         capped_boost = min(p["est_mult"], boost_cap)
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
+        chalk_eligible.append(p)
+
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
@@ -1200,24 +1219,14 @@ def _build_lineups(projections):
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     # ─────────────────────────────────────────────────────────────────────────
-    moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
     min_floor = moon_cfg.get("min_minutes_floor", 20)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.0)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
-    use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
     dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
 
     chalk_names = {p["name"] for p in chalk}
-
-    # Fetch RotoWire lineup statuses (cached, one call per slate)
-    rw_statuses = {}
-    if use_rotowire:
-        try:
-            rw_statuses = get_all_statuses()
-        except Exception as e:
-            print(f"RotoWire fetch failed, proceeding without: {e}")
 
     moonshot_pool = []
     for p in projections:
