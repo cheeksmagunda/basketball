@@ -1222,7 +1222,7 @@
   <div id="tab-line" class="tab-page">
     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:4px">
       <div class="section-label" style="margin-top:0">Line of the Day</div>
-      <button onclick="LINE_LOADED_DATE='';initLinePage()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetch('/api/refresh');}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <div id="lineContent">
       <div id="lineLoading" style="display:none">
@@ -1238,7 +1238,7 @@
         <div id="lineSlateSummary" style="margin-top:16px"></div>
       </div>
       <!-- Pick detail bottom sheet -->
-      <div id="linePickModal" onclick="closeLinePickModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:200;align-items:flex-end">
+      <div id="linePickModal" onclick="closeLinePickModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1001;align-items:flex-end">
         <div onclick="event.stopPropagation()" style="background:var(--surface2);border-radius:18px 18px 0 0;padding:20px 16px 36px;width:100%;max-height:80vh;overflow-y:auto">
           <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px"></div>
           <div id="linePickModalContent"></div>
@@ -1372,6 +1372,8 @@ const LOG = {
 // TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
+  closeLinePickModal();
+  document.body.style.overflow = '';
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
 
@@ -2382,8 +2384,8 @@ function renderLinePickCard(pick, isPrimary) {
           <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${pick.edge > 0 ? '+' : ''}${pick.edge}</div>
         </div>
         <div style="margin-left:auto;text-align:right">
-          ${pick.model_only
-            ? `<div style="font-size:0.62rem;color:var(--muted);font-style:italic;letter-spacing:0.04em">ESPN MODEL</div>`
+          ${(pick.model_only || pick.books_consensus == null)
+            ? `<div style="font-size:0.62rem;color:var(--muted);font-style:italic;letter-spacing:0.04em">MODEL</div>`
             : `<div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
           }
         </div>
