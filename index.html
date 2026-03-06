@@ -2432,11 +2432,11 @@ function renderResolvedTodayBanner(pick) {
 }
 
 function renderNextSlatePending() {
-  return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center">'
-    + '<div style="font-size:1.4rem;margin-bottom:10px">🏀</div>'
-    + '<div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">TOMORROW'S PICK COMING SOON</div>'
-    + '<div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Check back once the slate drops</div>'
-    + '</div>';
+  return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center">
+    <div style="font-size:1.4rem;margin-bottom:10px">🏀</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">TOMORROW&rsquo;S PICK COMING SOON</div>
+    <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Check back once the slate drops</div>
+  </div>`;
 }
 
 document.addEventListener('keydown', function(e) {
