@@ -1190,7 +1190,7 @@
       <div id="benUploadBanner" style="display:none;margin-bottom:10px;overflow:hidden;max-height:200px;transition:max-height 0.4s ease,opacity 0.4s ease,margin 0.4s ease;opacity:1">
         <div style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.22);border-radius:14px;padding:10px 12px">
           <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.68rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--lab);margin-bottom:5px">📋 Log Today's Results</div>
-          <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Upload your Real Sports screenshots after games wrap — Ben will compute the hindsight lineup and grade the model.</div>
+          <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Upload your Real Sports screenshots after games wrap — Ben will analyze accuracy and break down what the model got right.</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
               style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
@@ -2000,7 +2000,7 @@ function _renderBenEodPrompt() {
   el.id = 'benEodPrompt';
   el.innerHTML = `
     <div class="lab-msg-label">Ben</div>
-    <div>Games are wrapped up. Upload your screenshots to log today's results — I'll compute the hindsight optimal lineup and break down what the model got right.</div>
+    <div>Games are wrapped up. Upload your screenshots to log today's results — I'll analyze accuracy and break down what the model got right.</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button id="benUploadRSBtn" onclick="_benTriggerUpload('real_scores')"
         style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
@@ -2561,9 +2561,13 @@ async function showLabUnlocked(status) {
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
 
-  // Always show the upload banner when unlocked (collapses after both uploads done)
+  // Show upload banner only if today's actuals haven't been uploaded yet.
+  // briefing.latest_slate.date matches today when save-actuals already ran.
   const _ub = document.getElementById('benUploadBanner');
-  if (_ub) _ub.style.display = 'block';
+  if (_ub) {
+    const _hasActualsToday = LAB.briefing?.latest_slate?.date === _etToday();
+    _ub.style.display = _hasActualsToday ? 'none' : 'block';
+  }
   // Also trigger EOD chat bubble + hindsight once games are actually final
   if (LAB.messages.length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
     _renderBenEodPrompt();
