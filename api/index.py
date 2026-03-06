@@ -245,10 +245,10 @@ MIN_GATE = 12           # Minimum projected minutes — lowered from 15 to catch
                         # deep bench (Clifford, Riley) who win in garbage time
 DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
 
-def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
+def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{_et_date().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
 def _cs(k, v): _cp(k).write_text(json.dumps(v))
-def _lp(k): return LOCK_DIR / f"{hashlib.md5(f'{date.today().isoformat()}:{k}'.encode()).hexdigest()}.json"
+def _lp(k): return LOCK_DIR / f"{hashlib.md5(f'{_et_date().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
 def _ls(k, v): _lp(k).write_text(json.dumps(v))
 
@@ -1826,6 +1826,11 @@ async def refresh():
             f.unlink(); cleared += 1
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    # Clear lock cache (LOCK_DIR) — stale lock files must not survive a manual refresh
+    try:
+        for f in LOCK_DIR.glob("*.json"):
+            f.unlink(missing_ok=True); cleared += 1
+    except: pass
     # Also clear config cache on refresh
     try:
         cfg_cache = CONFIG_CACHE_DIR / "model_config.json"
@@ -2210,7 +2215,7 @@ async def line_history():
 # PHASE 3: LAB
 # ═════════════════════════════════════════════════════════════════════════════
 
-_GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0}
+_GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0, "date": ""}
 
 def _all_games_final(games):
     """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min.
@@ -2219,9 +2224,12 @@ def _all_games_final(games):
     if not games:
         return True, 0, 0, None
     now_ts = datetime.now(timezone.utc).timestamp()
-    if _GAMES_FINAL_CACHE["result"] is not None and now_ts - _GAMES_FINAL_CACHE["ts"] < 180:
-        return tuple(_GAMES_FINAL_CACHE["result"])
     today_str = _et_date().strftime("%Y%m%d")
+    # Cache valid only if within TTL AND still the same ET date
+    if (_GAMES_FINAL_CACHE["result"] is not None
+            and now_ts - _GAMES_FINAL_CACHE["ts"] < 180
+            and _GAMES_FINAL_CACHE.get("date") == today_str):
+        return tuple(_GAMES_FINAL_CACHE["result"])
     data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
     finals = 0
     remaining = 0
@@ -2237,8 +2245,7 @@ def _all_games_final(games):
                 latest_remaining = start
     all_final = remaining == 0 and finals > 0
     result = (all_final, remaining, finals, latest_remaining)
-    _GAMES_FINAL_CACHE["result"] = list(result)
-    _GAMES_FINAL_CACHE["ts"] = now_ts
+    _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
     return result
 
 
