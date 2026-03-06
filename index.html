@@ -1587,10 +1587,10 @@ async function loadSlate() {
     // Header meta badges
     const headerMeta = document.getElementById('headerMeta');
     if (headerMeta) {
-      const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
       const statusBadge = isLocked
         ? '<div class="header-badge locked">🔒 Picks Locked</div>'
-        : `<div class="header-badge">Updated ${timeNow} ET</div>`;
+        : `<div class="header-badge">Updated ${timeNow} CT</div>`;
       const countBadge = `<div class="header-badge">${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}</div>`;
       headerMeta.innerHTML = countBadge + statusBadge;
     }
@@ -2902,6 +2902,22 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
   const input  = document.getElementById('labInput');
   const nav    = document.getElementById('bottomNav');
   const tabLab = document.getElementById('tab-lab');
+  // Use visualViewport to precisely track keyboard height on iOS
+  const _applyKbHeight = () => {
+    if (!tabLab.classList.contains('lab-kb-open')) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const tabTop = tabLab.getBoundingClientRect().top;
+    tabLab.style.height = (vv.height - tabTop) + 'px';
+    requestAnimationFrame(() => {
+      const msgs = document.getElementById('labMessages');
+      if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    });
+  };
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', _applyKbHeight);
+  }
+
   input.addEventListener('focus', () => {
     if (!isMobile()) return;
     tabLab.classList.add('lab-kb-open');
@@ -2909,15 +2925,16 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
     nav.style.opacity = '0';
     nav.style.transform = 'translateX(-50%) translateY(16px)';
     nav.style.pointerEvents = 'none';
-    // After height expands, scroll messages to bottom so latest is visible
+    // visualViewport resize fires after keyboard appears; fallback scroll
     requestAnimationFrame(() => {
       const msgs = document.getElementById('labMessages');
-      msgs.scrollTop = msgs.scrollHeight;
+      if (msgs) msgs.scrollTop = msgs.scrollHeight;
     });
   });
   input.addEventListener('blur', () => {
     if (!isMobile()) return;
     tabLab.classList.remove('lab-kb-open');
+    tabLab.style.height = '';
     nav.style.opacity = '';
     nav.style.transform = '';
     nav.style.pointerEvents = '';
