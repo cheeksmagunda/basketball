@@ -855,7 +855,7 @@
     /* Ben tab: fixed-height flex column — messages scroll, input always visible */
     #tab-lab.active {
       display: flex; flex-direction: column;
-      height: calc(100dvh - 80px - 120px);
+      height: calc(100dvh - 80px - 150px);
       padding-top: 0; overflow: hidden;
     }
     /* When keyboard opens (labInput focused): nav hidden, JS sets exact height via visualViewport */
@@ -2980,8 +2980,8 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
     setTimeout(() => {
       if (tabLab.classList.contains('lab-kb-open')) return; // focus re-gained
       const tabTop = tabLab.getBoundingClientRect().top;
-      const navH = nav.getBoundingClientRect().height || 80;
-      tabLab.style.height = Math.max(300, window.innerHeight - tabTop - navH - 20) + 'px';
+      const navTop = nav.getBoundingClientRect().top;
+      tabLab.style.height = Math.max(300, navTop - tabTop - 12) + 'px';
       const msgs = document.getElementById('labMessages');
       if (msgs) msgs.scrollTop = msgs.scrollHeight;
     }, 350);
