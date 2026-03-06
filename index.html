@@ -2141,6 +2141,37 @@ function renderHindsightOptimal(lineup) {
 // ════════════════════════════════════════════════════════
 
 let LINE_LOADED = false;
+let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
+
+async function _tryAutoResolveLine(pick) {
+  if (LINE_RESOLVE_POLL) { clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; }
+  try {
+    const ar = await fetch('/api/auto-resolve-line');
+    if (!ar.ok) return;
+    const arData = await ar.json();
+    if (arData.status === 'resolved' || arData.status === 'already_resolved') {
+      const resolvedPick = { ...pick, result: arData.result, actual_stat: arData.actual_stat };
+      document.getElementById('linePickCard').innerHTML = renderLinePickCard(resolvedPick, true);
+      // Refresh history row too
+      const hr2 = await fetch('/api/line-history');
+      if (hr2.ok) {
+        const hist2 = await hr2.json();
+        if (hist2.picks && hist2.picks.length) {
+          document.getElementById('lineHistoryWrap').style.display = 'block';
+          LINE_LOADED = false; renderLineHistory(hist2); LINE_LOADED = true;
+        }
+      }
+    } else if (arData.status === 'game_not_final') {
+      // Game still live — poll every 5 min until it finishes
+      LINE_RESOLVE_POLL = setInterval(async function() {
+        if (document.getElementById('linePickWrap').style.display === 'none') {
+          clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; return;
+        }
+        await _tryAutoResolveLine(pick);
+      }, 5 * 60 * 1000);
+    }
+  } catch(e) { /* non-fatal */ }
+}
 
 async function initLinePage() {
   if (LINE_LOADED) return;
@@ -2194,36 +2225,11 @@ async function initLinePage() {
       });
     } catch(e) { /* non-fatal */ }
 
-    // Auto-resolve: if the pick is still pending and games are final, fetch the actual
-    // stat from ESPN and mark hit/miss without requiring manual input.
+    // Auto-resolve: if pick is pending, try to resolve against completed ESPN boxscores.
+    // If the game is still live, poll every 5 min until it finishes.
     const pickResult = data.pick.result;
     if (!pickResult || pickResult === 'pending') {
-      try {
-        const ar = await fetch('/api/auto-resolve-line');
-        if (ar.ok) {
-          const arData = await ar.json();
-          if (arData.status === 'resolved' || arData.status === 'already_resolved') {
-            // Re-render the pick card with the resolved result baked in
-            const resolvedPick = {
-              ...data.pick,
-              result: arData.result,
-              actual_stat: arData.actual_stat,
-            };
-            document.getElementById('linePickCard').innerHTML = renderLinePickCard(resolvedPick, true);
-            // Reload history so the history row updates too
-            LINE_LOADED = false;
-            const hr2 = await fetch('/api/line-history');
-            if (hr2.ok) {
-              const hist2 = await hr2.json();
-              if (hist2.picks && hist2.picks.length) {
-                document.getElementById('lineHistoryWrap').style.display = 'block';
-                renderLineHistory(hist2);
-              }
-            }
-            LINE_LOADED = true;
-          }
-        }
-      } catch(e) { /* non-fatal */ }
+      await _tryAutoResolveLine(data.pick);
     }
 
   } catch(e) {

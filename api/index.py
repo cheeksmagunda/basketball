@@ -80,6 +80,34 @@ def _github_write_file(path, content, message="auto-update"):
         return {"ok": True, "path": path}
     return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
 
+
+def _slate_backup_to_github(slate_data: dict):
+    """Write slate response to GitHub as a locked-state backup (deduped by date).
+    Called once when we promote reg_cache -> lock_cache so cold-start instances can recover."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/locks/{today}_slate.json"
+        existing, _ = _github_get_file(path)
+        if existing:
+            return  # already saved today
+        content = json.dumps(slate_data, default=str)
+        _github_write_file(path, content, f"slate lock backup {today}")
+    except Exception as e:
+        print(f"slate backup err: {e}")
+
+
+def _slate_restore_from_github():
+    """Read the locked-state slate backup from GitHub. Returns dict or None."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/locks/{today}_slate.json"
+        content, _ = _github_get_file(path)
+        if content:
+            return json.loads(content)
+    except Exception as e:
+        print(f"slate restore err: {e}")
+    return None
+
 def _csv_escape(v):
     """Escape a value for CSV (quote if it contains commas or quotes)."""
     s = str(v)
@@ -1282,7 +1310,16 @@ async def get_slate():
                 reg_cached["all_complete"] = all_final
                 reg_cached.setdefault("draftable_count", 0)
                 _ls("slate_v5_locked", reg_cached)
+                _slate_backup_to_github(reg_cached)
                 return reg_cached
+            # Cold-start with no local cache: try GitHub backup written at lock time
+            gh_backup = _slate_restore_from_github()
+            if gh_backup:
+                gh_backup["locked"] = True
+                gh_backup["all_complete"] = all_final
+                gh_backup.setdefault("draftable_count", 0)
+                _ls("slate_v5_locked", gh_backup)
+                return gh_backup
             return {"date": _et_date().isoformat(), "games": games,
                     "lineups": {"chalk": [], "upside": []},
                     "locked": True, "all_complete": all_final, "draftable_count": 0}
@@ -1320,8 +1357,15 @@ async def get_slate():
             cached["locked"] = True
             cached.setdefault("draftable_count", len(draftable_games))
             _ls("slate_v5_locked", cached)
+            _slate_backup_to_github(cached)
             return cached
-        # No cache on this instance after lock — return empty rather than recomputing
+        # Cold-start: no local cache. Try GitHub backup written at lock promotion time.
+        gh_backup = _slate_restore_from_github()
+        if gh_backup:
+            gh_backup["locked"] = True
+            gh_backup.setdefault("draftable_count", len(draftable_games))
+            _ls("slate_v5_locked", gh_backup)
+            return gh_backup
         return {"date": _et_date().isoformat(), "games": games,
                 "lineups": {"chalk": [], "upside": []},
                 "locked": True, "draftable_count": len(draftable_games)}
@@ -2021,18 +2065,16 @@ async def auto_resolve_line():
         return {"status": "already_resolved", "result": row["result"],
                 "actual_stat": _safe_float(row.get("actual_stat", 0))}
 
-    # Check if all today's games are final
-    games = fetch_games()
-    all_final, remaining, finals, _lrs = _all_games_final(games)
-    if not all_final:
-        return {"status": "not_final", "remaining": remaining, "finals": finals}
+    # No all-games-final gate. _fetch_player_final_stat only reads completed ESPN
+    # games, so it returns None while the pick's game is live and the real value
+    # once that specific game finishes (other games may still be in progress).
 
     # Fetch the player's actual stat from ESPN boxscore
     player_name = row.get("player_name", "")
     stat_type   = row.get("stat_type", "points")
     actual      = _fetch_player_final_stat(player_name, stat_type)
     if actual is None:
-        return {"status": "stat_not_found", "player": player_name, "stat_type": stat_type}
+        return {"status": "game_not_final", "player": player_name}
 
     direction = row.get("direction", "over")
     line_val  = _safe_float(row.get("line", 0))
