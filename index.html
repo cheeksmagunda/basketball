@@ -88,7 +88,7 @@
 
     /* ── HEADER ── */
     header {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
       padding: 14px 0 12px;
       border-bottom: 1px solid var(--border);
       margin-bottom: 0;
@@ -96,22 +96,33 @@
 
     .logo {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.15rem; font-weight: 900; letter-spacing: 0.04em;
+      font-size: 1.3rem; font-weight: 900; letter-spacing: 0.04em;
       text-transform: uppercase;
-      display: flex; align-items: center; gap: 8px;
+      display: flex; align-items: center; gap: 10px;
       flex-shrink: 0;
     }
     .logo-icon {
-      width: 28px; height: 28px; border-radius: 7px;
+      width: 34px; height: 34px; border-radius: 9px;
       background: var(--chalk);
       display: flex; align-items: center; justify-content: center;
-      font-size: 0.85rem;
-      box-shadow: 0 0 12px var(--chalk-glow);
+      font-size: 1rem;
+      box-shadow: 0 0 14px var(--chalk-glow);
     }
     .logo-sub {
-      font-size: 0.55rem; font-weight: 700; color: var(--muted);
-      letter-spacing: 0.14em; display: block; margin-top: 1px;
+      font-size: 0.6rem; font-weight: 700; color: var(--muted);
+      letter-spacing: 0.14em; display: block; margin-top: 2px;
     }
+    /* Header right-side meta badges */
+    .header-meta {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    }
+    .header-badge {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.63rem; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--muted); white-space: nowrap;
+    }
+    .header-badge.locked { color: var(--green); }
+    .header-badge.accent { color: var(--chalk); }
 
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
@@ -205,7 +216,7 @@
     /* Predict sub-pages */
     .predict-sub-page { display: none; }
     
-    .predict-sub-page.active { display: block; padding-bottom: 160px; }
+    .predict-sub-page.active { display: block; padding-bottom: 0; }
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
@@ -1062,6 +1073,7 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
+    <div id="headerMeta" class="header-meta"></div>
   </header>
 
   <!-- Contextual sub-nav: floats independently above the bottom tab bar -->
@@ -1104,7 +1116,7 @@
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
       <div class="section-label">Today's Top 5</div>
-      <div id="slateChips" class="game-chips"></div>
+      <div id="slateChips" class="game-chips" style="display:none"></div>
 
       <div class="mode-tabs" id="slateTabs" style="display:none">
         <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Starting 5</button>
@@ -1582,6 +1594,26 @@ async function loadSlate() {
       <div class="chip">${dateStr}</div>
       ${lockChip}
     `;
+    // Header meta badges
+    const headerMeta = document.getElementById('headerMeta');
+    if (headerMeta) {
+      const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      const statusBadge = isLocked
+        ? '<div class="header-badge locked">🔒 Picks Locked</div>'
+        : `<div class="header-badge">Updated ${timeNow} ET</div>`;
+      const countBadge = `<div class="header-badge">${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}</div>`;
+      // Sleeper badge: highest card-boost player with solid RS (≥ 4.0) across both lineups
+      const allPicks = [...(SLATE.lineups?.chalk || []), ...(SLATE.lineups?.upside || [])];
+      const seen = new Set();
+      const uniquePicks = allPicks.filter(p => { if (seen.has(p.name)) return false; seen.add(p.name); return true; });
+      const sleeper = uniquePicks
+        .filter(p => parseFloat(p.rating) >= 4.0 && parseFloat(p.est_mult) > 1.0)
+        .sort((a, b) => parseFloat(b.est_mult) - parseFloat(a.est_mult))[0];
+      const sleeperBadge = sleeper
+        ? `<div class="header-badge accent">⚡ ${sleeper.name.split(' ').pop()} +${parseFloat(sleeper.est_mult).toFixed(1)}x card</div>`
+        : '';
+      headerMeta.innerHTML = countBadge + statusBadge + sleeperBadge;
+    }
     switchSlate('chalk');
     savePredictions();
   } catch(e) {
