@@ -119,14 +119,9 @@
       transform: translateX(-50%);
       width: calc(100% - 32px);
       max-width: 468px;
-      /* Glass: lower opacity so content bleeds through, specular highlight on top */
-      background-color: rgba(14, 18, 32, 0.76);
+      background-color: rgba(14, 18, 32, 0.55);
       background-image: linear-gradient(to bottom, rgba(255,255,255,0.055) 0%, transparent 40%);
-      /* Directional border: bright top edge (light source), dim bottom edge */
-      border-top: 1px solid rgba(255,255,255,0.18);
-      border-left: 1px solid rgba(255,255,255,0.10);
-      border-right: 1px solid rgba(255,255,255,0.10);
-      border-bottom: 1px solid rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.12);
       border-radius: 26px;
       padding: 10px 10px 12px;
       backdrop-filter: blur(24px);
@@ -152,14 +147,10 @@
       color: rgba(255,255,255,0.30);
     }
     .bnav-icon-btn:hover { color: rgba(255,255,255,0.55); }
-    /* Active chip: frosted glass inner pill with directional light */
     .bnav-icon-btn.active {
       background-color: rgba(255,255,255,0.13);
       background-image: linear-gradient(to bottom, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%);
-      border-top: 1px solid rgba(255,255,255,0.22);
-      border-left: 1px solid rgba(255,255,255,0.12);
-      border-right: 1px solid rgba(255,255,255,0.12);
-      border-bottom: 1px solid rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.18);
       box-shadow: 0 2px 14px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.20) inset;
       color: #fff;
     }
@@ -180,12 +171,9 @@
       display: flex;
       align-items: center;
       gap: 2px;
-      background-color: rgba(14, 18, 32, 0.78);
+      background-color: rgba(14, 18, 32, 0.58);
       background-image: linear-gradient(to bottom, rgba(255,255,255,0.05) 0%, transparent 50%);
-      border-top: 1px solid rgba(255,255,255,0.16);
-      border-left: 1px solid rgba(255,255,255,0.09);
-      border-right: 1px solid rgba(255,255,255,0.09);
-      border-bottom: 1px solid rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.11);
       border-radius: 50px;
       padding: 4px;
       backdrop-filter: blur(20px);
