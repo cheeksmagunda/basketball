@@ -2158,7 +2158,10 @@ async function _tryAutoResolveLine(pick) {
 
 async function initLinePage() {
   const todayET = _etToday();
-  if (LINE_LOADED_DATE === todayET) return;
+  if (LINE_LOADED_DATE === todayET) {
+    switchLineDir(LINE_DIR); // restore button state on re-visit
+    return;
+  }
   LINE_LOADED_DATE = todayET;
   document.getElementById('lineLoading').style.display = 'block';
   document.getElementById('lineEmpty').style.display = 'none';
