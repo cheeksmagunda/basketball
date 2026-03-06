@@ -2316,11 +2316,8 @@ async function initLinePage() {
     }
     // Auto-select the direction matching today's pick in the sub-nav
     const pickDir = (data.pick.direction || 'under').toLowerCase();
-    LINE_DIR = pickDir;
     LINE_PICK_DIR = pickDir;
-    document.querySelectorAll('.line-dir-btn').forEach(btn =>
-      btn.classList.toggle('active', btn.dataset.dir === pickDir)
-    );
+    switchLineDir(pickDir);
 
     // Auto-save the pick
     try {
