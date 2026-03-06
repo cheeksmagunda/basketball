@@ -21,6 +21,7 @@ api/index.py           — FastAPI backend (all endpoints, projection engine, La
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
 api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
+api/rotowire.py        — RotoWire lineup scraper (free tier: availability + injury flags)
 api/temporal_risk.py   — TRAV module (available, not active in picks)
 data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
@@ -166,7 +167,13 @@ Predictions lock 5 minutes before the earliest game starts. Once locked:
 ## Two Lineup Types
 
 - **Starting 5 (chalk)**: MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent.
-- **Moonshot**: MILP-optimized for `moonshot_ev = rating × (avg_slot + card_boost × 1.5) × variance_bonus`. Weights card boost 1.5× and rewards inconsistent players who could boom. Excludes chalk picks. Always real projections — no garbage-time DNP traps.
+- **Moonshot** (v2 — March 5 overhaul): Options strategy. Hard floor of 20 projected minutes + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = predMin × card_boost² × dev_team_bonus × rating`. Development/tanking team players get 1.25x boost. Philosophy: buy cheap lottery tickets (high minutes + low drafts), let positive variance do the work. Solves the DNP trap problem from March 4-5.
+
+### Development Teams (configurable in model-config.json)
+`UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership.
+
+### RotoWire Integration (`api/rotowire.py`)
+Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Returns player availability (confirmed/expected/questionable/OUT). Moonshot hard-filters on this: any player flagged OUT or questionable is excluded. Cache TTL: 30 minutes.
 
 ## Model Improvements (deployed)
 
