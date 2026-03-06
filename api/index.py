@@ -3139,8 +3139,14 @@ async def lab_chat(payload: dict = Body(...)):
             r.raise_for_status()
             resp = r.json()
 
-            # Tool use — emit a status event per tool, then follow up
-            if resp.get("stop_reason") == "tool_use":
+            # Handle up to 5 rounds of tool use — Claude often chains multiple
+            # read_repo_file calls (e.g. read actuals → read predictions → respond).
+            # Without looping, the second tool_use response has no text block and
+            # renders as an empty bubble in the UI.
+            current_messages = list(messages)
+            for _round in range(5):
+                if resp.get("stop_reason") != "tool_use":
+                    break
                 tool_results = []
                 for block in resp.get("content", []):
                     if block.get("type") == "tool_use":
@@ -3152,19 +3158,18 @@ async def lab_chat(payload: dict = Body(...)):
                             "tool_use_id": block["id"],
                             "content":     result,
                         })
-
-                followup_messages = messages + [
+                current_messages = current_messages + [
                     {"role": "assistant", "content": resp["content"]},
                     {"role": "user",      "content": tool_results},
                 ]
-                r2 = requests.post(
+                r_next = requests.post(
                     "https://api.anthropic.com/v1/messages",
                     headers=headers,
-                    json={**base_body, "messages": followup_messages},
+                    json={**base_body, "messages": current_messages},
                     timeout=45,
                 )
-                r2.raise_for_status()
-                resp = r2.json()
+                r_next.raise_for_status()
+                resp = r_next.json()
 
             text = next((b["text"] for b in resp.get("content", []) if b.get("type") == "text"), "")
             yield _sse({"type": "content", "text": text})
