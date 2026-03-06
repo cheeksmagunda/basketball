@@ -96,20 +96,20 @@
 
     .logo {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.3rem; font-weight: 900; letter-spacing: 0.04em;
+      font-size: 1.7rem; font-weight: 900; letter-spacing: 0.04em;
       text-transform: uppercase;
       display: flex; align-items: center; gap: 10px;
       flex-shrink: 0;
     }
     .logo-icon {
-      width: 34px; height: 34px; border-radius: 9px;
+      width: 44px; height: 44px; border-radius: 12px;
       background: var(--chalk);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1rem;
-      box-shadow: 0 0 14px var(--chalk-glow);
+      font-size: 1.3rem;
+      box-shadow: 0 0 18px var(--chalk-glow);
     }
     .logo-sub {
-      font-size: 0.6rem; font-weight: 700; color: var(--muted);
+      font-size: 0.72rem; font-weight: 700; color: var(--muted);
       letter-spacing: 0.14em; display: block; margin-top: 2px;
     }
     /* Header right-side meta badges */
@@ -122,7 +122,6 @@
       text-transform: uppercase; color: var(--muted); white-space: nowrap;
     }
     .header-badge.locked { color: var(--green); }
-    .header-badge.accent { color: var(--chalk); }
 
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
@@ -624,7 +623,7 @@
     }
     .log-drill-title {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.3rem; font-weight: 900; letter-spacing: 0.04em;
+      font-size: 1.7rem; font-weight: 900; letter-spacing: 0.04em;
       text-transform: uppercase; color: var(--text);
     }
     .log-date-label {
@@ -1115,7 +1114,6 @@
 
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
-      <div class="section-label">Today's Top 5</div>
       <div id="slateChips" class="game-chips" style="display:none"></div>
 
       <div class="mode-tabs" id="slateTabs" style="display:none">
@@ -1602,17 +1600,7 @@ async function loadSlate() {
         ? '<div class="header-badge locked">🔒 Picks Locked</div>'
         : `<div class="header-badge">Updated ${timeNow} ET</div>`;
       const countBadge = `<div class="header-badge">${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}</div>`;
-      // Sleeper badge: highest card-boost player with solid RS (≥ 4.0) across both lineups
-      const allPicks = [...(SLATE.lineups?.chalk || []), ...(SLATE.lineups?.upside || [])];
-      const seen = new Set();
-      const uniquePicks = allPicks.filter(p => { if (seen.has(p.name)) return false; seen.add(p.name); return true; });
-      const sleeper = uniquePicks
-        .filter(p => parseFloat(p.rating) >= 4.0 && parseFloat(p.est_mult) > 1.0)
-        .sort((a, b) => parseFloat(b.est_mult) - parseFloat(a.est_mult))[0];
-      const sleeperBadge = sleeper
-        ? `<div class="header-badge accent">⚡ ${sleeper.name.split(' ').pop()} +${parseFloat(sleeper.est_mult).toFixed(1)}x card</div>`
-        : '';
-      headerMeta.innerHTML = countBadge + statusBadge + sleeperBadge;
+      headerMeta.innerHTML = countBadge + statusBadge;
     }
     switchSlate('chalk');
     savePredictions();
