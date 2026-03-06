@@ -1242,6 +1242,20 @@
     </div>
     <!-- Unlocked state -->
     <div id="labUnlocked" style="display:none">
+      <!-- End-of-day upload banner (shown when games final + no uploads yet) -->
+      <div id="benUploadBanner" style="display:none;margin-bottom:12px;background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.28);border-radius:14px;padding:14px 16px">
+        <div style="font-family:'Barlow',sans-serif;font-size:0.82rem;color:var(--text-dim);line-height:1.45;margin-bottom:12px">Games are wrapped up. Upload your screenshots to log today's results — I'll compute the hindsight optimal lineup and break down what the model got right.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
+            style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            📸 Real Scores
+          </button>
+          <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            🏆 Top Drafts
+          </button>
+        </div>
+      </div>
       <!-- Chat messages -->
       <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px">
         <div id="labEmptyState">
@@ -2018,10 +2032,23 @@ function renderLogDrillCards() {
   renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap });
 }
 
+// Hide upload banner once both uploads are done (both buttons marked green)
+function _checkBannerDone() {
+  const rs  = document.getElementById('benBannerRSBtn');
+  const win = document.getElementById('benBannerWinBtn');
+  if (rs?.disabled && win?.disabled) {
+    const banner = document.getElementById('benUploadBanner');
+    if (banner) banner.style.display = 'none';
+  }
+}
+
 // ── BEN UPLOAD (moved from Log page) ──
-// Renders end-of-day upload prompt in Ben chat when all games are final.
+// Shows the upload banner and renders end-of-day prompt in Ben chat when all games are final.
 function _renderBenEodPrompt() {
-  if (document.getElementById('benEodPrompt')) return; // already shown
+  // Show the top banner
+  const banner = document.getElementById('benUploadBanner');
+  if (banner) banner.style.display = 'block';
+  if (document.getElementById('benEodPrompt')) return; // chat bubble already shown
   const el = document.createElement('div');
   el.className = 'lab-msg assistant';
   el.id = 'benEodPrompt';
@@ -2043,17 +2070,20 @@ function _renderBenEodPrompt() {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-function _benTriggerUpload(type) {
+function _benTriggerUpload(type, source) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
-  input.onchange = () => _handleBenUpload(input.files[0], type);
+  input.onchange = () => _handleBenUpload(input.files[0], type, source);
   input.click();
 }
 
-async function _handleBenUpload(file, type) {
+async function _handleBenUpload(file, type, source) {
   if (!file) return;
-  const btnId = type === 'real_scores' ? 'benUploadRSBtn' : 'benUploadWinBtn';
+  // Update both the chat bubble buttons and the banner buttons
+  const chatBtnId   = type === 'real_scores' ? 'benUploadRSBtn'   : 'benUploadWinBtn';
+  const bannerBtnId = type === 'real_scores' ? 'benBannerRSBtn'   : 'benBannerWinBtn';
+  const btnId = source === 'banner' ? bannerBtnId : chatBtnId;
   const btn = document.getElementById(btnId);
   const origText = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
@@ -2072,7 +2102,10 @@ async function _handleBenUpload(file, type) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: today, players: data.players }),
       });
-      if (btn) { btn.textContent = '✓ Real Scores'; btn.style.background = 'rgba(34,197,94,0.2)'; btn.style.border = '1px solid var(--green)'; btn.style.color = 'var(--green)'; }
+      const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
+      _markDone('benUploadRSBtn', '✓ Real Scores');
+      _markDone('benBannerRSBtn', '✓ Real Scores');
+      _checkBannerDone();
 
       // Compute hindsight
       const hindsightPlayers = data.players
@@ -2116,7 +2149,10 @@ async function _handleBenUpload(file, type) {
           });
         } catch(e) { /* persist failure is non-fatal */ }
       }
-      if (btn) { btn.textContent = '✓ Top Drafts'; btn.style.background = 'rgba(34,197,94,0.2)'; btn.style.border = '1px solid var(--green)'; btn.style.color = 'var(--green)'; }
+      const _markDone2 = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
+      _markDone2('benUploadWinBtn', '✓ Top Drafts');
+      _markDone2('benBannerWinBtn', '✓ Top Drafts');
+      _checkBannerDone();
       const summary = `Top Drafts uploaded for ${today}. Winners: ${data.players.slice(0,6).map(p => `${p.player_name||p.name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')}.`;
       appendLabMessage('user', summary, true);
       await labCallClaude();
