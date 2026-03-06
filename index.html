@@ -855,7 +855,7 @@
     /* Ben tab: fixed-height flex column — messages scroll, input always visible */
     #tab-lab.active {
       display: flex; flex-direction: column;
-      
+      transition: height 0.18s ease;
       height: calc(100dvh - 80px - 100px);
       padding-top: 0; overflow: hidden;
     }
@@ -1220,16 +1220,26 @@
           <button onclick="_labClearPhoto()" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="file" id="labPhotoInput" accept="image/*" style="display:none" onchange="_labAttachPhoto(this.files[0]);this.value=''">
+          <input type="file" id="labPhotoInput" accept="image/*" tabindex="-1" style="display:none" onchange="_labAttachPhoto(this.files[0]);this.value=''">
           <button id="labPhotoBtn" onclick="document.getElementById('labPhotoInput').click()" title="Attach screenshot"
             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:background 0.15s">
             📷
           </button>
           <input type="text" id="labInput" placeholder="Ask Ben anything..."
             enterkeyhint="send"
+            autocomplete="off"
+            autocorrect="on"
+            autocapitalize="sentences"
+            spellcheck="true"
+            inputmode="text"
             style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;outline:none"
             onkeydown="if(event.key==='Enter'){event.preventDefault();labSend()}"
+            oninput="const s=document.getElementById('labSendBtn');s.disabled=!this.value.trim();s.style.opacity=this.value.trim()?'1':'0.4';"
           />
+          <button id="labSendBtn" onclick="labSend()" title="Send" disabled
+            style="background:var(--lab);border:none;border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.2rem;color:#fff;opacity:0.4;transition:opacity 0.15s">
+            ↑
+          </button>
         </div>
       </div>
     </div>
