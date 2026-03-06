@@ -1283,9 +1283,6 @@
             style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
           ></textarea>
-          <button id="labSendBtn" class="lab-send-btn" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="labSend()">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 13V2M2 7l5.5-5.5L13 7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
         </div>
       </div>
     </div>
@@ -2754,7 +2751,7 @@ async function labCallClaude(attachedImage = null) {
   labMsgs.appendChild(thinkEl);
   labMsgs.scrollTop = labMsgs.scrollHeight;
 
-  document.getElementById('labSendBtn').disabled = true;
+  document.getElementById('labSendBtn')?.disabled = true;
 
   try {
     // Build API messages — image only injected into the last user message (not stored in history)
@@ -2792,7 +2789,7 @@ async function labCallClaude(attachedImage = null) {
     thinkEl.remove();
     appendLabMessage('assistant', 'Network error. Please try again.');
   } finally {
-    document.getElementById('labSendBtn').disabled = false;
+    document.getElementById('labSendBtn')?.disabled = false;
   }
 }
 
@@ -2939,20 +2936,25 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
   const input  = document.getElementById('labInput');
   const nav    = document.getElementById('bottomNav');
   const tabLab = document.getElementById('tab-lab');
-  // Use visualViewport to precisely track keyboard height on iOS
+  // Use visualViewport to precisely track keyboard height on iOS.
+  // Also counter-scroll: iOS auto-scrolls the page up when input is focused,
+  // which hides the header. window.scrollTo(0,0) pins the page back to top
+  // before we measure tabTop so the header stays visible.
   const _applyKbHeight = () => {
     if (!tabLab.classList.contains('lab-kb-open')) return;
     const vv = window.visualViewport;
     if (!vv) return;
-    const tabTop = tabLab.getBoundingClientRect().top;
-    tabLab.style.height = (vv.height - tabTop) + 'px';
+    window.scrollTo(0, 0); // prevent iOS from hiding the header
     requestAnimationFrame(() => {
+      const tabTop = tabLab.getBoundingClientRect().top;
+      tabLab.style.height = Math.max(200, vv.height - tabTop) + 'px';
       const msgs = document.getElementById('labMessages');
       if (msgs) msgs.scrollTop = msgs.scrollHeight;
     });
   };
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', _applyKbHeight);
+    window.visualViewport.addEventListener('scroll', _applyKbHeight);
   }
 
   input.addEventListener('focus', () => {
@@ -2962,11 +2964,9 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
     nav.style.opacity = '0';
     nav.style.transform = 'translateX(-50%) translateY(16px)';
     nav.style.pointerEvents = 'none';
-    // visualViewport resize fires after keyboard appears; fallback scroll
-    requestAnimationFrame(() => {
-      const msgs = document.getElementById('labMessages');
-      if (msgs) msgs.scrollTop = msgs.scrollHeight;
-    });
+    // Counter iOS auto-scroll immediately and after keyboard settles
+    window.scrollTo(0, 0);
+    setTimeout(() => window.scrollTo(0, 0), 100);
   });
   input.addEventListener('blur', () => {
     if (!isMobile()) return;
