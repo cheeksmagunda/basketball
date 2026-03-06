@@ -1243,15 +1243,16 @@
     <!-- Unlocked state -->
     <div id="labUnlocked" style="display:none">
       <!-- End-of-day upload banner (shown when games final + no uploads yet) -->
-      <div id="benUploadBanner" style="display:none;margin-bottom:12px;background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.28);border-radius:14px;padding:14px 16px">
-        <div style="font-family:'Barlow',sans-serif;font-size:0.82rem;color:var(--text-dim);line-height:1.45;margin-bottom:12px">Games are wrapped up. Upload your screenshots to log today's results — I'll compute the hindsight optimal lineup and break down what the model got right.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div id="benUploadBanner" class="lab-msg assistant" style="display:none;margin-bottom:12px">
+        <div class="lab-msg-label">Ben</div>
+        <div>Games are wrapped up. Upload your screenshots to log today's results — I'll compute the hindsight optimal lineup and break down what the model got right.</div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
-            style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             📸 Real Scores
           </button>
           <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             🏆 Top Drafts
           </button>
         </div>
