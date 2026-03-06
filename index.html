@@ -1505,6 +1505,13 @@ async function loadSlate() {
         try {
           const lsKey = `slate_${slateData.date || ''}`;
           localStorage.setItem(lsKey, JSON.stringify(slateData));
+          // Prune any slate keys older than 2 days to avoid unbounded storage growth
+          const todayET = _etToday();
+          for (const k of Object.keys(localStorage)) {
+            if (k.startsWith('slate_') && k !== lsKey && k !== `slate_${todayET}`) {
+              localStorage.removeItem(k);
+            }
+          }
         } catch(e) {}
       }
     }
@@ -2082,6 +2089,12 @@ async function _handleBenUpload(file, type, source) {
       const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
       const summary = `Real Scores uploaded for ${today}. Players: ${playerList}.${auditStr}`;
       appendLabMessage('user', summary);
+      // Rebuild system prompt with fresh briefing so follow-up questions have current accuracy context
+      try {
+        const freshBriefing = await fetch('/api/lab/briefing').then(r => r.json());
+        LAB.briefing = freshBriefing;
+        LAB.system = buildLabSystemPrompt();
+      } catch(e) {}
       await labCallClaude();
 
     } else {
@@ -2668,6 +2681,8 @@ WHEN TO USE WHAT:
 - Algorithmic changes (formulas, logic, filters) → read_repo_file the function → explain → write_repo_file
 - Investigating accuracy → read_repo_file data/audit/{date}.json or data/actuals/{date}.csv
 - Historical pick analysis → list_repo_directory data/predictions, then read specific files
+- Full player projections (card boosts, RS ratings for ALL players, not just the top 10 in context) → read_repo_file data/predictions/{date}.csv (available after slate locks; has all projected players with RS, boost, minutes, pts/reb/ast). Pre-lock: slate context above shows top 10 only — tell user projections save at lock.
+- Card boost for a specific player not in the lineups above → read predictions CSV or note the player is outside the model's top picks for today
 
 ACTIONS (show confirm UI — use for config changes requiring user approval):
 - backtest: <action>{"action":"backtest","changes":{"dot.path":value},"description":"..."}</action>
