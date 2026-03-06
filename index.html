@@ -855,11 +855,10 @@
     /* Ben tab: fixed-height flex column — messages scroll, input always visible */
     #tab-lab.active {
       display: flex; flex-direction: column;
-      transition: height 0.18s ease;
-      height: calc(100dvh - 80px - 100px);
+      height: calc(100dvh - 80px - 120px);
       padding-top: 0; overflow: hidden;
     }
-    /* When keyboard opens (labInput focused): nav hidden, expand to fill the freed space */
+    /* When keyboard opens (labInput focused): nav hidden, JS sets exact height via visualViewport */
     #tab-lab.active.lab-kb-open {
       height: calc(100dvh - 80px);
     }
@@ -2973,6 +2972,16 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
     nav.style.pointerEvents = '';
     // Reset any viewport offset iOS leaves behind after keyboard dismissal
     setTimeout(() => window.scrollTo(0, 0), 50);
+    // Re-measure after iOS fully settles the keyboard out (dvh can lag a frame)
+    // to prevent a brief clip where the input bar slips under the nav
+    setTimeout(() => {
+      if (tabLab.classList.contains('lab-kb-open')) return; // focus re-gained
+      const tabTop = tabLab.getBoundingClientRect().top;
+      const navH = nav.getBoundingClientRect().height || 80;
+      tabLab.style.height = Math.max(300, window.innerHeight - tabTop - navH - 20) + 'px';
+      const msgs = document.getElementById('labMessages');
+      if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    }, 350);
   });
 })();
 
