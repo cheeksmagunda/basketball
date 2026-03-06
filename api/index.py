@@ -631,24 +631,129 @@ _BEN_TOOLS = [
             },
             "required": ["data_type"],
         },
-    }
+    },
+    {
+        "name": "read_repo_file",
+        "description": (
+            "Read any file from the GitHub repository. Use this to inspect the full source "
+            "code (api/index.py, api/real_score.py, api/line_engine.py, api/asset_optimizer.py, "
+            "index.html), prediction/actuals CSVs, audit JSONs, model config, or any other file. "
+            "Always read a code file before proposing or making changes to it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Repo-relative path, e.g. 'api/index.py', 'data/predictions/2026-03-05.csv', 'data/model-config.json'",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_repo_directory",
+        "description": (
+            "List files and subdirectories in a GitHub repository directory. "
+            "Use to discover available CSVs, audit files, or code modules."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Directory path, e.g. 'api', 'data/predictions', 'data/actuals'",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_repo_file",
+        "description": (
+            "Write or modify a file in the GitHub repository. Commits the change immediately. "
+            "Changes to api/*.py or index.html trigger an automatic Vercel redeploy (~2 min). "
+            "Use for code improvements, algorithm changes, bug fixes, or any file update. "
+            "ALWAYS call read_repo_file first to get the current content. "
+            "Make minimal, targeted changes — do not rewrite entire files unless necessary. "
+            "Summarize what you changed and why in the commit message."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Repo-relative path to write",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Complete new file content",
+                },
+                "commit_message": {
+                    "type": "string",
+                    "description": "Clear commit message describing what changed and why",
+                },
+            },
+            "required": ["path", "content", "commit_message"],
+        },
+    },
 ]
 
 
 def _execute_ben_tool(name, inp):
     """Execute a Ben tool call and return a string result."""
-    if name != "get_live_nba_data":
-        return f"Unknown tool: {name}"
-    dt = inp.get("data_type", "scores")
-    if dt == "scores":
-        return _live_scores()
-    if dt == "boxscore":
-        gid = inp.get("game_id", "")
-        return _live_boxscore(gid) if gid else "game_id is required for boxscore queries."
-    if dt == "player_stats":
-        pn = inp.get("player_name", "")
-        return _live_player_stats(pn) if pn else "player_name is required for player_stats queries."
-    return f"Unknown data_type: {dt}"
+    if name == "get_live_nba_data":
+        dt = inp.get("data_type", "scores")
+        if dt == "scores":
+            return _live_scores()
+        if dt == "boxscore":
+            gid = inp.get("game_id", "")
+            return _live_boxscore(gid) if gid else "game_id is required for boxscore queries."
+        if dt == "player_stats":
+            pn = inp.get("player_name", "")
+            return _live_player_stats(pn) if pn else "player_name is required for player_stats queries."
+        return f"Unknown data_type: {dt}"
+
+    if name == "read_repo_file":
+        path = inp.get("path", "")
+        if not path:
+            return "path is required."
+        content, _ = _github_get_file(path)
+        if content is None:
+            return f"File not found: {path}"
+        # Truncate very large files (> 60k chars) to avoid token overflow
+        if len(content) > 60000:
+            return content[:60000] + f"\n\n[...TRUNCATED — file is {len(content)} chars total. Request a specific section if needed.]"
+        return content
+
+    if name == "list_repo_directory":
+        path = inp.get("path", "")
+        items = _github_list_dir(path)
+        if not items:
+            return f"Directory empty or not found: {path}"
+        return json.dumps([{"name": i.get("name"), "type": i.get("type", "file"), "size": i.get("size")} for i in items], indent=2)
+
+    if name == "write_repo_file":
+        path    = inp.get("path", "")
+        content = inp.get("content", "")
+        message = inp.get("commit_message", "Ben: update file")
+        if not path or not content:
+            return "path and content are required."
+        result = _github_write_file(path, content, f"[Ben] {message}")
+        if result.get("error"):
+            return f"Write failed: {result['error']}"
+        # Clear relevant caches so changes take effect immediately
+        try:
+            if "model-config" in path:
+                (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
+            elif path.startswith("api/") or path == "index.html":
+                # Code change — clear all caches so next request uses new code
+                for f in CACHE_DIR.glob("*.json"):
+                    f.unlink()
+        except: pass
+        return f"Written successfully: {path} — deploy triggered if code file."
+
+    return f"Unknown tool: {name}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
