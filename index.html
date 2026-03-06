@@ -1217,10 +1217,11 @@
             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:background 0.15s">
             📷
           </button>
-          <textarea id="labInput" placeholder="Ask Ben anything..." rows="1"
-            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;resize:none;outline:none"
-            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
-          ></textarea>
+          <input type="text" id="labInput" placeholder="Ask Ben anything..."
+            enterkeyhint="send"
+            style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;outline:none"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();labSend()}"
+          />
         </div>
       </div>
     </div>
