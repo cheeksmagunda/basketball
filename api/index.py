@@ -2175,6 +2175,17 @@ async def line_history():
         if rows:
             results.append(rows[0])
 
+    # Deduplicate by player_name: keep only the most recent pick per player.
+    # Prevents same player appearing twice with different directions on consecutive days.
+    seen_players: set = set()
+    deduped = []
+    for r in results:
+        pname = r.get("player_name", "")
+        if pname not in seen_players:
+            seen_players.add(pname)
+            deduped.append(r)
+    results = deduped
+
     # Compute streak + hit rate
     hits   = [r for r in results if r.get("result") == "hit"]
     misses = [r for r in results if r.get("result") == "miss"]
