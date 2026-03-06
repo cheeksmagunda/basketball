@@ -1071,6 +1071,11 @@
     <button class="predict-sub-btn active" data-sub="slate" onclick="switchPredictSub('slate')">Slate-Wide</button>
     <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
   </div>
+  <!-- Line sub-nav: same pill, Over / Under direction filter -->
+  <div class="predict-sub-nav" id="lineSubNav" style="display:none">
+    <button class="predict-sub-btn line-dir-btn" data-dir="over" onclick="switchLineDir('over')">Over</button>
+    <button class="predict-sub-btn line-dir-btn active" data-dir="under" onclick="switchLineDir('under')">Under</button>
+  </div>
 
   <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
   <nav class="bottom-nav" id="bottomNav">
@@ -1359,9 +1364,9 @@ function switchTab(tab) {
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
 
-  // Show/hide predict sub-nav
-  const subNav = document.getElementById('predictSubNav');
-  subNav.style.display = (tab === 'predictions') ? 'flex' : 'none';
+  // Show/hide contextual sub-navs
+  document.getElementById('predictSubNav').style.display = (tab === 'predictions') ? 'flex' : 'none';
+  document.getElementById('lineSubNav').style.display = (tab === 'line') ? 'flex' : 'none';
 
   movePill(tab);
   setPillAccent(tab);
@@ -2160,6 +2165,7 @@ function renderHindsightOptimal(lineup) {
 // ════════════════════════════════════════════════════════
 
 let LINE_LOADED_DATE = '';
+let LINE_DIR = 'under'; // active direction filter for line sub-nav
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 
 async function _tryAutoResolveLine(pick) {
@@ -2251,6 +2257,12 @@ async function initLinePage() {
     if (data.slate_summary) {
       document.getElementById('lineSlateSummary').innerHTML = renderLineSummary(data.slate_summary);
     }
+    // Auto-select the direction matching today's pick in the sub-nav
+    const pickDir = (data.pick.direction || 'under').toLowerCase();
+    LINE_DIR = pickDir;
+    document.querySelectorAll('.line-dir-btn').forEach(btn =>
+      btn.classList.toggle('active', btn.dataset.dir === pickDir)
+    );
 
     // Auto-save the pick
     try {
@@ -2284,6 +2296,8 @@ async function initLinePage() {
       if (hist.picks && hist.picks.length) {
         document.getElementById('lineHistoryWrap').style.display = 'block';
         renderLineHistory(hist);
+        // Sync history to whatever direction is active in the sub-nav
+        filterLineHistory(LINE_DIR);
       }
     }
   } catch(e) { /* non-fatal */ }
@@ -2457,7 +2471,7 @@ document.addEventListener('keydown', function(e) {
 
 function filterLineHistory(dir) {
   if (!LINE_HIST_DATA) return;
-  // Update active tab styling
+  // Update active tab styling on the inline All/Over/Under tabs
   document.querySelectorAll('.line-hist-tab').forEach(btn => {
     const isActive = btn.dataset.dir === dir;
     btn.classList.toggle('active', isActive);
@@ -2465,6 +2479,16 @@ function filterLineHistory(dir) {
     if (isActive && dir !== 'all') btn.classList.add(dir);
   });
   document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA.picks, dir);
+}
+
+function switchLineDir(dir) {
+  LINE_DIR = dir;
+  // Update sub-nav pill buttons
+  document.querySelectorAll('.line-dir-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.dir === dir)
+  );
+  // Sync the inline history tabs and re-render history
+  filterLineHistory(dir);
 }
 
 // ════════════════════════════════════════════════════════
