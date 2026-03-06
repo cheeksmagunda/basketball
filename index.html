@@ -119,20 +119,26 @@
       transform: translateX(-50%);
       width: calc(100% - 32px);
       max-width: 468px;
-      background: rgba(14, 18, 32, 0.97);
-      border: 1px solid rgba(255,255,255,0.1);
+      /* Glass: lower opacity so content bleeds through, specular highlight on top */
+      background-color: rgba(14, 18, 32, 0.76);
+      background-image: linear-gradient(to bottom, rgba(255,255,255,0.055) 0%, transparent 40%);
+      /* Directional border: bright top edge (light source), dim bottom edge */
+      border-top: 1px solid rgba(255,255,255,0.18);
+      border-left: 1px solid rgba(255,255,255,0.10);
+      border-right: 1px solid rgba(255,255,255,0.10);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
       border-radius: 26px;
       padding: 10px 10px 12px;
-      backdrop-filter: blur(28px);
-      -webkit-backdrop-filter: blur(28px);
-      box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset;
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.10) inset;
       z-index: 1000;
     }
-    /* Icon row — acts as a visible "tray" */
+    /* Icon row — secondary glass layer inside the bar */
     .bnav-icon-row {
       display: flex;
       gap: 3px;
-      background: rgba(255,255,255,0.055);
+      background: rgba(255,255,255,0.07);
       border-radius: 20px;
       padding: 5px;
     }
@@ -141,15 +147,20 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 6px;
       padding: 14px 8px 12px;
-      border: none; background: transparent; border-radius: 16px;
-      cursor: pointer; transition: all 0.25s ease;
+      border: 1px solid transparent; background: transparent; border-radius: 16px;
+      cursor: pointer; transition: background 0.22s ease, box-shadow 0.22s ease, color 0.22s ease, border-color 0.22s ease;
       color: rgba(255,255,255,0.30);
     }
     .bnav-icon-btn:hover { color: rgba(255,255,255,0.55); }
+    /* Active chip: frosted glass inner pill with directional light */
     .bnav-icon-btn.active {
-      background: rgba(255,255,255,0.13);
-      border: none;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.10) inset;
+      background-color: rgba(255,255,255,0.13);
+      background-image: linear-gradient(to bottom, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%);
+      border-top: 1px solid rgba(255,255,255,0.22);
+      border-left: 1px solid rgba(255,255,255,0.12);
+      border-right: 1px solid rgba(255,255,255,0.12);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      box-shadow: 0 2px 14px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.20) inset;
       color: #fff;
     }
     .bnav-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
@@ -169,13 +180,17 @@
       display: flex;
       align-items: center;
       gap: 2px;
-      background: rgba(14, 18, 32, 0.94);
-      border: 1px solid rgba(255,255,255,0.09);
+      background-color: rgba(14, 18, 32, 0.78);
+      background-image: linear-gradient(to bottom, rgba(255,255,255,0.05) 0%, transparent 50%);
+      border-top: 1px solid rgba(255,255,255,0.16);
+      border-left: 1px solid rgba(255,255,255,0.09);
+      border-right: 1px solid rgba(255,255,255,0.09);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
       border-radius: 50px;
       padding: 4px;
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.50), 0 1px 0 rgba(255,255,255,0.05) inset;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.10) inset;
       z-index: 999;
     }
     .predict-sub-btn {
