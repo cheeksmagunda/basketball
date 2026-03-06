@@ -1234,6 +1234,7 @@
       </div>
       <div id="linePickWrap" style="display:none">
         <div id="lineResolvedToday" style="display:none;margin-bottom:12px"></div>
+        <div id="lineNoPickMsg" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:center;font-size:0.78rem;color:var(--muted)"></div>
         <div id="linePickCard"></div>
         <div id="lineSlateSummary" style="margin-top:16px"></div>
       </div>
@@ -2217,6 +2218,7 @@ function renderHindsightOptimal(lineup) {
 
 let LINE_LOADED_DATE = '';
 let LINE_DIR = 'under'; // active direction filter for line sub-nav
+let LINE_PICK_DIR = 'under'; // direction of today's actual pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 
 async function _tryAutoResolveLine(pick) {
@@ -2315,6 +2317,7 @@ async function initLinePage() {
     // Auto-select the direction matching today's pick in the sub-nav
     const pickDir = (data.pick.direction || 'under').toLowerCase();
     LINE_DIR = pickDir;
+    LINE_PICK_DIR = pickDir;
     document.querySelectorAll('.line-dir-btn').forEach(btn =>
       btn.classList.toggle('active', btn.dataset.dir === pickDir)
     );
@@ -2542,6 +2545,16 @@ function switchLineDir(dir) {
   document.querySelectorAll('.line-dir-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.dir === dir)
   );
+  // Show/hide main pick card based on direction match
+  const pickCard = document.getElementById('linePickCard');
+  const noMsg = document.getElementById('lineNoPickMsg');
+  if (pickCard && noMsg) {
+    const match = (dir === LINE_PICK_DIR);
+    pickCard.style.display = match ? '' : 'none';
+    document.getElementById('lineSlateSummary').style.display = match ? '' : 'none';
+    noMsg.style.display = match ? 'none' : 'block';
+    if (!match) noMsg.textContent = `Today's pick is ${LINE_PICK_DIR.toUpperCase()} — no ${dir.toUpperCase()} pick today`;
+  }
   // Sync the inline history tabs and re-render history
   filterLineHistory(dir);
 }
@@ -2919,14 +2932,16 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
 }
 
 // ── Ben keyboard / nav management ──
-// When the keyboard opens on mobile, the fixed bottom nav floats between the
-// input and the keyboard. Hide it while Ben's input is focused and restore on blur.
-// Also swap the CSS class that controls #tab-lab height so it fills the freed space.
+// On mobile: when the virtual keyboard opens, the fixed bottom nav floats between
+// the input and the keyboard — hide it while Ben's input is focused, restore on blur.
+// On desktop: skip entirely (no virtual keyboard, no nav hiding needed).
 (function setupBenKeyboard() {
+  const isMobile = () => window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   const input  = document.getElementById('labInput');
   const nav    = document.getElementById('bottomNav');
   const tabLab = document.getElementById('tab-lab');
   input.addEventListener('focus', () => {
+    if (!isMobile()) return;
     tabLab.classList.add('lab-kb-open');
     nav.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
     nav.style.opacity = '0';
@@ -2939,6 +2954,7 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
     });
   });
   input.addEventListener('blur', () => {
+    if (!isMobile()) return;
     tabLab.classList.remove('lab-kb-open');
     nav.style.opacity = '';
     nav.style.transform = '';
