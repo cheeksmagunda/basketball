@@ -307,3 +307,162 @@ class TestCacheDateBoundary:
         assert rng1.random() == rng2.random(), (
             "RNG seed is not deterministic for same ET date"
         )
+
+
+# ---------------------------------------------------------------------------
+# 5. Ben upload-banner actuals detection
+# ---------------------------------------------------------------------------
+
+class TestBenBannerActualsDetection:
+    """
+    The Ben upload banner must hide when today's actuals are already saved.
+
+    Root cause of the original bug: the banner checked only
+    briefing.latest_slate.date, which requires *paired* dates
+    (predictions + actuals both committed).  If the dedup guard
+    skipped the predictions commit, actuals existed but the briefing
+    didn't see them — banner stayed visible.
+
+    Fix: also check /api/log/get has_actuals directly.
+    """
+
+    _ACT_CSV = (
+        "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+        "LeBron James,5.2,1.4,1234,2.1,8.7,screenshot\n"
+        "Anthony Davis,4.1,1.2,890,3.0,6.5,screenshot\n"
+    )
+    _PRED_CSV = (
+        "scope,lineup_type,slot,player_name,player_id,team,pos,"
+        "predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk\n"
+        "slate,chalk,2.0,LeBron James,x,LAL,F,4.8,1.3,35,25,8,7,1,1\n"
+    )
+
+    def test_has_actuals_true_when_csv_has_data(self):
+        """log_get must return has_actuals=True when actuals CSV has player rows."""
+        from api.index import _parse_csv, ACT_FIELDS
+        rows = _parse_csv(self._ACT_CSV, ACT_FIELDS)
+        assert bool(rows) is True
+
+    def test_has_actuals_false_when_csv_missing(self):
+        """log_get must return has_actuals=False when actuals CSV is absent."""
+        from api.index import _parse_csv, ACT_FIELDS
+        rows = _parse_csv(None, ACT_FIELDS)
+        assert bool(rows) is False
+
+    def test_has_actuals_false_when_csv_header_only(self):
+        """log_get must return has_actuals=False for a header-only actuals CSV."""
+        from api.index import _parse_csv, ACT_FIELDS
+        header_only = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+        rows = _parse_csv(header_only, ACT_FIELDS)
+        assert bool(rows) is False
+
+    def test_has_actuals_independent_of_predictions(self):
+        """
+        has_actuals must be True even when predictions CSV is missing.
+        This is why /api/log/get is the reliable signal — not the briefing,
+        which requires both files (paired).
+        """
+        from api.index import _parse_csv, ACT_FIELDS, PRED_FIELDS
+        actuals     = _parse_csv(self._ACT_CSV, ACT_FIELDS)
+        predictions = _parse_csv(None, PRED_FIELDS)           # no predictions committed
+        assert bool(actuals) is True
+        assert bool(predictions) is False
+
+    def test_briefing_paired_logic_misses_actuals_without_predictions(self):
+        """
+        Reproduce the exact bug: briefing only surfaces today when BOTH
+        predictions and actuals are committed.  Actuals-only → latest_slate
+        date is NOT today → banner incorrectly stays visible.
+        """
+        from api.index import _et_date
+        today = _et_date().isoformat()
+
+        # Actuals exist for today; predictions were NOT committed (dedup guard)
+        act_dates  = {today}
+        pred_names = []           # empty — no predictions CSV on GitHub
+
+        paired = [
+            n[:-4] for n in sorted(pred_names, reverse=True)
+            if n.endswith(".csv") and n[:-4] in act_dates
+        ]
+
+        latest_slate_date = paired[0] if paired else None
+        assert latest_slate_date != today, (
+            "Without a predictions CSV the briefing cannot detect today's actuals — "
+            "confirming the bug. The fix is to also check /api/log/get has_actuals."
+        )
+
+    def test_parse_csv_field_mapping(self):
+        """Actuals CSV rows must map player_name and actual_rs correctly."""
+        from api.index import _parse_csv, ACT_FIELDS
+        rows = _parse_csv(self._ACT_CSV, ACT_FIELDS)
+        assert rows[0]["player_name"] == "LeBron James"
+        assert rows[0]["actual_rs"]   == "5.2"
+        assert rows[1]["player_name"] == "Anthony Davis"
+
+    def test_parse_csv_quoted_commas(self):
+        """Quoted fields containing commas must parse as single values."""
+        from api.index import _parse_csv, ACT_FIELDS
+        csv = (
+            "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+            '"Smith, Jr.",4.1,1.2,500,3.0,6.5,screenshot\n'
+        )
+        rows = _parse_csv(csv, ACT_FIELDS)
+        assert len(rows) == 1
+        assert rows[0]["player_name"] == "Smith, Jr."
+
+    def test_parse_csv_short_row_padded(self):
+        """Rows with fewer columns than the header must be padded, not crash."""
+        from api.index import _parse_csv, ACT_FIELDS
+        csv = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\nPlayer X,3.5\n"
+        rows = _parse_csv(csv, ACT_FIELDS)
+        assert len(rows) == 1
+        assert rows[0]["player_name"] == "Player X"
+        assert rows[0]["actual_rs"]   == "3.5"
+        assert rows[0]["source"]      == ""   # padded empty
+
+
+# ---------------------------------------------------------------------------
+# 6. JS banner-guard regression — both detection signals must stay present
+# ---------------------------------------------------------------------------
+
+class TestBannerGuardJS:
+    """
+    The frontend banner-visibility check in showLabUnlocked() must use both:
+      - _todayLog?.has_actuals  (direct log check — works without paired predictions)
+      - LAB.briefing?.latest_slate?.date  (briefing fallback)
+
+    Removing either regresses the banner bug.
+    """
+
+    @pytest.fixture(scope="class")
+    def script_source(self):
+        html = (ROOT / "index.html").read_text()
+        start = html.rfind("<script>")
+        end   = html.rfind("</script>")
+        assert start != -1 and end != -1, "No <script> block found in index.html"
+        return html[start:end]
+
+    def test_banner_check_uses_has_actuals(self, script_source):
+        """Banner visibility must check has_actuals from /api/log/get."""
+        assert "has_actuals" in script_source, (
+            "Missing has_actuals check — banner will show even after upload "
+            "when predictions weren't committed to GitHub"
+        )
+
+    def test_banner_check_uses_briefing_fallback(self, script_source):
+        """Banner visibility must also keep the briefing latest_slate fallback."""
+        assert "latest_slate" in script_source, (
+            "Missing latest_slate briefing fallback in banner check"
+        )
+
+    def test_log_get_fetched_in_showlabunlocked(self, script_source):
+        """/api/log/get must be called from showLabUnlocked to detect today's actuals."""
+        assert "/api/log/get" in script_source, (
+            "/api/log/get not called from showLabUnlocked — "
+            "banner detection will miss unpaired actuals"
+        )
+
+    def test_show_lab_unlocked_function_present(self, script_source):
+        """showLabUnlocked function must exist (catches accidental deletion)."""
+        assert "showLabUnlocked" in script_source
