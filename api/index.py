@@ -327,14 +327,14 @@ def _fetch_b2b_teams():
     _cs(cache_key, list(b2b))
     return b2b
 
-def fetch_games():
-    today_et = _et_date()
+def fetch_games(date=None):
+    """Fetch today's (or a specific date's) NBA schedule from ESPN.
+    date: a datetime.date object, or None for today ET."""
+    today_et = date or _et_date()
     cache_key = f"games_{today_et}"
     c = _cg(cache_key)
     if c: return c
     b2b_teams = _fetch_b2b_teams()
-    # Pass explicit ET date so ESPN returns the correct day's schedule regardless
-    # of what ESPN considers its internal "current" day (often Pacific time).
     date_str = today_et.strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={date_str}")
     games = []
@@ -1836,39 +1836,24 @@ async def refresh():
 
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
-@app.get("/api/line-of-the-day")
-async def get_line_of_the_day():
-    """Best player prop pick for today. Uses cached per-game projections when
-    available (fast path after PREDICT tab loads). Falls back to running the
-    full projection pipeline if no cache exists yet."""
-    cached = _cg("line_v1")
-    if cached and cached.get("pick"):
-        return JSONResponse(cached)
-
-    today = _et_date().isoformat()
-
-    # Check for pick saved today as JSON (fast path, avoids projection pipeline).
-    json_path = f"data/lines/{today}_pick.json"
+def _load_line_pick_for_date(date_str: str):
+    """Load a saved line pick for the given ISO date string (from JSON then CSV).
+    Returns the pick dict or None."""
+    json_path = f"data/lines/{date_str}_pick.json"
     saved_raw, _ = _github_get_file(json_path)
     if saved_raw:
         try:
-            saved_pick = json.loads(saved_raw)
-            result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
-            _cs("line_v1", result)
-            return JSONResponse(result)
+            return json.loads(saved_raw)
         except Exception:
             pass
-
-    # CSV fallback — JSON may not exist if save-line wrote the CSV but not the JSON
-    # (happens when the CSV already existed on the first call and the endpoint returned early).
-    csv_path = f"data/lines/{today}.csv"
+    csv_path = f"data/lines/{date_str}.csv"
     csv_raw, _ = _github_get_file(csv_path)
     if csv_raw:
         try:
             rows = _parse_csv(csv_raw, LINE_FIELDS)
             if rows:
                 r = rows[0]
-                saved_pick = {
+                pick = {
                     "player_name": r.get("player_name", ""),
                     "player_id":   r.get("player_id", ""),
                     "team":        r.get("team", ""),
@@ -1880,43 +1865,105 @@ async def get_line_of_the_day():
                     "edge":        _safe_float(r.get("edge", 0)),
                     "confidence":  int(_safe_float(r.get("confidence", 70))),
                     "narrative":   r.get("narrative", ""),
+                    "result":      r.get("result", ""),
+                    "actual_stat": r.get("actual_stat", ""),
                     "signals":     [],
                     "model_only":  True,
                 }
-                result = {"pick": saved_pick, "from_github": True, "slate_summary": None}
-                _cs("line_v1", result)
-                # Back-fill the missing JSON so future cold starts skip the pipeline
-                _github_write_file(json_path, json.dumps(saved_pick), f"backfill line pick json {today}")
-                return JSONResponse(result)
+                # Back-fill JSON
+                _github_write_file(json_path, json.dumps(pick), f"backfill line pick json {date_str}")
+                return pick
         except Exception:
             pass
+    return None
 
-    games = fetch_games()
+
+async def _run_line_engine_for_date(date):
+    """Run the full line engine pipeline for a given date (datetime.date)."""
+    games = fetch_games(date)
     draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
     if not draftable:
-        return JSONResponse({"pick": None, "error": "no_games"}, status_code=200)
-
-    # Fast path: reuse per-game projections already cached by /api/slate
+        return None, "no_games"
     all_proj = []
     for g in draftable:
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
-
-    # Slow path: run projections now (cold start — PREDICT tab not yet loaded)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=4) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
                 try: all_proj.extend(fut.result())
                 except Exception as e: print(f"line proj err: {e}")
-
     if not all_proj:
-        return JSONResponse({"pick": None, "error": "no_projections"}, status_code=200)
-
+        return None, "no_projections"
     result = run_line_engine(all_proj, draftable)
-    if result.get("pick"):
+    return result, None
+
+
+@app.get("/api/line-of-the-day")
+async def get_line_of_the_day():
+    """Best player prop pick. Serves today's saved pick if pending/unresolved.
+    Once today's pick is resolved (hit/miss), rotates to generate tomorrow's pick
+    so the card stays fresh throughout the day."""
+    cached = _cg("line_v1")
+    if cached and cached.get("pick"):
+        # Skip cache if today's pick is now resolved (need to rotate to tomorrow)
+        today_str = _et_date().isoformat()
+        cached_pick = cached["pick"]
+        pick_date = cached_pick.get("date", today_str)
+        already_resolved = cached_pick.get("result") not in (None, "", "pending")
+        if not already_resolved or pick_date != today_str:
+            return JSONResponse(cached)
+
+    today = _et_date()
+    today_str = today.isoformat()
+    tomorrow = today + timedelta(days=1)
+    tomorrow_str = tomorrow.isoformat()
+
+    # Load today's saved pick (if any)
+    today_pick = _load_line_pick_for_date(today_str)
+
+    # If today's pick is resolved, rotate to tomorrow's slate
+    if today_pick and today_pick.get("result") not in (None, "", "pending"):
+        # Try saved tomorrow pick first
+        tomorrow_pick = _load_line_pick_for_date(tomorrow_str)
+        if tomorrow_pick and tomorrow_pick.get("result") in (None, "", "pending"):
+            result = {"pick": tomorrow_pick, "from_github": True,
+                      "slate_summary": None, "resolved_today": today_pick}
+            _cs("line_v1", result)
+            return JSONResponse(result)
+        # Generate tomorrow's pick fresh
+        eng_result, err = await _run_line_engine_for_date(tomorrow)
+        if err or not eng_result or not eng_result.get("pick"):
+            # Tomorrow's slate not available yet — show resolved today pick with a flag
+            result = {"pick": None, "error": "next_slate_pending",
+                      "resolved_today": today_pick}
+            return JSONResponse(result)
+        # Tag pick with tomorrow's date and save
+        eng_result["pick"]["date"] = tomorrow_str
+        eng_result["resolved_today"] = today_pick
+        _cs("line_v1", eng_result)
+        try:
+            tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
+            existing, _ = _github_get_file(tomorrow_json)
+            if not existing:
+                _github_write_file(tomorrow_json, json.dumps(eng_result["pick"]),
+                                   f"line pick for {tomorrow_str}")
+        except Exception: pass
+        return JSONResponse(eng_result)
+
+    # Today's pick exists and is not yet resolved — serve it
+    if today_pick:
+        result = {"pick": today_pick, "from_github": True, "slate_summary": None}
         _cs("line_v1", result)
-    return result
+        return JSONResponse(result)
+
+    # No saved pick yet — run the engine for today
+    eng_result, err = await _run_line_engine_for_date(today)
+    if err or not eng_result or not eng_result.get("pick"):
+        return JSONResponse({"pick": None, "error": err or "no_projections"}, status_code=200)
+    _cs("line_v1", eng_result)
+    return JSONResponse(eng_result)
 
 
 LINE_FIELDS = LINE_CSV_HEADER.split(",")
