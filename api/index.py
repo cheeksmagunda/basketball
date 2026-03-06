@@ -1202,6 +1202,7 @@ def _build_lineups(projections):
     # ─────────────────────────────────────────────────────────────────────────
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
     min_floor = moon_cfg.get("min_minutes_floor", 20)
+    min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.0)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
@@ -1963,13 +1964,22 @@ async def refresh():
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
 def _load_line_pick_for_date(date_str: str):
-    """Load a saved line pick for the given ISO date string (from JSON then CSV).
-    Returns the pick dict or None."""
+    """Load saved line picks for the given ISO date string (from JSON then CSV).
+    Returns {"over_pick": ..., "under_pick": ...} or None.
+    Handles legacy single-pick JSON format transparently."""
     json_path = f"data/lines/{date_str}_pick.json"
     saved_raw, _ = _github_get_file(json_path)
     if saved_raw:
         try:
-            return json.loads(saved_raw)
+            data = json.loads(saved_raw)
+            # New dual-pick format
+            if "over_pick" in data or "under_pick" in data:
+                return data
+            # Legacy single-pick format — wrap by direction
+            direction = data.get("direction", "over").lower()
+            result = {"over_pick": None, "under_pick": None}
+            result[f"{direction}_pick"] = data
+            return result
         except Exception:
             pass
     csv_path = f"data/lines/{date_str}.csv"
@@ -1996,12 +2006,26 @@ def _load_line_pick_for_date(date_str: str):
                     "signals":     [],
                     "model_only":  True,
                 }
-                # Back-fill JSON
-                _github_write_file(json_path, json.dumps(pick), f"backfill line pick json {date_str}")
-                return pick
+                direction = pick["direction"].lower()
+                result = {"over_pick": None, "under_pick": None}
+                result[f"{direction}_pick"] = pick
+                # Back-fill JSON in new format
+                _github_write_file(json_path, json.dumps(result), f"backfill line pick json {date_str}")
+                return result
         except Exception:
             pass
     return None
+
+
+def _primary_pick(picks):
+    """Return the highest-confidence pick from a dual-pick dict, for resolved/rotation checks."""
+    if not picks:
+        return None
+    over  = picks.get("over_pick")
+    under = picks.get("under_pick")
+    if over and under:
+        return over if over.get("confidence", 0) >= under.get("confidence", 0) else under
+    return over or under
 
 
 async def _run_line_engine_for_date(date):
@@ -2026,19 +2050,27 @@ async def _run_line_engine_for_date(date):
     return result, None
 
 
+def _picks_response(picks, **extra):
+    """Build the standard /api/line-of-the-day response dict from a dual-pick dict."""
+    primary = _primary_pick(picks) if picks else None
+    return {
+        "pick":       primary,
+        "over_pick":  picks.get("over_pick")  if picks else None,
+        "under_pick": picks.get("under_pick") if picks else None,
+        **extra,
+    }
+
+
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day():
-    """Best player prop pick. Serves today's saved pick if pending/unresolved.
-    Once today's pick is resolved (hit/miss), rotates to generate tomorrow's pick
-    so the card stays fresh throughout the day."""
+    """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
+    Once today's primary pick is resolved, rotates to tomorrow's slate."""
     cached = _cg("line_v1")
     if cached and cached.get("pick"):
-        # Skip cache if today's pick is now resolved (need to rotate to tomorrow)
         today_str = _et_date().isoformat()
         cached_pick = cached["pick"]
         pick_date = cached_pick.get("date", today_str)
         already_resolved = cached_pick.get("result") not in (None, "", "pending")
-        # Serve cache only if it's today's unresolved pick. Any other case needs a fresh fetch.
         if not already_resolved and pick_date == today_str:
             return JSONResponse(cached)
 
@@ -2047,48 +2079,52 @@ async def get_line_of_the_day():
     tomorrow = today + timedelta(days=1)
     tomorrow_str = tomorrow.isoformat()
 
-    # Load today's saved pick (if any)
-    today_pick = _load_line_pick_for_date(today_str)
+    today_picks = _load_line_pick_for_date(today_str)
+    today_primary = _primary_pick(today_picks)
 
-    # If today's pick is resolved, rotate to tomorrow's slate
-    if today_pick and today_pick.get("result") not in (None, "", "pending"):
-        # Try saved tomorrow pick first
-        tomorrow_pick = _load_line_pick_for_date(tomorrow_str)
-        if tomorrow_pick and tomorrow_pick.get("result") in (None, "", "pending"):
-            result = {"pick": tomorrow_pick, "from_github": True,
-                      "slate_summary": None, "resolved_today": today_pick}
+    # If today's primary pick is resolved, rotate to tomorrow's slate
+    if today_primary and today_primary.get("result") not in (None, "", "pending"):
+        tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
+        tomorrow_primary = _primary_pick(tomorrow_picks)
+        if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
+            result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
+                                     resolved_today=today_primary)
             _cs("line_v1", result)
             return JSONResponse(result)
-        # Generate tomorrow's pick fresh
+        # Generate tomorrow's picks fresh
         eng_result, err = await _run_line_engine_for_date(tomorrow)
         if err or not eng_result or not eng_result.get("pick"):
-            # Tomorrow's slate not available yet — show resolved today pick with a flag
-            result = {"pick": None, "error": "next_slate_pending",
-                      "resolved_today": today_pick}
-            return JSONResponse(result)
-        # Tag pick with tomorrow's date and save
-        eng_result["pick"]["date"] = tomorrow_str
-        eng_result["resolved_today"] = today_pick
+            return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
+                                 "error": "next_slate_pending", "resolved_today": today_primary})
+        # Tag primary pick with tomorrow's date and save
+        if eng_result.get("pick"):
+            eng_result["pick"]["date"] = tomorrow_str
+        eng_result["resolved_today"] = today_primary
         _cs("line_v1", eng_result)
         try:
             tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
             existing, _ = _github_get_file(tomorrow_json)
             if not existing:
-                _github_write_file(tomorrow_json, json.dumps(eng_result["pick"]),
-                                   f"line pick for {tomorrow_str}")
+                saves = {
+                    "over_pick":  eng_result.get("over_pick"),
+                    "under_pick": eng_result.get("under_pick"),
+                }
+                _github_write_file(tomorrow_json, json.dumps(saves),
+                                   f"line picks for {tomorrow_str}")
         except Exception: pass
         return JSONResponse(eng_result)
 
-    # Today's pick exists and is not yet resolved — serve it
-    if today_pick:
-        result = {"pick": today_pick, "from_github": True, "slate_summary": None}
+    # Today's picks exist and are not resolved — serve them
+    if today_picks:
+        result = _picks_response(today_picks, from_github=True, slate_summary=None)
         _cs("line_v1", result)
         return JSONResponse(result)
 
-    # No saved pick yet — run the engine for today
+    # No saved picks yet — run the engine for today
     eng_result, err = await _run_line_engine_for_date(today)
     if err or not eng_result or not eng_result.get("pick"):
-        return JSONResponse({"pick": None, "error": err or "no_projections"}, status_code=200)
+        return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
+                             "error": err or "no_projections"}, status_code=200)
     _cs("line_v1", eng_result)
     return JSONResponse(eng_result)
 
@@ -2102,8 +2138,11 @@ async def save_line(payload: dict = Body(...)):
     csv_path  = f"data/lines/{today}.csv"
     json_path = f"data/lines/{today}_pick.json"
 
-    pick = payload.get("pick")
-    if not pick:
+    pick       = payload.get("pick")
+    over_pick  = payload.get("over_pick")
+    under_pick = payload.get("under_pick")
+    primary    = pick or over_pick or under_pick
+    if not primary:
         return JSONResponse({"error": "No pick provided"}, status_code=400)
 
     # Dedup on JSON — CSV may exist without JSON (legacy bug), so always ensure JSON is written.
@@ -2111,10 +2150,10 @@ async def save_line(payload: dict = Body(...)):
     if existing_json:
         return {"status": "already_saved", "path": json_path}
 
-    # Write CSV if not already present
+    # Write CSV using primary pick (for history / resolve compatibility)
     existing_csv, _ = _github_get_file(csv_path)
     if not existing_csv:
-        row = ",".join(_csv_escape(str(pick.get(k, ""))) for k in [
+        row = ",".join(_csv_escape(str(primary.get(k, ""))) for k in [
             "player_name", "player_id", "team", "opponent", "stat_type",
             "line", "direction", "projection", "edge", "confidence", "narrative",
         ])
@@ -2124,8 +2163,9 @@ async def save_line(payload: dict = Body(...)):
         if result.get("error"):
             return JSONResponse({"error": result["error"]}, status_code=500)
 
-    # Always write the JSON (the critical file for cold-start recovery)
-    _github_write_file(json_path, json.dumps(pick), f"line pick json for {today}")
+    # Write JSON with both picks (new dual-pick format)
+    saves = {"over_pick": over_pick or pick, "under_pick": under_pick}
+    _github_write_file(json_path, json.dumps(saves), f"line picks json for {today}")
 
     return {"status": "saved", "path": json_path}
 

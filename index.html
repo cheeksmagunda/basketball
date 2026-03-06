@@ -2218,7 +2218,8 @@ function renderHindsightOptimal(lineup) {
 
 let LINE_LOADED_DATE = '';
 let LINE_DIR = 'under'; // active direction filter for line sub-nav
-let LINE_PICK_DIR = 'under'; // direction of today's actual pick
+let LINE_OVER_PICK  = null; // today's over pick
+let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 
 async function _tryAutoResolveLine(pick) {
@@ -2309,30 +2310,31 @@ async function initLinePage() {
       return;
     }
 
+    // Store both direction picks
+    LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
+    LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
+
     document.getElementById('linePickWrap').style.display = 'block';
-    document.getElementById('linePickCard').innerHTML = renderLinePickCard(data.pick, true);
     if (data.slate_summary) {
       document.getElementById('lineSlateSummary').innerHTML = renderLineSummary(data.slate_summary);
     }
-    // Auto-select the direction matching today's pick in the sub-nav
-    const pickDir = (data.pick.direction || 'under').toLowerCase();
-    LINE_PICK_DIR = pickDir;
-    switchLineDir(pickDir);
+    // Render whichever pick matches the active direction (default: under)
+    switchLineDir(LINE_DIR);
 
-    // Auto-save the pick
+    // Auto-save both picks
     try {
       await fetch('/api/save-line', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pick: data.pick }),
+        body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
       });
     } catch(e) { /* non-fatal */ }
 
-    // Auto-resolve: if pick is pending, try to resolve against completed ESPN boxscores.
-    // If the game is still live, poll every 5 min until it finishes.
-    const pickResult = data.pick.result;
-    if (!pickResult || pickResult === 'pending') {
-      await _tryAutoResolveLine(data.pick);
+    // Auto-resolve: try to resolve primary pick against completed ESPN boxscores.
+    const primaryPick = data.pick;
+    const pickResult = primaryPick && primaryPick.result;
+    if (primaryPick && (!pickResult || pickResult === 'pending')) {
+      await _tryAutoResolveLine(primaryPick);
     }
 
   } catch(e) {
@@ -2542,15 +2544,19 @@ function switchLineDir(dir) {
   document.querySelectorAll('.line-dir-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.dir === dir)
   );
-  // Show/hide main pick card based on direction match
+  // Render the pick for the selected direction
   const pickCard = document.getElementById('linePickCard');
-  const noMsg = document.getElementById('lineNoPickMsg');
-  if (pickCard && noMsg) {
-    const match = (dir === LINE_PICK_DIR);
-    pickCard.style.display = match ? '' : 'none';
-    document.getElementById('lineSlateSummary').style.display = match ? '' : 'none';
-    noMsg.style.display = match ? 'none' : 'block';
-    if (!match) noMsg.textContent = `Today's pick is ${LINE_PICK_DIR.toUpperCase()} — no ${dir.toUpperCase()} pick today`;
+  const noMsg    = document.getElementById('lineNoPickMsg');
+  if (pickCard) {
+    const pick = dir === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
+    if (pick) {
+      pickCard.style.display = '';
+      pickCard.innerHTML = renderLinePickCard(pick, true);
+      if (noMsg) noMsg.style.display = 'none';
+    } else {
+      pickCard.style.display = 'none';
+      if (noMsg) { noMsg.style.display = 'block'; noMsg.textContent = `No ${dir.toUpperCase()} pick today.`; }
+    }
   }
   // Sync the inline history tabs and re-render history
   filterLineHistory(dir);
