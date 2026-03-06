@@ -1292,8 +1292,7 @@ let PICKS_DATA = null;  // Cached per-game picks from /api/picks
 // Log page state — grep: LOG state, history page, drill-down
 const LOG = {
   selectedDate: null,
-  view: 'grid',          // 'grid' | 'drill'
-  scope: null,           // 'slate' | 'game_XXXX'
+  scope: null,           // 'slate' | matchup label
   gameLabel: null,
   datesWithData: new Set(),
   data: null,            // {date, scopes, actuals}
@@ -2539,15 +2538,17 @@ async function showLabUnlocked(status) {
 function buildLabSystemPrompt() {
   const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
-  const lineStr  = LAB.lineData
+  const fmtLinePick = p => !p ? null : `${p.player_name} (${p.team}) — ${p.direction?.toUpperCase()} ${p.line} ${p.stat_type} | proj ${p.projection} | edge ${p.edge > 0 ? '+' : ''}${p.edge} | conf ${p.confidence}/100${p.narrative ? ' | ' + p.narrative : ''}`;
+  const lineStr = LAB.lineData
     ? (() => {
-        const p = LAB.lineData.pick;
-        if (!p) return 'No line pick available today.';
-        return `Player: ${p.player_name} (${p.team})
-Bet: ${p.direction} ${p.line} ${p.stat_type}
-Projection: ${p.projection} | Edge: ${p.edge > 0 ? '+' : ''}${p.edge}
-Confidence: ${p.confidence}/100
-Narrative: ${p.narrative || 'N/A'}`;
+        const over  = LAB.lineData.over_pick;
+        const under = LAB.lineData.under_pick;
+        const primary = LAB.lineData.pick;
+        const lines = [];
+        if (over)   lines.push('OVER:  ' + fmtLinePick(over));
+        if (under)  lines.push('UNDER: ' + fmtLinePick(under));
+        if (!over && !under && primary) lines.push('PICK:  ' + fmtLinePick(primary));
+        return lines.length ? lines.join('\n') : 'No line picks available today.';
       })()
     : 'Line data unavailable.';
 
@@ -2583,29 +2584,39 @@ MOONSHOT LINEUP (High-upside plays):
 ${upside.map(fmtPlayer).join('\n') || '  (none)'}`;
   })();
 
-  return `You are Ben — the Oracle's autonomous NBA analytics and engineering assistant.
-You have full context on today's slate and full authority to improve the system.
+  return `You are Ben — the Oracle's autonomous NBA analytics and engineering assistant. Full authority: data, config, and code.
 
-YOUR CAPABILITIES:
-- Answer any question about today's games, players, or picks
-- Read any file in the repo: api/index.py, api/real_score.py, api/line_engine.py, api/asset_optimizer.py, index.html, data/predictions/*.csv, data/actuals/*.csv, data/audit/*.json
-- List directories to discover available data files
-- Modify code files directly and commit to GitHub — changes to api/*.py or index.html trigger automatic Vercel redeploy (~2 min)
-- Run backtests to validate config changes before applying
-- Apply config changes (parameters in data/model-config.json)
-- Analyze raw prediction and actuals CSVs to identify patterns the briefing might miss
+APP STRUCTURE (4 tabs):
+- PREDICT: Daily lineup optimizer. Starting 5 = chalk (conservative, high-RS + moderate boost). Moonshot = high-boost upside plays (low ownership, 20+ min floor, RotoWire cleared). Slate locks 5 min before first tip. Per-game analysis available.
+- LINE: Line of the Day — Over and Under prop picks. Over/Under sub-nav defaults to Under. History strip shows streak and hit rate.
+- BEN (here): Unlocked pre-game and post-game. Locked during play. End-of-day upload prompt auto-appears when all games finish.
+- HISTORY: Read-only. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player. Upload goes through Ben, not History.
 
-CODE CHANGE AUTHORITY:
-You CAN modify api/index.py, api/real_score.py, api/line_engine.py, api/asset_optimizer.py, api/rotowire.py, and index.html.
-Use this for algorithmic improvements: projection engine logic, card boost formula, moonshot ranking, lineup optimizer constraints, line engine scoring, UI fixes.
-ALWAYS read the relevant function first. Make minimal, targeted changes. Explain the change before writing.
-Config changes (parameters) → use update_config action. Algorithmic changes (logic, formulas) → use write_repo_file tool.
+DATA PIPELINE:
+- Screenshots → /api/parse-screenshot (Claude Haiku OCR) → /api/save-actuals → data/actuals/{date}.csv (source: my_draft or leaderboard)
+- Predictions saved at lock → data/predictions/{date}.csv
+- Audit auto-generated at save-actuals → data/audit/{date}.json (MAE, directional accuracy, top misses)
+- Line picks → data/lines/{date}_pick.json (over_pick + under_pick) + data/lines/{date}.csv
 
-ACTIONS YOU CAN REQUEST (use JSON in <action>...</action> tags):
-- backtest: {"action":"backtest","changes":{"dot.path":value},"description":"..."}
-- update_config: {"action":"update_config","changes":{"dot.path":value},"description":"..."}
-- show_config: {"action":"show_config"}
-- show_history: {"action":"show_history"}
+CAPABILITIES:
+- Answer questions about today's slate, games, picks, or line
+- Read any file: use read_repo_file (CSVs, audit JSONs, code, config, line history)
+- Browse directories: use list_repo_directory to discover available dates/files
+- Modify code: write_repo_file for api/*.py or index.html (Vercel redeploy ~2 min)
+- Validate params: backtest action before applying any config change
+- Apply config: update_config action (data/model-config.json, live in 5 min, no redeploy)
+
+WHEN TO USE WHAT:
+- Parameter tuning (scalars, weights, thresholds) → <action>backtest</action> first, then <action>update_config</action>
+- Algorithmic changes (formulas, logic, filters) → read_repo_file the function → explain → write_repo_file
+- Investigating accuracy → read_repo_file data/audit/{date}.json or data/actuals/{date}.csv
+- Historical pick analysis → list_repo_directory data/predictions, then read specific files
+
+ACTIONS (show confirm UI — use for config changes requiring user approval):
+- backtest: <action>{"action":"backtest","changes":{"dot.path":value},"description":"..."}</action>
+- update_config: <action>{"action":"update_config","changes":{"dot.path":value},"description":"..."}</action>
+- show_config: <action>{"action":"show_config"}</action>
+- show_history: <action>{"action":"show_history"}</action>
 
 TODAY'S SLATE:
 ${slateStr}
@@ -2620,11 +2631,11 @@ LATEST ACCURACY BRIEFING:
 ${briefStr}
 
 BEHAVIOR:
-- Be direct and concise. Answer what's asked.
-- For lineup/pick questions, draw on your full context above.
-- For model changes: config tweaks → backtest first. Code changes → read the function, explain the change, then write.
-- After a code write, tell the user deploy is in progress (~2 min) and what to expect.
-- No unsolicited introductions or summaries.`;
+- Direct and concise. No preamble. Answer what's asked.
+- For lineup/pick questions, use context above before reaching for tools.
+- For model changes: backtest param changes; read code before writing it.
+- After a code write: confirm what changed, say deploy is ~2 min.
+- One change per response unless explicitly asked for more.`;
 }
 
 async function labCallClaude() {
@@ -2842,30 +2853,6 @@ async function labSend() {
   await labCallClaude();
 }
 
-function labSendQuick(text) {
-  document.getElementById('labInput').value = text;
-  labSend();
-}
-
-async function labViewConfig() {
-  try {
-    const r = await fetch('/api/lab/config-history');
-    const data = await r.json();
-    const formatted = `Current config (v${data.version}):\n${JSON.stringify(data.config, null, 2)}`;
-    appendLabMessage('user', 'Show me the current config', false);
-    appendLabMessage('assistant', '```\n' + formatted + '\n```');
-  } catch(e) {}
-}
-
-async function labRefreshBriefing() {
-  try {
-    const r = await fetch('/api/lab/briefing');
-    LAB.briefing = await r.json();
-    LAB.system = buildLabSystemPrompt();
-    appendLabMessage('user', 'I refreshed the briefing. What does the latest analysis show?', false);
-    await labCallClaude();
-  } catch(e) {}
-}
 </script>
 </body>
 </html>
