@@ -1366,9 +1366,9 @@ async def get_slate():
             gh_backup.setdefault("draftable_count", len(draftable_games))
             _ls("slate_v5_locked", gh_backup)
             return gh_backup
-        return {"date": _et_date().isoformat(), "games": games,
-                "lineups": {"chalk": [], "upside": []},
-                "locked": True, "draftable_count": len(draftable_games)}
+        # No cache anywhere — compute fresh. Safe because there's no prior session
+        # state to protect; the user is seeing picks for the first time on this instance.
+        # Fall through to the projection + MILP code below (which handles locked=True).
 
     cached = _cg("slate_v5")
     if cached:
@@ -1482,6 +1482,13 @@ async def save_predictions():
     result = _github_write_file(path, csv_content, f"predictions for {today}")
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
+
+    # Also write the slate backup now so cold-start instances can recover after lock,
+    # even if this Vercel instance dies before the lock window promotes the reg cache.
+    cached_slate_for_backup = _cg("slate_v5")
+    if cached_slate_for_backup:
+        _slate_backup_to_github(cached_slate_for_backup)
+
     return {"status": "saved", "path": path, "rows": len(rows)}
 
 
@@ -1912,7 +1919,8 @@ async def get_line_of_the_day():
         cached_pick = cached["pick"]
         pick_date = cached_pick.get("date", today_str)
         already_resolved = cached_pick.get("result") not in (None, "", "pending")
-        if not already_resolved or pick_date != today_str:
+        # Serve cache only if it's today's unresolved pick. Any other case needs a fresh fetch.
+        if not already_resolved and pick_date == today_str:
             return JSONResponse(cached)
 
     today = _et_date()
