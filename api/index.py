@@ -19,10 +19,12 @@ try:
     from api.real_score import real_score_projection, _make_rng
     from api.asset_optimizer import optimize_lineup
     from api.line_engine import run_line_engine
+    from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
 except ImportError:
     from .real_score import real_score_projection, _make_rng
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine
+    from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
 
 load_dotenv()
 app = FastAPI()
@@ -177,6 +179,12 @@ _CONFIG_DEFAULTS = {
     "contrarian": {
         "closeness_boost_floor":0.7,"closeness_boost_scalar":0.6,
         "underdog_bonus":1.1,"underdog_spread_min":2,"underdog_spread_max":7,
+    },
+    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
+    "moonshot": {
+        "min_minutes_floor":20, "dev_team_boost":1.25,
+        "card_boost_weight":2.0, "minutes_weight":1.0,
+        "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
 }
 
@@ -1176,17 +1184,82 @@ def _build_lineups(projections):
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
 
-    # MOONSHOT: high-ceiling, low-ownership targets.
-    # Uses moonshot_ev = rating × (avg_slot + card_boost * 1.5) × variance_bonus
-    # This weights card boost 1.5x and rewards inconsistent players who could boom.
-    # Unlike chalk (which optimizes EV), moonshot maximizes ceiling × contrarian upside.
+    # ── MOONSHOT: March 5 overhaul ──────────────────────────────────────────
+    # Philosophy shift: moonshot is an OPTIONS STRATEGY. We're buying cheap
+    # lottery tickets — players with guaranteed court time and almost no drafts.
+    # We don't need to predict who will score; we need to be in the pool where
+    # if someone has a hot night, we're holding the ticket.
+    #
+    # New formula: moonshot_ev = predMin × card_boost × dev_team_bonus
+    #   - Minutes = the player will actually be on the court (the ticket exists)
+    #   - Card boost = the payout multiplier (low ownership = huge boost)
+    #   - Dev team bonus = tanking teams give more predictable minutes
+    #
+    # Hard filters:
+    #   - 20+ projected minutes (the player is a real rotation piece)
+    #   - RotoWire lineup clearance (not flagged OUT or questionable)
+    #   - Not already in chalk lineup
+    # ─────────────────────────────────────────────────────────────────────────
+    moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
+    min_floor = moon_cfg.get("min_minutes_floor", 20)
+    dev_boost = moon_cfg.get("dev_team_boost", 1.25)
+    cb_weight = moon_cfg.get("card_boost_weight", 2.0)
+    min_weight = moon_cfg.get("minutes_weight", 1.0)
+    use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
+    dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
+
     chalk_names = {p["name"] for p in chalk}
-    moonshot_pool_raw = [p for p in chalk_eligible if p["name"] not in chalk_names]
+
+    # Fetch RotoWire lineup statuses (cached, one call per slate)
+    rw_statuses = {}
+    if use_rotowire:
+        try:
+            rw_statuses = get_all_statuses()
+        except Exception as e:
+            print(f"RotoWire fetch failed, proceeding without: {e}")
+
     moonshot_pool = []
-    for p in moonshot_pool_raw:
-        variance_bonus = 1 + p.get("player_variance", 0) * 0.8
-        moonshot_ev = round(p["rating"] * (avg_slot + p["est_mult"] * 1.5) * variance_bonus, 2)
-        moonshot_pool.append({**p, "moonshot_ev": moonshot_ev})
+    for p in projections:
+        if p["name"] in chalk_names:
+            continue
+
+        # Hard minute floor — the single most important filter.
+        # This is what kills the Conley / Wizards bench scrub problem.
+        if p.get("predMin", 0) < min_floor:
+            continue
+
+        # RotoWire clearance — skip players flagged OUT or questionable
+        if use_rotowire and rw_statuses:
+            if not is_safe_to_draft(p["name"]):
+                continue
+
+        # Minimum rating floor — still need some production floor
+        if p["rating"] < 2.0:
+            continue
+
+        # Development team bonus — tanking teams give predictable minutes
+        # to young players, AND those players have structurally lower ownership
+        is_dev = p.get("team", "") in dev_teams
+        team_bonus = dev_boost if is_dev else 1.0
+
+        # Moonshot EV: minutes × card_boost^weight × team_bonus
+        # Minutes ensure the player is on the court long enough for a hot night
+        # Card boost is weighted heavily because that's the payout multiplier
+        # Team bonus rewards dev-team players whose minutes are more certain
+        pred_min = p.get("predMin", 0)
+        boost = p.get("est_mult", 0.3)
+        moonshot_ev = round(
+            (pred_min ** min_weight) * (boost ** cb_weight) * team_bonus * p["rating"],
+            2
+        )
+
+        moonshot_pool.append({
+            **p,
+            "moonshot_ev": moonshot_ev,
+            "_is_dev_team": is_dev,
+            "_rw_cleared": True,
+        })
+
     upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                              rating_key="rating", card_boost_key="est_mult",
                              max_per_team=0)
@@ -1240,15 +1313,45 @@ def _build_game_lineups(projections, game):
     chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult")
 
-    # MOONSHOT: high-ceiling, low-ownership targets (game-level, with team balance).
+    # MOONSHOT: same March 5 overhaul — minutes × boost × dev_team ranking.
+    # Per-game version enforces team balance (min 2 per side).
+    moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
+    min_floor = moon_cfg.get("min_minutes_floor", 20)
+    dev_boost = moon_cfg.get("dev_team_boost", 1.25)
+    cb_weight = moon_cfg.get("card_boost_weight", 2.0)
+    min_weight = moon_cfg.get("minutes_weight", 1.0)
+    use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
+    dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
+
     chalk_names = {p["name"] for p in chalk}
-    moonshot_pool_raw = [p for p in chalk_eligible if p["name"] not in chalk_names]
+    rw_statuses = {}
+    if use_rotowire:
+        try:
+            rw_statuses = get_all_statuses()
+        except Exception:
+            pass
+
     moonshot_pool = []
-    avg_slot = 1.6
-    for p in moonshot_pool_raw:
-        variance_bonus = 1 + p.get("player_variance", 0) * 0.8
-        moonshot_ev = round(p["rating"] * (avg_slot + p["est_mult"] * 1.5) * variance_bonus, 2)
-        moonshot_pool.append({**p, "moonshot_ev": moonshot_ev})
+    for p in rescored:
+        if p["name"] in chalk_names:
+            continue
+        if p.get("predMin", 0) < min_floor:
+            continue
+        if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
+            continue
+        if p["rating"] < 2.0:
+            continue
+
+        is_dev = p.get("team", "") in dev_teams
+        team_bonus = dev_boost if is_dev else 1.0
+        pred_min = p.get("predMin", 0)
+        boost = p.get("est_mult", 0.3)
+        moonshot_ev = round(
+            (pred_min ** min_weight) * (boost ** cb_weight) * team_bonus * p["rating"],
+            2
+        )
+        moonshot_pool.append({**p, "moonshot_ev": moonshot_ev, "_is_dev_team": is_dev})
+
     upside = optimize_lineup(moonshot_pool, n=5, min_per_team=2, sort_key="moonshot_ev",
                              rating_key="rating", card_boost_key="est_mult")
 
@@ -1836,6 +1939,10 @@ async def refresh():
         cfg_cache = CONFIG_CACHE_DIR / "model_config.json"
         if cfg_cache.exists():
             cfg_cache.unlink()
+    except: pass
+    # Clear RotoWire cache so next slate load gets fresh lineup data
+    try:
+        _rw_clear()
     except: pass
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 

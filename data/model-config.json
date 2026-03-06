@@ -1,7 +1,7 @@
 {
-  "version": 3,
-  "updated_at": "2026-03-05T12:00:00Z",
-  "updated_by": "march4-audit",
+  "version": 4,
+  "updated_at": "2026-03-06T07:00:00Z",
+  "updated_by": "march5-audit",
   "card_boost": {
     "decay_base": 0.70,
     "ceiling": 3.0,
@@ -56,9 +56,19 @@
     "underdog_spread_min": 2,
     "underdog_spread_max": 7
   },
+  "development_teams": ["UTA", "IND", "BKN", "CHI", "NOP", "SAC", "MEM", "WAS", "DAL"],
+  "moonshot": {
+    "min_minutes_floor": 20,
+    "dev_team_boost": 1.25,
+    "card_boost_weight": 2.0,
+    "minutes_weight": 1.0,
+    "require_rotowire_clearance": true,
+    "max_ownership_pct": 3.0
+  },
   "changelog": [
     {"version": 1, "date": "2026-03-05", "change": "Initial config externalization"},
     {"version": 2, "date": "2026-03-05", "change": "March 4 audit: raise min_gate 12→15, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"},
-    {"version": 3, "date": "2026-03-05", "change": "Model improvements: min_gate 15→12 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"}
+    {"version": 3, "date": "2026-03-05", "change": "Model improvements: min_gate 15→12 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"},
+    {"version": 4, "date": "2026-03-06", "change": "March 5 audit: added development_teams list (UTA/IND/BKN/CHI/NOP/SAC/MEM/WAS/DAL), moonshot overhaul (20-min floor, minutes*boost ranking, RotoWire lineup clearance), RotoWire scraper integration for lineup confirmations"}
   ]
 }
