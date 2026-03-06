@@ -1288,7 +1288,7 @@
       <div id="labInputWrap" style="padding:10px 0 4px;background:var(--bg)">
         <div style="display:flex;gap:8px;align-items:center">
           <textarea id="labInput" placeholder="Ask Ben anything..." rows="1"
-            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;font-size:0.85rem;resize:none;outline:none"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border-bright);border-radius:12px;padding:10px 13px;color:var(--text);font-family:'Barlow',sans-serif;resize:none;outline:none"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labSend()}"
           ></textarea>
           <button id="labSendBtn" class="lab-send-btn" onclick="labSend()">
@@ -2962,6 +2962,8 @@ function appendLabMessage(role, content, hidden = false, isStatus = false) {
     nav.style.opacity = '';
     nav.style.transform = '';
     nav.style.pointerEvents = '';
+    // Reset any viewport offset iOS leaves behind after keyboard dismissal
+    setTimeout(() => window.scrollTo(0, 0), 50);
   });
 })();
 
