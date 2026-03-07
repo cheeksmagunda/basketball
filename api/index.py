@@ -16,6 +16,10 @@ from fastapi import FastAPI, Query, Body, File, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
+# Load .env before importing ecosystem modules so module-level os.getenv() calls
+# (e.g. ANTHROPIC_API_KEY in line_engine.py) pick up local env vars correctly.
+load_dotenv()
+
 # Real Score Ecosystem modules
 try:
     from api.real_score import real_score_projection, _make_rng
@@ -27,8 +31,6 @@ except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
-
-load_dotenv()
 app = FastAPI()
 
 # ── GitHub API helpers for persistent CSV storage ──

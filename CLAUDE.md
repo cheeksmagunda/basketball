@@ -142,8 +142,8 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 After all games are final and Ben unlocks, if no messages yet:
 - Ben auto-prompts with a message containing two upload buttons: **📸 Real Scores** and **🏆 Top Drafts**
 - Tapping a button opens the device file picker (dynamic `createElement('input')` — no HTML needed)
-- `_handleBenUpload()` runs the full pipeline: `parse-screenshot → save-actuals → hindsight → hidden message → labCallClaude()`
-- Ben responds with analysis + hindsight lineup, buttons turn green (✓) on success
+- `_handleBenUpload()` runs the full pipeline: `parse-screenshot → save-actuals → /api/audit/get → lab/briefing → labCallClaude()`
+- Ben responds with accuracy analysis (MAE, misses, patterns); buttons turn green (✓) on success
 - History page is now **read-only** — no upload UI there
 
 ### Lock System

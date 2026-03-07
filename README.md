@@ -17,18 +17,20 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 
 ```
 index.html             — 4-tab frontend (Predict | Line | Ben | History)
-api/index.py           — FastAPI backend (all endpoints, projection engine)
+api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
 api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
 api/rotowire.py        — RotoWire lineup scraper (availability/injury flags)
+api/temporal_risk.py   — TRAV module (available, not active in picks)
 lgbm_model.pkl         — LightGBM model bundle {model, features}
 train_lgbm.py          — Training script (11 features)
-data/model-config.json — Runtime model config (Ben/Lab writes here)
+data/model-config.json — Runtime model config (Ben/Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs
 data/actuals/          — Git-tracked daily actual result CSVs
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
+data/locks/            — Cold-start recovery: {date}_slate.json written at lock time
 vercel.json            — Vercel config (routes, crons, 300s timeout)
 server.py              — Local dev server (uvicorn)
 ```
@@ -46,8 +48,8 @@ server.py              — Local dev server (uvicorn)
 
 ```
 ESPN API (games, rosters, injuries, spreads)
-  → Injury Cascade (redistribute OUT minutes, +3 min cap)
-  → 50/50 Season/Recent stat blend
+  → Injury Cascade (redistribute OUT minutes; per-player cap default 3 min, configurable)
+  → Configurable season/recent stat blend (default 50/50)
   → LightGBM model (11 features, 70% weight)
   → Contextual adjustments (pace, spread, home/away)
   → Monte Carlo Real Score (closeness Cc, clutch Ck, momentum Mm)
@@ -75,24 +77,43 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 
 ## Key Endpoints
 
+### Core
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/slate` | GET | Full-slate predictions (Starting 5 + Moonshot) |
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
+| `/api/save-predictions` | POST | Save cached predictions to GitHub CSV (server-side lock guard — rejects pre-lock) |
+| `/api/parse-screenshot` | POST | Upload Real Sports screenshot; Claude Haiku parses it |
+| `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV + auto-generate audit JSON |
+| `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc, top misses) |
+| `/api/log/dates` | GET | List dates with stored prediction/actual data |
+| `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
+| `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
+| `/api/refresh` | GET | Clear all caches + config cache |
+
+### Line of the Day
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/line-of-the-day` | GET | Both over + under picks (6 parallel Haiku calls) |
 | `/api/refresh-line-odds` | GET | Sync current bookmaker line from Odds API (hourly cron) |
-| `/api/line-of-the-day` | GET | Today's over + under picks |
-| `/api/save-line` | POST | Persist today's picks to GitHub |
-| `/api/resolve-line` | POST | Mark pick hit/miss |
+| `/api/line-live-stat` | GET | Fetch live stat value for in-game pick tracking |
+| `/api/save-line` | POST | Persist `{over_pick, under_pick}` + primary pick to GitHub |
+| `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
+| `/api/auto-resolve-line` | GET | Auto-resolve today's pick from live stat data |
 | `/api/line-history` | GET | Recent picks with streak + hit rate |
-| `/api/save-predictions` | POST | Save cached predictions to GitHub CSV |
-| `/api/save-actuals` | POST | Save parsed actuals + auto-generate audit JSON |
-| `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc) |
+
+### Ben (Lab)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
 | `/api/lab/status` | GET | Lock status + games-final count |
-| `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt |
-| `/api/lab/update-config` | POST | Apply model config changes (dot-notation) |
-| `/api/lab/backtest` | POST | Replay historical slates with proposed params |
-| `/api/refresh` | GET | Clear all caches + config |
+| `/api/lab/briefing` | GET | Prediction accuracy analysis (MAE, biggest misses, patterns) |
+| `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with full Lab system prompt |
+| `/api/lab/update-config` | POST | Apply dot-notation model param changes, increment version |
+| `/api/lab/config-history` | GET | Full config + changelog |
+| `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
+| `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
+| `/api/lab/auto-improve` | GET | Cron: briefing → Haiku proposes change → backtest → auto-apply if ≥3% improvement |
 
 ## Cron Schedule (UTC)
 
@@ -127,6 +148,7 @@ All persistent data stored in the GitHub repo via Contents API:
 - `data/audit/{date}.json` — pre-computed accuracy audit
 - `data/lines/{date}.csv` — primary pick for result tracking/resolve
 - `data/lines/{date}_pick.json` — dual-pick format `{over_pick, under_pick}` with odds fields
+- `data/locks/{date}_slate.json` — cold-start lock recovery (written at lock-promotion time)
 - `data/model-config.json` — runtime model parameters (5-min cache, fallback to defaults)
 
 ## Local Development
@@ -147,6 +169,9 @@ git push -u origin claude/your-branch
 
 ## Known Limitations
 
-- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. Frontend preserves last displayed data client-side.
-- Line of the Day odds use season averages as baseline when Odds API is unavailable; `MODEL` label shown.
+- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves last displayed data client-side. `data/locks/{date}_slate.json` is the GitHub backup for lock recovery.
+- Line of the Day odds: picks loaded from the GitHub CSV lack `books_consensus`/`odds_over`/`odds_under` — rendered as `MODEL` label until odds are refreshed via `/api/refresh-line-odds`.
+- If both over and under picks are for the same player, `/api/refresh-line-odds` makes two identical Odds API calls — functionally correct, marginally wasteful on quota.
 - RotoWire scraping is free-tier only (availability + injury flags, no projected minutes).
+- `data/locks/` accumulates one JSON per day with no automated cleanup — prune manually at season end.
+- History tab shows only the last 30 days. Older predictions are stored in GitHub but not reachable from the date strip UI.
