@@ -2339,6 +2339,9 @@ async function initLinePage() {
   document.getElementById('lineSlateSummary').innerHTML = '';
 
   try {
+    // Fire auto-resolve in background — resolves picks whose games have ended
+    // without blocking page load. Next line-of-the-day call will see updated results.
+    fetch('/api/auto-resolve-line').catch(function(){});
     const r = await fetch('/api/line-of-the-day');
     if (!r.ok) throw new Error(`line-of-the-day error: ${r.status}`);
     const data = await r.json();
@@ -2761,15 +2764,9 @@ async function showLabLocked(status) {
   document.getElementById('labLocked').style.display = 'block';
   _updateLabLockedStatus(status);
 
-  // Fetch briefing (lightweight) to get pending_upload_date for the banner.
-  // This lets users upload yesterday's results even during today's locked slate.
-  try {
-    const briefingRes = await fetch('/api/lab/briefing');
-    if (briefingRes.ok) {
-      LAB.briefing = await briefingRes.json();
-      _initUploadBanner();
-    }
-  } catch(e) {}
+  // Hide upload banner while locked — don't clutter the locked screen
+  var _ub = document.getElementById('benUploadBanner');
+  if (_ub) _ub.style.display = 'none';
 
   // Poll every 3 min while locked: update games remaining + unlock estimate,
   // and automatically flip to unlocked view when all games finish.
