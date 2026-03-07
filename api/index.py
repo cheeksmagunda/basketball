@@ -1599,13 +1599,16 @@ async def get_slate():
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
-    # Compute the exact moment picks locked (earliest tip - lock_buffer_minutes).
-    # Always output as "...Z" UTC — iOS Safari misparses "+00:00" offset strings.
+    # lock_time: use the FIRST game of the day (all games, not just draftable).
+    # Once early games start and drop out of draftable_games, the displayed
+    # "Locked at X:XXpm" must not jump forward to the next game's lock window.
+    all_start_times = [g["startTime"] for g in games if g.get("startTime")]
+    earliest_all = min(all_start_times) if all_start_times else earliest
     lock_time = None
-    if earliest:
+    if earliest_all:
         try:
             lock_buf = _cfg("projection.lock_buffer_minutes", 5)
-            gs = datetime.fromisoformat(earliest.replace("Z", "+00:00")).astimezone(timezone.utc)
+            gs = datetime.fromisoformat(earliest_all.replace("Z", "+00:00")).astimezone(timezone.utc)
             lock_dt = gs - timedelta(minutes=lock_buf)
             lock_time = lock_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
@@ -1634,9 +1637,13 @@ async def get_slate():
             gh_backup.setdefault("draftable_count", len(draftable_games))
             _ls("slate_v5_locked", gh_backup)
             return gh_backup
-        # No cache anywhere — compute fresh. Safe because there's no prior session
-        # state to protect; the user is seeing picks for the first time on this instance.
-        # Fall through to the projection + MILP code below (which handles locked=True).
+        # No cache anywhere post-lock — return empty locked state.
+        # Computing fresh would use post-tip ESPN data and produce wrong picks vs
+        # what users saw pre-lock. Frontend preserves displayed picks client-side.
+        return {"date": _et_date().isoformat(), "games": games,
+                "lineups": {"chalk": [], "upside": []},
+                "locked": True, "draftable_count": len(draftable_games),
+                "lock_time": lock_time}
 
     cached = _cg("slate_v5")
     if cached:
@@ -1658,6 +1665,10 @@ async def get_slate():
               "draftable_count": len(draftable_games), "lock_time": lock_time}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
+        if not locked:
+            # Proactively save GitHub backup on every pre-lock computation so cold-start
+            # instances after lock can recover correct picks without needing a warm /tmp.
+            _slate_backup_to_github(result)
     if locked:
         _ls("slate_v5_locked", result)
     return result
