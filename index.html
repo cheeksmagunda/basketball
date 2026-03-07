@@ -2569,6 +2569,37 @@ function filterLineHistory(dir) {
     if (isActive && dir !== 'all') btn.classList.add(dir);
   });
   document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA.picks, dir);
+
+  // Recompute stats for the filtered subset
+  const filtered = dir === 'all' ? LINE_HIST_DATA.picks
+    : (LINE_HIST_DATA.picks || []).filter(p => p.direction === dir);
+  const hits   = filtered.filter(p => p.result === 'hit');
+  const misses = filtered.filter(p => p.result === 'miss');
+  const total  = hits.length + misses.length;
+  const hitRate = total ? Math.round(hits.length / total * 100) : null;
+  let streak = 0, streakType = null;
+  for (const p of filtered) {
+    if (!p.result || p.result === 'pending') continue;
+    if (!streakType) { streakType = p.result; streak = 1; }
+    else if (p.result === streakType) streak++;
+    else break;
+  }
+  const streakStr = streak ? `${streak}× ${streakType}` : '';
+  let statsHtml = '';
+  if (hitRate !== null || streakStr) {
+    statsHtml = `
+    <div style="display:flex;gap:16px;margin-bottom:14px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate !== null ? hitRate + '%' : '—'}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
+      </div>
+      ${streakStr ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${streakType==='hit'?'var(--green)':'var(--red)'}">${streakStr}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
+      </div>` : ''}
+    </div>`;
+  }
+  document.getElementById('lineHistoryStats').innerHTML = statsHtml;
 }
 
 function switchLineDir(dir) {
