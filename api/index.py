@@ -91,6 +91,18 @@ def _github_write_file(path, content, message="auto-update"):
     return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
 
 
+def _github_delete_file(path, sha, message="auto-delete"):
+    """Delete a file from the GitHub repo via Contents API."""
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return False
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    r = requests.delete(url, json={"message": message, "sha": sha}, headers={
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }, timeout=15)
+    return r.status_code in (200, 204)
+
+
 def _slate_backup_to_github(slate_data: dict):
     """Write slate response to GitHub as a locked-state backup (deduped by date).
     Called once when we promote reg_cache -> lock_cache so cold-start instances can recover."""
@@ -1871,6 +1883,14 @@ async def save_predictions():
     today = _et_date().isoformat()
     path = f"data/predictions/{today}.csv"
 
+    # Guard: only write predictions after the slate has locked.
+    # Pre-lock projections are not finalized — saving them would pollute the log
+    # with data that changes as injury news, lineups, and odds shift.
+    _games_now = fetch_games()
+    _start_times = [g["startTime"] for g in _games_now if g.get("startTime")]
+    if _start_times and not _is_locked(min(_start_times)):
+        return JSONResponse({"error": "Slate not locked yet — predictions not finalized"}, status_code=409)
+
     # Gather slate predictions — try all cache layers before giving up
     rows = []
     cached_slate = _cg("slate_v5") or _lg("slate_v5_locked")
@@ -1892,14 +1912,6 @@ async def save_predictions():
             rows.extend(_predictions_to_csv(cached_picks["lineups"], label))
         elif _is_locked(g.get("startTime", "")):
             locked_games_to_compute.append(g)
-        else:
-            game_proj = _cg(f"game_proj_{gid}")
-            if game_proj:
-                try:
-                    chalk, upside = _build_lineups(game_proj)
-                    rows.extend(_predictions_to_csv({"chalk": chalk, "upside": upside}, label))
-                except Exception as e:
-                    print(f"save-predictions game lineup err {gid}: {e}")
 
     # Auto-compute picks for locked games the user never manually analyzed.
     # Run in parallel so this doesn't add significant latency per game.
@@ -1937,6 +1949,23 @@ async def save_predictions():
         _slate_backup_to_github(cached_slate_for_backup)
 
     return {"status": "saved", "path": path, "rows": len(rows)}
+
+
+@app.post("/api/reset-uploads")
+async def reset_uploads(body: dict):
+    """Delete actuals + audit files for a given date from GitHub.
+    Used to undo an incorrect/early upload so Ben can re-prompt for the right date."""
+    date_str = body.get("date")
+    if not date_str:
+        return JSONResponse({"error": "date required"}, status_code=400)
+    deleted = []
+    for path in [f"data/actuals/{date_str}.csv", f"data/audit/{date_str}.json"]:
+        _, sha = _github_get_file(path)
+        if sha:
+            ok = _github_delete_file(path, sha, f"reset uploads for {date_str}")
+            if ok:
+                deleted.append(path)
+    return {"deleted": deleted, "date": date_str}
 
 
 @app.post("/api/parse-screenshot")
@@ -3303,6 +3332,15 @@ async def lab_briefing():
             "slates_observed": 1,
         })
 
+    # Determine the most recent date that has predictions but no actuals yet —
+    # this is the date the user should upload actuals for (may be yesterday if
+    # games ran overnight and today's slate hasn't started yet).
+    pred_dates = sorted(
+        [i["name"].replace(".csv","") for i in pred_items if i["name"].endswith(".csv")],
+        reverse=True
+    )
+    pending_upload_date = next((d for d in pred_dates if d not in act_dates), None)
+
     return {
         "latest_slate":    latest_slate,
         "rolling_accuracy": {
@@ -3315,6 +3353,7 @@ async def lab_briefing():
             "last_change":     (cfg.get("changelog") or [{}])[-1].get("change",""),
             "last_change_date": (cfg.get("changelog") or [{}])[-1].get("date",""),
         },
+        "pending_upload_date": pending_upload_date,
     }
 
 

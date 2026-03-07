@@ -428,11 +428,12 @@ class TestBenBannerActualsDetection:
 
 class TestBannerGuardJS:
     """
-    The frontend banner-visibility check in showLabUnlocked() must use both:
-      - _todayLog?.has_actuals  (direct log check — works without paired predictions)
-      - LAB.briefing?.latest_slate?.date  (briefing fallback)
+    The frontend banner-visibility check in showLabUnlocked() must use:
+      - LAB.briefing?.pending_upload_date  (pending slate date from backend)
+      - localStorage keyed by pending date (not _etToday())
 
-    Removing either regresses the banner bug.
+    pending_upload_date is the last predictions-only date with no actuals yet,
+    so uploads always target the correct slate date even when run next-morning.
     """
 
     @pytest.fixture(scope="class")
@@ -444,16 +445,16 @@ class TestBannerGuardJS:
         return html[start:end]
 
     def test_banner_check_uses_has_actuals(self, script_source):
-        """Banner visibility must check has_actuals from /api/log/get."""
+        """has_actuals is still used in the log rendering / other contexts."""
         assert "has_actuals" in script_source, (
-            "Missing has_actuals check — banner will show even after upload "
-            "when predictions weren't committed to GitHub"
+            "Missing has_actuals reference — likely indicates log rendering was removed"
         )
 
-    def test_banner_check_uses_briefing_fallback(self, script_source):
-        """Banner visibility must also keep the briefing latest_slate fallback."""
-        assert "latest_slate" in script_source, (
-            "Missing latest_slate briefing fallback in banner check"
+    def test_banner_check_uses_pending_upload_date(self, script_source):
+        """Banner visibility must use pending_upload_date from briefing."""
+        assert "pending_upload_date" in script_source, (
+            "Missing pending_upload_date — banner will use wrong date for localStorage key "
+            "and save-actuals, causing date mismatch between predictions and actuals"
         )
 
     def test_log_get_fetched_in_showlabunlocked(self, script_source):
