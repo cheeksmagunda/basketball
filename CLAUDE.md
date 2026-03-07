@@ -38,10 +38,13 @@ server.py              — Local dev server (uvicorn)
 
 4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | History**
 
-- **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation
-- **Line**: Line of the Day — best player prop edge from Odds API (gold accent). Over/Under sub-nav filters both history AND the main pick card.
+- **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation. "Slate-Wide | Game" sub-tabs inline at top of tab.
+- **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Odds refresh hourly from Odds API; pick cards show "Odds · [time] CT".
 - **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
 - **History**: Historical drill-down — date strip, game grid, read-only prediction cards vs actuals (no user input — upload happens through Ben)
+
+### Sub-Nav Tabs (inline, not floating)
+Both `predictSubNav` (Slate-Wide | Game) and `lineSubNav` (Over | Under) are inline `div.predict-sub-nav` elements positioned at the top of their respective tab pages. They match the `.mode-tab` visual language exactly — same height, padding, `border-radius:11px`, Barlow Condensed 800. Active states: predict = chalk blue, Over = gold (`--line`), Under = teal (`--lab`).
 
 ## Codebase Navigation (grep tags)
 
@@ -92,6 +95,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/line-of-the-day` | GET | **Both** Over + Under picks (6 parallel Haiku calls: 3 stats × 2 dirs); returns `{over_pick, under_pick, pick}` |
+| `/api/refresh-line-odds` | GET | **Hourly cron** — fetch current bookmaker line from Odds API and update `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
 | `/api/line-history` | GET | Recent picks with streak + hit rate |
@@ -207,13 +211,19 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `GET /api/audit/get?date=X` returns pre-computed audit (falls back to live computation).
 - `lab_briefing` uses cached audits when available; adds over-projection pattern detection.
 
-## Line Page — Direction Filter
+## Line Page — Direction Filter & Odds Refresh
 
-The Over/Under floating pill (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
+The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
 
-- `LINE_PICK_DIR` (global) is set when the pick loads — tracks today's actual pick direction
-- `switchLineDir(dir)`: if `dir !== LINE_PICK_DIR`, hides `#linePickCard` + `#lineSlateSummary`, shows `#lineNoPickMsg` with explanation text. Restores on match.
-- Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` (not in `LINE_CSV_HEADER`). These render as `MODEL` label. Only picks generated fresh from the engine include full odds data.
+- `switchLineDir(dir)`: renders the appropriate pick (`LINE_OVER_PICK` or `LINE_UNDER_PICK`) via `renderLinePickCard()`
+- Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
+- Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
+
+### Odds Refresh Pipeline
+- **Crons**: `0 * * * *` (hourly) + `55 * * * *` (every :55, hits common 6:55 PM ET lock)
+- **Helpers**: `_abbr_matches(abbr, full_name)` maps ESPN abbrs → Odds API team name fragments; `_fetch_odds_line(player, stat, team, opp)` makes 2-step Odds API call (events list → event player props)
+- **Lock freeze**: `/api/refresh-line-odds` checks `_is_locked(earliest)` — no-op if locked
+- **REFRESH button**: calls `/api/refresh-line-odds` then reloads Line page data
 
 ## z-index Hierarchy (fixed elements)
 
@@ -221,13 +231,38 @@ The Over/Under floating pill (`#lineSubNav`) and the inline All/Over/Under tabs 
 |---------|---------|
 | `#linePickModal` (bottom sheet) | 1001 |
 | `.bottom-nav` | 1000 |
-| `.predict-sub-nav` / `#lineSubNav` | 999 |
 
 `switchTab()` calls `closeLinePickModal()` + resets `document.body.style.overflow` on every tab switch to prevent scroll lock leaking between tabs.
 
-## Known Limitation
+Note: `predictSubNav` and `lineSubNav` are now **inline elements** (not fixed/floating) — no z-index needed.
 
-`/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side.
+## Cron Schedule (vercel.json)
+
+| Schedule (UTC) | Endpoint | Purpose |
+|----------------|----------|---------|
+| `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
+| `0 20 * * *` | `/api/refresh` | Second cache clear pass |
+| `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement |
+| `0 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync |
+| `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET window) |
+
+## Production Robustness Notes
+
+All frontend API calls (`fetch(...)`) have `.ok` checks before calling `.json()`. Missing `.ok` checks were a common source of silent failures in prior versions.
+
+Key patterns used throughout:
+- Async functions: `if (!r.ok) throw new Error('HTTP ' + r.status)` before `.json()`
+- Promise.allSettled chains: `fetch(...).then(r => r.ok ? r.json() : Promise.reject(...))`
+- Polling loops: `.then(r => r.ok ? r.json() : Promise.reject())` with empty `.catch`
+- `savePredictions`: resets `_predSavedDate` on non-OK responses so the next call can retry
+
+EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hidden context-loading messages don't suppress the upload prompt.
+
+## Known Limitations
+
+- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side.
+- `_github_write_file` does a GET + PUT internally (fetches current SHA before writing). On concurrent writes (rare), the second write may 422. The cron + user refresh pattern makes this extremely unlikely.
+- Odds API odds refresh: if both over_pick and under_pick are for the same player, the function makes two identical Odds API calls (one per pick object). Functionally correct, marginally wasteful on quota.
 
 ## Development
 
@@ -245,7 +280,7 @@ git push -u origin claude/codebase-analysis-e3rsW
 When starting fresh in a new chat, Claude Code automatically reads this file for context.
 Provide the following to the new session to orient it quickly:
 
-1. **Branch**: `claude/auto-merge-to-main-ZwBZw` (always develop here, push triggers auto-merge → main → Vercel)
+1. **Branch**: `claude/codebase-analysis-e3rsW` (always develop here, push triggers auto-merge → main → Vercel)
 2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
 3. **No test suite to run** — deploy triggers automatically on push; verify on `basketball-chi-cyan.vercel.app`
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.

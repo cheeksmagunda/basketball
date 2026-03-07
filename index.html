@@ -1429,6 +1429,7 @@ async function initGameSelector() {
   const btn = document.getElementById('analyzeBtn');
   try {
     const r = await fetch('/api/games');
+    if (!r.ok) throw new Error('Failed to load games (' + r.status + ')');
     const games = await r.json();
     if (!games.length) {
       sel.innerHTML = '<option value="">No games today</option>';
@@ -1775,9 +1776,10 @@ async function savePredictions() {
   if (!SLATE || !SLATE.locked) return;
   _predSavedDate = today;
   try {
-    await fetch('/api/save-predictions', { method: 'POST' });
+    const r = await fetch('/api/save-predictions', { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
   } catch(e) {
-    _predSavedDate = ''; // allow retry on network error
+    _predSavedDate = ''; // allow retry on next call
     console.warn('Prediction save failed:', e);
   }
 }
@@ -2521,6 +2523,7 @@ async function initLabPage() {
 
   try {
     const r = await fetch('/api/lab/status');
+    if (!r.ok) throw new Error('Failed to load Lab status: HTTP ' + r.status);
     const status = await r.json();
     document.getElementById('labLoading').style.display = 'none';
 
@@ -2549,7 +2552,7 @@ function showLabLocked(status) {
   _updateLabLockedStatus(status);
 
   // Show config changelog read-only
-  fetch('/api/lab/config-history').then(r=>r.json()).then(data => {
+  fetch('/api/lab/config-history').then(r => r.ok ? r.json() : Promise.reject()).then(data => {
     const el = document.getElementById('labLockedConfig');
     const changelog = (data.changelog || []).slice().reverse().slice(0,5);
     el.innerHTML = '<div class="lab-config-card"><div class="lab-config-label">Config v' + data.version + ' \xb7 Changelog</div>'
@@ -2566,7 +2569,7 @@ function showLabLocked(status) {
     if (document.getElementById('labLocked').style.display === 'none') {
       clearInterval(LAB._lockPoll); LAB._lockPoll = null; return;
     }
-    fetch('/api/lab/status').then(function(r) { return r.json(); }).then(async function(s) {
+    fetch('/api/lab/status').then(function(r) { return r.ok ? r.json() : Promise.reject(); }).then(async function(s) {
       if (!s.locked) {
         clearInterval(LAB._lockPoll); LAB._lockPoll = null;
         LAB.initialized = false;
@@ -2586,11 +2589,11 @@ async function showLabUnlocked(status) {
 
   // Load briefing + config + line data + slate + today's log in parallel (silently)
   const [briefingRes, configRes, lineRes, slateRes, logRes] = await Promise.allSettled([
-    fetch('/api/lab/briefing').then(r => r.json()),
-    fetch('/api/lab/config-history').then(r => r.json()),
-    fetch('/api/line-of-the-day').then(r => r.json()),
-    fetch('/api/slate').then(r => r.json()),
-    fetch(`/api/log/get?date=${_etToday()}`).then(r => r.json()),
+    fetch('/api/lab/briefing').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetch('/api/lab/config-history').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetch('/api/line-of-the-day').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetch('/api/slate').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetch(`/api/log/get?date=${_etToday()}`).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
   ]);
 
   if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
@@ -2613,7 +2616,7 @@ async function showLabUnlocked(status) {
     _ub.style.display = _hasActualsToday ? 'none' : 'block';
   }
   // Also trigger EOD chat bubble + hindsight once games are actually final
-  if (LAB.messages.length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
+  if (LAB.messages.filter(m => !m.hidden).length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
     _renderBenEodPrompt();
   }
 }
@@ -2833,6 +2836,7 @@ async function executeLabAction(action) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proposed_changes: action.changes, description: action.description }),
       });
+      if (!r.ok) throw new Error('Backtest failed: HTTP ' + r.status);
       const result = await r.json();
       btEl.remove();
       appendLabMessage('user', `Backtest result: ${JSON.stringify(result)}`, true);
@@ -2846,6 +2850,7 @@ async function executeLabAction(action) {
     const cfgEl = _labSpinner('Loading config...');
     try {
       const r = await fetch('/api/lab/config-history');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       cfgEl.remove();
       appendLabMessage('user', `Config data: ${JSON.stringify(data)}`, true);
@@ -2855,6 +2860,7 @@ async function executeLabAction(action) {
   } else if (type === 'show_history') {
     try {
       const r = await fetch('/api/lab/config-history');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       const changelogStr = (data.changelog || []).map(c => `v${c.version} (${c.date}): ${c.change}`).join('\n');
       appendLabMessage('assistant', `**Config History:**\n${changelogStr}`);
@@ -2898,6 +2904,7 @@ async function applyLabConfig(changes, description, msgEl) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ changes, change_description: description }),
     });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const result = await r.json();
     if (result.error) {
       if (statusDiv) statusDiv.textContent = `Error: ${result.error}`;
