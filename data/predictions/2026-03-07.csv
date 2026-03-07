@@ -9,13 +9,27 @@ slate,upside,1.8x,Buddy Hield,2990984,ATL,G,5.1,2.6,22.4,11.2,3.2,1.9,0.8,0.2
 slate,upside,1.6x,Mike Conley,3195,MIN,G,5.0,2.9,24.4,8.9,2.3,4.2,0.9,0.2
 slate,upside,1.4x,Kyle Filipowski,4684793,UTAH,F,4.7,2.7,25.2,10.1,6.6,2.1,0.8,0.5
 slate,upside,1.2x,Kyle Lowry,3012,PHI,G,4.6,2.9,20.1,7.8,2.5,3.5,0.8,0.2
-ORL @ MIN,chalk,2.0x,Julius Randle,3064514,MIN,F,4.6,1.7,33.2,20.4,8.0,4.6,0.9,0.3
+ORL @ MIN,chalk,2.0x,Julius Randle,3064514,MIN,F,4.5,1.7,33.2,20.4,8.0,4.6,0.9,0.3
 ORL @ MIN,chalk,1.8x,Rudy Gobert,3032976,MIN,C,4.4,2.1,31.6,11.8,11.6,1.6,0.8,1.9
 ORL @ MIN,chalk,1.6x,Jalen Suggs,4432165,ORL,G,4.1,2.1,27.5,13.1,3.6,4.5,1.6,0.7
-ORL @ MIN,chalk,1.4x,Wendell Carter Jr.,4277847,ORL,C,3.7,2.1,30.8,11.8,7.9,2.0,0.8,0.7
-ORL @ MIN,chalk,1.2x,Ayo Dosunmu,4397002,MIN,G,3.6,2.1,27.1,12.7,2.9,3.4,0.8,0.3
-ORL @ MIN,upside,2.0x,Jaden McDaniels,4431671,MIN,F,4.0,2.1,31.1,13.1,4.3,2.3,0.9,0.9
-ORL @ MIN,upside,1.8x,Desmond Bane,4066320,ORL,G,3.9,1.7,32.7,19.2,4.3,4.0,1.0,0.5
+ORL @ MIN,chalk,1.4x,Wendell Carter Jr.,4277847,ORL,C,3.6,2.1,30.8,11.8,7.9,2.0,0.8,0.7
+ORL @ MIN,chalk,1.2x,Ayo Dosunmu,4397002,MIN,G,3.5,2.1,27.1,12.7,2.9,3.4,0.8,0.3
+ORL @ MIN,upside,2.0x,Desmond Bane,4066320,ORL,G,3.9,1.7,32.7,19.2,4.3,4.0,1.0,0.5
+ORL @ MIN,upside,1.8x,Jaden McDaniels,4431671,MIN,F,3.9,2.1,31.1,13.1,4.3,2.3,0.9,0.9
 ORL @ MIN,upside,1.6x,Naz Reid,4396971,MIN,C,3.4,2.1,23.8,12.9,5.8,1.9,0.8,0.9
-ORL @ MIN,upside,1.4x,Mike Conley,3195,MIN,G,3.3,2.4,24.4,8.9,2.3,4.2,0.9,0.2
+ORL @ MIN,upside,1.4x,Mike Conley,3195,MIN,G,3.2,2.4,24.4,8.9,2.3,4.2,0.9,0.2
 ORL @ MIN,upside,1.2x,Tristan da Silva,4702382,ORL,F,2.7,2.4,25.8,8.6,3.5,1.4,0.8,0.3
+PHI @ ATL,chalk,2.0x,Andre Drummond,6585,PHI,C,4.0,2.2,25.5,9.4,10.2,1.1,0.9,1.0
+PHI @ ATL,chalk,1.8x,Paul George,4251,PHI,F,4.1,1.6,33.8,18.2,5.7,3.7,1.6,0.5
+PHI @ ATL,chalk,1.6x,Tyrese Maxey,4431678,PHI,G,4.2,1.4,37.5,24.9,3.7,5.8,1.6,0.6
+PHI @ ATL,chalk,1.4x,Jalen Johnson,4701230,ATL,F,3.8,1.8,29.3,18.2,8.9,5.9,1.1,0.6
+PHI @ ATL,upside,2.0x,Kyle Lowry,3012,PHI,G,3.1,2.3,23.1,7.8,2.5,3.5,0.8,0.2
+PHI @ ATL,upside,1.8x,Buddy Hield,2990984,ATL,G,3.1,2.2,22.4,11.2,3.2,1.9,0.8,0.2
+PHI @ ATL,upside,1.6x,CJ McCollum,2490149,ATL,G,3.3,1.8,30.9,19.1,3.5,3.7,0.8,0.4
+PHI @ ATL,upside,1.4x,Zaccharie Risacher,5211175,ATL,F,2.9,2.2,25.8,10.9,3.6,1.3,0.8,0.5
+PHI @ ATL,upside,1.2x,Dyson Daniels,4869342,ATL,G,3.2,2.3,29.3,10.2,5.8,5.0,1.9,0.5
+BKN @ DET,upside,2.0x,Caris LeVert,2991043,DET,G,2.8,2.3,26.2,10.3,2.7,3.3,0.9,0.5
+BKN @ DET,upside,1.8x,Isaiah Stewart,4432810,DET,F,2.5,2.4,23.9,9.4,6.0,1.2,0.3,1.4
+BKN @ DET,upside,1.6x,Jalen Duren,4433621,DET,C,2.4,1.9,27.4,15.7,10.5,1.9,0.8,0.8
+BKN @ DET,upside,1.4x,Danny Wolf,5107173,BKN,F,2.1,2.4,20.3,8.7,4.7,2.2,0.6,0.5
+BKN @ DET,upside,1.2x,Ochai Agbaji,4397018,BKN,G,2.0,2.7,20.8,5.8,2.5,0.9,0.5,0.3
