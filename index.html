@@ -1332,9 +1332,11 @@ function switchTab(tab) {
     requestAnimationFrame(() => {
       const vv = window.visualViewport;
       const tabEl = document.getElementById('tab-lab');
+      const navEl = document.getElementById('bottomNav');
       if (vv && tabEl) {
         const tabTop = tabEl.getBoundingClientRect().top;
-        tabEl.style.height = Math.max(200, vv.height - tabTop) + 'px';
+        const navTop = navEl ? navEl.getBoundingClientRect().top : vv.height - 100;
+        tabEl.style.height = Math.max(200, navTop - tabTop - 8) + 'px';
       }
     });
   } else {
