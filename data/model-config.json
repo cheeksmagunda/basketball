@@ -121,13 +121,6 @@
     "b2b_minute_penalty": 0.88,
     "default_total": 222
   },
-  "contrarian": {
-    "closeness_boost_floor": 0.7,
-    "closeness_boost_scalar": 0.6,
-    "underdog_bonus": 1.1,
-    "underdog_spread_min": 2,
-    "underdog_spread_max": 7
-  },
   "development_teams": [
     "UTA",
     "IND",

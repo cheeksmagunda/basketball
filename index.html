@@ -2069,8 +2069,9 @@ async function _handleBenUpload(file, type, source) {
     const form = new FormData();
     form.append('file', file);
     const r = await fetch('/api/parse-screenshot', { method: 'POST', body: form });
+    if (!r.ok) throw new Error('Upload failed (HTTP ' + r.status + ')');
     const data = await r.json();
-    if (!r.ok || !data.players?.length) throw new Error(data.error || 'No players found');
+    if (!data.players?.length) throw new Error(data.error || 'No players found');
 
     if (type === 'real_scores') {
       const today = _etToday();
@@ -3013,7 +3014,7 @@ async function executeLabAction(action) {
     const descText = action.description || JSON.stringify(action.changes);
     msgEl.innerHTML = `
       <div class="lab-msg-label">Ben</div>
-      <div>Ready to apply: <b></b></div>
+      <div data-config-status>Ready to apply: <b></b></div>
       <div style="margin-top:10px;display:flex;gap:8px">
         <button class="lab-apply-btn"
           style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
@@ -3036,7 +3037,7 @@ async function executeLabAction(action) {
 }
 
 async function applyLabConfig(changes, description, msgEl) {
-  const statusDiv = msgEl.querySelectorAll('div')[1]; // second div = "Ready to apply"
+  const statusDiv = msgEl.querySelector('[data-config-status]');
   const btnDiv    = msgEl.querySelector('.lab-apply-btn')?.parentElement;
   try {
     const r = await fetch('/api/lab/update-config', {

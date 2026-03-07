@@ -188,10 +188,6 @@ _CONFIG_DEFAULTS = {
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":1.5,          # max card boost counted toward chalk_ev (moonshot uses full boost)
     },
-    "contrarian": {
-        "closeness_boost_floor":0.7,"closeness_boost_scalar":0.6,
-        "underdog_bonus":1.1,"underdog_spread_min":2,"underdog_spread_max":7,
-    },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
         "min_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":2.0,
@@ -220,14 +216,16 @@ def _load_config():
             age = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
             if age < 300:
                 return json.loads(cache_file.read_text())
-        except Exception: pass
+        except Exception as _ce:
+            print(f"[WARN] Config cache read failed: {_ce}")
     try:
         content, _ = _github_get_file("data/model-config.json")
         if content:
             cfg = json.loads(content)
             cache_file.write_text(json.dumps(cfg))
             return cfg
-    except Exception: pass
+    except Exception as _ce:
+        print(f"[WARN] Config GitHub load failed, using defaults: {_ce}")
     return _CONFIG_DEFAULTS
 
 def _cfg(path, default=None):
@@ -375,7 +373,7 @@ def _fetch_b2b_teams():
     data = _espn_get(f"{ESPN}/scoreboard?dates={yesterday}")
     b2b = set()
     for ev in data.get("events", []):
-        comp = ev["competitions"][0]
+        comp = ev.get("competitions", [{}])[0]
         for cd in comp.get("competitors", []):
             abbr = cd.get("team", {}).get("abbreviation", "")
             if abbr: b2b.add(abbr)
@@ -394,7 +392,7 @@ def fetch_games(date=None):
     data = _espn_get(f"{ESPN}/scoreboard?dates={date_str}")
     games = []
     for ev in data.get("events", []):
-        comp = ev["competitions"][0]
+        comp = ev.get("competitions", [{}])[0]
         home = away = None
         for cd in comp.get("competitors", []):
             t = {"id": cd["team"]["id"], "name": cd["team"]["displayName"],
@@ -1154,7 +1152,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             ai_pred = AI_MODEL.predict(np.array([feat_vec]))[0]
             # Blend: LightGBM 70%, heuristic 30% — direct blend, no normalization
             base = (ai_pred * 0.7) + (heuristic * 0.3)
-        except Exception: pass
+        except Exception as _lgbm_e:
+            print(f"[WARN] LightGBM inference failed for player, using heuristic: {_lgbm_e}")
 
     # Contextual multipliers — game closeness matters BUT differently by role.
     pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
