@@ -1566,8 +1566,16 @@ async function loadSlate() {
     const headerMeta = document.getElementById('headerMeta');
     if (headerMeta) {
       const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+      let lockLabel = '🔒 Picks Locked';
+      if (isLocked && SLATE.lock_time) {
+        try {
+          const lt = new Date(SLATE.lock_time);
+          const ltStr = lt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+          lockLabel = `🔒 Locked · ${ltStr} CT`;
+        } catch(e) {}
+      }
       const statusBadge = isLocked
-        ? '<div class="header-badge locked">🔒 Picks Locked</div>'
+        ? `<div class="header-badge locked">${lockLabel}</div>`
         : `<div class="header-badge">Updated ${timeNow} CT</div>`;
       const countBadge = `<div class="header-badge">${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}</div>`;
       headerMeta.innerHTML = countBadge + statusBadge;
