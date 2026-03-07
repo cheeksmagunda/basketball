@@ -2914,10 +2914,19 @@ async def line_history():
                         continue
                     p = dict(p)
                     p.setdefault("date", date_str)
-                    # Fill result from CSV for the primary direction if JSON lacks it
-                    if p.get("direction") == csv_primary.get("direction") and not p.get("result"):
-                        p["result"]      = csv_primary.get("result", "pending")
-                        p["actual_stat"] = csv_primary.get("actual_stat", "")
+                    if not p.get("result") or p.get("result") == "pending":
+                        csv_actual = _safe_float(csv_primary.get("actual_stat", 0))
+                        if p.get("direction") == csv_primary.get("direction"):
+                            # Primary direction — copy result directly from CSV
+                            p["result"]      = csv_primary.get("result", "pending")
+                            p["actual_stat"] = csv_primary.get("actual_stat", "")
+                        elif (csv_primary.get("actual_stat") and
+                              p.get("player_name", "").lower() == csv_primary.get("player_name", "").lower()):
+                            # Other direction, same player — compute result from CSV actual
+                            p_line = _safe_float(p.get("line", 0))
+                            p_dir  = p.get("direction", "over")
+                            p["result"]      = "hit" if (csv_actual > p_line if p_dir == "over" else csv_actual < p_line) else "miss"
+                            p["actual_stat"] = csv_primary.get("actual_stat", "")
                     results.append(p)
                     added_dirs.add(p.get("direction"))
                 # Fallback: if JSON didn't cover the primary direction, add CSV row
