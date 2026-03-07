@@ -2840,7 +2840,7 @@ CAPABILITIES:
 - Answer questions about today's slate, games, picks, or line
 - Read any file: use read_repo_file (CSVs, audit JSONs, code, config, line history)
 - Browse directories: use list_repo_directory to discover available dates/files
-- Config changes: write_repo_file ONLY for data/model-config.json (live in 5 min, no redeploy needed)
+- Config changes: <action>update_config</action> for parameter tuning (shows confirm UI), or write_repo_file for data/model-config.json for structural additions
 - Validate params: backtest action before applying any config change
 
 WHEN TO USE WHAT:
