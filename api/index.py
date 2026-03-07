@@ -1576,17 +1576,29 @@ async def get_slate():
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
+    # Compute the exact moment picks locked (earliest tip - lock_buffer_minutes)
+    lock_time = None
+    if earliest:
+        try:
+            lock_buf = _cfg("projection.lock_buffer_minutes", 5)
+            gs = datetime.fromisoformat(earliest.replace("Z", "+00:00"))
+            lock_time = (gs - timedelta(minutes=lock_buf)).isoformat()
+        except Exception:
+            pass
+
     if locked:
         lock_cached = _lg("slate_v5_locked")
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", len(draftable_games))
+            if lock_time: lock_cached.setdefault("lock_time", lock_time)
             return lock_cached
         # Check regular cache and promote to lock cache
         cached = _cg("slate_v5")
         if cached:
             cached["locked"] = True
             cached.setdefault("draftable_count", len(draftable_games))
+            if lock_time: cached.setdefault("lock_time", lock_time)
             _ls("slate_v5_locked", cached)
             _slate_backup_to_github(cached)
             return cached
@@ -1618,7 +1630,7 @@ async def get_slate():
     chalk, upside = _build_lineups(all_proj)
     result = {"date": _et_date().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
-              "draftable_count": len(draftable_games)}
+              "draftable_count": len(draftable_games), "lock_time": lock_time}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
     if locked:
