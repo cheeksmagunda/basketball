@@ -466,3 +466,631 @@ class TestBannerGuardJS:
     def test_show_lab_unlocked_function_present(self, script_source):
         """showLabUnlocked function must exist (catches accidental deletion)."""
         assert "showLabUnlocked" in script_source
+
+
+# ---------------------------------------------------------------------------
+# 7. Response contract normalizers — _normalize_player
+# ---------------------------------------------------------------------------
+
+class TestNormalizePlayer:
+    """
+    _normalize_player() is the stable contract boundary between the model and
+    the frontend. Every player object going into an API response passes through
+    it. Tests verify:
+      - All required frontend fields are always present
+      - Internal MILP fields (chalk_ev_capped) are stripped
+      - Bad/missing numeric values coerce safely to 0.0 (no NaN in responses)
+      - Extra model-internal fields pass through untouched
+      - Empty input produces a safe zero-filled card
+    """
+
+    def _norm(self, p=None):
+        from api.index import _normalize_player
+        return _normalize_player(p or {})
+
+    def test_all_required_fields_present(self):
+        """Output must contain every field the frontend accesses."""
+        required = {
+            "id", "name", "pos", "team", "rating", "predMin",
+            "pts", "reb", "ast", "stl", "blk",
+            "est_mult", "slot", "chalk_ev", "moonshot_ev",
+            "injury_status", "_decline",
+        }
+        result = self._norm({"name": "Test Player", "rating": 4.5})
+        missing = required - set(result.keys())
+        assert not missing, f"Missing required fields: {missing}"
+
+    def test_numeric_fields_coerce_from_none(self):
+        """None values for numeric fields must become 0.0, not NaN."""
+        result = self._norm({"rating": None, "predMin": None, "pts": None,
+                             "est_mult": None, "chalk_ev": None})
+        assert result["rating"] == 0.0
+        assert result["predMin"] == 0.0
+        assert result["pts"] == 0.0
+        assert result["est_mult"] == 0.0
+        assert result["chalk_ev"] == 0.0
+        # Crucially: no NaN in the result
+        import math
+        for v in result.values():
+            if isinstance(v, float):
+                assert not math.isnan(v), f"NaN found in normalized output: {result}"
+
+    def test_numeric_fields_coerce_from_empty_string(self):
+        """Empty-string numeric fields must become 0.0."""
+        result = self._norm({"rating": "", "pts": "", "reb": ""})
+        assert result["rating"] == 0.0
+        assert result["pts"] == 0.0
+        assert result["reb"] == 0.0
+
+    def test_chalk_ev_capped_is_stripped(self):
+        """chalk_ev_capped is an internal MILP sort key — must never reach the frontend."""
+        result = self._norm({"rating": 4.0, "chalk_ev_capped": 9.99})
+        assert "chalk_ev_capped" not in result
+
+    def test_rw_cleared_is_stripped(self):
+        """_rw_cleared is an internal RotoWire flag — must never reach the frontend."""
+        result = self._norm({"name": "X", "_rw_cleared": True})
+        assert "_rw_cleared" not in result
+
+    def test_extra_model_fields_pass_through(self):
+        """Model fields not in the contract (debug, trend stats) must pass through."""
+        result = self._norm({
+            "name": "Test",
+            "season_pts": 22.1,
+            "recent_pts": 25.3,
+            "_cascade_bonus": 3.0,
+            "_is_dev_team": True,
+        })
+        assert result["season_pts"] == 22.1
+        assert result["recent_pts"] == 25.3
+        assert result["_cascade_bonus"] == 3.0
+        assert result["_is_dev_team"] is True
+
+    def test_string_fields_default_to_empty_string(self):
+        """String fields missing from input must default to '' not None."""
+        result = self._norm({})
+        assert result["name"] == ""
+        assert result["pos"] == ""
+        assert result["team"] == ""
+        assert result["injury_status"] == ""
+        assert result["slot"] == "1.0x"
+
+    def test_numeric_precision(self):
+        """Numeric fields are rounded to the expected decimal places."""
+        result = self._norm({"rating": 4.1667, "est_mult": 1.2345, "pts": 22.999})
+        assert result["rating"] == 4.2
+        assert result["est_mult"] == 1.23
+        assert result["pts"] == 23.0
+
+    def test_empty_input_is_safe(self):
+        """An empty dict must produce a fully-populated zero-card without raising."""
+        result = self._norm({})
+        assert result["rating"] == 0.0
+        assert result["moonshot_ev"] == 0.0
+        assert result["name"] == ""
+
+
+# ---------------------------------------------------------------------------
+# 8. Response contract normalizers — _normalize_line_pick
+# ---------------------------------------------------------------------------
+
+class TestNormalizeLinePick:
+    """
+    _normalize_line_pick() is the stable contract boundary for line picks.
+    Applied in _picks_response() and line_history before any data reaches
+    the frontend.
+    """
+
+    def _norm(self, p=None):
+        from api.index import _normalize_line_pick
+        return _normalize_line_pick(p or {})
+
+    def test_all_required_fields_present(self):
+        required = {
+            "player_name", "player_id", "team", "opponent",
+            "direction", "line", "stat_type", "projection",
+            "edge", "confidence", "narrative", "signals",
+            "result", "actual_stat", "line_updated_at",
+            "odds_over", "odds_under", "books_consensus", "date",
+        }
+        result = self._norm({"player_name": "LeBron James", "confidence": 72})
+        missing = required - set(result.keys())
+        assert not missing, f"Missing required fields: {missing}"
+
+    def test_edge_defaults_to_zero_not_none(self):
+        """edge=None/missing must produce 0.0 — not None which causes NaN in JS."""
+        assert self._norm({})["edge"] == 0.0
+        assert self._norm({"edge": None})["edge"] == 0.0
+
+    def test_signals_defaults_to_empty_list(self):
+        """signals=None/missing must produce [] — not None which crashes .map() in JS."""
+        assert self._norm({})["signals"] == []
+        assert self._norm({"signals": None})["signals"] == []
+
+    def test_result_defaults_to_pending(self):
+        assert self._norm({})["result"] == "pending"
+        assert self._norm({"result": None})["result"] == "pending"
+
+    def test_direction_defaults_to_over(self):
+        assert self._norm({})["direction"] == "over"
+
+    def test_line_coerces_to_float(self):
+        assert self._norm({"line": "22.5"})["line"] == 22.5
+        assert self._norm({"line": None})["line"] == 0.0
+        assert self._norm({"line": ""})["line"] == 0.0
+
+    def test_none_input_returns_empty_dict(self):
+        from api.index import _normalize_line_pick
+        assert _normalize_line_pick(None) == {}
+        assert _normalize_line_pick("bad") == {}
+
+    def test_extra_fields_pass_through(self):
+        """_live tracker and future additions must pass through."""
+        result = self._norm({"_live": {"status": "live", "stat_current": 14}})
+        assert result["_live"] == {"status": "live", "stat_current": 14}
+
+    def test_confidence_coerces_to_int(self):
+        assert self._norm({"confidence": 72.9})["confidence"] == 72
+        assert self._norm({"confidence": None})["confidence"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 9. Real Score engine — pure math unit tests
+# ---------------------------------------------------------------------------
+
+class TestRealScoreEngine:
+    """
+    real_score.py contains pure numpy Monte Carlo functions with no I/O.
+    All coefficient bounds and monotonicity relationships are tested here.
+    """
+
+    def test_closeness_coefficient_bounds(self):
+        """C_c must always be in [1.0, 2.0]."""
+        from api.real_score import closeness_coefficient, _make_rng
+        for spread, total in [(0, 210), (5, 222), (12, 235), (20, 200)]:
+            rng = _make_rng(spread, total, seed_date="2026-03-07")
+            c_c = closeness_coefficient(spread, total, rng)
+            assert 1.0 <= c_c <= 2.0, f"C_c={c_c} out of bounds for spread={spread}"
+
+    def test_closeness_higher_for_pickem_than_blowout(self):
+        """Pick'em games are closer → higher C_c than heavy-favorite games."""
+        from api.real_score import closeness_coefficient, _make_rng
+        rng_pk = _make_rng(0, 222, seed_date="2026-03-07")
+        rng_bl = _make_rng(0, 222, seed_date="2026-03-07")
+        c_pickem  = closeness_coefficient(0,  222, _make_rng(0,  222, seed_date="2026-03-07"))
+        c_blowout = closeness_coefficient(18, 222, _make_rng(18, 222, seed_date="2026-03-07"))
+        assert c_pickem > c_blowout, (
+            f"Pick'em C_c={c_pickem:.3f} should exceed blowout C_c={c_blowout:.3f}"
+        )
+
+    def test_clutch_coefficient_bounds(self):
+        """C_k must always be in [0.9, 1.8]."""
+        from api.real_score import clutch_coefficient, _make_rng
+        for spread, usage, variance in [(0, 1.0, 0.2), (10, 0.6, 0.1), (20, 0.4, 0.05)]:
+            rng = _make_rng(spread, 222, seed_date="2026-03-07")
+            c_k = clutch_coefficient(spread, 222, usage, variance, rng)
+            assert 0.9 <= c_k <= 1.8, f"C_k={c_k} out of bounds"
+
+    def test_clutch_higher_for_high_usage_in_close_game(self):
+        """High-usage star in pick'em game should get higher C_k than bench player in blowout."""
+        from api.real_score import clutch_coefficient, _make_rng
+        c_star  = clutch_coefficient(0,  222, usage_rate=2.0, player_variance=0.4,
+                                     rng=_make_rng(0,  222, seed_date="2026-03-07"))
+        c_bench = clutch_coefficient(18, 222, usage_rate=0.5, player_variance=0.0,
+                                     rng=_make_rng(18, 222, seed_date="2026-03-07"))
+        assert c_star > c_bench
+
+    def test_momentum_bonus_scales_with_variance(self):
+        """Higher variance → higher M_m (streaky players score more Real Score)."""
+        from api.real_score import momentum_bonus
+        assert momentum_bonus(0.0) == 1.0      # perfectly consistent
+        assert momentum_bonus(0.5) == 1.25     # maximum streakiness
+        assert momentum_bonus(0.25) == pytest.approx(1.125, abs=0.01)
+
+    def test_momentum_bonus_clamps_at_ceiling(self):
+        """M_m must not exceed 1.25 even for variance > 0.5."""
+        from api.real_score import momentum_bonus
+        assert momentum_bonus(1.0) == 1.25  # clamped at 0.5 internally
+        assert momentum_bonus(99)  == 1.25
+
+    def test_real_score_projection_positive(self):
+        """Real Score must be positive for positive base score."""
+        from api.real_score import real_score_projection, _make_rng
+        rng = _make_rng(5, 222, seed_date="2026-03-07")
+        rs, meta = real_score_projection(5.0, spread=5, total=222,
+                                         usage_rate=1.0, player_variance=0.2, rng=rng)
+        assert rs > 0
+        assert "c_closeness" in meta
+        assert "c_clutch" in meta
+        assert "m_momentum" in meta
+        assert "composite_mult" in meta
+
+    def test_real_score_deterministic_same_rng(self):
+        """Same seed → same Real Score (cache stability guarantee)."""
+        from api.real_score import real_score_projection, _make_rng
+        rng1 = _make_rng(5, 222, seed_date="2026-03-07")
+        rng2 = _make_rng(5, 222, seed_date="2026-03-07")
+        rs1, _ = real_score_projection(5.0, 5, 222, 1.0, 0.2, rng=rng1)
+        rs2, _ = real_score_projection(5.0, 5, 222, 1.0, 0.2, rng=rng2)
+        assert rs1 == rs2, "Real Score not deterministic for same seed"
+
+    def test_real_score_scales_with_base(self):
+        """Doubling s_base should roughly double the Real Score."""
+        from api.real_score import real_score_projection, _make_rng
+        rng_lo = _make_rng(5, 222, seed_date="2026-03-07")
+        rng_hi = _make_rng(5, 222, seed_date="2026-03-07")
+        rs_lo, _ = real_score_projection(3.0, 5, 222, 1.0, 0.2, rng=rng_lo)
+        rs_hi, _ = real_score_projection(6.0, 5, 222, 1.0, 0.2, rng=rng_hi)
+        ratio = rs_hi / rs_lo
+        assert 1.9 <= ratio <= 2.1, f"Doubling base gave ratio {ratio:.2f}, expected ~2.0"
+
+
+# ---------------------------------------------------------------------------
+# 10. MILP Lineup Optimizer — asset_optimizer.py
+# ---------------------------------------------------------------------------
+
+class TestAssetOptimizer:
+    """
+    optimize_lineup() is the MILP slot-assignment engine. Tests cover:
+      - Correct number of players returned
+      - Slot labels applied (2.0x best → 1.2x worst)
+      - Fallback works when fewer candidates than n
+      - Higher-rating player gets the higher slot
+      - Team constraint (max_per_team) is respected
+    """
+
+    def _make_players(self, n, base_rating=4.0, same_team=False):
+        teams = ["LAL", "BOS", "MIL", "PHX", "DEN", "UTA", "GSW", "MEM"]
+        return [
+            {
+                "name": f"Player{i}",
+                "team": "LAL" if same_team else teams[i % len(teams)],
+                "pos": ["PG", "SG", "SF", "PF", "C"][i % 5],
+                "rating": base_rating - i * 0.1,
+                "est_mult": 1.5 - i * 0.05,
+                "chalk_ev": (base_rating - i * 0.1) * (1.6 + 1.5 - i * 0.05),
+                "moonshot_ev": 0,
+            }
+            for i in range(n)
+        ]
+
+    def test_returns_exactly_n_players(self):
+        from api.asset_optimizer import optimize_lineup
+        players = self._make_players(10)
+        result = optimize_lineup(players, n=5)
+        assert len(result) == 5
+
+    def test_all_players_have_slot_labels(self):
+        from api.asset_optimizer import optimize_lineup, SLOT_LABELS
+        result = optimize_lineup(self._make_players(8), n=5)
+        for p in result:
+            assert p.get("slot") in SLOT_LABELS, f"Bad slot: {p.get('slot')}"
+
+    def test_slot_labels_are_unique(self):
+        """Each slot can only be assigned once."""
+        from api.asset_optimizer import optimize_lineup
+        result = optimize_lineup(self._make_players(8), n=5)
+        slots = [p["slot"] for p in result]
+        assert len(slots) == len(set(slots)), f"Duplicate slots: {slots}"
+
+    def test_fallback_with_fewer_candidates_than_n(self):
+        """If fewer than n candidates exist, return all of them (no crash)."""
+        from api.asset_optimizer import optimize_lineup
+        players = self._make_players(3)
+        result = optimize_lineup(players, n=5)
+        assert len(result) == 3
+        for p in result:
+            assert "slot" in p
+
+    def test_fallback_sort_greedy(self):
+        """_fallback_sort must rank by sort_key descending."""
+        from api.asset_optimizer import _fallback_sort
+        players = [
+            {"name": "A", "chalk_ev": 10.0, "team": "LAL", "pos": "PG"},
+            {"name": "B", "chalk_ev": 8.0,  "team": "BOS", "pos": "SG"},
+            {"name": "C", "chalk_ev": 6.0,  "team": "MIL", "pos": "SF"},
+        ]
+        result = _fallback_sort(players, n=3, sort_key="chalk_ev")
+        assert result[0]["name"] == "A"
+        assert result[0]["slot"] == "2.0x"
+
+    def test_max_per_team_constraint(self):
+        """max_per_team=2 must prevent more than 2 players from the same team."""
+        from api.asset_optimizer import optimize_lineup
+        # 3 teams × 4 players each = 12 players. n=5, max_per_team=2 → max 6 slots
+        # available across teams, so MILP is feasible and must respect the constraint.
+        teams = ["LAL", "BOS", "MIL"]
+        players = [
+            {
+                "name": f"Player{t}{i}",
+                "team": t,
+                "pos": ["PG", "SG", "SF", "PF"][i],
+                "rating": 4.0 - idx * 0.05,
+                "est_mult": 1.5,
+                "chalk_ev": 10.0 - idx * 0.1,
+                "moonshot_ev": 0,
+            }
+            for idx, (t, i) in enumerate(
+                [(t, i) for t in teams for i in range(4)]
+            )
+        ]
+        result = optimize_lineup(players, n=5, max_per_team=2)
+        for team in teams:
+            count = sum(1 for p in result if p.get("team") == team)
+            assert count <= 2, f"max_per_team=2 violated: {count} {team} players in lineup"
+
+    def test_empty_projections_returns_empty(self):
+        from api.asset_optimizer import optimize_lineup
+        result = optimize_lineup([], n=5)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# 11. Config coverage — new lineup/line keys are readable via _cfg()
+# ---------------------------------------------------------------------------
+
+class TestConfigCoverage:
+    """
+    After Phase B, all major model floors live in model-config.json.
+    These tests ensure the keys are present and return the expected defaults
+    via the _cfg() helper. Changing any of these values in the JSON should
+    be immediately reflected here (i.e. this test would need to be updated
+    if Ben changes a value, which is the correct behavior).
+    """
+
+    def test_chalk_rating_floor_readable(self):
+        from api.index import _cfg
+        val = _cfg("lineup.chalk_rating_floor", None)
+        assert val == 2.8, f"Expected 2.8, got {val}"
+
+    def test_game_chalk_rating_floor_readable(self):
+        from api.index import _cfg
+        val = _cfg("lineup.game_chalk_rating_floor", None)
+        assert val == 3.5, f"Expected 3.5, got {val}"
+
+    def test_avg_slot_multiplier_readable(self):
+        from api.index import _cfg
+        val = _cfg("lineup.avg_slot_multiplier", None)
+        assert val == 1.6, f"Expected 1.6, got {val}"
+
+    def test_slot_multipliers_readable(self):
+        from api.index import _cfg
+        val = _cfg("lineup.slot_multipliers", None)
+        assert val == [2.0, 1.8, 1.6, 1.4, 1.2], f"Unexpected: {val}"
+
+    def test_moonshot_min_rating_floor_readable(self):
+        from api.index import _cfg
+        val = _cfg("moonshot.min_rating_floor", None)
+        assert val == 2.0, f"Expected 2.0, got {val}"
+
+    def test_line_min_confidence_readable(self):
+        from api.index import _cfg
+        val = _cfg("line.min_confidence", None)
+        assert val == 50, f"Expected 50, got {val}"
+
+    def test_cfg_fallback_for_missing_key(self):
+        """_cfg must return the fallback value for a key that doesn't exist."""
+        from api.index import _cfg
+        assert _cfg("nonexistent.key.deep", "FALLBACK") == "FALLBACK"
+
+    def test_cfg_nested_dot_notation(self):
+        """_cfg must resolve arbitrary depth dot-notation keys."""
+        from api.index import _cfg
+        # card_boost.ceiling is an existing 3rd-level key
+        val = _cfg("card_boost.ceiling", None)
+        assert val == 3.0, f"Expected 3.0, got {val}"
+
+
+# ---------------------------------------------------------------------------
+# 12. project_player contract — output shape regression guard
+# ---------------------------------------------------------------------------
+
+class TestProjectPlayerContract:
+    """
+    project_player() is the core projection function. After _normalize_player()
+    wraps it, the frontend is insulated — but project_player() itself must still
+    produce valid input for the normalizer. These tests ensure it doesn't return
+    None for valid players and that the shape is stable.
+    """
+
+    def _make_pinfo(self, **kwargs):
+        base = {
+            "id": "test-123", "name": "Test Player", "pos": "SG",
+            "injury_status": "", "is_out": False,
+        }
+        base.update(kwargs)
+        return base
+
+    def _make_stats(self, **kwargs):
+        # Keys match what project_player reads: "min", "pts", "reb", "ast", etc.
+        base = {
+            "min": 28.0, "pts": 18.0, "reb": 4.0, "ast": 3.5,
+            "stl": 1.0,  "blk": 0.5,  "tov": 2.0,
+            "season_pts": 18.0, "recent_pts": 20.0,
+            "season_reb": 4.0,  "recent_reb": 4.5,
+            "season_ast": 3.5,  "recent_ast": 4.0,
+            "season_stl": 1.0,  "recent_stl": 1.1,
+            "season_blk": 0.5,  "recent_blk": 0.6,
+            "season_min": 28.0, "recent_min": 28.0,
+            "usage_trend": 0.0, "opp_def_rating": 112.0,
+            "home_away": 1.0, "ast_rate": 0.18, "def_rate": 0.04,
+            "pts_per_min": 0.64,
+        }
+        base.update(kwargs)
+        return base
+
+    def test_valid_player_returns_dict(self):
+        """project_player must return a dict (not None) for a healthy player."""
+        from api.index import project_player
+        result = project_player(
+            self._make_pinfo(), self._make_stats(),
+            spread=3.0, total=222.0, side="home", team_abbr="BOS"
+        )
+        assert result is not None
+        assert isinstance(result, dict)
+
+    def test_out_player_returns_none(self):
+        """project_player must return None for a player flagged is_out."""
+        from api.index import project_player
+        result = project_player(
+            self._make_pinfo(is_out=True), self._make_stats(),
+            spread=3.0, total=222.0, side="home", team_abbr="BOS"
+        )
+        assert result is None
+
+    def test_output_has_rating_and_est_mult(self):
+        """Both rating and est_mult must be present and numeric."""
+        from api.index import project_player
+        result = project_player(
+            self._make_pinfo(), self._make_stats(),
+            spread=0, total=210, side="away", team_abbr="MEM"
+        )
+        assert result is not None
+        assert isinstance(result.get("rating"), (int, float))
+        assert isinstance(result.get("est_mult"), (int, float))
+        assert result["rating"] >= 0
+        assert result["est_mult"] >= 0
+
+    def test_output_has_stat_fields(self):
+        """All projected stat fields (pts, reb, ast, stl, blk, tov) must be present."""
+        from api.index import project_player
+        result = project_player(
+            self._make_pinfo(), self._make_stats(),
+            spread=5, total=230, side="home", team_abbr="DEN"
+        )
+        assert result is not None
+        for field in ["pts", "reb", "ast", "stl", "blk", "tov", "predMin"]:
+            assert field in result, f"Missing stat field: {field}"
+            assert isinstance(result[field], (int, float))
+
+    def test_normalizer_accepts_project_player_output(self):
+        """_normalize_player must not raise when given real project_player output."""
+        from api.index import project_player, _normalize_player
+        raw = project_player(
+            self._make_pinfo(), self._make_stats(),
+            spread=3, total=220, side="home", team_abbr="GSW"
+        )
+        assert raw is not None
+        normalized = _normalize_player(raw)
+        # chalk_ev_capped must be gone
+        assert "chalk_ev_capped" not in normalized
+        # All required fields must be present and have correct types
+        assert isinstance(normalized["rating"], float)
+        assert isinstance(normalized["predMin"], float)
+        assert isinstance(normalized["est_mult"], float)
+
+
+# ---------------------------------------------------------------------------
+# 13. Line engine helpers — pure function tests (no Claude API calls)
+# ---------------------------------------------------------------------------
+
+class TestLineEngineHelpers:
+    """
+    Tests for line_engine.py helper functions that have no external deps.
+    Claude API calls are not tested here — only the pure data-transform layer.
+    """
+
+    def test_game_lookup_home_team(self):
+        """Home team lookup returns opponent (away abbr) and correct total."""
+        from api.line_engine import _game_lookup_from_games
+        games = [{
+            "home": {"abbr": "BOS"}, "away": {"abbr": "MIA"},
+            "total": 215.5, "spread": -5.5,
+            "home_b2b": False, "away_b2b": True,
+        }]
+        lookup = _game_lookup_from_games(games)
+        assert "BOS" in lookup
+        assert lookup["BOS"]["opponent"] == "MIA"
+        assert lookup["BOS"]["total"] == 215.5
+        assert lookup["BOS"]["spread"] == -5.5
+
+    def test_game_lookup_away_team(self):
+        """Away team lookup returns home abbr as opponent."""
+        from api.line_engine import _game_lookup_from_games
+        games = [{
+            "home": {"abbr": "BOS"}, "away": {"abbr": "MIA"},
+            "total": 215.5, "spread": -5.5,
+            "home_b2b": False, "away_b2b": True,
+        }]
+        lookup = _game_lookup_from_games(games)
+        assert lookup["MIA"]["opponent"] == "BOS"
+
+    def test_game_lookup_b2b_flags(self):
+        """B2B flags must be attributed to the correct team."""
+        from api.line_engine import _game_lookup_from_games
+        games = [{
+            "home": {"abbr": "LAL"}, "away": {"abbr": "GSW"},
+            "total": 228, "spread": 2.0,
+            "home_b2b": True, "away_b2b": False,
+        }]
+        lookup = _game_lookup_from_games(games)
+        # Home B2B — away team sees home is on B2B (opp_b2b)
+        assert lookup["GSW"]["opp_b2b"] is True
+        # Away B2B — home team sees away is on B2B
+        assert lookup["LAL"]["opp_b2b"] is False
+
+    def test_game_lookup_multiple_games(self):
+        """Lookup must cover all teams across multiple games."""
+        from api.line_engine import _game_lookup_from_games
+        games = [
+            {"home": {"abbr": "A"}, "away": {"abbr": "B"},
+             "total": 220, "spread": 0, "home_b2b": False, "away_b2b": False},
+            {"home": {"abbr": "C"}, "away": {"abbr": "D"},
+             "total": 230, "spread": 3, "home_b2b": False, "away_b2b": False},
+        ]
+        lookup = _game_lookup_from_games(games)
+        assert set(lookup.keys()) == {"A", "B", "C", "D"}
+
+    def test_game_lookup_empty_games(self):
+        """Empty games list must return empty lookup without raising."""
+        from api.line_engine import _game_lookup_from_games
+        assert _game_lookup_from_games([]) == {}
+
+
+# ---------------------------------------------------------------------------
+# 14. JS contract guard — normalizer integration visible in API shape
+# ---------------------------------------------------------------------------
+
+class TestJSContractGuard:
+    """
+    Regression guard: ensures the frontend null guards added in Phase C
+    are still present and that the contract normalizer functions exist
+    in the backend codebase.
+    """
+
+    @pytest.fixture(scope="class")
+    def script_source(self):
+        html = (ROOT / "index.html").read_text()
+        start = html.rfind("<script>")
+        end   = html.rfind("</script>")
+        assert start != -1 and end != -1
+        return html[start:end]
+
+    def test_optional_chaining_on_lineups_chalk(self, script_source):
+        """Both lineups?.chalk? guards must be present after Phase C fix."""
+        assert "lineups?.chalk?.length" in script_source, (
+            "Missing optional-chain null guard on lineups.chalk — "
+            "cold-start locked response will crash the app"
+        )
+
+    def test_parse_float_line_has_fallback(self, script_source):
+        """parseFloat(pick.line) must have a || 0 fallback to prevent NaN."""
+        assert "parseFloat(pick.line) || 0" in script_source, (
+            "parseFloat(pick.line) without || 0 — NaN will propagate to live tracker"
+        )
+
+    def test_edge_nullish_coalescing(self, script_source):
+        """pick.edge must use ?? 0 to handle undefined edge field."""
+        assert "pick.edge ?? 0" in script_source, (
+            "pick.edge without ?? 0 — undefined edge renders as 'NaN' in pick card"
+        )
+
+    def test_normalize_player_function_exists_in_backend(self):
+        """_normalize_player must be importable from api.index."""
+        from api.index import _normalize_player
+        assert callable(_normalize_player)
+
+    def test_normalize_line_pick_function_exists_in_backend(self):
+        """_normalize_line_pick must be importable from api.index."""
+        from api.index import _normalize_line_pick
+        assert callable(_normalize_line_pick)

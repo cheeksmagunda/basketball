@@ -194,9 +194,19 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":20, "min_card_boost":1.0, "dev_team_boost":1.25,
-        "card_boost_weight":2.0, "minutes_weight":1.0,
+        "min_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "dev_team_boost":1.25, "card_boost_weight":2.0, "minutes_weight":1.0,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
+    },
+    "lineup": {
+        "chalk_rating_floor": 2.8,
+        "game_chalk_rating_floor": 3.5,
+        "avg_slot_multiplier": 1.6,
+        "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
+    },
+    "line": {
+        "min_confidence": 50,
+        "min_edge_pct": 3.0,
     },
 }
 
@@ -1355,7 +1365,7 @@ _LINE_PICK_CONTRACT_FIELDS = {
 def _normalize_line_pick(p: dict) -> dict:
     """Stable frontend contract for line pick objects.
     Guarantees all required fields are present with correct types."""
-    if not p or not isinstance(p, dict):
+    if p is None or not isinstance(p, dict):
         return {}
     base = {
         "player_name":     p.get("player_name", ""),
@@ -1370,7 +1380,7 @@ def _normalize_line_pick(p: dict) -> dict:
         "confidence":      int(p.get("confidence") or 0),
         "narrative":       p.get("narrative", ""),
         "signals":         p.get("signals") or [],
-        "result":          p.get("result", "pending"),
+        "result":          p.get("result") or "pending",
         "actual_stat":     p.get("actual_stat"),
         "line_updated_at": p.get("line_updated_at"),
         "odds_over":       p.get("odds_over"),
