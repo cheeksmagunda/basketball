@@ -2737,7 +2737,7 @@ async function initLabPage() {
     document.getElementById('labLoading').style.display = 'none';
 
     if (status.locked) {
-      showLabLocked(status);
+      await showLabLocked(status);
     } else {
       await showLabUnlocked(status);
     }
