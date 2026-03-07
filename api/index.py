@@ -3246,37 +3246,43 @@ async def lab_status():
     last_change = (cfg.get("changelog") or [{}])[-1]
 
     if all_final:
-        # Unlocked: all started games are done (or genuine no-game day)
+        # All started games are done. Check if more games are scheduled today.
         next_lock = None
+        upcoming = 0
         if draftable:
             lock_buf = _cfg("projection.lock_buffer_minutes", 5)
             ns = min(g["startTime"] for g in draftable if g.get("startTime"))
             gs = datetime.fromisoformat(ns.replace("Z", "+00:00"))
             next_lock = (gs - timedelta(minutes=lock_buf)).isoformat()
+            upcoming = len(draftable)
+        reason = "All games final" if not upcoming else f"Break — {upcoming} game{'s' if upcoming != 1 else ''} later today"
         return {
             "locked": False,
-            "reason": "All games final",
+            "reason": reason,
             "current_config_version": cfg_version,
-            "games_remaining": 0,
+            "games_remaining": upcoming,
             "games_final": finals,
             "next_lock_time": next_lock,
         }
     elif slate_locked:
-        # Estimate unlock: latest non-final game start + 2.5h.
-        # Using earliest start produced times already in the past (e.g. 6pm+2.5h=8:30pm
-        # shown at 9pm). Use the latest remaining game's start instead.
+        # Total remaining = all games on slate minus finals (includes in-progress + scheduled).
+        # Showing only in-progress games was misleading (e.g. "1 remaining" when 5 more scheduled).
+        total_remaining = len(games) - finals
+
+        # Estimate unlock from the LAST game of the day, not the last in-progress game.
+        # Using latest_remaining_start showed 4:30 PM when the real unlock was 10 PM.
         est_unlock = None
-        anchor = latest_remaining_start or earliest
-        if anchor:
+        latest_start = max(start_times) if start_times else earliest
+        if latest_start:
             try:
-                gs = datetime.fromisoformat(anchor.replace("Z", "+00:00"))
+                gs = datetime.fromisoformat(latest_start.replace("Z", "+00:00"))
                 est_unlock = (gs + timedelta(hours=2, minutes=30)).isoformat()
             except Exception: pass
         return {
             "locked": True,
-            "reason": f"Slate in progress — {remaining} game{'s' if remaining != 1 else ''} remaining",
+            "reason": f"Slate in progress — {total_remaining} game{'s' if total_remaining != 1 else ''} remaining",
             "current_config_version": cfg_version,
-            "games_remaining": remaining,
+            "games_remaining": total_remaining,
             "games_final": finals,
             "estimated_unlock": est_unlock,
         }
