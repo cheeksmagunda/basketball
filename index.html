@@ -2084,6 +2084,8 @@ async function _handleBenUpload(file, type, source) {
       _markDone('benUploadRSBtn', '✓ Real Scores');
       _markDone('benBannerRSBtn', '✓ Real Scores');
       _checkBannerDone();
+      // Persist upload state so banner stays correct across tab switches + re-init
+      { const _lsKey = 'benUploads_' + _etToday(); const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
 
       // Pull the audit that save-actuals auto-generated (predictions vs actuals)
       let auditStr = '';
@@ -2133,6 +2135,8 @@ async function _handleBenUpload(file, type, source) {
       _markDone2('benUploadWinBtn', '✓ Top Drafts');
       _markDone2('benBannerWinBtn', '✓ Top Drafts');
       _checkBannerDone();
+      // Persist upload state so banner stays correct across tab switches + re-init
+      { const _lsKey = 'benUploads_' + _etToday(); const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       const winnerStr = leaderboardPlayers.length
         ? leaderboardPlayers.slice(0,6).map(p => `${p.player_name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')
         : `${data.players.length} entries parsed`;
@@ -2726,15 +2730,29 @@ async function showLabUnlocked(status) {
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
 
-  // Show upload banner only if today's actuals haven't been uploaded yet.
-  // Check log directly (has_actuals) as the reliable signal — briefing only
-  // includes dates with paired predictions+actuals, which can miss today if
-  // predictions weren't committed to GitHub.
+  // Show upload banner until BOTH Real Scores + Top Drafts are uploaded.
+  // Use localStorage (keyed by ET date) to track per-type state — survives tab
+  // switches and re-initialisation within the same day.
+  // Fallback: if localStorage has no flags yet AND actuals exist (prior session
+  // before this fix, or another device), keep banner hidden (legacy behaviour).
   const _ub = document.getElementById('benUploadBanner');
   if (_ub) {
     const _hasActualsToday = _todayLog?.has_actuals === true
       || LAB.briefing?.latest_slate?.date === _etToday();
-    _ub.style.display = _hasActualsToday ? 'none' : 'block';
+    const _todayUL = _etToday();
+    const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _todayUL) || '{}');
+    const _bothDone = (_ulFlags.real_scores && _ulFlags.top_drafts)
+      || (!_ulFlags.real_scores && !_ulFlags.top_drafts && _hasActualsToday);
+    _ub.style.display = _bothDone ? 'none' : 'block';
+    // Restore green/disabled state for any already-completed button
+    const _restoreBtn = (id, label) => {
+      const b = document.getElementById(id);
+      if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)';
+               b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)';
+               b.disabled = true; }
+    };
+    if (_ulFlags.real_scores) _restoreBtn('benBannerRSBtn',  '✓ Real Scores');
+    if (_ulFlags.top_drafts)  _restoreBtn('benBannerWinBtn', '✓ Top Drafts');
   }
   // Also trigger EOD chat bubble + hindsight once games are actually final
   if (LAB.messages.filter(m => !m.hidden).length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
