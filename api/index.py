@@ -2910,124 +2910,108 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
 
 @app.get("/api/auto-resolve-line")
 async def auto_resolve_line():
-    """Auto-resolve today's pending line pick when all games are final.
-    Fetches the player's actual stat from ESPN boxscore and marks hit/miss."""
+    """Auto-resolve today's line picks independently as each game finishes.
+    Checks BOTH over and under picks — resolves whichever game is final,
+    even if the other game is still in progress. Runs on cron every 15 min."""
     today = _et_date().isoformat()
     csv_path  = f"data/lines/{today}.csv"
     json_path = f"data/lines/{today}_pick.json"
 
-    existing, _ = _github_get_file(csv_path)
-    if not existing:
+    # JSON is the source of truth for both picks
+    pick_data_raw, _ = _github_get_file(json_path)
+    if not pick_data_raw:
         return {"status": "no_pick"}
-
-    rows = _parse_csv(existing, LINE_FIELDS)
-    if not rows:
-        return {"status": "no_pick"}
-
-    row = rows[0]
-    if row.get("result") and row["result"] not in ("pending", ""):
-        # Already resolved in CSV. Backfill _pick.json if it's missing the result
-        # (picks resolved before the JSON-update fix was deployed won't have it).
-        try:
-            pick_data_raw, _ = _github_get_file(json_path)
-            if pick_data_raw:
-                pick_data = json.loads(pick_data_raw)
-                direction = row.get("direction", "over")
-                dir_key   = f"{direction}_pick"
-                actual_f  = _safe_float(row.get("actual_stat", 0))
-                changed   = False
-                # Backfill primary direction
-                if pick_data.get(dir_key) and not pick_data[dir_key].get("result"):
-                    pick_data[dir_key]["result"]      = row["result"]
-                    pick_data[dir_key]["actual_stat"] = row.get("actual_stat", "")
-                    changed = True
-                # Also backfill the other-direction pick if it's the same player
-                other_dir = "under" if direction == "over" else "over"
-                other_key = f"{other_dir}_pick"
-                other = pick_data.get(other_key)
-                if other and isinstance(other, dict) and other.get("player_name") and not other.get("result"):
-                    if other.get("player_name", "").lower() == row.get("player_name", "").lower():
-                        other_line = _safe_float(other.get("line", 0))
-                        other_res  = "hit" if (actual_f > other_line if other_dir == "over" else actual_f < other_line) else "miss"
-                        other["result"]      = other_res
-                        other["actual_stat"] = str(actual_f)
-                        pick_data[other_key] = other
-                        changed = True
-                if changed:
-                    _github_write_file(json_path, json.dumps(pick_data),
-                                       f"backfill resolve json {today}")
-                    try:
-                        lc = _cp("line_v1")
-                        if lc.exists(): lc.unlink()
-                    except Exception: pass
-        except Exception as _e:
-            print(f"[auto-resolve] backfill err: {_e}")
-        return {"status": "already_resolved", "result": row["result"],
-                "actual_stat": _safe_float(row.get("actual_stat", 0))}
-
-    # No all-games-final gate. _fetch_player_final_stat only reads completed ESPN
-    # games, so it returns None while the pick's game is live and the real value
-    # once that specific game finishes (other games may still be in progress).
-
-    # Fetch the player's actual stat from ESPN boxscore
-    player_name = row.get("player_name", "")
-    stat_type   = row.get("stat_type", "points")
-    actual      = _fetch_player_final_stat(player_name, stat_type)
-    if actual is None:
-        return {"status": "game_not_final", "player": player_name}
-
-    direction = row.get("direction", "over")
-    line_val  = _safe_float(row.get("line", 0))
-    result    = "hit" if (actual > line_val if direction == "over" else actual < line_val) else "miss"
-
-    # Rewrite CSV with result
-    updated_row = dict(row)
-    updated_row["result"]      = result
-    updated_row["actual_stat"] = str(actual)
-    new_row = ",".join(_csv_escape(str(updated_row.get(k, ""))) for k in LINE_FIELDS)
-    csv_content = LINE_CSV_HEADER + "\n" + new_row + "\n"
-    _github_write_file(csv_path, csv_content, f"auto-resolve line {today}: {result} ({player_name} {actual} vs {line_val})")
-
-    # Also update the _pick.json so rotation logic in get_line_of_the_day can see the result
     try:
-        pick_data_raw, _ = _github_get_file(json_path)
-        if pick_data_raw:
-            pick_data = json.loads(pick_data_raw)
-            # Update the resolved direction's pick
-            dir_key = f"{direction}_pick"
-            if pick_data.get(dir_key):
-                pick_data[dir_key]["result"] = result
-                pick_data[dir_key]["actual_stat"] = actual
-            # Also resolve the other-direction pick — same player uses the same stat,
-            # different player requires a separate ESPN lookup.
-            other_dir = "under" if direction == "over" else "over"
-            other_key = f"{other_dir}_pick"
-            other = pick_data.get(other_key)
-            if other and isinstance(other, dict) and other.get("player_name") and not other.get("result"):
-                other_name = other.get("player_name", "")
-                other_line = _safe_float(other.get("line", 0))
-                if other_name.lower() == player_name.lower():
-                    other_actual = actual  # same player, same stat
-                else:
-                    other_actual = _fetch_player_final_stat(other_name, other.get("stat_type", stat_type))
-                if other_actual is not None:
-                    other_result = "hit" if (other_actual > other_line if other_dir == "over" else other_actual < other_line) else "miss"
-                    pick_data[other_key]["result"] = other_result
-                    pick_data[other_key]["actual_stat"] = other_actual
-            _github_write_file(json_path, json.dumps(pick_data),
-                               f"resolve line json {today}: {result} ({player_name})")
-    except Exception as e:
-        print(f"[auto-resolve] json update err: {e}")
+        pick_data = json.loads(pick_data_raw)
+    except Exception:
+        return {"status": "no_pick"}
 
-    # Bust the line cache so the next /api/line-of-the-day returns the resolved/rotated pick
+    resolved_any = False
+    results = {}
+
+    for direction in ("over", "under"):
+        dir_key = f"{direction}_pick"
+        pick = pick_data.get(dir_key)
+        if not pick or not isinstance(pick, dict):
+            continue
+        if pick.get("result") and pick["result"] not in ("pending", ""):
+            results[direction] = {"status": "already_resolved", "result": pick["result"]}
+            continue
+
+        player_name = pick.get("player_name", "")
+        stat_type   = pick.get("stat_type", "points")
+        if not player_name:
+            continue
+
+        actual = _fetch_player_final_stat(player_name, stat_type)
+        if actual is None:
+            results[direction] = {"status": "game_not_final", "player": player_name}
+            continue
+
+        line_val = _safe_float(pick.get("line", 0))
+        result = "hit" if (actual > line_val if direction == "over" else actual < line_val) else "miss"
+
+        pick_data[dir_key]["result"]      = result
+        pick_data[dir_key]["actual_stat"] = actual
+        resolved_any = True
+        results[direction] = {"status": "resolved", "result": result,
+                              "actual_stat": actual, "player": player_name,
+                              "line": line_val}
+
+    if not resolved_any:
+        return {"status": "no_change", "details": results}
+
+    # Persist updated JSON
+    _github_write_file(json_path, json.dumps(pick_data),
+                       f"auto-resolve line {today}")
+
+    # Update CSV for the primary pick (first row matches primary direction)
+    csv_existing, _ = _github_get_file(csv_path)
+    if csv_existing:
+        rows = _parse_csv(csv_existing, LINE_FIELDS)
+        if rows:
+            row = rows[0]
+            csv_dir = row.get("direction", "over")
+            dir_key = f"{csv_dir}_pick"
+            pick = pick_data.get(dir_key, {})
+            if pick.get("result") and pick["result"] not in ("pending", ""):
+                updated = dict(row)
+                updated["result"]      = pick["result"]
+                updated["actual_stat"] = str(pick.get("actual_stat", ""))
+                new_row = ",".join(_csv_escape(str(updated.get(k, ""))) for k in LINE_FIELDS)
+                _github_write_file(csv_path, LINE_CSV_HEADER + "\n" + new_row + "\n",
+                                   f"auto-resolve line csv {today}")
+
+    # Bust the line cache so /api/line-of-the-day sees the resolution and rotates
     try:
         line_cache = _cp("line_v1")
         if line_cache.exists():
             line_cache.unlink()
     except Exception: pass
 
-    return {"status": "resolved", "result": result, "actual_stat": actual,
-            "player": player_name, "line": line_val, "direction": direction}
+    # If BOTH picks are now resolved, pre-generate tomorrow's picks
+    over_done  = pick_data.get("over_pick", {}).get("result") not in (None, "", "pending")
+    under_done = pick_data.get("under_pick", {}).get("result") not in (None, "", "pending")
+    if over_done and under_done:
+        try:
+            tomorrow = _et_date() + timedelta(days=1)
+            tomorrow_str = tomorrow.isoformat()
+            tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
+            existing_tomorrow, _ = _github_get_file(tomorrow_json)
+            if not existing_tomorrow:
+                eng_result, err = await _run_line_engine_for_date(tomorrow)
+                if not err and eng_result and eng_result.get("pick"):
+                    saves = {
+                        "over_pick":  eng_result.get("over_pick"),
+                        "under_pick": eng_result.get("under_pick"),
+                    }
+                    _github_write_file(tomorrow_json, json.dumps(saves),
+                                       f"line picks for {tomorrow_str}")
+                    results["next_day"] = tomorrow_str
+        except Exception as e:
+            print(f"[auto-resolve] next-day generation err: {e}")
+
+    return {"status": "resolved", "details": results}
 
 
 @app.get("/api/line-history")

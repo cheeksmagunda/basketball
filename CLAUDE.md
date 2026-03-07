@@ -252,6 +252,7 @@ Note: `predictSubNav` and `lineSubNav` are now **inline elements** (not fixed/fl
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement |
 | `0 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync |
 | `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET window) |
+| `15,30,45 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends |
 
 ## Production Robustness Notes
 
