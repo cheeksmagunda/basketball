@@ -1673,6 +1673,33 @@ async def get_slate():
         _ls("slate_v5_locked", result)
     return result
 
+
+def _compute_game_picks(game):
+    """Compute game-specific projections and cache under both regular and lock keys.
+    Returns the result dict, or None if projections unavailable. Skips if already cached."""
+    gid = game["gameId"]
+    existing = _lg(f"picks_locked_{gid}") or _cg(f"picks_{gid}")
+    if existing:
+        return existing
+    try:
+        projections = _run_game(game)
+        if not projections:
+            return None
+        chalk, upside = _build_game_lineups(projections, game)
+        result = {
+            "date": _et_date().isoformat(), "game": game,
+            "gameScript": _game_script_label(game.get("total")),
+            "lineups": {"chalk": chalk, "upside": upside},
+            "locked": True, "injuries": _get_injuries(game),
+        }
+        _cs(f"picks_{gid}", result)
+        _ls(f"picks_locked_{gid}", result)
+        return result
+    except Exception as e:
+        print(f"[auto-lock] game {gid} picks err: {e}")
+        return None
+
+
 @app.get("/api/picks")
 async def get_picks(gameId: str = Query(...)):
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
@@ -1695,7 +1722,10 @@ async def get_picks(gameId: str = Query(...)):
             reg_cached["locked"] = True
             _ls(lock_key, reg_cached)
             return reg_cached
-        # No cache on this instance after lock — return locked empty
+        # No cache on this instance after lock — auto-compute so user sees picks
+        auto = _compute_game_picks(game)
+        if auto:
+            return auto
         return {"date": _et_date().isoformat(), "game": game,
                 "gameScript": None,
                 "lineups": {"chalk": [], "upside": []},
@@ -1729,16 +1759,19 @@ async def save_predictions():
     if cached_slate and cached_slate.get("lineups"):
         rows.extend(_predictions_to_csv(cached_slate["lineups"], "slate"))
 
-    # Gather per-game predictions from cache.
-    # Prefer explicit Game Analysis picks; fall back to slate projections built
-    # into lineups so per-game cards always appear in the Log tab.
+    # Gather per-game predictions. Prefer explicit Game Analysis picks (user-triggered),
+    # then lock cache, then raw slate projections. For locked games with no cache at all,
+    # auto-compute now so the log always has a full set of predictions.
     games = fetch_games()
+    locked_games_to_compute = []
     for g in games:
         gid = g["gameId"]
         label = g.get("label", f"game_{gid}")
-        cached_picks = _cg(f"picks_{gid}")
+        cached_picks = _cg(f"picks_{gid}") or _lg(f"picks_locked_{gid}")
         if cached_picks and cached_picks.get("lineups"):
             rows.extend(_predictions_to_csv(cached_picks["lineups"], label))
+        elif _is_locked(g.get("startTime", "")):
+            locked_games_to_compute.append(g)
         else:
             game_proj = _cg(f"game_proj_{gid}")
             if game_proj:
@@ -1747,6 +1780,21 @@ async def save_predictions():
                     rows.extend(_predictions_to_csv({"chalk": chalk, "upside": upside}, label))
                 except Exception as e:
                     print(f"save-predictions game lineup err {gid}: {e}")
+
+    # Auto-compute picks for locked games the user never manually analyzed.
+    # Run in parallel so this doesn't add significant latency per game.
+    if locked_games_to_compute:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_compute_game_picks, g): g for g in locked_games_to_compute}
+            for fut in as_completed(futures):
+                g = futures[fut]
+                label = g.get("label", f"game_{g['gameId']}")
+                try:
+                    result = fut.result()
+                    if result and result.get("lineups"):
+                        rows.extend(_predictions_to_csv(result["lineups"], label))
+                except Exception as e:
+                    print(f"save-predictions auto-lock {g['gameId']}: {e}")
 
     if not rows:
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
