@@ -2653,6 +2653,38 @@ async def resolve_line(payload: dict = Body(...)):
     new_row = ",".join(_csv_escape(str(updated_row.get(k, ""))) for k in fields_out)
     csv_content = LINE_CSV_HEADER + "\n" + new_row + "\n"
     _github_write_file(path, csv_content, f"line result for {date_str}: {result}")
+
+    # Also update the _pick.json so rotation logic sees the result
+    try:
+        json_p = f"data/lines/{date_str}_pick.json"
+        pick_raw, _ = _github_get_file(json_p)
+        if pick_raw:
+            pick_data = json.loads(pick_raw)
+            dir_key = f"{direction}_pick"
+            if pick_data.get(dir_key):
+                pick_data[dir_key]["result"] = result
+                pick_data[dir_key]["actual_stat"] = str(actual_f)
+            other_dir = "under" if direction == "over" else "over"
+            other_key = f"{other_dir}_pick"
+            other = pick_data.get(other_key)
+            player_name_r = row.get("player_name", "")
+            if other and other.get("player_name", "").lower() == player_name_r.lower():
+                other_line = _safe_float(other.get("line", 0))
+                other_res = "hit" if (actual_f > other_line if other_dir == "over" else actual_f < other_line) else "miss"
+                pick_data[other_key]["result"] = other_res
+                pick_data[other_key]["actual_stat"] = str(actual_f)
+            _github_write_file(json_p, json.dumps(pick_data),
+                               f"resolve line json {date_str}: {result}")
+    except Exception as e:
+        print(f"[resolve-line] json update err: {e}")
+
+    # Bust the line cache
+    try:
+        lc = _cp("line_v1")
+        if lc.exists():
+            lc.unlink()
+    except Exception: pass
+
     return {"status": "resolved", "result": result, "actual": actual_f}
 
 
@@ -2745,7 +2777,31 @@ async def auto_resolve_line():
     csv_content = LINE_CSV_HEADER + "\n" + new_row + "\n"
     _github_write_file(csv_path, csv_content, f"auto-resolve line {today}: {result} ({player_name} {actual} vs {line_val})")
 
-    # Also bust the line cache so the next /api/line-of-the-day returns the resolved pick
+    # Also update the _pick.json so rotation logic in get_line_of_the_day can see the result
+    try:
+        pick_data_raw, _ = _github_get_file(json_path)
+        if pick_data_raw:
+            pick_data = json.loads(pick_data_raw)
+            # Update the resolved direction's pick
+            dir_key = f"{direction}_pick"
+            if pick_data.get(dir_key):
+                pick_data[dir_key]["result"] = result
+                pick_data[dir_key]["actual_stat"] = actual
+            # If the other direction is the same player, resolve it too (same game/stat)
+            other_dir = "under" if direction == "over" else "over"
+            other_key = f"{other_dir}_pick"
+            other = pick_data.get(other_key)
+            if other and other.get("player_name", "").lower() == player_name.lower():
+                other_line = _safe_float(other.get("line", 0))
+                other_result = "hit" if (actual > other_line if other_dir == "over" else actual < other_line) else "miss"
+                pick_data[other_key]["result"] = other_result
+                pick_data[other_key]["actual_stat"] = actual
+            _github_write_file(json_path, json.dumps(pick_data),
+                               f"resolve line json {today}: {result} ({player_name})")
+    except Exception as e:
+        print(f"[auto-resolve] json update err: {e}")
+
+    # Bust the line cache so the next /api/line-of-the-day returns the resolved/rotated pick
     try:
         line_cache = _cp("line_v1")
         if line_cache.exists():
