@@ -685,7 +685,26 @@
       border: 1px solid rgba(212,166,64,0.3);
       border-radius: var(--r); padding: 16px 18px;
       position: relative; overflow: hidden;
+      transition: border-color 0.4s, box-shadow 0.4s;
     }
+    /* Live stat tracking */
+    .line-live-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .line-live-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .line-live-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 0.62rem; font-weight: 800;
+      letter-spacing: 0.1em; color: #22c55e; animation: livePulse 1.8s ease-in-out infinite; }
+    @keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .line-live-pace { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.03em; }
+    .line-live-progress-wrap { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .line-live-progress-bar { height: 100%; border-radius: 2px; transition: width 0.7s ease, background-color 0.4s; }
+    .line-live-labels { display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.6rem; color: var(--muted); }
+    .line-live-current { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 0.85rem; color: var(--text); }
+    /* Winning glow — direction-specific border + shadow */
+    .line-pick-card.live-winning-over {
+      border-color: rgba(212,166,64,0.55);
+      box-shadow: 0 0 22px rgba(212,166,64,0.28), inset 0 0 12px rgba(212,166,64,0.05); }
+    .line-pick-card.live-winning-under {
+      border-color: rgba(20,184,166,0.55);
+      box-shadow: 0 0 22px rgba(20,184,166,0.28), inset 0 0 12px rgba(20,184,166,0.05); }
     .line-pick-card::before {
       content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
       background: var(--line); box-shadow: 2px 0 12px var(--line-glow);
@@ -1289,6 +1308,12 @@ const LOG = {
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   closeLinePickModal();
+
+  // Live stat poll lifecycle: stop when leaving Line tab, restart when returning
+  if (tab !== 'line' && LINE_LIVE_POLL) {
+    clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
+  }
+
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
 
@@ -1308,6 +1333,10 @@ function switchTab(tab) {
   if (tab === 'log' && !LOG.selectedDate) initLogPage();
   if (tab === 'line') initLinePage();
   if (tab === 'lab')  initLabPage();
+  // Resume live poll on returning to Line tab if picks already loaded and no poll running
+  if (tab === 'line' && (LINE_OVER_PICK || LINE_UNDER_PICK) && !LINE_LIVE_POLL) {
+    _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+  }
 }
 
 // ── Predict sub-page routing ──
@@ -2128,6 +2157,7 @@ let LINE_DIR = 'under'; // active direction filter for line sub-nav
 let LINE_OVER_PICK  = null; // today's over pick
 let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
+let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
 
 async function _tryAutoResolveLine(pick) {
   if (LINE_RESOLVE_POLL) { clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; }
@@ -2157,6 +2187,62 @@ async function _tryAutoResolveLine(pick) {
       }, 5 * 60 * 1000);
     }
   } catch(e) { /* non-fatal */ }
+}
+
+async function _startLineLivePoll(overPick, underPick) {
+  if (LINE_LIVE_POLL) { clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null; }
+
+  async function _fetchLive(pick) {
+    if (!pick) return null;
+    const p = new URLSearchParams({ team: pick.team || '', stat_type: pick.stat_type || 'points',
+      player_name: pick.player_name || '' });
+    if (pick.player_id) p.set('player_id', pick.player_id);
+    try {
+      const r = await fetch('/api/line-live-stat?' + p);
+      return r.ok ? r.json() : null;
+    } catch(e) { return null; }
+  }
+
+  async function _poll() {
+    if (!document.getElementById('tab-line')?.classList.contains('active')) return;
+    // Deduplicate ESPN call if both picks are for the same team/game
+    const sameGame = overPick && underPick && overPick.team === underPick.team;
+    let overData, underData;
+    if (sameGame) {
+      overData = await _fetchLive(overPick);
+      underData = overData;
+    } else {
+      [overData, underData] = await Promise.all([_fetchLive(overPick), _fetchLive(underPick)]);
+    }
+
+    let anyLive = false;
+    if (overData?.status === 'live' && LINE_OVER_PICK) {
+      LINE_OVER_PICK = { ...LINE_OVER_PICK, _live: overData }; anyLive = true;
+    }
+    if (underData?.status === 'live' && LINE_UNDER_PICK) {
+      LINE_UNDER_PICK = { ...LINE_UNDER_PICK, _live: underData }; anyLive = true;
+    }
+
+    if (anyLive) {
+      const pick = LINE_DIR === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
+      const card = document.getElementById('linePickCard');
+      if (card && pick?._live) card.innerHTML = renderLinePickCard(pick, true);
+    }
+
+    // Stop when both games final; hand off to auto-resolve
+    const overDone = !overPick || ['final','no_game'].includes(overData?.status);
+    const underDone = !underPick || ['final','no_game'].includes(underData?.status);
+    if (overDone && underDone) {
+      clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
+      const activePick = LINE_DIR === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
+      if (activePick) _tryAutoResolveLine(activePick);
+    }
+  }
+
+  await _poll();
+  if (LINE_LIVE_POLL === null) { // only start interval if game still live after first poll
+    LINE_LIVE_POLL = setInterval(_poll, 30000);
+  }
 }
 
 async function initLinePage() {
@@ -2232,6 +2318,9 @@ async function initLinePage() {
     // Render whichever pick matches the active direction (default: under)
     switchLineDir(LINE_DIR);
 
+    // Start live stat tracking poll (no-op if games not yet started or already final)
+    _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+
     // Auto-save both picks
     try {
       await fetch('/api/save-line', {
@@ -2278,8 +2367,40 @@ function renderLinePickCard(pick, isPrimary) {
     `<span class="line-signal-chip">${s.type.replace(/_/g,' ')}</span>`
   ).join('');
 
+  // Live stat tracking section
+  let liveSection = '';
+  let winningClass = '';
+  if (pick._live?.status === 'live') {
+    const lv = pick._live;
+    const current = lv.stat_current ?? 0;
+    const lineVal = parseFloat(pick.line);
+    const isOver = dir === 'over';
+    const statLabel = (pick.stat_type || 'pts').toLowerCase();
+    const pct = Math.min(100, lineVal > 0 ? Math.round(current / lineVal * 100) : 0);
+    const winning = isOver
+      ? (lv.pace != null ? lv.pace >= lineVal : current >= lineVal)
+      : (lv.pace != null ? lv.pace <= lineVal : current < lineVal);
+    const barColor = winning ? (isOver ? 'var(--line)' : 'var(--lab)') : 'rgba(239,68,68,0.7)';
+    const periodStr = lv.period <= 4 ? `Q${lv.period}` : `OT${lv.period - 4}`;
+    winningClass = winning ? ` live-winning-${dir}` : '';
+    liveSection = `
+      <div class="line-live-section">
+        <div class="line-live-header">
+          <span class="line-live-badge">● LIVE ${periodStr} · ${lv.clock}</span>
+          ${lv.pace != null ? `<span class="line-live-pace">Pace: ~${lv.pace} ${statLabel}</span>` : ''}
+        </div>
+        <div class="line-live-progress-wrap">
+          <div class="line-live-progress-bar" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+        <div class="line-live-labels">
+          <span class="line-live-current">${current} ${statLabel}</span>
+          <span>Line: ${pick.line}</span>
+        </div>
+      </div>`;
+  }
+
   return `
-    <div class="line-pick-card">
+    <div class="line-pick-card${winningClass}">
       <div class="line-pick-header">
         <div>
           <div class="line-pick-name">${pick.player_name}</div>
@@ -2304,6 +2425,7 @@ function renderLinePickCard(pick, isPrimary) {
         </div>
       </div>
       ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
+      ${liveSection}
       <div class="line-narrative">${pick.narrative}</div>
       ${pick.line_updated_at ? (() => {
         const raw = pick.line_updated_at;
