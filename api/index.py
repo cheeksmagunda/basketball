@@ -1538,6 +1538,32 @@ async def get_games():
 @app.get("/api/slate")
 async def get_slate():
     games = fetch_games()
+
+    # Midnight rollover guard: if none of today's games have started yet but
+    # yesterday's games are still in progress, hold yesterday's locked slate.
+    # Handles the common case where a 10 PM ET tip-off runs past midnight and
+    # _et_date() has already advanced to the next day.
+    any_today_started = any(_is_completed(g.get("startTime", "")) for g in games)
+    if not any_today_started:
+        _, remaining_yesterday, _, _ = _all_games_final(games)
+        if remaining_yesterday > 0:
+            lock_cached = _lg("slate_v5_locked")
+            if lock_cached:
+                lock_cached["locked"] = True
+                lock_cached.setdefault("all_complete", False)
+                return lock_cached
+            try:
+                yesterday = (_et_date() - timedelta(days=1)).isoformat()
+                content, _ = _github_get_file(f"data/locks/{yesterday}_slate.json")
+                if content:
+                    gh = json.loads(content)
+                    gh["locked"] = True
+                    gh.setdefault("all_complete", False)
+                    return gh
+            except Exception:
+                pass
+            # No yesterday cache available — fall through to today's generation
+
     if not games:
         return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []},
                 "locked": False, "draftable_count": 0}
