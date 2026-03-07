@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "git diff HEAD~1 --name-only | grep -qvE '^(data/|.github/)' || exit 0",
+  "ignoreCommand": "git diff --quiet HEAD~1 HEAD -- . ':!data' ':!.github'",
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python", "config": { "maxDuration": 300 } },
     { "src": "index.html", "use": "@vercel/static" }
