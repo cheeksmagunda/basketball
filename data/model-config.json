@@ -1,7 +1,7 @@
 {
-  "version": 5,
-  "updated_at": "2026-03-06T14:00:00Z",
-  "updated_by": "march6-audit",
+  "version": 6,
+  "updated_at": "2026-03-07T00:00:00Z",
+  "updated_by": "production-hardening",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -137,9 +137,20 @@
     "WAS",
     "DAL"
   ],
+  "lineup": {
+    "chalk_rating_floor": 2.8,
+    "game_chalk_rating_floor": 3.5,
+    "avg_slot_multiplier": 1.6,
+    "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2]
+  },
+  "line": {
+    "min_confidence": 50,
+    "min_edge_pct": 3.0
+  },
   "moonshot": {
     "min_minutes_floor": 20,
     "min_card_boost": 1.0,
+    "min_rating_floor": 2.0,
     "dev_team_boost": 1.25,
     "card_boost_weight": 2.0,
     "minutes_weight": 1.0,
@@ -171,6 +182,11 @@
       "version": 5,
       "date": "2026-03-06",
       "change": "March 6 audit (Mar 5 results): chalk_boost_cap 1.0\u21921.5 (Bailey 187 drafts RS 5.9 +2.1x beat Wemby 1.4k drafts RS 7.1 +0.3x \u2014 cap was preventing high-boost role players from chalk); RotoWire check added to chalk lineup (fixes OUT/questionable players appearing in Starting 5)"
+    },
+    {
+      "version": 6,
+      "date": "2026-03-07",
+      "change": "Production hardening: added lineup.{chalk_rating_floor=2.8, game_chalk_rating_floor=3.5, avg_slot_multiplier=1.6, slot_multipliers}, line.{min_confidence=50, min_edge_pct=3.0}, moonshot.min_rating_floor=2.0. All lineup/line floors now tunable via Ben without code deploys. Added _normalize_player/_normalize_line_pick contract layer in api/index.py to decouple model internals from frontend."
     }
   ]
 }

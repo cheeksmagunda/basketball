@@ -36,6 +36,12 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")  # e.g. "cheeksmagunda/basketball"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# Startup env validation — warn on missing required vars (never crash; app degrades gracefully)
+_REQUIRED_ENV = ["GITHUB_TOKEN", "GITHUB_REPO", "ANTHROPIC_API_KEY"]
+_missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
+if _missing_env:
+    print(f"[WARN] Missing env vars: {_missing_env} — affected features will be degraded")
+
 def _github_get_file(path):
     """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
@@ -1300,10 +1306,86 @@ def _run_game(game):
     _cs(cache_key, out)
     return out
 
-CHALK_FLOOR = 2.8  # Minimum raw rating for Starting 5
+# ─────────────────────────────────────────────────────────────────────────────
+# RESPONSE CONTRACT NORMALIZERS
+# grep: _normalize_player, _normalize_line_pick
+# Stable frontend API contract. Model internals can change freely; only these
+# output shapes are guaranteed to the frontend. Apply at all lineup return points.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Internal-only fields never sent to the frontend
+_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared"}
+
+def _normalize_player(p: dict) -> dict:
+    """Stable frontend contract for player projection objects.
+    Model can add/remove internal fields freely.
+    Guarantees all required fields are present with correct types."""
+    base = {
+        "id":            p.get("id", ""),
+        "name":          p.get("name", ""),
+        "pos":           p.get("pos", ""),
+        "team":          p.get("team", ""),
+        "rating":        round(float(p.get("rating") or 0), 1),
+        "predMin":       round(float(p.get("predMin") or 0), 1),
+        "pts":           round(float(p.get("pts") or 0), 1),
+        "reb":           round(float(p.get("reb") or 0), 1),
+        "ast":           round(float(p.get("ast") or 0), 1),
+        "stl":           round(float(p.get("stl") or 0), 1),
+        "blk":           round(float(p.get("blk") or 0), 1),
+        "est_mult":      round(float(p.get("est_mult") or 0), 2),
+        "slot":          p.get("slot", "1.0x"),
+        "chalk_ev":      round(float(p.get("chalk_ev") or 0), 2),
+        "moonshot_ev":   round(float(p.get("moonshot_ev") or 0), 2),
+        "injury_status": p.get("injury_status", ""),
+        "_decline":      round(float(p.get("_decline") or 0), 2),
+    }
+    # Pass through extras (model fields, debug fields, trend stats) — strip internal-only
+    extras = {k: v for k, v in p.items()
+              if k not in base and k not in _PLAYER_INTERNAL_FIELDS}
+    return {**base, **extras}
+
+
+_LINE_PICK_CONTRACT_FIELDS = {
+    "player_name", "player_id", "team", "opponent", "direction", "line",
+    "stat_type", "projection", "edge", "confidence", "narrative", "signals",
+    "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
+    "books_consensus", "date",
+}
+
+def _normalize_line_pick(p: dict) -> dict:
+    """Stable frontend contract for line pick objects.
+    Guarantees all required fields are present with correct types."""
+    if not p or not isinstance(p, dict):
+        return {}
+    base = {
+        "player_name":     p.get("player_name", ""),
+        "player_id":       p.get("player_id", ""),
+        "team":            p.get("team", ""),
+        "opponent":        p.get("opponent", ""),
+        "direction":       p.get("direction", "over"),
+        "line":            float(p.get("line") or 0),
+        "stat_type":       p.get("stat_type", "points"),
+        "projection":      round(float(p.get("projection") or 0), 1),
+        "edge":            round(float(p.get("edge") or 0), 1),
+        "confidence":      int(p.get("confidence") or 0),
+        "narrative":       p.get("narrative", ""),
+        "signals":         p.get("signals") or [],
+        "result":          p.get("result", "pending"),
+        "actual_stat":     p.get("actual_stat"),
+        "line_updated_at": p.get("line_updated_at"),
+        "odds_over":       p.get("odds_over"),
+        "odds_under":      p.get("odds_under"),
+        "books_consensus": p.get("books_consensus"),
+        "date":            p.get("date", ""),
+    }
+    # Pass through any extra fields (e.g. _live tracker, future additions)
+    extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}
+    return {**base, **extras}
+
 
 def _build_lineups(projections):
-    avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
+    avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
+    chalk_floor = _cfg("lineup.chalk_rating_floor", 2.8)
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
     boost_cap = proj_cfg.get("chalk_boost_cap", 1.5)
 
@@ -1324,7 +1406,7 @@ def _build_lineups(projections):
     # RotoWire filter applied here too — chalk can't include OUT/questionable players.
     chalk_eligible = []
     for p in projections:
-        if p["rating"] < CHALK_FLOOR:
+        if p["rating"] < chalk_floor:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1382,7 +1464,7 @@ def _build_lineups(projections):
                 continue
 
         # Minimum rating floor — still need some production floor
-        if p["rating"] < 2.0:
+        if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
         # Development team bonus — tanking teams give predictable minutes
@@ -1412,7 +1494,7 @@ def _build_lineups(projections):
                              rating_key="rating", card_boost_key="est_mult",
                              max_per_team=0)
 
-    return chalk, upside
+    return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PER-GAME LINEUP BUILDER
@@ -1423,8 +1505,6 @@ def _build_lineups(projections):
 # - Stars are MORE important in single-game (smaller pool = stars stand out)
 # - Ownership is more concentrated, so contrarian plays matter more
 # ─────────────────────────────────────────────────────────────────────────────
-
-GAME_CHALK_FLOOR = 3.5  # Starting 5 floor for single-game
 
 def _apply_game_script(projections, game):
     """Re-score projections using game script weights. Returns new list (deep copies, no mutation)."""
@@ -1455,8 +1535,9 @@ def _build_game_lineups(projections, game):
     Starting 5: MILP-optimized with min 2 players per team.
     Moonshot: Next 5 players by the same chalk_ev ranking (no separate contrarian algo).
     """
+    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
     rescored = _apply_game_script(projections, game)
-    chalk_eligible = [p for p in rescored if p["rating"] >= GAME_CHALK_FLOOR]
+    chalk_eligible = [p for p in rescored if p["rating"] >= game_chalk_floor]
 
     chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
                             rating_key="rating", card_boost_key="est_mult")
@@ -1490,7 +1571,7 @@ def _build_game_lineups(projections, game):
             continue
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
-        if p["rating"] < 2.0:
+        if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
         is_dev = p.get("team", "") in dev_teams
@@ -1506,7 +1587,7 @@ def _build_game_lineups(projections, game):
     upside = optimize_lineup(moonshot_pool, n=5, min_per_team=2, sort_key="moonshot_ev",
                              rating_key="rating", card_boost_key="est_mult")
 
-    return chalk, upside
+    return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
 
 def _get_injuries(game):
     """Get list of OUT players for a game (from cached roster data)."""
@@ -2144,13 +2225,13 @@ async def hindsight(payload: dict = Body(...)):
     if not players:
         return JSONResponse({"error": "No players provided"}, status_code=400)
 
+    avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
     projections = []
     for p in players:
         rs = _safe_float(p.get("actual_rs"), 0)
         boost = _safe_float(p.get("actual_card_boost"), 0.3)
         if rs <= 0:
             continue
-        avg_slot = 1.6
         projections.append({
             "name": p.get("name", p.get("player_name", "")),
             "rating": rs,
@@ -2167,7 +2248,7 @@ async def hindsight(payload: dict = Body(...)):
     lineup = optimize_lineup(projections, n=min(5, len(projections)),
                              sort_key="chalk_ev", rating_key="rating",
                              card_boost_key="est_mult")
-    return {"lineup": lineup}
+    return {"lineup": [_normalize_player(p) for p in lineup]}
 
 
 @app.get("/api/refresh")
@@ -2384,10 +2465,12 @@ async def _run_line_engine_for_date(date):
 def _picks_response(picks, **extra):
     """Build the standard /api/line-of-the-day response dict from a dual-pick dict."""
     primary = _primary_pick(picks) if picks else None
+    over  = picks.get("over_pick")  if picks else None
+    under = picks.get("under_pick") if picks else None
     return {
-        "pick":       primary,
-        "over_pick":  picks.get("over_pick")  if picks else None,
-        "under_pick": picks.get("under_pick") if picks else None,
+        "pick":       _normalize_line_pick(primary) if primary else None,
+        "over_pick":  _normalize_line_pick(over)    if over    else None,
+        "under_pick": _normalize_line_pick(under)   if under   else None,
         **extra,
     }
 
@@ -2955,15 +3038,15 @@ async def line_history():
                                     )
                                 except Exception:
                                     pass
-                    results.append(p)
+                    results.append(_normalize_line_pick(p))
                     added_dirs.add(p.get("direction"))
                 # Fallback: if JSON didn't cover the primary direction, add CSV row
                 if csv_primary.get("direction") not in added_dirs:
-                    results.append(csv_primary)
+                    results.append(_normalize_line_pick(csv_primary))
                 continue
             except Exception:
                 pass
-        results.append(csv_primary)
+        results.append(_normalize_line_pick(csv_primary))
 
     # Exclude today's pick if it's still pending — it's already shown as the main card above
     # the history section. Showing it again as the top history row creates a confusing duplicate.
