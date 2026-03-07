@@ -2420,23 +2420,21 @@ function renderLinePickCard(pick, isPrimary) {
           <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${pick.edge > 0 ? '+' : ''}${pick.edge}</div>
         </div>
         <div style="margin-left:auto;text-align:right">
-          ${(pick.model_only || pick.books_consensus == null)
-            ? `<div style="font-size:0.62rem;color:var(--muted);font-style:italic;letter-spacing:0.04em">MODEL</div>`
-            : `<div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
-          }
+          ${pick.line_updated_at ? (() => {
+            const raw = pick.line_updated_at;
+            const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
+            const t = new Date(utcStr).toLocaleTimeString('en-US', {
+              hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
+            });
+            return `<div style="font-size:0.6rem;color:var(--muted);letter-spacing:0.03em">Odds · ${t} CT</div>`;
+          })() : (pick.books_consensus != null
+            ? `<div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
+            : '')}
         </div>
       </div>
       ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
       ${liveSection}
       <div class="line-narrative">${pick.narrative}</div>
-      ${pick.line_updated_at ? (() => {
-        const raw = pick.line_updated_at;
-        const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
-        const t = new Date(utcStr).toLocaleTimeString('en-US', {
-          hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
-        });
-        return `<div style="font-size:0.6rem;color:var(--muted);margin-top:6px;letter-spacing:0.03em">Odds · ${t} CT</div>`;
-      })() : ''}
       ${pick.result && pick.result !== 'pending' ? `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
         <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Result</span>
