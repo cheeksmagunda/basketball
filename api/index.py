@@ -2540,6 +2540,80 @@ async def refresh_line_odds():
     return {"status": "ok", "updated": updated, "timestamp": now_utc}
 
 
+@app.get("/api/line-live-stat")
+async def get_line_live_stat(
+    player_id: str = Query(""), player_name: str = Query(""),
+    team: str = Query(""), stat_type: str = Query("points")
+):
+    """Live in-game stat for a Line pick. No cache — must be fresh for 30s frontend polling."""
+    games = fetch_games()
+    game = next(
+        (g for g in games if team and (
+            g["home"]["abbr"].upper() == team.upper() or
+            g["away"]["abbr"].upper() == team.upper()
+        )), None
+    )
+    if not game:
+        return {"status": "no_game"}
+
+    start_time = game.get("startTime", "")
+    if not _is_locked(start_time):
+        return {"status": "pregame", "game_id": game["gameId"]}
+
+    data = _espn_get(f"{ESPN}/summary?event={game['gameId']}")
+    if not data:
+        return {"status": "unavailable"}
+
+    ev = data.get("header", {}).get("competitions", [{}])[0]
+    game_status = ev.get("status", {})
+    completed = game_status.get("type", {}).get("completed", False)
+    period = game_status.get("period", 0)
+    clock = game_status.get("displayClock", "")
+
+    if completed:
+        return {"status": "final", "game_id": game["gameId"]}
+    if not period:
+        return {"status": "pregame", "game_id": game["gameId"]}
+
+    # Find the player's current stat in the live box score
+    _STAT_BOX_LABEL = {"points": "PTS", "rebounds": "REB", "assists": "AST"}
+    label = _STAT_BOX_LABEL.get(stat_type.lower(), "PTS")
+    stat_current = None
+    for team_block in data.get("boxscore", {}).get("players", []):
+        for stat_block in team_block.get("statistics", []):
+            labels = stat_block.get("labels", [])
+            if label not in labels:
+                continue
+            idx = labels.index(label)
+            for ath in stat_block.get("athletes", []):
+                pid = ath.get("athlete", {}).get("id", "")
+                name = ath.get("athlete", {}).get("displayName", "")
+                if (player_id and pid == player_id) or \
+                   (player_name and player_name.lower() in name.lower()):
+                    stats = ath.get("stats", [])
+                    if idx < len(stats):
+                        try: stat_current = float(stats[idx])
+                        except: pass
+                    break
+
+    # Pace: project current stat rate to a full 48-minute game baseline
+    pace = None
+    try:
+        parts = clock.split(":")
+        clock_mins = int(parts[0]) + int(parts[1]) / 60
+        mins_per_period = 12 if period <= 4 else 5
+        elapsed = (period - 1) * mins_per_period + (mins_per_period - clock_mins)
+        if elapsed > 0 and stat_current is not None:
+            pace = round(stat_current / elapsed * 48, 1)
+    except Exception:
+        pass
+
+    return {
+        "status": "live", "stat_current": stat_current, "stat_type": stat_type,
+        "period": period, "clock": clock, "pace": pace, "game_id": game["gameId"],
+    }
+
+
 @app.post("/api/resolve-line")
 async def resolve_line(payload: dict = Body(...)):
     """Mark today's line pick as hit or miss given the actual stat."""
