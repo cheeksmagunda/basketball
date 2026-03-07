@@ -99,7 +99,8 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/refresh-line-odds` | GET | **Hourly cron** — fetch current bookmaker line from Odds API and update `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
-| `/api/line-history` | GET | Recent picks with streak + hit rate |
+| `/api/auto-resolve-line` | GET | **Cron** — resolves each pick independently when its game ends; generates next-day picks when both resolve |
+| `/api/line-history` | GET | Recent picks with streak + hit rate (only resolved picks — never pending) |
 
 ### Lab (Ben)
 | Endpoint | Method | Purpose |
@@ -139,18 +140,21 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - The chat prompt includes full system context (briefing data, config state, backtest capability)
 
 ### End-of-Day Upload Flow (in Ben)
-After all games are final and Ben unlocks, if no messages yet:
-- Ben auto-prompts with a message containing two upload buttons: **📸 Real Scores** and **🏆 Top Drafts**
-- Tapping a button opens the device file picker (dynamic `createElement('input')` — no HTML needed)
-- `_handleBenUpload()` runs the full pipeline: `parse-screenshot → save-actuals → /api/audit/get → lab/briefing → labCallClaude()`
-- Ben responds with accuracy analysis (MAE, misses, patterns); buttons turn green (✓) on success
-- History page is now **read-only** — no upload UI there
+After all games are final and Ben unlocks:
+- Upload banner with 4 buttons: **📸 Real Scores**, **🏆 Top Drafts**, **⚡ Starting 5**, **🚀 Moonshot**
+- Banner **hidden during lock** — only shows when Ben is unlocked
+- Banner title shows the pending date (e.g. "Log Results — Fri, Mar 6") from `pending_upload_date`
+- `pending_upload_date` = most recent prediction date (excluding today) without actuals uploaded
+- `_handleBenUpload()` pipeline: `parse-screenshot → save-actuals → /api/audit/get → lab/briefing → labCallClaude()`
+- All 4 upload types merge into the same actuals CSV (dedup by player name); buttons turn green (✓) on success
+- History page is **read-only** — no upload UI there
 
 ### Lock System
 - **Locked** 5 minutes before first game tip-off (slate is in progress)
 - **Unlocked** when ALL games on today's slate reach "Final" status on ESPN (3-min TTL cache)
-- During lock: shows read-only locked state with estimated unlock time
-- During unlock: full chat capabilities + end-of-day upload prompt (if first session open)
+- During lock: shows locked state with **total games remaining** (in-progress + scheduled) and estimated unlock based on **last game of the day** + 2.5h
+- During unlock: full chat capabilities + upload banner (if pending date exists)
+- **Break between game windows**: if early games finish but more are scheduled, Ben briefly unlocks with "Break — N games later today". Polling detects re-lock when next game window starts.
 
 ### Keyboard / Nav Behavior (Ben tab)
 - On **mobile**: focusing `#labInput` hides the bottom nav and expands `#tab-lab` to fill freed keyboard space via `lab-kb-open` CSS class. Blur restores everything.
@@ -253,6 +257,14 @@ Note: `predictSubNav` and `lineSubNav` are now **inline elements** (not fixed/fl
 | `0 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync |
 | `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET window) |
 | `15,30,45 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends |
+
+## Deployment Pipeline
+
+Vercel `ignoreCommand` in `vercel.json` prevents builds on data-only commits:
+```
+git diff --quiet HEAD~1 HEAD -- . ':!data' ':!.github'
+```
+This ensures GitHub API writes to `data/` (predictions, actuals, line picks, config) and `.github/` workflow changes don't trigger unnecessary redeploys. Only code changes trigger builds.
 
 ## Production Robustness Notes
 
