@@ -1569,7 +1569,10 @@ async function loadSlate() {
       let lockLabel = '🔒 Picks Locked';
       if (isLocked && SLATE.lock_time) {
         try {
-          const lt = new Date(SLATE.lock_time);
+          // Force unambiguous UTC parse — iOS Safari can misread "+00:00" as local time
+          const raw = SLATE.lock_time;
+          const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
+          const lt = new Date(utcStr);
           const ltStr = lt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
           lockLabel = `🔒 Locked · ${ltStr} CT`;
         } catch(e) {}
