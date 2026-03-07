@@ -254,10 +254,33 @@ for _p in [
 # _cg/cs = prediction cache (date-keyed, /tmp)
 # _lg/ls = lock cache (persists within warm Vercel instance)
 # ─────────────────────────────────────────────────────────────────────────────
-ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-MIN_GATE = 12           # Minimum projected minutes — lowered from 15 to catch
+ESPN      = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+ODDS_API_BASE = "https://api.the-odds-api.com/v4"
+MIN_GATE  = 12          # Minimum projected minutes — lowered from 15 to catch
                         # deep bench (Clifford, Riley) who win in garbage time
 DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
+
+# Map ESPN team abbreviations to keyword fragments in Odds API full team names
+_ABBR_TO_NAME_FRAG = {
+    "ATL": "atlanta",    "BOS": "boston",       "BKN": "brooklyn",    "CHA": "charlotte",
+    "CHI": "chicago",    "CLE": "cleveland",    "DAL": "dallas",      "DEN": "denver",
+    "DET": "detroit",    "GSW": "golden state", "HOU": "houston",     "IND": "indiana",
+    "LAC": "clippers",   "LAL": "lakers",       "MEM": "memphis",     "MIA": "miami",
+    "MIL": "milwaukee",  "MIN": "minnesota",    "NOP": "new orleans", "NY":  "new york",
+    "NYK": "new york",   "OKC": "oklahoma",     "ORL": "orlando",     "PHI": "philadelphia",
+    "PHX": "phoenix",    "POR": "portland",     "SAC": "sacramento",  "SAS": "san antonio",
+    "TOR": "toronto",    "UTA": "utah",         "WAS": "washington",
+}
+
+def _abbr_matches(abbr: str, full_name: str) -> bool:
+    frag = _ABBR_TO_NAME_FRAG.get(abbr.upper(), abbr.lower())
+    return frag in full_name.lower()
+
+_STAT_MARKET = {
+    "points":   "player_points",
+    "rebounds": "player_rebounds",
+    "assists":  "player_assists",
+}
 
 def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{_et_date().isoformat()}:{k}'.encode()).hexdigest()}.json"
 def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
@@ -2106,6 +2129,82 @@ async def refresh():
 # grep: LINE_CSV_HEADER, run_line_engine, line_engine, Odds API, prop edge
 # ═════════════════════════════════════════════════════════════════════════════
 
+def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_abbr: str):
+    """Fetch the current bookmaker consensus line for a player prop from The Odds API.
+    Returns {"line", "odds_over", "odds_under", "books_consensus"} or None on failure."""
+    api_key = os.environ.get("ODDS_API_KEY")
+    if not api_key:
+        return None
+    market = _STAT_MARKET.get(stat_type, "player_points")
+    try:
+        # Step 1: find today's event ID for this matchup
+        ev_r = requests.get(
+            f"{ODDS_API_BASE}/sports/basketball_nba/events",
+            params={"apiKey": api_key, "dateFormat": "iso"},
+            timeout=10,
+        )
+        if not ev_r.ok:
+            return None
+        event_id = None
+        for ev in ev_r.json():
+            home, away = ev.get("home_team", ""), ev.get("away_team", "")
+            if (_abbr_matches(team_abbr, home) or _abbr_matches(team_abbr, away)) and \
+               (_abbr_matches(opponent_abbr, home) or _abbr_matches(opponent_abbr, away)):
+                event_id = ev["id"]
+                break
+        if not event_id:
+            return None
+        # Step 2: fetch player props for that event
+        odds_r = requests.get(
+            f"{ODDS_API_BASE}/sports/basketball_nba/events/{event_id}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us",
+                "markets":    market,
+                "oddsFormat": "american",
+                "bookmakers": "draftkings,fanduel,betmgm,pointsbet",
+            },
+            timeout=10,
+        )
+        if not odds_r.ok:
+            return None
+        # Step 3: collect lines for the matching player across all bookmakers
+        lines_over, lines_under, over_prices, under_prices = [], [], [], []
+        pname_lower = player_name.lower()
+        for book in odds_r.json().get("bookmakers", []):
+            for mkt in book.get("markets", []):
+                if mkt["key"] != market:
+                    continue
+                for outcome in mkt.get("outcomes", []):
+                    if pname_lower not in outcome.get("name", "").lower():
+                        continue
+                    pt = outcome.get("point")
+                    if pt is None:
+                        continue
+                    if outcome.get("description", "").lower() == "over":
+                        lines_over.append(pt)
+                        over_prices.append(outcome.get("price", -110))
+                    else:
+                        lines_under.append(pt)
+                        under_prices.append(outcome.get("price", -110))
+        if not lines_over:
+            return None
+        # Consensus line = mode across books; fallback to average rounded to 0.5
+        from statistics import mode, mean, StatisticsError
+        try:
+            consensus = mode(lines_over)
+        except StatisticsError:
+            consensus = round(round(mean(lines_over) * 2) / 2, 1)
+        return {
+            "line":            consensus,
+            "odds_over":       int(mean(over_prices))  if over_prices  else -110,
+            "odds_under":      int(mean(under_prices)) if under_prices else -110,
+            "books_consensus": len(lines_over),
+        }
+    except Exception:
+        return None
+
+
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
 def _load_line_pick_for_date(date_str: str):
@@ -2330,6 +2429,54 @@ async def save_line(payload: dict = Body(...)):
     _github_write_file(json_path, json.dumps(saves), f"line picks json for {today}")
 
     return {"status": "saved", "path": json_path}
+
+
+@app.get("/api/refresh-line-odds")
+async def refresh_line_odds():
+    """Hourly cron: sync current bookmaker line from Odds API into today's pick JSON.
+    No-op if slate is locked — odds freeze at the same boundary as picks (5 min before tip)."""
+    today_str = _et_date().isoformat()
+
+    # Respect slate lock — stop updating once the slate is live
+    games = fetch_games()
+    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    start_times = [g["startTime"] for g in draftable if g.get("startTime")]
+    earliest = min(start_times) if start_times else None
+    if earliest and _is_locked(earliest):
+        return {"status": "locked", "message": "Slate locked — odds frozen"}
+
+    picks = _load_line_pick_for_date(today_str)
+    if not picks:
+        return {"status": "no_pick"}
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    updated = False
+
+    for key in ("over_pick", "under_pick"):
+        pick = picks.get(key)
+        if not pick:
+            continue
+        result = _fetch_odds_line(
+            pick.get("player_name", ""),
+            pick.get("stat_type", "points"),
+            pick.get("team", ""),
+            pick.get("opponent", ""),
+        )
+        if result:
+            pick.update(result)
+            pick["model_only"] = False
+        # Always stamp update time — shows the user when odds were last checked
+        pick["line_updated_at"] = now_utc
+        updated = True
+
+    if updated:
+        json_path = f"data/lines/{today_str}_pick.json"
+        _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
+        cf = _cp("line_v1")
+        if cf.exists():
+            cf.unlink()
+
+    return {"status": "ok", "updated": updated, "timestamp": now_utc}
 
 
 @app.post("/api/resolve-line")

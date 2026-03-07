@@ -19,6 +19,14 @@
     {
       "path": "/api/lab/auto-improve",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/refresh-line-odds",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/refresh-line-odds",
+      "schedule": "55 * * * *"
     }
   ]
 }
