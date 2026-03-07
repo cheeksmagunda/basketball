@@ -2750,9 +2750,10 @@ async function initLabPage() {
 
 function _updateLabLockedStatus(status) {
   document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
+  var tzOpts = {hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'};
   const estUnlock = status.estimated_unlock
-    ? 'Estimated unlock: ' + new Date(status.estimated_unlock).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})
-    : (status.next_lock_time ? 'Locks at ' + new Date(status.next_lock_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '');
+    ? 'Estimated unlock: ' + new Date(status.estimated_unlock).toLocaleTimeString('en-US',tzOpts)
+    : (status.next_lock_time ? 'Locks at ' + new Date(status.next_lock_time).toLocaleTimeString('en-US',tzOpts) : '');
   document.getElementById('labLockedUnlock').textContent = estUnlock;
 }
 
@@ -2778,14 +2779,23 @@ async function showLabLocked(status) {
       clearInterval(LAB._lockPoll); LAB._lockPoll = null; return;
     }
     fetch('/api/lab/status').then(function(r) { return r.ok ? r.json() : Promise.reject(); }).then(async function(s) {
-      if (!s.locked) {
-        clearInterval(LAB._lockPoll); LAB._lockPoll = null;
+      var lockedVisible = document.getElementById('labLocked').style.display !== 'none';
+      var unlockedVisible = document.getElementById('labUnlocked').style.display !== 'none';
+      if (!s.locked && lockedVisible) {
+        // Locked → unlocked transition (break between games or all final)
         LAB.initialized = false;
         document.getElementById('labLocked').style.display = 'none';
         document.getElementById('labLoading').style.display = 'block';
         await showLabUnlocked(s);
         document.getElementById('labLoading').style.display = 'none';
-      } else {
+        // Keep polling if more games are coming (next_lock_time set)
+        if (!s.next_lock_time) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
+      } else if (s.locked && unlockedVisible) {
+        // Break ended → re-locked: transition back to locked view
+        document.getElementById('labUnlocked').style.display = 'none';
+        await showLabLocked(s);  // Re-shows locked view + restarts its own poll
+        clearInterval(LAB._lockPoll); LAB._lockPoll = null;  // showLabLocked sets new poll
+      } else if (s.locked) {
         _updateLabLockedStatus(s);
       }
     }).catch(function() {});
