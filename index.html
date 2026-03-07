@@ -1492,7 +1492,7 @@ async function loadSlate() {
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
-    const isEmptyLocked = slateData.locked && !slateData.lineups.chalk.length;
+    const isEmptyLocked = slateData.locked && !slateData.lineups?.chalk?.length;
     if (isEmptyLocked) {
       // Cold-start after lock: server has no cache. Try in-memory SLATE first, then localStorage.
       const lsKey = `slate_${slateData.date || ''}`;
@@ -1645,7 +1645,7 @@ async function runAnalysis() {
       throw new Error(err.error || `HTTP ${r.status}`);
     }
     const picksData = await r.json();
-    if (picksData.locked && !picksData.lineups.chalk.length && PICKS_DATA) {
+    if (picksData.locked && !picksData.lineups?.chalk?.length && PICKS_DATA) {
       PICKS_DATA.locked = true;
     } else {
       PICKS_DATA = picksData;
@@ -2371,7 +2371,7 @@ function renderLinePickCard(pick, isPrimary) {
   if (pick._live?.status === 'live') {
     const lv = pick._live;
     const current = lv.stat_current ?? 0;
-    const lineVal = parseFloat(pick.line);
+    const lineVal = parseFloat(pick.line) || 0;
     const isOver = dir === 'over';
     const statLabel = (pick.stat_type || 'pts').toLowerCase();
     const pct = Math.min(100, lineVal > 0 ? Math.round(current / lineVal * 100) : 0);
@@ -2409,7 +2409,7 @@ function renderLinePickCard(pick, isPrimary) {
         <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
         <div>
           <div class="line-stat-val">${pick.line} ${pick.stat_type}</div>
-          <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${pick.edge > 0 ? '+' : ''}${pick.edge}</div>
+          <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${(pick.edge ?? 0) > 0 ? '+' : ''}${pick.edge ?? 0}</div>
         </div>
         <div style="margin-left:auto;text-align:right">
           ${pick.line_updated_at ? (() => {
