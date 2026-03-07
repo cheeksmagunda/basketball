@@ -3085,21 +3085,21 @@ async def line_history():
                                     )
                                 except Exception:
                                     pass
-                    results.append(_normalize_line_pick(p))
+                    # Only add resolved picks to history — pending picks belong
+                    # on the main card, not in Recent Picks.
+                    if p.get("result") and p["result"] not in ("pending", ""):
+                        results.append(_normalize_line_pick(p))
                     added_dirs.add(p.get("direction"))
                 # Fallback: if JSON didn't cover the primary direction, add CSV row
                 if csv_primary.get("direction") not in added_dirs:
-                    results.append(_normalize_line_pick(csv_primary))
+                    if csv_primary.get("result") and csv_primary["result"] not in ("pending", ""):
+                        results.append(_normalize_line_pick(csv_primary))
                 continue
             except Exception:
                 pass
-        results.append(_normalize_line_pick(csv_primary))
-
-    # Exclude today's pick if it's still pending — it's already shown as the main card above
-    # the history section. Showing it again as the top history row creates a confusing duplicate.
-    today_str = _et_date().isoformat()
-
-    results = [r for r in results if not (r.get("date") == today_str and r.get("result", "pending") == "pending")]
+        # Only add resolved picks — pending picks stay on the main card
+        if csv_primary.get("result") and csv_primary["result"] not in ("pending", ""):
+            results.append(_normalize_line_pick(csv_primary))
 
     # Deduplicate by (player_name, direction): allow same player to appear as both
     # over and under on the same day, but prevent duplicates of the exact same pick.
