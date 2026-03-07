@@ -2168,24 +2168,15 @@ async function _tryAutoResolveLine(pick) {
     if (arData.status === 'resolved' || arData.status === 'already_resolved') {
       const resolvedPick = { ...pick, result: arData.result, actual_stat: arData.actual_stat };
       document.getElementById('linePickCard').innerHTML = renderLinePickCard(resolvedPick, true);
-      // Update globals so switchLineDir re-renders the resolved state correctly
       if (LINE_OVER_PICK && LINE_OVER_PICK.direction === pick.direction) {
         LINE_OVER_PICK = { ...LINE_OVER_PICK, result: arData.result, actual_stat: arData.actual_stat };
       }
       if (LINE_UNDER_PICK && LINE_UNDER_PICK.direction === pick.direction) {
         LINE_UNDER_PICK = { ...LINE_UNDER_PICK, result: arData.result, actual_stat: arData.actual_stat };
       }
-      // Clear loaded date — next tab visit will reload from backend, which now rotates to new pick
       LINE_LOADED_DATE = '';
-      // Refresh history row
-      const hr2 = await fetch('/api/line-history');
-      if (hr2.ok) {
-        const hist2 = await hr2.json();
-        if (hist2.picks && hist2.picks.length) {
-          document.getElementById('lineHistoryWrap').style.display = 'block';
-          renderLineHistory(hist2);
-        }
-      }
+      // Auto-reload after short delay to show the rotated new pick
+      setTimeout(() => initLinePage(), 1500);
     } else if (arData.status === 'game_not_final') {
       // Game still live — poll every 5 min until it finishes
       LINE_RESOLVE_POLL = setInterval(async function() {
@@ -2340,9 +2331,11 @@ async function initLinePage() {
     } catch(e) { /* non-fatal */ }
 
     // Auto-resolve: try to resolve primary pick against completed ESPN boxscores.
+    // Skip if this is a rotated pick (resolved_today present) — tomorrow's pick has no
+    // result yet and auto_resolve_line always reads today's CSV, not tomorrow's.
     const primaryPick = data.pick;
-    const pickResult = primaryPick && primaryPick.result;
-    if (primaryPick && (!pickResult || pickResult === 'pending')) {
+    const pickResult  = primaryPick && primaryPick.result;
+    if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
       await _tryAutoResolveLine(primaryPick);
     }
 

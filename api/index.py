@@ -2753,7 +2753,25 @@ async def auto_resolve_line():
 
     row = rows[0]
     if row.get("result") and row["result"] not in ("pending", ""):
-        # Already resolved — return current result
+        # Already resolved in CSV. Backfill _pick.json if it's missing the result
+        # (picks resolved before the JSON-update fix was deployed won't have it).
+        try:
+            pick_data_raw, _ = _github_get_file(json_path)
+            if pick_data_raw:
+                pick_data = json.loads(pick_data_raw)
+                direction = row.get("direction", "over")
+                dir_key   = f"{direction}_pick"
+                if pick_data.get(dir_key) and not pick_data[dir_key].get("result"):
+                    pick_data[dir_key]["result"]      = row["result"]
+                    pick_data[dir_key]["actual_stat"] = row.get("actual_stat", "")
+                    _github_write_file(json_path, json.dumps(pick_data),
+                                       f"backfill resolve json {today}")
+                    try:
+                        lc = _cp("line_v1")
+                        if lc.exists(): lc.unlink()
+                    except Exception: pass
+        except Exception as _e:
+            print(f"[auto-resolve] backfill err: {_e}")
         return {"status": "already_resolved", "result": row["result"],
                 "actual_stat": _safe_float(row.get("actual_stat", 0))}
 
