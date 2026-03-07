@@ -1546,53 +1546,39 @@ async def get_slate():
     draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
     if not draftable_games:
-        # All today's games have passed tipoff. Two sub-cases:
-        # (a) Games happened today (finals > 0) → show locked state with cached picks
-        # (b) No games played yet today (early morning) → tell user when to come back
+        # All today's games have passed their lock window (draftable_games is empty).
+        # This means tip-off has occurred — slate is locked regardless of how many games
+        # are final. Do NOT gate on finals>0: that causes an unlock bug during the first
+        # ~30 min of play (before any game finishes) and on ESPN API failures.
         all_final, remaining, finals, _lrs = _all_games_final(games)
-        if finals > 0 or all_final:
-            # Sub-case (a): today's games are in progress or final — serve locked picks.
-            lock_cached = _lg("slate_v5_locked")
-            if lock_cached:
-                lock_cached["locked"] = True
-                lock_cached["all_complete"] = all_final
-                lock_cached.setdefault("draftable_count", 0)
-                return lock_cached
-            reg_cached = _cg("slate_v5")
-            if reg_cached:
-                reg_cached["locked"] = True
-                reg_cached["all_complete"] = all_final
-                reg_cached.setdefault("draftable_count", 0)
-                _ls("slate_v5_locked", reg_cached)
-                _slate_backup_to_github(reg_cached)
-                return reg_cached
-            # Cold-start with no local cache: try GitHub backup written at lock time
-            gh_backup = _slate_restore_from_github()
-            if gh_backup:
-                gh_backup["locked"] = True
-                gh_backup["all_complete"] = all_final
-                gh_backup.setdefault("draftable_count", 0)
-                _ls("slate_v5_locked", gh_backup)
-                return gh_backup
-            return {"date": _et_date().isoformat(), "games": games,
-                    "lineups": {"chalk": [], "upside": []},
-                    "locked": True, "all_complete": all_final, "draftable_count": 0}
-        # Sub-case (b): no games started yet today — tell user when to come back
-        earliest_today = min((g["startTime"] for g in games if g.get("startTime")), default=None)
-        available_msg = "later today"
-        if earliest_today:
-            try:
-                gs = datetime.fromisoformat(earliest_today.replace("Z", "+00:00"))
-                et_offset = timedelta(hours=-4 if 3 < gs.month < 11 else -5)
-                gs_et = gs + et_offset
-                available_msg = gs_et.strftime("%-I:%M %p ET")
-            except Exception: pass
-        return {
-            "date": _et_date().isoformat(), "games": games,
-            "lineups": {"chalk": [], "upside": []},
-            "locked": False, "no_games_yet": True, "draftable_count": 0,
-            "available_after": available_msg,
-        }
+        # all_complete is True only when ESPN confirms every game is done.
+        # Use finals>0 guard so an ESPN failure (finals=0, remaining=0) defaults to False.
+        all_complete = all_final and finals > 0
+        lock_cached = _lg("slate_v5_locked")
+        if lock_cached:
+            lock_cached["locked"] = True
+            lock_cached["all_complete"] = all_complete
+            lock_cached.setdefault("draftable_count", 0)
+            return lock_cached
+        reg_cached = _cg("slate_v5")
+        if reg_cached:
+            reg_cached["locked"] = True
+            reg_cached["all_complete"] = all_complete
+            reg_cached.setdefault("draftable_count", 0)
+            _ls("slate_v5_locked", reg_cached)
+            _slate_backup_to_github(reg_cached)
+            return reg_cached
+        # Cold-start with no local cache: try GitHub backup written at lock time
+        gh_backup = _slate_restore_from_github()
+        if gh_backup:
+            gh_backup["locked"] = True
+            gh_backup["all_complete"] = all_complete
+            gh_backup.setdefault("draftable_count", 0)
+            _ls("slate_v5_locked", gh_backup)
+            return gh_backup
+        return {"date": _et_date().isoformat(), "games": games,
+                "lineups": {"chalk": [], "upside": []},
+                "locked": True, "all_complete": all_complete, "draftable_count": 0}
 
     # lock_time and locked status both use the FIRST game of the entire day (all games,
     # not just draftable ones). Once the 6 PM game locks at 5:55 PM, the slate stays
