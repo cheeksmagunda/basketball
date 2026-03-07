@@ -818,24 +818,6 @@
       font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
       color: var(--lab); margin-top: 5px; opacity: 0.85;
     }
-    .lab-config-card {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px;
-    }
-    .lab-config-label {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--lab); margin-bottom: 8px;
-    }
-    .lab-changelog-item {
-      font-size: 0.72rem; color: var(--text-dim); padding: 6px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .lab-changelog-item:last-child { border-bottom: none; }
-    .lab-changelog-ver {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-weight: 800; color: var(--lab); margin-right: 6px;
-    }
     #labInput { line-height: 1.4; font-size: 16px; }
     #labInput:focus { border-color: var(--lab); }
     /* Ben tab: fixed-height flex column — messages scroll, input always visible */
@@ -1172,7 +1154,6 @@
         <p id="labLockedReason" style="color:var(--text-dim)">Slate in progress</p>
         <p id="labLockedUnlock" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
       </div>
-      <div id="labLockedConfig" style="margin-top:24px"></div>
     </div>
     <!-- Unlocked state -->
     <div id="labUnlocked" style="display:none">
@@ -2551,16 +2532,7 @@ function showLabLocked(status) {
   document.getElementById('labLocked').style.display = 'block';
   _updateLabLockedStatus(status);
 
-  // Show config changelog read-only
-  fetch('/api/lab/config-history').then(r => r.ok ? r.json() : Promise.reject()).then(data => {
-    const el = document.getElementById('labLockedConfig');
-    const changelog = (data.changelog || []).slice().reverse().slice(0,5);
-    el.innerHTML = '<div class="lab-config-card"><div class="lab-config-label">Config v' + data.version + ' \xb7 Changelog</div>'
-      + changelog.map(c => '<div class="lab-changelog-item"><span class="lab-changelog-ver">v' + c.version + '</span>'
-        + '<span style="color:var(--muted);font-size:0.65rem">' + c.date + '</span>'
-        + '<br><span>' + c.change + '</span></div>').join('')
-      + '</div>';
-  }).catch(function() {});
+
 
   // Poll every 3 min while locked: update games remaining + unlock estimate,
   // and automatically flip to unlocked view when all games finish.
