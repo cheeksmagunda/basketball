@@ -1322,6 +1322,17 @@ function switchTab(tab) {
   if (tab === 'lab') {
     window.scrollTo({ top: 0, behavior: 'instant' });
     document.body.style.overflow = 'hidden';
+    // Fix initial height — CSS calc leaves a gap vs the nav bar. Run the same
+    // visualViewport-based calculation as _applyKbHeight so the input sits
+    // correctly above the nav before the user ever touches the keyboard.
+    requestAnimationFrame(() => {
+      const vv = window.visualViewport;
+      const tabEl = document.getElementById('tab-lab');
+      if (vv && tabEl) {
+        const tabTop = tabEl.getBoundingClientRect().top;
+        tabEl.style.height = Math.max(200, vv.height - tabTop) + 'px';
+      }
+    });
   } else {
     document.body.style.overflow = '';
   }
