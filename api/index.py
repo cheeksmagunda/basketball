@@ -1614,6 +1614,21 @@ async def get_slate():
             if lock_time: cached.setdefault("lock_time", lock_time)
             _ls("slate_v5_locked", cached)
             _slate_backup_to_github(cached)
+            # Inline slate prediction save at lock-promotion time.
+            # Cold-start Lambdas handling the follow-up /api/save-predictions won't
+            # have the slate cache — write slate rows to GitHub now while we have them.
+            try:
+                today_str = _et_date().isoformat()
+                pred_path = f"data/predictions/{today_str}.csv"
+                pred_existing, _ = _github_get_file(pred_path)
+                if not pred_existing and cached.get("lineups"):
+                    slate_rows = _predictions_to_csv(cached["lineups"], "slate")
+                    if slate_rows:
+                        csv_init = CSV_HEADER + "\n" + "\n".join(slate_rows) + "\n"
+                        _github_write_file(pred_path, csv_init,
+                                           f"slate predictions lock {today_str}")
+            except Exception as _e:
+                print(f"[slate lock] inline pred save err: {_e}")
             return cached
         # Cold-start: no local cache. Try GitHub backup written at lock promotion time.
         gh_backup = _slate_restore_from_github()
@@ -1738,9 +1753,11 @@ async def save_predictions():
     today = _et_date().isoformat()
     path = f"data/predictions/{today}.csv"
 
-    # Gather slate predictions
+    # Gather slate predictions — try all cache layers before giving up
     rows = []
-    cached_slate = _cg("slate_v5")
+    cached_slate = _cg("slate_v5") or _lg("slate_v5_locked")
+    if not cached_slate:
+        cached_slate = _slate_restore_from_github()
     if cached_slate and cached_slate.get("lineups"):
         rows.extend(_predictions_to_csv(cached_slate["lineups"], "slate"))
 
