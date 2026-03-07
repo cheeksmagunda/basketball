@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Andre Drummond,6585,PHI,C,6.7,2.5,25.5,9.4,10.2,1.1,0.9,1.0
+slate,chalk,1.8x,Rudy Gobert,3032976,MIN,C,5.9,2.4,31.1,11.8,11.6,1.6,0.8,1.9
+slate,chalk,1.6x,Scotty Pippen Jr.,4431785,MEM,G,5.7,2.7,24.0,10.8,2.5,4.6,1.7,0.4
+slate,chalk,1.4x,Kevin Love,3449,UTAH,F,5.7,2.5,25.8,11.3,7.8,2.1,0.5,0.3
+slate,chalk,1.2x,Dyson Daniels,4869342,ATL,G,5.4,2.6,29.3,10.2,5.8,5.0,1.9,0.5
+slate,upside,2.0x,Jalen Johnson,4701230,ATL,F,6.6,1.4,28.1,18.2,8.9,5.9,1.1,0.6
+slate,upside,1.8x,Buddy Hield,2990984,ATL,G,5.1,2.6,22.4,11.2,3.2,1.9,0.8,0.2
+slate,upside,1.6x,Mike Conley,3195,MIN,G,5.0,2.9,24.4,8.9,2.3,4.2,0.9,0.2
+slate,upside,1.4x,Kyle Filipowski,4684793,UTAH,F,4.7,2.7,25.2,10.1,6.6,2.1,0.8,0.5
+slate,upside,1.2x,Kyle Lowry,3012,PHI,G,4.6,2.9,20.1,7.8,2.5,3.5,0.8,0.2
