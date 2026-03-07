@@ -2834,15 +2834,22 @@ async def auto_resolve_line():
             if pick_data.get(dir_key):
                 pick_data[dir_key]["result"] = result
                 pick_data[dir_key]["actual_stat"] = actual
-            # If the other direction is the same player, resolve it too (same game/stat)
+            # Also resolve the other-direction pick — same player uses the same stat,
+            # different player requires a separate ESPN lookup.
             other_dir = "under" if direction == "over" else "over"
             other_key = f"{other_dir}_pick"
             other = pick_data.get(other_key)
-            if other and other.get("player_name", "").lower() == player_name.lower():
+            if other and isinstance(other, dict) and other.get("player_name") and not other.get("result"):
+                other_name = other.get("player_name", "")
                 other_line = _safe_float(other.get("line", 0))
-                other_result = "hit" if (actual > other_line if other_dir == "over" else actual < other_line) else "miss"
-                pick_data[other_key]["result"] = other_result
-                pick_data[other_key]["actual_stat"] = actual
+                if other_name.lower() == player_name.lower():
+                    other_actual = actual  # same player, same stat
+                else:
+                    other_actual = _fetch_player_final_stat(other_name, other.get("stat_type", stat_type))
+                if other_actual is not None:
+                    other_result = "hit" if (other_actual > other_line if other_dir == "over" else other_actual < other_line) else "miss"
+                    pick_data[other_key]["result"] = other_result
+                    pick_data[other_key]["actual_stat"] = other_actual
             _github_write_file(json_path, json.dumps(pick_data),
                                f"resolve line json {today}: {result} ({player_name})")
     except Exception as e:
@@ -2868,12 +2875,41 @@ async def line_history():
         name = item.get("name", "")
         if not name.endswith(".csv"):
             continue
+        date_str = name[:-4]  # strip .csv
         content, _ = _github_get_file(f"data/lines/{name}")
         if not content:
             continue
         rows = _parse_csv(content, LINE_FIELDS)
-        if rows:
-            results.append(rows[0])
+        if not rows:
+            continue
+        csv_primary = rows[0]
+
+        # Try JSON for both-direction picks (over + under per day).
+        # CSV only stores the primary pick; JSON has both.
+        json_raw, _ = _github_get_file(f"data/lines/{date_str}_pick.json")
+        if json_raw:
+            try:
+                jd = json.loads(json_raw)
+                added_dirs = set()
+                for key in ("over_pick", "under_pick"):
+                    p = jd.get(key)
+                    if not (p and isinstance(p, dict) and p.get("player_name")):
+                        continue
+                    p = dict(p)
+                    p.setdefault("date", date_str)
+                    # Fill result from CSV for the primary direction if JSON lacks it
+                    if p.get("direction") == csv_primary.get("direction") and not p.get("result"):
+                        p["result"]      = csv_primary.get("result", "pending")
+                        p["actual_stat"] = csv_primary.get("actual_stat", "")
+                    results.append(p)
+                    added_dirs.add(p.get("direction"))
+                # Fallback: if JSON didn't cover the primary direction, add CSV row
+                if csv_primary.get("direction") not in added_dirs:
+                    results.append(csv_primary)
+                continue
+            except Exception:
+                pass
+        results.append(csv_primary)
 
     # Exclude today's pick if it's still pending — it's already shown as the main card above
     # the history section. Showing it again as the top history row creates a confusing duplicate.
