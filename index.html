@@ -2074,7 +2074,9 @@ async function _handleBenUpload(file, type, source) {
     if (!data.players?.length) throw new Error(data.error || 'No players found');
 
     if (type === 'real_scores') {
-      const today = _etToday();
+      // Use the pending slate date (may be yesterday) so actuals correlate with
+      // the correct predictions file in the History tab.
+      const today = LAB.briefing?.pending_upload_date || _etToday();
       const _saveRes = await fetch('/api/save-actuals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2085,8 +2087,8 @@ async function _handleBenUpload(file, type, source) {
       _markDone('benUploadRSBtn', '✓ Real Scores');
       _markDone('benBannerRSBtn', '✓ Real Scores');
       _checkBannerDone();
-      // Persist upload state so banner stays correct across tab switches + re-init
-      { const _lsKey = 'benUploads_' + _etToday(); const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      // Persist upload state under the pending slate date key
+      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
 
       // Pull the audit that save-actuals auto-generated (predictions vs actuals)
       let auditStr = '';
@@ -2117,7 +2119,8 @@ async function _handleBenUpload(file, type, source) {
 
     } else {
       // Persist leaderboard data to GitHub so Ben can reference it in future sessions
-      const today = _etToday();
+      // Use the pending slate date so leaderboard correlates with the correct slate.
+      const today = LAB.briefing?.pending_upload_date || _etToday();
       const leaderboardPlayers = data.players.filter(p => p.player_name || p.name).map(p => ({
         ...p,
         player_name: p.player_name || p.name || '',
@@ -2136,8 +2139,8 @@ async function _handleBenUpload(file, type, source) {
       _markDone2('benUploadWinBtn', '✓ Top Drafts');
       _markDone2('benBannerWinBtn', '✓ Top Drafts');
       _checkBannerDone();
-      // Persist upload state so banner stays correct across tab switches + re-init
-      { const _lsKey = 'benUploads_' + _etToday(); const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      // Persist upload state under the pending slate date key
+      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       const winnerStr = leaderboardPlayers.length
         ? leaderboardPlayers.slice(0,6).map(p => `${p.player_name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')
         : `${data.players.length} entries parsed`;
@@ -2732,19 +2735,16 @@ async function showLabUnlocked(status) {
   LAB.system = buildLabSystemPrompt();
 
   // Show upload banner until BOTH Real Scores + Top Drafts are uploaded.
-  // Use localStorage (keyed by ET date) to track per-type state — survives tab
-  // switches and re-initialisation within the same day.
-  // Fallback: if localStorage has no flags yet AND actuals exist (prior session
-  // before this fix, or another device), keep banner hidden (legacy behaviour).
+  // Use localStorage keyed by the PENDING SLATE DATE (last date with predictions
+  // but no actuals yet — may be yesterday if games ran overnight).
+  // If no pending date exists, all slates have actuals → hide banner.
   const _ub = document.getElementById('benUploadBanner');
   if (_ub) {
-    const _hasActualsToday = _todayLog?.has_actuals === true
-      || LAB.briefing?.latest_slate?.date === _etToday();
-    const _todayUL = _etToday();
-    const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _todayUL) || '{}');
-    const _bothDone = (_ulFlags.real_scores && _ulFlags.top_drafts)
-      || (!_ulFlags.real_scores && !_ulFlags.top_drafts && _hasActualsToday);
-    _ub.style.display = _bothDone ? 'none' : 'block';
+    const _pendingDate = LAB.briefing?.pending_upload_date || _etToday();
+    const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _pendingDate) || '{}');
+    const _allDone = !LAB.briefing?.pending_upload_date
+      || (_ulFlags.real_scores && _ulFlags.top_drafts);
+    _ub.style.display = _allDone ? 'none' : 'block';
     // Restore green/disabled state for any already-completed button
     const _restoreBtn = (id, label) => {
       const b = document.getElementById(id);
