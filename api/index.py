@@ -952,7 +952,7 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     base_offset    = cb.get("base_offset", 0.3)
     scalar         = cb.get("scalar", 3.4)
     bm_mult        = cb.get("big_market_multiplier", 1.5)
-    big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SAS"]))
+    big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"]))
 
     # Stars drive high ownership regardless of team market — treat like big market
     star_players = cb.get("star_players", [])
@@ -1236,7 +1236,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # EV score — card-adjusted expected value using additive formula
     # Use average slot (1.6) for ranking; MILP uses exact slots
-    avg_slot = 1.6  # simple avg of [2.0, 1.8, 1.6, 1.4, 1.2]
+    avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
 
     # Reliability multiplier — prevents high-boost/low-reliability players from
     # dominating the lineup. March 4th lesson: picking players for their card boost
