@@ -207,7 +207,7 @@ _CONFIG_DEFAULTS = {
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
     },
-    "development_teams": ["UTA","IND","BKN","CHI","NO","NOP","SAC","MEM","WAS","DAL"],
+    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
         "min_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.0, "minutes_weight":1.0,

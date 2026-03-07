@@ -2197,12 +2197,13 @@ async function _handleBenUpload(file, type, source) {
       }));
       if (leaderboardPlayers.length) {
         try {
-          await fetch('/api/save-actuals', {
+          const _lr = await fetch('/api/save-actuals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ date: today, players: leaderboardPlayers }),
           });
-        } catch(e) { /* persist failure is non-fatal */ }
+          if (!_lr.ok) throw new Error('HTTP ' + _lr.status);
+        } catch(e) { _appendMsg('assistant', 'Failed to save leaderboard — try again.'); return; }
       }
       _markDone(bannerBtnId, _labels[type]);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
@@ -2404,11 +2405,12 @@ async function initLinePage() {
 
     // Auto-save both picks
     try {
-      await fetch('/api/save-line', {
+      const _slr = await fetch('/api/save-line', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
       });
+      if (!_slr.ok) console.warn('save-line failed:', _slr.status);
     } catch(e) { /* non-fatal */ }
 
     // Auto-resolve: try to resolve primary pick against completed ESPN boxscores.
@@ -2790,8 +2792,7 @@ async function showLabLocked(status) {
       } else if (s.locked && unlockedVisible) {
         // Break ended → re-locked: transition back to locked view
         document.getElementById('labUnlocked').style.display = 'none';
-        await showLabLocked(s);  // Re-shows locked view + restarts its own poll
-        clearInterval(LAB._lockPoll); LAB._lockPoll = null;  // showLabLocked sets new poll
+        await showLabLocked(s);  // Re-shows locked view + starts its own poll
       } else if (s.locked) {
         _updateLabLockedStatus(s);
       }
