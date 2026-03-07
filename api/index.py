@@ -2787,9 +2787,26 @@ async def auto_resolve_line():
                 pick_data = json.loads(pick_data_raw)
                 direction = row.get("direction", "over")
                 dir_key   = f"{direction}_pick"
+                actual_f  = _safe_float(row.get("actual_stat", 0))
+                changed   = False
+                # Backfill primary direction
                 if pick_data.get(dir_key) and not pick_data[dir_key].get("result"):
                     pick_data[dir_key]["result"]      = row["result"]
                     pick_data[dir_key]["actual_stat"] = row.get("actual_stat", "")
+                    changed = True
+                # Also backfill the other-direction pick if it's the same player
+                other_dir = "under" if direction == "over" else "over"
+                other_key = f"{other_dir}_pick"
+                other = pick_data.get(other_key)
+                if other and isinstance(other, dict) and other.get("player_name") and not other.get("result"):
+                    if other.get("player_name", "").lower() == row.get("player_name", "").lower():
+                        other_line = _safe_float(other.get("line", 0))
+                        other_res  = "hit" if (actual_f > other_line if other_dir == "over" else actual_f < other_line) else "miss"
+                        other["result"]      = other_res
+                        other["actual_stat"] = str(actual_f)
+                        pick_data[other_key] = other
+                        changed = True
+                if changed:
                     _github_write_file(json_path, json.dumps(pick_data),
                                        f"backfill resolve json {today}")
                     try:
