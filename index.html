@@ -1169,6 +1169,32 @@
 
   <!-- ══ TAB: LAB ══ -->
   <div id="tab-lab" class="tab-page">
+    <!-- Upload banner — lives OUTSIDE lock gate so uploads work even during active slates.
+         pending_upload_date routes actuals to yesterday's file regardless of today's lock state. -->
+    <div id="benUploadBanner" style="display:none;margin-bottom:10px;padding-top:16px;overflow:hidden;max-height:300px;transition:max-height 0.4s ease,opacity 0.4s ease,margin 0.4s ease;opacity:1">
+      <div style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.22);border-radius:14px;padding:10px 12px">
+        <div id="benBannerTitle" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.68rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--lab);margin-bottom:5px">📋 Log Results</div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Upload your Real Sports screenshots — Ben will analyze accuracy and break down what the model got right.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
+            style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            📸 Real Scores
+          </button>
+          <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            🏆 Top Drafts
+          </button>
+          <button id="benBannerS5Btn" onclick="_benTriggerUpload('starting_5','banner')"
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            ⚡ Starting 5
+          </button>
+          <button id="benBannerMSBtn" onclick="_benTriggerUpload('moonshot','banner')"
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            🚀 Moonshot
+          </button>
+        </div>
+      </div>
+    </div>
     <!-- Locked state -->
     <div id="labLocked" style="display:none">
       <div class="empty-state" style="margin-top:32px">
@@ -1180,24 +1206,6 @@
     </div>
     <!-- Unlocked state -->
     <div id="labUnlocked" style="display:none">
-      <!-- End-of-day upload banner (shown when games final + no uploads yet) -->
-      <!-- Upload results banner — always shown when unlocked, collapses after both uploads done -->
-      <div id="benUploadBanner" style="display:none;margin-bottom:10px;overflow:hidden;max-height:200px;transition:max-height 0.4s ease,opacity 0.4s ease,margin 0.4s ease;opacity:1">
-        <div style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.22);border-radius:14px;padding:10px 12px">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.68rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--lab);margin-bottom:5px">📋 Log Today's Results</div>
-          <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Upload your Real Sports screenshots after games wrap — Ben will analyze accuracy and break down what the model got right.</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
-              style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-              📸 Real Scores
-            </button>
-            <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
-              style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-              🏆 Top Drafts
-            </button>
-          </div>
-        </div>
-      </div>
       <!-- Chat messages -->
       <div id="labMessages" style="display:flex;flex-direction:column;gap:12px;padding-bottom:10px">
         <div id="labEmptyState">
@@ -2036,11 +2044,43 @@ function renderLogDrillCards() {
   renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap });
 }
 
-// Hide upload banner once both uploads are done (both buttons marked green)
+// Initialize upload banner — shows if there's a pending date with incomplete uploads.
+// Runs in BOTH locked and unlocked paths so uploads work during active slates.
+function _initUploadBanner() {
+  const _ub = document.getElementById('benUploadBanner');
+  if (!_ub) return;
+  const _pendingDate = LAB.briefing?.pending_upload_date || null;
+  if (!_pendingDate) { _ub.style.display = 'none'; return; }
+  const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _pendingDate) || '{}');
+  const _allDone = _ulFlags.real_scores && _ulFlags.top_drafts && _ulFlags.starting_5 && _ulFlags.moonshot;
+  _ub.style.display = _allDone ? 'none' : 'block';
+  // Set banner title with the pending date
+  const _title = document.getElementById('benBannerTitle');
+  if (_title) {
+    const d = new Date(_pendingDate + 'T12:00:00');
+    const dayStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    _title.textContent = '📋 Log Results — ' + dayStr;
+  }
+  // Restore green/disabled state for any already-completed button
+  const _restoreBtn = (id, label) => {
+    const b = document.getElementById(id);
+    if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)';
+             b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)';
+             b.disabled = true; }
+  };
+  if (_ulFlags.real_scores) _restoreBtn('benBannerRSBtn',  '✓ Real Scores');
+  if (_ulFlags.top_drafts)  _restoreBtn('benBannerWinBtn', '✓ Top Drafts');
+  if (_ulFlags.starting_5)  _restoreBtn('benBannerS5Btn',  '✓ Starting 5');
+  if (_ulFlags.moonshot)    _restoreBtn('benBannerMSBtn',  '✓ Moonshot');
+}
+
+// Hide upload banner once all 4 uploads are done (all buttons marked green)
 function _checkBannerDone() {
   const rs  = document.getElementById('benBannerRSBtn');
   const win = document.getElementById('benBannerWinBtn');
-  if (rs?.disabled && win?.disabled) {
+  const s5  = document.getElementById('benBannerS5Btn');
+  const ms  = document.getElementById('benBannerMSBtn');
+  if (rs?.disabled && win?.disabled && s5?.disabled && ms?.disabled) {
     const banner = document.getElementById('benUploadBanner');
     if (banner) {
       banner.style.maxHeight = '0';
@@ -2066,13 +2106,26 @@ function _benTriggerUpload(type, source) {
 
 async function _handleBenUpload(file, type, source) {
   if (!file) return;
-  // Update both the chat bubble buttons and the banner buttons
-  const chatBtnId   = type === 'real_scores' ? 'benUploadRSBtn'   : 'benUploadWinBtn';
-  const bannerBtnId = type === 'real_scores' ? 'benBannerRSBtn'   : 'benBannerWinBtn';
-  const btnId = source === 'banner' ? bannerBtnId : chatBtnId;
+  // Button ID mapping for all 4 upload types
+  const _bannerBtnIds = {
+    'real_scores': 'benBannerRSBtn', 'top_drafts': 'benBannerWinBtn',
+    'starting_5': 'benBannerS5Btn',  'moonshot': 'benBannerMSBtn',
+  };
+  const _chatBtnIds = { 'real_scores': 'benUploadRSBtn', 'top_drafts': 'benUploadWinBtn' };
+  const _labels = {
+    'real_scores': '✓ Real Scores', 'top_drafts': '✓ Top Drafts',
+    'starting_5': '✓ Starting 5',  'moonshot': '✓ Moonshot',
+  };
+
+  const bannerBtnId = _bannerBtnIds[type];
+  const chatBtnId   = _chatBtnIds[type];
+  const btnId = source === 'banner' ? bannerBtnId : (chatBtnId || bannerBtnId);
   const btn = document.getElementById(btnId);
   const origText = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
+
+  // Is Ben chat available? (unlocked state visible)
+  const _benAvailable = document.getElementById('labUnlocked')?.style.display !== 'none';
 
   try {
     const form = new FormData();
@@ -2082,58 +2135,65 @@ async function _handleBenUpload(file, type, source) {
     const data = await r.json();
     if (!data.players?.length) throw new Error(data.error || 'No players found');
 
-    if (type === 'real_scores') {
-      // Use the pending slate date (may be yesterday) so actuals correlate with
-      // the correct predictions file in the History tab.
-      const today = LAB.briefing?.pending_upload_date || _etToday();
+    const today = LAB.briefing?.pending_upload_date || _etToday();
+    const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
+
+    if (type === 'real_scores' || type === 'starting_5' || type === 'moonshot') {
+      // All three save to the same actuals CSV (merge by player name).
+      // Tag source so we know where the data came from.
+      const taggedPlayers = data.players.map(p => ({ ...p, source: type }));
       const _saveRes = await fetch('/api/save-actuals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: today, players: data.players }),
+        body: JSON.stringify({ date: today, players: taggedPlayers }),
       });
       if (!_saveRes.ok) throw new Error(`Save actuals failed (${_saveRes.status})`);
-      const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
-      _markDone('benUploadRSBtn', '✓ Real Scores');
-      _markDone('benBannerRSBtn', '✓ Real Scores');
+
+      // Mark buttons done (banner + chat if exists)
+      _markDone(bannerBtnId, _labels[type]);
+      if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
-      // Persist upload state under the pending slate date key
       { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
 
-      // Pull the audit that save-actuals auto-generated (predictions vs actuals)
+      // Build summary
+      const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs ?? '?'} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
       let auditStr = '';
-      try {
-        const ar = await fetch(`/api/audit/get?date=${today}`);
-        if (ar.ok) {
-          const ad = await ar.json();
-          if (ad.mae != null) {
-            const dirAcc = ad.directional_accuracy != null ? Math.round(ad.directional_accuracy * 100) + '%' : 'N/A';
-            auditStr = ` Model accuracy — MAE: ${ad.mae}, directional: ${dirAcc}, over-projected: ${ad.over_projected}, under-projected: ${ad.under_projected}.`;
-            if (ad.biggest_misses?.length) {
-              auditStr += ' Biggest misses: ' + ad.biggest_misses.slice(0, 5).map(m => `${m.player || '?'} (pred ${m.predicted_rs ?? '?'} vs actual ${m.actual_rs ?? '?'})`).join(', ') + '.';
+      // Pull audit only on real_scores upload (the primary one)
+      if (type === 'real_scores') {
+        try {
+          const ar = await fetch(`/api/audit/get?date=${today}`);
+          if (ar.ok) {
+            const ad = await ar.json();
+            if (ad.mae != null) {
+              const dirAcc = ad.directional_accuracy != null ? Math.round(ad.directional_accuracy * 100) + '%' : 'N/A';
+              auditStr = ` Model accuracy — MAE: ${ad.mae}, directional: ${dirAcc}, over-projected: ${ad.over_projected}, under-projected: ${ad.under_projected}.`;
+              if (ad.biggest_misses?.length) {
+                auditStr += ' Biggest misses: ' + ad.biggest_misses.slice(0, 5).map(m => `${m.player || '?'} (pred ${m.predicted_rs ?? '?'} vs actual ${m.actual_rs ?? '?'})`).join(', ') + '.';
+              }
             }
           }
-        }
-      } catch(e) {}
+        } catch(e) {}
+      }
 
-      const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs ?? '?'} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
-      const summary = `Real Scores uploaded for ${today}. Players: ${playerList}.${auditStr}`;
-      appendLabMessage('user', summary);
-      // Rebuild system prompt with fresh briefing so follow-up questions have current accuracy context
-      try {
-        const freshBriefing = await fetch('/api/lab/briefing').then(r => r.ok ? r.json() : Promise.reject('briefing ' + r.status));
-        LAB.briefing = freshBriefing;
-        LAB.system = buildLabSystemPrompt();
-      } catch(e) {}
-      await labCallClaude();
+      const typeLabel = type === 'starting_5' ? 'Starting 5' : type === 'moonshot' ? 'Moonshot' : 'Real Scores';
+      const summary = `${typeLabel} uploaded for ${today}. Players: ${playerList}.${auditStr}`;
+
+      if (_benAvailable) {
+        appendLabMessage('user', summary);
+        if (type === 'real_scores') {
+          try {
+            const freshBriefing = await fetch('/api/lab/briefing').then(r => r.ok ? r.json() : Promise.reject('briefing ' + r.status));
+            LAB.briefing = freshBriefing;
+            LAB.system = buildLabSystemPrompt();
+          } catch(e) {}
+        }
+        await labCallClaude();
+      }
 
     } else {
-      // Persist leaderboard data to GitHub so Ben can reference it in future sessions
-      // Use the pending slate date so leaderboard correlates with the correct slate.
-      const today = LAB.briefing?.pending_upload_date || _etToday();
+      // top_drafts — persist leaderboard data
       const leaderboardPlayers = data.players.filter(p => p.player_name || p.name).map(p => ({
-        ...p,
-        player_name: p.player_name || p.name || '',
-        source: 'leaderboard',
+        ...p, player_name: p.player_name || p.name || '', source: 'leaderboard',
       }));
       if (leaderboardPlayers.length) {
         try {
@@ -2144,22 +2204,24 @@ async function _handleBenUpload(file, type, source) {
           });
         } catch(e) { /* persist failure is non-fatal */ }
       }
-      const _markDone2 = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
-      _markDone2('benUploadWinBtn', '✓ Top Drafts');
-      _markDone2('benBannerWinBtn', '✓ Top Drafts');
+      _markDone(bannerBtnId, _labels[type]);
+      if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
-      // Persist upload state under the pending slate date key
       { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       const winnerStr = leaderboardPlayers.length
         ? leaderboardPlayers.slice(0,6).map(p => `${p.player_name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')
         : `${data.players.length} entries parsed`;
       const summary = `Top Drafts uploaded for ${today}. ${leaderboardPlayers.length ? 'Winners: ' + winnerStr : winnerStr}.`;
-      appendLabMessage('user', summary);
-      await labCallClaude();
+      if (_benAvailable) {
+        appendLabMessage('user', summary);
+        await labCallClaude();
+      }
     }
 
   } catch(e) {
-    appendLabMessage('assistant', `Upload failed: ${e.message}. Try again.`);
+    if (_benAvailable) {
+      appendLabMessage('assistant', `Upload failed: ${e.message}. Try again.`);
+    }
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
@@ -2694,11 +2756,19 @@ function _updateLabLockedStatus(status) {
   document.getElementById('labLockedUnlock').textContent = estUnlock;
 }
 
-function showLabLocked(status) {
+async function showLabLocked(status) {
   document.getElementById('labLocked').style.display = 'block';
   _updateLabLockedStatus(status);
 
-
+  // Fetch briefing (lightweight) to get pending_upload_date for the banner.
+  // This lets users upload yesterday's results even during today's locked slate.
+  try {
+    const briefingRes = await fetch('/api/lab/briefing');
+    if (briefingRes.ok) {
+      LAB.briefing = await briefingRes.json();
+      _initUploadBanner();
+    }
+  } catch(e) {}
 
   // Poll every 3 min while locked: update games remaining + unlock estimate,
   // and automatically flip to unlocked view when all games finish.
@@ -2743,27 +2813,9 @@ async function showLabUnlocked(status) {
   // Build system prompt (context is ready; user starts the conversation)
   LAB.system = buildLabSystemPrompt();
 
-  // Show upload banner until BOTH Real Scores + Top Drafts are uploaded.
-  // Use localStorage keyed by the PENDING SLATE DATE (last date with predictions
-  // but no actuals yet — may be yesterday if games ran overnight).
-  // If no pending date exists, all slates have actuals → hide banner.
-  const _ub = document.getElementById('benUploadBanner');
-  if (_ub) {
-    const _pendingDate = LAB.briefing?.pending_upload_date || _etToday();
-    const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _pendingDate) || '{}');
-    const _allDone = !LAB.briefing?.pending_upload_date
-      || (_ulFlags.real_scores && _ulFlags.top_drafts);
-    _ub.style.display = _allDone ? 'none' : 'block';
-    // Restore green/disabled state for any already-completed button
-    const _restoreBtn = (id, label) => {
-      const b = document.getElementById(id);
-      if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)';
-               b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)';
-               b.disabled = true; }
-    };
-    if (_ulFlags.real_scores) _restoreBtn('benBannerRSBtn',  '✓ Real Scores');
-    if (_ulFlags.top_drafts)  _restoreBtn('benBannerWinBtn', '✓ Top Drafts');
-  }
+  // Upload banner state is now initialized by _initUploadBanner() which runs
+  // in both locked and unlocked paths — see initLabPage.
+  _initUploadBanner();
   // Also trigger EOD chat bubble + hindsight once games are actually final
   if (LAB.messages.filter(m => !m.hidden).length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
     _renderBenEodPrompt();
