@@ -2910,9 +2910,14 @@ _GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0, "date": ""}
 def _all_games_final(games):
     """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min.
     Returns (all_final, remaining, finals, latest_remaining_start_iso).
-    latest_remaining_start_iso is the ESPN date of the latest non-final game, or None."""
-    if not games:
-        return True, 0, 0, None
+
+    Handles midnight-rollover: late games (e.g. 10 PM ET tip-off) can still be
+    running past midnight when _et_date() has already advanced to the next day.
+    If today's ESPN scoreboard has no started/completed games, we also check
+    yesterday's scoreboard so those late games are not missed.
+
+    Future/pregame games on the next day's slate are NOT counted as remaining —
+    only games that have actually passed their tip-off time matter here."""
     now_ts = datetime.now(timezone.utc).timestamp()
     today_str = _et_date().strftime("%Y%m%d")
     # Cache valid only if within TTL AND still the same ET date
@@ -2920,20 +2925,41 @@ def _all_games_final(games):
             and now_ts - _GAMES_FINAL_CACHE["ts"] < 180
             and _GAMES_FINAL_CACHE.get("date") == today_str):
         return tuple(_GAMES_FINAL_CACHE["result"])
+
+    def _tally(scoreboard_data):
+        fins, rem, latest = 0, 0, None
+        for ev in scoreboard_data.get("events", []):
+            completed = ev.get("status", {}).get("type", {}).get("completed", False)
+            start = ev.get("date", "")
+            if completed:
+                fins += 1
+            else:
+                # Only count games that have actually started. Future pregame games
+                # (tomorrow's slate already in ESPN) must NOT block unlock.
+                try:
+                    start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                    started = now_ts > start_dt.timestamp() - 300  # 5-min grace
+                except Exception:
+                    started = False
+                if started:
+                    rem += 1
+                    if start and (latest is None or start > latest):
+                        latest = start
+        return fins, rem, latest
+
     data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
-    finals = 0
-    remaining = 0
-    latest_remaining = None  # latest scheduled start among non-final games
-    for ev in data.get("events", []):
-        completed = ev.get("status", {}).get("type", {}).get("completed", False)
-        start = ev.get("date", "")
-        if completed:
-            finals += 1
-        else:
-            remaining += 1
-            if start and (latest_remaining is None or start > latest_remaining):
-                latest_remaining = start
-    all_final = remaining == 0 and finals > 0
+    finals, remaining, latest_remaining = _tally(data)
+
+    # Midnight rollover: if today has no started or completed games yet,
+    # check yesterday — late games may still be running past midnight ET.
+    if finals == 0 and remaining == 0:
+        yesterday_str = (_et_date() - timedelta(days=1)).strftime("%Y%m%d")
+        ydata = _espn_get(f"{ESPN}/scoreboard?dates={yesterday_str}")
+        finals, remaining, latest_remaining = _tally(ydata)
+
+    # All done when no started games are still in progress.
+    # If both counts are 0 (genuine no-game day or ESPN outage) default to unlocked.
+    all_final = (remaining == 0)
     result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
     return result
@@ -2956,8 +2982,8 @@ async def lab_status():
     cfg_version = cfg.get("version", 1)
     last_change = (cfg.get("changelog") or [{}])[-1]
 
-    if all_final or not games:
-        # Unlocked: all games done or no games today
+    if all_final:
+        # Unlocked: all started games are done (or genuine no-game day)
         next_lock = None
         if draftable:
             lock_buf = _cfg("projection.lock_buffer_minutes", 5)
@@ -2966,7 +2992,7 @@ async def lab_status():
             next_lock = (gs - timedelta(minutes=lock_buf)).isoformat()
         return {
             "locked": False,
-            "reason": "All games final" if games else "No games today",
+            "reason": "All games final",
             "current_config_version": cfg_version,
             "games_remaining": 0,
             "games_final": finals,
