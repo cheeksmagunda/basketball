@@ -2717,9 +2717,10 @@ async def resolve_line(payload: dict = Body(...)):
     return {"status": "resolved", "result": result, "actual": actual_f}
 
 
-def _fetch_player_final_stat(player_name: str, stat_type: str) -> float | None:
-    """Fetch a player's final boxscore stat from ESPN for today's games.
+def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = None) -> float | None:
+    """Fetch a player's final boxscore stat from ESPN for today's (or a given) games.
     stat_type is the line pick type: 'points', 'rebounds', 'assists', etc.
+    date_str: optional YYYYMMDD string; defaults to today in ET.
     Returns the numeric value or None if not found / game not final."""
     label_map = {
         "points": "PTS", "pts": "PTS",
@@ -2732,8 +2733,8 @@ def _fetch_player_final_stat(player_name: str, stat_type: str) -> float | None:
     espn_label = label_map.get(stat_type.lower(), "PTS")
     player_lower = player_name.lower().strip()
 
-    today_str = _et_date().strftime("%Y%m%d")
-    data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
+    query_date = date_str if date_str else _et_date().strftime("%Y%m%d")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={query_date}")
     for ev in data.get("events", []):
         # Only use completed games
         completed = ev.get("status", {}).get("type", {}).get("completed", False)
@@ -2932,6 +2933,28 @@ async def line_history():
                                 # No actual_stat — invert the CSV direction's result
                                 p["result"] = "miss" if csv_primary["result"] == "hit" else "hit"
                             p["actual_stat"] = csv_primary.get("actual_stat", "")
+                        elif date_str < _et_date().isoformat():
+                            # Different player from primary, historical date — ESPN lookup
+                            espn_date = date_str.replace("-", "")
+                            actual_hist = _fetch_player_final_stat(
+                                p.get("player_name", ""), p.get("stat_type", "points"), espn_date
+                            )
+                            if actual_hist is not None:
+                                p_line = _safe_float(p.get("line", 0))
+                                p_dir  = p.get("direction", "over")
+                                p["result"]      = "hit" if (actual_hist > p_line if p_dir == "over" else actual_hist < p_line) else "miss"
+                                p["actual_stat"] = str(actual_hist)
+                                # Write back to JSON so future history loads skip this ESPN call
+                                try:
+                                    jd[key]["result"]      = p["result"]
+                                    jd[key]["actual_stat"] = p["actual_stat"]
+                                    _github_write_file(
+                                        f"data/lines/{date_str}_pick.json",
+                                        json.dumps(jd),
+                                        f"backfill {date_str} {p.get('direction')} result"
+                                    )
+                                except Exception:
+                                    pass
                     results.append(p)
                     added_dirs.add(p.get("direction"))
                 # Fallback: if JSON didn't cover the primary direction, add CSV row
@@ -2945,6 +2968,7 @@ async def line_history():
     # Exclude today's pick if it's still pending — it's already shown as the main card above
     # the history section. Showing it again as the top history row creates a confusing duplicate.
     today_str = _et_date().isoformat()
+
     results = [r for r in results if not (r.get("date") == today_str and r.get("result", "pending") == "pending")]
 
     # Deduplicate by (player_name, direction): allow same player to appear as both
