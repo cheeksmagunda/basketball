@@ -1133,7 +1133,7 @@
   <div id="tab-line" class="tab-page">
     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:4px">
       <div class="section-label" style="margin-top:0">Line of the Day</div>
-      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetch('/api/refresh');}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetch('/api/refresh-line-odds');}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <div id="lineContent">
       <div id="lineLoading" style="display:none">
@@ -2334,6 +2334,14 @@ function renderLinePickCard(pick, isPrimary) {
       </div>
       ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
       <div class="line-narrative">${pick.narrative}</div>
+      ${pick.line_updated_at ? (() => {
+        const raw = pick.line_updated_at;
+        const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
+        const t = new Date(utcStr).toLocaleTimeString('en-US', {
+          hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
+        });
+        return `<div style="font-size:0.6rem;color:var(--muted);margin-top:6px;letter-spacing:0.03em">Odds · ${t} CT</div>`;
+      })() : ''}
       ${pick.result && pick.result !== 'pending' ? `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
         <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Result</span>
