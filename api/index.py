@@ -1576,13 +1576,15 @@ async def get_slate():
     earliest = min(start_times) if start_times else None
     locked = _is_locked(earliest) if earliest else False
 
-    # Compute the exact moment picks locked (earliest tip - lock_buffer_minutes)
+    # Compute the exact moment picks locked (earliest tip - lock_buffer_minutes).
+    # Always output as "...Z" UTC — iOS Safari misparses "+00:00" offset strings.
     lock_time = None
     if earliest:
         try:
             lock_buf = _cfg("projection.lock_buffer_minutes", 5)
-            gs = datetime.fromisoformat(earliest.replace("Z", "+00:00"))
-            lock_time = (gs - timedelta(minutes=lock_buf)).isoformat()
+            gs = datetime.fromisoformat(earliest.replace("Z", "+00:00")).astimezone(timezone.utc)
+            lock_dt = gs - timedelta(minutes=lock_buf)
+            lock_time = lock_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
             pass
 
