@@ -2920,12 +2920,17 @@ async def line_history():
                             # Primary direction — copy result directly from CSV
                             p["result"]      = csv_primary.get("result", "pending")
                             p["actual_stat"] = csv_primary.get("actual_stat", "")
-                        elif (csv_primary.get("actual_stat") and
-                              p.get("player_name", "").lower() == csv_primary.get("player_name", "").lower()):
-                            # Other direction, same player — compute result from CSV actual
-                            p_line = _safe_float(p.get("line", 0))
-                            p_dir  = p.get("direction", "over")
-                            p["result"]      = "hit" if (csv_actual > p_line if p_dir == "over" else csv_actual < p_line) else "miss"
+                        elif (p.get("player_name", "").lower() == csv_primary.get("player_name", "").lower()
+                              and csv_primary.get("result") in ("hit", "miss")):
+                            # Other direction, same player — infer result from CSV
+                            if csv_primary.get("actual_stat"):
+                                # Compute directly from actual stat
+                                p_line = _safe_float(p.get("line", 0))
+                                p_dir  = p.get("direction", "over")
+                                p["result"] = "hit" if (csv_actual > p_line if p_dir == "over" else csv_actual < p_line) else "miss"
+                            else:
+                                # No actual_stat — invert the CSV direction's result
+                                p["result"] = "miss" if csv_primary["result"] == "hit" else "hit"
                             p["actual_stat"] = csv_primary.get("actual_stat", "")
                     results.append(p)
                     added_dirs.add(p.get("direction"))
@@ -2942,14 +2947,14 @@ async def line_history():
     today_str = _et_date().isoformat()
     results = [r for r in results if not (r.get("date") == today_str and r.get("result", "pending") == "pending")]
 
-    # Deduplicate by player_name: keep only the most recent pick per player.
-    # Prevents same player appearing twice with different directions on consecutive days.
-    seen_players: set = set()
+    # Deduplicate by (player_name, direction): allow same player to appear as both
+    # over and under on the same day, but prevent duplicates of the exact same pick.
+    seen: set = set()
     deduped = []
     for r in results:
-        pname = r.get("player_name", "")
-        if pname not in seen_players:
-            seen_players.add(pname)
+        key = (r.get("player_name", ""), r.get("direction", ""))
+        if key not in seen:
+            seen.add(key)
             deduped.append(r)
     results = deduped
 
