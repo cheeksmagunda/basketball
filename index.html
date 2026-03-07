@@ -190,6 +190,9 @@
     .predict-sub-btn.active {
       background: rgba(79,142,247,0.1); border-color: rgba(79,142,247,0.4); color: var(--chalk);
     }
+    .predict-sub-btn.line-dir-btn {
+      border-radius: var(--r);
+    }
     .predict-sub-btn.line-dir-btn.active[data-dir="over"] {
       background: rgba(212,166,64,0.1); border-color: rgba(212,166,64,0.4); color: var(--line);
     }
@@ -569,6 +572,7 @@
       background: var(--log-win); opacity: 0.8;
     }
     .date-chip-dot.hidden-dot { opacity: 0; }
+    .date-chip-dot.historical-dot { background: var(--chalk); }
 
     /* Log game grid */
     .log-game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
@@ -1123,7 +1127,7 @@
       <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetch('/api/refresh-line-odds');}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <!-- Over | Under direction filter — inline at top, matches Slate-Wide | Game tabs -->
-    <div class="predict-sub-nav" id="lineSubNav">
+    <div class="predict-sub-nav" id="lineSubNav" style="margin-top:14px">
       <button class="predict-sub-btn line-dir-btn" data-dir="over" onclick="switchLineDir('over')">Over</button>
       <button class="predict-sub-btn line-dir-btn active" data-dir="under" onclick="switchLineDir('under')">Under</button>
     </div>
@@ -1844,7 +1848,7 @@ async function initLogPage() {
     <button class="date-chip${c.isToday ? ' active' : ''}" data-date="${c.iso}" onclick="selectLogDate('${c.iso}')">
       <span class="date-chip-day">${c.dayLabel}</span>
       <span class="date-chip-num">${c.numLabel}</span>
-      <span class="date-chip-dot${c.hasData ? '' : ' hidden-dot'}"></span>
+      <span class="date-chip-dot${!c.hasData ? ' hidden-dot' : !c.isToday ? ' historical-dot' : ''}"></span>
     </button>`).join('');
 
   // Auto-select today
@@ -1908,7 +1912,7 @@ function renderLogGrid(dateStr) {
         <div class="log-slate-card" style="opacity:0.55;cursor:default">
           <div>
             <div class="log-slate-card-label">Full Slate</div>
-            <div class="log-slate-card-sub">Games in progress — results after final</div>
+            <div class="log-slate-card-sub">The Oracle cannot be rushed — drafts logged at event start</div>
           </div>
           <span style="color:var(--muted);font-size:1.2rem">⏳</span>
         </div>`;
@@ -2033,30 +2037,9 @@ function _checkBannerDone() {
 }
 
 // ── BEN UPLOAD (moved from Log page) ──
-// Shows the upload banner and renders end-of-day prompt in Ben chat when all games are final.
+// The upload banner above the chat handles the EOD CTA — no chat bubble needed.
 function _renderBenEodPrompt() {
-  if (document.getElementById('benEodPrompt')) return; // chat bubble already shown
-  const el = document.createElement('div');
-  el.className = 'lab-msg assistant';
-  el.id = 'benEodPrompt';
-  el.innerHTML = `
-    <div class="lab-msg-label">Ben</div>
-    <div>Games are wrapped up. Upload your screenshots to log today's results — I'll analyze accuracy and break down what the model got right.</div>
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button id="benUploadRSBtn" onclick="_benTriggerUpload('real_scores')"
-        style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-        📸 Real Scores
-      </button>
-      <button id="benUploadWinBtn" onclick="_benTriggerUpload('top_drafts')"
-        style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-        🏆 Top Drafts
-      </button>
-    </div>`;
-  const msgs = document.getElementById('labMessages');
-  msgs.appendChild(el);
-  const anchor2 = document.getElementById('labScrollAnchor');
-  if (anchor2) msgs.appendChild(anchor2);
-  _labScrollToBottom();
+  // Chat bubble suppressed: the pinned "LOG TODAY'S RESULTS" banner covers this CTA.
 }
 
 function _benTriggerUpload(type, source) {
