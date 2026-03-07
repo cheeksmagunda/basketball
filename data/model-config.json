@@ -1,7 +1,7 @@
 {
-  "version": 6,
-  "updated_at": "2026-03-07T00:00:00Z",
-  "updated_by": "production-hardening",
+  "version": 7,
+  "updated_at": "2026-03-07T18:00:00Z",
+  "updated_by": "mar6-audit-calibration",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -11,8 +11,10 @@
     "big_market_multiplier": 1.5,
     "big_market_teams": [
       "LAL",
+      "GS",
       "GSW",
       "BOS",
+      "NY",
       "NYK",
       "PHI",
       "MIL",
@@ -43,12 +45,19 @@
       "Zion Williamson",
       "Karl-Anthony Towns",
       "Donovan Mitchell",
-      "De'Aaron Fox"
+      "De'Aaron Fox",
+      "LaMelo Ball",
+      "Kawhi Leonard",
+      "Jaylen Brown",
+      "Kon Knueppel",
+      "Reed Sheppard",
+      "Donovan Clingan"
     ],
-    "log_formula_active": false,
-    "log_a": 3.2,
-    "log_b": 0.45,
-    "log_ownership_scalar": 300.0
+    "log_formula_active": true,
+    "log_a": 3.76,
+    "log_b": 0.88,
+    "log_ownership_scalar": 50.0,
+    "star_hype_multiplier": 15.0
   },
   "game_script": {
     "defensive_grind_ceiling": 220,
@@ -99,7 +108,9 @@
       "stl": 4.5,
       "blk": 4.0,
       "tov": -1.2
-    }
+    },
+    "compression_divisor": 7.0,
+    "compression_power": 0.62
   },
   "cascade": {
     "redistribution_rate": 0.7,
@@ -117,7 +128,7 @@
     "gtd_minute_penalty": 0.75,
     "dnp_risk_min_threshold": 8.0,
     "reliability_floor": 0.7,
-    "chalk_boost_cap": 1.5,
+    "chalk_boost_cap": 2.5,
     "b2b_minute_penalty": 0.88,
     "default_total": 222
   },
@@ -126,6 +137,7 @@
     "IND",
     "BKN",
     "CHI",
+    "NO",
     "NOP",
     "SAC",
     "MEM",
@@ -133,7 +145,7 @@
     "DAL"
   ],
   "lineup": {
-    "chalk_rating_floor": 2.8,
+    "chalk_rating_floor": 2.0,
     "game_chalk_rating_floor": 3.5,
     "avg_slot_multiplier": 1.6,
     "slot_multipliers": [
@@ -167,12 +179,12 @@
     {
       "version": 2,
       "date": "2026-03-05",
-      "change": "March 4 audit: raise min_gate 12\u219215, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"
+      "change": "March 4 audit: raise min_gate 12→15, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"
     },
     {
       "version": 3,
       "date": "2026-03-05",
-      "change": "Model improvements: min_gate 15\u219212 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"
+      "change": "Model improvements: min_gate 15→12 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"
     },
     {
       "version": 4,
@@ -182,12 +194,17 @@
     {
       "version": 5,
       "date": "2026-03-06",
-      "change": "March 6 audit (Mar 5 results): chalk_boost_cap 1.0\u21921.5 (Bailey 187 drafts RS 5.9 +2.1x beat Wemby 1.4k drafts RS 7.1 +0.3x \u2014 cap was preventing high-boost role players from chalk); RotoWire check added to chalk lineup (fixes OUT/questionable players appearing in Starting 5)"
+      "change": "March 6 audit (Mar 5 results): chalk_boost_cap 1.0→1.5 (Bailey 187 drafts RS 5.9 +2.1x beat Wemby 1.4k drafts RS 7.1 +0.3x — cap was preventing high-boost role players from chalk); RotoWire check added to chalk lineup (fixes OUT/questionable players appearing in Starting 5)"
     },
     {
       "version": 6,
       "date": "2026-03-07",
       "change": "Production hardening: added lineup.{chalk_rating_floor=2.8, game_chalk_rating_floor=3.5, avg_slot_multiplier=1.6, slot_multipliers}, line.{min_confidence=50, min_edge_pct=3.0}, moonshot.min_rating_floor=2.0. All lineup/line floors now tunable via Ben without code deploys. Added _normalize_player/_normalize_line_pick contract layer in api/index.py to decouple model internals from frontend."
+    },
+    {
+      "version": 7,
+      "date": "2026-03-07",
+      "change": "March 6 results audit — 5 fixes: (1) RS compression recalibrated — divisor 5→7, power 0.75→0.62 (Jokic pred 11.7 vs actual 5.6, Wemby 10.4 vs 4.5); (2) Log card boost formula ACTIVATED — fitted to Real Sports actual data: boost=3.76-0.88*log10(drafts). New star_hype_multiplier=15x separates stars (9k drafts→0.2 boost) from role players (13 drafts→3.0 boost). scalar=50 with big_market 1.5x + star 15x stacking; (3) chalk_boost_cap 1.5→2.5 — all 3 winning lineups stacked +3.0x boost in Starting 5; (4) chalk_rating_floor 2.8→2.0 — Ighodaro RS 2.3 in ALL 3 winning drafts; (5) star_players expanded: +LaMelo, Kawhi, Jaylen Brown, Knueppel, Sheppard, Clingan (high-ownership players model should penalize)."
     }
   ]
 }

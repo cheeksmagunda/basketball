@@ -174,12 +174,13 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
         "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
-        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
+        "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
         "star_players": ["Luka Doncic","Victor Wembanyama","Giannis Antetokounmpo","Jayson Tatum","Shai Gilgeous-Alexander","Nikola Jokic","Anthony Edwards","LeBron James","Stephen Curry","Kevin Durant","Damian Lillard","Trae Young","Devin Booker","Joel Embiid","Cade Cunningham","Paolo Banchero","Zion Williamson","Karl-Anthony Towns","Donovan Mitchell","De'Aaron Fox"],
-        "log_formula_active": False,    # use log-formula for card boost (activate after 50+ actuals)
-        "log_a": 3.2,                   # log-formula intercept
-        "log_b": 0.45,                  # log-formula slope
-        "log_ownership_scalar": 300.0,  # scales predicted drafts for log-formula
+        "log_formula_active": True,     # activated: calibrated against Mar 6 Real Sports actuals
+        "log_a": 3.76,                  # intercept — fit to: 13d→3.0x, 134d→1.9x, 1.1k→1.0x, 9k→0x
+        "log_b": 0.88,                  # slope — steeper = more separation stars vs role players
+        "log_ownership_scalar": 50.0,   # base scalar (low; star_hype_multiplier handles stars)
+        "star_hype_multiplier": 15.0,   # star players get 15x hype (predicts 5k-10k drafts)
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -190,7 +191,11 @@ _CONFIG_DEFAULTS = {
         "blowout_spread_threshold":8,"blowout_pts_penalty":0.90,
         "blowout_ast_penalty":0.90,"blowout_reb_penalty":0.94,
     },
-    "real_score": {"dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2}},
+    "real_score": {
+        "dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2},
+        "compression_divisor": 7.0,     # was 5.0; higher = lower RS projections
+        "compression_power": 0.62,      # was 0.75; lower = more compression on stars
+    },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
     "projection": {
         "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
@@ -200,16 +205,16 @@ _CONFIG_DEFAULTS = {
         "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
-        "chalk_boost_cap":1.5,          # max card boost counted toward chalk_ev (moonshot uses full boost)
+        "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
     },
-    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
+    "development_teams": ["UTA","IND","BKN","CHI","NO","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
         "min_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.0, "minutes_weight":1.0,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
     "lineup": {
-        "chalk_rating_floor": 2.8,
+        "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
         "game_chalk_rating_floor": 3.5,
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
@@ -952,23 +957,27 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     base_offset    = cb.get("base_offset", 0.3)
     scalar         = cb.get("scalar", 3.4)
     bm_mult        = cb.get("big_market_multiplier", 1.5)
-    big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"]))
+    big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"]))
 
     # Stars drive high ownership regardless of team market — treat like big market
     star_players = cb.get("star_players", [])
     is_star = bool(player_name and any(_norm_last(s) == _norm_last(player_name) for s in star_players))
 
-    # Log-formula path: card_boost ≈ 3.2 - 0.45 * log10(predicted_drafts)
-    # Verified against March 3 data. Activated via config once calibrated (50+ actuals).
-    # Parameters: log_a (intercept), log_b (slope), log_ownership_scalar (PPG→drafts)
+    # Log-formula path: boost = log_a - log_b * log10(predicted_drafts)
+    # Calibrated against Real Sports actual data (March 6):
+    #   13 drafts → 3.0x, 134 → 1.9x, 1100 → 1.0x, 9000 → 0x
+    # Best fit: boost = 3.76 - 0.88 * log10(drafts)
     if cb.get("log_formula_active", False):
-        log_a      = cb.get("log_a", 3.2)
-        log_b      = cb.get("log_b", 0.45)
-        own_scalar = cb.get("log_ownership_scalar", 300.0)
+        log_a      = cb.get("log_a", 3.76)
+        log_b      = cb.get("log_b", 0.88)
+        own_scalar = cb.get("log_ownership_scalar", 50.0)
+        star_mult  = cb.get("star_hype_multiplier", 15.0)
         # Ownership proxy: PPG * minutes-weight * market/star factor
         hype_factor = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
-        if team_abbr in big_markets or is_star:
+        if team_abbr in big_markets:
             hype_factor *= bm_mult
+        if is_star:
+            hype_factor *= star_mult
         predicted_drafts = max(1, own_scalar * hype_factor)
         boost = log_a - log_b * np.log10(predicted_drafts)
         return round(min(max(boost, floor_val), ceiling), 1)
@@ -1223,10 +1232,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     )
 
     # Raw projected score — compressed via power function to match
-    # actual Real Score gaps (~1.5x star vs role, not ~3x linear).
-    # Power of 0.75 compresses 23→11.2, 8→4.8 (ratio 2.3x vs 2.9x linear)
-    raw_linear = real_result / 5.0
-    raw_score = min(raw_linear ** 0.75, 15.0)
+    # actual Real Score scale. March 6 audit: old params (div=5, pow=0.75)
+    # produced Jokic=11.7 vs actual 5.6 (2x over). New defaults (div=7, pow=0.62)
+    # compress more aggressively: stars ~5-8 RS, role players ~2-4 RS.
+    rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
+    comp_div = rs_cfg.get("compression_divisor", 7.0)
+    comp_pow = rs_cfg.get("compression_power", 0.62)
+    raw_linear = real_result / comp_div
+    raw_score = min(raw_linear ** comp_pow, 15.0)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
