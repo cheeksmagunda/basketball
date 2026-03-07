@@ -33,11 +33,15 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit and push updated model
+      - name: Stamp model retrain date in config
+        if: steps.check.outputs.changed == 'true'
+        run: python scripts/bump_retrain_config.py
+
+      - name: Commit and push updated model + config
         if: steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add lgbm_model.pkl
+          git add lgbm_model.pkl data/model-config.json
           git commit -m "chore: daily model retrain $(date -u +%Y-%m-%d)"
           git push

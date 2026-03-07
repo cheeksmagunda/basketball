@@ -2840,13 +2840,12 @@ CAPABILITIES:
 - Answer questions about today's slate, games, picks, or line
 - Read any file: use read_repo_file (CSVs, audit JSONs, code, config, line history)
 - Browse directories: use list_repo_directory to discover available dates/files
-- Modify code: write_repo_file for api/*.py or index.html (Vercel redeploy ~2 min)
+- Config changes: write_repo_file ONLY for data/model-config.json (live in 5 min, no redeploy needed)
 - Validate params: backtest action before applying any config change
-- Apply config: update_config action (data/model-config.json, live in 5 min, no redeploy)
 
 WHEN TO USE WHAT:
 - Parameter tuning (scalars, weights, thresholds) → <action>backtest</action> first, then <action>update_config</action>
-- Algorithmic changes (formulas, logic, filters) → read_repo_file the function → explain → write_repo_file
+- Algorithmic changes (formulas, logic, filters) → read_repo_file the function → describe the exact change needed → tell the user to implement it via a developer push (you cannot write code files)
 - Investigating accuracy → read_repo_file data/audit/{date}.json or data/actuals/{date}.csv
 - Historical pick analysis → list_repo_directory data/predictions, then read specific files
 - Full player projections (card boosts, RS ratings for ALL players, not just the top 10 in context) → read_repo_file data/predictions/{date}.csv (available after slate locks; has all projected players with RS, boost, minutes, pts/reb/ast). Pre-lock: slate context above shows top 10 only — tell user projections save at lock.
@@ -2873,8 +2872,8 @@ ${briefStr}
 BEHAVIOR:
 - Direct and concise. No preamble. Answer what's asked.
 - For lineup/pick questions, use context above before reaching for tools.
-- For model changes: backtest param changes; read code before writing it.
-- After a code write: confirm what changed, say deploy is ~2 min.
+- For model changes: backtest param changes; read code before describing changes.
+- You cannot modify code files (api/, index.html, .github/). If asked to change code, read the relevant file, describe the exact change needed, and direct the user to implement it via a code push.
 - One change per response unless explicitly asked for more.`;
 }
 

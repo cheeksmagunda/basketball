@@ -174,7 +174,7 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
         "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
-        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SAS"],
+        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
         "star_players": ["Luka Doncic","Victor Wembanyama","Giannis Antetokounmpo","Jayson Tatum","Shai Gilgeous-Alexander","Nikola Jokic","Anthony Edwards","LeBron James","Stephen Curry","Kevin Durant","Damian Lillard","Trae Young","Devin Booker","Joel Embiid","Cade Cunningham","Paolo Banchero","Zion Williamson","Karl-Anthony Towns","Donovan Mitchell","De'Aaron Fox"],
         "log_formula_active": False,    # use log-formula for card boost (activate after 50+ actuals)
         "log_a": 3.2,                   # log-formula intercept
@@ -733,11 +733,11 @@ _BEN_TOOLS = [
     {
         "name": "write_repo_file",
         "description": (
-            "Write or modify a file in the GitHub repository. Commits the change immediately. "
-            "Changes to api/*.py or index.html trigger an automatic Vercel redeploy (~2 min). "
-            "Use for code improvements, algorithm changes, bug fixes, or any file update. "
+            "Modify the model config file only. Ben is authorized to write ONLY to "
+            "data/model-config.json. Do not attempt to write api/, index.html, "
+            ".github/, or any other path — those require a developer code push. "
             "ALWAYS call read_repo_file first to get the current content. "
-            "Make minimal, targeted changes — do not rewrite entire files unless necessary. "
+            "Make targeted parameter changes only. "
             "Summarize what you changed and why in the commit message."
         ),
         "input_schema": {
@@ -745,7 +745,7 @@ _BEN_TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Repo-relative path to write",
+                    "description": "Must be 'data/model-config.json'. No other paths are permitted.",
                 },
                 "content": {
                     "type": "string",
@@ -760,6 +760,9 @@ _BEN_TOOLS = [
         },
     },
 ]
+
+
+_BEN_WRITABLE_PATHS = {"data/model-config.json"}
 
 
 def _execute_ben_tool(name, inp):
@@ -801,19 +804,21 @@ def _execute_ben_tool(name, inp):
         message = inp.get("commit_message", "Ben: update file")
         if not path or not content:
             return "path and content are required."
+        if path not in _BEN_WRITABLE_PATHS:
+            return (
+                f"Ben is not authorized to write to '{path}'. "
+                "Ben can only modify data/model-config.json. "
+                "For code or workflow changes, describe what should change "
+                "and a developer will implement it via a code push."
+            )
         result = _github_write_file(path, content, f"[Ben] {message}")
         if result.get("error"):
             return f"Write failed: {result['error']}"
-        # Clear relevant caches so changes take effect immediately
+        # Clear config cache so changes take effect immediately
         try:
-            if "model-config" in path:
-                (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
-            elif path.startswith("api/") or path == "index.html":
-                # Code change — clear all caches so next request uses new code
-                for f in CACHE_DIR.glob("*.json"):
-                    f.unlink()
+            (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
         except Exception: pass
-        return f"Written successfully: {path} — deploy triggered if code file."
+        return f"Written successfully: {path} — config live within 5 minutes."
 
     return f"Unknown tool: {name}"
 
