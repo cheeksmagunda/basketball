@@ -3362,13 +3362,15 @@ async def lab_briefing():
         })
 
     # Determine the most recent date that has predictions but no actuals yet —
-    # this is the date the user should upload actuals for (may be yesterday if
-    # games ran overnight and today's slate hasn't started yet).
+    # this is the date the user should upload actuals for.
+    # IMPORTANT: exclude today — games may still be in progress and any upload
+    # would be yesterday's screenshots misfiled under today's date.
+    today_iso = _et_date().isoformat()
     pred_dates = sorted(
         [i["name"].replace(".csv","") for i in pred_items if i["name"].endswith(".csv")],
         reverse=True
     )
-    pending_upload_date = next((d for d in pred_dates if d not in act_dates), None)
+    pending_upload_date = next((d for d in pred_dates if d not in act_dates and d != today_iso), None)
 
     return {
         "latest_slate":    latest_slate,
