@@ -2168,13 +2168,22 @@ async function _tryAutoResolveLine(pick) {
     if (arData.status === 'resolved' || arData.status === 'already_resolved') {
       const resolvedPick = { ...pick, result: arData.result, actual_stat: arData.actual_stat };
       document.getElementById('linePickCard').innerHTML = renderLinePickCard(resolvedPick, true);
-      // Refresh history row too
+      // Update globals so switchLineDir re-renders the resolved state correctly
+      if (LINE_OVER_PICK && LINE_OVER_PICK.direction === pick.direction) {
+        LINE_OVER_PICK = { ...LINE_OVER_PICK, result: arData.result, actual_stat: arData.actual_stat };
+      }
+      if (LINE_UNDER_PICK && LINE_UNDER_PICK.direction === pick.direction) {
+        LINE_UNDER_PICK = { ...LINE_UNDER_PICK, result: arData.result, actual_stat: arData.actual_stat };
+      }
+      // Clear loaded date — next tab visit will reload from backend, which now rotates to new pick
+      LINE_LOADED_DATE = '';
+      // Refresh history row
       const hr2 = await fetch('/api/line-history');
       if (hr2.ok) {
         const hist2 = await hr2.json();
         if (hist2.picks && hist2.picks.length) {
           document.getElementById('lineHistoryWrap').style.display = 'block';
-          LINE_LOADED_DATE = ''; renderLineHistory(hist2); LINE_LOADED_DATE = _etToday();
+          renderLineHistory(hist2);
         }
       }
     } else if (arData.status === 'game_not_final') {
