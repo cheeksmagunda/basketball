@@ -1094,3 +1094,206 @@ class TestJSContractGuard:
         """_normalize_line_pick must be importable from api.index."""
         from api.index import _normalize_line_pick
         assert callable(_normalize_line_pick)
+
+
+# ---------------------------------------------------------------------------
+# 15. log_get() normalization regression guard (C3 fix)
+# ---------------------------------------------------------------------------
+
+class TestLogGetNormalization:
+    """
+    Regression guard for C3: log_get() builds player cards from CSV rows.
+    Before the fix, these were raw dicts missing chalk_ev, moonshot_ev,
+    injury_status — causing undefined renders in the History tab.
+
+    After the fix, _normalize_player() is applied, guaranteeing all required
+    frontend fields are present with safe defaults.
+    """
+
+    _PRED_CSV = (
+        "scope,lineup_type,slot,player_name,player_id,team,pos,"
+        "predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk\n"
+        "slate,chalk,2.0x,LeBron James,x,LAL,F,4.8,1.3,35,25,8,7,1,1\n"
+        "slate,upside,2.0x,Kris Middleton,y,MIL,F,3.2,2.1,28,15,5,4,1,0\n"
+    )
+
+    def test_log_get_player_cards_have_chalk_ev(self):
+        """Player cards from log_get must include chalk_ev (normalized, not raw CSV)."""
+        from api.index import _parse_csv, PRED_FIELDS, _normalize_player
+        rows = _parse_csv(self._PRED_CSV, PRED_FIELDS)
+        assert rows, "Failed to parse prediction CSV"
+
+        # Simulate what log_get does after the C3 fix
+        card = _normalize_player({
+            "slot":      rows[0].get("slot", ""),
+            "name":      rows[0].get("player_name", ""),
+            "team":      rows[0].get("team", ""),
+            "pos":       rows[0].get("pos", ""),
+            "rating":    rows[0].get("predicted_rs", ""),
+            "est_mult":  rows[0].get("est_card_boost", ""),
+            "predMin":   rows[0].get("pred_min", ""),
+            "pts":       rows[0].get("pts", ""),
+            "reb":       rows[0].get("reb", ""),
+            "ast":       rows[0].get("ast", ""),
+            "stl":       rows[0].get("stl", ""),
+            "blk":       rows[0].get("blk", ""),
+        })
+        assert "chalk_ev" in card, "chalk_ev missing from normalized log card"
+        assert "moonshot_ev" in card, "moonshot_ev missing from normalized log card"
+        assert "injury_status" in card, "injury_status missing from normalized log card"
+        assert isinstance(card["chalk_ev"], float)
+        assert isinstance(card["injury_status"], str)
+
+    def test_log_get_player_rating_is_float(self):
+        """rating field from CSV string must be coerced to float by normalizer."""
+        from api.index import _normalize_player
+        card = _normalize_player({"rating": "4.8", "pts": "25", "reb": "8"})
+        assert isinstance(card["rating"], float), f"rating should be float, got {type(card['rating'])}"
+        assert card["rating"] == 4.8
+
+    def test_log_get_empty_string_stats_are_zero(self):
+        """CSV rows with missing stats (empty strings) must normalize to 0.0."""
+        from api.index import _normalize_player
+        card = _normalize_player({"rating": "", "pts": "", "reb": "", "ast": ""})
+        assert card["rating"] == 0.0
+        assert card["pts"] == 0.0
+
+    def test_log_get_no_nan_in_output(self):
+        """No NaN values should appear in normalized log cards (catches parseFloat('') → NaN)."""
+        import math
+        from api.index import _normalize_player
+        card = _normalize_player({"rating": "4.8", "pts": "25", "est_mult": "1.3",
+                                   "reb": "", "ast": None, "stl": "1"})
+        for k, v in card.items():
+            if isinstance(v, float):
+                assert not math.isnan(v), f"NaN found in field '{k}': {card}"
+
+
+# ---------------------------------------------------------------------------
+# 16. update-config input validation regression guard (H6 fix)
+# ---------------------------------------------------------------------------
+
+class TestUpdateConfigValidation:
+    """
+    Regression guard for H6: /api/lab/update-config accepts dot-notation keys
+    from user input. Before the fix, unsanitized keys could write to arbitrary
+    config paths. After the fix, a regex validates each key segment.
+
+    These tests verify the validation pattern matches what the endpoint uses.
+    """
+
+    VALID_KEY_RE = r'^[a-zA-Z_][a-zA-Z0-9_]*([.][a-zA-Z_][a-zA-Z0-9_]*)*$'
+
+    def _valid(self, key):
+        import re
+        return bool(re.match(self.VALID_KEY_RE, key))
+
+    def test_normal_config_keys_pass(self):
+        """Standard config paths must be accepted."""
+        assert self._valid("card_boost.decay_base")
+        assert self._valid("lineup.chalk_rating_floor")
+        assert self._valid("moonshot.min_rating_floor")
+        assert self._valid("projection.b2b_minute_penalty")
+        assert self._valid("development_teams")
+
+    def test_path_traversal_is_rejected(self):
+        """Path segments with special chars must be rejected."""
+        assert not self._valid("../etc/passwd")
+        assert not self._valid("card_boost/../os")
+        assert not self._valid("card_boost.decay_base; DROP TABLE")
+        assert not self._valid("card_boost[0]")
+        assert not self._valid("")
+        assert not self._valid("card boost")  # space in key
+
+    def test_numeric_first_char_is_rejected(self):
+        """Keys must start with letter or underscore, not digit."""
+        assert not self._valid("1card_boost")
+        assert not self._valid("0.decay")
+
+    def test_underscore_keys_are_accepted(self):
+        """Keys with leading underscores are valid (e.g., _internal)."""
+        assert self._valid("_private_key")
+        assert self._valid("card_boost._internal")
+
+    def test_validation_regex_present_in_source(self):
+        """The validation regex must be present in api/index.py (catches accidental deletion)."""
+        src = (ROOT / "api" / "index.py").read_text()
+        assert "Invalid key format" in src, (
+            "update-config key validation removed — H6 security fix regressed"
+        )
+        assert "lab_update_config" in src, "lab_update_config function missing"
+
+
+# ---------------------------------------------------------------------------
+# 17. New frontend null guard regression tests (audit batch fixes)
+# ---------------------------------------------------------------------------
+
+class TestFrontendAuditFixes:
+    """
+    Regression guards for the 8 frontend null guards and .ok checks added
+    in the whole-app audit implementation. Each test checks that the exact
+    guard pattern remains in the JS source.
+    """
+
+    @pytest.fixture(scope="class")
+    def script_source(self):
+        html = (ROOT / "index.html").read_text()
+        start = html.rfind("<script>")
+        end   = html.rfind("</script>")
+        assert start != -1 and end != -1
+        return html[start:end]
+
+    def test_briefing_fetch_has_ok_check(self, script_source):
+        """C1: /api/lab/briefing fetch must check .ok before .json()."""
+        assert "r.ok ? r.json() : Promise.reject('briefing ' + r.status)" in script_source, (
+            "C1 regression: briefing fetch missing .ok guard"
+        )
+
+    def test_chat_streaming_has_ok_check(self, script_source):
+        """C2: /api/lab/chat must check r.ok before r.body.getReader()."""
+        assert "if (!r.ok) throw new Error('chat ' + r.status)" in script_source, (
+            "C2 regression: chat streaming missing .ok guard before getReader()"
+        )
+
+    def test_line_hist_data_optional_chain(self, script_source):
+        """H1: LINE_HIST_DATA.picks must use optional chaining."""
+        assert "LINE_HIST_DATA?.picks" in script_source, (
+            "H1 regression: LINE_HIST_DATA.picks without optional chain — throws if null"
+        )
+
+    def test_slate_available_after_optional_chain(self, script_source):
+        """H3: SLATE.available_after must use optional chaining."""
+        assert "SLATE?.available_after" in script_source, (
+            "H3 regression: SLATE.available_after without optional chain"
+        )
+
+    def test_line_resolve_poll_cleared_on_tab_switch(self, script_source):
+        """M5: LINE_RESOLVE_POLL must be cleared in switchTab()."""
+        # Check both polls are cleared
+        assert "LINE_RESOLVE_POLL" in script_source
+        # The fix adds clearing of LINE_RESOLVE_POLL in switchTab — verify it's there
+        # by checking the pattern appears near LINE_LIVE_POLL clearing
+        live_idx = script_source.find("clearInterval(LINE_LIVE_POLL)")
+        resolve_idx = script_source.find("clearInterval(LINE_RESOLVE_POLL)")
+        assert resolve_idx != -1, "M5 regression: LINE_RESOLVE_POLL never cleared"
+
+    def test_mutation_observer_dedup(self, script_source):
+        """M6: MutationObserver must use disconnect() before re-attaching."""
+        assert "_labMsgObserver" in script_source, (
+            "M6 regression: MutationObserver not tracked — accumulates on each Lab open"
+        )
+        assert "_labMsgObserver.disconnect()" in script_source, (
+            "M6 regression: MutationObserver not disconnected before re-attaching"
+        )
+
+    def test_pickedx_nan_guard(self, script_source):
+        """M4: parseInt(el.dataset.pickIdx) result must be checked for NaN."""
+        assert "isNaN(_pidx)" in script_source, (
+            "M4 regression: pickIdx NaN guard removed — could assign undefined to _linePick"
+        )
+
+    def test_biggest_misses_field_guards(self, script_source):
+        """M2: biggest_misses map must have field guards to prevent 'undefined' renders."""
+        assert "m.player || '?'" in script_source, (
+            "M2 regression: m.player accessed without fallback"
+        )

@@ -160,7 +160,7 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
         "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
-        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
+        "big_market_teams": ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SAS"],
         "star_players": ["Luka Doncic","Victor Wembanyama","Giannis Antetokounmpo","Jayson Tatum","Shai Gilgeous-Alexander","Nikola Jokic","Anthony Edwards","LeBron James","Stephen Curry","Kevin Durant","Damian Lillard","Trae Young","Devin Booker","Joel Embiid","Cade Cunningham","Paolo Banchero","Zion Williamson","Karl-Anthony Towns","Donovan Mitchell","De'Aaron Fox"],
         "log_formula_active": False,    # use log-formula for card boost (activate after 50+ actuals)
         "log_a": 3.2,                   # log-formula intercept
@@ -179,7 +179,7 @@ _CONFIG_DEFAULTS = {
     "real_score": {"dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2}},
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
     "projection": {
-        "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,
+        "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
         "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
         # DNP / reliability guards (added after March 4th audit)
@@ -263,6 +263,8 @@ for _p in [
                 AI_FEATURES = None
             break
         except Exception: pass
+if AI_MODEL is None:
+    print("[WARN] LightGBM model not found at any path — using heuristic fallback for all projections")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -354,7 +356,7 @@ def _safe_float(v, default=0.0):
 def _espn_get(url):
     try:
         r = requests.get(url, timeout=10)
-        r.raise_for_status()
+        if not r.ok: return {}
         return r.json()
     except: return {}
 
@@ -930,7 +932,7 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     base_offset    = cb.get("base_offset", 0.3)
     scalar         = cb.get("scalar", 3.4)
     bm_mult        = cb.get("big_market_multiplier", 1.5)
-    big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SA"]))
+    big_markets    = set(cb.get("big_market_teams", ["LAL","GSW","BOS","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI","SAS"]))
 
     # Stars drive high ownership regardless of team market — treat like big market
     star_players = cb.get("star_players", [])
@@ -1061,7 +1063,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # and rest-managed players (older, injury-prone) often sit entirely.
     # Penalize projected minutes by 12% on B2B nights.
     if is_b2b:
-        proj_min *= 0.88
+        proj_min *= _cfg("projection.b2b_minute_penalty", 0.88)
 
     # GTD (game-time decision) — apply minute reduction to account for scratch risk.
     # GTD players are confirmed questionable; ~30-40% sit on any given night.
@@ -2188,7 +2190,7 @@ async def log_get(date: str = Query(None)):
     for row in predictions:
         scope = row.get("scope", "")
         lt = row.get("lineup_type", "chalk")
-        scopes.setdefault(scope, {"chalk": [], "upside": []})[lt].append({
+        scopes.setdefault(scope, {"chalk": [], "upside": []})[lt].append(_normalize_player({
             "slot": row.get("slot", ""),
             "name": row.get("player_name", ""),
             "team": row.get("team", ""),
@@ -2201,7 +2203,7 @@ async def log_get(date: str = Query(None)):
             "ast": row.get("ast", ""),
             "stl": row.get("stl", ""),
             "blk": row.get("blk", ""),
-        })
+        }))
 
     return {
         "date": date_str,
@@ -2810,7 +2812,7 @@ async def resolve_line(payload: dict = Body(...)):
     return {"status": "resolved", "result": result, "actual": actual_f}
 
 
-def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = None) -> float | None:
+def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = None) -> "float | None":
     """Fetch a player's final boxscore stat from ESPN for today's (or a given) games.
     stat_type is the line pick type: 'points', 'rebounds', 'assists', etc.
     date_str: optional YYYYMMDD string; defaults to today in ET.
@@ -3331,6 +3333,11 @@ async def lab_update_config(payload: dict = Body(...)):
     description = payload.get("change_description", "Lab update")
     if not changes:
         return JSONResponse({"error": "No changes provided"}, status_code=400)
+    # Security: reject keys with non-alphanumeric path segments (prevents path traversal)
+    import re as _re
+    for key in changes:
+        if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*([.][a-zA-Z_][a-zA-Z0-9_]*)*$', str(key)):
+            return JSONResponse({"error": f"Invalid key format: {key!r}"}, status_code=400)
 
     cfg = _load_config()
     old_version = cfg.get("version", 1)

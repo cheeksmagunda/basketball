@@ -1317,6 +1317,9 @@ function switchTab(tab) {
   if (tab !== 'line' && LINE_LIVE_POLL) {
     clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
   }
+  if (tab !== 'line' && LINE_RESOLVE_POLL) {
+    clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null;
+  }
 
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
@@ -1702,7 +1705,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
     const msg = SLATE?.no_games_yet
-      ? `Today's slate will be available around <b>${SLATE.available_after}</b>.`
+      ? `Today's slate will be available around <b>${SLATE?.available_after}</b>.`
       : 'No players to display yet.';
     el.innerHTML = `<div class="empty-state"><span class="icon">🏀</span><p>${msg}</p></div>`;
     return;
@@ -2092,18 +2095,18 @@ async function _handleBenUpload(file, type, source) {
             const dirAcc = ad.directional_accuracy != null ? Math.round(ad.directional_accuracy * 100) + '%' : 'N/A';
             auditStr = ` Model accuracy — MAE: ${ad.mae}, directional: ${dirAcc}, over-projected: ${ad.over_projected}, under-projected: ${ad.under_projected}.`;
             if (ad.biggest_misses?.length) {
-              auditStr += ' Biggest misses: ' + ad.biggest_misses.slice(0, 5).map(m => `${m.player} (pred ${m.predicted_rs} vs actual ${m.actual_rs})`).join(', ') + '.';
+              auditStr += ' Biggest misses: ' + ad.biggest_misses.slice(0, 5).map(m => `${m.player || '?'} (pred ${m.predicted_rs ?? '?'} vs actual ${m.actual_rs ?? '?'})`).join(', ') + '.';
             }
           }
         }
       } catch(e) {}
 
-      const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
+      const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs ?? '?'} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
       const summary = `Real Scores uploaded for ${today}. Players: ${playerList}.${auditStr}`;
       appendLabMessage('user', summary);
       // Rebuild system prompt with fresh briefing so follow-up questions have current accuracy context
       try {
-        const freshBriefing = await fetch('/api/lab/briefing').then(r => r.json());
+        const freshBriefing = await fetch('/api/lab/briefing').then(r => r.ok ? r.json() : Promise.reject('briefing ' + r.status));
         LAB.briefing = freshBriefing;
         LAB.system = buildLabSystemPrompt();
       } catch(e) {}
@@ -2499,7 +2502,8 @@ function renderLineHistoryRows(picks, dirFilter) {
   // Attach picks to rendered nodes after inserting into DOM (deferred via timeout)
   setTimeout(() => {
     document.querySelectorAll('.line-history-row[data-pick-idx]').forEach(el => {
-      el._linePick = _picks[parseInt(el.dataset.pickIdx)];
+      const _pidx = parseInt(el.dataset.pickIdx);
+      if (!isNaN(_pidx) && _pidx < _picks.length) el._linePick = _picks[_pidx];
     });
   }, 0);
   if (!filtered.length) {
@@ -2553,11 +2557,11 @@ function filterLineHistory(dir) {
     btn.classList.remove('over', 'under');
     if (isActive && dir !== 'all') btn.classList.add(dir);
   });
-  document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA.picks, dir);
+  document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA?.picks, dir);
 
   // Recompute stats for the filtered subset
-  const filtered = dir === 'all' ? LINE_HIST_DATA.picks
-    : (LINE_HIST_DATA.picks || []).filter(p => p.direction === dir);
+  const filtered = dir === 'all' ? (LINE_HIST_DATA?.picks || [])
+    : (LINE_HIST_DATA?.picks || []).filter(p => p.direction === dir);
   const hits   = filtered.filter(p => p.result === 'hit');
   const misses = filtered.filter(p => p.result === 'miss');
   const total  = hits.length + misses.length;
@@ -2888,6 +2892,7 @@ async function labCallClaude(attachedImage = null) {
     });
 
     // Read SSE stream — backend emits status events then final content
+    if (!r.ok) throw new Error('chat ' + r.status);
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -3108,12 +3113,15 @@ function _labScrollToBottom() {
   // P4: MutationObserver — auto-scroll #labMessages whenever new content is added
   // (covers Claude streaming tokens and new messages). Only scrolls if user is already
   // near the bottom (within 120px), so manually scrolling up to read history isn't hijacked.
+  // Disconnect any existing observer before re-attaching (prevents accumulation on re-open).
   const msgs = document.getElementById('labMessages');
   if (msgs && typeof MutationObserver !== 'undefined') {
-    new MutationObserver(() => {
+    if (window._labMsgObserver) { window._labMsgObserver.disconnect(); }
+    window._labMsgObserver = new MutationObserver(() => {
       const distFromBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight;
       if (distFromBottom < 200) _labScrollToBottom();
-    }).observe(msgs, { childList: true, subtree: true, characterData: true });
+    });
+    window._labMsgObserver.observe(msgs, { childList: true, subtree: true, characterData: true });
   }
 
   input.addEventListener('focus', () => {
