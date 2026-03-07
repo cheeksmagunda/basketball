@@ -1815,7 +1815,7 @@ async function savePredictions() {
 }
 
 // ════════════════════════════════════════════════════════
-// ── LOG PAGE ──
+// LOG PAGE — grep: initLogPage, selectLogDate, renderLogGrid, openLogDrilldown, drill-down
 // ════════════════════════════════════════════════════════
 
 async function initLogPage() {
@@ -1935,11 +1935,12 @@ function renderLogGrid(dateStr) {
   }
 
   // Per-game cards — scope is now the readable label (e.g. "BOS @ NYK")
+  // Use data-scope attribute instead of inline onclick interpolation so any special
+  // characters in ESPN-sourced labels are handled safely by the delegated listener below.
   gameScopes.forEach(scope => {
     const chalkCount = scopes[scope]?.chalk?.length || 0;
-    const escapedScope = scope.replace(/'/g, "\\'");
     html += `
-      <div class="log-game-card" onclick="openLogDrilldown('${escapedScope}', '${escapedScope}')">
+      <div class="log-game-card" data-scope="${scope.replace(/"/g, '&quot;')}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div class="log-game-matchup">${scope}</div>
           <span style="color:var(--muted);font-size:1rem;margin-left:6px">›</span>
@@ -1954,6 +1955,14 @@ function renderLogGrid(dateStr) {
   }
 
   grid.innerHTML = html;
+
+  // Delegate clicks for per-game cards (data-scope avoids inline interpolation)
+  grid.querySelectorAll('.log-game-card[data-scope]').forEach(card => {
+    card.addEventListener('click', () => {
+      const s = card.dataset.scope;
+      openLogDrilldown(s, s);
+    });
+  });
 }
 
 function openLogDrilldown(scope, gameLabel) {
@@ -2156,7 +2165,7 @@ async function _handleBenUpload(file, type, source) {
 }
 
 // ════════════════════════════════════════════════════════
-// ── LINE PAGE ──
+// LINE PAGE — grep: initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
 // ════════════════════════════════════════════════════════
 
 let LINE_LOADED_DATE = '';
@@ -2624,7 +2633,7 @@ function switchLineDir(dir) {
 }
 
 // ════════════════════════════════════════════════════════
-// ── LAB PAGE ──
+// LAB PAGE — grep: initLabPage, LAB state, labCallClaude, buildLabSystemPrompt, _handleBenUpload
 // ════════════════════════════════════════════════════════
 
 const LAB = {

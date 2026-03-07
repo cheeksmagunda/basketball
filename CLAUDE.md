@@ -28,6 +28,7 @@ data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
 data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 data/audit/            — Git-tracked daily audit JSONs (auto-generated on save-actuals)
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
+data/locks/            — Cold-start recovery: {date}_slate.json written at lock-promotion time
 lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
 train_lgbm.py          — Training script (11 features, run locally or via GitHub Actions)
 vercel.json            — Vercel config (routes, crons, 300s timeout on Pro plan)
@@ -58,9 +59,9 @@ grep: SLATE                    — loadSlate, /api/slate, Starting 5, Moonshot
 grep: PER-GAME ANALYSIS        — runAnalysis, /api/picks
 grep: CARD RENDERING           — renderCards, player-card, tcolor
 grep: PREDICTION PERSISTENCE   — savePredictions, dedup guard
-grep: LOG PAGE                 — initLogPage, selectLogDate, drill-down
-grep: LINE PAGE                — initLinePage, renderLinePickCard
-grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude
+grep: LOG PAGE                 — initLogPage, selectLogDate, renderLogGrid, openLogDrilldown, drill-down
+grep: LINE PAGE                — initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
+grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt, _handleBenUpload
 grep: github_storage           — _github_get_file, _github_write_file
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
 grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
@@ -170,20 +171,26 @@ A **Magic 8-ball** animation plays on app load and during API calls (slate fetch
 the new CSV content against what's already stored — skipping the GitHub commit if unchanged.
 This prevents the commit → Vercel redeploy cascade that was triggering 6+ redeploys per visit.
 
+The `/api/save-predictions` endpoint also enforces a server-side lock guard — it returns HTTP 409
+if called before the slate is locked, making it impossible to persist pre-lock projections regardless
+of which call path invoked it (frontend, cron, or direct POST).
+
 ## Lock System
 
 Predictions lock 5 minutes before the earliest game starts. Once locked:
+- **`/api/save-predictions`** rejects (HTTP 409) pre-lock calls — server-side guard regardless of caller
 - Backend returns cached predictions (no recomputation with post-tipoff data)
 - Lock cache (`/tmp/nba_locks_v1/`) survives within a warm Vercel instance
-- On cold start with no cache, returns empty locked response (frontend preserves displayed data)
+- On cold start with no cache, `data/locks/{date}_slate.json` on GitHub is the recovery source
+- On cold start with no GitHub backup either, returns empty locked response (frontend preserves displayed data)
 
 ## Two Lineup Types
 
 - **Starting 5 (chalk)**: MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent.
-- **Moonshot** (v2 — March 5 overhaul): Options strategy. Hard floor of 20 projected minutes + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = predMin × card_boost² × dev_team_bonus × rating`. Development/tanking team players get 1.25x boost. Philosophy: buy cheap lottery tickets (high minutes + low drafts), let positive variance do the work. Solves the DNP trap problem from March 4-5.
+- **Moonshot** (v2): Options strategy. Hard floor of 20 projected minutes + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = predMin × card_boost² × dev_team_bonus × rating`. Development/tanking team players get 1.25x boost. Philosophy: buy cheap lottery tickets (high minutes + low drafts), let positive variance do the work.
 
 ### Development Teams (configurable in model-config.json)
-`UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership.
+Current default: `UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership. **This list is a seasonal snapshot** — update via Ben or directly in `data/model-config.json` as the standings shift.
 
 ### RotoWire Integration (`api/rotowire.py`)
 Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Returns player availability (confirmed/expected/questionable/OUT). Moonshot hard-filters on this: any player flagged OUT or questionable is excluded. Cache TTL: 30 minutes.
@@ -263,6 +270,8 @@ EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hid
 - `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side.
 - `_github_write_file` does a GET + PUT internally (fetches current SHA before writing). On concurrent writes (rare), the second write may 422. The cron + user refresh pattern makes this extremely unlikely.
 - Odds API odds refresh: if both over_pick and under_pick are for the same player, the function makes two identical Odds API calls (one per pick object). Functionally correct, marginally wasteful on quota.
+- `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
+- History tab shows only the last 30 days. Predictions older than 30 days are stored in GitHub but not reachable from the UI date strip.
 
 ## Development
 
@@ -271,8 +280,12 @@ EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hid
 pip install -r requirements.txt
 uvicorn server:app --reload
 
-# Deploy — push to feature branch; auto-merge-to-main.yml merges → main → Vercel
-git push -u origin claude/codebase-analysis-e3rsW
+# Deploy — push to your session branch; auto-merge-to-main.yml merges → main → Vercel
+# Branch naming convention: claude/<session-id>  (e.g. claude/codebase-analysis-e3rsW)
+git push -u origin <your-branch>
+
+# Verify on production
+# https://basketball-chi-cyan.vercel.app
 ```
 
 ## Starting a New Claude Code Session
@@ -280,10 +293,10 @@ git push -u origin claude/codebase-analysis-e3rsW
 When starting fresh in a new chat, Claude Code automatically reads this file for context.
 Provide the following to the new session to orient it quickly:
 
-1. **Branch**: `claude/codebase-analysis-e3rsW` (always develop here, push triggers auto-merge → main → Vercel)
+1. **Branch**: Create a new `claude/<session-id>` branch (e.g. `claude/my-feature-xyz`). Push triggers auto-merge → main → Vercel. **Never push to main directly.**
 2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
 3. **No test suite to run** — deploy triggers automatically on push; verify on `basketball-chi-cyan.vercel.app`
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
-5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LOG`, `LAB`, `LINE_DIR`, `LINE_PICK_DIR`, `LINE_LOADED_DATE`
-6. **Cache**: `/tmp/nba_cache_v19/` (daily, keyed by ET date). `/api/refresh` clears all caches + config.
+5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LOG`, `LAB`, `LINE_DIR`, `LINE_OVER_PICK`, `LINE_UNDER_PICK`, `LINE_LOADED_DATE`
+6. **Cache**: Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/refresh` clears all caches + config.
 7. **Config**: `data/model-config.json` on GitHub — Ben/Lab writes here, backend reads with 5-min TTL.

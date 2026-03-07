@@ -333,7 +333,10 @@ def _is_locked(start_time_iso):
         return False
 
 def _is_completed(start_time_iso):
-    """Returns True if the game has already passed its lock window."""
+    """Returns True if the game has passed its lock window (i.e. is locked or in progress).
+    NOTE: Despite the name, this does NOT check if the game is finished on ESPN —
+    it only checks whether the lock window has been crossed (now >= start - lock_buf).
+    Use _all_games_final() to check ESPN completion status."""
     try:
         lock_buf = _cfg("projection.lock_buffer_minutes", 5)
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
@@ -3140,7 +3143,7 @@ async def line_history():
 # BEN / LAB ENGINE — Phase 3
 # grep: /api/lab/status, /api/lab/briefing, /api/lab/update-config, /api/lab/chat
 # grep: /api/lab/backtest, /api/lab/rollback, _all_games_final, Lab lock system
-# grep: _GAMES_FINAL_CACHE, buildLabSystemPrompt, claude-sonnet-4-6, Ben
+# grep: _GAMES_FINAL_CACHE, buildLabSystemPrompt, claude-opus-4-6, Ben
 # ═════════════════════════════════════════════════════════════════════════════
 # PHASE 3: LAB
 # ═════════════════════════════════════════════════════════════════════════════
