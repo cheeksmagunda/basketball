@@ -1594,16 +1594,15 @@ async def get_slate():
             "available_after": available_msg,
         }
 
-    # Lock is based on earliest DRAFTABLE game — completed games don't count
+    # lock_time and locked status both use the FIRST game of the entire day (all games,
+    # not just draftable ones). Once the 6 PM game locks at 5:55 PM, the slate stays
+    # locked for the rest of the day — even between game windows when mid-day games
+    # are already in progress but the next batch hasn't hit their lock window yet.
     start_times = [g["startTime"] for g in draftable_games if g.get("startTime")]
     earliest = min(start_times) if start_times else None
-    locked = _is_locked(earliest) if earliest else False
-
-    # lock_time: use the FIRST game of the day (all games, not just draftable).
-    # Once early games start and drop out of draftable_games, the displayed
-    # "Locked at X:XXpm" must not jump forward to the next game's lock window.
     all_start_times = [g["startTime"] for g in games if g.get("startTime")]
     earliest_all = min(all_start_times) if all_start_times else earliest
+    locked = _is_locked(earliest_all) if earliest_all else False
     lock_time = None
     if earliest_all:
         try:
