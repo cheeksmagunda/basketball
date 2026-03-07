@@ -2471,7 +2471,9 @@ async def refresh_line_odds():
 
     if updated:
         json_path = f"data/lines/{today_str}_pick.json"
-        _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
+        write_result = _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
+        if write_result.get("error"):
+            return JSONResponse({"status": "error", "message": write_result["error"]}, status_code=500)
         cf = _cp("line_v1")
         if cf.exists():
             cf.unlink()

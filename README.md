@@ -1,86 +1,152 @@
-# The Oracle — NBA Draft Optimizer for the Real Sports App
+# The Oracle — NBA Draft Optimizer for Real Sports
 
-AI-powered NBA draft optimizer built specifically for the **Real Sports App** scoring system — not traditional DFS. Uses Monte Carlo game simulation, MILP slot optimization, and injury cascade analysis.
+AI-powered daily NBA draft optimizer for the **Real Sports App**. Projects player Real Scores via Monte Carlo simulation, estimates card boosts, and builds MILP-optimized lineups. Deployed on Vercel as a FastAPI backend + single-page HTML frontend.
 
-## Real Sports App vs Traditional DFS
-
-The Real Sports App uses a fundamentally different scoring algorithm than traditional DFS platforms:
+## What Real Sports Scores
 
 | Factor | Traditional DFS | Real Sports App |
 |--------|----------------|-----------------|
-| Scoring | Static: PTS + REB + AST×1.5 + ... | **Real Score**: context-dependent, non-linear |
-| Game Closeness | Irrelevant | **#1 factor** — tight games = exponentially higher scores |
+| Scoring | Static: PTS/REB/AST formula | **Real Score**: context-dependent, non-linear |
+| Game Closeness | Irrelevant | **#1 factor** — tight games exponentially boost scores |
 | Clutch Factor | Not modeled | 4th quarter, lead-changing plays get massive boosts |
-| Momentum | Not modeled | Streaky/burst production scores higher than steady output |
-| Optimal Strategy | Fade stars, target low-ownership bench | **Target players in close games with high clutch potential** |
+| Optimal Strategy | Low-ownership stars | **High-RS role players with big card boosts** |
 
-## How It Works
-
-### Scoring Pipeline
-```
-ESPN API (daily game data, spreads, totals, injuries)
-  → 50/50 Season/Recent stat blending
-  → Injury Cascade Engine (redistribute OUT player minutes, capped +3 min/player)
-  → DFS Base Score (proxy for raw production)
-  → LightGBM AI Model (70% weight, with spread-derived opponent quality)
-  → Contextual Adjustments (pace, spread closeness, home/away)
-  → Monte Carlo Real Score Engine (closeness C_c, clutch C_k, momentum M_m)
-  → MILP Slot Optimizer (assigns players to 2.0x/1.5x/1.2x/1.0x/1.0x slots)
-```
-
-### Full Slate (Starting 5 + Moonshot)
-- **Starting 5:** Highest projected Real Score picks. Near-neutral ownership weighting — Real Score engine already favors players in close games over stars in blowouts.
-- **Moonshot:** 5 different players targeting high Real Score ceiling — close-game environments, high variance, momentum potential. NOT about low-minute bench players.
-
-### Per-Game Analysis
-Single-game drafts with team balance (min 2 per team) and game script adjustments:
-
-| O/U Range | Script | Strategy |
-|-----------|--------|----------|
-| < 220 | Defensive Grind | Boost STL/BLK, suppress volume stats |
-| 220-235 | Balanced Pace | Neutral — lean on matchup and spread |
-| 236-245 | Fast-Paced | Boost scorers, assists, rebounders |
-| > 245 | Track Meet | Boost PTS+AST combos, penalize if spread > 8 |
-
-### Key Model Parameters
-| Parameter | Value | Why |
-|-----------|-------|-----|
-| Ownership mult | 1.0 (neutral) | Real Score handles differentiation via game context |
-| Stat blend | 50% season / 50% recent | Balances stability with matchup sensitivity |
-| Cascade cap | +3 min/player max | Prevents unrealistic bench projections |
-| Cascade badge threshold | +2.5 min | Only flags genuine role expansions |
-| Decline trigger | Recent < 90% of season min | Catches declining usage earlier |
-| Raw score cap | 25.0 | Lets stars differentiate (vs 15.0 before) |
-| Spread adjustment | 4% range | Stronger boost for tight games |
-| Opponent quality | Derived from spread | Not hardcoded (was 112.0 for all games) |
-
-### Injury Cascade Engine
-When a player is OUT, their minutes redistribute to teammates at same position group. Bench players get proportionally more. Capped at +3 min per player to prevent unrealistic projections.
-
-### Calibration Feedback Loop
-After entering actual results in the Lab, the backend calculates prediction bias and adjusts future projections via exponential moving average (alpha=0.3).
+Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.0x, 1.8x, 1.6x, 1.4x, 1.2x.
 
 ## Architecture
 
-- **Frontend:** Single-file `index.html` (vanilla JS). PWA-capable.
-- **Backend:** FastAPI (`api/index.py`) on Vercel serverless.
-- **Data:** ESPN API (scoreboard, rosters, athlete overview). No API key needed.
-- **AI Model:** LightGBM (`lgbm_model.pkl`) blended 70/30 with heuristic scoring.
-- **Real Score Engine:** Monte Carlo simulation (closeness, clutch, momentum coefficients).
-- **Optimizer:** PuLP/CBC MILP solver for slot assignment.
-- **Storage:** LocalStorage for Lab history, `/tmp` for server-side caching.
+```
+index.html             — 4-tab frontend (Predict | Line | Ben | History)
+api/index.py           — FastAPI backend (all endpoints, projection engine)
+api/real_score.py      — Monte Carlo Real Score projection engine
+api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
+api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
+api/rotowire.py        — RotoWire lineup scraper (availability/injury flags)
+lgbm_model.pkl         — LightGBM model bundle {model, features}
+train_lgbm.py          — Training script (11 features)
+data/model-config.json — Runtime model config (Ben/Lab writes here)
+data/predictions/      — Git-tracked daily prediction CSVs
+data/actuals/          — Git-tracked daily actual result CSVs
+data/audit/            — Git-tracked daily audit JSONs
+data/lines/            — Git-tracked daily Line of the Day picks
+vercel.json            — Vercel config (routes, crons, 300s timeout)
+server.py              — Local dev server (uvicorn)
+```
+
+## Tabs
+
+| Tab | Purpose |
+|-----|---------|
+| **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
+| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh hourly from Odds API |
+| **Ben** | Chat interface (Claude Opus). Locked during games, unlocked after final. End-of-day upload flow |
+| **History** | Historical drill-down — predictions vs actuals, read-only |
+
+## Scoring Pipeline
+
+```
+ESPN API (games, rosters, injuries, spreads)
+  → Injury Cascade (redistribute OUT minutes, +3 min cap)
+  → 50/50 Season/Recent stat blend
+  → LightGBM model (11 features, 70% weight)
+  → Contextual adjustments (pace, spread, home/away)
+  → Monte Carlo Real Score (closeness Cc, clutch Ck, momentum Mm)
+  → Card Boost estimate (inverse ownership heuristic)
+  → MILP slot optimizer → Starting 5 + Moonshot lineups
+```
+
+## Two Lineup Types
+
+**Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Consistent, conservative.
+
+**Moonshot** — Options strategy. Hard requirements: ≥20 projected minutes, RotoWire lineup confirmation, ≥2.0 RS rating. Ranked by `moonshot_ev = predMin × card_boost² × dev_team_bonus × rating`. Development team players get 1.25x boost. Buys lottery tickets on high-minutes low-drafts players.
+
+## Line of the Day
+
+Daily player prop pick generated by 6 parallel Claude Haiku calls (points/rebounds/assists × over/under). Best over and best under picks stored separately.
+
+**Hourly odds refresh**: A Vercel cron (`0 * * * *` + `55 * * * *`) calls `/api/refresh-line-odds` which fetches the current bookmaker consensus line from The Odds API and updates the pick's `line`, `odds_over`, `odds_under`, and `books_consensus` fields without changing the pick direction or reasoning. The odds freeze at slate lock time (5 min before first tip). Pick cards show "Odds · [time] CT" to indicate freshness.
+
+## Ben (Lab) Interface
+
+Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefing, config, slate, line, log data). After all games go final, Ben auto-prompts for screenshot uploads (Real Scores + Top Drafts) and computes hindsight optimal lineup.
+
+**Config updates**: Ben can propose model parameter changes, run backtests, and apply changes to `data/model-config.json` via the GitHub Contents API — no redeploy needed.
+
+## Key Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/slate` | GET | Full-slate predictions (Starting 5 + Moonshot) |
+| `/api/picks?gameId=X` | GET | Per-game predictions |
+| `/api/games` | GET | Today's games with lock status |
+| `/api/refresh-line-odds` | GET | Sync current bookmaker line from Odds API (hourly cron) |
+| `/api/line-of-the-day` | GET | Today's over + under picks |
+| `/api/save-line` | POST | Persist today's picks to GitHub |
+| `/api/resolve-line` | POST | Mark pick hit/miss |
+| `/api/line-history` | GET | Recent picks with streak + hit rate |
+| `/api/save-predictions` | POST | Save cached predictions to GitHub CSV |
+| `/api/save-actuals` | POST | Save parsed actuals + auto-generate audit JSON |
+| `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc) |
+| `/api/lab/status` | GET | Lock status + games-final count |
+| `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt |
+| `/api/lab/update-config` | POST | Apply model config changes (dot-notation) |
+| `/api/lab/backtest` | POST | Replay historical slates with proposed params |
+| `/api/refresh` | GET | Clear all caches + config |
+
+## Cron Schedule (UTC)
+
+| Schedule | Endpoint | Purpose |
+|----------|----------|---------|
+| `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
+| `0 20 * * *` | `/api/refresh` | Second cache clear pass |
+| `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model params if ≥3% MAE improvement |
+| `0 * * * *` | `/api/refresh-line-odds` | Hourly odds sync from Odds API |
+| `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET lock window) |
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `GITHUB_TOKEN` | GitHub PAT (repo scope) — for CSV + config read/write |
+| `GITHUB_REPO` | e.g. `cheeksmagunda/basketball` |
+| `ANTHROPIC_API_KEY` | Claude (screenshot OCR + Ben chat) |
+| `ODDS_API_KEY` | The Odds API — player prop lines for Line of the Day |
+
+## LightGBM Model
+
+**11 features**: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_3g_trend, games_played`
+
+Retrained nightly via GitHub Actions (`retrain-model.yml`). Manual retrain: `python train_lgbm.py`.
+
+## Data Layer
+
+All persistent data stored in the GitHub repo via Contents API:
+- `data/predictions/{date}.csv` — player predictions per day
+- `data/actuals/{date}.csv` — actual results per day
+- `data/audit/{date}.json` — pre-computed accuracy audit
+- `data/lines/{date}.csv` — primary pick for result tracking/resolve
+- `data/lines/{date}_pick.json` — dual-pick format `{over_pick, under_pick}` with odds fields
+- `data/model-config.json` — runtime model parameters (5-min cache, fallback to defaults)
 
 ## Local Development
 
 ```bash
 pip install -r requirements.txt
 uvicorn server:app --reload
+# open http://localhost:8000
 ```
 
 ## Deployment
 
-Deployed on Vercel. Push to main triggers auto-deploy.
+Push to the feature branch — `auto-merge-to-main.yml` merges to `main` → Vercel auto-deploys.
 
 ```bash
-vercel --prod
+git push -u origin claude/your-branch
 ```
+
+## Known Limitations
+
+- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. Frontend preserves last displayed data client-side.
+- Line of the Day odds use season averages as baseline when Odds API is unavailable; `MODEL` label shown.
+- RotoWire scraping is free-tier only (availability + injury flags, no projected minutes).
