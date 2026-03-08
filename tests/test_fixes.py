@@ -405,5 +405,22 @@ class TestLineConfig:
         assert result.get("pick") is not None or result.get("error") is not None
 
 
+# ─────────────────────────────────────────────────────────
+# TestLgbmFeatureAlignment — train vs inference feature list
+# ─────────────────────────────────────────────────────────
+class TestLgbmFeatureAlignment:
+    """When LightGBM bundle is loaded, feature list must have 11 elements; 10th (index 9) is recent_vs_season (or legacy recent_3g_trend)."""
+
+    def test_feature_list_length_and_trend_feature(self):
+        from api.index import AI_FEATURES
+        if AI_FEATURES is None:
+            pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
+        assert len(AI_FEATURES) == 11, f"Expected 11 features, got {len(AI_FEATURES)}: {AI_FEATURES}"
+        # 11th feature (1-based) = index 9: recent scoring vs season (train: recent_5g_pts/avg_pts; inference: recent_pts/season_pts)
+        assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
+            f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

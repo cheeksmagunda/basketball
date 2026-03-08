@@ -84,12 +84,11 @@ df['pts_per_min'] = np.where(df['recent_min'] > 0, df['avg_pts'] / df['recent_mi
 df['prev_date'] = g['GAME_DATE'].transform(lambda x: x.shift(1))
 df['rest_days'] = (df['GAME_DATE'] - df['prev_date']).dt.days.fillna(3).clip(1, 7)
 
-# Feature 11: Recent 3-game scoring trend vs 5-game baseline
-df['recent_3g_pts'] = g['PTS'].transform(lambda x: x.rolling(3).mean().shift(1))
+# Feature 11: Recent vs season scoring (must match inference: recent_pts / season_pts)
 df['recent_5g_pts'] = g['PTS'].transform(lambda x: x.rolling(5).mean().shift(1))
-df['recent_3g_trend'] = np.where(
-    df['recent_5g_pts'] > 0,
-    df['recent_3g_pts'] / df['recent_5g_pts'],
+df['recent_vs_season'] = np.where(
+    df['avg_pts'] > 0,
+    df['recent_5g_pts'] / df['avg_pts'],
     1.0
 ).clip(0.5, 2.0)
 
@@ -100,7 +99,7 @@ df['games_played'] = g.cumcount()  # 0-indexed, represents games BEFORE this one
 features = [
     'avg_min', 'avg_pts', 'usage_trend', 'opp_def_rating',
     'home_away', 'ast_rate', 'def_rate', 'pts_per_min',
-    'rest_days', 'recent_3g_trend', 'games_played'
+    'rest_days', 'recent_vs_season', 'games_played'
 ]
 target = 'actual_base_score'
 

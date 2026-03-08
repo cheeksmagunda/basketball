@@ -275,10 +275,10 @@ Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Re
 ## Model Improvements (deployed)
 
 ### LightGBM (11 features, `lgbm_model.pkl`)
-Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_3g_trend, games_played`
+Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_vs_season, games_played`
 
-- Model bundle format: `{"model": lgb.LGBMRegressor, "features": [...]}` — legacy bare-model pkl still supported.
-- `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits).
+- Model bundle format: `{"model": lgb.LGBMRegressor, "features": [...]}` — inference verifies feature vector length; bundle required.
+- `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits). `recent_vs_season` = recent scoring vs season average (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts).
 - Retrained nightly by GitHub Actions (`retrain-model.yml`). Retrain manually: `python train_lgbm.py`.
 
 ### Card Boost (`_est_card_boost`)
@@ -524,6 +524,11 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 
 No orphan entrypoints; all API surface is in api/index.py. Scripts are for local/CI use.
 
+## Audits
+
+- **docs/AUDIT-LIGHTWEIGHT.md** — Production, object/variable/reference, pipeline/caching, LightGBM (includes fix for recent_vs_season train/inference alignment).
+- **docs/AUDIT-HEAVY.md** — Security, error handling, API consistency, contracts, timeouts, deployment, observability, tests/docs.
+
 ## Unit Testing Framework
 
 Two test modules; run both for full coverage:
@@ -540,6 +545,7 @@ TestSaveActualsAuditGate — audit only fires when real_scores data is present
 TestAutoResolveMidnight — pick_date vs et_date divergence after midnight
 TestCacheTTLs           — 3 min games, 5 min config, 30 min RotoWire, 60s locked TTL
 TestPollingIntervals    — 120s lab lock, 60s line live, 300s failure cutoff
+TestLgbmFeatureAlignment — when bundle loaded, 11 features and 11th is recent_vs_season or recent_3g_trend
 ```
 
 **tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions:

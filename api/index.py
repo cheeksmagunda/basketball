@@ -1229,19 +1229,20 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
             # Feature vector — must match train_lgbm.py feature order exactly.
             # Values not available from ESPN at inference time use neutral defaults.
+            # Feature 11: recent_vs_season (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts)
             season_pts_   = stats.get("season_pts", pts)
             ast_rate_     = ast / max(avg_min, 1)
             def_rate_     = (stl + blk) / max(avg_min, 1)
             pts_per_min_  = pts / max(avg_min, 1)
             home_away_    = 1.0 if side == "home" else 0.0
             rest_days_    = 2.0   # typical NBA schedule; not in ESPN splits
-            recent_3g_    = stats.get("recent_pts", pts) / max(stats.get("season_pts", pts), 1)
-            recent_3g_    = float(np.clip(recent_3g_, 0.5, 2.0))
+            recent_vs_season_ = stats.get("recent_pts", pts) / max(stats.get("season_pts", pts), 1)
+            recent_vs_season_ = float(np.clip(recent_vs_season_, 0.5, 2.0))
             games_played_ = 40.0  # mid-season default; not in ESPN splits
 
             feat_vec = [avg_min, season_pts_, usage, opp_def_rating,
                         home_away_, ast_rate_, def_rate_, pts_per_min_,
-                        rest_days_, recent_3g_, games_played_]
+                        rest_days_, recent_vs_season_, games_played_]
 
             # If the saved model has a known feature list, verify length matches
             if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
