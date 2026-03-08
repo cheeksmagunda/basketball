@@ -1965,6 +1965,22 @@ async def get_games() -> dict:
 
 def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
+    # Fast path: if today's locked slate is already in memory, skip ALL external calls.
+    today_str = _et_date().isoformat()
+    _lk_pre = _lg("slate_v5_locked")
+    if _lk_pre and _lk_pre.get("date") == today_str:
+        _lk_pre["locked"] = True
+        _lk_pre.setdefault("draftable_count", 0)
+        return _lk_pre
+    # Cold-start fast path: check GitHub backup before making any ESPN calls.
+    # The backup is written at lock-promotion time so it exists on most cold starts.
+    _gh_pre = _slate_restore_from_github()
+    if _gh_pre and _gh_pre.get("date") == today_str and _gh_pre.get("locked"):
+        _gh_pre["locked"] = True
+        _gh_pre.setdefault("draftable_count", 0)
+        _ls("slate_v5_locked", _gh_pre)
+        return _gh_pre
+
     games = fetch_games()
 
     # Midnight rollover guard: if none of today's games have started yet but
@@ -2015,13 +2031,15 @@ def _get_slate_impl():
             lock_cached.setdefault("draftable_count", 0)
             return lock_cached
 
-        # Cache miss (cold start) — call ESPN now to determine all_complete status.
-        # all_complete is True only when ESPN confirms every game is done.
-        # Use finals>0 guard so an ESPN failure (finals=0, remaining=0) defaults to False.
+        # Cache miss (cold start) — check regular /tmp cache and GitHub backup BEFORE
+        # calling ESPN. _cg("slate_v5") survives longer than the lock cache on partial
+        # warm instances; GitHub backup exists on true cold starts after lock-promotion.
+        reg_cached = _cg("slate_v5")
+        gh_backup = None if reg_cached else _slate_restore_from_github()
+        # Now call ESPN once to get all_complete status (only reached on cold start).
         all_final, remaining, finals, _lrs = _all_games_final(games)
         all_complete = all_final and finals > 0
 
-        reg_cached = _cg("slate_v5")
         if reg_cached:
             reg_cached["locked"] = True
             reg_cached["all_complete"] = all_complete
@@ -2029,8 +2047,8 @@ def _get_slate_impl():
             _ls("slate_v5_locked", reg_cached)
             _slate_backup_to_github(reg_cached)
             return reg_cached
-        # Cold-start with no local cache: try GitHub backup written at lock time
-        gh_backup = _slate_restore_from_github()
+        if gh_backup is None:
+            gh_backup = _slate_restore_from_github()
         if gh_backup:
             gh_backup["locked"] = True
             gh_backup["all_complete"] = all_complete
@@ -2988,24 +3006,28 @@ def _primary_pick(picks):
 async def _run_line_engine_for_date(date):
     """Run the full line engine pipeline for a given date (datetime.date)."""
     games = fetch_games(date)
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
-    if not draftable:
+    if not games:
         return None, "no_games"
+    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    # Post-lock (slate locked, all games past their lock window): fall back to all games
+    # so line picks can still be generated after tip-off. Projections come from cache
+    # (_run_game cache is keyed by gameId, survives across lock).
+    target_games = draftable if draftable else games
     all_proj = []
-    for g in draftable:
+    for g in target_games:
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
-            for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
+            for fut in as_completed({pool.submit(_run_game, g): g for g in target_games}):
                 try: all_proj.extend(fut.result())
                 except Exception as e: print(f"line proj err: {e}")
     if not all_proj:
         return None, "no_projections"
     _enrich_projections_with_l5(all_proj)
     line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
-    result = run_line_engine(all_proj, draftable, line_config)
+    result = run_line_engine(all_proj, target_games, line_config)
     return result, None
 
 
