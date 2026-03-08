@@ -1,6 +1,9 @@
 """
 Unit tests for basketball app backend — real assertions, real function calls.
 Run with: pytest tests/test_fixes.py -v
+
+Requires backend deps (numpy, lightgbm, etc.). If skipped, run:
+  pip install -r requirements.txt
 """
 
 import pytest
@@ -8,6 +11,9 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, call
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Skip entire module if backend dependencies are not installed (clear message instead of ERRORs)
+pytest.importorskip("numpy", reason="Install dependencies: pip install -r requirements.txt")
 
 
 # ─────────────────────────────────────────────────────────

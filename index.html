@@ -948,6 +948,16 @@
       text-transform: uppercase; color: var(--lab);
       margin-bottom: 7px; display: block;
     }
+    .lab-msg .lab-table {
+      width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 6px 0;
+      background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+    }
+    .lab-msg .lab-table th, .lab-msg .lab-table td {
+      padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    .lab-msg .lab-table th { font-weight: 700; color: var(--text); }
+    .lab-msg .lab-table td { color: var(--text); }
+    .lab-msg .lab-table tr:last-child td { border-bottom: none; }
     .lab-msg.thinking {
       align-self: flex-start;
       background: rgba(10,16,26,0.85);
@@ -993,6 +1003,7 @@
       display: flex; flex-direction: column;
       min-height: 0;
       position: relative;
+      padding-right: 12px; /* prevent scrollbar from overlapping user (right-aligned) messages */
     }
     /* Spacer: grows when few messages, pushes them to the bottom like a real chat UI */
     #labMessages::before { content: ''; flex: 1; }
@@ -3602,6 +3613,37 @@ async function applyLabConfig(changes, description, msgEl) {
   }
 }
 
+function formatLabTables(text) {
+  const escape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const rowRe = /^\|.+\|$/;
+  const sepRe = /^\|[\s\-:]+(\|[\s\-:]+)*\|$/;
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const start = i;
+    while (i < lines.length && rowRe.test(lines[i])) i++;
+    const run = lines.slice(start, i);
+    if (run.length >= 1) {
+      const headerCells = run[0].split('|').slice(1, -1).map(c => escape(c.trim()));
+      let bodyStart = 1;
+      if (run.length > 1 && sepRe.test(run[1])) bodyStart = 2;
+      const bodyRows = run.slice(bodyStart).map(row => row.split('|').slice(1, -1).map(c => escape(c.trim())));
+      const colCount = headerCells.length;
+      const valid = bodyRows.every(row => row.length === colCount);
+      if (valid && colCount > 0) {
+        const thRow = '<tr>' + headerCells.map(c => `<th>${c}</th>`).join('') + '</tr>';
+        const tdRows = bodyRows.map(row => '<tr>' + row.map(c => `<td>${c}</td>`).join('') + '</tr>').join('');
+        out.push('<table class="lab-table"><thead>' + thRow + '</thead><tbody>' + tdRows + '</tbody></table>');
+      } else {
+        run.forEach(l => out.push(l));
+      }
+    }
+    if (i < lines.length) { out.push(lines[i]); i++; }
+  }
+  return out.join('\n');
+}
+
 function appendLabMessage(role, content, hidden = false, isStatus = false, imageSrc = null) {
   LAB.messages.push({ role, content, hidden });
   if (hidden) return;
@@ -3610,10 +3652,12 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
   el.className = `lab-msg ${role}`;
 
   if (role === 'assistant') {
-    // Convert basic markdown: code blocks, bold, italic, newlines
-    const formatted = content
+    // Convert basic markdown: code blocks, tables, bold, italic, newlines
+    const afterCode = content
       .replace(/```[\w]*\n?([\s\S]*?)```/g, (_,c) =>
-        `<pre style="background:rgba(0,0,0,0.35);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.74rem;overflow-x:auto;white-space:pre-wrap;margin:6px 0">${c.trim()}</pre>`)
+        `<pre style="background:rgba(0,0,0,0.35);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.74rem;overflow-x:auto;white-space:pre-wrap;margin:6px 0">${c.trim()}</pre>`);
+    const afterTables = formatLabTables(afterCode);
+    const formatted = afterTables
       .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);border-radius:3px;padding:1px 4px;font-size:0.8em">$1</code>')
       .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
       .replace(/\*(.*?)\*/g, '<i>$1</i>')

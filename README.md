@@ -206,7 +206,7 @@ pytest tests/ -v
 - **tests/test_fixes.py** — Backend: _safe_float, _is_locked, _compute_audit, _github_write_file retry, save-actuals audit gate, midnight rollover, cache TTLs, polling intervals.
 - **tests/test_core.py** — Helpers, line cache serve/bypass rules, JS string and render-function checks, cache date-boundary regressions.
 
-Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.). Use `pip install -r requirements.txt` first.
+Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.). Use `pip install -r requirements.txt` first (e.g. in a virtual environment). If pytest reports tests *skipped* with reason "Install dependencies: pip install -r requirements.txt", install the requirements and re-run.
 
 ## Deployment
 

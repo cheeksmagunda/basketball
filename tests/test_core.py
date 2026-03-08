@@ -6,6 +6,8 @@ Coverage targets the three most failure-prone areas:
   1. Pure helper functions (no I/O, no external deps)
   2. Line-cache & slate endpoint logic (mocked GitHub / ESPN)
   3. JS syntax integrity (catches apostrophe crashes before push)
+
+Requires backend deps (numpy, etc.). If skipped, run: pip install -r requirements.txt
 """
 import re
 import sys
@@ -19,6 +21,9 @@ import pytest
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+
+# Skip backend-dependent tests if deps not installed (clear message instead of ERRORs)
+pytest.importorskip("numpy", reason="Install dependencies: pip install -r requirements.txt")
 
 # ---------------------------------------------------------------------------
 # 1. Pure helper unit tests (no network, no filesystem)
