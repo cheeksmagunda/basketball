@@ -622,13 +622,20 @@ def _fetch_b2b_teams():
     _cs(cache_key, list(b2b))
     return b2b
 
+_GAMES_CACHE_TS: dict = {}  # cache_key → timestamp for TTL enforcement
+
 def fetch_games(date=None):
     """Fetch today's (or a specific date's) NBA schedule from ESPN.
-    date: a datetime.date object, or None for today ET."""
+    date: a datetime.date object, or None for today ET.
+    Cache TTL: 5 minutes — game list rarely changes, but stale data causes
+    downstream issues (missing games in Log, wrong lock status)."""
     today_et = date or _et_date()
     cache_key = f"games_{today_et}"
     c = _cg(cache_key)
-    if c: return c
+    if c:
+        cached_at = _GAMES_CACHE_TS.get(cache_key, 0)
+        if time.time() - cached_at < 300:  # 5 min TTL
+            return c
     b2b_teams = _fetch_b2b_teams()
     date_str = today_et.strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={date_str}")
@@ -653,6 +660,7 @@ def fetch_games(date=None):
             "away_b2b": away["abbr"] in b2b_teams,
         })
     _cs(cache_key, games)
+    _GAMES_CACHE_TS[cache_key] = time.time()
     return games
 
 def fetch_roster(team_id, team_abbr):
@@ -2312,12 +2320,22 @@ async def save_predictions():
     if not rows:
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
 
-    csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
-
-    # Skip commit if content is identical to what's already stored (avoids unnecessary Vercel redeploys)
+    # Merge with existing CSV — on split-window days, later-locking games need to be
+    # appended without overwriting earlier predictions (e.g. 5 PM game saved first,
+    # 7:30 PM game locks later and gets added by /api/refresh cron).
     existing, _ = _github_get_file(path)
-    if existing and existing.strip() == csv_content.strip():
-        return {"status": "unchanged", "path": path, "rows": len(rows)}
+    if existing:
+        existing_scopes = set()
+        for line in existing.strip().split("\n")[1:]:  # skip header
+            fields = line.split(",")
+            if fields:
+                existing_scopes.add(fields[0])
+        new_rows = [r for r in rows if r.split(",")[0] not in existing_scopes]
+        if not new_rows:
+            return {"status": "unchanged", "path": path, "rows": 0}
+        csv_content = existing.rstrip("\n") + "\n" + "\n".join(new_rows) + "\n"
+    else:
+        csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
 
     result = _github_write_file(path, csv_content, f"predictions for {today}")
     if result.get("error"):

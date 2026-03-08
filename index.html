@@ -1514,15 +1514,16 @@ function switchTab(tab) {
     closeLogDrilldown();  // always return to grid view on tab entry
     if (!LOG.selectedDate) initLogPage();
   }
-  if (tab === 'predictions' || tab === 'line') {
-    const stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
-    if (stale) {
-      if (tab === 'predictions') loadSlate();
-      else { LINE_LOADED_DATE = ''; initLinePage(); }
-    }
+  if (tab === 'predictions') {
+    var stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
+    if (stale) loadSlate();
   }
-  if (tab === 'line') initLinePage();
-  if (tab === 'lab')  initLabPage();
+  if (tab === 'line') {
+    var stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
+    if (stale) LINE_LOADED_DATE = '';  // bust cache so initLinePage re-fetches
+    initLinePage();  // has its own cache guard (LINE_LOADED_DATE === todayET)
+  }
+  if (tab === 'lab') initLabPage();  // has its own staleness guard
   // Resume live poll on returning to Line tab if picks already loaded and no poll running
   if (tab === 'line' && (LINE_OVER_PICK || LINE_UNDER_PICK) && !LINE_LIVE_POLL) {
     _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
@@ -2086,21 +2087,29 @@ function renderSkeletons(containerId, count) {
 // PREDICTION PERSISTENCE — grep: savePredictions, /api/save-predictions, GitHub CSV
 // ════════════════════════════════════════════════════════════════════
 let _predSavedDate = '';
+var _predSavedLockedCount = 0;
 function _etToday() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 async function savePredictions() {
   const today = _etToday();
-  if (_predSavedDate === today) return; // only fire once per ET day
   // Only save when the slate is locked — predictions are finalized at that point.
   // If called pre-lock, skip without consuming the flag so it can fire on next call.
   if (!SLATE || !SLATE.locked) return;
+  // Count games currently past their lock window (5 min before tip).
+  // Re-fire if more games have locked since last save (split-window days).
+  var lockedNow = (SLATE.games || []).filter(function(g) {
+    return g.startTime && (new Date(g.startTime).getTime() - Date.now()) <= 5 * 60 * 1000;
+  }).length;
+  if (_predSavedDate === today && lockedNow <= _predSavedLockedCount) return;
   _predSavedDate = today;
+  _predSavedLockedCount = lockedNow;
   try {
     const r = await fetchWithTimeout('/api/save-predictions', { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
   } catch(e) {
     _predSavedDate = ''; // allow retry on next call
+    _predSavedLockedCount = 0;
     console.warn('Prediction save failed:', e);
   }
 }
