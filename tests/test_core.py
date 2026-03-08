@@ -630,6 +630,13 @@ class TestNormalizeLinePick:
         assert _normalize_line_pick(None) == {}
         assert _normalize_line_pick("bad") == {}
 
+    def test_recent_form_values_passed_through(self):
+        """recent_form_values (real last-5 game stats) is passed through when present."""
+        out = self._norm({"player_name": "X", "recent_form_values": [18.0, 12.0, 22.0, 15.0, 19.0]})
+        assert out.get("recent_form_values") == [18.0, 12.0, 22.0, 15.0, 19.0]
+        out2 = self._norm({"player_name": "Y"})
+        assert out2.get("recent_form_values") is None
+
     def test_extra_fields_pass_through(self):
         """_live tracker and future additions must pass through."""
         result = self._norm({"_live": {"status": "live", "stat_current": 14}})
