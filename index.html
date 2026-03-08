@@ -293,11 +293,11 @@
     }
     .pos-pill {
       background: var(--border-bright); border-radius: 3px;
-      padding: 1px 5px; font-size: 0.6rem;
+      padding: 1px 5px; font-size: 0.6rem; margin-left: 4px;
     }
     .injury-badge {
-      background: rgba(244,63,94,0.15); color: #f43f5e;
-      border: 1px solid rgba(244,63,94,0.3); border-radius: 3px;
+      background: #3B1C1C; color: #FFB4B4;
+      border: 1px solid rgba(255,180,180,0.2); border-radius: 3px;
       padding: 1px 5px; font-size: 0.55rem; font-weight: 800;
       letter-spacing: 0.08em;
     }
@@ -308,7 +308,31 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    .stat-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .stat-pills { display: flex; flex-direction: column; gap: 6px; }
+    .stat-context-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .stat-context-pill {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px; padding: 2px 8px;
+      color: var(--text-dim); white-space: nowrap;
+    }
+    .stat-grid-row {
+      display: flex; gap: 2px;
+    }
+    .stat-col {
+      display: flex; flex-direction: column; align-items: center;
+      min-width: 34px; padding: 0 3px;
+    }
+    .stat-col-val {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.82rem; font-weight: 800; color: #fff; line-height: 1;
+    }
+    .stat-col-lbl {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.58rem; font-weight: 700; color: #8A96A3;
+      text-transform: uppercase; letter-spacing: 0.06em; line-height: 1; margin-top: 1px;
+    }
     .stat-pill {
       font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
       display: flex; align-items: center; gap: 3px;
@@ -344,8 +368,8 @@
     }
 
     .mult-badge {
-      background: rgba(79,142,247,0.1); color: var(--chalk);
-      border: 1px solid rgba(79,142,247,0.2);
+      background: rgba(255,215,0,0.1); color: #FFD700;
+      border: 1px solid rgba(255,215,0,0.25);
       font-size: 0.6rem; padding: 2px 6px; border-radius: 4px;
     }
 
@@ -553,11 +577,11 @@
       flex-shrink: 0;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       padding: 8px 12px;
-      background: var(--surface2); border: 1px solid var(--border);
+      background: #1E2633; border: 1px solid var(--border);
       border-radius: 10px; cursor: pointer; transition: all 0.2s;
       min-width: 52px;
     }
-    .date-chip:hover { border-color: var(--border-bright); }
+    .date-chip:hover { border-color: var(--border-bright); background: #243040; }
     .date-chip.active {
       background: rgba(79,142,247,0.12);
       border-color: var(--chalk);
@@ -565,12 +589,12 @@
     .date-chip-day {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--muted);
+      text-transform: uppercase; color: #8A96A3;
     }
     .date-chip.active .date-chip-day { color: var(--chalk); }
     .date-chip-num {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.1rem; font-weight: 900; color: var(--text-dim); line-height: 1;
+      font-size: 1.1rem; font-weight: 900; color: #8A96A3; line-height: 1;
     }
     .date-chip.active .date-chip-num { color: var(--chalk); }
     .date-chip-dot {
@@ -978,7 +1002,8 @@
     .oracle-label {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
-      text-transform: uppercase; color: var(--muted);
+      text-transform: uppercase; color: #81D4FA;
+      text-shadow: 0 0 12px rgba(129,212,250,0.4), 0 0 24px rgba(129,212,250,0.15);
       animation: textPulse 2s ease-in-out infinite;
     }
 
@@ -1086,7 +1111,7 @@
       </div>
       <div id="gameScriptBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:8px 14px;margin:8px 0 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px"></div>
       <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px"></div>
-      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:#fbbf24;padding:6px 12px;text-align:center;letter-spacing:0.3px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;margin-bottom:14px"></div>
+      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:#FFB4B4;padding:6px 12px;text-align:center;letter-spacing:0.3px;background:#3B1C1C;border:1px solid rgba(255,180,180,0.2);border-radius:8px;margin-bottom:14px"></div>
       <div id="picksList"></div>
     </div>
 
@@ -1194,7 +1219,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <div id="benBannerTitle" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.68rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--lab)">📋 Log Results</div>
           <button id="benBannerSkipBtn" onclick="_benSkipAllUploads()"
-            style="background:transparent;border:1px solid var(--muted);border-radius:8px;color:var(--muted);padding:3px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.65rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s;line-height:1.4">
+            style="background:rgba(255,255,255,0.08);border:none;border-radius:11px;color:var(--text-dim);padding:4px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.65rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s;line-height:1.4;backdrop-filter:blur(4px)">
             ⊘ Skip All
           </button>
         </div>
@@ -1794,6 +1819,15 @@ async function runAnalysis() {
 // ════════════════════════════════════════════════════════════════════
 // CARD RENDERING — grep: renderCards, player-card, TEAM_COLORS, tcolor, rank-badge
 // ════════════════════════════════════════════════════════════════════
+const _SLOT_HEAT = {
+  1: {c:'#FFD700', bg:'rgba(255,215,0,0.10)', bc:'rgba(255,215,0,0.30)'},
+  2: {c:'#FFA726', bg:'rgba(255,167,38,0.10)', bc:'rgba(255,167,38,0.28)'},
+  3: {c:'#FF9800', bg:'rgba(255,152,0,0.10)', bc:'rgba(255,152,0,0.25)'},
+  4: {c:'#4DB6AC', bg:'rgba(77,182,172,0.10)', bc:'rgba(77,182,172,0.22)'},
+  5: {c:'#64B5F6', bg:'rgba(100,181,246,0.10)', bc:'rgba(100,181,246,0.20)'},
+};
+function _slotHeat(slot) { return _SLOT_HEAT[slot] || _SLOT_HEAT[3]; }
+
 function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
@@ -1819,8 +1853,6 @@ function renderCards(picks, containerId, mode, opts = {}) {
       return `rgba(${r},${g},${b},0.06)`;
     })();
 
-    const multBadge = p.est_mult ? `<span class="mult-badge">+${p.est_mult}x card</span>` : '';
-
     // Actual RS pill for log cards
     let actualPill = '';
     if (isLog) {
@@ -1832,17 +1864,26 @@ function renderCards(picks, containerId, mode, opts = {}) {
       }
     }
 
-    const statsHtml = [
-      multBadge,
+    // Context pills (card boost + minutes)
+    const contextPills = [
+      p.est_mult && `<span class="stat-context-pill">+${p.est_mult}x card</span>`,
+      p.predMin && `<span class="stat-context-pill">${p.predMin} min</span>`,
       actualPill,
-      p.predMin && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.predMin}</b> min</div>`,
-      p.pts      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.pts}</b> pts</div>`,
-      p.reb      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.reb}</b> reb</div>`,
-      p.ast      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.ast}</b> ast</div>`,
-      p.stl      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.stl}</b> stl</div>`,
-      p.blk      && `<div class="stat-pill"><div class="stat-dot"></div><b>${p.blk}</b> blk</div>`,
-      (p._decline && p._decline < 0.85) && `<div class="stat-pill" style="color:#f43f5e"><b>↓${Math.round((1-p._decline)*100)}%</b> usage</div>`,
-    ].filter(Boolean).join('');
+      (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:#FFB4B4;border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
+    ].filter(Boolean);
+
+    // Core stat columns (PTS / REB / AST / STL / BLK)
+    const statCols = [
+      p.pts && {v: p.pts, l: 'PTS'},
+      p.reb && {v: p.reb, l: 'REB'},
+      p.ast && {v: p.ast, l: 'AST'},
+      p.stl && {v: p.stl, l: 'STL'},
+      p.blk && {v: p.blk, l: 'BLK'},
+    ].filter(Boolean);
+
+    const statsHtml = `
+      ${contextPills.length ? `<div class="stat-context-row">${contextPills.join('')}</div>` : ''}
+      ${statCols.length ? `<div class="stat-grid-row">${statCols.map(s => `<div class="stat-col"><div class="stat-col-val">${s.v}</div><div class="stat-col-lbl">${s.l}</div></div>`).join('')}</div>` : ''}`;
 
     const logCardClass = isLog ? ' log-card' : '';
     const logScoreColorVar = isLog ? `--log-score-color:${scoreColor};` : '';
@@ -1861,9 +1902,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
           <div class="score-num">${p.rating}</div>
           <span class="score-label">RS</span>
           ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:rgba(147,197,253,0.7);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
-          <div class="slot-badge" style="background:${isUpside?(isLog?'rgba(184,152,120,0.08)':'rgba(249,115,22,0.1)'):(isLog?'rgba(123,164,200,0.08)':'rgba(79,142,247,0.1)')};border-color:${isUpside?(isLog?'rgba(184,152,120,0.2)':'rgba(249,115,22,0.25)'):(isLog?'rgba(123,164,200,0.2)':'rgba(79,142,247,0.25)')}">
-            ${p.slot || '—'}
-          </div>
+          ${(() => { const h = _slotHeat(parseInt(p.slot)||3); return `<div class="slot-badge" style="background:${h.bg};border-color:${h.bc};color:${h.c}">${p.slot || '—'}</div>`; })()}
         </div>
       </div>`;
   }).join('');
@@ -2719,20 +2758,22 @@ let LINE_HIST_DATA = null;
 
 function renderLineHistory(hist) {
   LINE_HIST_DATA = hist;
-  const streak = hist.streak ? `${hist.streak}× ${hist.streak_type}` : '';
+  const streakNum = hist.streak || 0;
+  const streakLabel = hist.streak_type || '';
 
   let statsHtml = '';
-  if (hist.hit_rate !== null || streak) {
+  if (hist.hit_rate !== null || streakNum) {
     const hitRate = hist.hit_rate !== null ? `${hist.hit_rate}%` : '—';
+    const streakColor = streakLabel === 'hit' ? 'var(--green)' : 'var(--red)';
     statsHtml = `
     <div style="display:flex;gap:16px;margin-bottom:14px">
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
       </div>
-      ${streak ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${hist.streak_type==='hit'?'var(--green)':'var(--red)'}">${streak}</div>
-        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
+      ${streakNum ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${streakColor};line-height:1">${streakNum}× ${streakLabel.toUpperCase()}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-top:3px">Streak</div>
       </div>` : ''}
     </div>`;
   }
@@ -2829,18 +2870,18 @@ function filterLineHistory(dir) {
     else if (p.result === streakType) streak++;
     else break;
   }
-  const streakStr = streak ? `${streak}× ${streakType}` : '';
   let statsHtml = '';
-  if (hitRate !== null || streakStr) {
+  if (hitRate !== null || streak) {
+    const streakColor = streakType === 'hit' ? 'var(--green)' : 'var(--red)';
     statsHtml = `
     <div style="display:flex;gap:16px;margin-bottom:14px">
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate !== null ? hitRate + '%' : '—'}</div>
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
       </div>
-      ${streakStr ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${streakType==='hit'?'var(--green)':'var(--red)'}">${streakStr}</div>
-        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>
+      ${streak ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${streakColor};line-height:1">${streak}× ${(streakType||'').toUpperCase()}</div>
+        <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-top:3px">Streak</div>
       </div>` : ''}
     </div>`;
   }
