@@ -82,7 +82,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 |----------|--------|---------|
 | `/api/health` | GET | Health check for monitoring (config + GitHub reachability) |
 | `/api/version` | GET | Build identifier (VERCEL_GIT_COMMIT_SHA) for deploy checks |
-| `/api/slate` | GET | Full-slate predictions (all games) |
+| `/api/slate` | GET | Full-slate predictions (all games). Never returns 5xx; on backend exception returns 200 with `error: "slate_failed"` and empty lineups so the frontend shows "Slate temporarily unavailable" and Retry. |
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
 | `/api/save-predictions` | POST | Save cached predictions to GitHub CSV (deduped — skips commit if unchanged) |
@@ -313,6 +313,7 @@ The main pick card (`renderLinePickCard`) uses a **zoned layout** and design tok
 - **Conclusion (Oracle Insight):** Model reasoning is consolidated into a single narrative paragraph at the bottom of the card, not standalone pills. `_buildLineConclusion(pick)` merges `pick.narrative` with `pick.signals` (e.g. injury upgrade, B2B) into one natural-language sentence; key reasons are highlighted with `--color-text-primary`. The paragraph sits in `.line-pick-conclusion-wrap` (subtle background, 8px radius, padding). **This "Narrative Conclusion" pattern is the standard for model explanations app-wide** — use one prose block, not reasoning bubbles.
 - **Pick payload fields** (from backend): Core fields plus `season_avg`, `proj_min`, `avg_min`, `game_time`, `recent_form_bars`, `recent_form_values`. `recent_form_bars` is set in `api/line_engine.py`; `recent_form_values` is filled in `api/index.py` via `_get_last5_game_stats()` (nba_api PlayerGameLog, 30-min cache). All passed through `_normalize_line_pick`.
 - **Design tokens:** Line card uses `--radius-card`, `--radius-pill`, `--font-size-micro`, `--color-success`, `--color-danger`, `--color-text-primary`, `--color-text-muted`, `--line`, `--lab`; no hardcoded hex for semantic colors in the card block.
+- **Cache:** `index.html` is served with `Cache-Control: max-age=0, must-revalidate` (vercel.json) so browsers and edge revalidate and users get the latest card (5-column + conclusion) after deploy. If an user still sees an old card, they should hard refresh (e.g. pull-to-refresh on mobile) or close and reopen the tab.
 
 ### Odds Refresh Pipeline
 - **Cron**: `55 * * * *` (once per hour at :55; hits common 6:55 PM ET lock)

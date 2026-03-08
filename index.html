@@ -1736,6 +1736,18 @@ async function loadSlate() {
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
+    if (slateData.error === 'slate_failed') {
+      document.getElementById('slateTabs').style.display = 'none';
+      document.getElementById('slateList').innerHTML = `
+        <div class="empty-state">
+          <span class="icon">📡</span>
+          <p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>
+          <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
+        </div>`;
+      SLATE = slateData;
+      SLATE_LOADED_AT = 0;
+      return;
+    }
     const isEmptyLocked = slateData.locked && !slateData.lineups?.chalk?.length;
     if (isEmptyLocked) {
       // Cold-start after lock: server has no cache. Try in-memory SLATE first, then localStorage.
@@ -2863,11 +2875,11 @@ function _escapeHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Build a single "Conclusion" paragraph from narrative + signals (Oracle Insight). Returns HTML. */
+/** Build a single "Conclusion" paragraph from narrative + signals (Oracle Insight). Returns HTML. Always shows at least one line when we have projection + edge so the card never looks like the old version. */
 function _buildLineConclusion(pick) {
   const proj = pick.projection != null && pick.projection !== '' ? Number(pick.projection).toFixed(1) : null;
   const edge = pick.edge != null ? Number(pick.edge) : null;
-  const base = pick.season_avg != null && pick.season_avg !== '' ? pick.season_avg : null;
+  const base = pick.season_avg != null && pick.season_avg !== '' ? pick.season_avg : (pick.line != null && pick.line !== '' ? Number(pick.line) : null);
   const conf = pick.confidence != null ? pick.confidence : 0;
   const stat = (pick.stat_type || 'points').toLowerCase();
   const hasBase = proj != null && edge != null && base != null;
@@ -2880,7 +2892,8 @@ function _buildLineConclusion(pick) {
     if (!intro.endsWith('.')) intro += '.';
   } else if (hasBase) {
     const edgeStr = (edge > 0 ? '+' : '') + Number(edge).toFixed(1);
-    intro = `Model projects ${proj} ${stat} — a ${edgeStr} edge vs the ${base} season baseline.`;
+    const baseStr = typeof base === 'number' ? base.toFixed(1) : String(base);
+    intro = `Model projects ${proj} ${stat} — a ${edgeStr} edge vs the ${baseStr} season baseline.`;
   }
   if (!intro && !details.length && !conf) return '';
 
@@ -2899,13 +2912,10 @@ function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const statLabel = _lineStatLabel(pick.stat_type);
   const lineNum = parseFloat(pick.line) || 0;
-  const defaultBars = [0.9, 1.0, 0.95, 1.05, 1.0];
-  const formBars = (pick.recent_form_bars && pick.recent_form_bars.length >= 5)
-    ? pick.recent_form_bars.slice(0, 5)
-    : defaultBars;
-  const l5Values = (pick.recent_form_values && Array.isArray(pick.recent_form_values) && pick.recent_form_values.length)
+  const hasRealL5 = pick.recent_form_values && Array.isArray(pick.recent_form_values) && pick.recent_form_values.length;
+  const l5Values = hasRealL5
     ? pick.recent_form_values.slice(0, 5).map(v => Math.round(Number(v)))
-    : formBars.map(r => Math.round(lineNum * (typeof r === 'number' ? r : 1)));
+    : [];
   const l5Html = l5Values.length
     ? l5Values.map((v, i) => {
         const hit = dir === 'over' ? v >= lineNum : v < lineNum;
