@@ -153,7 +153,7 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 ### Prediction model boundaries (grep: LINE CONFIG, line_engine config)
 
 - **Draft model:** Config in `data/model-config.json` (card_boost, game_script, real_score, cascade, projection, lineup, moonshot, development_teams); code in `api/index.py`, `api/real_score.py`, `api/asset_optimizer.py`; `lgbm_model.pkl` is trained separately (GitHub Actions). Ben can change draft behavior via Lab (update-config, backtest).
-- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Line-specific knobs: `min_confidence`, `min_edge_pct`. Ben can tune Line picks via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
+- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Before running the engine, `api/index.py` enriches projections with **real last-5 game stats** (nba_api) when available (`_enrich_projections_with_l5`), so Claude and the fallback see actual recent form. Line knobs in config: `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`. Ben can tune via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
 
 ## Ben (Lab) Interface
 
@@ -588,7 +588,7 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 | Dead code pruned | `index.html` | Removed empty `_renderBenEodPrompt()` function |
 | Skip All button relocated | `index.html` | Moved from button row to title bar (top-right) — semantic meta-action placement |
 | Rate-limit thread-safety | `api/index.py` | `_RATE_LIMIT_LOCK` wraps read-modify-write of `_RATE_LIMIT_STORE` so concurrent requests are safe |
-| Line config wired from model-config | `api/index.py`, `api/line_engine.py` | `run_line_engine(projections, games, line_config)`; `min_confidence` and `min_edge_pct` filter candidates; Ben can tune via `line` section |
+| Line config wired from model-config | `api/index.py`, `api/line_engine.py` | `run_line_engine(projections, games, line_config)`; `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`; projections enriched with real L5 before engine run |
 
 ## Production audit
 

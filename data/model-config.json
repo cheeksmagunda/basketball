@@ -158,7 +158,11 @@
   },
   "line": {
     "min_confidence": 50,
-    "min_edge_pct": 3.0
+    "min_edge_pct": 3.0,
+    "recent_form_over_ratio": 1.08,
+    "recent_form_under_ratio": 0.92,
+    "min_edge_pts": 2.0,
+    "min_edge_other": 1.5
   },
   "moonshot": {
     "min_minutes_floor": 20,
@@ -205,6 +209,11 @@
       "version": 7,
       "date": "2026-03-07",
       "change": "March 6 results audit — 5 fixes: (1) RS compression recalibrated — divisor 5→7, power 0.75→0.62 (Jokic pred 11.7 vs actual 5.6, Wemby 10.4 vs 4.5); (2) Log card boost formula ACTIVATED — fitted to Real Sports actual data: boost=3.76-0.88*log10(drafts). New star_hype_multiplier=15x separates stars (9k drafts→0.2 boost) from role players (13 drafts→3.0 boost). scalar=50 with big_market 1.5x + star 15x stacking; (3) chalk_boost_cap 1.5→2.5 — all 3 winning lineups stacked +3.0x boost in Starting 5; (4) chalk_rating_floor 2.8→2.0 — Ighodaro RS 2.3 in ALL 3 winning drafts; (5) star_players expanded: +LaMelo, Kawhi, Jaylen Brown, Knueppel, Sheppard, Clingan (high-ownership players model should penalize)."
+    },
+    {
+      "version": 8,
+      "date": "2026-03-08",
+      "change": "Line of the Day: projections enriched with real last-5 game stats (nba_api) before engine run so over/under picks use actual recent form. Line section de-hardcoded: recent_form_over_ratio (1.08), recent_form_under_ratio (0.92), min_edge_pts (2.0), min_edge_other (1.5) now tunable via Ben."
     }
   ]
 }

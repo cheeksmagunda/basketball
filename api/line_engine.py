@@ -260,8 +260,13 @@ def run_model_fallback(projections, games, line_config=None):
 
     game_ctx_map = _game_lookup_from_games(games)
     candidates = []
-    min_confidence = (line_config or {}).get("min_confidence", 50)
-    min_edge_pct = (line_config or {}).get("min_edge_pct", 0.0)
+    cfg = line_config or {}
+    min_confidence = cfg.get("min_confidence", 50)
+    min_edge_pct = cfg.get("min_edge_pct", 0.0)
+    recent_form_over_ratio = cfg.get("recent_form_over_ratio", 1.08)
+    recent_form_under_ratio = cfg.get("recent_form_under_ratio", 0.92)
+    min_edge_pts = cfg.get("min_edge_pts", 2.0)
+    min_edge_other = cfg.get("min_edge_other", 1.5)
 
     stat_configs = [
         ("points",   "pts",  "season_pts",  "recent_pts",  8.0, 18),
@@ -281,10 +286,11 @@ def run_model_fallback(projections, games, line_config=None):
             if season_val < min_season or pred_min < min_min or proj_val <= 0:
                 continue
 
+            min_edge = min_edge_pts if stat_type == "points" else min_edge_other
             line      = round(round(season_val * 2) / 2, 1)
             edge      = round(proj_val - line, 1)
             direction = "over" if edge > 0 else "under"
-            if abs(edge) < (1.5 if stat_type != "points" else 2.0):
+            if abs(edge) < min_edge:
                 continue
 
             signals, signal_bonus = [], 0
@@ -294,10 +300,10 @@ def run_model_fallback(projections, games, line_config=None):
                 signal_bonus += 15
 
             recent_val = p.get(recent_field, proj_val)
-            if direction == "over" and recent_val > season_val * 1.08:
+            if direction == "over" and recent_val > season_val * recent_form_over_ratio:
                 signals.append({"type": "recent_form", "detail": f"Averaging {recent_val:.1f} {stat_type} recently vs {season_val:.1f} season"})
                 signal_bonus += 12
-            elif direction == "under" and recent_val < season_val * 0.92:
+            elif direction == "under" and recent_val < season_val * recent_form_under_ratio:
                 signals.append({"type": "recent_form", "detail": f"Averaging {recent_val:.1f} {stat_type} recently vs {season_val:.1f} season"})
                 signal_bonus += 12
 

@@ -284,6 +284,10 @@ _CONFIG_DEFAULTS = {
     "line": {
         "min_confidence": 50,
         "min_edge_pct": 3.0,
+        "recent_form_over_ratio": 1.08,
+        "recent_form_under_ratio": 0.92,
+        "min_edge_pts": 2.0,
+        "min_edge_other": 1.5,
     },
 }
 
@@ -447,6 +451,48 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
     except Exception as e:
         print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
         return None
+
+
+def _enrich_projections_with_l5(projections):
+    """Overwrite recent_pts/recent_reb/recent_ast with real L5 means when available, so the line engine uses actual last-5 form. Mutates projections in place. Caps to top N candidates to bound nba_api calls."""
+    if not projections:
+        return
+    # Line candidates: predMin >= 15 and at least one stat meets line_engine-style threshold
+    def is_candidate(p):
+        pred_min = p.get("predMin", 0) or 0
+        if pred_min < 15:
+            return False
+        sp = p.get("season_pts", p.get("pts", 0)) or 0
+        sr = p.get("season_reb", p.get("reb", 0)) or 0
+        sa = p.get("season_ast", p.get("ast", 0)) or 0
+        return sp >= 6 or sr >= 2 or sa >= 1.5
+    candidates = [p for p in projections if is_candidate(p)]
+    if not candidates:
+        return
+    # Cap to top 50 by relevance to limit latency
+    def score(p):
+        pts = p.get("pts", 0) or 0
+        reb = p.get("reb", 0) or 0
+        ast = p.get("ast", 0) or 0
+        return (p.get("predMin", 0) or 0) * (pts + reb + ast)
+    candidates.sort(key=score, reverse=True)
+    top = candidates[:50]
+    for p in top:
+        name = p.get("name") or ""
+        if not name:
+            continue
+        if (p.get("season_pts", p.get("pts", 0)) or 0) >= 6:
+            l5 = _get_last5_game_stats(name, "points")
+            if l5 and len(l5) > 0:
+                p["recent_pts"] = round(sum(l5) / len(l5), 1)
+        if (p.get("season_reb", p.get("reb", 0)) or 0) >= 2:
+            l5 = _get_last5_game_stats(name, "rebounds")
+            if l5 and len(l5) > 0:
+                p["recent_reb"] = round(sum(l5) / len(l5), 1)
+        if (p.get("season_ast", p.get("ast", 0)) or 0) >= 1.5:
+            l5 = _get_last5_game_stats(name, "assists")
+            if l5 and len(l5) > 0:
+                p["recent_ast"] = round(sum(l5) / len(l5), 1)
 
 
 def _is_locked(start_time_iso):
@@ -2862,6 +2908,7 @@ async def _run_line_engine_for_date(date):
                 except Exception as e: print(f"line proj err: {e}")
     if not all_proj:
         return None, "no_projections"
+    _enrich_projections_with_l5(all_proj)
     line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
     result = run_line_engine(all_proj, draftable, line_config)
     return result, None
