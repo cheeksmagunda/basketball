@@ -23,19 +23,37 @@ CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 # GAME CONTEXT HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _format_game_time_et(iso_date_str):
+    """Format ESPN ISO date to e.g. 1:00 PM ET (portable)."""
+    if not iso_date_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_date_str.replace("Z", "+00:00"))
+        from zoneinfo import ZoneInfo
+        et = dt.astimezone(ZoneInfo("America/New_York"))
+        hour_12 = et.hour % 12 or 12
+        return f"{hour_12}:{et.minute:02d} {et.strftime('%p')} ET"
+    except Exception:
+        return ""
+
+
 def _game_lookup_from_games(games):
-    """Build team abbr -> {opponent, opp_b2b, total, spread} lookup."""
+    """Build team abbr -> {opponent, opp_b2b, total, spread, game_time} lookup."""
     lookup = {}
     for g in games:
         home_abbr = g["home"]["abbr"]
         away_abbr = g["away"]["abbr"]
-        lookup[home_abbr] = {
+        game_time = _format_game_time_et(g.get("startTime", ""))
+        entry = {
             "opponent": away_abbr, "opp_b2b": g.get("away_b2b", False),
             "total": g.get("total", 222), "spread": g.get("spread", 0),
+            "game_time": game_time,
         }
+        lookup[home_abbr] = dict(entry)
         lookup[away_abbr] = {
             "opponent": home_abbr, "opp_b2b": g.get("home_b2b", False),
             "total": g.get("total", 222), "spread": g.get("spread", 0),
+            "game_time": game_time,
         }
     return lookup
 
@@ -296,6 +314,10 @@ def run_model_fallback(projections, games, line_config=None):
             edge_pct = (abs(edge) / line * 100.0) if line and line > 0 else 0.0
             if confidence < min_confidence or (min_edge_pct > 0 and edge_pct < min_edge_pct):
                 continue
+            # L5 heuristic: 5 bars with ratio recent/season (0–1) for sparkline
+            ratio = min(1.2, recent_val / max(season_val, 0.01)) if season_val else 1.0
+            recent_form_bars = [round(ratio, 2)] * 5
+            avg_min = p.get("season_min", p.get("min", 0))
             candidates.append({
                 "player_name": p["name"], "player_id": p.get("id", ""),
                 "team": team_abbr, "opponent": opponent,
@@ -303,6 +325,11 @@ def run_model_fallback(projections, games, line_config=None):
                 "projection": proj_val, "edge": edge, "confidence": confidence,
                 "odds_over": None, "odds_under": None, "books_consensus": 0,
                 "model_only": True, "signals": signals, "narrative": narrative,
+                "season_avg": round(season_val, 1),
+                "proj_min": round(pred_min, 1),
+                "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
+                "game_time": gctx.get("game_time", ""),
+                "recent_form_bars": recent_form_bars,
             })
 
     if not candidates:
@@ -322,6 +349,35 @@ def run_model_fallback(projections, games, line_config=None):
             "model_only": True,
         },
     }
+
+
+def _enrich_pick_from_projections(pick, projections, game_ctx_map):
+    """Add season_avg, proj_min, avg_min, game_time, recent_form_bars from projections when missing."""
+    if not pick or not projections:
+        return
+    name = pick.get("player_name", "")
+    team = pick.get("team", "")
+    stat_type = pick.get("stat_type", "points")
+    meta = _STAT_META.get(stat_type, _STAT_META["points"])
+    season_field = meta["season_field"]
+    recent_field = meta["recent_field"]
+    for p in projections:
+        if p.get("name") == name and p.get("team") == team:
+            if "season_avg" not in pick or pick.get("season_avg") is None:
+                pick["season_avg"] = round(p.get(season_field, p.get(meta["field"], 0)), 1)
+            if "proj_min" not in pick or pick.get("proj_min") is None:
+                pick["proj_min"] = round(p.get("predMin", 0), 1)
+            avg_min = p.get("season_min", p.get("min", 0))
+            if "avg_min" not in pick or pick.get("avg_min") is None:
+                pick["avg_min"] = round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0
+            if "game_time" not in pick or not pick.get("game_time"):
+                pick["game_time"] = game_ctx_map.get(team, {}).get("game_time", "")
+            if "recent_form_bars" not in pick or not pick.get("recent_form_bars"):
+                season_val = p.get(season_field, p.get(meta["field"], 0)) or 0.01
+                recent_val = p.get(recent_field, pick.get("projection", 0))
+                ratio = min(1.2, recent_val / max(season_val, 0.01))
+                pick["recent_form_bars"] = [round(ratio, 2)] * 5
+            break
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -393,6 +449,13 @@ def run_line_engine(projections, games, line_config=None):
             over_pick = fallback.get("over_pick")
         if not under_pick:
             under_pick = fallback.get("under_pick")
+
+    # Enrich Claude-built picks with season_avg, proj_min, avg_min, game_time, recent_form_bars
+    game_ctx_map = _game_lookup_from_games(games)
+    if over_pick:
+        _enrich_pick_from_projections(over_pick, projections, game_ctx_map)
+    if under_pick:
+        _enrich_pick_from_projections(under_pick, projections, game_ctx_map)
 
     primary = over_pick if (over_pick and (not under_pick or over_pick.get("confidence", 0) >= under_pick.get("confidence", 0))) else under_pick
 

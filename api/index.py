@@ -1464,6 +1464,7 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "stat_type", "projection", "edge", "confidence", "narrative", "signals",
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
+    "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1491,6 +1492,11 @@ def _normalize_line_pick(p: dict) -> dict:
         "odds_under":      p.get("odds_under"),
         "books_consensus": p.get("books_consensus"),
         "date":            p.get("date", ""),
+        "season_avg":      p.get("season_avg"),
+        "proj_min":        p.get("proj_min"),
+        "avg_min":         p.get("avg_min"),
+        "game_time":       p.get("game_time", ""),
+        "recent_form_bars": p.get("recent_form_bars"),
     }
     # Pass through any extra fields (e.g. _live tracker, future additions)
     extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}

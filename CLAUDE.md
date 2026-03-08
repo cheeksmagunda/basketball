@@ -303,7 +303,15 @@ The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs
 - **No "yesterday's pick" banner** — resolved picks appear only in Recent Picks history. The main card always shows today's pick for the selected direction.
 - Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
 - Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
-- **Line card layout**: Odds timestamp is in the card header (top-right); 3-column micro-grid (Proj / Edge / Baseline) uses full width with `justify-content: space-between` and centered columns; redundant narrative prose removed; negative edge uses `--color-danger`.
+
+### Line of the Day card
+The main pick card (`renderLinePickCard`) uses a **zoned layout** and design tokens. Over and Under use the same component; only `dir` and content differ.
+
+- **Zone 1 (Header):** Player name; subheader = matchup + game time (e.g. `CLE vs BOS · 1:00 PM ET`) when `game_time` is present, else `Team · vs Opponent`. Odds/timestamp in the top-right of the card (`position: relative` on the card, flex + `margin-left: auto` on the odds block).
+- **Zone 2 (The Play):** One row: bet pill (OVER/UNDER) + target stat line (e.g. `13.0 pts`). Stat label is derived from `pick.stat_type` via a small map (points → PTS, rebounds → REB, assists → AST) — no hardcoded PTS/REB/AST in the UI.
+- **Zone 3 (Data row):** A single full-width flex row (`.line-pick-data-row`, `justify-content: space-between`) with **5 columns:** (1) **Baseline** — sportsbook line + stat label; (2) **Edge** — mathematical edge, semantic colors `edge-plus` / `edge-minus` (`--color-success` / `--color-danger`); (3) **Target stat** — stacked projection (primary) / season average (muted), using `pick.projection` and `pick.season_avg` for the chosen stat only; (4) **Minutes** — stacked `proj_min` / `avg_min`; (5) **L5** — compact 5-bar sparkline from `pick.recent_form_bars` (or placeholder if missing).
+- **Pick payload fields** (from backend): In addition to core fields, the line pick contract includes `season_avg`, `proj_min`, `avg_min`, `game_time`, and `recent_form_bars` (array of 5 values 0–1 for sparkline). These are set in `api/line_engine.py` (fallback candidates and `_enrich_pick_from_projections` for Claude picks) and passed through `_normalize_line_pick` in `api/index.py`.
+- **Design tokens:** Line card uses `--radius-card`, `--radius-pill`, `--font-size-micro`, `--color-success`, `--color-danger`, `--line`, `--lab`, `--line-glow`, `--lab-glow`; no hardcoded hex/rgba for borders or semantic colors in the card block.
 
 ### Odds Refresh Pipeline
 - **Cron**: `55 * * * *` (once per hour at :55; hits common 6:55 PM ET lock)

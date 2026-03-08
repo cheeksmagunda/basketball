@@ -58,6 +58,7 @@
       --color-text-muted: #8A96A3;
       --radius-pill: 9999px;
       --radius-card: 14px;
+      --font-size-micro: 0.65rem;
       --tracking-caps: 0.06em;
       /* Decorative one-offs (injury, line under, oracle, date chip) */
       --color-injury-bg: #3B1C1C;
@@ -791,8 +792,8 @@
     /* ── LINE PAGE ── */
     .line-pick-card {
       background: var(--surface);
-      border: 1px solid rgba(212,166,64,0.3);
-      border-radius: var(--r); padding: 16px 18px;
+      border: 1px solid var(--line-card-border, rgba(212,166,64,0.3));
+      border-radius: var(--radius-card); padding: 16px 18px;
       position: relative; overflow: hidden;
       transition: border-color 0.4s, box-shadow 0.4s;
     }
@@ -809,11 +810,11 @@
     .line-live-current { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 0.85rem; color: var(--text); }
     /* Winning glow — direction-specific border + shadow */
     .line-pick-card.live-winning-over {
-      border-color: rgba(212,166,64,0.55);
-      box-shadow: 0 0 22px rgba(212,166,64,0.28), inset 0 0 12px rgba(212,166,64,0.05); }
+      border-color: var(--line);
+      box-shadow: 0 0 22px var(--line-glow), inset 0 0 12px rgba(212,166,64,0.08); }
     .line-pick-card.live-winning-under {
-      border-color: rgba(20,184,166,0.55);
-      box-shadow: 0 0 22px rgba(20,184,166,0.28), inset 0 0 12px rgba(20,184,166,0.05); }
+      border-color: var(--lab);
+      box-shadow: 0 0 22px var(--lab-glow), inset 0 0 12px rgba(20,184,166,0.08); }
     .line-pick-card::before {
       content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
       background: var(--line); box-shadow: 2px 0 12px var(--line-glow);
@@ -821,12 +822,14 @@
     .line-pick-header {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px;
     }
+    .line-pick-header-left { min-width: 0; }
     .line-pick-header-meta {
-      flex-shrink: 0; text-align: right;
+      flex-shrink: 0; text-align: right; color: var(--color-text-muted);
     }
     .line-pick-odds-meta {
-      font-size: 0.6rem; color: var(--color-text-muted); letter-spacing: var(--tracking-caps);
+      font-size: var(--font-size-micro, 0.65rem); color: var(--color-text-muted); letter-spacing: var(--tracking-caps);
     }
+    .line-pick-odds-num { font-size: 0.7rem; }
     .line-pick-name {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1.4rem; font-weight: 900; letter-spacing: 0.02em; color: var(--text);
@@ -844,10 +847,10 @@
     .line-direction-pill {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;
-      padding: 5px 14px; border-radius: 6px;
+      padding: 5px 14px; border-radius: var(--radius-pill);
     }
-    .line-direction-pill.over  { background: rgba(212,166,64,0.18); color: var(--line); border: 1px solid rgba(212,166,64,0.45); }
-    .line-direction-pill.under { background: rgba(20,184,166,0.18); color: var(--color-line-under); border: 1px solid rgba(20,184,166,0.45); }
+    .line-direction-pill.over  { background: var(--line-over-bg, rgba(212,166,64,0.18)); color: var(--line); border: 1px solid var(--line-over-border, rgba(212,166,64,0.45)); }
+    .line-direction-pill.under { background: var(--lab-bg, rgba(20,184,166,0.18)); color: var(--color-line-under); border: 1px solid var(--lab-border, rgba(20,184,166,0.45)); }
     .line-stat-val {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1.6rem; font-weight: 900; color: var(--text); line-height: 1;
@@ -859,31 +862,41 @@
     .line-pick-micro-col {
       display: flex; flex-direction: column; align-items: center; gap: 2px;
     }
+    .line-pick-data-row {
+      display: flex; justify-content: space-between; width: 100%; margin-top: 10px; gap: 4px;
+    }
+    .line-pick-data-col {
+      display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0;
+    }
+    .line-pick-stat-val {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.875rem; font-weight: 800;
+      color: var(--color-text-primary); font-variant-numeric: tabular-nums;
+    }
+    .line-pick-stat-avg {
+      font-size: 0.6rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums;
+    }
+    .line-pick-sparkline-wrap { display: inline-flex; align-items: flex-end; height: 14px; }
+    .line-pick-sparkline-wrap svg { width: 24px; height: 14px; }
+    .line-pick-sparkline-wrap rect { fill: currentColor; opacity: 0.7; }
+    .line-pick-l5-col .line-pick-micro-lbl { margin-bottom: 2px; }
+    .line-result-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+    }
+    .line-result-lbl {
+      font-size: var(--font-size-micro, 0.65rem); color: var(--color-text-muted);
+      text-transform: uppercase; letter-spacing: var(--tracking-caps);
+    }
     .line-pick-micro-lbl {
-      font-size: 10px; font-weight: 700; color: var(--color-text-muted);
+      font-size: var(--font-size-micro, 0.65rem); font-weight: 700; color: var(--color-text-muted);
       text-transform: uppercase; letter-spacing: var(--tracking-caps);
     }
     .line-pick-micro-val {
-      font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 800; color: var(--color-text-primary);
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.875rem; font-weight: 800; color: var(--color-text-primary);
       font-variant-numeric: tabular-nums;
     }
     .line-pick-micro-val.edge-plus { color: var(--color-success); }
     .line-pick-micro-val.edge-minus { color: var(--color-danger); }
-    .line-signal-chip .sparkline-wrap {
-      display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-left: 6px; vertical-align: middle;
-    }
-    .line-signal-chip .sparkline-wrap svg { width: 24px; height: 14px; }
-    .line-signal-chip .sparkline-wrap rect { fill: currentColor; opacity: 0.7; }
-    .line-proj { font-size: 0.75rem; color: var(--text-dim); }
-    .line-signals {
-      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
-    }
-    .line-signal-chip {
-      display: inline-flex; align-items: center;
-      font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 4px;
-      background: rgba(212,166,64,0.1); color: var(--line); border: 1px solid rgba(212,166,64,0.2);
-      text-transform: uppercase; letter-spacing: 0.06em;
-    }
     .line-summary-row {
       display: flex; gap: 8px; flex-wrap: wrap;
     }
@@ -900,7 +913,7 @@
     .line-history-name { font-size: 0.78rem; font-weight: 600; color: var(--text); }
     .line-history-sub  { font-size: 0.65rem; color: var(--muted); }
     .line-result-pill {
-      font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      font-size: var(--font-size-micro); font-weight: 700; padding: 2px 8px; border-radius: 4px;
       text-transform: uppercase; letter-spacing: 0.06em;
     }
     .line-result-pill.hit     { background: rgba(34,197,94,0.2); color: var(--color-success); border: 1px solid rgba(34,197,94,0.45); }
@@ -2822,21 +2835,17 @@ async function initLinePage() {
   } catch(e) { /* non-fatal */ }
 }
 
+const LINE_STAT_LABEL = { points: 'PTS', rebounds: 'REB', assists: 'AST' };
+function _lineStatLabel(statType) { return LINE_STAT_LABEL[statType] || (statType || 'pts').toUpperCase().slice(0, 3); }
+
 function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
-  const signals = pick.signals || [];
+  const statLabel = _lineStatLabel(pick.stat_type);
   const defaultBars = [0.5, 0.6, 0.7, 0.55, 0.65];
   const sparklineBars = (pick.recent_form_bars && pick.recent_form_bars.length >= 5)
     ? pick.recent_form_bars.slice(0, 5)
-    : defaultBars; // last 5 outcomes 0–1, or placeholder
+    : defaultBars;
   const sparklineSvg = `<svg viewBox="0 0 24 14" preserveAspectRatio="none"><rect x="0" y="${14 - sparklineBars[0]*12}" width="3.5" height="${sparklineBars[0]*12}" rx="1"/><rect x="5" y="${14 - sparklineBars[1]*12}" width="3.5" height="${sparklineBars[1]*12}" rx="1"/><rect x="10" y="${14 - sparklineBars[2]*12}" width="3.5" height="${sparklineBars[2]*12}" rx="1"/><rect x="15" y="${14 - sparklineBars[3]*12}" width="3.5" height="${sparklineBars[3]*12}" rx="1"/><rect x="20" y="${14 - sparklineBars[4]*12}" width="3.5" height="${sparklineBars[4]*12}" rx="1"/></svg>`;
-  const signalChips = signals.slice(0, 3).map(s => {
-    const label = s.type.replace(/_/g, ' ');
-    if (s.type === 'recent_form') {
-      return `<span class="line-signal-chip"><span>${label}</span><span class="sparkline-wrap">${sparklineSvg}</span></span>`;
-    }
-    return `<span class="line-signal-chip">${label}</span>`;
-  }).join('');
 
   // Live stat tracking section
   let liveSection = '';
@@ -2846,25 +2855,25 @@ function renderLinePickCard(pick, isPrimary) {
     const current = lv.stat_current ?? 0;
     const lineVal = parseFloat(pick.line) || 0;
     const isOver = dir === 'over';
-    const statLabel = (pick.stat_type || 'pts').toLowerCase();
+    const statLabelLive = (pick.stat_type || 'pts').toLowerCase();
     const pct = Math.min(100, lineVal > 0 ? Math.round(current / lineVal * 100) : 0);
     const winning = isOver
       ? (lv.pace != null ? lv.pace >= lineVal : current >= lineVal)
       : (lv.pace != null ? lv.pace <= lineVal : current < lineVal);
-    const barColor = winning ? (isOver ? 'var(--line)' : 'var(--lab)') : 'rgba(239,68,68,0.7)';
+    const barColor = winning ? (isOver ? 'var(--line)' : 'var(--lab)') : 'var(--color-danger)';
     const periodStr = lv.period <= 4 ? `Q${lv.period}` : `OT${lv.period - 4}`;
     winningClass = winning ? ` live-winning-${dir}` : '';
     liveSection = `
       <div class="line-live-section">
         <div class="line-live-header">
           <span class="line-live-badge">● LIVE ${periodStr} · ${lv.clock}</span>
-          ${lv.pace != null ? `<span class="line-live-pace">Pace: ~${lv.pace} ${statLabel}</span>` : ''}
+          ${lv.pace != null ? `<span class="line-live-pace">Pace: ~${lv.pace} ${statLabelLive}</span>` : ''}
         </div>
         <div class="line-live-progress-wrap">
           <div class="line-live-progress-bar" style="width:${pct}%;background:${barColor}"></div>
         </div>
         <div class="line-live-labels">
-          <span class="line-live-current">${current} ${statLabel}</span>
+          <span class="line-live-current">${current} ${statLabelLive}</span>
           <span>Line: ${pick.line}</span>
         </div>
       </div>`;
@@ -2880,43 +2889,57 @@ function renderLinePickCard(pick, isPrimary) {
         return `<div class="line-pick-odds-meta">Odds · ${t} CT</div>`;
       })()
     : (pick.books_consensus != null
-      ? `<div style="font-size:0.7rem;color:var(--color-text-muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div class="line-pick-odds-meta">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
+      ? `<div class="line-pick-odds-meta line-pick-odds-num">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div class="line-pick-odds-meta">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
       : '');
+
+  const subheader = pick.game_time ? `${pick.team} vs ${pick.opponent} · ${pick.game_time}` : `${pick.team} · vs ${pick.opponent}`;
+  const edgeClass = (pick.edge ?? 0) > 0 ? 'edge-plus' : (pick.edge ?? 0) < 0 ? 'edge-minus' : '';
+  const projStat = pick.projection ?? '—';
+  const seasonStat = pick.season_avg != null ? pick.season_avg : '—';
+  const projMin = pick.proj_min != null ? pick.proj_min : '—';
+  const avgMin = pick.avg_min != null ? pick.avg_min : '—';
 
   return `
     <div class="line-pick-card${winningClass}">
       <div class="line-pick-header">
-        <div>
+        <div class="line-pick-header-left">
           <div class="line-pick-name">${pick.player_name}</div>
-          <div class="line-pick-team">${pick.team} · vs ${pick.opponent}</div>
+          <div class="line-pick-team">${subheader}</div>
         </div>
         ${oddsHtml ? `<div class="line-pick-header-meta">${oddsHtml}</div>` : ''}
       </div>
       <div class="line-direction-row">
         <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
-        <div style="flex:1;min-width:0">
-          <div class="line-stat-val">${pick.line} ${pick.stat_type}</div>
-          <div class="line-pick-micro-grid">
-            <div class="line-pick-micro-col">
-              <span class="line-pick-micro-lbl">Proj</span>
-              <span class="line-pick-micro-val">${pick.projection ?? '—'}</span>
-            </div>
-            <div class="line-pick-micro-col">
-              <span class="line-pick-micro-lbl">Edge</span>
-              <span class="line-pick-micro-val ${(pick.edge ?? 0) > 0 ? 'edge-plus' : (pick.edge ?? 0) < 0 ? 'edge-minus' : ''}">${(pick.edge ?? 0) > 0 ? '+' : ''}${pick.edge ?? 0}</span>
-            </div>
-            <div class="line-pick-micro-col">
-              <span class="line-pick-micro-lbl">Baseline</span>
-              <span class="line-pick-micro-val">${pick.line ?? '—'}</span>
-            </div>
-          </div>
+        <div class="line-stat-val">${pick.line ?? '—'} ${statLabel.toLowerCase()}</div>
+      </div>
+      <div class="line-pick-data-row">
+        <div class="line-pick-data-col">
+          <span class="line-pick-micro-lbl">Baseline</span>
+          <span class="line-pick-micro-val">${pick.line ?? '—'} ${statLabel}</span>
+        </div>
+        <div class="line-pick-data-col">
+          <span class="line-pick-micro-lbl">Edge</span>
+          <span class="line-pick-micro-val ${edgeClass}">${(pick.edge ?? 0) > 0 ? '+' : ''}${pick.edge ?? 0}</span>
+        </div>
+        <div class="line-pick-data-col">
+          <span class="line-pick-micro-lbl">${statLabel}</span>
+          <span class="line-pick-stat-val">${projStat}</span>
+          <span class="line-pick-stat-avg">${seasonStat}</span>
+        </div>
+        <div class="line-pick-data-col">
+          <span class="line-pick-micro-lbl">Min</span>
+          <span class="line-pick-stat-val">${projMin}</span>
+          <span class="line-pick-stat-avg">${avgMin}</span>
+        </div>
+        <div class="line-pick-data-col line-pick-l5-col">
+          <span class="line-pick-micro-lbl">L5</span>
+          <span class="line-pick-sparkline-wrap">${sparklineSvg}</span>
         </div>
       </div>
-      ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
       ${liveSection}
       ${pick.result && pick.result !== 'pending' ? `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-        <span style="font-size:0.65rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:var(--tracking-caps)">Result</span>
+      <div class="line-result-row">
+        <span class="line-result-lbl">Result</span>
         <span class="line-result-pill ${pick.result}">${pick.result.toUpperCase()}${pick.actual_stat != null ? ` · ${pick.actual_stat} actual` : ''}</span>
       </div>` : ''}
     </div>`;
