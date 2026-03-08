@@ -12,6 +12,7 @@ import copy
 import csv
 import io
 import hashlib
+import re
 import unicodedata
 import pickle
 import os
@@ -84,6 +85,15 @@ async def docs_auth_and_log(request, call_next):
     })
     print(log_line, flush=True)
     return response
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+def _validate_date(date_str: str) -> Optional[JSONResponse]:
+    """Return a 400 JSONResponse if date_str is not YYYY-MM-DD format, else None."""
+    if not _DATE_RE.match(date_str):
+        return JSONResponse({"error": "Invalid date format (expected YYYY-MM-DD)"}, status_code=400)
+    return None
 
 
 # ── GitHub API helpers for persistent CSV storage ──
@@ -365,7 +375,7 @@ for _p in [
                 AI_FEATURES = _bundle["features"]
                 break
             # Legacy bare model format not supported — require bundled features for alignment
-        except Exception: pass
+        except (OSError, pickle.UnpicklingError, KeyError, ValueError): pass
     if AI_MODEL is None:
         print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
 
@@ -581,14 +591,14 @@ def _et_date() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 def _safe_float(v: Any, default: float = 0.0) -> float:
     try: return float(v) if v is not None else default
-    except: return default
+    except (ValueError, TypeError): return default
 
 def _espn_get(url):
     try:
         r = requests.get(url, timeout=10)
         if not r.ok: return {}
         return r.json()
-    except: return {}
+    except (requests.RequestException, ValueError): return {}
 
 def _fetch_b2b_teams():
     """Detect teams on the second night of a back-to-back.
@@ -2305,6 +2315,8 @@ async def reset_uploads(body: dict):
     date_str = body.get("date")
     if not date_str:
         return JSONResponse({"error": "date required"}, status_code=400)
+    bad = _validate_date(date_str)
+    if bad: return bad
     deleted = []
     for path in [f"data/actuals/{date_str}.csv", f"data/audit/{date_str}.json"]:
         _, sha = _github_get_file(path)
@@ -2330,9 +2342,10 @@ async def parse_screenshot(request: Request, file: UploadFile = File(...)):
     b64_image = base64.b64encode(image_bytes).decode("ascii")
 
     # Determine media type
-    ct = file.content_type or "image/png"
-    if ct not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
-        ct = "image/png"
+    _ALLOWED_IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
+    ct = file.content_type or ""
+    if ct not in _ALLOWED_IMAGE_TYPES:
+        return JSONResponse({"error": f"Unsupported image type: {ct or 'unknown'}. Allowed: png, jpeg, gif, webp"}, status_code=415)
 
     prompt = """Extract ALL player data from this Real Sports app screenshot.
 
@@ -2460,6 +2473,8 @@ async def save_actuals(payload: dict = Body(...)):
     If skipped, returns early without processing screenshots.
     """
     date_str = payload.get("date", _et_date().isoformat())
+    bad = _validate_date(date_str)
+    if bad: return bad
     players = payload.get("players", [])
     if not players:
         return JSONResponse({"error": "No player data"}, status_code=400)
@@ -2579,6 +2594,8 @@ async def log_dates():
 async def log_get(date: str = Query(None)):
     """Get stored predictions and actuals for a date."""
     date_str = date or _et_date().isoformat()
+    bad = _validate_date(date_str)
+    if bad: return bad
 
     pred_csv, _ = _github_get_file(f"data/predictions/{date_str}.csv")
     act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
@@ -2622,6 +2639,8 @@ async def log_actuals_stats(date: str = Query(None)):
     player_name -> {pts, reb, ast, stl, blk, min}. Cached for 24h since
     historical box scores don't change."""
     date_str = date or _et_date().isoformat()
+    bad = _validate_date(date_str)
+    if bad: return bad
     cache_key = f"actuals_stats_{date_str}"
     cached = _cg(cache_key)
     if cached is not None:
@@ -2630,7 +2649,7 @@ async def log_actuals_stats(date: str = Query(None)):
     from datetime import date as date_cls
     try:
         d = date_cls.fromisoformat(date_str)
-    except Exception:
+    except (ValueError, TypeError):
         return {"error": "Invalid date format", "players": {}}
 
     games = fetch_games(d)
@@ -2681,6 +2700,8 @@ async def log_actuals_stats(date: str = Query(None)):
 async def audit_get(date: str = Query(None)):
     """Return pre-computed audit JSON for a date (or compute live if missing)."""
     date_str = date or _et_date().isoformat()
+    bad = _validate_date(date_str)
+    if bad: return bad
     # Try cached audit first
     cached_json, _ = _github_get_file(f"data/audit/{date_str}.json")
     if cached_json:
@@ -3244,7 +3265,7 @@ async def get_line_live_stat(
                     stats = ath.get("stats", [])
                     if idx < len(stats):
                         try: stat_current = float(stats[idx])
-                        except: pass
+                        except (ValueError, TypeError): pass
                     break
 
     # Pace: project current stat rate to a full 48-minute game baseline
@@ -3269,6 +3290,8 @@ async def get_line_live_stat(
 async def resolve_line(payload: dict = Body(...)):
     """Mark today's line pick as hit or miss given the actual stat."""
     date_str = payload.get("date", _et_date().isoformat())
+    bad = _validate_date(date_str)
+    if bad: return bad
     actual   = payload.get("actual_stat")
     if actual is None:
         return JSONResponse({"error": "actual_stat required"}, status_code=400)
@@ -4520,6 +4543,8 @@ async def lab_skip_uploads(payload: dict = Body(...)):
     date_str = payload.get("date", "").strip()
     if not date_str:
         return JSONResponse({"error": "date required"}, status_code=400)
+    bad = _validate_date(date_str)
+    if bad: return bad
 
     try:
         # Load existing skipped dates

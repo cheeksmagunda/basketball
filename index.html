@@ -1944,7 +1944,7 @@ async function runAnalysis() {
     const injBadge = document.getElementById('gameInjuryBadge');
     const injuries = PICKS_DATA.injuries || [];
     if (injuries.length > 0) {
-      const names = injuries.map(inj => `${inj.name} (${inj.team})`).join(', ');
+      const names = injuries.map(inj => `${_escapeHtml(inj.name)} (${_escapeHtml(inj.team)})`).join(', ');
       injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}`;
       injBadge.style.display = 'block';
     } else {
@@ -1957,7 +1957,7 @@ async function runAnalysis() {
     PICKS_STATE = asyncStateError(PICKS_STATE, e);
     hideLoader();
     document.getElementById('picksList').innerHTML = '';
-    banner.innerHTML = `⚠ ${e.message} <button type="button" class="retry-inline-btn" onclick="runAnalysis()">Retry</button>`;
+    banner.innerHTML = `⚠ ${_escapeHtml(e.message)} <button type="button" class="retry-inline-btn" onclick="runAnalysis()">Retry</button>`;
     banner.style.display = 'block';
   } finally {
     isFetching = false;
@@ -1983,7 +1983,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
     const msg = SLATE?.no_games_yet
-      ? `Today's slate will be available around <b>${SLATE?.available_after}</b>.`
+      ? `Today's slate will be available around <b>${_escapeHtml(SLATE?.available_after)}</b>.`
       : 'No players to display yet.';
     el.innerHTML = `<div class="empty-state"><span class="icon">🏀</span><p>${msg}</p></div>`;
     return;
@@ -2109,9 +2109,9 @@ function renderCards(picks, containerId, mode, opts = {}) {
         <div class="rank-badge">${p.slot || (i+1)}</div>
         <div class="player-info">
           <div class="player-meta">
-            ${p.team || '—'} <span class="pos-pill">${p.pos || '—'}</span>${p.injury_status ? ` <span class="injury-badge">${p.injury_status}</span>` : ''}
+            ${_escapeHtml(p.team || '—')} <span class="pos-pill">${_escapeHtml(p.pos || '—')}</span>${p.injury_status ? ` <span class="injury-badge">${_escapeHtml(p.injury_status)}</span>` : ''}
           </div>
-          <div class="player-name">${p.name}</div>
+          <div class="player-name">${_escapeHtml(p.name)}</div>
           <div class="stat-pills">${statsHtml}</div>
         </div>
         ${scoreColHtml}
@@ -3138,7 +3138,7 @@ function renderLinePickCard(pick, isPrimary) {
       ? `<div class="line-pick-odds-meta line-pick-odds-num">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div class="line-pick-odds-meta">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
       : '');
 
-  const subheader = pick.game_time ? `${pick.team} vs ${pick.opponent} · ${pick.game_time}` : `${pick.team} · vs ${pick.opponent}`;
+  const subheader = pick.game_time ? `${_escapeHtml(pick.team)} vs ${_escapeHtml(pick.opponent)} · ${_escapeHtml(pick.game_time)}` : `${_escapeHtml(pick.team)} · vs ${_escapeHtml(pick.opponent)}`;
   const edgeClass = (pick.edge ?? 0) > 0 ? 'edge-plus' : (pick.edge ?? 0) < 0 ? 'edge-minus' : '';
   const projStat = pick.projection != null && pick.projection !== '' ? Number(pick.projection).toFixed(1) : '—';
   const seasonStat = pick.season_avg != null && pick.season_avg !== '' ? (typeof pick.season_avg === 'number' ? pick.season_avg.toFixed(1) : String(pick.season_avg)) : '—';
@@ -3150,7 +3150,7 @@ function renderLinePickCard(pick, isPrimary) {
     <div class="line-pick-card${winningClass}">
       <div class="line-pick-header">
         <div class="line-pick-header-left">
-          <div class="line-pick-name">${pick.player_name}</div>
+          <div class="line-pick-name">${_escapeHtml(pick.player_name)}</div>
           <div class="line-pick-team">${subheader}</div>
         </div>
         ${oddsHtml ? `<div class="line-pick-header-meta">${oddsHtml}</div>` : ''}
@@ -3249,8 +3249,8 @@ function renderLineHistoryRows(picks, dirFilter) {
         <div style="display:flex;align-items:center;gap:7px;min-width:0">
           <span class="line-hist-dir-pill ${dir}">${dir.toUpperCase()}</span>
           <div style="min-width:0">
-            <div class="line-history-name">${p.player_name}</div>
-            <div class="line-history-sub">${p.line} ${p.stat_type||'pts'} · ${p.date}</div>
+            <div class="line-history-name">${_escapeHtml(p.player_name)}</div>
+            <div class="line-history-sub">${_escapeHtml(p.line)} ${_escapeHtml(p.stat_type||'pts')} · ${_escapeHtml(p.date)}</div>
           </div>
         </div>
         <span class="line-result-pill ${result}" style="flex-shrink:0">${result}</span>
@@ -3788,7 +3788,7 @@ async function labCallClaude(attachedImage = null) {
         let evt;
         try { evt = JSON.parse(part.slice(6)); } catch { continue; }
         if (evt.type === 'status') {
-          thinkEl.innerHTML = '<div class="lab-thinking-dots"><span></span><span></span><span></span></div><div class="lab-think-status">' + evt.text + '</div>';
+          thinkEl.innerHTML = '<div class="lab-thinking-dots"><span></span><span></span><span></span></div><div class="lab-think-status">' + _escapeHtml(evt.text) + '</div>';
           labMsgs.scrollTop = labMsgs.scrollHeight;
         } else if (evt.type === 'content') {
           thinkEl.remove();
