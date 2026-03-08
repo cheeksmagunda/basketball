@@ -3220,10 +3220,13 @@ async def lab_status():
     games = fetch_games()
     draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
-    # If games are currently in progress (slate locked, games not yet final)
+    # If games are currently in progress (slate locked, games not yet final).
+    # Check ALL game start times — not just earliest. On a 6-game Saturday slate,
+    # the earliest game (e.g. 2 PM) expires its 6h lock window by 8 PM, but late
+    # games (7-10 PM tips) are still live. Using min() caused Ben to unlock mid-slate.
     start_times = [g["startTime"] for g in games if g.get("startTime")]
+    slate_locked = any(_is_locked(st) for st in start_times) if start_times else False
     earliest = min(start_times) if start_times else None
-    slate_locked = _is_locked(earliest) if earliest else False
 
     all_final, remaining, finals, latest_remaining_start = _all_games_final(games)
 
@@ -3274,7 +3277,24 @@ async def lab_status():
             "estimated_unlock": est_unlock,
         }
     else:
-        # Pre-slate — lab is open
+        # Pre-slate — lab is open.
+        # Safety check: if we have no games AND no finals, ESPN may be down.
+        # Check lock files on GitHub as a fallback before unlocking.
+        if not games and not finals:
+            try:
+                today_str = _et_date().strftime("%Y-%m-%d")
+                lock_data = _github_get_file(f"data/locks/{today_str}_slate.json")
+                if lock_data:
+                    # A lock file exists for today — games were scheduled. ESPN is likely down.
+                    return {
+                        "locked": True,
+                        "reason": "ESPN unavailable — defaulting to locked (games scheduled today)",
+                        "current_config_version": cfg_version,
+                        "games_remaining": 0,
+                        "games_final": 0,
+                    }
+            except Exception:
+                pass
         return {
             "locked": False,
             "reason": "Pre-slate window",

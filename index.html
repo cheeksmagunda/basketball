@@ -2747,9 +2747,13 @@ async function initLabPage() {
       await showLabUnlocked(status);
     }
   } catch(e) {
+    // Default to LOCKED on API failure — never show unlocked state without
+    // positive confirmation from the backend. Unlocking on error was allowing
+    // chat + uploads during live games when the API was unreachable.
     document.getElementById('labLoading').style.display = 'none';
-    document.getElementById('labUnlocked').style.display = 'flex';
-    appendLabMessage('assistant', 'Could not connect to the Lab backend. Make sure the API is running.');
+    document.getElementById('labLocked').style.display = 'block';
+    document.getElementById('labLockedReason').textContent = 'Unable to reach server — defaulting to locked';
+    document.getElementById('labLockedUnlock').textContent = '';
   }
 }
 
