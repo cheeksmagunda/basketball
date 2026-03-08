@@ -2409,6 +2409,22 @@ async function _startLineLivePoll(overPick, underPick) {
       clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
       const activePick = LINE_DIR === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
       if (activePick) _tryAutoResolveLine(activePick);
+      // EVENT-BASED TRIGGER: Games finished — immediately check if slate is now unlocked
+      // Don't wait for next scheduled Lab poll (~30-60s). This enables fastest unlock detection.
+      if (document.getElementById('tab-lab')?.classList.contains('active')) {
+        console.log('[event] Games final detected — triggering immediate lab status check');
+        setTimeout(() => {
+          fetchWithTimeout('/api/lab/status', {}, 10000)
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(s => {
+              if (!s.locked && LAB.locked) {
+                console.log('[event] Lab unlocked by game final event');
+                showLabUnlocked(s);
+              }
+            })
+            .catch(() => {});
+        }, 500);  // Small delay to allow auto-resolve to complete
+      }
     }
   }
 

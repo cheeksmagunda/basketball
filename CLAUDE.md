@@ -182,22 +182,40 @@ The `/api/save-predictions` endpoint also enforces a server-side lock guard — 
 if called before the slate is locked, making it impossible to persist pre-lock projections regardless
 of which call path invoked it (frontend, cron, or direct POST).
 
-## Lock System
+## Lock System (Event-Driven Unlock)
 
-Predictions lock 5 minutes before the earliest game starts. Once locked:
-- **`/api/save-predictions`** rejects (HTTP 409) pre-lock calls — server-side guard regardless of caller
-- Backend returns cached predictions (no recomputation with post-tipoff data)
+Predictions lock 5 minutes before the earliest game starts (lock window). Once locked, slate remains locked based on **game completion status**, not clock:
+
+### Unlock Triggers (in priority order)
+1. **ESPN Game Final** (Primary): If `_all_games_final()` returns True, unlock immediately (game completion event)
+2. **Time-Based Fallback**: If latest game running 4.5+ hours, mark as complete (ESPN lag protection)
+3. **6-Hour Ceiling**: If game_start + 6h has passed, stop polling (safety net)
+
+### Lock Cache Behavior
 - Lock cache (`/tmp/nba_locks_v1/`) survives within a warm Vercel instance
+- Cache TTL during locked slate: **30 seconds** (enables event-driven detection)
+- Cache TTL pre-slate: **180 seconds** (normal polling)
+- On cache expiration, immediately checks ESPN to see if games are done
 - On cold start with no cache, `data/locks/{date}_slate.json` on GitHub is the recovery source
 - On cold start with no GitHub backup either, returns empty locked response (frontend preserves displayed data)
 
 ### `any()` Lock Pattern (split-window days)
 All slate-level lock checks use `any(_is_locked(st) for st in start_times)` — NOT `_is_locked(min(...))`.
-On split-window Saturdays (e.g. 2 PM + 9 PM CT), the earliest game's 6h `_is_locked` ceiling expires
-while late games are still live. `any()` stays locked as long as ANY game is within its lock window.
-This applies to: `/api/slate` (line 1747), `/api/save-predictions` (line 1920), `/api/refresh` (line 2333),
-and `/api/lab/status` (line 3234). Per-game checks (e.g. `/api/picks`, `/api/line-live-stat`) correctly
-use single-game `_is_locked(game_start)`.
+
+**Why `any()`?** On split-window Saturdays (e.g. 2 PM + 9 PM CT):
+- 2 PM game's 6h ceiling expires at 8 PM
+- 9 PM game's 6h ceiling expires at 3 AM (next day)
+- System must stay locked while ANY game is live, not just the first one
+- `min()` would incorrectly unlock at 8 PM when late games still active
+- `any()` correctly stays locked until BOTH time window AND game completion
+
+This applies to:
+- `/api/slate` (line 1777): `any(_is_locked(st))` before computing predictions
+- `/api/save-predictions` (line 1920): `any(_is_locked(...))` guard prevents pre-lock saves
+- `/api/refresh` (line 2333): `any(_is_locked(...))` gate for auto-save
+- `/api/lab/status` (line 3331): `any(_is_locked(st))` determines locked state
+
+Per-game checks (e.g. `/api/picks`, `/api/line-live-stat`) correctly use single-game `_is_locked(game_start)`.
 
 ### Triple-Gated Save Pipeline
 Predictions are saved to `data/predictions/` through exactly two code paths, both strictly post-lock:
@@ -299,6 +317,41 @@ Key patterns used throughout:
 - `savePredictions`: resets `_predSavedDate` on non-OK responses so the next call can retry
 
 EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hidden context-loading messages don't suppress the upload prompt.
+
+## Event-Based Slate Transition
+
+The system now uses **game completion events** instead of clock-based timeouts for slate unlocking. When the final game on a slate completes, the system:
+
+1. **Immediately detects completion** — `_all_games_final()` checks ESPN scoreboard and fires the unlock event
+2. **Triggers upload prompt** — Ben unlocks and shows the end-of-day upload banner
+3. **Enables next slate** — New games become draftable within seconds of previous slate completion
+
+### Cache TTL Optimization (Adaptive)
+- **Locked slate**: Cache TTL reduced to **30 seconds** (from 180s)
+- **Pre-slate**: Cache TTL remains 180 seconds
+- During locked periods, the backend refreshes game status every 30s instead of waiting 3 minutes
+- Enables sub-minute detection of slate completion without hammering ESPN API
+
+### Aggressive ESPN Fallback (4.5-Hour Rule)
+If ESPN API delays updating game status to "Final":
+- If latest game running 4.5+ hours: automatically mark all games as complete
+- Ignores `finals > 0` requirement — fires even if ESPN completely lagged
+- Prevents indefinite lock waits when ESPN slow during high-traffic windows (Saturday evenings)
+- Prevents false unlocks: still requires `remaining == 0` (at least one game attempt started)
+
+### Event-Driven Frontend Unlock
+When line polling detects games finished (`status === 'final'`):
+- Immediately triggers `/api/lab/status` check instead of waiting for next poll cycle (~30-60s)
+- If Lab is active and unlocks, shows upload banner instantly
+- Falls back to auto-resolve cron if Ben not open
+
+### Lock System Priority
+The unlock logic prioritizes game completion over time windows:
+1. **First**: Check if all games final via ESPN → unlock immediately
+2. **Second**: Check if `any(_is_locked(st))` for remaining games → stay locked
+3. **Fallback**: Use 4.5-hour timeout → unlock if game running too long
+
+This prevents lock waits even when ESPN lags during high-traffic periods.
 
 ## Responsiveness & Reliability Improvements
 
