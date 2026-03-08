@@ -3204,9 +3204,11 @@ def _all_games_final(games):
         ydata = _espn_get(f"{ESPN}/scoreboard?dates={yesterday_str}")
         finals, remaining, latest_remaining = _tally(ydata)
 
-    # All done when no started games are still in progress.
-    # If both counts are 0 (genuine no-game day or ESPN outage) default to unlocked.
-    all_final = (remaining == 0)
+    # All done when no started games are still in progress AND we actually saw
+    # completed games. If ESPN returns empty data (outage/rate-limit), both counts
+    # are 0 — that's NOT confirmation games are final. Only unlock when we have
+    # positive evidence (at least one completed game) or it's genuinely a no-game day.
+    all_final = (remaining == 0 and finals > 0)
     result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
     return result
@@ -3230,7 +3232,8 @@ async def lab_status():
     last_change = (cfg.get("changelog") or [{}])[-1]
 
     if all_final:
-        # All started games are done. Check if more games are scheduled today.
+        # All started games confirmed done (requires finals > 0 from _all_games_final,
+        # so ESPN outages/empty responses won't falsely trigger this path).
         next_lock = None
         upcoming = 0
         if draftable:
