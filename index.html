@@ -2244,24 +2244,22 @@ function renderLogGrid(dateStr) {
   const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
   label.textContent = dateLabel;
 
-  if (!data || !data.has_predictions) {
-    var _todayET = _etToday();
-    var _isToday = dateStr === _todayET;
-    var _slateLocked = SLATE && SLATE.locked;
+  // Check if predictions look incomplete for today: fewer per-game scopes than locked games.
+  // This catches the split-window case where only early games were saved initially.
+  var _todayET = _etToday();
+  var _isToday = dateStr === _todayET;
+  var _slateLocked = SLATE && SLATE.locked;
+  var _gameScopes = data ? Object.keys(data.scopes || {}).filter(function(s) { return s !== 'slate'; }).length : 0;
+  var _lockedGames = _slateLocked ? (SLATE.games || []).filter(function(g) {
+    return g.startTime && (new Date(g.startTime).getTime() - Date.now()) <= 5 * 60 * 1000;
+  }).length : 0;
+  var _looksIncomplete = _isToday && _slateLocked && data && data.has_predictions && _gameScopes < _lockedGames && !LOG._refetchedToday;
 
-    if (_isToday && !_slateLocked) {
-      // Pre-lock: predictions save at lock time — show friendly message
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">🔮</span><p>The Oracle cannot be rushed — drafts logged at event start.</p></div>`;
-      return;
-    }
-
-    if (_isToday && _slateLocked && !LOG._refetchedToday) {
-      // Post-lock but stale cache: invalidate and re-fetch (predictions should exist now)
-      LOG._refetchedToday = true;
-      delete LOG.dateCache[dateStr];
-      LOG.data = null;
-      LOG_STATE = asyncStateLoading(LOG_STATE);
-      _renderLogGridFromState(dateStr);
+  if (_looksIncomplete) {
+    // Predictions exist but missing games — trigger save then re-fetch
+    LOG._refetchedToday = true;
+    delete LOG.dateCache[dateStr];
+    fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 30000).catch(function(){}).finally(function() {
       fetchWithTimeout('/api/log/get?date=' + dateStr).then(function(r) {
         if (!r.ok) throw new Error('Failed');
         return r.json();
@@ -2270,8 +2268,40 @@ function renderLogGrid(dateStr) {
         LOG.data = freshData;
         LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
         renderLogGrid(dateStr);
-      }).catch(function() {
-        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>';
+      }).catch(function() {});
+    });
+    // Fall through to render current (partial) data while save runs in background
+  }
+
+  if (!data || !data.has_predictions) {
+
+    if (_isToday && !_slateLocked) {
+      // Pre-lock: predictions save at lock time — show friendly message
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">🔮</span><p>The Oracle cannot be rushed — drafts logged at event start.</p></div>`;
+      return;
+    }
+
+    if (_isToday && _slateLocked && !LOG._refetchedToday) {
+      // Post-lock but stale/incomplete: trigger save-predictions to capture any
+      // newly-locked games, THEN re-fetch the log data.
+      LOG._refetchedToday = true;
+      delete LOG.dateCache[dateStr];
+      LOG.data = null;
+      LOG_STATE = asyncStateLoading(LOG_STATE);
+      _renderLogGridFromState(dateStr);
+      // Fire save-predictions first so the backend auto-computes any missing games
+      fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 30000).catch(function(){}).finally(function() {
+        fetchWithTimeout('/api/log/get?date=' + dateStr).then(function(r) {
+          if (!r.ok) throw new Error('Failed');
+          return r.json();
+        }).then(function(freshData) {
+          LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() };
+          LOG.data = freshData;
+          LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
+          renderLogGrid(dateStr);
+        }).catch(function() {
+          grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>';
+        });
       });
       return;
     }
