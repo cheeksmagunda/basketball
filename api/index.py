@@ -394,17 +394,32 @@ def _lg(k, date_str=None): return json.loads(_lp(k, date_str).read_text()) if _l
 def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
 
 
+def _l5_name_variants(name: str):
+    """Return list of name variants to try for nba_api lookup (e.g. Sam -> Samuel)."""
+    name = (name or "").strip()
+    if not name:
+        return []
+    out = [name]
+    first, _, last = name.partition(" ")
+    # Common first-name shortenings that nba_api may store in full form
+    expand = {"Sam": "Samuel", "Mike": "Michael", "Matt": "Matthew", "Dan": "Daniel", "Jon": "Jonathan", "Josh": "Joshua", "Joe": "Joseph", "Tom": "Thomas", "Jim": "James", "Bill": "William"}
+    if first and last and first in expand:
+        out.append(expand[first] + " " + last)
+    return out
+
+
 def _get_last5_game_stats(player_name: str, stat_type: str):
     """Fetch actual last-5-game stat values (PTS/REB/AST) via nba_api. Returns list of up to 5 floats (most recent first) or None on failure. Cached 30 min."""
     if not player_name or not player_name.strip():
         return None
     stat_type = (stat_type or "points").lower()
     col = "PTS" if stat_type == "points" else ("REB" if stat_type == "rebounds" else "AST")
-    cache_key = f"l5_{hashlib.md5(f'{player_name.strip().lower()}:{stat_type}'.encode()).hexdigest()}"
+    name_clean = player_name.strip()
+    cache_key = f"l5_{hashlib.md5(f'{name_clean.lower()}:{stat_type}'.encode()).hexdigest()}"
     cached = _cg(cache_key)
     if cached is not None:
         if isinstance(cached, list):
-            return cached
+            return cached if len(cached) > 0 else None  # don't serve cached empty; retry to get real L5
         if isinstance(cached, dict) and "v" in cached and "ts" in cached:
             try:
                 ts = datetime.fromisoformat(cached["ts"].replace("Z", "+00:00"))
@@ -419,8 +434,11 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
         y, m = now.year, now.month
         season = f"{y}-{str(y+1)[-2:]}" if m >= 10 else f"{y-1}-{str(y)[-2:]}"
         all_players = nba_players.get_players()
-        name_clean = player_name.strip()
-        match = next((p for p in all_players if (p.get("full_name") or "").strip() == name_clean), None)
+        match = None
+        for try_name in _l5_name_variants(name_clean):
+            match = next((p for p in all_players if (p.get("full_name") or "").strip() == try_name), None)
+            if match:
+                break
         if not match:
             base = name_clean
             for suffix in (" Jr.", " Jr", " III", " II", " IV", " Sr."):
@@ -438,11 +456,9 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
         log = playergamelog.PlayerGameLog(player_id=nba_id, season=season, season_type_all_star="Regular Season")
         df = log.get_data_frames()
         if not df or df[0].empty:
-            _cs(cache_key, [])
-            return []
+            return []  # do not cache empty; next request will retry
         tbl = df[0]
         if col not in tbl.columns:
-            _cs(cache_key, [])
             return []
         vals = [round(float(v), 1) for v in tbl[col].astype(float).tolist()[:5]]
         payload = {"v": vals, "ts": datetime.now(timezone.utc).isoformat()}
@@ -1909,8 +1925,8 @@ async def get_games():
         g["draftable"] = not _is_completed(st) if st else False
     return games
 
-@app.get("/api/slate")
-async def get_slate():
+def _get_slate_impl():
+    """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
     games = fetch_games()
 
     # Midnight rollover guard: if none of today's games have started yet but
@@ -2082,6 +2098,26 @@ async def get_slate():
     if locked:
         _ls("slate_v5_locked", result)
     return result
+
+
+@app.get("/api/slate")
+async def get_slate():
+    """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling."""
+    try:
+        return _get_slate_impl()
+    except Exception as e:
+        print(f"[slate] error: {e}")
+        return JSONResponse(
+            content={
+                "error": "slate_failed",
+                "date": _et_date().isoformat(),
+                "games": [],
+                "lineups": {"chalk": [], "upside": []},
+                "locked": False,
+                "draftable_count": 0,
+            },
+            status_code=200,
+        )
 
 
 def _compute_game_picks(game):
