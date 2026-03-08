@@ -49,6 +49,16 @@
       --log-win-glow: rgba(212,166,64,0.2);
       --log-opt: #9b80c8;
       --log-opt-glow: rgba(155,128,200,0.2);
+
+      /* Global design tokens */
+      --color-success: #00E676;
+      --color-danger: #FF8A80;
+      --color-warning: #d4a640;
+      --color-text-primary: #e8edf5;
+      --color-text-muted: #8A96A3;
+      --radius-pill: 9999px;
+      --radius-card: 14px;
+      --tracking-caps: 0.06em;
     }
 
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -163,7 +173,7 @@
       background-image: linear-gradient(to bottom, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%);
       border-color: rgba(255,255,255,0.28);
       box-shadow: 0 2px 14px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.30) inset;
-      color: #fff;
+      color: var(--color-text-primary);
     }
     .bnav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
     .bnav-icon svg { width: 22px; height: 22px; display: block; }
@@ -276,7 +286,7 @@
 
     .rank-badge {
       width: 42px; height: 42px;
-      border-radius: 10px;
+      border-radius: var(--radius-card);
       background: rgba(0,0,0,0.4);
       border: 1px solid var(--border-bright);
       display: flex; align-items: center; justify-content: center;
@@ -299,7 +309,7 @@
       padding: 1px 5px; font-size: 0.6rem; margin-left: 4px;
     }
     .injury-badge {
-      background: #3B1C1C; color: #FFB4B4;
+      background: #3B1C1C; color: var(--color-danger);
       border: 1px solid rgba(255,180,180,0.2); border-radius: 3px;
       padding: 1px 5px; font-size: 0.55rem; font-weight: 800;
       letter-spacing: 0.08em;
@@ -307,7 +317,7 @@
     .player-name {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1.15rem; font-weight: 800; line-height: 1;
-      color: #fff; margin-bottom: 6px;
+      color: var(--color-text-primary); margin-bottom: 6px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
@@ -329,12 +339,12 @@
     }
     .stat-col-val {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.82rem; font-weight: 800; color: #fff; line-height: 1;
+      font-size: 0.82rem; font-weight: 800; color: var(--color-text-primary); line-height: 1;
       font-variant-numeric: tabular-nums;
     }
     .stat-col-lbl {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.58rem; font-weight: 700; color: #8A96A3;
+      font-size: 0.58rem; font-weight: 700; color: var(--color-text-muted);
       text-transform: uppercase; letter-spacing: 0.06em; line-height: 1; margin-top: 1px;
     }
     .stat-pill {
@@ -372,7 +382,7 @@
     }
 
     .mult-badge {
-      background: rgba(255,215,0,0.1); color: #FFD700;
+      background: rgba(255,215,0,0.1); color: var(--color-warning);
       border: 1px solid rgba(255,215,0,0.25);
       font-size: 0.6rem; padding: 2px 6px; border-radius: 4px;
     }
@@ -476,7 +486,7 @@
       font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
       text-transform: uppercase;
       background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94,0.25);
-      color: #22c55e;
+      color: var(--color-success);
       padding: 5px 10px; border-radius: 8px;
       display: inline-flex; align-items: center; gap: 5px;
     }
@@ -515,13 +525,13 @@
       border: 1px solid rgba(244,63,94,0.3);
       border-radius: 10px;
       padding: 12px 16px;
-      font-size: 0.82rem; color: #fda4af;
+      font-size: 0.82rem; color: var(--color-danger);
       margin-bottom: 16px;
       display: none;
     }
     .retry-inline-btn {
       margin-left: 10px; padding: 4px 12px; font-size: 0.78rem;
-      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-card);
       color: var(--text); cursor: pointer; font-weight: 600;
     }
     .retry-inline-btn:hover { background: var(--chalk); color: var(--bg); border-color: var(--chalk); }
@@ -534,7 +544,7 @@
       display: flex; align-items: center; justify-content: center; padding: 20px;
     }
     .modal-box {
-      background: var(--bg); border: 1px solid var(--border-bright); border-radius: 16px;
+      background: var(--bg); border: 1px solid var(--border-bright); border-radius: var(--radius-card);
       padding: 24px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto;
     }
     .modal-header {
@@ -548,22 +558,22 @@
     .score-row-name { font-size: 0.82rem; font-weight: 600; }
     .score-row-pred { font-size: 0.75rem; color: var(--muted); text-align: center; }
     .score-row input {
-      background: var(--surface2); border: 1px solid var(--border-bright); border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border-bright); border-radius: var(--radius-card);
       padding: 8px; color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: center;
       outline: none; width: 100%;
     }
     .score-row input:focus { border-color: var(--chalk); }
     .score-row input[type="text"] { text-align: left; font-weight: 400; }
     .modal-cancel {
-      flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+      flex: 1; padding: 10px; border-radius: var(--radius-card); border: 1px solid var(--border);
       background: transparent; color: var(--muted); cursor: pointer;
       font-family: 'Barlow Condensed', sans-serif; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.06em; transition: all 0.2s;
     }
     .modal-cancel:hover { border-color: var(--border-bright); color: var(--text-dim); }
     .modal-submit {
-      flex: 2; padding: 10px; border-radius: 10px; border: none;
-      background: var(--chalk); color: #fff; cursor: pointer;
+      flex: 2; padding: 10px; border-radius: var(--radius-card); border: none;
+      background: var(--chalk); color: var(--color-text-primary); cursor: pointer;
       font-family: 'Barlow Condensed', sans-serif; font-weight: 800; text-transform: uppercase;
       letter-spacing: 0.06em; transition: all 0.2s;
     }
@@ -582,7 +592,7 @@
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       padding: 8px 12px;
       background: #1E2633; border: 1px solid var(--border);
-      border-radius: 10px; cursor: pointer; transition: all 0.2s;
+      border-radius: var(--radius-card); cursor: pointer; transition: all 0.2s;
       min-width: 52px;
     }
     .date-chip:hover { border-color: var(--border-bright); background: #243040; }
@@ -593,12 +603,12 @@
     .date-chip-day {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: #8A96A3;
+      text-transform: uppercase; color: var(--color-text-muted);
     }
     .date-chip.active .date-chip-day { color: var(--chalk); }
     .date-chip-num {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.1rem; font-weight: 900; color: #8A96A3; line-height: 1;
+      font-size: 1.1rem; font-weight: 900; color: var(--color-text-muted); line-height: 1;
     }
     .date-chip.active .date-chip-num { color: var(--chalk); }
     .date-chip-dot {
@@ -679,11 +689,11 @@
 
     /* Graded card states — hit/miss accent bar + glow */
     .player-card.graded-hit::before { background: var(--green) !important; box-shadow: 2px 0 12px rgba(34,197,94,0.4) !important; }
-    .player-card.graded-miss::before { background: #FF8A80 !important; box-shadow: 2px 0 12px rgba(255,138,128,0.3) !important; }
+    .player-card.graded-miss::before { background: var(--color-danger) !important; box-shadow: 2px 0 12px rgba(255,138,128,0.3) !important; }
 
     /* Pending results indicator */
     .pending-results {
-      font-size: 0.68rem; font-style: italic; color: #8A96A3;
+      font-size: 0.68rem; font-style: italic; color: var(--color-text-muted);
       display: inline-flex; align-items: center; gap: 4px;
     }
 
@@ -693,11 +703,11 @@
       font-size: 0.88rem; font-weight: 800; line-height: 1;
       font-variant-numeric: tabular-nums;
     }
-    .stat-col-actual.stat-hit { color: #00E676; }
-    .stat-col-actual.stat-miss { color: #FF8A80; }
+    .stat-col-actual.stat-hit { color: var(--color-success); }
+    .stat-col-actual.stat-miss { color: var(--color-danger); }
     .stat-col-proj {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.52rem; font-weight: 600; color: #8A96A3;
+      font-size: 0.52rem; font-weight: 600; color: var(--color-text-muted);
       line-height: 1; margin-top: 1px;
       font-variant-numeric: tabular-nums;
     }
@@ -707,11 +717,11 @@
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 2rem; font-weight: 900; line-height: 1;
     }
-    .score-actual.score-hit { color: #00E676; }
-    .score-actual.score-miss { color: #FF8A80; }
+    .score-actual.score-hit { color: var(--color-success); }
+    .score-actual.score-miss { color: var(--color-danger); }
     .score-proj-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.62rem; font-weight: 700; color: #8A96A3;
+      font-size: 0.62rem; font-weight: 700; color: var(--color-text-muted);
       margin-top: 2px;
     }
 
@@ -767,7 +777,7 @@
     .line-live-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
     .line-live-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .line-live-badge { font-family: 'Barlow Condensed', sans-serif; font-size: 0.62rem; font-weight: 800;
-      letter-spacing: 0.1em; color: #22c55e; animation: livePulse 1.8s ease-in-out infinite; }
+      letter-spacing: 0.1em; color: var(--color-success); animation: livePulse 1.8s ease-in-out infinite; }
     @keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
     .line-live-pace { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.03em; }
     .line-live-progress-wrap { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
@@ -786,7 +796,13 @@
       background: var(--line); box-shadow: 2px 0 12px var(--line-glow);
     }
     .line-pick-header {
-      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px;
+    }
+    .line-pick-header-meta {
+      flex-shrink: 0; text-align: right;
+    }
+    .line-pick-odds-meta {
+      font-size: 0.6rem; color: var(--color-text-muted); letter-spacing: var(--tracking-caps);
     }
     .line-pick-name {
       font-family: 'Barlow Condensed', sans-serif;
@@ -815,31 +831,27 @@
       font-variant-numeric: tabular-nums;
     }
     .line-pick-micro-grid {
-      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 8px;
+      display: flex; flex-direction: row; justify-content: space-between; width: 100%; margin-top: 8px;
     }
     .line-pick-micro-col {
       display: flex; flex-direction: column; align-items: center; gap: 2px;
     }
     .line-pick-micro-lbl {
-      font-size: 10px; font-weight: 700; color: #8A96A3;
-      text-transform: uppercase; letter-spacing: 0.06em;
+      font-size: 10px; font-weight: 700; color: var(--color-text-muted);
+      text-transform: uppercase; letter-spacing: var(--tracking-caps);
     }
     .line-pick-micro-val {
-      font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 800; color: #fff;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 800; color: var(--color-text-primary);
       font-variant-numeric: tabular-nums;
     }
-    .line-pick-micro-val.edge-plus { color: var(--green); }
-    .line-pick-micro-val.edge-minus { color: var(--red); }
+    .line-pick-micro-val.edge-plus { color: var(--color-success); }
+    .line-pick-micro-val.edge-minus { color: var(--color-danger); }
     .line-signal-chip .sparkline-wrap {
       display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-left: 6px; vertical-align: middle;
     }
     .line-signal-chip .sparkline-wrap svg { width: 24px; height: 14px; }
     .line-signal-chip .sparkline-wrap rect { fill: currentColor; opacity: 0.7; }
     .line-proj { font-size: 0.75rem; color: var(--text-dim); }
-    .line-narrative {
-      font-size: 0.78rem; color: var(--text-dim); line-height: 1.5;
-      border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;
-    }
     .line-signals {
       display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
     }
@@ -868,8 +880,8 @@
       font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
       text-transform: uppercase; letter-spacing: 0.06em;
     }
-    .line-result-pill.hit     { background: rgba(34,197,94,0.2); color: #86efac; border: 1px solid rgba(34,197,94,0.45); }
-    .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
+    .line-result-pill.hit     { background: rgba(34,197,94,0.2); color: var(--color-success); border: 1px solid rgba(34,197,94,0.45); }
+    .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--color-danger); border: 1px solid rgba(244,63,94,0.2); }
     .line-result-pill.pending { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
     .line-hist-tab {
       font-family: 'Barlow Condensed', sans-serif; font-size: 0.65rem; font-weight: 800;
@@ -1170,7 +1182,7 @@
       </div>
       <div id="gameScriptBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:8px 14px;margin:8px 0 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px"></div>
       <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px"></div>
-      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:#FFB4B4;padding:6px 12px;text-align:center;letter-spacing:0.3px;background:#3B1C1C;border:1px solid rgba(255,180,180,0.2);border-radius:8px;margin-bottom:14px"></div>
+      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:var(--color-danger);padding:6px 12px;text-align:center;letter-spacing:0.3px;background:#3B1C1C;border:1px solid rgba(255,180,180,0.2);border-radius:var(--radius-card);margin-bottom:14px"></div>
       <div id="picksList"></div>
     </div>
 
@@ -1276,7 +1288,7 @@
         <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Upload your Real Sports screenshots — Ben will analyze accuracy and break down what the model got right.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
-            style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            style="background:var(--lab);border:none;border-radius:var(--radius-card);color:var(--color-text-primary);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             📸 Real Scores
           </button>
           <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
@@ -1341,7 +1353,7 @@
             oninput="const s=document.getElementById('labSendBtn');s.disabled=!this.value.trim();s.style.opacity=this.value.trim()?'1':'0.4';"
           />
           <button id="labSendBtn" tabindex="-1" onclick="labSend()" title="Send" disabled
-            style="background:var(--lab);border:none;border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.2rem;color:#fff;opacity:0.4;transition:opacity 0.15s">
+            style="background:var(--lab);border:none;border-radius:var(--radius-card);width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.2rem;color:var(--color-text-primary);opacity:0.4;transition:opacity 0.15s">
             ↑
           </button>
         </div>
@@ -1835,7 +1847,7 @@ async function runAnalysis() {
     if (PICKS_DATA.locked) {
       lockBadge.innerHTML = 'Picks locked — showing final predictions';
       lockBadge.style.display = 'block';
-      lockBadge.style.color = '#22c55e';
+      lockBadge.style.color = 'var(--color-success)';
     } else {
       lockBadge.style.display = 'none';
     }
@@ -1927,7 +1939,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
     const contextPills = [
       p.est_mult && `<span class="stat-context-pill">+${p.est_mult}x card</span>`,
       p.predMin && `<span class="stat-context-pill">${p.predMin} min</span>`,
-      (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:#FFB4B4;border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
+      (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:var(--color-danger);border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
       (isLog && !hasActuals) ? '<span class="pending-results">Waiting for results</span>' : '',
     ].filter(Boolean);
 
@@ -2800,6 +2812,19 @@ function renderLinePickCard(pick, isPrimary) {
       </div>`;
   }
 
+  const oddsHtml = pick.line_updated_at
+    ? (() => {
+        const raw = pick.line_updated_at;
+        const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
+        const t = new Date(utcStr).toLocaleTimeString('en-US', {
+          hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
+        });
+        return `<div class="line-pick-odds-meta">Odds · ${t} CT</div>`;
+      })()
+    : (pick.books_consensus != null
+      ? `<div style="font-size:0.7rem;color:var(--color-text-muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div class="line-pick-odds-meta">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
+      : '');
+
   return `
     <div class="line-pick-card${winningClass}">
       <div class="line-pick-header">
@@ -2807,6 +2832,7 @@ function renderLinePickCard(pick, isPrimary) {
           <div class="line-pick-name">${pick.player_name}</div>
           <div class="line-pick-team">${pick.team} · vs ${pick.opponent}</div>
         </div>
+        ${oddsHtml ? `<div class="line-pick-header-meta">${oddsHtml}</div>` : ''}
       </div>
       <div class="line-direction-row">
         <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
@@ -2827,25 +2853,12 @@ function renderLinePickCard(pick, isPrimary) {
             </div>
           </div>
         </div>
-        <div style="margin-left:auto;text-align:right">
-          ${pick.line_updated_at ? (() => {
-            const raw = pick.line_updated_at;
-            const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
-            const t = new Date(utcStr).toLocaleTimeString('en-US', {
-              hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
-            });
-            return `<div style="font-size:0.6rem;color:var(--muted);letter-spacing:0.03em">Odds · ${t} CT</div>`;
-          })() : (pick.books_consensus != null
-            ? `<div style="font-size:0.7rem;color:var(--muted)">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div style="font-size:0.6rem;color:var(--muted)">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
-            : '')}
-        </div>
       </div>
       ${signalChips ? `<div class="line-signals">${signalChips}</div>` : ''}
       ${liveSection}
-      <div class="line-narrative">${pick.narrative}</div>
       ${pick.result && pick.result !== 'pending' ? `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-        <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Result</span>
+        <span style="font-size:0.65rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:var(--tracking-caps)">Result</span>
         <span class="line-result-pill ${pick.result}">${pick.result.toUpperCase()}${pick.actual_stat != null ? ` · ${pick.actual_stat} actual` : ''}</span>
       </div>` : ''}
     </div>`;
@@ -3434,7 +3447,7 @@ async function executeLabAction(action) {
       <div data-config-status>Ready to apply: <b></b></div>
       <div style="margin-top:10px;display:flex;gap:8px">
         <button class="lab-apply-btn"
-          style="background:var(--lab);border:none;border-radius:8px;color:#fff;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
+          style="background:var(--lab);border:none;border-radius:var(--radius-card);color:var(--color-text-primary);padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer">
           Apply
         </button>
         <button class="lab-decline-btn"

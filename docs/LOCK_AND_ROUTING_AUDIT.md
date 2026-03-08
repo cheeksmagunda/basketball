@@ -10,7 +10,7 @@
 |------|----------|---------|
 | `_is_locked(start_time_iso)` | api/index.py ~391 | True if within lock_buffer of start or &lt;6h past start. Catches exceptions → False. |
 | `_is_completed(start_time_iso)` | api/index.py ~406 | True if past lock window (lock or in progress). Used for draftable. |
-| `_all_games_final(games)` | api/index.py ~3352 | ESPN scoreboard check; 30s TTL when locked, 180s pre-slate. Returns (all_final, remaining, finals, latest). |
+| `_all_games_final(games)` | api/index.py ~3352 | ESPN scoreboard check; 60s TTL when locked, 180s pre-slate. Returns (all_final, remaining, finals, latest). |
 | `LOCK_DIR` / `_lg` / _ls | api/index.py ~221, 348, 388 | In-memory lock cache; `_lp(k)` file path, `_lg` read, `_ls` write. |
 | GitHub lock backup | api/index.py ~170–189 | `data/locks/{date}_slate.json` read/write for cold-start recovery. |
 
@@ -31,7 +31,7 @@
 |------|----------|
 | Predict tab | `SLATE.locked`, `SLATE.all_complete`; clientLocked fallback (5 min before first game); "Picks Locked" chip; savePredictions only when `SLATE.locked`. |
 | Game analysis | `PICKS_DATA.locked`; badge "Picks locked — showing final predictions". |
-| Ben tab | `initLabPage()` calls `/api/lab/status`; on failure shows "Unable to reach server — defaulting to locked" + Retry. Locked view hides upload banner; polling every 60s when locked. |
+| Ben tab | `initLabPage()` calls `/api/lab/status`; on failure shows "Unable to reach server — defaulting to locked" + Retry. Locked view hides upload banner; polling every 120s when locked. |
 | Line tab | Odds refresh disabled when slate locked (backend). |
 
 ### 1.4 Issues found (and fixed)
@@ -51,7 +51,7 @@
 | `/(.*)` | `/index.html` | SPA fallback; no server-side routes. |
 
 Builds: `api/index.py` (Python, maxDuration 300s), `index.html` (static).  
-Crons: refresh (19:00, 20:00 UTC), auto-improve (09:00), refresh-line-odds (hourly + :55), auto-resolve-line (15, 30, 45).
+Crons: refresh (19:00 UTC only), auto-improve (09:00), refresh-line-odds (hourly at :55), auto-resolve-line (0, 30 min).
 
 ### 2.2 FastAPI routes (api/index.py)
 

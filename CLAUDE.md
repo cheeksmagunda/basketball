@@ -49,7 +49,7 @@ Both `predictSubNav` (Slate-Wide | Game) and `lineSubNav` (Over | Under) are inl
 
 ## Codebase Navigation (grep tags)
 
-All major sections in `api/index.py` and `index.html` are tagged with `# grep:` comments for fast searching:
+All major sections in `api/index.py` and `index.html` are tagged for fast searching. In `api/index.py` search for `# grep:`; in `index.html` grep for the section name (e.g. `LOG PAGE`) or function name (e.g. `initLogPage`).
 
 ```
 grep: TEAM_COLORS              — team color hex map in index.html
@@ -117,6 +117,16 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/lab/auto-improve` | GET | **Cron** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% (requires CRON_SECRET when set) |
 | `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt (keeps key server-side) |
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
+
+**Admin / optional (not used by main UI):** `POST /api/reset-uploads` — deletes actuals + audit for a date (admin/debug). `POST /api/hindsight` — optimal hindsight lineup from actual RS (Ben-driven or future). `GET /api/version` — build identifier for deploy/monitoring.
+
+## App init and tab data flow
+
+- **Startup:** `loadSlate()` and `initGameSelector()` run in parallel: `GET /api/slate` (10s) and `GET /api/games` (10s). Predict tab is default; slate list and game dropdown populate.
+- **Tab load (lazy):** Line, Log, and Lab load on first visit when `switchTab()` is called:
+  - **Line:** `initLinePage()` → fire-and-forget `GET /api/auto-resolve-line`, then `GET /api/line-of-the-day`, `GET /api/line-history`; live stat poll and resolve poll when applicable.
+  - **Log:** `initLogPage()` → `GET /api/log/dates`, then `buildLogDateStrip()` (60-day strip); selecting a date calls `GET /api/log/get?date=X`; drill-down may call `GET /api/log/actuals-stats?date=X` (cached in `LOG._statsCache`).
+  - **Lab:** `initLabPage()` → pre-warm `GET /api/health`, then `GET /api/lab/status`; on unlock, loads briefing + config-history + line-of-the-day + slate + log for context; lock poll every 120s when locked.
 
 ## Environment Variables (Vercel)
 
@@ -280,6 +290,7 @@ The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs
 - **No "yesterday's pick" banner** — resolved picks appear only in Recent Picks history. The main card always shows today's pick for the selected direction.
 - Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
 - Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
+- **Line card layout**: Odds timestamp is in the card header (top-right); 3-column micro-grid (Proj / Edge / Baseline) uses full width with `justify-content: space-between` and centered columns; redundant narrative prose removed; negative edge uses `--color-danger`.
 
 ### Odds Refresh Pipeline
 - **Cron**: `55 * * * *` (once per hour at :55; hits common 6:55 PM ET lock)
@@ -297,6 +308,23 @@ The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs
 `switchTab()` calls `closeLinePickModal()` + resets `document.body.style.overflow` on every tab switch to prevent scroll lock leaking between tabs.
 
 Note: `predictSubNav` and `lineSubNav` are now **inline elements** (not fixed/floating) — no z-index needed.
+
+## Global Design Tokens (index.html :root)
+
+Single source of truth for UI consistency and future theming:
+
+| Token | Purpose |
+|-------|---------|
+| `--color-success` | Neon green — HITs, positive edges, success states |
+| `--color-danger` | Coral red — MISSes, negative edges, alerts |
+| `--color-warning` | Gold/orange — mid-tier multipliers, warnings |
+| `--color-text-primary` | White/off-white — primary text, buttons |
+| `--color-text-muted` | Slate grey (#8A96A3) — metadata, labels |
+| `--radius-pill` | 9999px — tags, pill buttons |
+| `--radius-card` | 14px — main containers, cards, modals |
+| `--tracking-caps` | 0.06em — letter-spacing for ALL CAPS labels |
+
+Use these tokens instead of hardcoded hex or pixel radii across Predict, Line, Ben, and History.
 
 ## Cron Schedule (vercel.json)
 
@@ -384,7 +412,7 @@ Backend uses Python `ThreadPoolExecutor` for parallel processing:
 - 8 workers matches typical Vercel CPU core availability
 
 ### Polling Interval Tuning
-- **Lab lock polling**: 2 minutes (reduces Vercel invocations; line ~2980 in `index.html`)
+- **Lab lock polling**: 2 minutes (reduces Vercel invocations; see `initLabPage` in index.html, ~3135)
   - Unlock detected within ~2 min; user can tap Retry for immediate check
 - **Line live stat polling**: 1 minute; max 5 consecutive failures (300s tolerance) before fallback to cron
   - Prevents indefinite polling on persistent network failures
@@ -403,7 +431,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 
 | Cache | TTL | Purpose | Invalidation |
 |-------|-----|---------|--------------|
-| Game final status (`_all_games_final`) | 3 min | Detects when ALL games reach Final status | `/api/refresh` endpoint clears |
+| Game final status (`_all_games_final`) | 60s when locked, 180s pre-slate | Detects when ALL games reach Final status | `/api/refresh` endpoint clears |
 | Model config (`data/model-config.json`) | 5 min | Runtime tuning parameters | `/api/refresh` clears; Lab writes bypass cache |
 | RotoWire lineups | 30 min | Player availability (OUT, questionable, etc.) | 30 min expiration; manual refresh via app |
 | Lock status per game | 6 hours | 5 min before tip to 6h after (ceiling) | Natural expiration |
@@ -459,9 +487,27 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 }
 ```
 
+## Other Files (Extended Audit)
+
+| File | Role | Notes |
+|------|------|------|
+| **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
+| **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
+| **api/real_score.py** | Monte Carlo Real Score | RS projection (closeness, clutch, momentum). Used by projection pipeline in index. |
+| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Used by game runner in index. |
+| **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production uses Vercel static + serverless. |
+| **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
+| **scripts/sync_model_config.py** | Config sync | Syncs model-config from GitHub (used by workflows). |
+| **scripts/bump_retrain_config.py** | Retrain config | Bumps retrain config for GitHub Actions. |
+| **train_lgbm.py** | Model training | 11-feature LightGBM training; outputs lgbm_model.pkl. Run locally or via retrain-model.yml. |
+
+No orphan entrypoints; all API surface is in api/index.py. Scripts are for local/CI use.
+
 ## Unit Testing Framework
 
-Real unit test suite (`tests/test_fixes.py`) — actual assertions against actual function calls, mocked external I/O:
+Two test modules; run both for full coverage:
+
+**tests/test_fixes.py** — Backend behavior, mocked I/O:
 
 ```python
 # Test classes (pytest):
@@ -475,7 +521,16 @@ TestCacheTTLs           — 3 min games, 5 min config, 30 min RotoWire, 60s lock
 TestPollingIntervals    — 120s lab lock, 60s line live, 300s failure cutoff
 ```
 
-Run with: `pytest tests/test_fixes.py -v`
+**tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions:
+
+- **TestHelpers** — _et_date, _is_locked, _est_card_boost, cache roundtrip
+- **TestLineCacheLogic** — when line cache is served vs bypassed (today unresolved / resolved / yesterday)
+- **TestJSSyntax** — unescaped apostrophes in single-quoted strings; presence of renderCards, renderLinePickCard, initLinePage, loadSlate, switchTab; _etToday / LINE_LOADED_DATE / _predSavedDate
+- **TestCacheDateBoundary** — cache keys consistent with ET date
+
+Run all: `pytest tests/ -v`  
+Run fast subset only: `pytest tests/test_fixes.py -v`  
+Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm). Use `pip install -r requirements.txt` before running.
 
 ## Known Limitations
 
@@ -483,7 +538,7 @@ Run with: `pytest tests/test_fixes.py -v`
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
 - `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
-- History tab shows 60 days by default with "Load more dates" (up to 180) and "Go to date" for any date with data.
+- History tab shows a 60-day date strip (no "Load more"); dates with stored data are highlighted via `/api/log/dates`.
 - Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Exception: `/api/lab/chat` uses a raw streaming fetch (SSE) by design — no timeout on the stream body, only on connection.
 - Upload screenshot type validation is client-side trust only — the system cannot verify that a "Real Scores" button upload actually contains a Real Scores screenshot. Wrong uploads produce skewed audit data for that date.
 
@@ -509,6 +564,13 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 
 **Lock & routing audit:** [docs/LOCK_AND_ROUTING_AUDIT.md](docs/LOCK_AND_ROUTING_AUDIT.md). Covers all lock usage (slate, picks, save-predictions, lab status, line odds) and Vercel/FastAPI routing. Fixes applied: `/api/lab/status` wrapped in try/except — on any exception returns 200 with `locked: true` and reason "Server temporarily unavailable — try again" so the frontend shows a retry instead of a generic fetch failure; ESPN-down GitHub lock check now uses `lock_content, _ = _github_get_file(...)` and `if lock_content:` (was incorrectly checking the tuple).
 
+## Pre-deploy checklist (production finalization)
+
+- **Env**: Required vars set in Vercel (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY; optional ODDS_API_KEY, CRON_SECRET, DOCS_SECRET).
+- **Tests**: Run `pytest tests/ -v` locally when changing backend or frontend contract; test_core.py catches JS apostrophe crashes.
+- **Docs**: CLAUDE.md and README.md reflect current endpoints, crons, and lock/cache behavior.
+- **Health**: Use GET `/api/health` for uptime monitoring; alert on non-200.
+
 ## Development
 
 ```bash
@@ -532,7 +594,7 @@ Provide the following to the new session to orient it quickly:
 
 1. **Branch**: Create a new `claude/<session-id>` branch (e.g. `claude/my-feature-xyz`). Push triggers auto-merge → main → Vercel. **Never push to main directly.**
 2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
-3. **No test suite to run** — deploy triggers automatically on push; verify on `basketball-chi-cyan.vercel.app`
+3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push; verify on `basketball-chi-cyan.vercel.app`.
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
 5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LOG`, `LAB`, `LINE_DIR`, `LINE_OVER_PICK`, `LINE_UNDER_PICK`, `LINE_LOADED_DATE`
 6. **Cache**: Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/refresh` clears all caches + config.

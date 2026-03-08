@@ -163,3 +163,5 @@
 | Observability | print() only; no PII/secrets in logs | Add /api/health; optional structured logging and error tracking |
 
 This audit is documentation only. Implementations (health endpoint, cron secret, timeout wrappers, error sanitization) are separate follow-up tasks.
+
+**Doc sync (2026-03-08):** CLAUDE and LOCK_AND_ROUTING_AUDIT updated for TTL (60s when locked), cron schedules, lab poll 120s; History 60-day wording aligned with buildLogDateStrip; app init and tab data flow documented.

@@ -194,6 +194,19 @@ uvicorn server:app --reload
 # open http://localhost:8000
 ```
 
+## Testing
+
+Unit tests cover lock logic, audit computation, GitHub retries, cache TTLs, line cache behavior, and JS syntax (e.g. unescaped apostrophes). Run with:
+
+```bash
+pytest tests/ -v
+```
+
+- **tests/test_fixes.py** — Backend: _safe_float, _is_locked, _compute_audit, _github_write_file retry, save-actuals audit gate, midnight rollover, cache TTLs, polling intervals.
+- **tests/test_core.py** — Helpers, line cache serve/bypass rules, JS string and render-function checks, cache date-boundary regressions.
+
+Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.). Use `pip install -r requirements.txt` first.
+
 ## Deployment
 
 Push to the feature branch — `auto-merge-to-main.yml` merges to `main` → Vercel auto-deploys.
@@ -230,4 +243,4 @@ Predictions lock 5 minutes before the earliest game tip-off. **Slates unlock bas
 - When over and under picks are the same player, `/api/refresh-line-odds` fetches Odds API once and applies the result to both (deduped).
 - RotoWire scraping is free-tier only (availability + injury flags, no projected minutes).
 - `data/locks/` accumulates one JSON per day with no automated cleanup — prune manually at season end.
-- History tab shows 60 days by default with "Load more dates" (up to 180) and a "Go to date" picker for any date with data.
+- History tab shows a 60-day date strip; dates with stored data are highlighted (from `/api/log/dates`).
