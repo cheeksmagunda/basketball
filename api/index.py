@@ -1918,12 +1918,17 @@ async def version():
 
 @app.get("/api/games")
 async def get_games():
-    games = fetch_games()
-    for g in games:
-        st = g.get("startTime", "")
-        g["locked"] = _is_locked(st) if st else False
-        g["draftable"] = not _is_completed(st) if st else False
-    return games
+    """Never returns 500; on exception returns 200 with empty list."""
+    try:
+        games = fetch_games()
+        for g in games:
+            st = g.get("startTime", "")
+            g["locked"] = _is_locked(st) if st else False
+            g["draftable"] = not _is_completed(st) if st else False
+        return games
+    except Exception as e:
+        print(f"[games] error: {e}")
+        return []
 
 def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
@@ -2532,15 +2537,19 @@ ACT_FIELDS = ["player_name","actual_rs","actual_card_boost","drafts","avg_finish
 
 @app.get("/api/log/dates")
 async def log_dates():
-    """Return sorted list of dates that have stored prediction or actual data."""
-    dates = set()
-    for prefix in ["data/predictions", "data/actuals"]:
-        items = _github_list_dir(prefix)
-        for item in items:
-            name = item.get("name", "")
-            if name.endswith(".csv"):
-                dates.add(name[:-4])
-    return sorted(dates, reverse=True)
+    """Return sorted list of dates that have stored prediction or actual data. Never returns 500."""
+    try:
+        dates = set()
+        for prefix in ["data/predictions", "data/actuals"]:
+            items = _github_list_dir(prefix)
+            for item in items:
+                name = item.get("name", "")
+                if name.endswith(".csv"):
+                    dates.add(name[:-4])
+        return sorted(dates, reverse=True)
+    except Exception as e:
+        print(f"[log/dates] error: {e}")
+        return []
 
 
 @app.get("/api/log/get")
