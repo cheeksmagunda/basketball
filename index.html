@@ -16,6 +16,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    /* Global design tokens — single source of truth for colors, radius, typography.
+       Prefer semantic tokens (--color-success, --color-danger, --radius-card) for new code.
+       --green/--red: legacy success/error (use --color-success/--color-danger where consistent).
+       --r: alias for --radius-card (14px). */
     :root {
       --bg: #060a0f;
       --surface: rgba(12, 18, 28, 0.85);
@@ -31,16 +35,16 @@
       --text-dim: #94a3b8;
       --green: #22c55e;
       --red: #f43f5e;
-      --r: 14px;
+      --r: var(--radius-card);
       /* Line page accent — gold */
       --line: #d4a640;
       --line-glow: rgba(212,166,64,0.22);
       /* Lab page accent — teal */
       --lab: #14b8a6;
       --lab-glow: rgba(20,184,166,0.22);
-      /* Per-tab ambient glow color (updated by switchTab) */
+      /* Per-tab ambient glow (set by switchTab) */
       --tab-glow: rgba(79,142,247,0.06);
-      /* Log page palette — desaturated/cooler, WCAG AA on dark bg */
+      /* Log page palette — desaturated, WCAG AA on dark bg */
       --log-chalk: #7ba4c8;
       --log-chalk-glow: rgba(123,164,200,0.2);
       --log-upside: #b89878;
@@ -50,7 +54,7 @@
       --log-opt: #9b80c8;
       --log-opt-glow: rgba(155,128,200,0.2);
 
-      /* Global design tokens */
+      /* Semantic design tokens (prefer these in new styles) */
       --color-success: #00E676;
       --color-danger: #FF8A80;
       --color-warning: #d4a640;
@@ -60,7 +64,7 @@
       --radius-card: 14px;
       --font-size-micro: 0.65rem;
       --tracking-caps: 0.06em;
-      /* Decorative one-offs (injury, line under, oracle, date chip) */
+      /* Decorative one-offs */
       --color-injury-bg: #3B1C1C;
       --color-line-under: #5eead4;
       --color-oracle-label: #81D4FA;
@@ -879,17 +883,18 @@
     .line-l5-sep { color: var(--muted); font-weight: 400; margin: 0 2px; }
     .line-l5-num { font-family: inherit; }
     .line-pick-l5-col .line-pick-micro-lbl { margin-bottom: 2px; }
-    .line-pick-tags {
-      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; margin-bottom: 6px;
+    .line-pick-conclusion-wrap {
+      margin-top: 20px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      border: 1px solid var(--border);
     }
-    .line-pick-tag {
-      font-size: 0.6rem; padding: 3px 8px; border-radius: var(--radius-pill);
-      background: var(--surface2); border: 1px solid var(--border);
-      color: var(--color-text-muted); letter-spacing: var(--tracking-caps);
-      text-transform: uppercase;
+    .line-pick-conclusion {
+      font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.45; margin: 0;
     }
-    .line-pick-explanation {
-      font-size: 0.7rem; color: var(--color-text-muted); line-height: 1.4; margin: 0 0 8px 0;
+    .line-pick-conclusion .line-conclusion-highlight {
+      color: var(--color-text-primary);
     }
     .line-result-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -1514,10 +1519,14 @@ const TEAM_COLORS = {
 // ════════════════════════════════════════════════════════════════════
 // GLOBAL STATE — grep: SLATE, PICKS_DATA, LOG, LAB, LINE_LOADED
 // ════════════════════════════════════════════════════════════════════
-let SLATE = null;       // Cached slate response from /api/slate
-let PICKS_DATA = null;  // Cached per-game picks from /api/picks
-let isFetching = false; // Frontend request lock — prevents concurrent API race conditions
-let SLATE_LOADED_AT = 0; // Timestamp of last successful loadSlate() — for back-button revalidation
+// Global state — grep: GLOBAL STATE
+// SLATE: cached /api/slate; PICKS_DATA: cached /api/picks per game; isFetching: request lock;
+// SLATE_LOADED_AT: last loadSlate() time for revalidation; LOG: History tab state;
+// LINE_*: Line of the Day state; LAB: Ben chat state; PREDICT_SUB: slate|game; TAB_ACCENT: tab colors.
+let SLATE = null;
+let PICKS_DATA = null;
+let isFetching = false;
+let SLATE_LOADED_AT = 0;
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG = {
@@ -2850,6 +2859,42 @@ async function initLinePage() {
 const LINE_STAT_LABEL = { points: 'PTS', rebounds: 'REB', assists: 'AST' };
 function _lineStatLabel(statType) { return LINE_STAT_LABEL[statType] || (statType || 'pts').toUpperCase().slice(0, 3); }
 
+function _escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Build a single "Conclusion" paragraph from narrative + signals (Oracle Insight). Returns HTML. */
+function _buildLineConclusion(pick) {
+  const proj = pick.projection != null && pick.projection !== '' ? Number(pick.projection).toFixed(1) : null;
+  const edge = pick.edge != null ? Number(pick.edge) : null;
+  const base = pick.season_avg != null && pick.season_avg !== '' ? pick.season_avg : null;
+  const conf = pick.confidence != null ? pick.confidence : 0;
+  const stat = (pick.stat_type || 'points').toLowerCase();
+  const hasBase = proj != null && edge != null && base != null;
+  const signals = (pick.signals && Array.isArray(pick.signals)) ? pick.signals : [];
+  const details = signals.map(s => typeof s === 'string' ? s : (s && (s.detail || s.type || ''))).filter(Boolean);
+
+  let intro = '';
+  if (pick.narrative && pick.narrative.trim()) {
+    intro = pick.narrative.trim();
+    if (!intro.endsWith('.')) intro += '.';
+  } else if (hasBase) {
+    const edgeStr = (edge > 0 ? '+' : '') + Number(edge).toFixed(1);
+    intro = `Model projects ${proj} ${stat} — a ${edgeStr} edge vs the ${base} season baseline.`;
+  }
+  if (!intro && !details.length && !conf) return '';
+
+  let driven = '';
+  if (details.length) {
+    const text = details.map(d => _escapeHtml(String(d).trim())).join(', ');
+    driven = ` <span class="line-conclusion-highlight">This is driven by ${text}.</span>`;
+  }
+  const hasConfInIntro = intro && /\d+%\s*confidence/i.test(intro);
+  const confidenceStr = (conf && !hasConfInIntro) ? ` (${conf}% confidence).` : '';
+  const full = _escapeHtml(intro) + driven + _escapeHtml(confidenceStr);
+  return full.trim() ? `<p class="line-pick-conclusion">${full}</p>` : '';
+}
+
 function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const statLabel = _lineStatLabel(pick.stat_type);
@@ -2919,6 +2964,7 @@ function renderLinePickCard(pick, isPrimary) {
   const seasonStat = pick.season_avg != null && pick.season_avg !== '' ? (typeof pick.season_avg === 'number' ? pick.season_avg.toFixed(1) : String(pick.season_avg)) : '—';
   const projMin = pick.proj_min != null && pick.proj_min !== '' ? (typeof pick.proj_min === 'number' ? pick.proj_min.toFixed(1) : String(pick.proj_min)) : '—';
   const avgMin = pick.avg_min != null && pick.avg_min !== '' ? (typeof pick.avg_min === 'number' ? pick.avg_min.toFixed(1) : String(pick.avg_min)) : '—';
+  const conclusionHtml = _buildLineConclusion(pick);
 
   return `
     <div class="line-pick-card${winningClass}">
@@ -2958,17 +3004,7 @@ function renderLinePickCard(pick, isPrimary) {
         </div>
       </div>
       ${liveSection}
-      ${(pick.signals && pick.signals.length) ? `
-      <div class="line-pick-tags">
-        ${pick.signals.map(s => {
-          const raw = typeof s === 'string' ? s : (s && (s.detail || s.type || ''));
-          const label = String(raw || '').replace(/^[^:]+:\s*/i, '').trim().slice(0, 36)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          return label ? `<span class="line-pick-tag">${label}</span>` : '';
-        }).filter(Boolean).join('')}
-      </div>` : ''}
-      ${(pick.narrative || (pick.projection != null && pick.edge != null && (pick.season_avg != null && pick.season_avg !== '') && pick.confidence)) ? `
-      <p class="line-pick-explanation">${(pick.narrative || `Model projects ${Number(pick.projection).toFixed(1)} ${(pick.stat_type || 'points').toLowerCase()} — a ${(pick.edge > 0 ? '+' : '')}${Number(pick.edge).toFixed(1)} edge vs the ${pick.season_avg} season baseline at ${pick.confidence || 0}% confidence.`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : ''}
+      ${conclusionHtml ? `<div class="line-pick-conclusion-wrap">${conclusionHtml}</div>` : ''}
       ${pick.result && pick.result !== 'pending' ? `
       <div class="line-result-row">
         <span class="line-result-lbl">Result</span>
@@ -3155,16 +3191,17 @@ function switchLineDir(dir) {
 // ════════════════════════════════════════════════════════
 
 const LAB = {
-  messages: [],       // conversation history
-  system: '',         // dynamic system prompt
-  briefing: null,     // latest briefing
-  config: null,       // current config
-  lineData: null,     // today's Line of the Day
-  slateData: null,    // today's slate projections
+  messages: [],
+  system: '',
+  briefing: null,
+  config: null,
+  lineData: null,
+  slateData: null,
   initialized: false,
-  initAt: 0,          // timestamp of last init (ms)
-  _lockPoll: null,    // setInterval id for locked-state polling
-  pendingImage: null, // {base64, mediaType, dataUrl} — attached to next send, cleared after
+  initAt: 0,
+  initDate: '',       // ET date string when Lab was opened (clears messages on rollover)
+  _lockPoll: null,
+  pendingImage: null,
 };
 
 function _isLabStatusErrorFallback(status) {

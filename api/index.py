@@ -344,9 +344,9 @@ for _p in [
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
+# Module-level: UPPER_SNAKE = public constants; _lower = private (do not mutate).
 # grep: ESPN, MIN_GATE, DEFAULT_TOTAL, _cp, _cg, _cs, _lp, _lg, _ls
-# _cg/cs = prediction cache (date-keyed, /tmp)
-# _lg/ls = lock cache (persists within warm Vercel instance)
+# _cg/cs = prediction cache (date-keyed, /tmp); _lg/ls = lock cache (warm instance).
 # ─────────────────────────────────────────────────────────────────────────────
 ESPN      = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
