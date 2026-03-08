@@ -1617,6 +1617,10 @@ function hideLoader() {
 (function init() {
   // Show predict sub-nav on initial load (Predict is the default tab)
   document.getElementById('predictSubNav').style.display = 'flex';
+  // Fire a lightweight health ping to wake the Vercel function (cold start takes 5-15s).
+  // This runs in parallel with loadSlate so the function is warm by the time
+  // the slate request arrives (or at worst, by a retry).
+  fetch('/api/health').catch(function() {});
   loadSlate(); // non-blocking: slate and game dropdown populate when /api/slate returns (loadSlate calls populateGameSelector on success)
   initGameSelector(); // parallel fallback: fills game dropdown from /api/games independently
 })();
@@ -1681,6 +1685,7 @@ async function initGameSelector() {
 // ════════════════════════════════════════════════════════════════════
 // SLATE — grep: loadSlate, /api/slate, slateList, Starting 5, Moonshot
 // ════════════════════════════════════════════════════════════════════
+var _slateRetryCount = 0;
 async function loadSlate() {
   SLATE_STATE = asyncStateLoading(SLATE_STATE);
   showLoader();
@@ -1688,6 +1693,7 @@ async function loadSlate() {
   try {
     const r = await fetchWithTimeout('/api/slate', {}, 30000);
     hideLoader();
+    _slateRetryCount = 0; // reset on success
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
     SLATE_STATE = asyncStateSuccess(SLATE_STATE, slateData);
@@ -1783,6 +1789,16 @@ async function loadSlate() {
       }).catch(function() {});
     }
   } catch(e) {
+    // Auto-retry up to 2 times — cold start warms the function so retries succeed fast
+    if (_slateRetryCount < 2) {
+      _slateRetryCount++;
+      console.log('[slate] Auto-retry ' + _slateRetryCount + '/2 after: ' + e.message);
+      var msg = document.getElementById('oracleMsg');
+      if (msg) msg.textContent = _slateRetryCount === 1 ? 'WARMING UP' : 'ALMOST THERE';
+      setTimeout(loadSlate, _slateRetryCount * 2000); // 2s, 4s backoff
+      return;
+    }
+    _slateRetryCount = 0;
     SLATE_STATE = asyncStateError(SLATE_STATE, e);
     hideLoader();
     document.getElementById('slateList').innerHTML = `
