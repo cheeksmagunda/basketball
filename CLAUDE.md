@@ -155,6 +155,7 @@ After all games are final and Ben unlocks:
 - During lock: shows locked state with **total games remaining** (in-progress + scheduled) and estimated unlock based on **last game of the day** + 2.5h
 - During unlock: full chat capabilities + upload banner (if pending date exists)
 - **Break between game windows**: if early games finish but more are scheduled, Ben briefly unlocks with "Break — N games later today". Polling detects re-lock when next game window starts.
+- **4 failure paths hardened**: (1) ESPN outage — `_all_games_final` requires `finals > 0`, (2) split-window — `any(_is_locked(st))` checks ALL games, (3) ESPN down — GitHub lock file fallback before unlocking, (4) frontend API failure — defaults to locked state
 
 ### Keyboard / Nav Behavior (Ben tab)
 - On **mobile**: focusing `#labInput` hides the bottom nav and expands `#tab-lab` to fill freed keyboard space via `lab-kb-open` CSS class. Blur restores everything.
@@ -187,6 +188,24 @@ Predictions lock 5 minutes before the earliest game starts. Once locked:
 - Lock cache (`/tmp/nba_locks_v1/`) survives within a warm Vercel instance
 - On cold start with no cache, `data/locks/{date}_slate.json` on GitHub is the recovery source
 - On cold start with no GitHub backup either, returns empty locked response (frontend preserves displayed data)
+
+### `any()` Lock Pattern (split-window days)
+All slate-level lock checks use `any(_is_locked(st) for st in start_times)` — NOT `_is_locked(min(...))`.
+On split-window Saturdays (e.g. 2 PM + 9 PM CT), the earliest game's 6h `_is_locked` ceiling expires
+while late games are still live. `any()` stays locked as long as ANY game is within its lock window.
+This applies to: `/api/slate` (line 1747), `/api/save-predictions` (line 1920), `/api/refresh` (line 2333),
+and `/api/lab/status` (line 3234). Per-game checks (e.g. `/api/picks`, `/api/line-live-stat`) correctly
+use single-game `_is_locked(game_start)`.
+
+### Triple-Gated Save Pipeline
+Predictions are saved to `data/predictions/` through exactly two code paths, both strictly post-lock:
+1. **`/api/save-predictions`** — called by frontend `savePredictions()` + `/api/refresh` cron
+2. **Inline at lock-promotion** in `/api/slate` — first locked request promotes cache and writes CSV
+
+Three independent gates prevent pre-lock saves:
+- **Frontend guard**: `if (!SLATE || !SLATE.locked) return;` in `savePredictions()`
+- **Backend guard**: `if not any(_is_locked(st) ...)` → HTTP 409 in `/api/save-predictions`
+- **Cron guard**: `/api/refresh` only calls `save_predictions()` if `any(_is_locked(...))`
 
 ## Two Lineup Types
 
@@ -227,6 +246,7 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
 
 - `switchLineDir(dir)`: renders the appropriate pick (`LINE_OVER_PICK` or `LINE_UNDER_PICK`) via `renderLinePickCard()`
+- **No "yesterday's pick" banner** — resolved picks appear only in Recent Picks history. The main card always shows today's pick for the selected direction.
 - Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
 - Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
 
