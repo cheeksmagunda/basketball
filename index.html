@@ -1701,6 +1701,14 @@ async function initGameSelector() {
       populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked });
     } else {
       if (sel) sel.innerHTML = '<option value="">Offline — check backend</option>';
+      // Self-heal: loadSlate() runs in parallel and may still be in-flight on cold start
+      // (can take 10-20s). Check once after 5s in case SLATE has since populated.
+      setTimeout(function() {
+        if (sel && sel.options.length === 1 && sel.options[0].value === '' &&
+            SLATE && Array.isArray(SLATE.games) && SLATE.games.length) {
+          populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked });
+        }
+      }, 5000);
     }
   }
 }
@@ -1713,7 +1721,7 @@ async function loadSlate() {
   showLoader();
   renderSkeletons('slateList', 5);
   try {
-    const r = await fetchWithTimeout('/api/slate', {}, 10000);
+    const r = await fetchWithTimeout('/api/slate', {}, 30000);
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
