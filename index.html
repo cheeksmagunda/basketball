@@ -3059,6 +3059,11 @@ async function initLabPage() {
   document.getElementById('labLoading').style.display = 'block';
   document.getElementById('labLocked').style.display   = 'none';
   document.getElementById('labUnlocked').style.display = 'none';
+  var _ub0 = document.getElementById('benUploadBanner');
+  if (_ub0) _ub0.style.display = 'none';
+
+  // Pre-warm: lightweight health call triggers Vercel cold start so lab/status hits a warm instance
+  try { await fetchWithTimeout('/api/health', {}, 10000); } catch(e) {}
 
   try {
     const r = await fetchWithTimeout('/api/lab/status', {}, 30000);
