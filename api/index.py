@@ -2918,15 +2918,33 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
 async def auto_resolve_line():
     """Auto-resolve today's line picks independently as each game finishes.
     Checks BOTH over and under picks — resolves whichever game is final,
-    even if the other game is still in progress. Runs on cron every 15 min."""
-    today = _et_date().isoformat()
-    csv_path  = f"data/lines/{today}.csv"
-    json_path = f"data/lines/{today}_pick.json"
+    even if the other game is still in progress. Runs on cron every 15 min.
 
-    # JSON is the source of truth for both picks
+    Midnight rollover: a late game (e.g. 10 PM ET tip) can finish after midnight
+    ET, advancing _et_date() to the next day before the pick resolves. In that
+    case today's pick file doesn't exist yet, so we fall back to yesterday's file.
+    We also pass the pick's actual date to _fetch_player_final_stat so it queries
+    the right ESPN scoreboard, and compute the next-day target from pick_date+1
+    (not _et_date()+1, which would skip a day after midnight rollover)."""
+    today = _et_date().isoformat()
+
+    # Determine which date's pick file to use — midnight rollover support.
+    pick_date = today
+    json_path = f"data/lines/{pick_date}_pick.json"
     pick_data_raw, _ = _github_get_file(json_path)
     if not pick_data_raw:
-        return {"status": "no_pick"}
+        # Check yesterday: a 10 PM ET game finishing at 12:30 AM is stored
+        # under yesterday's date but the cron now runs on the new ET day.
+        yesterday = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).date().isoformat()
+        ypath = f"data/lines/{yesterday}_pick.json"
+        pick_data_raw, _ = _github_get_file(ypath)
+        if pick_data_raw:
+            pick_date = yesterday
+            json_path = ypath
+        else:
+            return {"status": "no_pick"}
+
+    csv_path = f"data/lines/{pick_date}.csv"
     try:
         pick_data = json.loads(pick_data_raw)
     except Exception:
@@ -2934,6 +2952,10 @@ async def auto_resolve_line():
 
     resolved_any = False
     results = {}
+
+    # Pass the pick's actual date to ESPN boxscore queries so games that ran
+    # past midnight are found on the date they started, not today's new date.
+    espn_date = pick_date.replace("-", "")  # YYYYMMDD
 
     for direction in ("over", "under"):
         dir_key = f"{direction}_pick"
@@ -2949,7 +2971,7 @@ async def auto_resolve_line():
         if not player_name:
             continue
 
-        actual = _fetch_player_final_stat(player_name, stat_type)
+        actual = _fetch_player_final_stat(player_name, stat_type, date_str=espn_date)
         if actual is None:
             results[direction] = {"status": "game_not_final", "player": player_name}
             continue
@@ -2969,7 +2991,7 @@ async def auto_resolve_line():
 
     # Persist updated JSON
     _github_write_file(json_path, json.dumps(pick_data),
-                       f"auto-resolve line {today}")
+                       f"auto-resolve line {pick_date}")
 
     # Update CSV for the primary pick (first row matches primary direction)
     csv_existing, _ = _github_get_file(csv_path)
@@ -2986,7 +3008,7 @@ async def auto_resolve_line():
                 updated["actual_stat"] = str(pick.get("actual_stat", ""))
                 new_row = ",".join(_csv_escape(str(updated.get(k, ""))) for k in LINE_FIELDS)
                 _github_write_file(csv_path, LINE_CSV_HEADER + "\n" + new_row + "\n",
-                                   f"auto-resolve line csv {today}")
+                                   f"auto-resolve line csv {pick_date}")
 
     # Bust the line cache so /api/line-of-the-day sees the resolution and rotates
     try:
@@ -2995,25 +3017,27 @@ async def auto_resolve_line():
             line_cache.unlink()
     except Exception: pass
 
-    # If BOTH picks are now resolved, pre-generate tomorrow's picks
+    # If BOTH picks are now resolved, pre-generate the next day's picks.
+    # Use pick_date + 1 day (not _et_date() + 1 day) so a midnight-rollover
+    # case generates picks for Day+1 rather than Day+2.
     over_done  = pick_data.get("over_pick", {}).get("result") not in (None, "", "pending")
     under_done = pick_data.get("under_pick", {}).get("result") not in (None, "", "pending")
     if over_done and under_done:
         try:
-            tomorrow = _et_date() + timedelta(days=1)
-            tomorrow_str = tomorrow.isoformat()
-            tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
+            next_day = (datetime.strptime(pick_date, "%Y-%m-%d") + timedelta(days=1)).date()
+            next_day_str = next_day.isoformat()
+            tomorrow_json = f"data/lines/{next_day_str}_pick.json"
             existing_tomorrow, _ = _github_get_file(tomorrow_json)
             if not existing_tomorrow:
-                eng_result, err = await _run_line_engine_for_date(tomorrow)
+                eng_result, err = await _run_line_engine_for_date(next_day)
                 if not err and eng_result and eng_result.get("pick"):
                     saves = {
                         "over_pick":  eng_result.get("over_pick"),
                         "under_pick": eng_result.get("under_pick"),
                     }
                     _github_write_file(tomorrow_json, json.dumps(saves),
-                                       f"line picks for {tomorrow_str}")
-                    results["next_day"] = tomorrow_str
+                                       f"line picks for {next_day_str}")
+                    results["next_day"] = next_day_str
         except Exception as e:
             print(f"[auto-resolve] next-day generation err: {e}")
 
