@@ -573,6 +573,13 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 - Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Exception: `/api/lab/chat` uses a raw streaming fetch (SSE) by design — no timeout on the stream body, only on connection.
 - Upload screenshot type validation is client-side trust only — the system cannot verify that a "Real Scores" button upload actually contains a Real Scores screenshot. Wrong uploads produce skewed audit data for that date.
 
+## Troubleshooting
+
+If slate, line, and/or log all fail to load:
+1. **Deployed URL** — Use the production URL (e.g. `https://basketball-chi-cyan.vercel.app`); avoid file:// or wrong origin.
+2. **Health and version** — Call `GET /api/health` and `GET /api/version`; if they fail, the backend is unreachable or cold-starting.
+3. **Vercel function logs** — Look for `[slate] error:`, `[line-of-the-day] error:`, `[games] error:`, `[log/dates] error:` or "Task timed out" to identify the failing path.
+
 ## Robustness Fixes (this session)
 
 | Fix | File | Detail |

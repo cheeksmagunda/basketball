@@ -1862,7 +1862,7 @@ async function loadSlate() {
     document.getElementById('slateList').innerHTML = `
       <div class="empty-state">
         <span class="icon">📡</span>
-        <p>Couldn't load today's slate.<br>Make sure the API server is running.</p>
+        <p>Slate didn't load.<br>Tap Retry, or try again in a moment.</p>
         <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
       </div>`;
   }
@@ -2185,20 +2185,22 @@ function buildLogDateStrip() {
 
 async function initLogPage() {
   const strip = document.getElementById('logDateStrip');
-  strip.innerHTML = '';
+  const today = new Date();
+  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
+  // Show date strip immediately (dots may be empty until /api/log/dates returns)
+  buildLogDateStrip();
+  selectLogDate(toLocalISO(today));
+
+  // Fetch which dates have data in background; refresh strip when done
   try {
     const r = await fetchWithTimeout('/api/log/dates');
     if (r.ok) {
       const dates = await r.json();
       dates.forEach(d => LOG.datesWithData.add(d));
+      buildLogDateStrip();
     }
   } catch(e) { /* non-fatal */ }
-
-  buildLogDateStrip();
-  const today = new Date();
-  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  selectLogDate(toLocalISO(today));
 }
 
 async function selectLogDate(dateStr) {
@@ -2846,7 +2848,7 @@ async function initLinePage() {
     document.getElementById('lineLoading').style.display = 'none';
     const emptyEl = document.getElementById('lineEmpty');
     emptyEl.querySelector('.icon').textContent = '📡';
-    document.getElementById('lineEmptyMsg').textContent = 'Couldn\'t load line pick. Check backend.';
+    document.getElementById('lineEmptyMsg').textContent = 'Line pick didn\'t load. Tap Retry.';
     emptyEl.style.display = 'flex';
   } finally {
     isFetching = false;
