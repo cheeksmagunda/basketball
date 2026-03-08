@@ -3149,9 +3149,19 @@ async function initLabPage() {
     document.getElementById('labLoading').style.display = 'none';
 
     // Backend returns locked=true on any exception ("Server temporarily unavailable — try again").
-    // Don't show "BEN IS LOCKED" for that — show "Couldn't determine status" so we only show
-    // locked when we actually know the slate is in progress.
+    // Don't show "BEN IS LOCKED" for that — try degraded mode (load briefing, show banner if pending).
     if (status.locked && _isLabStatusErrorFallback(status)) {
+      try {
+        const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
+        if (br.ok) {
+          const briefing = await br.json();
+          if (briefing && briefing.pending_upload_date) {
+            LAB.briefing = briefing;
+            await showLabUnlocked({ locked: false, games_final: 0 });
+            return;
+          }
+        }
+      } catch(_) {}
       _showLabStatusUnknown();
       return;
     }
@@ -3168,15 +3178,37 @@ async function initLabPage() {
       const status = await r2.json();
       document.getElementById('labLoading').style.display = 'none';
       if (status.locked && _isLabStatusErrorFallback(status)) {
+        try {
+          const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
+          if (br.ok) {
+            const briefing = await br.json();
+            if (briefing && briefing.pending_upload_date) {
+              LAB.briefing = briefing;
+              await showLabUnlocked({ locked: false, games_final: 0 });
+              return;
+            }
+          }
+        } catch(_) {}
         _showLabStatusUnknown();
         return;
       }
       if (status.locked) { await showLabLocked(status); }
       else { await showLabUnlocked(status); }
       return;
-    } catch(e2) { /* fall through to connection-error UI */ }
+    } catch(e2) { /* fall through */ }
     document.getElementById('labLoading').style.display = 'none';
-    // Show connection error only — we never say "Ben is locked" when we didn't get a response
+    // Degraded mode: status failed but try to load briefing so the upload banner can still appear
+    try {
+      const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
+      if (br.ok) {
+        const briefing = await br.json();
+        if (briefing && briefing.pending_upload_date) {
+          LAB.briefing = briefing;
+          await showLabUnlocked({ locked: false, games_final: 0 });
+          return;
+        }
+      }
+    } catch(_) {}
     var _ub = document.getElementById('benUploadBanner');
     if (_ub) _ub.style.display = 'none';
     document.getElementById('labConnectionError').style.display = 'block';

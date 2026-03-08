@@ -3524,6 +3524,26 @@ async def lab_status():
         slate_locked = any(_is_locked(st) for st in start_times) if start_times else False
         earliest = min(start_times) if start_times else None
 
+        # Fast path: pre-slate (no game has started). Return unlocked without calling ESPN scoreboard.
+        if not slate_locked and earliest:
+            try:
+                lock_buf = _cfg("projection.lock_buffer_minutes", 5)
+                earliest_dt = datetime.fromisoformat(earliest.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                if now < earliest_dt - timedelta(minutes=lock_buf):
+                    cfg = _load_config()
+                    cfg_version = cfg.get("version", 1)
+                    return {
+                        "locked": False,
+                        "reason": "Pre-slate window",
+                        "current_config_version": cfg_version,
+                        "games_remaining": 0,
+                        "games_final": 0,
+                        "next_lock_time": earliest,
+                    }
+            except Exception:
+                pass
+
         all_final, remaining, finals, latest_remaining_start = _all_games_final(games)
 
         cfg = _load_config()
