@@ -2776,7 +2776,7 @@ async function initLinePage() {
     // Fire auto-resolve in background — resolves picks whose games have ended
     // without blocking page load. Next line-of-the-day call will see updated results.
     fetch('/api/auto-resolve-line').catch(function(){});
-    const r = await fetchWithTimeout('/api/line-of-the-day');
+    const r = await fetchWithTimeout('/api/line-of-the-day', {}, 25000);
     if (!r.ok) throw new Error(`line-of-the-day error: ${r.status}`);
     const data = await r.json();
     document.getElementById('lineLoading').style.display = 'none';
@@ -2794,6 +2794,7 @@ async function initLinePage() {
         no_edges:         "No strong edges found on today's props. Check back closer to tip-off.",
         odds_unavailable: 'Odds API unavailable. Try refreshing.',
         no_projections:   'Could not load player projections.',
+        server_error:    'Line pick service temporarily unavailable. Tap Retry.',
       };
       const icons = {
         no_games:  '🏀',
