@@ -89,7 +89,7 @@
     /* ── HEADER ── */
     header {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
-      padding: 14px 0 12px;
+      padding: 10px 0 8px;
       border-bottom: 1px solid var(--border);
       margin-bottom: 0;
     }
@@ -208,14 +208,14 @@
 
     /* ── TAB PAGES ── */
     .tab-page { display: none; }
-    .tab-page.active { display: block; padding-top: 20px; }
+    .tab-page.active { display: block; padding-top: 10px; }
 
     /* ── SECTION LABEL ── */
     .section-label {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.65rem; font-weight: 700; letter-spacing: 0.2em;
       text-transform: uppercase; color: var(--muted);
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     /* ── CHALK/UPSIDE TABS ── */
@@ -1152,7 +1152,7 @@
   <!-- ══ TAB: LINE ══ -->
   <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
   <div id="tab-line" class="tab-page">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Line of the Day</div>
       <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetchWithTimeout('/api/refresh-line-odds', {}, 10000);}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
