@@ -1741,7 +1741,10 @@ async def get_slate():
     earliest = min(start_times) if start_times else None
     all_start_times = [g["startTime"] for g in games if g.get("startTime")]
     earliest_all = min(all_start_times) if all_start_times else earliest
-    locked = _is_locked(earliest_all) if earliest_all else False
+    # any() not min() — on split-window days (e.g. 2 PM + 9 PM CT), the earliest
+    # game's 6h ceiling can expire while late games are still live. any() stays
+    # locked as long as ANY game is within its lock window.
+    locked = any(_is_locked(st) for st in all_start_times) if all_start_times else False
     lock_time = None
     if earliest_all:
         try:
@@ -1909,9 +1912,12 @@ async def save_predictions():
     # Guard: only write predictions after the slate has locked.
     # Pre-lock projections are not finalized — saving them would pollute the log
     # with data that changes as injury news, lineups, and odds shift.
+    # Uses any() instead of min() — on split-window days the earliest game's 6h
+    # ceiling can expire while late games are still live. any() stays locked as
+    # long as ANY game is within its lock window.
     _games_now = fetch_games()
     _start_times = [g["startTime"] for g in _games_now if g.get("startTime")]
-    if _start_times and not _is_locked(min(_start_times)):
+    if _start_times and not any(_is_locked(st) for st in _start_times):
         return JSONResponse({"error": "Slate not locked yet — predictions not finalized"}, status_code=409)
 
     # Gather slate predictions — try all cache layers before giving up
@@ -2324,7 +2330,7 @@ async def refresh():
         games = fetch_games()
         draftable = [g for g in games if g.get("startTime")]
         start_times = [g["startTime"] for g in draftable]
-        if start_times and _is_locked(min(start_times)):
+        if start_times and any(_is_locked(st) for st in start_times):
             await save_predictions()
             auto_saved = True
     except Exception as e:

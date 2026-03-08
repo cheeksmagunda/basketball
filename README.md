@@ -40,7 +40,7 @@ server.py              — Local dev server (uvicorn)
 | Tab | Purpose |
 |-----|---------|
 | **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
-| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh hourly from Odds API |
+| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh hourly. Resolved picks only in Recent Picks history |
 | **Ben** | Chat interface (Claude Opus). Locked during games, unlocked after final. End-of-day upload flow |
 | **History** | Historical drill-down — predictions vs actuals, read-only |
 
@@ -166,6 +166,12 @@ Push to the feature branch — `auto-merge-to-main.yml` merges to `main` → Ver
 ```bash
 git push -u origin claude/your-branch
 ```
+
+## Lock System
+
+Predictions lock 5 minutes before the earliest game tip-off. All slate-level lock checks use `any(_is_locked(st) for st in start_times)` to handle split-window days (e.g. 2 PM + 9 PM CT games) where the earliest game's 6h ceiling expires while late games are still live.
+
+**Triple-gated prediction saves** — frontend `SLATE.locked` check, backend `any(_is_locked(...))` HTTP 409 guard, and cron guard. Two write paths to `data/predictions/`: the `/api/save-predictions` endpoint and inline save at lock-promotion in `/api/slate`.
 
 ## Known Limitations
 
