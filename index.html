@@ -86,6 +86,9 @@
 
     .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 170px; }
 
+    /* Uppercase letter-spacing for readability (buttons, labels, metadata) */
+    [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: 0.06em; }
+
     /* ── HEADER ── */
     header {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -327,6 +330,7 @@
     .stat-col-val {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.82rem; font-weight: 800; color: #fff; line-height: 1;
+      font-variant-numeric: tabular-nums;
     }
     .stat-col-lbl {
       font-family: 'Barlow Condensed', sans-serif;
@@ -770,8 +774,29 @@
     .line-stat-val {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1.6rem; font-weight: 900; color: var(--text); line-height: 1;
+      font-variant-numeric: tabular-nums;
     }
-    .line-stat-label { font-size: 0.7rem; color: var(--muted); }
+    .line-pick-micro-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 8px;
+    }
+    .line-pick-micro-col {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .line-pick-micro-lbl {
+      font-size: 10px; font-weight: 700; color: #8A96A3;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .line-pick-micro-val {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 800; color: #fff;
+      font-variant-numeric: tabular-nums;
+    }
+    .line-pick-micro-val.edge-plus { color: var(--green); }
+    .line-pick-micro-val.edge-minus { color: var(--red); }
+    .line-signal-chip .sparkline-wrap {
+      display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-left: 6px; vertical-align: middle;
+    }
+    .line-signal-chip .sparkline-wrap svg { width: 24px; height: 14px; }
+    .line-signal-chip .sparkline-wrap rect { fill: currentColor; opacity: 0.7; }
     .line-proj { font-size: 0.75rem; color: var(--text-dim); }
     .line-narrative {
       font-size: 0.78rem; color: var(--text-dim); line-height: 1.5;
@@ -781,6 +806,7 @@
       display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
     }
     .line-signal-chip {
+      display: inline-flex; align-items: center;
       font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 4px;
       background: rgba(212,166,64,0.1); color: var(--line); border: 1px solid rgba(212,166,64,0.2);
       text-transform: uppercase; letter-spacing: 0.06em;
@@ -1345,7 +1371,7 @@ const TEAM_COLORS = {
   LAC:"#C8102E",  // Clippers red
   LAL:"#FDB927",  // Lakers gold
   MEM:"#6B8FC0",  // Grizzlies slate blue
-  MIA:"#F9A01B",  // Heat gold-orange
+  MIA:"#98002E",  // Heat red
   MIL:"#3ECF7E",  // Bucks bright green
   MIN:"#78BE20",  // Wolves lime green
   NO:"#C8A96A",   // Pelicans gold (ESPN alt abbr)
@@ -2626,9 +2652,18 @@ async function initLinePage() {
 function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const signals = pick.signals || [];
-  const signalChips = signals.slice(0, 3).map(s =>
-    `<span class="line-signal-chip">${s.type.replace(/_/g,' ')}</span>`
-  ).join('');
+  const defaultBars = [0.5, 0.6, 0.7, 0.55, 0.65];
+  const sparklineBars = (pick.recent_form_bars && pick.recent_form_bars.length >= 5)
+    ? pick.recent_form_bars.slice(0, 5)
+    : defaultBars; // last 5 outcomes 0–1, or placeholder
+  const sparklineSvg = `<svg viewBox="0 0 24 14" preserveAspectRatio="none"><rect x="0" y="${14 - sparklineBars[0]*12}" width="3.5" height="${sparklineBars[0]*12}" rx="1"/><rect x="5" y="${14 - sparklineBars[1]*12}" width="3.5" height="${sparklineBars[1]*12}" rx="1"/><rect x="10" y="${14 - sparklineBars[2]*12}" width="3.5" height="${sparklineBars[2]*12}" rx="1"/><rect x="15" y="${14 - sparklineBars[3]*12}" width="3.5" height="${sparklineBars[3]*12}" rx="1"/><rect x="20" y="${14 - sparklineBars[4]*12}" width="3.5" height="${sparklineBars[4]*12}" rx="1"/></svg>`;
+  const signalChips = signals.slice(0, 3).map(s => {
+    const label = s.type.replace(/_/g, ' ');
+    if (s.type === 'recent_form') {
+      return `<span class="line-signal-chip"><span>${label}</span><span class="sparkline-wrap">${sparklineSvg}</span></span>`;
+    }
+    return `<span class="line-signal-chip">${label}</span>`;
+  }).join('');
 
   // Live stat tracking section
   let liveSection = '';
@@ -2672,9 +2707,22 @@ function renderLinePickCard(pick, isPrimary) {
       </div>
       <div class="line-direction-row">
         <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="line-stat-val">${pick.line} ${pick.stat_type}</div>
-          <div class="line-stat-label">Proj: ${pick.projection} · Edge: ${(pick.edge ?? 0) > 0 ? '+' : ''}${pick.edge ?? 0}</div>
+          <div class="line-pick-micro-grid">
+            <div class="line-pick-micro-col">
+              <span class="line-pick-micro-lbl">Proj</span>
+              <span class="line-pick-micro-val">${pick.projection ?? '—'}</span>
+            </div>
+            <div class="line-pick-micro-col">
+              <span class="line-pick-micro-lbl">Edge</span>
+              <span class="line-pick-micro-val ${(pick.edge ?? 0) > 0 ? 'edge-plus' : (pick.edge ?? 0) < 0 ? 'edge-minus' : ''}">${(pick.edge ?? 0) > 0 ? '+' : ''}${pick.edge ?? 0}</span>
+            </div>
+            <div class="line-pick-micro-col">
+              <span class="line-pick-micro-lbl">Baseline</span>
+              <span class="line-pick-micro-val">${pick.line ?? '—'}</span>
+            </div>
+          </div>
         </div>
         <div style="margin-left:auto;text-align:right">
           ${pick.line_updated_at ? (() => {
