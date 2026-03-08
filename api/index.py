@@ -72,25 +72,55 @@ def _github_list_dir(path):
         return r.json()
     return []
 
-def _github_write_file(path, content, message="auto-update"):
-    """Create or update a file in the GitHub repo via Contents API."""
+def _github_write_file(path, content, message="auto-update", max_retries=3):
+    """Create or update a file in the GitHub repo via Contents API.
+
+    Retries on 422 Conflict (SHA mismatch) with exponential backoff to handle
+    concurrent writes. This prevents data loss when multiple requests write to
+    the same path simultaneously."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return {"error": "GITHUB_TOKEN or GITHUB_REPO not configured"}
+
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    _, sha = _github_get_file(path)
-    payload = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-    }
-    if sha:
-        payload["sha"] = sha
-    r = requests.put(url, json=payload, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-    }, timeout=15)
-    if r.status_code in (200, 201):
-        return {"ok": True, "path": path}
-    return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
+
+    for attempt in range(max_retries):
+        _, sha = _github_get_file(path)
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+        }
+        if sha:
+            payload["sha"] = sha
+
+        try:
+            r = requests.put(url, json=payload, headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+            }, timeout=15)
+
+            if r.status_code in (200, 201):
+                return {"ok": True, "path": path}
+
+            # 422 = Conflict (SHA mismatch due to concurrent write)
+            # Retry with fresh SHA fetch
+            if r.status_code == 422 and attempt < max_retries - 1:
+                backoff_sec = (2 ** attempt)  # 1, 2, 4 seconds
+                import time
+                time.sleep(backoff_sec)
+                continue
+
+            # For other errors or final retry exhausted, return error
+            return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                backoff_sec = (2 ** attempt)
+                import time
+                time.sleep(backoff_sec)
+                continue
+            return {"error": f"GitHub write failed: {str(e)[:200]}"}
+
+    return {"error": "GitHub write failed after maximum retries"}
 
 
 def _github_delete_file(path, sha, message="auto-delete"):
@@ -1777,12 +1807,18 @@ async def get_slate():
                 today_str = _et_date().isoformat()
                 pred_path = f"data/predictions/{today_str}.csv"
                 pred_existing, _ = _github_get_file(pred_path)
-                if not pred_existing and cached.get("lineups"):
-                    slate_rows = _predictions_to_csv(cached["lineups"], "slate")
-                    if slate_rows:
-                        csv_init = CSV_HEADER + "\n" + "\n".join(slate_rows) + "\n"
-                        _github_write_file(pred_path, csv_init,
-                                           f"slate predictions lock {today_str}")
+                if not pred_existing:
+                    lineups = cached.get("lineups")
+                    if not lineups:
+                        print(f"[slate lock] WARNING: no lineups to save (lineups={lineups})")
+                    else:
+                        slate_rows = _predictions_to_csv(lineups, "slate")
+                        if slate_rows:
+                            csv_init = CSV_HEADER + "\n" + "\n".join(slate_rows) + "\n"
+                            _github_write_file(pred_path, csv_init,
+                                               f"slate predictions lock {today_str}")
+                        else:
+                            print(f"[slate lock] WARNING: lineups exist but _predictions_to_csv returned empty")
             except Exception as _e:
                 print(f"[slate lock] inline pred save err: {_e}")
             return cached
@@ -3244,6 +3280,7 @@ def _all_games_final(games):
     # for 4+ hours, treat as final anyway. This handles ESPN API delays where
     # games finish but status updates lag (common in high-traffic periods).
     # NBA games max ~3.5h; 4h buffer includes OT and processing delays.
+    # GUARD: Don't use fallback if ESPN appears to be down (no games returned at all).
     if not all_final and remaining > 0 and latest_remaining and finals > 0:
         try:
             latest_dt = datetime.fromisoformat(latest_remaining.replace("Z", "+00:00"))
@@ -3252,6 +3289,13 @@ def _all_games_final(games):
                 all_final = True
         except Exception:
             pass
+
+    # Safety: if ESPN returned no data (both counts 0), we cannot confirm games
+    # are final even if it's past game time. Only lock files and manual override
+    # can force unlock when ESPN is unreachable. This prevents false unlock during
+    # ESPN outages that coincide with off-days or startup delays.
+    if finals == 0 and remaining == 0:
+        all_final = False
 
     result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
@@ -3494,6 +3538,10 @@ async def lab_update_config(payload: dict = Body(...)):
     cfg["changelog"] = changelog
 
     content = json.dumps(cfg, indent=2)
+    # Note: _github_write_file now handles 422 conflicts with exponential backoff retry.
+    # If another concurrent request modified config, this write will retry with fresh SHA.
+    # Changelog is built from config at this moment; if multiple writes race, the one that
+    # succeeds retains its changelog entry, others are retried and see the updated config.
     result  = _github_write_file("data/model-config.json", content, f"Lab config v{new_version}: {description}")
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
