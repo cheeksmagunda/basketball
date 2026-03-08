@@ -2005,16 +2005,22 @@ def _get_slate_impl():
         # This means tip-off has occurred — slate is locked regardless of how many games
         # are final. Do NOT gate on finals>0: that causes an unlock bug during the first
         # ~30 min of play (before any game finishes) and on ESPN API failures.
-        all_final, remaining, finals, _lrs = _all_games_final(games)
-        # all_complete is True only when ESPN confirms every game is done.
-        # Use finals>0 guard so an ESPN failure (finals=0, remaining=0) defaults to False.
-        all_complete = all_final and finals > 0
+
+        # Check in-memory lock cache FIRST — avoids an ESPN call on warm instances.
+        # The cached all_complete value is at most 60s stale (lock cache TTL), which is
+        # acceptable since the frontend polls for the games-final transition.
         lock_cached = _lg("slate_v5_locked")
         if lock_cached:
             lock_cached["locked"] = True
-            lock_cached["all_complete"] = all_complete
             lock_cached.setdefault("draftable_count", 0)
             return lock_cached
+
+        # Cache miss (cold start) — call ESPN now to determine all_complete status.
+        # all_complete is True only when ESPN confirms every game is done.
+        # Use finals>0 guard so an ESPN failure (finals=0, remaining=0) defaults to False.
+        all_final, remaining, finals, _lrs = _all_games_final(games)
+        all_complete = all_final and finals > 0
+
         reg_cached = _cg("slate_v5")
         if reg_cached:
             reg_cached["locked"] = True
