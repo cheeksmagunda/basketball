@@ -2958,7 +2958,7 @@ async function initLabPage() {
   document.getElementById('labUnlocked').style.display = 'none';
 
   try {
-    const r = await fetchWithTimeout('/api/lab/status', {}, 20000);
+    const r = await fetchWithTimeout('/api/lab/status', {}, 30000);
     if (!r.ok) throw new Error('Failed to load Lab status: HTTP ' + r.status);
     const status = await r.json();
     document.getElementById('labLoading').style.display = 'none';
@@ -2969,6 +2969,16 @@ async function initLabPage() {
       await showLabUnlocked(status);
     }
   } catch(e) {
+    // Auto-retry once — first request may have warmed a cold Vercel function
+    try {
+      const r2 = await fetchWithTimeout('/api/lab/status', {}, 15000);
+      if (!r2.ok) throw new Error('Retry failed: HTTP ' + r2.status);
+      const status = await r2.json();
+      document.getElementById('labLoading').style.display = 'none';
+      if (status.locked) { await showLabLocked(status); }
+      else { await showLabUnlocked(status); }
+      return;
+    } catch(e2) { /* fall through to error UI */ }
     document.getElementById('labLoading').style.display = 'none';
     document.getElementById('labLocked').style.display = 'block';
     document.getElementById('labLockedReason').innerHTML = 'Unable to reach server — defaulting to locked';
