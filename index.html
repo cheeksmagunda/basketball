@@ -1450,7 +1450,7 @@ const TEAM_COLORS = {
  * - LINE_LOTD_STATE: AsyncState for Line tab — data = { pick, over_pick?, under_pick?, error? }; pick has stat_type, line, narrative, game_time, etc.
  * - LAB: Ben tab — messages[], briefing, cachedStatus, system; init on first visit; lock poll when locked.
  * - LOG: History tab — selectedDate, data (from /api/log/get), dateCache; init on first visit via initLogPage → buildLogDateStrip, selectLogDate.
- * Tab init: Predict (loadSlate + initGameSelector at startup); Line/Log/Lab lazy-init on first switchTab (initLinePage, initLogPage, initLabPage).
+ * Tab init: Predict (loadSlate at startup, non-blocking; game dropdown from SLATE.games on success); Line/Log/Lab lazy-init on first switchTab (initLinePage, initLogPage, initLabPage).
  */
 let SLATE = null;
 let PICKS_DATA = null;
@@ -1648,16 +1648,44 @@ function hideLoader() {
 // ════════════════════════════════════════════════════════════════════
 // APP INIT — grep: DOMContentLoaded, initGameSelector, loadSlate, startup
 // ════════════════════════════════════════════════════════════════════
-(async function init() {
+(function init() {
   // Show predict sub-nav on initial load (Predict is the default tab)
   document.getElementById('predictSubNav').style.display = 'flex';
-  loadSlate();
-  initGameSelector();
+  loadSlate(); // non-blocking: slate and game dropdown populate when /api/slate returns (loadSlate calls populateGameSelector on success)
 })();
 
 // ════════════════════════════════════════════════════════════════════
-// GAME SELECTOR — grep: initGameSelector, gameSel, game dropdown, /api/games
+// GAME SELECTOR — grep: initGameSelector, populateGameSelector, gameSel, /api/games
 // ════════════════════════════════════════════════════════════════════
+/** Populate the game dropdown from an array of game objects. Source-agnostic (from /api/games or SLATE.games). */
+function populateGameSelector(games, opts) {
+  const sel = _el('gameSel');
+  const btn = _el('analyzeBtn');
+  if (!sel) return;
+  opts = opts || {};
+  const slateLocked = opts.slateLocked === true;
+  if (!Array.isArray(games) || !games.length) {
+    sel.innerHTML = '<option value="">No games today</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Select a game...</option>';
+  games.forEach(g => {
+    const o = document.createElement('option');
+    o.value = g.gameId || g.id || '';
+    let label = (g.label || '') + (g.total ? ` \u00B7 O/U ${g.total}` : '');
+    if (g.startTime) {
+      const start = new Date(g.startTime);
+      label += ` \u00B7 ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+    }
+    const locked = slateLocked || (g.locked === true) || (g.startTime && (new Date(g.startTime).getTime() - Date.now()) <= 5 * 60 * 1000);
+    if (locked) label += ' \uD83D\uDD12';
+    o.textContent = label;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => { if (btn) btn.disabled = !sel.value; };
+  if (btn) btn.disabled = !sel.value;
+}
+
 async function initGameSelector() {
   const sel = document.getElementById('gameSel');
   const btn = document.getElementById('analyzeBtn');
@@ -1665,26 +1693,13 @@ async function initGameSelector() {
     const r = await fetchWithTimeout('/api/games', {}, 10000);
     if (!r.ok) throw new Error('Failed to load games (' + r.status + ')');
     const games = await r.json();
-    if (!games.length) {
-      sel.innerHTML = '<option value="">No games today</option>';
-      return;
-    }
-    sel.innerHTML = '<option value="">Select a game...</option>';
-    games.forEach(g => {
-      const o = document.createElement('option');
-      o.value = g.gameId;
-      let label = g.label + (g.total ? ` \u00B7 O/U ${g.total}` : '');
-      if (g.startTime) {
-        const start = new Date(g.startTime);
-        label += ` \u00B7 ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-      }
-      if (g.locked) label += ' \uD83D\uDD12';
-      o.textContent = label;
-      sel.appendChild(o);
-    });
-    sel.onchange = () => { btn.disabled = !sel.value; };
+    populateGameSelector(games);
   } catch(e) {
-    sel.innerHTML = '<option value="">Offline — check backend</option>';
+    if (SLATE && Array.isArray(SLATE.games) && SLATE.games.length) {
+      populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked });
+    } else {
+      if (sel) sel.innerHTML = '<option value="">Offline — check backend</option>';
+    }
   }
 }
 
@@ -1713,6 +1728,7 @@ async function loadSlate() {
         </div>`;
       SLATE = slateData;
       SLATE_LOADED_AT = 0;
+      initGameSelector(); // fallback: try to fill game dropdown when slate failed
       return;
     }
     const isEmptyLocked = slateData.locked && !slateData.lineups?.chalk?.length;
@@ -1759,6 +1775,8 @@ async function loadSlate() {
     if (slateTabsEl) slateTabsEl.style.display = 'flex';
     SLATE_LOADED_AT = Date.now();
     if (typeof LAB !== 'undefined') { LAB.cachedStatus = null; LAB.statusFetchedAt = 0; }
+
+    if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked }); }
 
     // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
     // so the "Picks Locked" chip appears without the user having to manually refresh.
@@ -1827,6 +1845,13 @@ async function loadSlate() {
     }
     switchSlate('chalk');
     savePredictions();
+    // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
+    if (typeof LAB !== 'undefined') {
+      fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(function(s) {
+        LAB.cachedStatus = s;
+        LAB.statusFetchedAt = Date.now();
+      }).catch(function() {});
+    }
   } catch(e) {
     SLATE_STATE = asyncStateError(SLATE_STATE, e);
     hideLoader();
@@ -1836,6 +1861,7 @@ async function loadSlate() {
         <p>Slate didn't load.<br>Tap Retry, or try again in a moment.</p>
         <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
       </div>`;
+    initGameSelector(); // fallback: try to fill game dropdown when slate fetch failed
   }
 }
 
@@ -2089,6 +2115,9 @@ function renderCards(picks, containerId, mode, opts = {}) {
         ${scoreColHtml}
       </div>`;
   }).join('');
+  const doWrite = () => { el.innerHTML = html; };
+  if (picks.length > 10) requestAnimationFrame(doWrite);
+  else doWrite();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2173,23 +2202,37 @@ function buildLogDateStrip() {
 }
 
 async function initLogPage() {
-  const strip = document.getElementById('logDateStrip');
   const today = new Date();
   const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const todayStr = toLocalISO(today);
 
-  // Show date strip immediately (dots may be empty until /api/log/dates returns)
+  LOG.selectedDate = todayStr;
+  closeLogDrilldown();
   buildLogDateStrip();
-  selectLogDate(toLocalISO(today));
+  LOG.data = null;
+  LOG_STATE = asyncStateLoading(LOG_STATE);
+  _renderLogGridFromState(todayStr);
 
-  // Fetch which dates have data in background; refresh strip when done
-  try {
-    const r = await fetchWithTimeout('/api/log/dates');
-    if (r.ok) {
-      const dates = await r.json();
-      dates.forEach(d => LOG.datesWithData.add(d));
-      buildLogDateStrip();
-    }
-  } catch(e) { /* non-fatal */ }
+  const datesPromise = fetchWithTimeout('/api/log/dates').then(r => r.ok ? r.json() : Promise.reject(new Error('dates ' + r.status)));
+  const getPromise = fetchWithTimeout(`/api/log/get?date=${todayStr}`).then(r => r.ok ? r.json() : Promise.reject(new Error('get ' + r.status)));
+
+  const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
+
+  if (datesRes.status === 'fulfilled') {
+    datesRes.value.forEach(d => LOG.datesWithData.add(d));
+    buildLogDateStrip();
+  }
+
+  if (getRes.status === 'fulfilled') {
+    const data = getRes.value;
+    LOG.dateCache[todayStr] = { data, loadedAt: Date.now() };
+    LOG.data = data;
+    LOG_STATE = asyncStateSuccess(LOG_STATE, data);
+    renderLogGrid(todayStr);
+  } else {
+    LOG_STATE = asyncStateError(LOG_STATE, getRes.reason);
+    _renderLogGridFromState(todayStr);
+  }
 }
 
 async function selectLogDate(dateStr) {
@@ -2239,45 +2282,33 @@ function renderLogGrid(dateStr) {
     return;
   }
 
-  // Build game list from scopes
+  // Build game list from scopes — only render entries that have been written (draft content exists).
   const scopes = data.scopes || {};
   const gameScopes = Object.keys(scopes).filter(s => s !== 'slate');
-  const hasSlate = 'slate' in scopes;
   const hasActuals = data.has_actuals;
-  const isToday = dateStr === _etToday();
 
   let html = '';
 
-  // Full Slate card — only show once all games are done (actuals exist).
-  // While today's games are still in progress, show a placeholder instead.
-  if (hasSlate) {
-    if (isToday && !hasActuals) {
-      html += `
-        <div class="log-slate-card" style="opacity:0.55;cursor:default">
-          <div>
-            <div class="log-slate-card-label">Full Slate</div>
-            <div class="log-slate-card-sub">The Oracle cannot be rushed — drafts logged at event start</div>
-          </div>
-          <span style="color:var(--muted);font-size:1.2rem">⏳</span>
-        </div>`;
-    } else {
-      const playerCount = (scopes['slate']?.chalk?.length || 0) + (scopes['slate']?.upside?.length || 0);
-      html += `
-        <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
-          <div>
-            <div class="log-slate-card-label">Full Slate</div>
-            <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
-          </div>
-          <span style="color:var(--chalk);font-size:1.2rem">›</span>
-        </div>`;
-    }
+  // Full Slate card — only show when slate scope has actual draft content (written at lock).
+  const slateChalk = (scopes['slate']?.chalk?.length || 0);
+  const slateUpside = (scopes['slate']?.upside?.length || 0);
+  if (slateChalk + slateUpside > 0) {
+    const playerCount = slateChalk + slateUpside;
+    html += `
+      <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
+        <div>
+          <div class="log-slate-card-label">Full Slate</div>
+          <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
+        </div>
+        <span style="color:var(--chalk);font-size:1.2rem">›</span>
+      </div>`;
   }
 
-  // Per-game cards — scope is now the readable label (e.g. "BOS @ NYK")
-  // Use data-scope attribute instead of inline onclick interpolation so any special
-  // characters in ESPN-sourced labels are handled safely by the delegated listener below.
+  // Per-game cards — only show when that scope has draft content (chalk or upside).
   gameScopes.forEach(scope => {
     const chalkCount = scopes[scope]?.chalk?.length || 0;
+    const upsideCount = scopes[scope]?.upside?.length || 0;
+    if (chalkCount + upsideCount === 0) return;
     html += `
       <div class="log-game-card" data-scope="${scope.replace(/"/g, '&quot;')}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -2293,15 +2324,18 @@ function renderLogGrid(dateStr) {
     return;
   }
 
-  grid.innerHTML = html;
-
-  // Delegate clicks for per-game cards (data-scope avoids inline interpolation)
-  grid.querySelectorAll('.log-game-card[data-scope]').forEach(card => {
-    card.addEventListener('click', () => {
-      const s = card.dataset.scope;
-      openLogDrilldown(s, s);
+  const cardCount = (slateChalk + slateUpside > 0 ? 1 : 0) + gameScopes.length;
+  const doWrite = () => {
+    grid.innerHTML = html;
+    grid.querySelectorAll('.log-game-card[data-scope]').forEach(card => {
+      card.addEventListener('click', () => {
+        const s = card.dataset.scope;
+        openLogDrilldown(s, s);
+      });
     });
-  });
+  };
+  if (cardCount > 10) requestAnimationFrame(doWrite);
+  else doWrite();
 }
 
 function openLogDrilldown(scope, gameLabel) {
@@ -2912,6 +2946,7 @@ async function initLinePage() {
   const todayET = _etToday();
   const alreadyLoaded = LINE_LOADED_DATE === todayET && LINE_LOTD_STATE.status === 'success';
   if (alreadyLoaded) {
+    _renderLineLOTDFromState(); // paint cached pick immediately so no skeleton flash
     switchLineDir(LINE_DIR);
     fetchLineHistory();
     return;
