@@ -9,9 +9,19 @@ slate,upside,1.8x,Buddy Hield,2990984,ATL,G,5.1,2.6,22.4,11.2,3.2,1.9,0.8,0.2
 slate,upside,1.6x,Mike Conley,3195,MIN,G,5.0,2.9,24.4,8.9,2.3,4.2,0.9,0.2
 slate,upside,1.4x,Kyle Filipowski,4684793,UTAH,F,4.7,2.7,25.2,10.1,6.6,2.1,0.8,0.5
 slate,upside,1.2x,Kyle Lowry,3012,PHI,G,4.6,2.9,20.1,7.8,2.5,3.5,0.8,0.2
-BKN @ DET,chalk,2.0x,Jalen Duren,4433621,DET,C,4.4,1.9,27.4,15.7,10.5,1.9,0.8,0.8
-BKN @ DET,chalk,1.8x,Michael Porter Jr.,4278104,BKN,F,4.4,1.7,31.0,20.7,6.8,2.4,0.8,0.3
-BKN @ DET,chalk,1.6x,Nic Claxton,4278067,BKN,C,4.0,2.2,27.7,11.6,7.4,3.0,0.8,1.4
+PHI @ ATL,chalk,2.0x,Andre Drummond,6585,PHI,C,4.1,2.2,25.5,9.4,10.2,1.1,0.9,1.0
+PHI @ ATL,chalk,1.8x,Paul George,4251,PHI,F,4.8,1.6,33.8,18.2,5.7,3.7,1.6,0.5
+PHI @ ATL,chalk,1.6x,CJ McCollum,2490149,ATL,G,4.0,1.8,30.9,19.1,3.5,3.7,0.8,0.4
+PHI @ ATL,chalk,1.4x,Dyson Daniels,4869342,ATL,G,3.8,2.3,29.3,10.2,5.8,5.0,1.9,0.5
+PHI @ ATL,chalk,1.2x,Jalen Johnson,4701230,ATL,F,4.4,1.8,28.1,18.2,8.9,5.9,1.1,0.6
+PHI @ ATL,upside,2.0x,Kyle Lowry,3012,PHI,G,3.2,2.3,23.1,7.8,2.5,3.5,0.8,0.2
+PHI @ ATL,upside,1.8x,Buddy Hield,2990984,ATL,G,3.2,2.2,22.4,11.2,3.2,1.9,0.8,0.2
+PHI @ ATL,upside,1.6x,Zaccharie Risacher,5211175,ATL,F,2.9,2.2,24.3,10.9,3.6,1.3,0.8,0.5
+PHI @ ATL,upside,1.4x,Onyeka Okongwu,4431680,ATL,F,3.6,2.1,26.5,13.4,7.4,2.4,0.9,1.1
+PHI @ ATL,upside,1.2x,Quentin Grimes,4397014,PHI,G,3.2,2.0,29.8,11.7,3.4,2.9,0.8,0.3
+BKN @ DET,chalk,2.0x,Jalen Duren,4433621,DET,C,4.5,1.9,27.4,15.7,10.5,1.9,0.8,0.8
+BKN @ DET,chalk,1.8x,Michael Porter Jr.,4278104,BKN,F,4.5,1.7,31.0,20.7,6.8,2.4,0.8,0.3
+BKN @ DET,chalk,1.6x,Nic Claxton,4278067,BKN,C,4.1,2.2,27.7,11.6,7.4,3.0,0.8,1.4
 BKN @ DET,chalk,1.4x,Tobias Harris,6440,DET,F,3.8,2.0,29.9,14.7,5.7,2.4,0.9,0.4
 BKN @ DET,chalk,1.2x,Caris LeVert,2991043,DET,G,3.5,2.3,25.0,10.3,2.7,3.3,0.9,0.5
 BKN @ DET,upside,2.0x,Isaiah Stewart,4432810,DET,F,3.0,2.4,23.9,9.4,6.0,1.2,0.3,1.4
@@ -19,43 +29,33 @@ BKN @ DET,upside,1.8x,Kevin Huerter,4066372,DET,G,3.1,2.2,26.5,10.8,3.5,2.6,0.8,
 BKN @ DET,upside,1.6x,Duncan Robinson,3157465,DET,F,2.9,2.2,27.2,11.7,2.6,1.9,0.6,0.2
 BKN @ DET,upside,1.4x,Ochai Agbaji,4397018,BKN,G,2.5,2.7,20.8,5.8,2.5,0.9,0.5,0.3
 BKN @ DET,upside,1.2x,Terance Mann,3907823,BKN,G,2.6,2.5,25.6,7.8,3.4,2.7,0.7,0.2
-PHI @ ATL,chalk,2.0x,Andre Drummond,6585,PHI,C,4.1,2.2,25.5,9.4,10.2,1.1,0.9,1.0
-PHI @ ATL,chalk,1.8x,Paul George,4251,PHI,F,4.8,1.6,33.8,18.2,5.7,3.7,1.6,0.5
-PHI @ ATL,chalk,1.6x,CJ McCollum,2490149,ATL,G,3.9,1.8,30.9,19.1,3.5,3.7,0.8,0.4
-PHI @ ATL,chalk,1.4x,Dyson Daniels,4869342,ATL,G,3.7,2.3,29.3,10.2,5.8,5.0,1.9,0.5
-PHI @ ATL,chalk,1.2x,Jalen Johnson,4701230,ATL,F,4.3,1.8,28.1,18.2,8.9,5.9,1.1,0.6
-PHI @ ATL,upside,2.0x,Kyle Lowry,3012,PHI,G,3.2,2.3,23.1,7.8,2.5,3.5,0.8,0.2
-PHI @ ATL,upside,1.8x,Buddy Hield,2990984,ATL,G,3.2,2.2,22.4,11.2,3.2,1.9,0.8,0.2
-PHI @ ATL,upside,1.6x,Zaccharie Risacher,5211175,ATL,F,2.8,2.2,24.3,10.9,3.6,1.3,0.8,0.5
-PHI @ ATL,upside,1.4x,Onyeka Okongwu,4431680,ATL,F,3.6,2.1,26.5,13.4,7.4,2.4,0.9,1.1
-PHI @ ATL,upside,1.2x,Quentin Grimes,4397014,PHI,G,3.1,2.0,29.8,11.7,3.4,2.9,0.8,0.3
-LAC @ MEM,chalk,2.0x,Kawhi Leonard,6450,LAC,F,5.1,0.4,30.0,24.2,6.4,3.4,1.9,0.6
-LAC @ MEM,chalk,1.8x,Ty Jerome,4065733,MEM,G,4.1,2.1,22.2,14.1,2.5,4.0,0.9,0.1
-LAC @ MEM,chalk,1.6x,Darius Garland,4396907,LAC,G,3.8,1.7,28.8,18.1,2.5,6.8,0.9,0.1
-LAC @ MEM,chalk,1.4x,Cedric Coward,4903027,MEM,F,3.6,2.1,29.2,13.3,6.1,2.9,0.6,0.4
-LAC @ MEM,chalk,1.2x,Brook Lopez,3448,LAC,C,3.6,2.0,24.1,11.7,4.5,1.2,0.7,1.4
-LAC @ MEM,upside,2.0x,Scotty Pippen Jr.,4431785,MEM,G,3.7,2.3,24.0,10.8,2.5,4.6,1.7,0.4
-LAC @ MEM,upside,1.8x,Jaylen Wells,5112087,MEM,F,3.2,2.1,29.4,12.1,3.4,1.7,0.8,0.1
-LAC @ MEM,upside,1.6x,Javon Small,4781746,MEM,G,2.8,2.5,20.9,7.8,2.8,3.6,0.7,0.3
-LAC @ MEM,upside,1.4x,GG Jackson,5105550,MEM,F,3.0,2.2,23.6,11.1,4.0,1.2,0.7,0.7
-LAC @ MEM,upside,1.2x,Walter Clayton Jr.,4896372,MEM,G,2.7,2.6,22.3,7.1,2.0,3.8,0.7,0.3
-UTAH @ MIL,chalk,2.0x,Keyonte George,4433627,UTAH,G,4.6,1.7,33.5,20.6,3.6,5.8,0.9,0.2
-UTAH @ MIL,chalk,1.8x,Kevin Love,3449,UTAH,F,3.7,2.2,25.8,11.3,7.8,2.1,0.5,0.3
-UTAH @ MIL,chalk,1.6x,Myles Turner,3133628,MIL,C,4.1,1.9,29.0,13.2,6.1,1.4,0.7,1.9
-UTAH @ MIL,chalk,1.4x,Kyle Kuzma,3134907,MIL,F,3.8,1.8,29.4,14.8,5.5,2.6,0.6,0.5
-UTAH @ MIL,chalk,1.2x,Giannis Antetokounmpo,3032977,MIL,F,5.5,0.3,31.6,25.8,9.9,5.2,1.0,0.9
-UTAH @ MIL,upside,2.0x,Kyle Filipowski,4684793,UTAH,F,3.2,2.3,25.2,10.1,6.6,2.1,0.8,0.5
-UTAH @ MIL,upside,1.8x,Bobby Portis,3064482,MIL,F,3.4,2.0,24.4,12.7,6.7,1.4,0.6,0.3
-UTAH @ MIL,upside,1.6x,Ace Bailey,4873138,UTAH,G,3.2,2.1,28.8,12.4,4.0,1.7,0.8,0.5
-UTAH @ MIL,upside,1.4x,Brice Sensabaugh,5105839,UTAH,F,2.9,2.2,24.4,11.8,3.0,1.6,0.7,0.1
-UTAH @ MIL,upside,1.2x,Gary Trent Jr.,4277843,MIL,G,2.8,2.1,24.4,10.3,1.6,1.4,0.8,0.1
-GS @ OKC,chalk,2.0x,Al Horford,3213,GS,C,4.4,2.1,28.7,10.6,6.4,2.9,0.8,1.1
-GS @ OKC,chalk,1.8x,Draymond Green,6589,GS,F,3.8,2.2,29.9,8.6,6.2,5.4,1.1,0.8
+GS @ OKC,chalk,2.0x,Al Horford,3213,GS,C,4.5,2.1,28.7,10.6,6.4,2.9,0.8,1.1
+GS @ OKC,chalk,1.8x,Draymond Green,6589,GS,F,3.9,2.2,29.9,8.6,6.2,5.4,1.1,0.8
 GS @ OKC,chalk,1.6x,Cason Wallace,4683692,OKC,G,3.6,2.4,29.1,8.4,3.0,2.5,1.8,0.3
 GS @ OKC,chalk,1.4x,Brandin Podziemski,4709138,GS,G,3.8,2.0,30.3,11.8,5.3,3.6,1.1,0.2
-GS @ OKC,chalk,1.2x,Shai Gilgeous-Alexander,4278073,OKC,G,6.0,0.4,35.7,28.4,4.5,5.8,1.4,0.8
-GS @ OKC,upside,2.0x,Luguentz Dort,4397020,OKC,G,3.4,2.2,31.4,10.2,3.9,1.4,0.8,0.4
-GS @ OKC,upside,1.8x,Jared McCain,4683778,OKC,G,2.7,2.4,21.8,9.1,2.2,1.6,0.6,0.0
-GS @ OKC,upside,1.6x,Kenrich Williams,3133626,OKC,G,2.4,2.7,20.6,6.5,3.6,1.6,0.7,0.1
-GS @ OKC,upside,1.4x,Quinten Post,4593016,GS,C,2.6,2.4,20.0,7.7,4.0,1.4,0.4,0.5
-GS @ OKC,upside,1.2x,Aaron Wiggins,4397183,OKC,G,2.7,2.3,24.6,9.6,3.3,1.6,0.8,0.4
+GS @ OKC,chalk,1.2x,Luguentz Dort,4397020,OKC,G,3.5,2.2,31.4,10.2,3.9,1.4,0.8,0.4
+GS @ OKC,upside,2.0x,Jared McCain,4683778,OKC,G,2.7,2.4,21.8,9.1,2.2,1.6,0.6,0.0
+GS @ OKC,upside,1.8x,Kenrich Williams,3133626,OKC,G,2.5,2.7,20.6,6.5,3.6,1.6,0.7,0.1
+GS @ OKC,upside,1.6x,Quinten Post,4593016,GS,C,2.6,2.4,20.0,7.7,4.0,1.4,0.4,0.5
+GS @ OKC,upside,1.4x,Aaron Wiggins,4397183,OKC,G,2.7,2.3,24.6,9.6,3.3,1.6,0.8,0.4
+GS @ OKC,upside,1.2x,Nate Williams,4397821,GS,G,2.2,2.3,21.0,9.0,2.0,1.3,0.3,0.0
+LAC @ MEM,chalk,2.0x,Kawhi Leonard,6450,LAC,F,5.2,0.4,30.0,24.2,6.4,3.4,1.9,0.6
+LAC @ MEM,chalk,1.8x,Ty Jerome,4065733,MEM,G,4.2,2.1,22.2,14.1,2.5,4.0,0.9,0.1
+LAC @ MEM,chalk,1.6x,Darius Garland,4396907,LAC,G,3.8,1.7,28.8,18.1,2.5,6.8,0.9,0.1
+LAC @ MEM,chalk,1.4x,Cedric Coward,4903027,MEM,F,3.7,2.1,29.2,13.3,6.1,2.9,0.6,0.4
+LAC @ MEM,chalk,1.2x,Brook Lopez,3448,LAC,C,3.6,2.0,24.1,11.7,4.5,1.2,0.7,1.4
+LAC @ MEM,upside,2.0x,Scotty Pippen Jr.,4431785,MEM,G,3.8,2.3,24.0,10.8,2.5,4.6,1.7,0.4
+LAC @ MEM,upside,1.8x,Jaylen Wells,5112087,MEM,F,3.3,2.1,29.4,12.1,3.4,1.7,0.8,0.1
+LAC @ MEM,upside,1.6x,Javon Small,4781746,MEM,G,2.9,2.5,20.9,7.8,2.8,3.6,0.7,0.3
+LAC @ MEM,upside,1.4x,GG Jackson,5105550,MEM,F,3.1,2.2,23.6,11.1,4.0,1.2,0.7,0.7
+LAC @ MEM,upside,1.2x,Walter Clayton Jr.,4896372,MEM,G,2.7,2.6,22.3,7.1,2.0,3.8,0.7,0.3
+UTAH @ MIL,chalk,2.0x,Keyonte George,4433627,UTAH,G,4.6,1.7,33.5,20.6,3.6,5.8,0.9,0.2
+UTAH @ MIL,chalk,1.8x,Kevin Love,3449,UTAH,F,3.8,2.2,25.8,11.3,7.8,2.1,0.5,0.3
+UTAH @ MIL,chalk,1.6x,Myles Turner,3133628,MIL,C,4.1,1.9,29.0,13.2,6.1,1.4,0.7,1.9
+UTAH @ MIL,chalk,1.4x,Kyle Kuzma,3134907,MIL,F,3.9,1.8,29.4,14.8,5.5,2.6,0.6,0.5
+UTAH @ MIL,chalk,1.2x,Giannis Antetokounmpo,3032977,MIL,F,5.6,0.3,31.6,25.8,9.9,5.2,1.0,0.9
+UTAH @ MIL,upside,2.0x,Kyle Filipowski,4684793,UTAH,F,3.2,2.3,25.2,10.1,6.6,2.1,0.8,0.5
+UTAH @ MIL,upside,1.8x,Bobby Portis,3064482,MIL,F,3.4,2.0,24.4,12.7,6.7,1.4,0.6,0.3
+UTAH @ MIL,upside,1.6x,Ace Bailey,4873138,UTAH,G,3.3,2.1,28.8,12.4,4.0,1.7,0.8,0.5
+UTAH @ MIL,upside,1.4x,Brice Sensabaugh,5105839,UTAH,F,2.9,2.2,24.4,11.8,3.0,1.6,0.7,0.1
+UTAH @ MIL,upside,1.2x,Gary Trent Jr.,4277843,MIL,G,2.8,2.1,24.4,10.3,1.6,1.4,0.8,0.1
