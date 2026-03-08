@@ -603,11 +603,6 @@
     }
     .date-chip-dot.hidden-dot { opacity: 0; }
     .date-chip-dot.historical-dot { background: var(--chalk); }
-    .log-date-actions {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0; margin: 0 1rem;
-    }
-    .log-go-date { display: flex; align-items: center; gap: 0.5rem; }
-    .log-go-date input[type="date"] { padding: 0.35rem 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 
     /* Log game grid */
     .log-game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
@@ -1122,15 +1117,6 @@
 
     <!-- Date strip -->
     <div class="date-strip" id="logDateStrip"></div>
-    <div class="log-date-actions">
-      <button type="button" class="secondary-btn" id="logLoadMoreBtn" onclick="loadMoreLogDays()">Load more dates</button>
-      <label class="log-go-date">
-        <span>Go to date:</span>
-        <input type="date" id="logGoToDateInput" />
-        <button type="button" class="secondary-btn" onclick="goToLogDate()">Go</button>
-      </label>
-    </div>
-
     <!-- Grid view -->
     <div id="logGridView">
       <div class="section-label" id="logGridLabel">Games</div>
@@ -1394,7 +1380,6 @@ const LOG = {
   scope: null,           // 'slate' | matchup label
   gameLabel: null,
   datesWithData: new Set(),
-  stripDayCount: 60,     // number of days to show in date strip (max 180)
   data: null,            // {date, scopes, actuals}
   currentTab: 'chalk',
 };
@@ -1954,9 +1939,8 @@ function buildLogDateStrip() {
   const today = new Date();
   const strip = document.getElementById('logDateStrip');
   const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const n = Math.min(LOG.stripDayCount, 180);
   const chips = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < 60; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const iso = toLocalISO(d);
@@ -1989,29 +1973,6 @@ async function initLogPage() {
   const today = new Date();
   const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   selectLogDate(toLocalISO(today));
-}
-
-function loadMoreLogDays() {
-  LOG.stripDayCount = Math.min(LOG.stripDayCount + 30, 180);
-  buildLogDateStrip();
-  const btn = document.getElementById('logLoadMoreBtn');
-  if (btn) btn.textContent = LOG.stripDayCount >= 180 ? 'All dates loaded' : 'Load more dates';
-  if (LOG.stripDayCount >= 180) btn.disabled = true;
-}
-
-function goToLogDate() {
-  const input = document.getElementById('logGoToDateInput');
-  if (!input || !input.value) return;
-  const dateStr = input.value;
-  const today = new Date();
-  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const todayIso = toLocalISO(today);
-  const daysDiff = Math.ceil((new Date(todayIso) - new Date(dateStr)) / (24 * 60 * 60 * 1000));
-  if (daysDiff > LOG.stripDayCount) {
-    LOG.stripDayCount = Math.min(daysDiff + 5, 180);
-    buildLogDateStrip();
-  }
-  selectLogDate(dateStr);
 }
 
 async function selectLogDate(dateStr) {
