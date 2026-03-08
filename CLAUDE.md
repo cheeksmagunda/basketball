@@ -70,7 +70,7 @@ grep: CARD BOOST               — _est_card_boost, _dfs_score
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
 grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
-grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks
+grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/health, /api/version
 grep: LINE OF THE DAY ENGINE   — /api/line-of-the-day, run_line_engine
 grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 ```
@@ -80,6 +80,8 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 ### Core
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/api/health` | GET | Health check for monitoring (config + GitHub reachability) |
+| `/api/version` | GET | Build identifier (VERCEL_GIT_COMMIT_SHA) for deploy checks |
 | `/api/slate` | GET | Full-slate predictions (all games) |
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
@@ -90,7 +92,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear cache + config cache (also runs on cron at 7pm/8pm UTC) |
+| `/api/refresh` | GET | Clear cache + config cache (cron at 7pm/8pm UTC; requires CRON_SECRET when set) |
 
 ### Line of the Day
 | Endpoint | Method | Purpose |
@@ -99,7 +101,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/refresh-line-odds` | GET | **Hourly cron** — fetch current bookmaker line from Odds API and update `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
-| `/api/auto-resolve-line` | GET | **Cron** — resolves each pick independently when its game ends; generates next-day picks when both resolve |
+| `/api/auto-resolve-line` | GET | **Cron** — resolves each pick when its game ends; generates next-day picks when both resolve (requires CRON_SECRET when set) |
 | `/api/line-history` | GET | Recent picks with streak + hit rate (only resolved picks — never pending) |
 
 ### Lab (Ben)
@@ -111,7 +113,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/lab/config-history` | GET | Full config + changelog |
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
-| `/api/lab/auto-improve` | GET | **Cron endpoint** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% improvement |
+| `/api/lab/auto-improve` | GET | **Cron** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% (requires CRON_SECRET when set) |
 | `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt (keeps key server-side) |
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
 
@@ -121,6 +123,10 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
 - `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
 - `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day)
+- `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`) require `Authorization: Bearer <CRON_SECRET>`. Vercel injects this when invoking crons.
+- `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
+
+**OpenAPI docs:** FastAPI serves `/docs` (Swagger UI) and `/redoc` in production. Use them to browse and try endpoints. When `DOCS_SECRET` is set, append `?docs_key=<DOCS_SECRET>` to the URL or send the header to access.
 
 ## Runtime Config System
 
@@ -322,6 +328,8 @@ Key patterns used throughout:
 
 EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hidden context-loading messages don't suppress the upload prompt.
 
+**Health in deployment:** Use `GET /api/health` for uptime monitoring. Configure an external checker (e.g. UptimeRobot, Cronitor) to hit the URL and alert on non-200; Vercel does not provide built-in health-check alerting.
+
 ## Event-Based Slate Transition
 
 The system now uses **game completion events** instead of clock-based timeouts for slate unlocking. When the final game on a slate completes, the system:
@@ -473,9 +481,9 @@ Run with: `pytest tests/test_fixes.py -v`
 
 - `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side. `data/locks/{date}_slate.json` provides GitHub backup recovery.
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
-- Odds API: if both over_pick and under_pick are for the same player, `/api/refresh-line-odds` makes two identical API calls (one per pick object). Functionally correct, marginally wasteful on quota.
+- Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
 - `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
-- History tab shows only the last 30 days. Predictions older than 30 days are stored in GitHub but not reachable from the UI date strip.
+- History tab shows 60 days by default with "Load more dates" (up to 180) and "Go to date" for any date with data.
 - Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Exception: `/api/lab/chat` uses a raw streaming fetch (SSE) by design — no timeout on the stream body, only on connection.
 - Upload screenshot type validation is client-side trust only — the system cannot verify that a "Real Scores" button upload actually contains a Real Scores screenshot. Wrong uploads produce skewed audit data for that date.
 
@@ -495,11 +503,16 @@ Run with: `pytest tests/test_fixes.py -v`
 | Dead code pruned | `index.html` | Removed empty `_renderBenEodPrompt()` function |
 | Skip All button relocated | `index.html` | Moved from button row to title bar (top-right) — semantic meta-action placement |
 
+## Production audit
+
+Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: GitHub error sanitization (no leak to client), `GET /api/health`, `GET /api/version`, cron secret on `/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, and `fetchWithTimeout` for lab/backtest and lab/update-config.
+
 ## Development
 
 ```bash
 # Local
 pip install -r requirements.txt
+python scripts/check-env.py   # verify required env vars (fail-fast)
 uvicorn server:app --reload
 
 # Deploy — push to your session branch; auto-merge-to-main.yml merges → main → Vercel
