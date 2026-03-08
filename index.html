@@ -1759,9 +1759,10 @@ async function loadSlate() {
 
     if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
 
-    // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
-    // so savePredictions fires once the slate locks.
-    if (!SLATE.locked) {
+    // If slate not yet locked AND games haven't all finished, schedule an auto-re-fetch
+    // when the lock window opens so savePredictions fires once the slate locks.
+    // Skip entirely when all_complete — no reason to re-fetch a finished slate.
+    if (!SLATE.locked && !SLATE.all_complete) {
       const now = Date.now();
       const startMs = (SLATE.games || [])
         .map(g => g.startTime ? new Date(g.startTime).getTime() : Infinity)
@@ -1773,8 +1774,8 @@ async function loadSlate() {
           setTimeout(() => { if (!SLATE.locked) loadSlate(); }, delay + 2000);
         } else if (delay <= 0) {
           // Lock window already passed but backend returned unlocked (stale cache).
-          // Retry after a short delay to pick up the locked state.
-          setTimeout(() => { if (!SLATE.locked) loadSlate(); }, 5000);
+          // Retry once after a short delay to pick up the locked state.
+          setTimeout(() => { if (!SLATE.locked && !SLATE.all_complete) loadSlate(); }, 5000);
         }
       }
     }
