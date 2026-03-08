@@ -145,10 +145,15 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 After all games are final and Ben unlocks:
 - Upload banner with 4 buttons: **📸 Real Scores**, **🏆 Top Drafts**, **⚡ Starting 5**, **🚀 Moonshot**
 - Banner **hidden during lock** — only shows when Ben is unlocked
-- Banner title shows the pending date (e.g. "Log Results — Fri, Mar 6") from `pending_upload_date`
+- Banner title shows pending date + live progress counter (e.g. "Log Results — Fri, Mar 6  2/4")
 - `pending_upload_date` = most recent prediction date (excluding today) without actuals uploaded
+- **Skip All** button in top-right of banner header (meta-action on the date, not a data action)
 - `_handleBenUpload()` pipeline: `parse-screenshot → save-actuals → /api/audit/get → lab/briefing → labCallClaude()`
-- All 4 upload types merge into the same actuals CSV (dedup by player name); buttons turn green (✓) on success
+- On successful upload: button flashes green for 1.5s, then **hides** (user only sees remaining uploads)
+- `_checkBannerDone()` uses **localStorage** as source of truth (not DOM disabled state, since buttons hide)
+- On reload: already-done buttons hidden immediately (no stale green buttons cluttering the banner)
+- Audit gate: `save-actuals` only generates `data/audit/{date}.json` when `real_scores` data is present
+- All 4 upload types merge into the same actuals CSV (dedup by player name)
 - History page is **read-only** — no upload UI there
 
 ### Lock System
@@ -449,23 +454,21 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 
 ## Unit Testing Framework
 
-Comprehensive test suite (`tests/test_fixes.py`) validates all responsiveness and reliability improvements:
+Real unit test suite (`tests/test_fixes.py`) — actual assertions against actual function calls, mocked external I/O:
 
 ```python
 # Test classes (pytest):
-TestGitHubWriteRetry — exponential backoff + SHA mismatch handling
-TestESPNFallback — 4-hour timeout + empty-data guard
-TestLockTiming — 5 min buffer, 6h ceiling, split-window `any()` pattern
-TestAutoResolveRollover — midnight rollover, pick_date tracking
-TestFetchTimeout — 10s default, 30s screenshot, AbortController
-TestPollingIntervals — 1 min Lab lock poll, 5 failure cutoff
-TestSkipUploads — localStorage + backend persistence
-TestCacheTTLs — 3 min games, 5 min config, 30 min RotoWire, 1h odds
-TestThreadPoolOptimization — 8 workers on slate/picks/audit
-TestBacktestTimeout — 10 slate limit, 240s safety margin
+TestSafeFloat           — numeric/None/empty string edge cases for _safe_float()
+TestIsLocked            — 5-min pre-tip buffer, 6h ceiling, split-window any() pattern
+TestComputeAudit        — MAE calculation, no-data guard, zero-RS skip, miss sorting
+TestGitHubWriteRetry    — 422 SHA conflict, 1s/2s/4s backoff, max-retry error return
+TestSaveActualsAuditGate — audit only fires when real_scores data is present
+TestAutoResolveMidnight — pick_date vs et_date divergence after midnight
+TestCacheTTLs           — 3 min games, 5 min config, 30 min RotoWire, 30s locked TTL
+TestPollingIntervals    — 60s lab lock, 30s line live, 150s failure cutoff
 ```
 
-All test cases pass with 100% coverage of critical paths.
+Run with: `pytest tests/test_fixes.py -v`
 
 ## Known Limitations
 
@@ -474,7 +477,24 @@ All test cases pass with 100% coverage of critical paths.
 - Odds API: if both over_pick and under_pick are for the same player, `/api/refresh-line-odds` makes two identical API calls (one per pick object). Functionally correct, marginally wasteful on quota.
 - `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
 - History tab shows only the last 30 days. Predictions older than 30 days are stored in GitHub but not reachable from the UI date strip.
-- Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Slow backend responses trigger client-side error handling; users should refresh rather than wait indefinitely.
+- Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Exception: `/api/lab/chat` uses a raw streaming fetch (SSE) by design — no timeout on the stream body, only on connection.
+- Upload screenshot type validation is client-side trust only — the system cannot verify that a "Real Scores" button upload actually contains a Real Scores screenshot. Wrong uploads produce skewed audit data for that date.
+
+## Robustness Fixes (this session)
+
+| Fix | File | Detail |
+|-----|------|--------|
+| Stale response guard on game switching | `index.html` | `runAnalysis()` captures `gameId` at call time; discards response if selector changed mid-flight |
+| `fetchWithTimeout` on `/api/picks` | `index.html` | Was raw `fetch`, now 15s timeout |
+| `fetchWithTimeout` on `/api/audit/get` | `index.html` | Was raw `fetch`, now 10s timeout |
+| `fetchWithTimeout` on `top_drafts` save | `index.html` | Was raw `fetch`, now 10s timeout |
+| Drill-down auto-close on History tab return | `index.html` | `switchTab('log')` now calls `closeLogDrilldown()` before grid init |
+| Upload banner: hide completed buttons | `index.html` | On reload, done buttons hide immediately; on new upload, flash green → hide after 1.5s |
+| Upload banner: X/4 progress counter | `index.html` | Title updates live as each upload completes |
+| `_checkBannerDone` uses localStorage | `index.html` | DOM disabled state unreliable after hide; localStorage is source of truth |
+| Audit gate on `real_scores` | `api/index.py` | `save-actuals` only generates audit JSON when `real_scores` rows present |
+| Dead code pruned | `index.html` | Removed empty `_renderBenEodPrompt()` function |
+| Skip All button relocated | `index.html` | Moved from button row to title bar (top-right) — semantic meta-action placement |
 
 ## Development
 

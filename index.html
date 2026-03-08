@@ -1395,7 +1395,10 @@ function switchTab(tab) {
   setPillAccent(tab);
   const tabGlows = { predictions: 'rgba(79,142,247,0.07)', line: 'rgba(212,166,64,0.06)', lab: 'rgba(20,184,166,0.06)', log: 'rgba(123,164,200,0.05)' };
   document.documentElement.style.setProperty('--tab-glow', tabGlows[tab] || tabGlows.predictions);
-  if (tab === 'log' && !LOG.selectedDate) initLogPage();
+  if (tab === 'log') {
+    closeLogDrilldown();  // always return to grid view on tab entry
+    if (!LOG.selectedDate) initLogPage();
+  }
   if (tab === 'line') initLinePage();
   if (tab === 'lab')  initLabPage();
   // Resume live poll on returning to Line tab if picks already loaded and no poll running
@@ -1685,9 +1688,15 @@ async function runAnalysis() {
   renderSkeletons('picksList', 5);
   showLoader();
 
+  // Capture gameId at call time — discard response if user switched games mid-flight
+  const _requestedGameId = gameId;
   try {
-    const r = await fetch(`/api/picks?gameId=${gameId}`);
+    const r = await fetchWithTimeout(`/api/picks?gameId=${gameId}`, {}, 15000);
     hideLoader();
+    // Stale response guard: user may have changed game selector while request was in-flight
+    if (document.getElementById('gameSel').value !== _requestedGameId) {
+      btn.disabled = false; btn.innerHTML = '⚡ Analyze Draft'; return;
+    }
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: 'Server error' }));
       throw new Error(err.error || `HTTP ${r.status}`);
@@ -2124,11 +2133,6 @@ function _checkBannerDone() {
 }
 
 // ── BEN UPLOAD (moved from Log page) ──
-// The upload banner above the chat handles the EOD CTA — no chat bubble needed.
-function _renderBenEodPrompt() {
-  // Chat bubble suppressed: the pinned "LOG TODAY'S RESULTS" banner covers this CTA.
-}
-
 function _benTriggerUpload(type, source) {
   const input = document.createElement('input');
   input.type = 'file';
@@ -2245,7 +2249,7 @@ async function _handleBenUpload(file, type, source) {
       // Pull audit only on real_scores upload (the primary one)
       if (type === 'real_scores') {
         try {
-          const ar = await fetch(`/api/audit/get?date=${today}`);
+          const ar = await fetchWithTimeout(`/api/audit/get?date=${today}`, {}, 10000);
           if (ar.ok) {
             const ad = await ar.json();
             if (ad.mae != null) {
