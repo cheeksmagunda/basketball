@@ -3236,7 +3236,8 @@ async def line_history():
 _GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0, "date": ""}
 
 def _all_games_final(games):
-    """Check ESPN scoreboard to see if all today's games are completed. Cached 3 min.
+    """Check ESPN scoreboard to see if all today's games are completed.
+    Cached with adaptive TTL: 30s when locked slate, 180s pre-slate.
     Returns (all_final, remaining, finals, latest_remaining_start_iso).
 
     Handles midnight-rollover: late games (e.g. 10 PM ET tip-off) can still be
@@ -3248,9 +3249,15 @@ def _all_games_final(games):
     only games that have actually passed their tip-off time matter here."""
     now_ts = datetime.now(timezone.utc).timestamp()
     today_str = _et_date().strftime("%Y%m%d")
+
+    # Determine if slate is locked. During locked slate, use 30s TTL for responsiveness.
+    # This enables event-driven unlock detection without hammering ESPN API.
+    slate_locked = any(_is_locked(g.get("startTime", "")) for g in games if g.get("startTime"))
+    cache_ttl = 30 if slate_locked else 180
+
     # Cache valid only if within TTL AND still the same ET date
     if (_GAMES_FINAL_CACHE["result"] is not None
-            and now_ts - _GAMES_FINAL_CACHE["ts"] < 180
+            and now_ts - _GAMES_FINAL_CACHE["ts"] < cache_ttl
             and _GAMES_FINAL_CACHE.get("date") == today_str):
         return tuple(_GAMES_FINAL_CACHE["result"])
 
@@ -3291,17 +3298,19 @@ def _all_games_final(games):
     # positive evidence (at least one completed game) or it's genuinely a no-game day.
     all_final = (remaining == 0 and finals > 0)
 
-    # Fallback: if ESPN isn't marking games as complete but they've been running
-    # for 4+ hours, treat as final anyway. This handles ESPN API delays where
-    # games finish but status updates lag (common in high-traffic periods).
-    # NBA games max ~3.5h; 4h buffer includes OT and processing delays.
-    # GUARD: Don't use fallback if ESPN appears to be down (no games returned at all).
-    if not all_final and remaining > 0 and latest_remaining and finals > 0:
+    # AGGRESSIVE FALLBACK: If ESPN isn't marking games as complete but they've been
+    # running for 4.5+ hours, treat as final anyway. This handles ESPN API delays.
+    # NBA games max ~3.5h; 4.5h buffer includes OT, 2OT, and processing delays.
+    # KEY: Removed the `finals > 0` requirement. Now fires even if ESPN is completely
+    # lagged on all game statuses. This prevents 6-hour lock ceiling waits when ESPN
+    # is slow during high-traffic periods (evening games on Saturdays).
+    if not all_final and remaining > 0 and latest_remaining:
         try:
             latest_dt = datetime.fromisoformat(latest_remaining.replace("Z", "+00:00"))
             hours_since_start = (now_ts - latest_dt.timestamp()) / 3600
-            if hours_since_start >= 4.0:
+            if hours_since_start >= 4.5:
                 all_final = True
+                print(f"[espn fallback] latest_remaining running {hours_since_start:.1f}h — forcing all_final=True (ESPN lagged)")
         except Exception:
             pass
 

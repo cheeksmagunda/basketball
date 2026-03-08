@@ -196,11 +196,21 @@ Push to the feature branch — `auto-merge-to-main.yml` merges to `main` → Ver
 git push -u origin claude/your-branch
 ```
 
-## Lock System
+## Lock System (Event-Driven Unlock)
 
-Predictions lock 5 minutes before the earliest game tip-off. All slate-level lock checks use `any(_is_locked(st) for st in start_times)` to handle split-window days (e.g. 2 PM + 9 PM CT games) where the earliest game's 6h ceiling expires while late games are still live.
+Predictions lock 5 minutes before the earliest game tip-off. **Slates unlock based on game completion events**, not clock timeouts.
 
-**Triple-gated prediction saves** — frontend `SLATE.locked` check, backend `any(_is_locked(...))` HTTP 409 guard, and cron guard. Two write paths to `data/predictions/`: the `/api/save-predictions` endpoint and inline save at lock-promotion in `/api/slate`.
+### Unlock Priority
+1. **ESPN Game Final** (primary): If all games marked Final on ESPN → unlock immediately
+2. **Time Fallback** (4.5h): If latest game running 4.5+ hours → assume complete (handles ESPN lag)
+3. **6h Ceiling**: Safety net if something hangs
+
+### Technical Details
+- Cache TTL during locked slate: **30 seconds** (enables responsive event detection)
+- Cache TTL pre-slate: 180 seconds (normal polling)
+- All slate-level checks use `any(_is_locked(st))` to handle split-window days (2 PM + 9 PM games)
+- **Triple-gated prediction saves** — frontend `SLATE.locked` check, backend `any(_is_locked(...))` HTTP 409 guard, and cron guard
+- Two write paths to `data/predictions/`: the `/api/save-predictions` endpoint and inline save at lock-promotion in `/api/slate`
 
 ## Known Limitations
 
