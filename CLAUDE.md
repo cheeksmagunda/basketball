@@ -150,6 +150,11 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 - Use `_cfg("dot.path", default)` helper anywhere in `api/index.py` to read config
 - `/api/refresh` also clears the config cache for immediate effect
 
+### Prediction model boundaries (grep: LINE CONFIG, line_engine config)
+
+- **Draft model:** Config in `data/model-config.json` (card_boost, game_script, real_score, cascade, projection, lineup, moonshot, development_teams); code in `api/index.py`, `api/real_score.py`, `api/asset_optimizer.py`; `lgbm_model.pkl` is trained separately (GitHub Actions). Ben can change draft behavior via Lab (update-config, backtest).
+- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Line-specific knobs: `min_confidence`, `min_edge_pct`. Ben can tune Line picks via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
+
 ## Ben (Lab) Interface
 
 Ben is a **pure chat interface** — no quick-action buttons. The user types naturally and Ben:
@@ -535,6 +540,7 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 
 ## Known Limitations
 
+- Rate limiting uses an in-memory store with a lock (thread-safe); it does not persist across Vercel instances, so limits are per-instance.
 - `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side. `data/locks/{date}_slate.json` provides GitHub backup recovery.
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
@@ -558,6 +564,8 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 | Audit gate on `real_scores` | `api/index.py` | `save-actuals` only generates audit JSON when `real_scores` rows present |
 | Dead code pruned | `index.html` | Removed empty `_renderBenEodPrompt()` function |
 | Skip All button relocated | `index.html` | Moved from button row to title bar (top-right) — semantic meta-action placement |
+| Rate-limit thread-safety | `api/index.py` | `_RATE_LIMIT_LOCK` wraps read-modify-write of `_RATE_LIMIT_STORE` so concurrent requests are safe |
+| Line config wired from model-config | `api/index.py`, `api/line_engine.py` | `run_line_engine(projections, games, line_config)`; `min_confidence` and `min_edge_pct` filter candidates; Ben can tune via `line` section |
 
 ## Production audit
 

@@ -59,6 +59,12 @@
       --radius-pill: 9999px;
       --radius-card: 14px;
       --tracking-caps: 0.06em;
+      /* Decorative one-offs (injury, line under, oracle, date chip) */
+      --color-injury-bg: #3B1C1C;
+      --color-line-under: #5eead4;
+      --color-oracle-label: #81D4FA;
+      --color-date-chip-bg: #1E2633;
+      --color-date-chip-hover: #243040;
     }
 
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -309,7 +315,7 @@
       padding: 1px 5px; font-size: 0.6rem; margin-left: 4px;
     }
     .injury-badge {
-      background: #3B1C1C; color: var(--color-danger);
+      background: var(--color-injury-bg); color: var(--color-danger);
       border: 1px solid rgba(255,180,180,0.2); border-radius: 3px;
       padding: 1px 5px; font-size: 0.55rem; font-weight: 800;
       letter-spacing: 0.08em;
@@ -523,6 +529,7 @@
     .empty-state .icon { font-size: 2rem; margin-bottom: 10px; display: block; }
     .empty-state p { font-size: 0.82rem; line-height: 1.55; }
 
+    /* Legacy / unused — candidates for future cleanup: placeholder-page, modal-overlay, modal-box, result-badge, winning-draft-* */
     .placeholder-page {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       min-height: 40vh; text-align: center; padding: 48px 24px;
@@ -607,11 +614,11 @@
       flex-shrink: 0;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       padding: 8px 12px;
-      background: #1E2633; border: 1px solid var(--border);
+      background: var(--color-date-chip-bg); border: 1px solid var(--border);
       border-radius: var(--radius-card); cursor: pointer; transition: all 0.2s;
       min-width: 52px;
     }
-    .date-chip:hover { border-color: var(--border-bright); background: #243040; }
+    .date-chip:hover { border-color: var(--border-bright); background: var(--color-date-chip-hover); }
     .date-chip.active {
       background: rgba(79,142,247,0.12);
       border-color: var(--chalk);
@@ -840,7 +847,7 @@
       padding: 5px 14px; border-radius: 6px;
     }
     .line-direction-pill.over  { background: rgba(212,166,64,0.18); color: var(--line); border: 1px solid rgba(212,166,64,0.45); }
-    .line-direction-pill.under { background: rgba(20,184,166,0.18); color: #5eead4;    border: 1px solid rgba(20,184,166,0.45); }
+    .line-direction-pill.under { background: rgba(20,184,166,0.18); color: var(--color-line-under); border: 1px solid rgba(20,184,166,0.45); }
     .line-stat-val {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1.6rem; font-weight: 900; color: var(--text); line-height: 1;
@@ -1025,6 +1032,7 @@
     }
     #oracleLoader.visible { opacity: 1; pointer-events: all; }
 
+    /* Loader colors (magic8-ball, oracle) are intentional one-offs — no design token. */
     .magic8-ball {
       width: 130px; height: 130px; border-radius: 50%;
       background: radial-gradient(circle at 38% 34%, #1e2235 0%, #090c14 60%, #030508 100%);
@@ -1089,7 +1097,7 @@
     .oracle-label {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
-      text-transform: uppercase; color: #81D4FA;
+      text-transform: uppercase; color: var(--color-oracle-label);
       text-shadow: 0 0 12px rgba(129,212,250,0.4), 0 0 24px rgba(129,212,250,0.15);
       animation: textPulse 2s ease-in-out infinite;
     }
@@ -1196,9 +1204,9 @@
         <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Starting 5</button>
         <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🚀 Moonshot</button>
       </div>
-      <div id="gameScriptBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:8px 14px;margin:8px 0 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px"></div>
-      <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px"></div>
-      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:var(--color-danger);padding:6px 12px;text-align:center;letter-spacing:0.3px;background:#3B1C1C;border:1px solid rgba(255,180,180,0.2);border-radius:var(--radius-card);margin-bottom:14px"></div>
+      <div id="gameScriptBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:8px 14px;margin:8px 0 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card)"></div>
+      <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-card)"></div>
+      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:var(--color-danger);padding:6px 12px;text-align:center;letter-spacing:0.3px;background:var(--color-injury-bg);border:1px solid rgba(255,180,180,0.2);border-radius:var(--radius-card);margin-bottom:14px"></div>
       <div id="picksList"></div>
     </div>
 
@@ -1308,15 +1316,15 @@
             📸 Real Scores
           </button>
           <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             🏆 Top Drafts
           </button>
           <button id="benBannerS5Btn" onclick="_benTriggerUpload('starting_5','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             ⚡ Starting 5
           </button>
           <button id="benBannerMSBtn" onclick="_benTriggerUpload('moonshot','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             🚀 Moonshot
           </button>
         </div>
@@ -1346,7 +1354,7 @@
       <!-- Input — pure chat -->
       <div id="labInputWrap" style="background:var(--bg)">
         <!-- Photo preview pill (shown when image is attached) -->
-        <div id="labPhotoPreview" style="display:none;align-items:center;gap:8px;margin-bottom:8px;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:8px 10px">
+        <div id="labPhotoPreview" style="display:none;align-items:center;gap:8px;margin-bottom:8px;background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);padding:8px 10px">
           <img id="labPhotoThumb" src="" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0">
           <span style="flex:1;font-size:0.72rem;color:var(--text-dim);font-family:'Barlow',sans-serif">Screenshot attached</span>
           <button onclick="_labClearPhoto()" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1">×</button>
@@ -1354,7 +1362,7 @@
         <div style="display:flex;gap:8px;align-items:center">
           <input type="file" id="labPhotoInput" accept="image/*" tabindex="-1" aria-hidden="true" style="display:none" onchange="_labAttachPhoto(this.files[0]);this.value=''">
           <button id="labPhotoBtn" tabindex="-1" onclick="document.getElementById('labPhotoInput').click()" title="Attach screenshot"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:background 0.15s">
+            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:background 0.15s">
             📷
           </button>
           <input type="text" id="labInput" placeholder="Ask Ben anything..."
@@ -2922,11 +2930,11 @@ function renderLineHistory(hist) {
     const streakColor = streakLabel === 'hit' ? 'var(--green)' : 'var(--red)';
     statsHtml = `
     <div style="display:flex;gap:16px;margin-bottom:14px">
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate}</div>
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
       </div>
-      ${streakNum ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      ${streakNum ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${streakColor};line-height:1">${streakNum}× ${streakLabel.toUpperCase()}</div>
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-top:3px">Streak</div>
       </div>` : ''}
@@ -3030,11 +3038,11 @@ function filterLineHistory(dir) {
     const streakColor = streakType === 'hit' ? 'var(--green)' : 'var(--red)';
     statsHtml = `
     <div style="display:flex;gap:16px;margin-bottom:14px">
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--line)">${hitRate !== null ? hitRate + '%' : '—'}</div>
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>
       </div>
-      ${streak ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      ${streak ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${streakColor};line-height:1">${streak}× ${(streakType||'').toUpperCase()}</div>
         <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-top:3px">Streak</div>
       </div>` : ''}

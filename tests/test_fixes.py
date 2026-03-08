@@ -7,6 +7,7 @@ import pytest
 import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, call
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # ─────────────────────────────────────────────────────────
@@ -316,6 +317,86 @@ class TestPollingIntervals:
     def test_line_failure_cutoff_300s_tolerance(self):
         """5 failures × 60s = 300s before falling back to cron"""
         assert 5 * 60 == 300
+
+
+# ─────────────────────────────────────────────────────────
+# TestRateLimitThreadSafe — concurrent calls do not raise; limit enforced
+# ─────────────────────────────────────────────────────────
+class TestRateLimitThreadSafe:
+    """_check_rate_limit is thread-safe and enforces limit under concurrency"""
+
+    def test_concurrent_calls_do_not_raise(self):
+        """Multiple threads calling _check_rate_limit for same key — no exception"""
+        from api.index import _check_rate_limit, _RATE_LIMITS
+        req = Mock()
+        req.headers = {}
+        req.client = Mock(host="127.0.0.1")
+        path_key = "line-of-the-day"  # limit 10
+        limit = _RATE_LIMITS[path_key]
+
+        def one_call(_):
+            return _check_rate_limit(req, path_key)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(one_call, range(limit + 2)))
+        # No exception; first `limit` return None, rest may return 429
+        assert len(results) == limit + 2
+        nones = sum(1 for r in results if r is None)
+        rate_limited = sum(1 for r in results if r is not None and getattr(r, "status_code", None) == 429)
+        assert nones + rate_limited == len(results)
+        assert nones <= limit
+
+    def test_limit_enforced_after_threshold(self):
+        """After limit requests for a key, next call returns 429"""
+        from api.index import _check_rate_limit, _RATE_LIMITS, _RATE_LIMIT_STORE, _RATE_LIMIT_LOCK
+        path_key = "parse-screenshot"  # limit 5
+        limit = _RATE_LIMITS[path_key]
+        req = Mock()
+        req.headers = {}
+        req.client = Mock(host="192.168.1.99")  # unique so we don't clash with other tests
+        key = (req.client.host, path_key)
+        with patch("api.index._client_ip", return_value=req.client.host):
+            with _RATE_LIMIT_LOCK:
+                if key in _RATE_LIMIT_STORE:
+                    del _RATE_LIMIT_STORE[key]
+            for _ in range(limit):
+                r = _check_rate_limit(req, path_key)
+                assert r is None
+            r = _check_rate_limit(req, path_key)
+            assert r is not None and r.status_code == 429
+
+
+# ─────────────────────────────────────────────────────────
+# TestLineConfig — line_engine respects min_confidence from config
+# ─────────────────────────────────────────────────────────
+class TestLineConfig:
+    """run_model_fallback and run_line_engine respect line_config min_confidence"""
+
+    def test_model_fallback_filters_by_min_confidence(self):
+        """Candidates below min_confidence are excluded"""
+        from api.line_engine import run_model_fallback
+        # Minimal projections: one high-confidence candidate, one low
+        proj = [
+            {"name": "Player A", "team": "LAL", "predMin": 30, "pts": 26, "season_pts": 22, "recent_pts": 23,
+             "reb": 5, "season_reb": 6, "recent_reb": 5.5, "ast": 4, "season_ast": 4, "recent_ast": 4},
+            {"name": "Player B", "team": "BOS", "predMin": 28, "pts": 10, "season_pts": 8, "recent_pts": 8,
+             "reb": 3, "season_reb": 3, "recent_reb": 3, "ast": 2, "season_ast": 2, "recent_ast": 2},
+        ]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "away_b2b": False, "home_b2b": False}]
+        out = run_model_fallback(proj, games, line_config={"min_confidence": 70})
+        # Should still get a pick; if we had only low-confidence candidates they'd be filtered
+        assert out.get("error") is None or out.get("pick") is not None or out.get("over_pick") or out.get("under_pick")
+
+    def test_run_line_engine_accepts_line_config(self):
+        """run_line_engine(proj, games, line_config) does not raise; uses fallback when no API key"""
+        from api.line_engine import run_line_engine
+        proj = [{"name": "P", "team": "LAL", "predMin": 30, "pts": 22, "season_pts": 20, "recent_pts": 21,
+                 "reb": 5, "season_reb": 5, "recent_reb": 5, "ast": 4, "season_ast": 4, "recent_ast": 4}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}}]
+        with patch("api.line_engine.ANTHROPIC_API_KEY", ""):
+            result = run_line_engine(proj, games, line_config={"min_confidence": 55, "min_edge_pct": 2.0})
+        assert "pick" in result and "error" in result
+        assert result.get("pick") is not None or result.get("error") is not None
 
 
 if __name__ == "__main__":

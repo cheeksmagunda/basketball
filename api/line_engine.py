@@ -231,16 +231,19 @@ def _run_parallel_claude(projections, games):
 # ALGORITHMIC FALLBACK — pure ESPN model, no external API calls
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_model_fallback(projections, games):
+def run_model_fallback(projections, games, line_config=None):
     """
     Algorithmic pick when Claude API is unavailable.
     Scores edges across points, rebounds, and assists; picks the highest-confidence one.
+    line_config: optional dict with min_confidence, min_edge_pct (from model-config line section).
     """
     if not projections:
         return {"pick": None, "error": "no_projections"}
 
     game_ctx_map = _game_lookup_from_games(games)
     candidates = []
+    min_confidence = (line_config or {}).get("min_confidence", 50)
+    min_edge_pct = (line_config or {}).get("min_edge_pct", 0.0)
 
     stat_configs = [
         ("points",   "pts",  "season_pts",  "recent_pts",  8.0, 18),
@@ -290,6 +293,9 @@ def run_model_fallback(projections, games):
                 f"Model projects {proj_val:.1f} {stat_type} — a {abs(edge):.1f} edge "
                 f"vs the {line:.1f} season baseline at {confidence}% confidence."
             )
+            edge_pct = (abs(edge) / line * 100.0) if line and line > 0 else 0.0
+            if confidence < min_confidence or (min_edge_pct > 0 and edge_pct < min_edge_pct):
+                continue
             candidates.append({
                 "player_name": p["name"], "player_id": p.get("id", ""),
                 "team": team_abbr, "opponent": opponent,
@@ -322,25 +328,28 @@ def run_model_fallback(projections, games):
 # MAIN ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_line_engine(projections, games):
+def run_line_engine(projections, games, line_config=None):
     """
     Main entry point. Uses Claude Haiku to reason about ESPN projection data
     and pick today's best player prop edge. Falls back to algorithmic model
     if Claude API is unavailable.
+    line_config: optional dict (e.g. from model-config "line" section) with min_confidence, min_edge_pct.
     """
     if not games:
         return {"pick": None, "error": "no_games"}
     if not projections:
         return {"pick": None, "error": "no_projections"}
 
+    min_confidence = (line_config or {}).get("min_confidence", 50)
+
     if not ANTHROPIC_API_KEY:
-        return run_model_fallback(projections, games)
+        return run_model_fallback(projections, games, line_config)
 
     over_data, under_data = _run_parallel_claude(projections, games)
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")
-        return run_model_fallback(projections, games)
+        return run_model_fallback(projections, games, line_config)
 
     def _build_pick(pd):
         if not pd:
@@ -371,9 +380,15 @@ def run_line_engine(projections, games):
     over_pick  = _build_pick(over_data)
     under_pick = _build_pick(under_data)
 
+    # Enforce min_confidence: reject Claude picks below threshold
+    if over_pick and over_pick.get("confidence", 0) < min_confidence:
+        over_pick = None
+    if under_pick and under_pick.get("confidence", 0) < min_confidence:
+        under_pick = None
+
     # Fill missing direction from algorithmic fallback
     if not over_pick or not under_pick:
-        fallback = run_model_fallback(projections, games)
+        fallback = run_model_fallback(projections, games, line_config)
         if not over_pick:
             over_pick = fallback.get("over_pick")
         if not under_pick:

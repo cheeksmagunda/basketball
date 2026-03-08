@@ -7,6 +7,7 @@ import unicodedata
 import pickle
 import os
 import base64
+import threading
 import time
 import uuid
 import numpy as np
@@ -1722,8 +1723,9 @@ def _get_injuries(game):
 # ═════════════════════════════════════════════════════════════════════════════
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 
-# Rate limiting: in-memory sliding window per IP for expensive endpoints
+# Rate limiting: in-memory sliding window per IP for expensive endpoints (thread-safe)
 _RATE_LIMIT_STORE = {}  # (ip, path_key) -> [timestamps]
+_RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_WINDOW = 60  # seconds
 _RATE_LIMITS = {"parse-screenshot": 5, "lab/chat": 20, "line-of-the-day": 10}
 
@@ -1738,14 +1740,15 @@ def _check_rate_limit(request: Request, path_key: str):
     ip = _client_ip(request)
     key = (ip, path_key)
     now = datetime.now(timezone.utc).timestamp()
-    if key not in _RATE_LIMIT_STORE:
-        _RATE_LIMIT_STORE[key] = []
-    times = _RATE_LIMIT_STORE[key]
-    times[:] = [t for t in times if now - t < _RATE_LIMIT_WINDOW]
-    limit = _RATE_LIMITS[path_key]
-    if len(times) >= limit:
-        return JSONResponse({"error": "Too many requests", "retry_after": _RATE_LIMIT_WINDOW}, status_code=429)
-    times.append(now)
+    with _RATE_LIMIT_LOCK:
+        if key not in _RATE_LIMIT_STORE:
+            _RATE_LIMIT_STORE[key] = []
+        times = _RATE_LIMIT_STORE[key]
+        times[:] = [t for t in times if now - t < _RATE_LIMIT_WINDOW]
+        limit = _RATE_LIMITS[path_key]
+        if len(times) >= limit:
+            return JSONResponse({"error": "Too many requests", "retry_after": _RATE_LIMIT_WINDOW}, status_code=429)
+        times.append(now)
     return None
 
 
@@ -2749,7 +2752,8 @@ async def _run_line_engine_for_date(date):
                 except Exception as e: print(f"line proj err: {e}")
     if not all_proj:
         return None, "no_projections"
-    result = run_line_engine(all_proj, draftable)
+    line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
+    result = run_line_engine(all_proj, draftable, line_config)
     return result, None
 
 
