@@ -3018,11 +3018,6 @@ async def _run_line_engine_for_date(date):
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
-    if not all_proj and not draftable:
-        # All games past lock window + no cached projections (cold start).
-        # Don't attempt expensive _run_game + Claude/Odds calls for completed games —
-        # odds won't be available and projections would timeout for nothing.
-        return None, "games_complete"
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in target_games}):
@@ -3146,6 +3141,16 @@ async def get_line_of_the_day(request: Request):
                 l5 = _get_last5_game_stats(pick["player_name"], pick["stat_type"])
                 if l5 is not None:
                     pick["recent_form_values"] = l5
+        # Auto-save to GitHub so picks persist across cold starts and future visits.
+        # Without this, picks only exist in memory/cache and are lost on cold start.
+        try:
+            json_path = f"data/lines/{today_str}_pick.json"
+            existing_json, _ = _github_get_file(json_path)
+            if not existing_json:
+                saves = {"over_pick": eng_result.get("over_pick"), "under_pick": eng_result.get("under_pick")}
+                _github_write_file(json_path, json.dumps(saves), f"line picks for {today_str}")
+        except Exception as _save_err:
+            print(f"[line-of-the-day] auto-save err: {_save_err}")
         _cs("line_v1", eng_result)
         return JSONResponse(eng_result)
     except Exception as e:
