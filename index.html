@@ -1467,6 +1467,7 @@ const LOG = {
   data: null,            // {date, scopes, actuals}
   currentTab: 'chalk',
   dateCache: {},        // { [dateStr]: { data, loadedAt } }
+  _refetchedToday: false, // guard against re-fetch loops in renderLogGrid
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -1652,6 +1653,7 @@ function hideLoader() {
   // Show predict sub-nav on initial load (Predict is the default tab)
   document.getElementById('predictSubNav').style.display = 'flex';
   loadSlate(); // non-blocking: slate and game dropdown populate when /api/slate returns (loadSlate calls populateGameSelector on success)
+  initGameSelector(); // parallel fallback: fills game dropdown from /api/games independently
 })();
 
 // ════════════════════════════════════════════════════════════════════
@@ -2207,6 +2209,7 @@ async function initLogPage() {
   const todayStr = toLocalISO(today);
 
   LOG.selectedDate = todayStr;
+  LOG._refetchedToday = false;
   closeLogDrilldown();
   buildLogDateStrip();
   LOG.data = null;
@@ -2239,6 +2242,7 @@ async function selectLogDate(dateStr) {
   document.querySelectorAll('.date-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.date === dateStr));
   LOG.selectedDate = dateStr;
+  LOG._refetchedToday = false;
   closeLogDrilldown();
 
   const cached = LOG.dateCache[dateStr];
@@ -2278,6 +2282,38 @@ function renderLogGrid(dateStr) {
   label.textContent = dateLabel;
 
   if (!data || !data.has_predictions) {
+    var _todayET = _etToday();
+    var _isToday = dateStr === _todayET;
+    var _slateLocked = SLATE && SLATE.locked;
+
+    if (_isToday && !_slateLocked) {
+      // Pre-lock: predictions save at lock time — show friendly message
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">🔮</span><p>The Oracle cannot be rushed — drafts logged at event start.</p></div>`;
+      return;
+    }
+
+    if (_isToday && _slateLocked && !LOG._refetchedToday) {
+      // Post-lock but stale cache: invalidate and re-fetch (predictions should exist now)
+      LOG._refetchedToday = true;
+      delete LOG.dateCache[dateStr];
+      LOG.data = null;
+      LOG_STATE = asyncStateLoading(LOG_STATE);
+      _renderLogGridFromState(dateStr);
+      fetchWithTimeout('/api/log/get?date=' + dateStr).then(function(r) {
+        if (!r.ok) throw new Error('Failed');
+        return r.json();
+      }).then(function(freshData) {
+        LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() };
+        LOG.data = freshData;
+        LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
+        renderLogGrid(dateStr);
+      }).catch(function() {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>';
+      });
+      return;
+    }
+
+    // Historical date or already refetched: show definitive message
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>`;
     return;
   }
@@ -2869,35 +2905,46 @@ async function fetchLineOfTheDay() {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
   _renderLineLOTDFromState();
   fetch('/api/auto-resolve-line').catch(function(){});
-  let r;
-  try {
-    r = await fetchWithTimeout('/api/line-of-the-day', {}, 25000);
-    if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
-    const data = await r.json();
-    LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
-    _renderLineLOTDFromState();
-    if (data.pick) {
-      _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-      try {
-        const _slr = await fetchWithTimeout('/api/save-line', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-        });
-        if (!_slr.ok) console.warn('save-line failed:', _slr.status);
-      } catch(e) { /* non-fatal */ }
-      const primaryPick = data.pick;
-      const pickResult = primaryPick && primaryPick.result;
-      if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
-        await _tryAutoResolveLine(primaryPick);
+
+  var _lineMaxAttempts = 2;
+  var _lineLastErr;
+  for (var _lineAttempt = 1; _lineAttempt <= _lineMaxAttempts; _lineAttempt++) {
+    var r;
+    try {
+      r = await fetchWithTimeout('/api/line-of-the-day', {}, 45000);
+      if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
+      var data = await r.json();
+      LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
+      _renderLineLOTDFromState();
+      if (data.pick) {
+        _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+        try {
+          var _slr = await fetchWithTimeout('/api/save-line', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
+          });
+          if (!_slr.ok) console.warn('save-line failed:', _slr.status);
+        } catch(e) { /* non-fatal */ }
+        var primaryPick = data.pick;
+        var pickResult = primaryPick && primaryPick.result;
+        if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
+          await _tryAutoResolveLine(primaryPick);
+        }
+      }
+      return; // success — exit
+    } catch(e) {
+      _lineLastErr = e;
+      var reason = classifyFetchError(e, r);
+      console.warn('[line-of-the-day] attempt ' + _lineAttempt + ' failed:', reason, e && e.message ? e.message : '');
+      if (_lineAttempt < _lineMaxAttempts) {
+        await new Promise(function(resolve) { setTimeout(resolve, 3000); }); // 3s backoff
       }
     }
-  } catch(e) {
-    const reason = classifyFetchError(e, r);
-    console.warn('[line-of-the-day] failed:', reason, e.message || '');
-    LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
-    _renderLineLOTDFromState();
   }
+  // All attempts exhausted
+  LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, _lineLastErr);
+  _renderLineLOTDFromState();
 }
 
 function retryLineOfTheDay() {
@@ -2953,6 +3000,8 @@ async function initLinePage() {
   }
   LINE_LOADED_DATE = todayET;
   document.getElementById('lineHistoryWrap').style.display = 'none';
+  // Pre-warm backend on cold start (non-blocking, same pattern as Lab page)
+  fetchWithTimeout('/api/health', {}, 10000).catch(function(){});
   fetchLineOfTheDay();
   fetchLineHistory();
 }
@@ -3395,7 +3444,7 @@ async function initLabPage() {
   var _ub0 = _el('benUploadBanner');
   if (_ub0) _ub0.style.display = 'none';
 
-  try { await fetchWithTimeout('/api/health', {}, 10000); } catch(e) {}
+  fetchWithTimeout('/api/health', {}, 10000).catch(function(){}); // pre-warm (non-blocking)
 
   try {
     const r = await fetchWithTimeout('/api/lab/status', {}, 30000);
@@ -3540,35 +3589,33 @@ async function showLabUnlocked(status) {
   // Explicitly stop lock polling to prevent memory leak on rapid flickers
   if (LAB._lockPoll) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
 
-  [_el('labConnectionError'), _el('labLocked')].forEach(e => { if (e) e.style.display = 'none'; });
+  [_el('labConnectionError'), _el('labLocked'), _el('labLoading')].forEach(e => { if (e) e.style.display = 'none'; });
   const labUnlockedShow = _el('labUnlocked');
   if (labUnlockedShow) labUnlockedShow.style.display = 'flex';
 
-  // Load briefing + config + line data + slate + today's log in parallel (silently)
-  const [briefingRes, configRes, lineRes, slateRes, logRes] = await Promise.allSettled([
+  // Show chat UI immediately with whatever context is available
+  if (!LAB.system) LAB.system = buildLabSystemPrompt();
+
+  // Load context data in background (non-blocking) — chat is usable while this runs
+  Promise.allSettled([
     fetchWithTimeout('/api/lab/briefing', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     fetchWithTimeout('/api/lab/config-history', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     fetchWithTimeout('/api/line-of-the-day', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     fetchWithTimeout(`/api/log/get?date=${_etToday()}`).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-  ]);
-
-  if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
-  if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
-  if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
-  if (slateRes.status === 'fulfilled')    LAB.slateData = slateRes.value;
-  const _todayLog = logRes.status === 'fulfilled' ? logRes.value : null;
-
-  // Build system prompt (context is ready; user starts the conversation)
-  LAB.system = buildLabSystemPrompt();
-
-  // Upload banner state is now initialized by _initUploadBanner() which runs
-  // in both locked and unlocked paths — see initLabPage.
-  _initUploadBanner();
-  // Also trigger EOD chat bubble + hindsight once games are actually final
-  if (LAB.messages.filter(m => !m.hidden).length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
-    _renderBenEodPrompt();
-  }
+  ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes]) {
+    if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
+    if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
+    if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
+    if (slateRes.status === 'fulfilled')    LAB.slateData = slateRes.value;
+    // Rebuild system prompt with full context
+    LAB.system = buildLabSystemPrompt();
+    // Upload banner (needs briefing data)
+    _initUploadBanner();
+    if (LAB.messages.filter(function(m) { return !m.hidden; }).length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
+      _renderBenEodPrompt();
+    }
+  });
 }
 
 function buildLabSystemPrompt() {
