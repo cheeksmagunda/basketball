@@ -3018,6 +3018,11 @@ async def _run_line_engine_for_date(date):
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
+    if not all_proj and not draftable:
+        # All games past lock window + no cached projections (cold start).
+        # Don't attempt expensive _run_game + Claude/Odds calls for completed games —
+        # odds won't be available and projections would timeout for nothing.
+        return None, "games_complete"
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in target_games}):

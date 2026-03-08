@@ -2830,11 +2830,12 @@ function _renderLineLOTDFromState() {
         no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',
         no_edges:         "No strong edges found on today's props. Check back closer to tip-off.",
+        games_complete:   "Today's games are complete. No line pick was generated for this slate.",
         odds_unavailable: 'Odds API unavailable. Try refreshing.',
         no_projections:   'Could not load player projections.',
         server_error:    'Line pick service temporarily unavailable. Tap Retry.',
       };
-      const icons = { no_games: '🏀', no_edges: '📊', no_api_key: '🔑', default: '📡' };
+      const icons = { no_games: '🏀', no_edges: '📊', games_complete: '🏁', no_api_key: '🔑', default: '📡' };
       if (lineEmptyEl) {
         const icon = lineEmptyEl.querySelector('.icon');
         if (icon) icon.textContent = icons[data.error] || icons.default;
