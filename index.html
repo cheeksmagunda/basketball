@@ -2910,7 +2910,7 @@ async function initLabPage() {
   document.getElementById('labUnlocked').style.display = 'none';
 
   try {
-    const r = await fetchWithTimeout('/api/lab/status', {}, 10000);
+    const r = await fetchWithTimeout('/api/lab/status', {}, 20000);
     if (!r.ok) throw new Error('Failed to load Lab status: HTTP ' + r.status);
     const status = await r.json();
     document.getElementById('labLoading').style.display = 'none';
@@ -2921,13 +2921,10 @@ async function initLabPage() {
       await showLabUnlocked(status);
     }
   } catch(e) {
-    // Default to LOCKED on API failure — never show unlocked state without
-    // positive confirmation from the backend. Unlocking on error was allowing
-    // chat + uploads during live games when the API was unreachable.
     document.getElementById('labLoading').style.display = 'none';
     document.getElementById('labLocked').style.display = 'block';
-    document.getElementById('labLockedReason').textContent = 'Unable to reach server — defaulting to locked';
-    document.getElementById('labLockedUnlock').textContent = '';
+    document.getElementById('labLockedReason').innerHTML = 'Unable to reach server — defaulting to locked';
+    document.getElementById('labLockedUnlock').innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
   }
 }
 
