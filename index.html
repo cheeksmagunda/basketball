@@ -1124,7 +1124,7 @@
   <div id="tab-line" class="tab-page">
     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;margin-bottom:12px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Line of the Day</div>
-      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetch('/api/refresh-line-odds');}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetchWithTimeout('/api/refresh-line-odds', {}, 10000);}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <!-- Over | Under direction filter — inline at top, matches Slate-Wide | Game tabs -->
     <div class="predict-sub-nav" id="lineSubNav" style="margin-top:14px">
@@ -1256,6 +1256,38 @@
 </div>
 
 <script>
+// ════════════════════════════════════════════════════════════════════
+// FETCH TIMEOUT WRAPPER — Prevent indefinite hangs on slow backend
+// ════════════════════════════════════════════════════════════════════
+/**
+ * fetchWithTimeout(url, options, timeoutMs)
+ * Wraps fetch() with a timeout using Promise.race().
+ * If timeout expires, aborts the request and rejects.
+ * @param {string} url - Fetch URL
+ * @param {object} options - Standard fetch options
+ * @param {number} timeoutMs - Timeout in milliseconds (default 10s for blocking, 30s for screenshot)
+ * @returns {Promise} - fetch response or timeout error
+ */
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  options.signal = controller.signal;
+
+  return fetch(url, options)
+    .then(response => {
+      clearTimeout(timeoutId);
+      return response;
+    })
+    .catch(error => {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error(`Fetch timeout after ${timeoutMs}ms: ${url}`);
+      }
+      throw error;
+    });
+}
+
 // ════════════════════════════════════════════════════════════════════
 // CONSTANTS — grep: TEAM_COLORS, team colors, accent bar, tcolor
 // ════════════════════════════════════════════════════════════════════
@@ -1465,7 +1497,7 @@ async function initGameSelector() {
   const sel = document.getElementById('gameSel');
   const btn = document.getElementById('analyzeBtn');
   try {
-    const r = await fetch('/api/games');
+    const r = await fetchWithTimeout('/api/games', {}, 10000);
     if (!r.ok) throw new Error('Failed to load games (' + r.status + ')');
     const games = await r.json();
     if (!games.length) {
@@ -1498,7 +1530,7 @@ async function loadSlate() {
   showLoader();
   renderSkeletons('slateList', 5);
   try {
-    const r = await fetch('/api/slate');
+    const r = await fetchWithTimeout('/api/slate', {}, 10000);
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
@@ -1813,7 +1845,7 @@ async function savePredictions() {
   if (!SLATE || !SLATE.locked) return;
   _predSavedDate = today;
   try {
-    const r = await fetch('/api/save-predictions', { method: 'POST' });
+    const r = await fetchWithTimeout('/api/save-predictions', { method: 'POST' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
   } catch(e) {
     _predSavedDate = ''; // allow retry on next call
@@ -1833,7 +1865,7 @@ async function initLogPage() {
 
   // Load dates with data
   try {
-    const r = await fetch('/api/log/dates');
+    const r = await fetchWithTimeout('/api/log/dates');
     if (r.ok) {
       const dates = await r.json();
       dates.forEach(d => LOG.datesWithData.add(d));
@@ -1882,7 +1914,7 @@ async function selectLogDate(dateStr) {
   grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">⏳</span><p>Loading...</p></div>`;
 
   try {
-    const r = await fetch(`/api/log/get?date=${dateStr}`);
+    const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`);
     if (!r.ok) throw new Error('Failed to load log data');
     LOG.data = await r.json();
   } catch(e) {
@@ -2129,7 +2161,7 @@ async function _handleBenUpload(file, type, source) {
   try {
     const form = new FormData();
     form.append('file', file);
-    const r = await fetch('/api/parse-screenshot', { method: 'POST', body: form });
+    const r = await fetchWithTimeout('/api/parse-screenshot', { method: 'POST', body: form }, 30000);
     if (!r.ok) throw new Error('Upload failed (HTTP ' + r.status + ')');
     const data = await r.json();
     if (!data.players?.length) throw new Error(data.error || 'No players found');
@@ -2141,7 +2173,7 @@ async function _handleBenUpload(file, type, source) {
       // All three save to the same actuals CSV (merge by player name).
       // Tag source so we know where the data came from.
       const taggedPlayers = data.players.map(p => ({ ...p, source: type }));
-      const _saveRes = await fetch('/api/save-actuals', {
+      const _saveRes = await fetchWithTimeout('/api/save-actuals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: today, players: taggedPlayers }),
@@ -2181,7 +2213,7 @@ async function _handleBenUpload(file, type, source) {
         appendLabMessage('user', summary);
         if (type === 'real_scores') {
           try {
-            const freshBriefing = await fetch('/api/lab/briefing').then(r => r.ok ? r.json() : Promise.reject('briefing ' + r.status));
+            const freshBriefing = await fetchWithTimeout('/api/lab/briefing', {}, 10000).then(r => r.ok ? r.json() : Promise.reject('briefing ' + r.status));
             LAB.briefing = freshBriefing;
             LAB.system = buildLabSystemPrompt();
           } catch(e) {}
@@ -2240,7 +2272,7 @@ let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
 async function _tryAutoResolveLine(pick) {
   if (LINE_RESOLVE_POLL) { clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; }
   try {
-    const ar = await fetch('/api/auto-resolve-line');
+    const ar = await fetchWithTimeout('/api/auto-resolve-line');
     if (!ar.ok) return;
     const arData = await ar.json();
     if (arData.status === 'resolved' || arData.status === 'already_resolved') {
@@ -2271,7 +2303,7 @@ async function _startLineLivePoll(overPick, underPick) {
   if (LINE_LIVE_POLL) { clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null; }
 
   let failureCount = 0;  // Track consecutive API failures
-  const MAX_FAILURES = 3;  // Stop polling after 3 consecutive failures
+  const MAX_FAILURES = 5;  // Stop polling after 5 consecutive failures (150s tolerance for ESPN slowness)
 
   async function _fetchLive(pick) {
     if (!pick) return null;
@@ -2279,7 +2311,7 @@ async function _startLineLivePoll(overPick, underPick) {
       player_name: pick.player_name || '' });
     if (pick.player_id) p.set('player_id', pick.player_id);
     try {
-      const r = await fetch('/api/line-live-stat?' + p);
+      const r = await fetchWithTimeout('/api/line-live-stat?' + p);
       return r.ok ? r.json() : null;
     } catch(e) { return null; }
   }
@@ -2362,7 +2394,7 @@ async function initLinePage() {
     // Fire auto-resolve in background — resolves picks whose games have ended
     // without blocking page load. Next line-of-the-day call will see updated results.
     fetch('/api/auto-resolve-line').catch(function(){});
-    const r = await fetch('/api/line-of-the-day');
+    const r = await fetchWithTimeout('/api/line-of-the-day');
     if (!r.ok) throw new Error(`line-of-the-day error: ${r.status}`);
     const data = await r.json();
     document.getElementById('lineLoading').style.display = 'none';
@@ -2410,7 +2442,7 @@ async function initLinePage() {
 
     // Auto-save both picks
     try {
-      const _slr = await fetch('/api/save-line', {
+      const _slr = await fetchWithTimeout('/api/save-line', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
@@ -2437,7 +2469,7 @@ async function initLinePage() {
 
   // Load history
   try {
-    const hr = await fetch('/api/line-history');
+    const hr = await fetchWithTimeout('/api/line-history');
     if (hr.ok) {
       const hist = await hr.json();
       if (hist.picks && hist.picks.length) {
@@ -2735,7 +2767,7 @@ async function initLabPage() {
   document.getElementById('labUnlocked').style.display = 'none';
 
   try {
-    const r = await fetch('/api/lab/status');
+    const r = await fetchWithTimeout('/api/lab/status', {}, 10000);
     if (!r.ok) throw new Error('Failed to load Lab status: HTTP ' + r.status);
     const status = await r.json();
     document.getElementById('labLoading').style.display = 'none';
@@ -2780,7 +2812,7 @@ async function showLabLocked(status) {
     if (document.getElementById('labLocked').style.display === 'none') {
       clearInterval(LAB._lockPoll); LAB._lockPoll = null; return;
     }
-    fetch('/api/lab/status').then(function(r) { return r.ok ? r.json() : Promise.reject(); }).then(async function(s) {
+    fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(); }).then(async function(s) {
       var lockedVisible = document.getElementById('labLocked').style.display !== 'none';
       var unlockedVisible = document.getElementById('labUnlocked').style.display !== 'none';
       if (!s.locked && lockedVisible) {
@@ -2800,7 +2832,7 @@ async function showLabLocked(status) {
         _updateLabLockedStatus(s);
       }
     }).catch(function() {});
-  }, 3 * 60 * 1000);
+  }, 60000);  // 1 minute: faster unlock detection vs 3 min (improved responsiveness)
 }
 
 async function showLabUnlocked(status) {
@@ -2811,11 +2843,11 @@ async function showLabUnlocked(status) {
 
   // Load briefing + config + line data + slate + today's log in parallel (silently)
   const [briefingRes, configRes, lineRes, slateRes, logRes] = await Promise.allSettled([
-    fetch('/api/lab/briefing').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetch('/api/lab/config-history').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetch('/api/line-of-the-day').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetch('/api/slate').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetch(`/api/log/get?date=${_etToday()}`).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout('/api/lab/briefing', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout('/api/lab/config-history', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout('/api/line-of-the-day', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout(`/api/log/get?date=${_etToday()}`).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
   ]);
 
   if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
@@ -3064,7 +3096,7 @@ async function executeLabAction(action) {
   } else if (type === 'show_config') {
     const cfgEl = _labSpinner('Loading config...');
     try {
-      const r = await fetch('/api/lab/config-history');
+      const r = await fetchWithTimeout('/api/lab/config-history', {}, 10000);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       cfgEl.remove();
@@ -3074,7 +3106,7 @@ async function executeLabAction(action) {
 
   } else if (type === 'show_history') {
     try {
-      const r = await fetch('/api/lab/config-history');
+      const r = await fetchWithTimeout('/api/lab/config-history', {}, 10000);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       const changelogStr = (data.changelog || []).map(c => `v${c.version} (${c.date}): ${c.change}`).join('\n');

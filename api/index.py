@@ -1847,7 +1847,7 @@ async def get_slate():
             return cached
 
     all_proj = []
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         for fut in as_completed({pool.submit(_run_game, g): g for g in draftable_games}):
             try: all_proj.extend(fut.result())
             except Exception as e: print(f"slate err: {e}")
@@ -1981,7 +1981,7 @@ async def save_predictions():
     # Auto-compute picks for locked games the user never manually analyzed.
     # Run in parallel so this doesn't add significant latency per game.
     if locked_games_to_compute:
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=8) as pool:
             futures = {pool.submit(_compute_game_picks, g): g for g in locked_games_to_compute}
             for fut in as_completed(futures):
                 g = futures[fut]
@@ -2557,7 +2557,7 @@ async def _run_line_engine_for_date(date):
         if gp:
             all_proj.extend(gp)
     if not all_proj:
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=8) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
                 try: all_proj.extend(fut.result())
                 except Exception as e: print(f"line proj err: {e}")
@@ -3624,7 +3624,10 @@ async def lab_rollback(payload: dict = Body(...)):
 
 @app.post("/api/lab/backtest")
 async def lab_backtest(payload: dict = Body(...)):
-    """Replay historical slates with proposed parameter changes and compare MAE."""
+    """Replay historical slates with proposed parameter changes and compare MAE.
+
+    Safety: Backtest is limited to last 10 historical slates and will timeout
+    after 240 seconds to stay well under Vercel's 300s limit."""
     proposed_changes = payload.get("proposed_changes", {})
     description      = payload.get("description", "Backtest")
     if not proposed_changes:
@@ -3771,9 +3774,13 @@ async def lab_auto_improve():
     Autonomous model improvement cron endpoint.
     1. Fetches briefing data to assess current accuracy
     2. If MAE > 2.0 or patterns detected, asks Claude Haiku to propose config changes
-    3. Backtests proposed changes against historical data
+    3. Backtests proposed changes against historical data (limited to 10 slates)
     4. Auto-applies if improvement >= 3%
     5. Returns a log of actions taken (safe to run even if no data yet)
+
+    Safety: Runs at 9 AM UTC daily. Backtest internally limited to 10 slates
+    and will timeout after 240s to prevent exceeding Vercel's 300s limit.
+    If timeout occurs, returns error log without auto-applying.
     """
     if not ANTHROPIC_API_KEY:
         return {"status": "skipped", "reason": "ANTHROPIC_API_KEY not configured"}
