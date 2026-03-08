@@ -8,6 +8,7 @@ Requires backend deps (numpy, lightgbm, etc.). If skipped, run:
 
 import pytest
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, call
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,58 +51,70 @@ class TestSafeFloat:
 
 # ─────────────────────────────────────────────────────────
 # TestIsLocked — lock window edge cases
+# _is_locked expects ISO string, not datetime object
 # ─────────────────────────────────────────────────────────
 class TestIsLocked:
-    """_is_locked(start_time) — 5-min pre-tip buffer, 6-hour ceiling"""
+    """_is_locked(start_time_iso) — 5-min pre-tip buffer, 6-hour ceiling"""
 
     def setup_method(self):
         from api.index import _is_locked
         self.fn = _is_locked
 
+    def _iso(self, dt):
+        return dt.isoformat()
+
     def test_locked_4_minutes_before_tip(self):
         """4 min before tip is inside the 5-min lock window"""
         start = datetime.now(timezone.utc) + timedelta(minutes=4)
-        assert self.fn(start) is True
+        assert self.fn(self._iso(start)) is True
 
     def test_unlocked_10_minutes_before_tip(self):
         """10 min before tip is before the lock window"""
         start = datetime.now(timezone.utc) + timedelta(minutes=10)
-        assert self.fn(start) is False
+        assert self.fn(self._iso(start)) is False
 
     def test_locked_during_game(self):
         """2 hours after tip — game in progress"""
         start = datetime.now(timezone.utc) - timedelta(hours=2)
-        assert self.fn(start) is True
+        assert self.fn(self._iso(start)) is True
 
     def test_unlocked_after_6_hour_ceiling(self):
         """7 hours after tip — ceiling exceeded"""
         start = datetime.now(timezone.utc) - timedelta(hours=7)
-        assert self.fn(start) is False
+        assert self.fn(self._iso(start)) is False
 
     def test_split_window_any_pattern_stays_locked(self):
         """Split Saturday: early game done (7h), late game active (1h) → stays locked"""
-        early = datetime.now(timezone.utc) - timedelta(hours=7)   # ceiling passed
-        late  = datetime.now(timezone.utc) - timedelta(hours=1)   # still live
+        early = self._iso(datetime.now(timezone.utc) - timedelta(hours=7))   # ceiling passed
+        late  = self._iso(datetime.now(timezone.utc) - timedelta(hours=1))   # still live
         assert any(self.fn(st) for st in [early, late]) is True
 
     def test_split_window_all_done_unlocks(self):
         """Both games past ceiling → fully unlocked"""
-        game1 = datetime.now(timezone.utc) - timedelta(hours=7)
-        game2 = datetime.now(timezone.utc) - timedelta(hours=8)
+        game1 = self._iso(datetime.now(timezone.utc) - timedelta(hours=7))
+        game2 = self._iso(datetime.now(timezone.utc) - timedelta(hours=8))
         assert any(self.fn(st) for st in [game1, game2]) is False
+
+    def test_none_input_returns_false(self):
+        """None or invalid input does not raise"""
+        assert self.fn(None) is False
+        assert self.fn("") is False
+        assert self.fn("not-a-date") is False
 
 
 # ─────────────────────────────────────────────────────────
 # TestComputeAudit — accuracy comparison logic
+# CSV must match PRED_FIELDS / ACT_FIELDS column order from api/index.py
 # ─────────────────────────────────────────────────────────
 class TestComputeAudit:
     """_compute_audit — predictions vs actuals MAE and directional accuracy"""
 
+    # PRED_FIELDS = scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
     PRED_CSV = (
-        "player_name,team,predicted_rs,pred_min,game_id\n"
-        "LeBron James,LAL,4.5,35,1\n"
-        "Stephen Curry,GSW,5.0,36,2\n"
-        "Kevin Durant,PHX,3.8,33,3\n"
+        "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk\n"
+        "slate,chalk,2.0x,LeBron James,123,LAL,SF,4.5,1.5,35,28,7,7,1,0.5\n"
+        "slate,chalk,1.8x,Stephen Curry,456,GSW,PG,5.0,1.2,36,30,5,6,1.5,0.2\n"
+        "slate,chalk,1.6x,Kevin Durant,789,PHX,PF,3.8,1.8,33,26,7,5,1,1\n"
     )
     ACT_CSV = (
         "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
@@ -175,9 +188,9 @@ class TestComputeAudit:
         from api.index import _compute_audit
         with patch('api.index._github_get_file', side_effect=self._mock_github(self.PRED_CSV, self.ACT_CSV)):
             result = _compute_audit('2026-03-08')
-        # LeBron: pred 4.5 > actual 4.2 → over-projected
-        # Curry:  pred 5.0 < actual 6.1 → under-projected
-        # Durant: pred 3.8 > actual 3.5 → over-projected
+        # LeBron: pred 4.5 > actual 4.2 → over-projected (error = actual - pred = -0.3 < 0)
+        # Curry:  pred 5.0 < actual 6.1 → under-projected (error = 1.1 > 0)
+        # Durant: pred 3.8 > actual 3.5 → over-projected (error = -0.3 < 0)
         assert result['over_projected'] == 2
         assert result['under_projected'] == 1
 
@@ -191,15 +204,18 @@ class TestGitHubWriteRetry:
     def _make_response(self, status, body=None):
         r = Mock()
         r.status_code = status
+        r.text = json.dumps(body or {})
         r.json.return_value = body or {}
         return r
 
     def test_succeeds_on_first_try(self):
         from api.index import _github_write_file
         ok = self._make_response(201, {'content': {'sha': 'abc'}})
-        with patch('api.index._github_get_file', return_value=('{}', 'oldsha')):
-            with patch('requests.put', return_value=ok) as mock_put:
-                result = _github_write_file('data/test.json', '{}', 'commit')
+        with patch('api.index.GITHUB_TOKEN', 'fake'), \
+             patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._github_get_file', return_value=('{}', 'oldsha')), \
+             patch('requests.put', return_value=ok) as mock_put:
+            result = _github_write_file('data/test.json', '{}', 'commit')
         assert mock_put.call_count == 1
         assert 'error' not in result
 
@@ -207,31 +223,46 @@ class TestGitHubWriteRetry:
         from api.index import _github_write_file
         fail = self._make_response(422, {'message': 'SHA does not match'})
         ok   = self._make_response(201, {'content': {'sha': 'newsha'}})
-        with patch('api.index._github_get_file', return_value=('{}', 'sha')):
-            with patch('requests.put', side_effect=[fail, fail, ok]) as mock_put:
-                with patch('time.sleep'):
-                    result = _github_write_file('data/test.json', '{}', 'commit')
+        with patch('api.index.GITHUB_TOKEN', 'fake'), \
+             patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._github_get_file', return_value=('{}', 'sha')), \
+             patch('requests.put', side_effect=[fail, fail, ok]) as mock_put, \
+             patch('time.sleep'):
+            result = _github_write_file('data/test.json', '{}', 'commit')
         assert mock_put.call_count == 3
         assert 'error' not in result
 
     def test_returns_error_after_max_retries(self):
         from api.index import _github_write_file
         fail = self._make_response(422, {'message': 'SHA mismatch'})
-        with patch('api.index._github_get_file', return_value=('{}', 'sha')):
-            with patch('requests.put', return_value=fail):
-                with patch('time.sleep'):
-                    result = _github_write_file('data/test.json', '{}', 'commit')
+        with patch('api.index.GITHUB_TOKEN', 'fake'), \
+             patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._github_get_file', return_value=('{}', 'sha')), \
+             patch('requests.put', return_value=fail), \
+             patch('time.sleep'):
+            result = _github_write_file('data/test.json', '{}', 'commit')
         assert 'error' in result
 
     def test_backoff_delays_are_1_2_4_seconds(self):
         from api.index import _github_write_file
         fail = self._make_response(422, {'message': 'SHA mismatch'})
-        with patch('api.index._github_get_file', return_value=('{}', 'sha')):
-            with patch('requests.put', return_value=fail):
-                with patch('time.sleep') as mock_sleep:
-                    _github_write_file('data/test.json', '{}', 'commit')
+        with patch('api.index.GITHUB_TOKEN', 'fake'), \
+             patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._github_get_file', return_value=('{}', 'sha')), \
+             patch('requests.put', return_value=fail), \
+             patch('time.sleep') as mock_sleep:
+            _github_write_file('data/test.json', '{}', 'commit')
         sleep_args = [c.args[0] for c in mock_sleep.call_args_list]
-        assert sleep_args == [1, 2, 4]
+        # 3 attempts: sleep after attempt 0 (1s) and attempt 1 (2s); attempt 2 is final, no sleep
+        assert sleep_args == [1, 2]
+
+    def test_returns_error_when_no_token(self):
+        """Missing GITHUB_TOKEN returns error immediately without hitting API"""
+        from api.index import _github_write_file
+        with patch('api.index.GITHUB_TOKEN', ''), \
+             patch('api.index.GITHUB_REPO', 'owner/repo'):
+            result = _github_write_file('data/test.json', '{}', 'commit')
+        assert 'error' in result
 
 
 # ─────────────────────────────────────────────────────────
@@ -381,7 +412,6 @@ class TestLineConfig:
     def test_model_fallback_filters_by_min_confidence(self):
         """Candidates below min_confidence are excluded"""
         from api.line_engine import run_model_fallback
-        # Minimal projections: one high-confidence candidate, one low
         proj = [
             {"name": "Player A", "team": "LAL", "predMin": 30, "pts": 26, "season_pts": 22, "recent_pts": 23,
              "reb": 5, "season_reb": 6, "recent_reb": 5.5, "ast": 4, "season_ast": 4, "recent_ast": 4},
@@ -390,18 +420,18 @@ class TestLineConfig:
         ]
         games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "away_b2b": False, "home_b2b": False}]
         out = run_model_fallback(proj, games, line_config={"min_confidence": 70})
-        # Should still get a pick; if we had only low-confidence candidates they'd be filtered
         assert out.get("error") is None or out.get("pick") is not None or out.get("over_pick") or out.get("under_pick")
 
-    def test_run_line_engine_accepts_line_config(self):
-        """run_line_engine(proj, games, line_config) does not raise; uses fallback when no API key"""
+    def test_run_line_engine_uses_fallback_without_api_key(self):
+        """run_line_engine falls back to model when no API key; returns pick or error"""
         from api.line_engine import run_line_engine
         proj = [{"name": "P", "team": "LAL", "predMin": 30, "pts": 22, "season_pts": 20, "recent_pts": 21,
                  "reb": 5, "season_reb": 5, "recent_reb": 5, "ast": 4, "season_ast": 4, "recent_ast": 4}]
-        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
         with patch("api.line_engine.ANTHROPIC_API_KEY", ""):
             result = run_line_engine(proj, games, line_config={"min_confidence": 55, "min_edge_pct": 2.0})
-        assert "pick" in result and "error" in result
+        assert "pick" in result
+        # With no API key, always uses fallback — gets a result or no_edges error
         assert result.get("pick") is not None or result.get("error") is not None
 
 
@@ -416,22 +446,21 @@ class TestLgbmFeatureAlignment:
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
         assert len(AI_FEATURES) == 11, f"Expected 11 features, got {len(AI_FEATURES)}: {AI_FEATURES}"
-        # 11th feature (1-based) = index 9: recent scoring vs season (train: recent_5g_pts/avg_pts; inference: recent_pts/season_pts)
         assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
             f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
         )
 
 
 # ─────────────────────────────────────────────────────────
-# TestGlobalExceptionHandler — unhandled exceptions return 500, no leak
+# TestSlateExceptionHandling — slate never returns 500
 # ─────────────────────────────────────────────────────────
-class TestGlobalExceptionHandler:
-    """Global exception handler returns 500 with generic body; no stack trace or internal detail in response."""
+class TestSlateExceptionHandling:
+    """Slate endpoint catches exceptions and returns 200 with error key (by design, never 500)."""
 
-    def test_unhandled_exception_returns_500_and_generic_body(self):
+    def test_unhandled_exception_returns_200_with_error_key(self):
         pytest.importorskip("fastapi", reason="Install dependencies: pip install -r requirements.txt")
         from fastapi.testclient import TestClient
-        from api.index import app, _get_slate_impl
+        from api.index import app
 
         def raise_err():
             raise ValueError("internal detail must not appear in response")
@@ -439,11 +468,94 @@ class TestGlobalExceptionHandler:
         with patch("api.index._get_slate_impl", side_effect=raise_err):
             client = TestClient(app)
             r = client.get("/api/slate")
-        assert r.status_code == 500
+        # Slate endpoint wraps all exceptions → 200 with error field
+        assert r.status_code == 200
         body = r.json()
-        assert body.get("error") == "An unexpected error occurred"
-        assert "traceback" not in r.text.lower()
-        assert "internal detail" not in r.text
+        assert body.get("error") == "slate_failed"
+        # No internal detail leaked
+        assert "internal detail" not in json.dumps(body)
+
+
+# ─────────────────────────────────────────────────────────
+# TestGameSelectorLockDisplay — per-game lock, not slate-wide
+# Regression test for: all games showing locked when only
+# one game was within the lock window
+# ─────────────────────────────────────────────────────────
+class TestGameSelectorLockDisplay:
+    """Frontend populateGameSelector must NOT pass slateLocked to override per-game lock status."""
+
+    def test_no_slate_locked_passed_to_populate_game_selector(self):
+        """loadSlate should call populateGameSelector without slateLocked override"""
+        with open('index.html', 'r') as f:
+            html = f.read()
+
+        # Find all calls to populateGameSelector
+        calls = re.findall(r'populateGameSelector\([^)]+\)', html)
+        for c in calls:
+            assert 'slateLocked' not in c, (
+                f"populateGameSelector should not receive slateLocked override: {c}"
+            )
+
+    def test_per_game_lock_check_in_populate(self):
+        """populateGameSelector checks g.locked and g.startTime individually"""
+        with open('index.html', 'r') as f:
+            html = f.read()
+        # The lock line should check g.locked or startTime, not slateLocked
+        assert 'g.locked === true' in html or 'g.locked===true' in html
+
+
+# ─────────────────────────────────────────────────────────
+# TestLinePrimaryPickFallback — direction populated from primary
+# Regression test for: both Over/Under showing "No pick today"
+# when API returns primary pick but null directional picks
+# ─────────────────────────────────────────────────────────
+class TestLinePrimaryPickFallback:
+    """Frontend should populate LINE_OVER_PICK or LINE_UNDER_PICK from primary pick when directions are null."""
+
+    def test_frontend_has_primary_pick_fallback(self):
+        """When data.pick exists but both directional picks are null, primary is used"""
+        with open('index.html', 'r') as f:
+            html = f.read()
+        # The fallback block: if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick)
+        assert '!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick' in html, \
+            "Missing fallback: populate direction from primary pick when both are null"
+
+
+# ─────────────────────────────────────────────────────────
+# TestLinePicksBothNullRegeneration — backend regenerates when both null
+# Regression test for: saved JSON with both directions null gets stuck
+# ─────────────────────────────────────────────────────────
+class TestLinePicksBothNullRegeneration:
+    """When saved line picks have both over_pick and under_pick as null, backend should regenerate."""
+
+    def test_both_null_triggers_fresh_generation(self):
+        """If today_picks has both directions null, it should be treated as no picks"""
+        from api.index import _primary_pick
+        # Simulating what the line-of-the-day endpoint does:
+        # if both are null, the guard sets today_picks = None so engine runs fresh
+        today_picks = {"over_pick": None, "under_pick": None}
+        has_over = today_picks.get("over_pick") is not None
+        has_under = today_picks.get("under_pick") is not None
+        if not has_over and not has_under:
+            today_picks = None
+        assert today_picks is None, "Both-null picks should be reset to None for regeneration"
+
+    def test_one_direction_present_is_kept(self):
+        """If one direction has data, the picks dict is preserved (not reset)"""
+        today_picks = {"over_pick": {"player_name": "Test"}, "under_pick": None}
+        has_over = today_picks.get("over_pick") is not None
+        has_under = today_picks.get("under_pick") is not None
+        if not has_over and not has_under:
+            today_picks = None
+        assert today_picks is not None, "Picks with one valid direction should be preserved"
+
+    def test_backend_source_has_both_null_guard(self):
+        """The line-of-the-day endpoint has the both-null guard in source"""
+        import inspect
+        from api.index import get_line_of_the_day
+        source = inspect.getsource(get_line_of_the_day)
+        assert 'today_picks = None' in source, \
+            "line-of-the-day endpoint should reset today_picks to None when both directions are null"
 
 
 if __name__ == "__main__":

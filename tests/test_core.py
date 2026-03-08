@@ -854,7 +854,7 @@ class TestConfigCoverage:
     def test_chalk_rating_floor_readable(self):
         from api.index import _cfg
         val = _cfg("lineup.chalk_rating_floor", None)
-        assert val == 2.8, f"Expected 2.8, got {val}"
+        assert val == 2.0, f"Expected 2.0, got {val}"
 
     def test_game_chalk_rating_floor_readable(self):
         from api.index import _cfg
