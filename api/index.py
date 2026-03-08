@@ -27,12 +27,12 @@ load_dotenv()
 try:
     from api.real_score import real_score_projection, _make_rng
     from api.asset_optimizer import optimize_lineup
-    from api.line_engine import run_line_engine
+    from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
 except ImportError:
     from .real_score import real_score_projection, _make_rng
     from .asset_optimizer import optimize_lineup
-    from .line_engine import run_line_engine
+    from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
@@ -2676,6 +2676,42 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
 
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
+
+def _get_projections_for_date(date_obj):
+    """Return (all_proj, draftable_games) for the given date for line-engine enrichment."""
+    games = fetch_games(date_obj)
+    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    if not draftable:
+        return [], []
+    all_proj = []
+    for g in draftable:
+        gp = _cg(f"game_proj_{g['gameId']}")
+        if gp:
+            all_proj.extend(gp)
+    if not all_proj:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
+                try:
+                    all_proj.extend(fut.result())
+                except Exception as e:
+                    print(f"[line] proj err: {e}")
+    return all_proj, draftable
+
+
+def _enrich_loaded_line_picks(picks_dict, date_obj):
+    """Enrich over_pick and under_pick with season_avg, proj_min, avg_min, game_time, recent_form_bars when loaded from GitHub."""
+    if not picks_dict:
+        return
+    all_proj, draftable = _get_projections_for_date(date_obj)
+    if not all_proj or not draftable:
+        return
+    game_ctx_map = _game_lookup_from_games(draftable)
+    for key in ("over_pick", "under_pick"):
+        pick = picks_dict.get(key)
+        if pick:
+            _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
+
+
 def _load_line_pick_for_date(date_str: str):
     """Load saved line picks for the given ISO date string (from JSON then CSV).
     Returns {"over_pick": ..., "under_pick": ...} or None.
@@ -2807,6 +2843,7 @@ async def get_line_of_the_day(request: Request):
         tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
         tomorrow_primary = _primary_pick(tomorrow_picks)
         if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
+            _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
             result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
                                      resolved_today=today_primary)
             _cs("line_v1", result)
@@ -2852,6 +2889,8 @@ async def get_line_of_the_day(request: Request):
                     _github_write_file(json_path, json.dumps(today_picks),
                                        f"backfill missing direction for {today_str}")
                 except Exception: pass
+        # Enrich picks loaded from GitHub with season_avg, proj_min, avg_min, game_time, recent_form_bars
+        _enrich_loaded_line_picks(today_picks, today)
         result = _picks_response(today_picks, from_github=True, slate_summary=None)
         _cs("line_v1", result)
         return JSONResponse(result)

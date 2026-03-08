@@ -875,10 +875,22 @@
     .line-pick-stat-avg {
       font-size: 0.6rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums;
     }
-    .line-pick-sparkline-wrap { display: inline-flex; align-items: flex-end; height: 14px; }
-    .line-pick-sparkline-wrap svg { width: 24px; height: 14px; }
-    .line-pick-sparkline-wrap rect { fill: currentColor; opacity: 0.7; }
+    .line-pick-l5-values { font-size: 0.8rem; font-variant-numeric: tabular-nums; font-weight: 700; }
+    .line-l5-sep { color: var(--muted); font-weight: 400; margin: 0 2px; }
+    .line-l5-num { font-family: inherit; }
     .line-pick-l5-col .line-pick-micro-lbl { margin-bottom: 2px; }
+    .line-pick-tags {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; margin-bottom: 6px;
+    }
+    .line-pick-tag {
+      font-size: 0.6rem; padding: 3px 8px; border-radius: var(--radius-pill);
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--color-text-muted); letter-spacing: var(--tracking-caps);
+      text-transform: uppercase;
+    }
+    .line-pick-explanation {
+      font-size: 0.7rem; color: var(--color-text-muted); line-height: 1.4; margin: 0 0 8px 0;
+    }
     .line-result-row {
       display: flex; align-items: center; justify-content: space-between;
       margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
@@ -2841,11 +2853,20 @@ function _lineStatLabel(statType) { return LINE_STAT_LABEL[statType] || (statTyp
 function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const statLabel = _lineStatLabel(pick.stat_type);
-  const defaultBars = [0.5, 0.6, 0.7, 0.55, 0.65];
-  const sparklineBars = (pick.recent_form_bars && pick.recent_form_bars.length >= 5)
+  const lineNum = parseFloat(pick.line) || 0;
+  const defaultBars = [0.9, 1.0, 0.95, 1.05, 1.0];
+  const formBars = (pick.recent_form_bars && pick.recent_form_bars.length >= 5)
     ? pick.recent_form_bars.slice(0, 5)
     : defaultBars;
-  const sparklineSvg = `<svg viewBox="0 0 24 14" preserveAspectRatio="none"><rect x="0" y="${14 - sparklineBars[0]*12}" width="3.5" height="${sparklineBars[0]*12}" rx="1"/><rect x="5" y="${14 - sparklineBars[1]*12}" width="3.5" height="${sparklineBars[1]*12}" rx="1"/><rect x="10" y="${14 - sparklineBars[2]*12}" width="3.5" height="${sparklineBars[2]*12}" rx="1"/><rect x="15" y="${14 - sparklineBars[3]*12}" width="3.5" height="${sparklineBars[3]*12}" rx="1"/><rect x="20" y="${14 - sparklineBars[4]*12}" width="3.5" height="${sparklineBars[4]*12}" rx="1"/></svg>`;
+  const l5Values = formBars.map(r => Math.round(lineNum * (typeof r === 'number' ? r : 1)));
+  const l5Html = l5Values.length
+    ? l5Values.map((v, i) => {
+        const hit = dir === 'over' ? v >= lineNum : v < lineNum;
+        const color = hit ? (dir === 'over' ? 'var(--line)' : 'var(--lab)') : 'var(--color-danger)';
+        const sep = i < l5Values.length - 1 ? ' <span class="line-l5-sep">•</span> ' : '';
+        return `<span class="line-l5-num" style="color:${color}">${v}</span>${sep}`;
+      }).join('')
+    : '<span class="line-l5-num" style="color:var(--muted)">—</span>';
 
   // Live stat tracking section
   let liveSection = '';
@@ -2894,10 +2915,10 @@ function renderLinePickCard(pick, isPrimary) {
 
   const subheader = pick.game_time ? `${pick.team} vs ${pick.opponent} · ${pick.game_time}` : `${pick.team} · vs ${pick.opponent}`;
   const edgeClass = (pick.edge ?? 0) > 0 ? 'edge-plus' : (pick.edge ?? 0) < 0 ? 'edge-minus' : '';
-  const projStat = pick.projection ?? '—';
-  const seasonStat = pick.season_avg != null ? pick.season_avg : '—';
-  const projMin = pick.proj_min != null ? pick.proj_min : '—';
-  const avgMin = pick.avg_min != null ? pick.avg_min : '—';
+  const projStat = pick.projection != null && pick.projection !== '' ? Number(pick.projection).toFixed(1) : '—';
+  const seasonStat = pick.season_avg != null && pick.season_avg !== '' ? (typeof pick.season_avg === 'number' ? pick.season_avg.toFixed(1) : String(pick.season_avg)) : '—';
+  const projMin = pick.proj_min != null && pick.proj_min !== '' ? (typeof pick.proj_min === 'number' ? pick.proj_min.toFixed(1) : String(pick.proj_min)) : '—';
+  const avgMin = pick.avg_min != null && pick.avg_min !== '' ? (typeof pick.avg_min === 'number' ? pick.avg_min.toFixed(1) : String(pick.avg_min)) : '—';
 
   return `
     <div class="line-pick-card${winningClass}">
@@ -2933,10 +2954,21 @@ function renderLinePickCard(pick, isPrimary) {
         </div>
         <div class="line-pick-data-col line-pick-l5-col">
           <span class="line-pick-micro-lbl">L5</span>
-          <span class="line-pick-sparkline-wrap">${sparklineSvg}</span>
+          <div class="line-pick-l5-values">${l5Html}</div>
         </div>
       </div>
       ${liveSection}
+      ${(pick.signals && pick.signals.length) ? `
+      <div class="line-pick-tags">
+        ${pick.signals.map(s => {
+          const raw = typeof s === 'string' ? s : (s && (s.detail || s.type || ''));
+          const label = String(raw || '').replace(/^[^:]+:\s*/i, '').trim().slice(0, 36)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return label ? `<span class="line-pick-tag">${label}</span>` : '';
+        }).filter(Boolean).join('')}
+      </div>` : ''}
+      ${(pick.narrative || (pick.projection != null && pick.edge != null && (pick.season_avg != null && pick.season_avg !== '') && pick.confidence)) ? `
+      <p class="line-pick-explanation">${(pick.narrative || `Model projects ${Number(pick.projection).toFixed(1)} ${(pick.stat_type || 'points').toLowerCase()} — a ${(pick.edge > 0 ? '+' : '')}${Number(pick.edge).toFixed(1)} edge vs the ${pick.season_avg} season baseline at ${pick.confidence || 0}% confidence.`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : ''}
       ${pick.result && pick.result !== 'pending' ? `
       <div class="line-result-row">
         <span class="line-result-lbl">Result</span>
