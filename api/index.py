@@ -13,6 +13,7 @@ import csv
 import io
 import hashlib
 import re
+import traceback
 import unicodedata
 import pickle
 import os
@@ -2213,6 +2214,7 @@ def _compute_game_picks(game):
         return result
     except Exception as e:
         print(f"[auto-lock] game {gid} picks err: {e}")
+        traceback.print_exc()
         return None
 
 
@@ -2316,6 +2318,7 @@ async def save_predictions():
                         rows.extend(_predictions_to_csv(result["lineups"], label))
                 except Exception as e:
                     print(f"save-predictions auto-lock {g['gameId']}: {e}")
+                    traceback.print_exc()
 
     if not rows:
         return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
