@@ -2270,6 +2270,9 @@ async function _tryAutoResolveLine(pick) {
 async function _startLineLivePoll(overPick, underPick) {
   if (LINE_LIVE_POLL) { clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null; }
 
+  let failureCount = 0;  // Track consecutive API failures
+  const MAX_FAILURES = 3;  // Stop polling after 3 consecutive failures
+
   async function _fetchLive(pick) {
     if (!pick) return null;
     const p = new URLSearchParams({ team: pick.team || '', stat_type: pick.stat_type || 'points',
@@ -2283,6 +2286,7 @@ async function _startLineLivePoll(overPick, underPick) {
 
   async function _poll() {
     if (!document.getElementById('tab-line')?.classList.contains('active')) return;
+
     // Deduplicate ESPN call if both picks are for the same team/game
     const sameGame = overPick && underPick && overPick.team === underPick.team;
     let overData, underData;
@@ -2291,6 +2295,20 @@ async function _startLineLivePoll(overPick, underPick) {
       underData = overData;
     } else {
       [overData, underData] = await Promise.all([_fetchLive(overPick), _fetchLive(underPick)]);
+    }
+
+    // Track API failures: if both fetches fail and we can't detect game status, increment failure count
+    const bothFailed = !overData && !underData;
+    if (bothFailed) {
+      failureCount++;
+      // Stop polling if ESPN is down for 3+ consecutive polls; fall back to auto-resolve cron
+      if (failureCount >= MAX_FAILURES) {
+        console.warn('[line-live-poll] ESPN unavailable for 90+ sec; stopping polling (will resume via auto-resolve cron)');
+        clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
+        return;
+      }
+    } else {
+      failureCount = 0;  // Reset on successful fetch
     }
 
     let anyLive = false;
@@ -2307,9 +2325,11 @@ async function _startLineLivePoll(overPick, underPick) {
       if (card && pick?._live) card.innerHTML = renderLinePickCard(pick, true);
     }
 
-    // Stop when both games final; hand off to auto-resolve
-    const overDone = !overPick || ['final','no_game'].includes(overData?.status);
-    const underDone = !underPick || ['final','no_game'].includes(underData?.status);
+    // Stop when both games final; hand off to auto-resolve cron
+    // Note: if data fetch failed (null), we can't detect completion, so won't stop here
+    // (handled above by failure counter)
+    const overDone = !overPick || (overData && ['final','no_game'].includes(overData.status));
+    const underDone = !underPick || (underData && ['final','no_game'].includes(underData.status));
     if (overDone && underDone) {
       clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
       const activePick = LINE_DIR === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
@@ -2784,6 +2804,9 @@ async function showLabLocked(status) {
 }
 
 async function showLabUnlocked(status) {
+  // Explicitly stop lock polling to prevent memory leak on rapid flickers
+  if (LAB._lockPoll) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
+
   document.getElementById('labUnlocked').style.display = 'flex';
 
   // Load briefing + config + line data + slate + today's log in parallel (silently)
