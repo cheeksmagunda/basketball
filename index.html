@@ -1698,7 +1698,7 @@ async function initGameSelector() {
     populateGameSelector(games);
   } catch(e) {
     if (SLATE && Array.isArray(SLATE.games) && SLATE.games.length) {
-      populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked });
+      populateGameSelector(SLATE.games);
     } else {
       if (sel) sel.innerHTML = '<option value="">Offline — check backend</option>';
       // Self-heal: loadSlate() runs in parallel and may still be in-flight on cold start
@@ -1706,7 +1706,7 @@ async function initGameSelector() {
       setTimeout(function() {
         if (sel && sel.options.length === 1 && sel.options[0].value === '' &&
             SLATE && Array.isArray(SLATE.games) && SLATE.games.length) {
-          populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked });
+          populateGameSelector(SLATE.games);
         }
       }, 5000);
     }
@@ -1786,7 +1786,7 @@ async function loadSlate() {
     SLATE_LOADED_AT = Date.now();
     if (typeof LAB !== 'undefined') { LAB.cachedStatus = null; LAB.statusFetchedAt = 0; }
 
-    if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games, { slateLocked: !!SLATE.locked }); }
+    if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
 
     // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
     // so the "Picks Locked" chip appears without the user having to manually refresh.
@@ -2902,6 +2902,11 @@ function _renderLineLOTDFromState() {
     }
     LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
     LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
+    // If pick exists but no directional picks, populate from primary
+    if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick) {
+      if (data.pick.direction === 'over') LINE_OVER_PICK = data.pick;
+      else LINE_UNDER_PICK = data.pick;
+    }
     linePickWrap.style.display = 'block';
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
     switchLineDir(LINE_DIR);

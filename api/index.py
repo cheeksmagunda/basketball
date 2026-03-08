@@ -3104,6 +3104,9 @@ async def get_line_of_the_day(request: Request):
             return JSONResponse(eng_result)
 
         # Today's picks exist — serve if both directions present, else fill missing direction
+        # If both directions are null, treat as no saved picks and regenerate from scratch
+        if today_picks and not today_picks.get("over_pick") and not today_picks.get("under_pick"):
+            today_picks = None
         if today_picks:
             missing_over  = not today_picks.get("over_pick")
             missing_under = not today_picks.get("under_pick")
