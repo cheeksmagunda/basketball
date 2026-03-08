@@ -1853,6 +1853,10 @@ async function loadSlate() {
       const countBadge = `<div class="header-badge">${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}</div>`;
       headerMeta.innerHTML = countBadge + statusBadge;
     }
+    const tabsEl = _el('slateTabs');
+    const chipsEl = _el('slateChips');
+    if (tabsEl) tabsEl.style.display = 'block';
+    if (chipsEl) chipsEl.style.display = 'block';
     switchSlate('chalk');
     savePredictions();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
