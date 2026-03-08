@@ -1341,6 +1341,8 @@ const TEAM_COLORS = {
 // ════════════════════════════════════════════════════════════════════
 let SLATE = null;       // Cached slate response from /api/slate
 let PICKS_DATA = null;  // Cached per-game picks from /api/picks
+let isFetching = false; // Frontend request lock — prevents concurrent API race conditions
+let SLATE_LOADED_AT = 0; // Timestamp of last successful loadSlate() — for back-button revalidation
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG = {
@@ -1398,6 +1400,13 @@ function switchTab(tab) {
   if (tab === 'log') {
     closeLogDrilldown();  // always return to grid view on tab entry
     if (!LOG.selectedDate) initLogPage();
+  }
+  if (tab === 'predictions' || tab === 'line') {
+    const stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
+    if (stale) {
+      if (tab === 'predictions') loadSlate();
+      else { LINE_LOADED_DATE = ''; initLinePage(); }
+    }
   }
   if (tab === 'line') initLinePage();
   if (tab === 'lab')  initLabPage();
@@ -1584,6 +1593,7 @@ async function loadSlate() {
       }
     }
     document.getElementById('slateTabs').style.display = 'flex';
+    SLATE_LOADED_AT = Date.now();
 
     // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
     // so the "Picks Locked" chip appears without the user having to manually refresh.
@@ -1675,12 +1685,15 @@ function switchSlate(tab) {
 // PER-GAME ANALYSIS — grep: runAnalysis, /api/picks, analyzeBtn, game analysis
 // ════════════════════════════════════════════════════════════════════
 async function runAnalysis() {
+  if (isFetching) return;
   const sel = document.getElementById('gameSel');
   const btn = document.getElementById('analyzeBtn');
   const banner = document.getElementById('errorBanner');
   const gameId = sel.value;
   if (!gameId) return;
 
+  isFetching = true;
+  const rb = document.getElementById('lineRefreshBtn'); if (rb) rb.disabled = true;
   banner.style.display = 'none';
   document.getElementById('gameAnalysisEmpty').style.display = 'none';
   btn.disabled = true;
@@ -1695,7 +1708,10 @@ async function runAnalysis() {
     hideLoader();
     // Stale response guard: user may have changed game selector while request was in-flight
     if (document.getElementById('gameSel').value !== _requestedGameId) {
-      btn.disabled = false; btn.innerHTML = '⚡ Analyze Draft'; return;
+      isFetching = false;
+      btn.disabled = false; btn.innerHTML = 'Analyze Draft';
+      const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = false;
+      return;
     }
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: 'Server error' }));
@@ -1747,8 +1763,10 @@ async function runAnalysis() {
     banner.textContent = `⚠ ${e.message}`;
     banner.style.display = 'block';
   } finally {
+    isFetching = false;
     btn.disabled = false;
     btn.innerHTML = 'Analyze Draft';
+    const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = false;
   }
 }
 
@@ -2449,11 +2467,15 @@ async function _startLineLivePoll(overPick, underPick) {
 }
 
 async function initLinePage() {
+  if (isFetching) return;
   const todayET = _etToday();
   if (LINE_LOADED_DATE === todayET) {
     switchLineDir(LINE_DIR); // restore button state on re-visit
     return;
   }
+  isFetching = true;
+  const _ab = document.getElementById('analyzeBtn'); if (_ab) _ab.disabled = true;
+  const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = true;
   LINE_LOADED_DATE = todayET;
   document.getElementById('lineLoading').style.display = 'block';
   document.getElementById('lineEmpty').style.display = 'none';
@@ -2538,6 +2560,10 @@ async function initLinePage() {
     emptyEl.querySelector('.icon').textContent = '📡';
     document.getElementById('lineEmptyMsg').textContent = 'Couldn\'t load line pick. Check backend.';
     emptyEl.style.display = 'flex';
+  } finally {
+    isFetching = false;
+    const _ab = document.getElementById('analyzeBtn'); if (_ab) _ab.disabled = !document.getElementById('gameSel')?.value;
+    const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = false;
   }
 
   // Load history

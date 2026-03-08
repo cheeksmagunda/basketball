@@ -22,7 +22,6 @@ api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
 api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
 api/rotowire.py        — RotoWire lineup scraper (free tier: availability + injury flags)
-api/temporal_risk.py   — TRAV module (available, not active in picks)
 data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
 data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)

@@ -301,17 +301,14 @@ for _p in [
         try:
             with open(_p, "rb") as f:
                 _bundle = pickle.load(f)
-            # Support both new bundle format {"model":..,"features":..} and legacy bare model
-            if isinstance(_bundle, dict) and "model" in _bundle:
+            if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
                 AI_MODEL    = _bundle["model"]
-                AI_FEATURES = _bundle.get("features")
-            else:
-                AI_MODEL    = _bundle   # legacy bare model (4-feature)
-                AI_FEATURES = None
-            break
+                AI_FEATURES = _bundle["features"]
+                break
+            # Legacy bare model format not supported — require bundled features for alignment
         except Exception: pass
-if AI_MODEL is None:
-    print("[WARN] LightGBM model not found at any path — using heuristic fallback for all projections")
+    if AI_MODEL is None:
+        print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -347,12 +344,18 @@ _STAT_MARKET = {
     "assists":  "player_assists",
 }
 
-def _cp(k): return CACHE_DIR / f"{hashlib.md5(f'{_et_date().isoformat()}:{k}'.encode()).hexdigest()}.json"
-def _cg(k): return json.loads(_cp(k).read_text()) if _cp(k).exists() else None
-def _cs(k, v): _cp(k).write_text(json.dumps(v))
-def _lp(k): return LOCK_DIR / f"{hashlib.md5(f'{_et_date().isoformat()}:{k}'.encode()).hexdigest()}.json"
-def _lg(k): return json.loads(_lp(k).read_text()) if _lp(k).exists() else None
-def _ls(k, v): _lp(k).write_text(json.dumps(v))
+def _cp(k, date_str=None):
+    """Cache path for key k. date_str: optional slate date (YYYY-MM-DD) for midnight-rollover correctness."""
+    d = date_str or _et_date().isoformat()
+    return CACHE_DIR / f"{hashlib.md5(f'{d}:{k}'.encode()).hexdigest()}.json"
+def _cg(k, date_str=None): return json.loads(_cp(k, date_str).read_text()) if _cp(k, date_str).exists() else None
+def _cs(k, v, date_str=None): _cp(k, date_str).write_text(json.dumps(v))
+def _lp(k, date_str=None):
+    """Lock path for key k. date_str: optional slate date for midnight-rollover correctness."""
+    d = date_str or _et_date().isoformat()
+    return LOCK_DIR / f"{hashlib.md5(f'{d}:{k}'.encode()).hexdigest()}.json"
+def _lg(k, date_str=None): return json.loads(_lp(k, date_str).read_text()) if _lp(k, date_str).exists() else None
+def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
 
 def _is_locked(start_time_iso):
     """Returns True if current UTC time is within lock_buffer_minutes of game start.
@@ -1183,10 +1186,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         heuristic *= decline_factor
 
     # AI blend — 70% LightGBM, 30% heuristic
+    # Usage trend clipping must match train_lgbm.py
+    USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     base = heuristic
     if AI_MODEL is not None:
         try:
-            usage = min(max(pts / max(avg_min, 1) * 0.8, 0.9), 1.5)
+            usage = min(max(pts / max(avg_min, 1) * 0.8, USAGE_TREND_MIN), USAGE_TREND_MAX)
             sign = 1.0 if side == "away" else -1.0
             opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
 
@@ -1704,18 +1709,19 @@ async def get_slate():
     if not any_today_started:
         _, remaining_yesterday, _, _ = _all_games_final(games)
         if remaining_yesterday > 0:
-            lock_cached = _lg("slate_v5_locked")
+            yesterday = (_et_date() - timedelta(days=1)).isoformat()
+            lock_cached = _lg("slate_v5_locked", yesterday)
             if lock_cached:
                 lock_cached["locked"] = True
                 lock_cached.setdefault("all_complete", False)
                 return lock_cached
             try:
-                yesterday = (_et_date() - timedelta(days=1)).isoformat()
                 content, _ = _github_get_file(f"data/locks/{yesterday}_slate.json")
                 if content:
                     gh = json.loads(content)
                     gh["locked"] = True
                     gh.setdefault("all_complete", False)
+                    _ls("slate_v5_locked", gh, yesterday)
                     return gh
             except Exception:
                 pass
@@ -2768,7 +2774,7 @@ async def refresh_line_odds():
         write_result = _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
         if write_result.get("error"):
             return JSONResponse({"status": "error", "message": write_result["error"]}, status_code=500)
-        cf = _cp("line_v1")
+        cf = _cp("line_v1", today_str)
         if cf.exists():
             cf.unlink()
 
@@ -2914,9 +2920,9 @@ async def resolve_line(payload: dict = Body(...)):
     except Exception as e:
         print(f"[resolve-line] json update err: {e}")
 
-    # Bust the line cache
+    # Bust the line cache for this date
     try:
-        lc = _cp("line_v1")
+        lc = _cp("line_v1", date_str)
         if lc.exists():
             lc.unlink()
     except Exception: pass
@@ -3067,7 +3073,7 @@ async def auto_resolve_line():
 
     # Bust the line cache so /api/line-of-the-day sees the resolution and rotates
     try:
-        line_cache = _cp("line_v1")
+        line_cache = _cp("line_v1", pick_date)
         if line_cache.exists():
             line_cache.unlink()
     except Exception: pass

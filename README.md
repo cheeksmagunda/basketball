@@ -22,7 +22,6 @@ api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
 api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
 api/rotowire.py        — RotoWire lineup scraper (availability/injury flags)
-api/temporal_risk.py   — TRAV module (available, not active in picks)
 lgbm_model.pkl         — LightGBM model bundle {model, features}
 train_lgbm.py          — Training script (11 features)
 data/model-config.json — Runtime model config (Ben/Lab writes here; 5-min cache)
