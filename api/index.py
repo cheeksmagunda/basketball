@@ -3599,6 +3599,24 @@ async def auto_resolve_line(request: Request):
         except Exception as e:
             print(f"[auto-resolve] next-day generation err: {e}")
 
+    # ── Piggyback: save predictions for any newly-locked games ──
+    # This cron runs every 30 min. On split-window days (e.g. 1 PM + 7 PM games),
+    # the /api/refresh cron (once at 2 PM EST) misses late-locking games.
+    # By calling save_predictions here, later games get their predictions written
+    # to the CSV as soon as they lock, within the next 30-min window.
+    try:
+        _sp_games = fetch_games()
+        _sp_starts = [g["startTime"] for g in _sp_games if g.get("startTime")]
+        if _sp_starts and any(_is_locked(st) for st in _sp_starts):
+            sp_result = await save_predictions()
+            # save_predictions returns dict on success, JSONResponse on error
+            if isinstance(sp_result, dict):
+                sp_status = sp_result.get("status", "ok")
+                if sp_status != "unchanged":
+                    print(f"[auto-resolve] piggyback save-predictions: {sp_status}, rows={sp_result.get('rows', '?')}")
+    except Exception as e:
+        print(f"[auto-resolve] piggyback save-predictions err: {e}")
+
     return {"status": "resolved", "details": results}
 
 
