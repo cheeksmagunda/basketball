@@ -309,9 +309,9 @@ The main pick card (`renderLinePickCard`) uses a **zoned layout** and design tok
 
 - **Zone 1 (Header):** Player name; subheader = matchup + game time (e.g. `CLE vs BOS · 1:00 PM ET`) when `game_time` is present, else `Team · vs Opponent`. Odds/timestamp in the top-right of the card (`position: relative` on the card, flex + `margin-left: auto` on the odds block).
 - **Zone 2 (The Play):** One row: bet pill (OVER/UNDER) + target stat line (e.g. `13.0 pts`). Stat label is derived from `pick.stat_type` via a small map (points → PTS, rebounds → REB, assists → AST) — no hardcoded PTS/REB/AST in the UI.
-- **Zone 3 (Data row):** A single full-width flex row (`.line-pick-data-row`, `justify-content: space-between`) with **5 columns:** (1) **Baseline** — sportsbook line + stat label; (2) **Edge** — mathematical edge, semantic colors `edge-plus` / `edge-minus`; (3) **Target stat** — stacked projection / season average; (4) **Minutes** — stacked `proj_min` / `avg_min`; (5) **L5** — text array of last-5 derived values (e.g. `12 • 14 • 9 • 16 • 11`) with hit/miss coloring vs baseline.
+- **Zone 3 (Data row):** A single full-width flex row (`.line-pick-data-row`, `justify-content: space-between`) with **5 columns:** (1) **Baseline** — sportsbook line + stat label; (2) **Edge** — mathematical edge, semantic colors `edge-plus` / `edge-minus`; (3) **Target stat** — stacked projection / season average; (4) **Minutes** — stacked `proj_min` / `avg_min`; (5) **L5** — text array of last-5 stat values (e.g. `12 • 14 • 9 • 16 • 11`) with hit/miss coloring vs baseline. When `recent_form_values` is present (real last-5 from nba_api), L5 uses those; otherwise it falls back to ratio-based values from `recent_form_bars`.
 - **Conclusion (Oracle Insight):** Model reasoning is consolidated into a single narrative paragraph at the bottom of the card, not standalone pills. `_buildLineConclusion(pick)` merges `pick.narrative` with `pick.signals` (e.g. injury upgrade, B2B) into one natural-language sentence; key reasons are highlighted with `--color-text-primary`. The paragraph sits in `.line-pick-conclusion-wrap` (subtle background, 8px radius, padding). **This "Narrative Conclusion" pattern is the standard for model explanations app-wide** — use one prose block, not reasoning bubbles.
-- **Pick payload fields** (from backend): Core fields plus `season_avg`, `proj_min`, `avg_min`, `game_time`, `recent_form_bars`. Set in `api/line_engine.py` and passed through `_normalize_line_pick` in `api/index.py`.
+- **Pick payload fields** (from backend): Core fields plus `season_avg`, `proj_min`, `avg_min`, `game_time`, `recent_form_bars`, `recent_form_values`. `recent_form_bars` is set in `api/line_engine.py`; `recent_form_values` is filled in `api/index.py` via `_get_last5_game_stats()` (nba_api PlayerGameLog, 30-min cache). All passed through `_normalize_line_pick`.
 - **Design tokens:** Line card uses `--radius-card`, `--radius-pill`, `--font-size-micro`, `--color-success`, `--color-danger`, `--color-text-primary`, `--color-text-muted`, `--line`, `--lab`; no hardcoded hex for semantic colors in the card block.
 
 ### Odds Refresh Pipeline
@@ -458,6 +458,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | RotoWire lineups | 30 min | Player availability (OUT, questionable, etc.) | 30 min expiration; manual refresh via app |
 | Lock status per game | 6 hours | 5 min before tip to 6h after (ceiling) | Natural expiration |
 | Line odds (`books_consensus`) | 1 hour | Bookmaker consensus line (refreshed by cron) | Hourly cron runs; slate-lock freeze |
+| L5 game stats (`_get_last5_game_stats`) | 30 min | Real last-5 PTS/REB/AST per player (nba_api) | Stored with ts in cache; TTL checked on read |
 
 ### Midnight Rollover Handling
 `auto_resolve_line()` (api/index.py lines 2917-3040) correctly handles games finishing after midnight ET:

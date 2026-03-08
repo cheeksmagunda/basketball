@@ -389,6 +389,66 @@ def _lp(k, date_str=None):
 def _lg(k, date_str=None): return json.loads(_lp(k, date_str).read_text()) if _lp(k, date_str).exists() else None
 def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
 
+
+def _get_last5_game_stats(player_name: str, stat_type: str):
+    """Fetch actual last-5-game stat values (PTS/REB/AST) via nba_api. Returns list of up to 5 floats (most recent first) or None on failure. Cached 30 min."""
+    if not player_name or not player_name.strip():
+        return None
+    stat_type = (stat_type or "points").lower()
+    col = "PTS" if stat_type == "points" else ("REB" if stat_type == "rebounds" else "AST")
+    cache_key = f"l5_{hashlib.md5(f'{player_name.strip().lower()}:{stat_type}'.encode()).hexdigest()}"
+    cached = _cg(cache_key)
+    if cached is not None:
+        if isinstance(cached, list):
+            return cached
+        if isinstance(cached, dict) and "v" in cached and "ts" in cached:
+            try:
+                ts = datetime.fromisoformat(cached["ts"].replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - ts).total_seconds() < 30 * 60:
+                    return cached["v"]
+            except Exception:
+                pass
+    try:
+        from nba_api.stats.static import players as nba_players
+        from nba_api.stats.endpoints import playergamelog
+        now = datetime.now(timezone.utc)
+        y, m = now.year, now.month
+        season = f"{y}-{str(y+1)[-2:]}" if m >= 10 else f"{y-1}-{str(y)[-2:]}"
+        all_players = nba_players.get_players()
+        name_clean = player_name.strip()
+        match = next((p for p in all_players if (p.get("full_name") or "").strip() == name_clean), None)
+        if not match:
+            base = name_clean
+            for suffix in (" Jr.", " Jr", " III", " II", " IV", " Sr."):
+                if base.endswith(suffix):
+                    base = base[: -len(suffix)].strip()
+                    break
+            match = next((p for p in all_players if (p.get("full_name") or "").strip() == base), None)
+        if not match:
+            match = next((p for p in all_players if name_clean.lower() in ((p.get("full_name") or "").lower())), None)
+        if not match:
+            return None
+        nba_id = match.get("id")
+        if not nba_id:
+            return None
+        log = playergamelog.PlayerGameLog(player_id=nba_id, season=season, season_type_all_star="Regular Season")
+        df = log.get_data_frames()
+        if not df or df[0].empty:
+            _cs(cache_key, [])
+            return []
+        tbl = df[0]
+        if col not in tbl.columns:
+            _cs(cache_key, [])
+            return []
+        vals = [round(float(v), 1) for v in tbl[col].astype(float).tolist()[:5]]
+        payload = {"v": vals, "ts": datetime.now(timezone.utc).isoformat()}
+        _cs(cache_key, payload)
+        return vals
+    except Exception as e:
+        print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
+        return None
+
+
 def _is_locked(start_time_iso):
     """Returns True if current UTC time is within lock_buffer_minutes of game start.
     Returns False only for games >6h past start (well past any possible final buzzer)."""
@@ -1466,6 +1526,7 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
     "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
+    "recent_form_values",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1498,6 +1559,7 @@ def _normalize_line_pick(p: dict) -> dict:
         "avg_min":         p.get("avg_min"),
         "game_time":       p.get("game_time", ""),
         "recent_form_bars": p.get("recent_form_bars"),
+        "recent_form_values": p.get("recent_form_values"),
     }
     # Pass through any extra fields (e.g. _live tracker, future additions)
     extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}
@@ -2710,6 +2772,11 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
         pick = picks_dict.get(key)
         if pick:
             _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
+            pname, st = pick.get("player_name"), pick.get("stat_type")
+            if pname and st:
+                l5 = _get_last5_game_stats(pname, st)
+                if l5 is not None:
+                    pick["recent_form_values"] = l5
 
 
 def _load_line_pick_for_date(date_str: str):
@@ -2900,6 +2967,12 @@ async def get_line_of_the_day(request: Request):
     if err or not eng_result or not eng_result.get("pick"):
         return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                              "error": err or "no_projections"}, status_code=200)
+    for key in ("over_pick", "under_pick"):
+        pick = eng_result.get(key)
+        if pick and pick.get("player_name") and pick.get("stat_type"):
+            l5 = _get_last5_game_stats(pick["player_name"], pick["stat_type"])
+            if l5 is not None:
+                pick["recent_form_values"] = l5
     _cs("line_v1", eng_result)
     return JSONResponse(eng_result)
 

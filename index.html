@@ -2903,7 +2903,9 @@ function renderLinePickCard(pick, isPrimary) {
   const formBars = (pick.recent_form_bars && pick.recent_form_bars.length >= 5)
     ? pick.recent_form_bars.slice(0, 5)
     : defaultBars;
-  const l5Values = formBars.map(r => Math.round(lineNum * (typeof r === 'number' ? r : 1)));
+  const l5Values = (pick.recent_form_values && Array.isArray(pick.recent_form_values) && pick.recent_form_values.length)
+    ? pick.recent_form_values.slice(0, 5).map(v => Math.round(Number(v)))
+    : formBars.map(r => Math.round(lineNum * (typeof r === 'number' ? r : 1)));
   const l5Html = l5Values.length
     ? l5Values.map((v, i) => {
         const hit = dir === 'over' ? v >= lineNum : v < lineNum;
