@@ -7,12 +7,14 @@ import unicodedata
 import pickle
 import os
 import base64
+import time
+import uuid
 import numpy as np
 import requests
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import FastAPI, Query, Body, File, UploadFile
+from fastapi import FastAPI, Query, Body, File, UploadFile, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
@@ -31,7 +33,34 @@ except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
+DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
+
 app = FastAPI()
+
+
+@app.middleware("http")
+async def docs_auth_and_log(request, call_next):
+    """Optional docs auth (when DOCS_SECRET set) + structured request logging."""
+    if DOCS_SECRET and request.url.path in ("/docs", "/redoc", "/openapi.json"):
+        key = request.query_params.get("docs_key") or request.headers.get("x-docs-key")
+        if key != DOCS_SECRET:
+            return JSONResponse({"detail": "Docs require docs_key or X-Docs-Key"}, status_code=401)
+
+    request_id = str(uuid.uuid4())[:8]
+    request.state.request_id = request_id
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - start) * 1000, 1)
+    log_line = json.dumps({
+        "request_id": request_id,
+        "path": request.url.path,
+        "method": request.method,
+        "status": response.status_code,
+        "duration_ms": duration_ms,
+    })
+    print(log_line, flush=True)
+    return response
+
 
 # ── GitHub API helpers for persistent CSV storage ──
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -109,8 +138,9 @@ def _github_write_file(path, content, message="auto-update", max_retries=3):
                 time.sleep(backoff_sec)
                 continue
 
-            # For other errors or final retry exhausted, return error
-            return {"error": f"GitHub API {r.status_code}: {r.text[:200]}"}
+            # For other errors or final retry exhausted: log detail, return generic (no leak to client)
+            print(f"[github] write failed {path}: {r.status_code} {r.text[:200]}")
+            return {"error": "GitHub write failed"}
 
         except Exception as e:
             if attempt < max_retries - 1:
@@ -118,7 +148,8 @@ def _github_write_file(path, content, message="auto-update", max_retries=3):
                 import time
                 time.sleep(backoff_sec)
                 continue
-            return {"error": f"GitHub write failed: {str(e)[:200]}"}
+            print(f"[github] write exception {path}: {e}")
+            return {"error": "GitHub write failed"}
 
     return {"error": "GitHub write failed after maximum retries"}
 
@@ -1686,8 +1717,70 @@ def _get_injuries(game):
 # ═════════════════════════════════════════════════════════════════════════════
 # CORE API ENDPOINTS
 # grep: /api/games, /api/slate, /api/picks, /api/save-predictions, /api/refresh
-# /api/hindsight, /api/log, /api/parse-screenshot, /api/save-actuals
+# /api/hindsight, /api/log, /api/parse-screenshot, /api/save-actuals, /api/health
 # ═════════════════════════════════════════════════════════════════════════════
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+
+# Rate limiting: in-memory sliding window per IP for expensive endpoints
+_RATE_LIMIT_STORE = {}  # (ip, path_key) -> [timestamps]
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMITS = {"parse-screenshot": 5, "lab/chat": 20, "line-of-the-day": 10}
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return (forwarded.split(",")[0].strip() or (request.client.host if request.client else "") or "unknown")
+
+def _check_rate_limit(request: Request, path_key: str):
+    """Return JSONResponse(429) if over limit, else None."""
+    if path_key not in _RATE_LIMITS:
+        return None
+    ip = _client_ip(request)
+    key = (ip, path_key)
+    now = datetime.now(timezone.utc).timestamp()
+    if key not in _RATE_LIMIT_STORE:
+        _RATE_LIMIT_STORE[key] = []
+    times = _RATE_LIMIT_STORE[key]
+    times[:] = [t for t in times if now - t < _RATE_LIMIT_WINDOW]
+    limit = _RATE_LIMITS[path_key]
+    if len(times) >= limit:
+        return JSONResponse({"error": "Too many requests", "retry_after": _RATE_LIMIT_WINDOW}, status_code=429)
+    times.append(now)
+    return None
+
+
+def _require_cron_secret(request: Request):
+    """Return True if request is authorized (cron or no CRON_SECRET set). Used by cron-only endpoints."""
+    if not CRON_SECRET:
+        return True  # backward compat: no secret configured => allow
+    auth = request.headers.get("authorization", "")
+    return auth == f"Bearer {CRON_SECRET}"
+
+
+@app.get("/api/health")
+async def health():
+    """Lightweight health check for uptime monitoring. Returns 200 and optionally checks GitHub + config."""
+    out = {"status": "ok"}
+    try:
+        _load_config()
+        out["config"] = "ok"
+    except Exception as e:
+        out["config"] = "error"
+        print(f"[health] config load: {e}")
+    if GITHUB_TOKEN and GITHUB_REPO:
+        c, _ = _github_get_file("data/model-config.json")
+        out["github"] = "ok" if c is not None else "unreachable"
+    else:
+        out["github"] = "skipped"
+    return out
+
+
+@app.get("/api/version")
+async def version():
+    """Return build/deploy identifier for 'what is deployed' checks. Set VERCEL_GIT_COMMIT_SHA at build time."""
+    sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+    return {"version": sha[:7] if sha else "unknown"}
+
+
 @app.get("/api/games")
 async def get_games():
     games = fetch_games()
@@ -2040,8 +2133,11 @@ async def reset_uploads(body: dict):
 
 
 @app.post("/api/parse-screenshot")
-async def parse_screenshot(file: UploadFile = File(...)):
+async def parse_screenshot(request: Request, file: UploadFile = File(...)):
     """Parse a Real Sports app screenshot using Claude Vision API."""
+    rl = _check_rate_limit(request, "parse-screenshot")
+    if rl is not None:
+        return rl
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
 
@@ -2382,7 +2478,9 @@ async def hindsight(payload: dict = Body(...)):
 
 
 @app.get("/api/refresh")
-async def refresh():
+async def refresh(request: Request):
+    if not _require_cron_secret(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     # Auto-save predictions BEFORE clearing cache, if the slate is currently locked.
     # Cron safety net: ensures predictions persist even if no user visits at lock time.
     # Must run first — save_predictions() reads from _cg("slate_v5") which gets wiped below.
@@ -2606,9 +2704,12 @@ def _picks_response(picks, **extra):
 
 
 @app.get("/api/line-of-the-day")
-async def get_line_of_the_day():
+async def get_line_of_the_day(request: Request):
     """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
     Once today's primary pick is resolved, rotates to tomorrow's slate."""
+    rl = _check_rate_limit(request, "line-of-the-day")
+    if rl is not None:
+        return rl
     cached = _cg("line_v1")
     if cached and cached.get("pick"):
         today_str = _et_date().isoformat()
@@ -2733,7 +2834,7 @@ async def save_line(payload: dict = Body(...)):
 
 @app.get("/api/refresh-line-odds")
 async def refresh_line_odds():
-    """Hourly cron: sync current bookmaker line from Odds API into today's pick JSON.
+    """Hourly cron + Line tab Refresh button: sync current bookmaker line from Odds API.
     No-op if slate is locked — odds freeze at the same boundary as picks (5 min before tip)."""
     today_str = _et_date().isoformat()
 
@@ -2752,20 +2853,21 @@ async def refresh_line_odds():
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     updated = False
 
+    def _pick_odds_key(p):
+        return (p.get("player_name", ""), p.get("stat_type", "points"), p.get("team", ""), p.get("opponent", ""))
+
+    odds_cache = {}  # (player_name, stat_type, team, opponent) -> result dict
     for key in ("over_pick", "under_pick"):
         pick = picks.get(key)
         if not pick:
             continue
-        result = _fetch_odds_line(
-            pick.get("player_name", ""),
-            pick.get("stat_type", "points"),
-            pick.get("team", ""),
-            pick.get("opponent", ""),
-        )
+        pk = _pick_odds_key(pick)
+        if pk not in odds_cache:
+            odds_cache[pk] = _fetch_odds_line(pick.get("player_name", ""), pick.get("stat_type", "points"), pick.get("team", ""), pick.get("opponent", ""))
+        result = odds_cache[pk]
         if result:
             pick.update(result)
             pick["model_only"] = False
-        # Always stamp update time — shows the user when odds were last checked
         pick["line_updated_at"] = now_utc
         updated = True
 
@@ -2976,7 +3078,7 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
 
 
 @app.get("/api/auto-resolve-line")
-async def auto_resolve_line():
+async def auto_resolve_line(request: Request):
     """Auto-resolve today's line picks independently as each game finishes.
     Checks BOTH over and under picks — resolves whichever game is final,
     even if the other game is still in progress. Runs on cron every 15 min.
@@ -2987,6 +3089,8 @@ async def auto_resolve_line():
     We also pass the pick's actual date to _fetch_player_final_stat so it queries
     the right ESPN scoreboard, and compute the next-day target from pick_date+1
     (not _et_date()+1, which would skip a day after midnight rollover)."""
+    if not _require_cron_secret(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     today = _et_date().isoformat()
 
     # Determine which date's pick file to use — midnight rollover support.
@@ -3803,7 +3907,7 @@ async def lab_backtest(payload: dict = Body(...)):
 
 
 @app.get("/api/lab/auto-improve")
-async def lab_auto_improve():
+async def lab_auto_improve(request: Request):
     """
     Autonomous model improvement cron endpoint.
     1. Fetches briefing data to assess current accuracy
@@ -3816,6 +3920,8 @@ async def lab_auto_improve():
     and will timeout after 240s to prevent exceeding Vercel's 300s limit.
     If timeout occurs, returns error log without auto-applying.
     """
+    if not _require_cron_secret(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     if not ANTHROPIC_API_KEY:
         return {"status": "skipped", "reason": "ANTHROPIC_API_KEY not configured"}
 
@@ -3985,8 +4091,11 @@ def _tool_status_label(name: str, inputs: dict) -> str:
 
 
 @app.post("/api/lab/chat")
-async def lab_chat(payload: dict = Body(...)):
+async def lab_chat(request: Request, payload: dict = Body(...)):
     """Proxy to Anthropic Messages API — streams SSE events so the UI can show live status."""
+    rl = _check_rate_limit(request, "lab/chat")
+    if rl is not None:
+        return rl
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
 

@@ -491,6 +491,12 @@
       margin-bottom: 16px;
       display: none;
     }
+    .retry-inline-btn {
+      margin-left: 10px; padding: 4px 12px; font-size: 0.78rem;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); cursor: pointer; font-weight: 600;
+    }
+    .retry-inline-btn:hover { background: var(--chalk); color: var(--bg); border-color: var(--chalk); }
 
     .hidden { display: none !important; }
 
@@ -573,6 +579,11 @@
     }
     .date-chip-dot.hidden-dot { opacity: 0; }
     .date-chip-dot.historical-dot { background: var(--chalk); }
+    .log-date-actions {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0; margin: 0 1rem;
+    }
+    .log-go-date { display: flex; align-items: center; gap: 0.5rem; }
+    .log-go-date input[type="date"] { padding: 0.35rem 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 
     /* Log game grid */
     .log-game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
@@ -1086,6 +1097,14 @@
 
     <!-- Date strip -->
     <div class="date-strip" id="logDateStrip"></div>
+    <div class="log-date-actions">
+      <button type="button" class="secondary-btn" id="logLoadMoreBtn" onclick="loadMoreLogDays()">Load more dates</button>
+      <label class="log-go-date">
+        <span>Go to date:</span>
+        <input type="date" id="logGoToDateInput" />
+        <button type="button" class="secondary-btn" onclick="goToLogDate()">Go</button>
+      </label>
+    </div>
 
     <!-- Grid view -->
     <div id="logGridView">
@@ -1350,6 +1369,7 @@ const LOG = {
   scope: null,           // 'slate' | matchup label
   gameLabel: null,
   datesWithData: new Set(),
+  stripDayCount: 60,     // number of days to show in date strip (max 180)
   data: null,            // {date, scopes, actuals}
   currentTab: 'chalk',
 };
@@ -1667,6 +1687,7 @@ async function loadSlate() {
       <div class="empty-state">
         <span class="icon">📡</span>
         <p>Couldn't load today's slate.<br>Make sure the API server is running.</p>
+        <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
       </div>`;
   }
 }
@@ -1760,7 +1781,7 @@ async function runAnalysis() {
   } catch(e) {
     hideLoader();
     document.getElementById('picksList').innerHTML = '';
-    banner.textContent = `⚠ ${e.message}`;
+    banner.innerHTML = `⚠ ${e.message} <button type="button" class="retry-inline-btn" onclick="runAnalysis()">Retry</button>`;
     banner.style.display = 'block';
   } finally {
     isFetching = false;
@@ -1890,28 +1911,13 @@ async function savePredictions() {
 // LOG PAGE — grep: initLogPage, selectLogDate, renderLogGrid, openLogDrilldown, drill-down
 // ════════════════════════════════════════════════════════
 
-async function initLogPage() {
-  // Build date strip for last 30 days
+function buildLogDateStrip() {
   const today = new Date();
   const strip = document.getElementById('logDateStrip');
-  strip.innerHTML = '';
-
-  // Load dates with data
-  try {
-    const r = await fetchWithTimeout('/api/log/dates');
-    if (r.ok) {
-      const dates = await r.json();
-      dates.forEach(d => LOG.datesWithData.add(d));
-
-    }
-  } catch(e) { /* non-fatal */ }
-
-  // Build chips: today + 29 prior days
-  // Use local date to avoid UTC midnight shift (e.g. 7pm ET = midnight UTC = wrong day)
   const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-
+  const n = Math.min(LOG.stripDayCount, 180);
   const chips = [];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < n; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const iso = toLocalISO(d);
@@ -1920,17 +1926,53 @@ async function initLogPage() {
     const hasData = LOG.datesWithData.has(iso);
     chips.push({ iso, dayLabel, numLabel, hasData, isToday: i === 0 });
   }
-
   strip.innerHTML = chips.map(c => `
-    <button class="date-chip${c.isToday ? ' active' : ''}" data-date="${c.iso}" onclick="selectLogDate('${c.iso}')">
+    <button class="date-chip${(LOG.selectedDate === c.iso) || (!LOG.selectedDate && c.isToday) ? ' active' : ''}" data-date="${c.iso}" onclick="selectLogDate('${c.iso}')">
       <span class="date-chip-day">${c.dayLabel}</span>
       <span class="date-chip-num">${c.numLabel}</span>
       <span class="date-chip-dot${!c.hasData ? ' hidden-dot' : !c.isToday ? ' historical-dot' : ''}"></span>
     </button>`).join('');
+}
 
-  // Auto-select today
+async function initLogPage() {
+  const strip = document.getElementById('logDateStrip');
+  strip.innerHTML = '';
+
+  try {
+    const r = await fetchWithTimeout('/api/log/dates');
+    if (r.ok) {
+      const dates = await r.json();
+      dates.forEach(d => LOG.datesWithData.add(d));
+    }
+  } catch(e) { /* non-fatal */ }
+
+  buildLogDateStrip();
+  const today = new Date();
+  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  selectLogDate(toLocalISO(today));
+}
+
+function loadMoreLogDays() {
+  LOG.stripDayCount = Math.min(LOG.stripDayCount + 30, 180);
+  buildLogDateStrip();
+  const btn = document.getElementById('logLoadMoreBtn');
+  if (btn) btn.textContent = LOG.stripDayCount >= 180 ? 'All dates loaded' : 'Load more dates';
+  if (LOG.stripDayCount >= 180) btn.disabled = true;
+}
+
+function goToLogDate() {
+  const input = document.getElementById('logGoToDateInput');
+  if (!input || !input.value) return;
+  const dateStr = input.value;
+  const today = new Date();
+  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const todayIso = toLocalISO(today);
-  selectLogDate(todayIso);
+  const daysDiff = Math.ceil((new Date(todayIso) - new Date(dateStr)) / (24 * 60 * 60 * 1000));
+  if (daysDiff > LOG.stripDayCount) {
+    LOG.stripDayCount = Math.min(daysDiff + 5, 180);
+    buildLogDateStrip();
+  }
+  selectLogDate(dateStr);
 }
 
 async function selectLogDate(dateStr) {
@@ -3177,11 +3219,11 @@ async function executeLabAction(action) {
     const btEl = _labSpinner('Running backtest on historical slates...');
     appendLabMessage('user', `Backtest result: running...`, true); // placeholder
     try {
-      const r = await fetch('/api/lab/backtest', {
+      const r = await fetchWithTimeout('/api/lab/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proposed_changes: action.changes, description: action.description }),
-      });
+      }, 120000);
       if (!r.ok) throw new Error('Backtest failed: HTTP ' + r.status);
       const result = await r.json();
       btEl.remove();
@@ -3245,11 +3287,11 @@ async function applyLabConfig(changes, description, msgEl) {
   const statusDiv = msgEl.querySelector('[data-config-status]');
   const btnDiv    = msgEl.querySelector('.lab-apply-btn')?.parentElement;
   try {
-    const r = await fetch('/api/lab/update-config', {
+    const r = await fetchWithTimeout('/api/lab/update-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ changes, change_description: description }),
-    });
+    }, 15000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const result = await r.json();
     if (result.error) {

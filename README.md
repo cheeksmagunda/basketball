@@ -79,6 +79,8 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 ### Core
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/api/health` | GET | Health check for monitoring (config + GitHub) |
+| `/api/version` | GET | Build identifier (e.g. VERCEL_GIT_COMMIT_SHA) |
 | `/api/slate` | GET | Full-slate predictions (Starting 5 + Moonshot) |
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
@@ -89,7 +91,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear all caches + config cache |
+| `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set) |
 
 ### Line of the Day
 | Endpoint | Method | Description |
@@ -99,7 +101,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/line-live-stat` | GET | Fetch live stat value for in-game pick tracking |
 | `/api/save-line` | POST | Persist `{over_pick, under_pick}` + primary pick to GitHub |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
-| `/api/auto-resolve-line` | GET | Auto-resolve today's pick from live stat data |
+| `/api/auto-resolve-line` | GET | Cron: auto-resolve picks when games end (requires CRON_SECRET when set) |
 | `/api/line-history` | GET | Recent picks with streak + hit rate |
 
 ### Ben (Lab)
@@ -112,9 +114,11 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/lab/config-history` | GET | Full config + changelog |
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
-| `/api/lab/auto-improve` | GET | Cron: briefing → Haiku proposes change → backtest → auto-apply if ≥3% improvement |
+| `/api/lab/auto-improve` | GET | Cron: auto-tune model (requires CRON_SECRET when set) |
 
 ## Cron Schedule (UTC)
+
+When `CRON_SECRET` is set in Vercel, cron endpoints require `Authorization: Bearer <CRON_SECRET>` (Vercel injects this automatically).
 
 | Schedule | Endpoint | Purpose |
 |----------|----------|---------|
@@ -123,6 +127,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model params if ≥3% MAE improvement |
 | `0 * * * *` | `/api/refresh-line-odds` | Hourly odds sync from Odds API |
 | `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET lock window) |
+| `15,30,45 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (requires CRON_SECRET when set) |
 
 ## Responsiveness & Reliability
 
@@ -160,6 +165,8 @@ Users can skip uploading results for specific slates without affecting model lea
 | `GITHUB_REPO` | e.g. `cheeksmagunda/basketball` |
 | `ANTHROPIC_API_KEY` | Claude (screenshot OCR + Ben chat) |
 | `ODDS_API_KEY` | The Odds API — player prop lines for Line of the Day |
+| `CRON_SECRET` | (optional) Secures cron-only endpoints; Vercel sends as Bearer token when invoking crons |
+| `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
 
 ## LightGBM Model
 
@@ -183,6 +190,7 @@ All persistent data stored in the GitHub repo via Contents API:
 
 ```bash
 pip install -r requirements.txt
+python scripts/check-env.py   # verify required env vars (optional but recommended)
 uvicorn server:app --reload
 # open http://localhost:8000
 ```
@@ -194,6 +202,10 @@ Push to the feature branch — `auto-merge-to-main.yml` merges to `main` → Ver
 ```bash
 git push -u origin claude/your-branch
 ```
+
+## Monitoring / Health check
+
+Use **GET `/api/health`** for uptime checks. It returns `200` with `{ "status": "ok", "config": "ok"|"error", "github": "ok"|"unreachable"|"skipped" }`. Configure an external monitor (e.g. [UptimeRobot](https://uptimerobot.com), [Cronitor](https://cronitor.io), or a simple cron that `curl`s the URL and alerts on non-200) so you notice outages quickly. Vercel does not provide built-in health-check alerting.
 
 ## Lock System (Event-Driven Unlock)
 
@@ -215,7 +227,7 @@ Predictions lock 5 minutes before the earliest game tip-off. **Slates unlock bas
 
 - `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves last displayed data client-side. `data/locks/{date}_slate.json` is the GitHub backup for lock recovery.
 - Line of the Day odds: picks loaded from the GitHub CSV lack `books_consensus`/`odds_over`/`odds_under` — rendered as `MODEL` label until odds are refreshed via `/api/refresh-line-odds`.
-- If both over and under picks are for the same player, `/api/refresh-line-odds` makes two identical Odds API calls — functionally correct, marginally wasteful on quota.
+- When over and under picks are the same player, `/api/refresh-line-odds` fetches Odds API once and applies the result to both (deduped).
 - RotoWire scraping is free-tier only (availability + injury flags, no projected minutes).
 - `data/locks/` accumulates one JSON per day with no automated cleanup — prune manually at season end.
-- History tab shows only the last 30 days. Older predictions are stored in GitHub but not reachable from the date strip UI.
+- History tab shows 60 days by default with "Load more dates" (up to 180) and a "Go to date" picker for any date with data.
