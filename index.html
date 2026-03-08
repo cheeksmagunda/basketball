@@ -342,10 +342,15 @@
       font-size: 0.82rem; font-weight: 800; color: var(--color-text-primary); line-height: 1;
       font-variant-numeric: tabular-nums;
     }
+    .stat-col-avg {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.6rem; font-weight: 600; color: var(--color-text-muted); line-height: 1;
+      font-variant-numeric: tabular-nums; margin-top: 2px;
+    }
     .stat-col-lbl {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.58rem; font-weight: 700; color: var(--color-text-muted);
-      text-transform: uppercase; letter-spacing: 0.06em; line-height: 1; margin-top: 1px;
+      text-transform: uppercase; letter-spacing: var(--tracking-caps); line-height: 1; margin-top: 1px;
     }
     .stat-pill {
       font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
@@ -1935,21 +1940,30 @@ function renderCards(picks, containerId, mode, opts = {}) {
       }
     }
 
+    // Dynamic stat column config — drives all card stat grids from data
+    const _STAT_CONFIG = [
+      { k: 'pts', sk: 'season_pts', l: 'PTS' },
+      { k: 'reb', sk: 'season_reb', l: 'REB' },
+      { k: 'ast', sk: 'season_ast', l: 'AST' },
+      { k: 'stl', sk: 'season_stl', l: 'STL' },
+      { k: 'blk', sk: 'season_blk', l: 'BLK' },
+    ];
+    const statCols = _STAT_CONFIG
+      .filter(c => p[c.k])
+      .map(c => ({ v: p[c.k], avg: p[c.sk], l: c.l, k: c.k }));
+
+    // Minutes pill: projected + season avg
+    const avgMin = p.season_min || p.avg_min;
+    const minPillText = (p.predMin && avgMin)
+      ? `${p.predMin}m <span style="color:var(--color-text-muted);font-weight:600">/ ${avgMin} avg</span>`
+      : (p.predMin ? `${p.predMin} min` : '');
+
     // Context pills (card boost + minutes)
     const contextPills = [
       p.est_mult && `<span class="stat-context-pill">+${p.est_mult}x card</span>`,
-      p.predMin && `<span class="stat-context-pill">${p.predMin} min</span>`,
+      minPillText && `<span class="stat-context-pill">${minPillText}</span>`,
       (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:var(--color-danger);border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
       (isLog && !hasActuals) ? '<span class="pending-results">Waiting for results</span>' : '',
-    ].filter(Boolean);
-
-    // Core stat columns (PTS / REB / AST / STL / BLK)
-    const statCols = [
-      p.pts && {v: p.pts, l: 'PTS', k: 'pts'},
-      p.reb && {v: p.reb, l: 'REB', k: 'reb'},
-      p.ast && {v: p.ast, l: 'AST', k: 'ast'},
-      p.stl && {v: p.stl, l: 'STL', k: 'stl'},
-      p.blk && {v: p.blk, l: 'BLK', k: 'blk'},
     ].filter(Boolean);
 
     let statsHtml;
@@ -1970,9 +1984,14 @@ function renderCards(picks, containerId, mode, opts = {}) {
         ${contextPills.length ? `<div class="stat-context-row">${contextPills.join('')}</div>` : ''}
         ${gradedCols ? `<div class="stat-grid-row">${gradedCols}</div>` : ''}`;
     } else {
+      // Standard 3-tier: Projection (bold) / Avg (muted) / Label
+      const stdCols = statCols.map(s => {
+        const avgHtml = s.avg != null ? `<div class="stat-col-avg">${s.avg}</div>` : '';
+        return `<div class="stat-col"><div class="stat-col-val">${s.v}</div>${avgHtml}<div class="stat-col-lbl">${s.l}</div></div>`;
+      }).join('');
       statsHtml = `
         ${contextPills.length ? `<div class="stat-context-row">${contextPills.join('')}</div>` : ''}
-        ${statCols.length ? `<div class="stat-grid-row">${statCols.map(s => `<div class="stat-col"><div class="stat-col-val">${s.v}</div><div class="stat-col-lbl">${s.l}</div></div>`).join('')}</div>` : ''}`;
+        ${stdCols ? `<div class="stat-grid-row">${stdCols}</div>` : ''}`;
     }
 
     const logCardClass = isLog ? ' log-card' : '';

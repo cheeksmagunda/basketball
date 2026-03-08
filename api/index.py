@@ -1353,6 +1353,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
         # Recent vs season stats — used by line engine for trend detection
+        "season_min": round(stats.get("season_min", avg_min), 1),
         "season_pts": round(stats.get("season_pts", pts), 1),
         "recent_pts": round(stats.get("recent_pts", pts), 1),
         "season_reb": round(stats.get("season_reb", reb), 1),
