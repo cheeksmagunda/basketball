@@ -422,5 +422,29 @@ class TestLgbmFeatureAlignment:
         )
 
 
+# ─────────────────────────────────────────────────────────
+# TestGlobalExceptionHandler — unhandled exceptions return 500, no leak
+# ─────────────────────────────────────────────────────────
+class TestGlobalExceptionHandler:
+    """Global exception handler returns 500 with generic body; no stack trace or internal detail in response."""
+
+    def test_unhandled_exception_returns_500_and_generic_body(self):
+        pytest.importorskip("fastapi", reason="Install dependencies: pip install -r requirements.txt")
+        from fastapi.testclient import TestClient
+        from api.index import app, _get_slate_impl
+
+        def raise_err():
+            raise ValueError("internal detail must not appear in response")
+
+        with patch("api.index._get_slate_impl", side_effect=raise_err):
+            client = TestClient(app)
+            r = client.get("/api/slate")
+        assert r.status_code == 500
+        body = r.json()
+        assert body.get("error") == "An unexpected error occurred"
+        assert "traceback" not in r.text.lower()
+        assert "internal detail" not in r.text
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

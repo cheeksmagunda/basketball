@@ -534,19 +534,6 @@
     .empty-state .icon { font-size: 2rem; margin-bottom: 10px; display: block; }
     .empty-state p { font-size: 0.82rem; line-height: 1.55; }
 
-    /* Legacy / unused — candidates for future cleanup: placeholder-page, modal-overlay, modal-box, result-badge, winning-draft-* */
-    .placeholder-page {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      min-height: 40vh; text-align: center; padding: 48px 24px;
-    }
-    .placeholder-page .pl-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.3; }
-    .placeholder-page h2 {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.4rem; font-weight: 900; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
-    }
-    .placeholder-page p { font-size: 0.8rem; color: var(--muted); }
-
     /* ── ERROR BANNER ── */
     .error-banner {
       background: rgba(244,63,94,0.1);
@@ -565,47 +552,6 @@
     .retry-inline-btn:hover { background: var(--chalk); color: var(--bg); border-color: var(--chalk); }
 
     .hidden { display: none !important; }
-
-    /* ── MODAL ── */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
-      display: flex; align-items: center; justify-content: center; padding: 20px;
-    }
-    .modal-box {
-      background: var(--bg); border: 1px solid var(--border-bright); border-radius: var(--radius-card);
-      padding: 24px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto;
-    }
-    .modal-header {
-      font-family: 'Barlow Condensed', sans-serif; font-size: 1.1rem; font-weight: 800;
-      margin-bottom: 16px; color: var(--text);
-    }
-    .score-row {
-      display: grid; grid-template-columns: 1fr 50px 70px; gap: 8px; align-items: center;
-      padding: 8px 0; border-bottom: 1px solid var(--border);
-    }
-    .score-row-name { font-size: 0.82rem; font-weight: 600; }
-    .score-row-pred { font-size: 0.75rem; color: var(--muted); text-align: center; }
-    .score-row input {
-      background: var(--surface2); border: 1px solid var(--border-bright); border-radius: var(--radius-card);
-      padding: 8px; color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: center;
-      outline: none; width: 100%;
-    }
-    .score-row input:focus { border-color: var(--chalk); }
-    .score-row input[type="text"] { text-align: left; font-weight: 400; }
-    .modal-cancel {
-      flex: 1; padding: 10px; border-radius: var(--radius-card); border: 1px solid var(--border);
-      background: transparent; color: var(--muted); cursor: pointer;
-      font-family: 'Barlow Condensed', sans-serif; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.06em; transition: all 0.2s;
-    }
-    .modal-cancel:hover { border-color: var(--border-bright); color: var(--text-dim); }
-    .modal-submit {
-      flex: 2; padding: 10px; border-radius: var(--radius-card); border: none;
-      background: var(--chalk); color: var(--color-text-primary); cursor: pointer;
-      font-family: 'Barlow Condensed', sans-serif; font-weight: 800; text-transform: uppercase;
-      letter-spacing: 0.06em; transition: all 0.2s;
-    }
-    .modal-submit:disabled { opacity: 0.35; cursor: not-allowed; }
 
     /* ── LOG PAGE SPECIFIC ── */
 
@@ -761,38 +707,6 @@
       text-transform: uppercase; color: var(--text-dim);
       display: flex; align-items: center; gap: 8px; margin: 20px 0 12px;
     }
-    .result-badge {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em;
-      text-transform: uppercase; padding: 3px 8px; border-radius: 4px;
-    }
-    .result-badge.win { background: rgba(212,166,64,0.15); color: var(--log-win); border: 1px solid rgba(212,166,64,0.3); }
-    .result-badge.opt { background: rgba(155,128,200,0.15); color: var(--log-opt); border: 1px solid rgba(155,128,200,0.3); }
-
-    .winning-draft-card {
-      background: var(--surface);
-      border: 1px solid rgba(212,166,64,0.25);
-      border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px;
-      opacity: 0; transform: translateY(12px);
-      animation: fadeUp 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
-    }
-    .winning-draft-rank {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--log-win); margin-bottom: 8px;
-    }
-    .winning-draft-score {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.6rem; font-weight: 900; color: var(--log-win); float: right;
-    }
-    .winning-draft-player {
-      font-size: 0.78rem; color: var(--text-dim); padding: 3px 0;
-      border-bottom: 1px solid var(--border);
-      display: flex; justify-content: space-between;
-    }
-    .winning-draft-player:last-child { border-bottom: none; }
-    .winning-draft-player b { color: var(--text); }
-
     /* ── LINE PAGE ── */
     .line-pick-card {
       background: var(--surface);
@@ -1303,12 +1217,8 @@
       <button class="predict-sub-btn line-dir-btn active" data-dir="under" onclick="switchLineDir('under')">Under</button>
     </div>
     <div id="lineContent">
-      <div id="lineLoading" style="display:none">
-        <div class="skeleton" style="height:140px;border-radius:var(--r);margin-bottom:12px"><div class="skel-block" style="width:100%;height:100%"></div></div>
-        <div class="skeleton" style="height:90px;border-radius:var(--r)"><div class="skel-block" style="width:100%;height:100%"></div></div>
-      </div>
       <div id="lineEmpty" style="display:none">
-        <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p></div>
+        <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p><button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="retryLineOfTheDay()">Retry</button></div>
       </div>
       <div id="linePickWrap" style="display:none">
         <div id="lineNoPickMsg" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:center;font-size:0.78rem;color:var(--muted)"></div>
@@ -1474,6 +1384,20 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
     });
 }
 
+/** Safe localStorage parse: returns fallback on missing key or invalid JSON (avoids throw on corrupted data). */
+function _safeParseLocalStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return JSON.parse(raw);
+  } catch (e) {
+    return fallback;
+  }
+}
+
+/** Safe getElementById for resilience; use before accessing .style, .innerHTML, etc. */
+function _el(id) { return document.getElementById(id); }
+
 // ════════════════════════════════════════════════════════════════════
 // CONSTANTS — grep: TEAM_COLORS, team colors, accent bar, tcolor
 // ════════════════════════════════════════════════════════════════════
@@ -1519,16 +1443,22 @@ const TEAM_COLORS = {
 // ════════════════════════════════════════════════════════════════════
 // GLOBAL STATE — grep: SLATE, PICKS_DATA, LOG, LAB, LINE_LOADED
 // ════════════════════════════════════════════════════════════════════
-// Global state — grep: GLOBAL STATE
-// SLATE: cached /api/slate; PICKS_DATA: cached /api/picks per game; isFetching: request lock;
-// SLATE_LOADED_AT: last loadSlate() time for revalidation; LOG: History tab state;
-// LINE_*: Line of the Day state; LAB: Ben chat state; PREDICT_SUB: slate|game; TAB_ACCENT: tab colors.
+/**
+ * API shapes and tab init (grep: GLOBAL STATE)
+ * - SLATE: /api/slate response — { date, locked, games[], lineups: { chalk[], upside[] }, error? }.
+ * - PICKS_DATA: /api/picks per gameId — { chalk[], upside[], game }.
+ * - LINE_LOTD_STATE: AsyncState for Line tab — data = { pick, over_pick?, under_pick?, error? }; pick has stat_type, line, narrative, game_time, etc.
+ * - LAB: Ben tab — messages[], briefing, cachedStatus, system; init on first visit; lock poll when locked.
+ * - LOG: History tab — selectedDate, data (from /api/log/get), dateCache; init on first visit via initLogPage → buildLogDateStrip, selectLogDate.
+ * Tab init: Predict (loadSlate + initGameSelector at startup); Line/Log/Lab lazy-init on first switchTab (initLinePage, initLogPage, initLabPage).
+ */
 let SLATE = null;
 let PICKS_DATA = null;
 let isFetching = false;
 let SLATE_LOADED_AT = 0;
 
 // Log page state — grep: LOG state, history page, drill-down
+const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const LOG = {
   selectedDate: null,
   scope: null,           // 'slate' | matchup label
@@ -1536,7 +1466,40 @@ const LOG = {
   datesWithData: new Set(),
   data: null,            // {date, scopes, actuals}
   currentTab: 'chalk',
+  dateCache: {},        // { [dateStr]: { data, loadedAt } }
 };
+
+// ════════════════════════════════════════════════════════════════════
+// ASYNC STATE — grep: asyncStateInitial, asyncStateLoading, asyncStateSuccess, asyncStateError
+// Generic state wrapper for network-backed views: Initial -> Loading -> Success(Data) | Error
+// Shape: { status: 'initial'|'loading'|'success'|'error', data: T|null, error: Error|null [, loadedAt?: number ] }
+// ════════════════════════════════════════════════════════════════════
+function asyncStateInitial() {
+  return { status: 'initial', data: null, error: null };
+}
+function asyncStateLoading(prev) {
+  const s = prev ? { ...prev } : asyncStateInitial();
+  s.status = 'loading';
+  s.error = null;
+  return s;
+}
+function asyncStateSuccess(prev, data) {
+  const s = prev ? { ...prev } : asyncStateInitial();
+  s.status = 'success';
+  s.data = data;
+  s.error = null;
+  s.loadedAt = Date.now();
+  return s;
+}
+function asyncStateError(prev, err) {
+  const s = prev ? { ...prev } : asyncStateInitial();
+  s.status = 'error';
+  s.error = err;
+  return s;
+}
+
+let SLATE_STATE = asyncStateInitial();  // Predict slate AsyncState
+let PICKS_STATE = asyncStateInitial();  // Per-game picks AsyncState
 
 // ════════════════════════════════════════════════════════════════════
 // TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
@@ -1729,6 +1692,7 @@ async function initGameSelector() {
 // SLATE — grep: loadSlate, /api/slate, slateList, Starting 5, Moonshot
 // ════════════════════════════════════════════════════════════════════
 async function loadSlate() {
+  SLATE_STATE = asyncStateLoading(SLATE_STATE);
   showLoader();
   renderSkeletons('slateList', 5);
   try {
@@ -1736,9 +1700,12 @@ async function loadSlate() {
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
+    SLATE_STATE = asyncStateSuccess(SLATE_STATE, slateData);
     if (slateData.error === 'slate_failed') {
-      document.getElementById('slateTabs').style.display = 'none';
-      document.getElementById('slateList').innerHTML = `
+      const tabs = _el('slateTabs');
+      const list = _el('slateList');
+      if (tabs) tabs.style.display = 'none';
+      if (list) list.innerHTML = `
         <div class="empty-state">
           <span class="icon">📡</span>
           <p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>
@@ -1788,8 +1755,10 @@ async function loadSlate() {
         } catch(e) {}
       }
     }
-    document.getElementById('slateTabs').style.display = 'flex';
+    const slateTabsEl = _el('slateTabs');
+    if (slateTabsEl) slateTabsEl.style.display = 'flex';
     SLATE_LOADED_AT = Date.now();
+    if (typeof LAB !== 'undefined') { LAB.cachedStatus = null; LAB.statusFetchedAt = 0; }
 
     // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
     // so the "Picks Locked" chip appears without the user having to manually refresh.
@@ -1807,7 +1776,8 @@ async function loadSlate() {
       }
     }
 
-    const chips = document.getElementById('slateChips');
+    const chips = _el('slateChips');
+    if (!chips) return;
     const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
     const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
 
@@ -1858,6 +1828,7 @@ async function loadSlate() {
     switchSlate('chalk');
     savePredictions();
   } catch(e) {
+    SLATE_STATE = asyncStateError(SLATE_STATE, e);
     hideLoader();
     document.getElementById('slateList').innerHTML = `
       <div class="empty-state">
@@ -1890,6 +1861,7 @@ async function runAnalysis() {
   if (!gameId) return;
 
   isFetching = true;
+  PICKS_STATE = asyncStateLoading(PICKS_STATE);
   const rb = document.getElementById('lineRefreshBtn'); if (rb) rb.disabled = true;
   banner.style.display = 'none';
   document.getElementById('gameAnalysisEmpty').style.display = 'none';
@@ -1898,12 +1870,10 @@ async function runAnalysis() {
   renderSkeletons('picksList', 5);
   showLoader();
 
-  // Capture gameId at call time — discard response if user switched games mid-flight
   const _requestedGameId = gameId;
   try {
     const r = await fetchWithTimeout(`/api/picks?gameId=${gameId}`, {}, 15000);
     hideLoader();
-    // Stale response guard: user may have changed game selector while request was in-flight
     if (document.getElementById('gameSel').value !== _requestedGameId) {
       isFetching = false;
       btn.disabled = false; btn.innerHTML = 'Analyze Draft';
@@ -1915,6 +1885,7 @@ async function runAnalysis() {
       throw new Error(err.error || `HTTP ${r.status}`);
     }
     const picksData = await r.json();
+    PICKS_STATE = asyncStateSuccess(PICKS_STATE, picksData);
     if (picksData.locked && !picksData.lineups?.chalk?.length && PICKS_DATA) {
       PICKS_DATA.locked = true;
     } else {
@@ -1955,6 +1926,7 @@ async function runAnalysis() {
     renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
     savePredictions();
   } catch(e) {
+    PICKS_STATE = asyncStateError(PICKS_STATE, e);
     hideLoader();
     document.getElementById('picksList').innerHTML = '';
     banner.innerHTML = `⚠ ${e.message} <button type="button" class="retry-inline-btn" onclick="runAnalysis()">Retry</button>`;
@@ -2160,6 +2132,23 @@ async function savePredictions() {
 // ════════════════════════════════════════════════════════
 // LOG PAGE — grep: initLogPage, selectLogDate, renderLogGrid, openLogDrilldown, drill-down
 // ════════════════════════════════════════════════════════
+let LOG_STATE = asyncStateInitial();
+
+function _renderLogGridFromState(dateStr) {
+  const grid = _el('logGameGrid');
+  const label = _el('logGridLabel');
+  if (!grid || !label) return;
+  if (LOG_STATE.status === 'initial' || LOG_STATE.status === 'loading') {
+    const d = new Date(dateStr + 'T12:00:00');
+    label.textContent = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">⏳</span><p>Loading...</p></div>`;
+    return;
+  }
+  if (LOG_STATE.status === 'error') {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📡</span><p>Couldn't load data for this date.</p></div>`;
+    return;
+  }
+}
 
 function buildLogDateStrip() {
   const today = new Date();
@@ -2204,34 +2193,42 @@ async function initLogPage() {
 }
 
 async function selectLogDate(dateStr) {
-  // Update strip selection
   document.querySelectorAll('.date-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.date === dateStr));
-
   LOG.selectedDate = dateStr;
-  LOG.data = null;
   closeLogDrilldown();
 
-  // Load data
-  const grid = document.getElementById('logGameGrid');
-  grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">⏳</span><p>Loading...</p></div>`;
+  const cached = LOG.dateCache[dateStr];
+  if (cached && (Date.now() - cached.loadedAt) < LOG_CACHE_TTL_MS) {
+    LOG.data = cached.data;
+    LOG_STATE = asyncStateSuccess(LOG_STATE, cached.data);
+    renderLogGrid(dateStr);
+    return;
+  }
+
+  LOG.data = null;
+  LOG_STATE = asyncStateLoading(LOG_STATE);
+  _renderLogGridFromState(dateStr);
 
   try {
     const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`);
     if (!r.ok) throw new Error('Failed to load log data');
-    LOG.data = await r.json();
+    const data = await r.json();
+    LOG.dateCache[dateStr] = { data, loadedAt: Date.now() };
+    LOG.data = data;
+    LOG_STATE = asyncStateSuccess(LOG_STATE, data);
+    renderLogGrid(dateStr);
   } catch(e) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📡</span><p>Couldn't load data for this date.</p></div>`;
-    return;
+    LOG_STATE = asyncStateError(LOG_STATE, e);
+    _renderLogGridFromState(dateStr);
   }
-
-  renderLogGrid(dateStr);
 }
 
 function renderLogGrid(dateStr) {
   const data = LOG.data;
-  const grid = document.getElementById('logGameGrid');
-  const label = document.getElementById('logGridLabel');
+  const grid = _el('logGameGrid');
+  const label = _el('logGridLabel');
+  if (!grid || !label) return;
 
   const d = new Date(dateStr + 'T12:00:00');
   const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
@@ -2404,7 +2401,7 @@ function _initUploadBanner() {
   if (!_ub) return;
   const _pendingDate = LAB.briefing?.pending_upload_date || null;
   if (!_pendingDate) { _ub.style.display = 'none'; return; }
-  const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _pendingDate) || '{}');
+  const _ulFlags = _safeParseLocalStorage('benUploads_' + _pendingDate, {});
   const _allDone = _ulFlags.real_scores && _ulFlags.top_drafts && _ulFlags.starting_5 && _ulFlags.moonshot;
   _ub.style.display = _allDone ? 'none' : 'block';
   // Set banner title with the pending date + progress counter
@@ -2428,7 +2425,7 @@ function _initUploadBanner() {
 function _checkBannerDone() {
   const pendingDate = LAB.briefing?.pending_upload_date;
   if (!pendingDate) return;
-  const _u = JSON.parse(localStorage.getItem('benUploads_' + pendingDate) || '{}');
+  const _u = _safeParseLocalStorage('benUploads_' + pendingDate, {});
   if (_u.real_scores && _u.top_drafts && _u.starting_5 && _u.moonshot) {
     const banner = document.getElementById('benUploadBanner');
     if (banner) {
@@ -2457,7 +2454,8 @@ async function _benSkipAllUploads() {
   const pendingDate = LAB.briefing?.pending_upload_date || _etToday();
 
   // Store in localStorage to persist across sessions
-  const skippedDates = JSON.parse(localStorage.getItem('benSkippedUploadDates') || '[]');
+  let skippedDates = _safeParseLocalStorage('benSkippedUploadDates', []);
+  if (!Array.isArray(skippedDates)) skippedDates = [];
   if (!skippedDates.includes(pendingDate)) {
     skippedDates.push(pendingDate);
     localStorage.setItem('benSkippedUploadDates', JSON.stringify(skippedDates));
@@ -2526,7 +2524,7 @@ async function _handleBenUpload(file, type, source) {
       const b = document.getElementById(id);
       if (!b) return;
       b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true;
-      const _uf = JSON.parse(localStorage.getItem('benUploads_' + date) || '{}');
+      const _uf = _safeParseLocalStorage('benUploads_' + date, {});
       const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot].filter(Boolean).length;
       const _t = document.getElementById('benBannerTitle');
       if (_t) { const d = new Date(date + 'T12:00:00'); const ds = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/4' : ''); }
@@ -2545,7 +2543,7 @@ async function _handleBenUpload(file, type, source) {
       if (!_saveRes.ok) throw new Error(`Save actuals failed (${_saveRes.status})`);
 
       // Write localStorage first so counter in _markBannerDone reads the updated count
-      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       _markBannerDone(bannerBtnId, _labels[type], today);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
@@ -2600,7 +2598,7 @@ async function _handleBenUpload(file, type, source) {
           if (!_lr.ok) throw new Error('HTTP ' + _lr.status);
         } catch(e) { _appendMsg('assistant', 'Failed to save leaderboard — try again.'); return; }
       }
-      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       _markBannerDone(bannerBtnId, _labels[type], today);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
@@ -2632,6 +2630,17 @@ let LINE_OVER_PICK  = null; // today's over pick
 let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
+// Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
+let LINE_LOTD_STATE = asyncStateInitial();
+let LINE_HISTORY_STATE = asyncStateInitial();
+
+/** Classify fetch failure for logging. Returns 'timeout' | 'http_XXX' | 'parse' | 'network'. */
+function classifyFetchError(err, response) {
+  if (err && err.name === 'AbortError') return 'timeout';
+  if (response && response.ok === false) return 'http_' + (response.status || 0);
+  if (response && response.ok) return 'parse';
+  return 'network';
+}
 
 async function _tryAutoResolveLine(pick) {
   if (LINE_RESOLVE_POLL) { clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; }
@@ -2649,7 +2658,7 @@ async function _tryAutoResolveLine(pick) {
         LINE_UNDER_PICK = { ...LINE_UNDER_PICK, result: arData.result, actual_stat: arData.actual_stat };
       }
       LINE_LOADED_DATE = '';
-      // Auto-reload after short delay to show the rotated new pick
+      LINE_LOTD_STATE = asyncStateInitial();
       setTimeout(() => initLinePage(), 1500);
     } else if (arData.status === 'game_not_final') {
       // Game still live — poll every 5 min until it finishes
@@ -2755,41 +2764,45 @@ async function _startLineLivePoll(overPick, underPick) {
   }
 }
 
-async function initLinePage() {
-  if (isFetching) return;
-  const todayET = _etToday();
-  if (LINE_LOADED_DATE === todayET) {
-    switchLineDir(LINE_DIR); // restore button state on re-visit
+function _renderLineLOTDFromState() {
+  const st = LINE_LOTD_STATE;
+  const loading = st.status === 'initial' || st.status === 'loading';
+  const lineEmptyEl = _el('lineEmpty');
+  const linePickWrap = _el('linePickWrap');
+  const linePickCard = _el('linePickCard');
+  const lineSlateSummary = _el('lineSlateSummary');
+  const lineRefreshBtn = _el('lineRefreshBtn');
+  if (!linePickWrap || !linePickCard) return;
+  if (lineRefreshBtn) lineRefreshBtn.disabled = loading;
+
+  if (loading) {
+    linePickWrap.style.display = 'block';
+    linePickCard.innerHTML = renderLinePickCardSkeleton();
+    lineSlateSummary.innerHTML = '';
+    lineEmptyEl.style.display = 'none';
     return;
   }
-  isFetching = true;
-  const _ab = document.getElementById('analyzeBtn'); if (_ab) _ab.disabled = true;
-  const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = true;
-  LINE_LOADED_DATE = todayET;
-  document.getElementById('lineLoading').style.display = 'block';
-  document.getElementById('lineEmpty').style.display = 'none';
-  document.getElementById('linePickWrap').style.display = 'none';
-  document.getElementById('lineHistoryWrap').style.display = 'none';
-  // Reset content
-  document.getElementById('linePickCard').innerHTML = '';
-  document.getElementById('lineSlateSummary').innerHTML = '';
-
-  try {
-    // Fire auto-resolve in background — resolves picks whose games have ended
-    // without blocking page load. Next line-of-the-day call will see updated results.
-    fetch('/api/auto-resolve-line').catch(function(){});
-    const r = await fetchWithTimeout('/api/line-of-the-day', {}, 25000);
-    if (!r.ok) throw new Error(`line-of-the-day error: ${r.status}`);
-    const data = await r.json();
-    document.getElementById('lineLoading').style.display = 'none';
-
+  if (st.status === 'error') {
+    linePickWrap.style.display = 'none';
+    if (lineEmptyEl) {
+      const icon = lineEmptyEl.querySelector('.icon');
+      if (icon) icon.textContent = '📡';
+      const msg = _el('lineEmptyMsg');
+      if (msg) msg.textContent = 'Line pick didn\'t load. Tap Retry.';
+      lineEmptyEl.style.display = 'flex';
+    }
+    return;
+  }
+  if (st.status === 'success' && st.data) {
+    const data = st.data;
+    if (data.error === 'next_slate_pending') {
+      linePickWrap.style.display = 'block';
+      linePickCard.innerHTML = renderNextSlatePending();
+      lineSlateSummary.innerHTML = '';
+      lineEmptyEl.style.display = 'none';
+      return;
+    }
     if (!data.pick) {
-      // Special case: today resolved, tomorrow's slate not posted yet
-      if (data.error === 'next_slate_pending') {
-        document.getElementById('linePickWrap').style.display = 'block';
-        document.getElementById('linePickCard').innerHTML = renderNextSlatePending();
-        return;
-      }
       const msgs = {
         no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',
@@ -2798,77 +2811,115 @@ async function initLinePage() {
         no_projections:   'Could not load player projections.',
         server_error:    'Line pick service temporarily unavailable. Tap Retry.',
       };
-      const icons = {
-        no_games:  '🏀',
-        no_edges:  '📊',
-        no_api_key:'🔑',
-        default:   '📡',
-      };
-      const emptyEl = document.getElementById('lineEmpty');
-      emptyEl.querySelector('.icon').textContent = icons[data.error] || icons.default;
-      document.getElementById('lineEmptyMsg').textContent = msgs[data.error] || 'No line pick available.';
-      emptyEl.style.display = 'flex';
+      const icons = { no_games: '🏀', no_edges: '📊', no_api_key: '🔑', default: '📡' };
+      if (lineEmptyEl) {
+        const icon = lineEmptyEl.querySelector('.icon');
+        if (icon) icon.textContent = icons[data.error] || icons.default;
+        const msg = _el('lineEmptyMsg');
+        if (msg) msg.textContent = msgs[data.error] || 'No line pick available.';
+        lineEmptyEl.style.display = 'flex';
+      }
+      linePickWrap.style.display = 'none';
       return;
     }
-
-    // Store both direction picks
     LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
     LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
-
-    document.getElementById('linePickWrap').style.display = 'block';
-    if (data.slate_summary) {
-      document.getElementById('lineSlateSummary').innerHTML = renderLineSummary(data.slate_summary);
-    }
-    // Render whichever pick matches the active direction (default: under)
+    linePickWrap.style.display = 'block';
+    lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
     switchLineDir(LINE_DIR);
-
-    // Start live stat tracking poll (no-op if games not yet started or already final)
-    _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-
-    // Auto-save both picks
-    try {
-      const _slr = await fetchWithTimeout('/api/save-line', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-      });
-      if (!_slr.ok) console.warn('save-line failed:', _slr.status);
-    } catch(e) { /* non-fatal */ }
-
-    // Auto-resolve: try to resolve primary pick against completed ESPN boxscores.
-    // Skip if this is a rotated pick (resolved_today present) — tomorrow's pick has no
-    // result yet and auto_resolve_line always reads today's CSV, not tomorrow's.
-    const primaryPick = data.pick;
-    const pickResult  = primaryPick && primaryPick.result;
-    if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
-      await _tryAutoResolveLine(primaryPick);
-    }
-
-  } catch(e) {
-    document.getElementById('lineLoading').style.display = 'none';
-    const emptyEl = document.getElementById('lineEmpty');
-    emptyEl.querySelector('.icon').textContent = '📡';
-    document.getElementById('lineEmptyMsg').textContent = 'Line pick didn\'t load. Tap Retry.';
-    emptyEl.style.display = 'flex';
-  } finally {
-    isFetching = false;
-    const _ab = document.getElementById('analyzeBtn'); if (_ab) _ab.disabled = !document.getElementById('gameSel')?.value;
-    const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = false;
+    lineEmptyEl.style.display = 'none';
   }
+}
 
-  // Load history
+async function fetchLineOfTheDay() {
+  LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
+  _renderLineLOTDFromState();
+  fetch('/api/auto-resolve-line').catch(function(){});
+  let r;
   try {
-    const hr = await fetchWithTimeout('/api/line-history');
-    if (hr.ok) {
-      const hist = await hr.json();
-      if (hist.picks && hist.picks.length) {
-        document.getElementById('lineHistoryWrap').style.display = 'block';
-        renderLineHistory(hist);
-        // Sync history to whatever direction is active in the sub-nav
-        filterLineHistory(LINE_DIR);
+    r = await fetchWithTimeout('/api/line-of-the-day', {}, 25000);
+    if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
+    const data = await r.json();
+    LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
+    _renderLineLOTDFromState();
+    if (data.pick) {
+      _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+      try {
+        const _slr = await fetchWithTimeout('/api/save-line', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
+        });
+        if (!_slr.ok) console.warn('save-line failed:', _slr.status);
+      } catch(e) { /* non-fatal */ }
+      const primaryPick = data.pick;
+      const pickResult = primaryPick && primaryPick.result;
+      if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
+        await _tryAutoResolveLine(primaryPick);
       }
     }
-  } catch(e) { /* non-fatal */ }
+  } catch(e) {
+    const reason = classifyFetchError(e, r);
+    console.warn('[line-of-the-day] failed:', reason, e.message || '');
+    LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
+    _renderLineLOTDFromState();
+  }
+}
+
+function retryLineOfTheDay() {
+  fetchLineOfTheDay();
+}
+
+function _renderLineHistoryFromState() {
+  const st = LINE_HISTORY_STATE;
+  const wrap = document.getElementById('lineHistoryWrap');
+  const list = document.getElementById('lineHistoryList');
+  const stats = document.getElementById('lineHistoryStats');
+  if (st.status === 'initial' || st.status === 'loading') {
+    wrap.style.display = 'block';
+    stats.innerHTML = '';
+    list.innerHTML = '<div class="skeleton" style="height:48px;margin-bottom:8px"><div class="skel-block skel-line wide"></div><div class="skel-block skel-line narrow"></div></div>'.repeat(3);
+    return;
+  }
+  if (st.status === 'error') {
+    wrap.style.display = 'block';
+    stats.innerHTML = '';
+    list.innerHTML = '<div class="empty-state" style="padding:16px"><span class="icon">📡</span><p>Couldn\'t load recent picks.</p></div>';
+    return;
+  }
+  if (st.status === 'success' && st.data && st.data.picks && st.data.picks.length) {
+    renderLineHistory(st.data);
+    filterLineHistory(LINE_DIR);
+  }
+}
+
+async function fetchLineHistory() {
+  LINE_HISTORY_STATE = asyncStateLoading(LINE_HISTORY_STATE);
+  _renderLineHistoryFromState();
+  try {
+    const hr = await fetchWithTimeout('/api/line-history');
+    if (!hr.ok) throw new Error('line-history HTTP ' + hr.status);
+    const hist = await hr.json();
+    LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
+    _renderLineHistoryFromState();
+  } catch(e) {
+    LINE_HISTORY_STATE = asyncStateError(LINE_HISTORY_STATE, e);
+    _renderLineHistoryFromState();
+  }
+}
+
+async function initLinePage() {
+  const todayET = _etToday();
+  const alreadyLoaded = LINE_LOADED_DATE === todayET && LINE_LOTD_STATE.status === 'success';
+  if (alreadyLoaded) {
+    switchLineDir(LINE_DIR);
+    fetchLineHistory();
+    return;
+  }
+  LINE_LOADED_DATE = todayET;
+  document.getElementById('lineHistoryWrap').style.display = 'none';
+  fetchLineOfTheDay();
+  fetchLineHistory();
 }
 
 const LINE_STAT_LABEL = { points: 'PTS', rebounds: 'REB', assists: 'AST' };
@@ -2876,6 +2927,36 @@ function _lineStatLabel(statType) { return LINE_STAT_LABEL[statType] || (statTyp
 
 function _escapeHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Skeleton HTML matching the Line pick card layout (header, play row, 5-col data row, conclusion). */
+function renderLinePickCardSkeleton() {
+  return `
+    <div class="line-pick-card" style="pointer-events:none">
+      <div class="line-pick-header">
+        <div class="line-pick-header-left">
+          <div class="skeleton" style="padding:0;margin:0;border:none;background:transparent;display:block">
+            <div class="skel-block skel-line wide" style="height:18px;width:140px;margin-bottom:6px"></div>
+            <div class="skel-block skel-line narrow" style="height:12px;width:180px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="line-direction-row">
+        <div class="skel-block" style="width:52px;height:24px;border-radius:var(--radius-pill)"></div>
+        <div class="skel-block skel-line" style="height:14px;width:60px"></div>
+      </div>
+      <div class="line-pick-data-row">
+        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Baseline</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
+        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Edge</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
+        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">PTS</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
+        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Min</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
+        <div class="line-pick-data-col line-pick-l5-col"><span class="line-pick-micro-lbl">L5</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
+      </div>
+      <div class="line-pick-conclusion-wrap">
+        <div class="skel-block skel-line wide" style="height:12px;margin-bottom:8px"></div>
+        <div class="skel-block skel-line narrow" style="height:12px;width:80%"></div>
+      </div>
+    </div>`;
 }
 
 /** Build a single "Conclusion" paragraph from narrative + signals (Oracle Insight). Returns HTML. Always shows at least one line when we have projection + edge so the card never looks like the old version. */
@@ -3217,6 +3298,8 @@ const LAB = {
   initDate: '',       // ET date string when Lab was opened (clears messages on rollover)
   _lockPoll: null,
   pendingImage: null,
+  cachedStatus: null,   // JSON from /api/lab/status — avoid refetch on quick tab revisit
+  statusFetchedAt: 0,   // timestamp; invalidate on Retry or after 10 min or when loadSlate completes
 };
 
 function _isLabStatusErrorFallback(status) {
@@ -3229,16 +3312,21 @@ function _isLabStatusErrorFallback(status) {
 function _showLabStatusUnknown() {
   var _ub = document.getElementById('benUploadBanner');
   if (_ub) _ub.style.display = 'none';
-  document.getElementById('labLocked').style.display = 'none';
-  document.getElementById('labConnectionError').style.display = 'block';
-  document.getElementById('labConnectionErrorReason').textContent = 'Server couldn\'t determine status. Tap Retry.';
-  document.getElementById('labConnectionErrorAction').innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
+  const labLockedEl = _el('labLocked');
+  const labConnErr = _el('labConnectionError');
+  const labConnReason = _el('labConnectionErrorReason');
+  const labConnAction = _el('labConnectionErrorAction');
+  if (labLockedEl) labLockedEl.style.display = 'none';
+  if (labConnErr) labConnErr.style.display = 'block';
+  if (labConnReason) labConnReason.textContent = 'Server couldn\'t determine status. Tap Retry.';
+  if (labConnAction) labConnAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.cachedStatus=null;LAB.statusFetchedAt=0;LAB.initialized=false;initLabPage()">Retry</button>';
 }
 
 async function initLabPage() {
   // Re-check status if tab revisited after 10+ minutes (lock state may have changed)
   const stale = Date.now() - LAB.initAt > 10 * 60 * 1000;
   if (LAB.initialized && !stale) return;
+  if (!_el('labUnlocked')) return; // DOM not ready (e.g. wrong tab markup)
   LAB.initialized = true;
   LAB.initAt = Date.now();
   // Only clear messages when the date has rolled over — not just because we've been
@@ -3246,28 +3334,43 @@ async function initLabPage() {
   const today = _etToday();
   if (LAB.initDate && LAB.initDate !== today) {
     LAB.messages = [];
-    document.getElementById('labMessages').innerHTML = '<div id="labEmptyState"><div class="les-icon">🔮</div><div class="les-title">Ask Ben anything</div><div class="les-sub">Today\'s slate is loaded. Ask about players, projections, card boosts, or trends.</div></div>';
+    const labMsg = _el('labMessages');
+    if (labMsg) labMsg.innerHTML = '<div id="labEmptyState"><div class="les-icon">🔮</div><div class="les-title">Ask Ben anything</div><div class="les-sub">Today\'s slate is loaded. Ask about players, projections, card boosts, or trends.</div></div>';
   }
   LAB.initDate = today;
 
-  document.getElementById('labLoading').style.display = 'block';
-  document.getElementById('labLocked').style.display   = 'none';
-  document.getElementById('labConnectionError').style.display = 'none';
-  document.getElementById('labUnlocked').style.display = 'none';
-  var _ub0 = document.getElementById('benUploadBanner');
+  // Use cached status when fresh (10 min) so user doesn't always see "Loading Lab..." on tab revisit
+  const statusCacheFresh = LAB.cachedStatus && (Date.now() - LAB.statusFetchedAt) < 10 * 60 * 1000;
+  if (statusCacheFresh) {
+    [_el('labLoading'), _el('labLocked'), _el('labConnectionError'), _el('labUnlocked')].forEach(e => { if (e) e.style.display = 'none'; });
+    var _ubC = _el('benUploadBanner');
+    if (_ubC) _ubC.style.display = 'none';
+    const status = LAB.cachedStatus;
+    if (status.locked && _isLabStatusErrorFallback(status)) {
+      _showLabStatusUnknown();
+      return;
+    }
+    if (status.locked) { await showLabLocked(status); }
+    else { await showLabUnlocked(status); }
+    return;
+  }
+
+  [_el('labLoading')].forEach(e => { if (e) e.style.display = 'block'; });
+  [_el('labLocked'), _el('labConnectionError'), _el('labUnlocked')].forEach(e => { if (e) e.style.display = 'none'; });
+  var _ub0 = _el('benUploadBanner');
   if (_ub0) _ub0.style.display = 'none';
 
-  // Pre-warm: lightweight health call triggers Vercel cold start so lab/status hits a warm instance
   try { await fetchWithTimeout('/api/health', {}, 10000); } catch(e) {}
 
   try {
     const r = await fetchWithTimeout('/api/lab/status', {}, 30000);
     if (!r.ok) throw new Error('Failed to load Lab status: HTTP ' + r.status);
     const status = await r.json();
-    document.getElementById('labLoading').style.display = 'none';
+    LAB.cachedStatus = status;
+    LAB.statusFetchedAt = Date.now();
+    const labLoad = _el('labLoading');
+    if (labLoad) labLoad.style.display = 'none';
 
-    // Backend returns locked=true on any exception ("Server temporarily unavailable — try again").
-    // Don't show "BEN IS LOCKED" for that — try degraded mode (load briefing, show banner if pending).
     if (status.locked && _isLabStatusErrorFallback(status)) {
       try {
         const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
@@ -3294,7 +3397,10 @@ async function initLabPage() {
       const r2 = await fetchWithTimeout('/api/lab/status', {}, 15000);
       if (!r2.ok) throw new Error('Retry failed: HTTP ' + r2.status);
       const status = await r2.json();
-      document.getElementById('labLoading').style.display = 'none';
+      LAB.cachedStatus = status;
+      LAB.statusFetchedAt = Date.now();
+      const _labLoad = _el('labLoading');
+      if (_labLoad) _labLoad.style.display = 'none';
       if (status.locked && _isLabStatusErrorFallback(status)) {
         try {
           const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
@@ -3314,7 +3420,8 @@ async function initLabPage() {
       else { await showLabUnlocked(status); }
       return;
     } catch(e2) { /* fall through */ }
-    document.getElementById('labLoading').style.display = 'none';
+    const _labLoadOuter = _el('labLoading');
+    if (_labLoadOuter) _labLoadOuter.style.display = 'none';
     // Degraded mode: status failed but try to load briefing so the upload banner can still appear
     try {
       const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
@@ -3329,8 +3436,10 @@ async function initLabPage() {
     } catch(_) {}
     var _ub = document.getElementById('benUploadBanner');
     if (_ub) _ub.style.display = 'none';
-    document.getElementById('labConnectionError').style.display = 'block';
-    document.getElementById('labConnectionErrorAction').innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
+    const connErr = _el('labConnectionError');
+    const connAction = _el('labConnectionErrorAction');
+    if (connErr) connErr.style.display = 'block';
+    if (connAction) connAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.cachedStatus=null;LAB.statusFetchedAt=0;LAB.initialized=false;initLabPage()">Retry</button>';
   }
 }
 
@@ -3338,7 +3447,7 @@ function _updateLabLockedStatus(status) {
   document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
   var el = document.getElementById('labLockedUnlock');
   if (status.reason && status.reason.indexOf('try again') !== -1) {
-    el.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
+    el.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.cachedStatus=null;LAB.statusFetchedAt=0;LAB.initialized=false;initLabPage()">Retry</button>';
     return;
   }
   var tzOpts = {hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'};
@@ -3361,29 +3470,34 @@ async function showLabLocked(status) {
   // and automatically flip to unlocked view when all games finish.
   if (LAB._lockPoll) clearInterval(LAB._lockPoll);
   LAB._lockPoll = setInterval(function() {
-    if (document.getElementById('labLocked').style.display === 'none') {
+    const _labLocked = _el('labLocked');
+    if (!_labLocked || _labLocked.style.display === 'none') {
       clearInterval(LAB._lockPoll); LAB._lockPoll = null; return;
     }
-    fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(); }).then(async function(s) {
-      var lockedVisible = document.getElementById('labLocked').style.display !== 'none';
-      var unlockedVisible = document.getElementById('labUnlocked').style.display !== 'none';
+    fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(async function(s) {
+      var labLockedEl = _el('labLocked');
+      var labUnlockedEl = _el('labUnlocked');
+      var lockedVisible = labLockedEl ? labLockedEl.style.display !== 'none' : false;
+      var unlockedVisible = labUnlockedEl ? labUnlockedEl.style.display !== 'none' : false;
       if (!s.locked && lockedVisible) {
         // Locked → unlocked transition (break between games or all final)
         LAB.initialized = false;
-        document.getElementById('labLocked').style.display = 'none';
-        document.getElementById('labLoading').style.display = 'block';
+        if (labLockedEl) labLockedEl.style.display = 'none';
+        var labLoad = _el('labLoading'); if (labLoad) labLoad.style.display = 'block';
         await showLabUnlocked(s);
-        document.getElementById('labLoading').style.display = 'none';
+        if (labLoad) labLoad.style.display = 'none';
         // Keep polling if more games are coming (next_lock_time set)
         if (!s.next_lock_time) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
       } else if (s.locked && unlockedVisible) {
         // Break ended → re-locked: transition back to locked view
-        document.getElementById('labUnlocked').style.display = 'none';
+        if (labUnlockedEl) labUnlockedEl.style.display = 'none';
         await showLabLocked(s);  // Re-shows locked view + starts its own poll
       } else if (s.locked) {
         _updateLabLockedStatus(s);
       }
-    }).catch(function() {});
+    }).catch(function(e) {
+      console.warn('[lab] Lock poll status check failed:', e && e.message ? e.message : e);
+    });
   }, 120000);  // 2 minutes: reduce Vercel invocations while keeping unlock detection
 }
 
@@ -3391,9 +3505,9 @@ async function showLabUnlocked(status) {
   // Explicitly stop lock polling to prevent memory leak on rapid flickers
   if (LAB._lockPoll) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
 
-  document.getElementById('labConnectionError').style.display = 'none';
-  document.getElementById('labLocked').style.display = 'none';
-  document.getElementById('labUnlocked').style.display = 'flex';
+  [_el('labConnectionError'), _el('labLocked')].forEach(e => { if (e) e.style.display = 'none'; });
+  const labUnlockedShow = _el('labUnlocked');
+  if (labUnlockedShow) labUnlockedShow.style.display = 'flex';
 
   // Load briefing + config + line data + slate + today's log in parallel (silently)
   const [briefingRes, configRes, lineRes, slateRes, logRes] = await Promise.allSettled([
@@ -3564,11 +3678,15 @@ async function labCallClaude(attachedImage = null) {
       return { role: m.role, content: m.content };
     });
 
+    const chatAbort = new AbortController();
+    const chatTimeoutId = setTimeout(() => chatAbort.abort(), 60000); // 60s connection timeout
     const r = await fetch('/api/lab/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: apiMessages, system: LAB.system }),
+      signal: chatAbort.signal,
     });
+    clearTimeout(chatTimeoutId);
 
     // Read SSE stream — backend emits status events then final content
     if (!r.ok) throw new Error('chat ' + r.status);
@@ -3602,7 +3720,8 @@ async function labCallClaude(attachedImage = null) {
 
   } catch(e) {
     thinkEl.remove();
-    appendLabMessage('assistant', 'Network error. Please try again.');
+    const msg = (e && e.name === 'AbortError') ? 'Request timed out. Please try again.' : 'Network error. Please try again.';
+    appendLabMessage('assistant', msg);
   } finally {
     const _sendBtnF = document.getElementById('labSendBtn'); if (_sendBtnF) _sendBtnF.disabled = false;
   }

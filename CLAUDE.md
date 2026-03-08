@@ -378,6 +378,10 @@ Key patterns used throughout:
 - Polling loops: `.then(r => r.ok ? r.json() : Promise.reject())` with empty `.catch`
 - `savePredictions`: resets `_predSavedDate` on non-OK responses so the next call can retry
 
+### Resilience (error boundaries)
+- **Backend:** A global `@app.exception_handler(Exception)` in `api/index.py` catches any unhandled exception: logs full traceback server-side and returns `JSONResponse({"error": "An unexpected error occurred"}, status_code=500)` with no stack trace or internal detail in the response.
+- **Frontend:** All `JSON.parse(localStorage.getItem(...))` usages are wrapped via `_safeParseLocalStorage(key, fallback)` so corrupted or invalid JSON does not throw. Critical DOM access uses `_el(id)` with null checks (or early return) in Line/Lab/Log/Predict and Lab lock poll so missing elements do not throw. Lab lock poll logs status fetch failures with `console.warn('[lab] Lock poll status check failed:', ...)` instead of failing silently. Lab chat uses an `AbortController` with a 60s connection timeout for the initial `/api/lab/chat` request; on timeout the user sees "Request timed out. Please try again."
+
 EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hidden context-loading messages don't suppress the upload prompt.
 
 **Health in deployment:** Use `GET /api/health` for uptime monitoring. Configure an external checker (e.g. UptimeRobot, Cronitor) to hit the URL and alert on non-200; Vercel does not provide built-in health-check alerting.
