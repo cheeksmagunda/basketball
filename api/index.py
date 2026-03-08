@@ -2169,11 +2169,26 @@ def _compute_audit(date_str):
 
 @app.post("/api/save-actuals")
 async def save_actuals(payload: dict = Body(...)):
-    """Save confirmed actuals to GitHub as CSV."""
+    """Save confirmed actuals to GitHub as CSV.
+
+    Safety: Checks if user has skipped uploads for this date.
+    If skipped, returns early without processing screenshots.
+    """
     date_str = payload.get("date", _et_date().isoformat())
     players = payload.get("players", [])
     if not players:
         return JSONResponse({"error": "No player data"}, status_code=400)
+
+    # Check if this date was marked as skipped by user
+    try:
+        skipped_content, _ = _github_get_file("data/skipped-uploads.json")
+        if skipped_content:
+            skipped_data = json.loads(skipped_content)
+            if date_str in skipped_data.get("skipped_dates", []):
+                print(f"[save-actuals] Skipping upload for {date_str} (user marked as skipped)")
+                return {"status": "skipped", "date": date_str, "reason": "User skipped uploads for this date"}
+    except Exception:
+        pass  # If check fails, continue with normal processing
 
     path = f"data/actuals/{date_str}.csv"
     header = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source"
@@ -4024,3 +4039,40 @@ async def lab_chat(payload: dict = Body(...)):
             yield _sse({"type": "content", "error": f"Anthropic API error: {str(e)}", "text": ""})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/api/lab/skip-uploads")
+async def lab_skip_uploads(payload: dict = Body(...)):
+    """Mark a specific date's screenshots as skipped (user doesn't want to upload).
+
+    Does NOT process the screenshots, does NOT store them, does NOT affect learning.
+    Simply records in GitHub that this date was skipped by the user.
+
+    Frontend calls this when user clicks "Skip All Uploads" button on the banner.
+    Stores indication in data/skipped-uploads.json for audit purposes.
+    """
+    date_str = payload.get("date", "").strip()
+    if not date_str:
+        return JSONResponse({"error": "date required"}, status_code=400)
+
+    try:
+        # Load existing skipped dates
+        skipped_file = "data/skipped-uploads.json"
+        skipped_content, _ = _github_get_file(skipped_file)
+        skipped_data = json.loads(skipped_content) if skipped_content else {"skipped_dates": []}
+
+        # Add this date if not already present
+        if date_str not in skipped_data.get("skipped_dates", []):
+            skipped_data.setdefault("skipped_dates", []).append(date_str)
+            skipped_data["last_skipped_at"] = datetime.now(timezone.utc).isoformat()
+
+            # Write back to GitHub
+            _github_write_file(skipped_file, json.dumps(skipped_data, indent=2),
+                              f"Skip uploads for {date_str}")
+
+        return {"status": "skipped", "date": date_str}
+
+    except Exception as e:
+        # Non-critical — don't fail if we can't record skip
+        print(f"[skip-uploads] Error recording skip for {date_str}: {e}")
+        return {"status": "recorded_locally", "date": date_str}
