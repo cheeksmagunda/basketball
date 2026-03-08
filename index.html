@@ -943,8 +943,11 @@
     #labInputWrap { flex-shrink: 0; padding: 10px 0 max(8px, env(safe-area-inset-bottom, 8px)); }
 
     /* ── MAGIC 8-BALL LOADER ── */
+    /* Loader is now INSIDE #tab-predictions — position:absolute keeps it
+       scoped to the Predict tab so it never overlays Line/Ben/Log. */
+    #tab-predictions { position: relative; min-height: 80vh; }
     #oracleLoader {
-      position: fixed; inset: 0; z-index: 999;
+      position: absolute; inset: 0; z-index: 10;
       background: rgba(6,10,15,0.94);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
@@ -1039,17 +1042,6 @@
 </head>
 <body>
 
-<!-- ══ MAGIC 8-BALL ORACLE LOADER ══ -->
-<div id="oracleLoader">
-  <div class="magic8-ball">
-    <div class="magic8-num">8</div>
-    <div class="magic8-window">
-      <div class="magic8-text" id="oracleMsg">READING THE GAME</div>
-    </div>
-  </div>
-  <div class="oracle-label">The Oracle is thinking...</div>
-</div>
-
 <div class="app">
 
   <header>
@@ -1087,6 +1079,17 @@
 
   <!-- ══ TAB: PREDICTIONS ══ -->
   <div id="tab-predictions" class="tab-page active">
+
+    <!-- ══ MAGIC 8-BALL ORACLE LOADER (scoped to Predict tab) ══ -->
+    <div id="oracleLoader">
+      <div class="magic8-ball">
+        <div class="magic8-num">8</div>
+        <div class="magic8-window">
+          <div class="magic8-text" id="oracleMsg">READING THE GAME</div>
+        </div>
+      </div>
+      <div class="oracle-label">The Oracle is thinking...</div>
+    </div>
 
     <!-- Sub-nav: Slate-Wide | Game — inline at top, matches Starting 5 | Moonshot tabs -->
     <div class="predict-sub-nav" id="predictSubNav">
@@ -1421,6 +1424,7 @@ let SLATE = null;
 let PICKS_DATA = null;
 let isFetching = false;
 let SLATE_LOADED_AT = 0;
+var _slateAutoRefreshCount = 0; // Cap for the delay<=0 retry loop (max 3)
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -1472,6 +1476,7 @@ let PICKS_STATE = asyncStateInitial();  // Per-game picks AsyncState
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   closeLinePickModal();
+  hideLoader(); // Dismiss 8-ball overlay on ANY tab switch (scoped to Predict but belt-and-suspenders)
 
   // Live stat poll lifecycle: stop when leaving Line tab, restart when returning
   if (tab !== 'line' && LINE_LIVE_POLL) {
@@ -1591,6 +1596,8 @@ function showLoader() {
   const el = document.getElementById('oracleLoader');
   const msg = document.getElementById('oracleMsg');
   if (!el) return;
+  // Clear any existing interval to prevent duplicate message rotators
+  clearInterval(_oracleMsgTimer);
   // Rotate messages every 1.8s while visible
   _oracleMsgIdx = Math.floor(Math.random() * ORACLE_MSGS.length);
   if (msg) msg.textContent = ORACLE_MSGS[_oracleMsgIdx];
@@ -1773,14 +1780,16 @@ async function loadSlate() {
         const delay = lockAt - now;
         if (delay > 0 && delay < 4 * 60 * 60 * 1000) { // only arm if ≤ 4 hours out
           setTimeout(() => { if (!SLATE.locked) loadSlate(); }, delay + 2000);
-        } else if (delay <= 0) {
+        } else if (delay <= 0 && _slateAutoRefreshCount < 3) {
           // Lock window already passed but backend returned unlocked (stale cache).
-          // Retry once after a short delay to pick up the locked state.
+          // Retry after a short delay to pick up the locked state (max 3 retries).
+          _slateAutoRefreshCount++;
           setTimeout(() => { if (!SLATE.locked && !SLATE.all_complete) loadSlate(); }, 5000);
         }
       }
     }
 
+    if (SLATE.locked) _slateAutoRefreshCount = 0; // Reset retry cap on successful lock
     switchSlate('chalk');
     savePredictions();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
@@ -2858,6 +2867,9 @@ function _renderLineLOTDFromState() {
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
     switchLineDir(LINE_DIR);
     lineEmptyEl.style.display = 'none';
+    // Ensure history section is visible once picks load successfully
+    var histWrap = document.getElementById('lineHistoryWrap');
+    if (histWrap) histWrap.style.display = 'block';
   }
 }
 
@@ -2955,7 +2967,9 @@ async function initLinePage() {
   if (alreadyLoaded) {
     _renderLineLOTDFromState(); // paint cached pick immediately so no skeleton flash
     switchLineDir(LINE_DIR);
-    fetchLineHistory();
+    // Only re-fetch history if not already cached — prevents skeleton flash on every tab switch
+    if (!LINE_HIST_DATA) fetchLineHistory();
+    else _renderLineHistoryFromState();
     return;
   }
   LINE_LOADED_DATE = todayET;
