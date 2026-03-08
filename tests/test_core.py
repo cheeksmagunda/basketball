@@ -217,6 +217,34 @@ class TestJSSyntax:
         assert "LINE_LOADED_DATE" in source, "LINE_LOADED must be date-keyed (LINE_LOADED_DATE)"
         assert "_predSavedDate" in source, "_predSavedToday must be date-keyed (_predSavedDate)"
 
+    def test_no_redundant_info_bars(self, script_lines):
+        """Redundant slateChips/headerMeta info bars must not exist in the codebase."""
+        html = (ROOT / "index.html").read_text()
+        assert 'id="slateChips"' not in html, "slateChips element should be removed"
+        assert 'id="headerMeta"' not in html, "headerMeta element should be removed"
+        assert ".lock-chip" not in html, "lock-chip CSS should be removed"
+        assert ".game-chips" not in html, "game-chips CSS should be removed"
+
+    def test_line_pick_extraction_before_error_gate(self, script_lines):
+        """LINE_OVER_PICK/LINE_UNDER_PICK must be extracted before the error gate check."""
+        source = "\n".join(script_lines)
+        # The extraction (data.over_pick) must appear BEFORE the error gate (!data.pick && !LINE_OVER_PICK)
+        extract_pos = source.find("data.over_pick")
+        error_gate_pos = source.find("!data.pick && !LINE_OVER_PICK")
+        assert extract_pos != -1, "LINE_OVER_PICK extraction from data.over_pick missing"
+        assert error_gate_pos != -1, "Error gate should check !data.pick && !LINE_OVER_PICK"
+        assert extract_pos < error_gate_pos, (
+            "Directional pick extraction must happen BEFORE the error gate check"
+        )
+
+    def test_save_predictions_not_gated_by_chips(self, script_lines):
+        """savePredictions() must not be blocked by missing UI elements."""
+        source = "\n".join(script_lines)
+        # savePredictions should not be after a slateChips guard
+        assert "slateChips" not in source or source.find("slateChips") > source.find("savePredictions"), (
+            "savePredictions must not be gated behind slateChips element check"
+        )
+
 
 # ---------------------------------------------------------------------------
 # 4. Cache date-boundary regression tests

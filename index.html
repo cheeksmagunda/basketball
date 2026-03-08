@@ -136,17 +136,6 @@
       font-size: 0.72rem; font-weight: 700; color: var(--muted);
       letter-spacing: 0.14em; display: block; margin-top: 2px;
     }
-    /* Header right-side meta badges */
-    .header-meta {
-      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
-    }
-    .header-badge {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.63rem; font-weight: 700; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--muted); white-space: nowrap;
-    }
-    .header-badge.locked { color: var(--green); }
-
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
       position: fixed;
@@ -486,17 +475,6 @@
     }
     .back-btn:hover { color: var(--text); }
 
-    /* ── GAME INFO CHIPS ── */
-    .game-chips { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
-    .chip {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
-      text-transform: uppercase;
-      background: var(--surface2); border: 1px solid var(--border);
-      padding: 5px 10px; border-radius: 8px; color: var(--text-dim);
-    }
-    .chip b { color: var(--text); }
-
     .secondary-btn {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.75rem; font-weight: 700; letter-spacing: var(--tracking-caps);
@@ -507,16 +485,6 @@
       transition: all 0.2s;
     }
     .secondary-btn:hover { color: var(--color-text-primary); border-color: var(--border-bright); }
-
-    .lock-chip {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
-      text-transform: uppercase;
-      background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94,0.25);
-      color: var(--color-success);
-      padding: 5px 10px; border-radius: 8px;
-      display: inline-flex; align-items: center; gap: 5px;
-    }
 
     /* ── DIVIDER ── */
     .divider {
@@ -1092,7 +1060,6 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
-    <div id="headerMeta" class="header-meta"></div>
   </header>
 
   <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
@@ -1129,8 +1096,6 @@
 
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
-      <div id="slateChips" class="game-chips" style="display:none"></div>
-
       <div class="mode-tabs" id="slateTabs" style="display:none">
         <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Starting 5</button>
         <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🚀 Moonshot</button>
@@ -1789,7 +1754,7 @@ async function loadSlate() {
     if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
 
     // If slate not yet locked, schedule an auto-re-fetch when the lock window opens
-    // so the "Picks Locked" chip appears without the user having to manually refresh.
+    // so savePredictions fires once the slate locks.
     if (!SLATE.locked) {
       const now = Date.now();
       const startMs = (SLATE.games || [])
@@ -1800,63 +1765,14 @@ async function loadSlate() {
         const delay = lockAt - now;
         if (delay > 0 && delay < 4 * 60 * 60 * 1000) { // only arm if ≤ 4 hours out
           setTimeout(() => { if (!SLATE.locked) loadSlate(); }, delay + 2000);
+        } else if (delay <= 0) {
+          // Lock window already passed but backend returned unlocked (stale cache).
+          // Retry after a short delay to pick up the locked state.
+          setTimeout(() => { if (!SLATE.locked) loadSlate(); }, 5000);
         }
       }
     }
 
-    const chips = _el('slateChips');
-    if (!chips) return;
-    const slateDate = SLATE.date ? new Date(SLATE.date + 'T12:00:00') : new Date();
-    const dateStr = slateDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
-
-    // Authoritative lock: server flag OR client-side check (catches case where API was
-    // called just before the 5-min window and the page wasn't refreshed).
-    const _lockNow = Date.now();
-    const clientLocked = (SLATE.games || []).some(g =>
-      g.startTime && (new Date(g.startTime).getTime() - _lockNow) < 5 * 60 * 1000
-    );
-    const isLocked = SLATE.locked || SLATE.all_complete || clientLocked;
-
-    let lockChip = '';
-    if (isLocked) {
-      lockChip = '<div class="lock-chip">Picks Locked</div>';
-    }
-    // draftable_count is always present now; fall back to games.length only for legacy cache.
-    const draftable = SLATE.draftable_count != null ? SLATE.draftable_count : (SLATE.games || []).length;
-    const totalGames = (SLATE.games || []).length;
-    // Show total game count (X Games) when locked/complete so user knows the slate size.
-    // Show draftable count when slate is open so user knows how many are still pickable.
-    const gameCount = isLocked ? totalGames : draftable;
-    chips.innerHTML = `
-      <div class="chip"><b>${gameCount}</b> Game${gameCount !== 1 ? 's' : ''}</div>
-      <div class="chip">${dateStr}</div>
-      ${lockChip}
-    `;
-    // Header meta badges
-    const headerMeta = document.getElementById('headerMeta');
-    if (headerMeta) {
-      const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
-      let lockLabel = '🔒 Picks Locked';
-      if (isLocked && SLATE.lock_time) {
-        try {
-          // Force unambiguous UTC parse — iOS Safari can misread "+00:00" as local time
-          const raw = SLATE.lock_time;
-          const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
-          const lt = new Date(utcStr);
-          const ltStr = lt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
-          lockLabel = `🔒 Locked · ${ltStr} CT`;
-        } catch(e) {}
-      }
-      const statusBadge = isLocked
-        ? `<div class="header-badge locked">${lockLabel}</div>`
-        : `<div class="header-badge">Updated ${timeNow} CT</div>`;
-      const countBadge = `<div class="header-badge">${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}</div>`;
-      headerMeta.innerHTML = countBadge + statusBadge;
-    }
-    const tabsEl = _el('slateTabs');
-    const chipsEl = _el('slateChips');
-    if (tabsEl) tabsEl.style.display = 'block';
-    if (chipsEl) chipsEl.style.display = 'block';
     switchSlate('chalk');
     savePredictions();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
@@ -2884,7 +2800,15 @@ function _renderLineLOTDFromState() {
       lineEmptyEl.style.display = 'none';
       return;
     }
-    if (!data.pick) {
+    // Extract directional picks first — they may exist even when primary pick is null
+    LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
+    LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
+    // If pick exists but no directional picks, populate from primary
+    if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick) {
+      if (data.pick.direction === 'over') LINE_OVER_PICK = data.pick;
+      else LINE_UNDER_PICK = data.pick;
+    }
+    if (!data.pick && !LINE_OVER_PICK && !LINE_UNDER_PICK) {
       const msgs = {
         no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',
@@ -2903,13 +2827,6 @@ function _renderLineLOTDFromState() {
       }
       linePickWrap.style.display = 'none';
       return;
-    }
-    LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
-    LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
-    // If pick exists but no directional picks, populate from primary
-    if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick) {
-      if (data.pick.direction === 'over') LINE_OVER_PICK = data.pick;
-      else LINE_UNDER_PICK = data.pick;
     }
     linePickWrap.style.display = 'block';
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
