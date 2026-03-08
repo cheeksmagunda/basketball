@@ -3414,7 +3414,7 @@ _GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0, "date": ""}
 
 def _all_games_final(games):
     """Check ESPN scoreboard to see if all today's games are completed.
-    Cached with adaptive TTL: 30s when locked slate, 180s pre-slate.
+    Cached with adaptive TTL: 60s when locked slate, 180s pre-slate.
     Returns (all_final, remaining, finals, latest_remaining_start_iso).
 
     Handles midnight-rollover: late games (e.g. 10 PM ET tip-off) can still be

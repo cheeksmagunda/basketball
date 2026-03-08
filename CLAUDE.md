@@ -103,6 +103,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
 | `/api/auto-resolve-line` | GET | **Cron** — resolves each pick when its game ends; generates next-day picks when both resolve (requires CRON_SECRET when set) |
+| `/api/line-live-stat` | GET | Fetch live in-game stat value for pick tracking (single-game lock check) |
 | `/api/line-history` | GET | Recent picks with streak + hit rate (only resolved picks — never pending) |
 
 ### Lab (Ben)
@@ -174,7 +175,7 @@ After all games are final and Ben unlocks:
 
 ### Lock System
 - **Locked** 5 minutes before first game tip-off (slate is in progress)
-- **Unlocked** when ALL games on today's slate reach "Final" status on ESPN (3-min TTL cache)
+- **Unlocked** when ALL games on today's slate reach "Final" status on ESPN (60s TTL when locked, 180s pre-slate)
 - During lock: shows locked state with **total games remaining** (in-progress + scheduled) and estimated unlock based on **last game of the day** + 2.5h
 - During unlock: full chat capabilities + upload banner (if pending date exists)
 - **Break between game windows**: if early games finish but more are scheduled, Ben briefly unlocks with "Break — N games later today". Polling detects re-lock when next game window starts.

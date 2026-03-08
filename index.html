@@ -486,6 +486,17 @@
     }
     .chip b { color: var(--text); }
 
+    .secondary-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.75rem; font-weight: 700; letter-spacing: var(--tracking-caps);
+      text-transform: uppercase;
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 8px 16px; border-radius: var(--radius-card);
+      color: var(--color-text-muted); cursor: pointer;
+      transition: all 0.2s;
+    }
+    .secondary-btn:hover { color: var(--color-text-primary); border-color: var(--border-bright); }
+
     .lock-chip {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
@@ -1950,10 +1961,10 @@ function renderCards(picks, containerId, mode, opts = {}) {
     ];
     const statCols = _STAT_CONFIG
       .filter(c => p[c.k])
-      .map(c => ({ v: p[c.k], avg: p[c.sk], l: c.l, k: c.k }));
+      .map(c => ({ v: p[c.k], avg: p[c.sk] != null ? p[c.sk] : null, l: c.l, k: c.k }));
 
-    // Minutes pill: projected + season avg
-    const avgMin = p.season_min || p.avg_min;
+    // Minutes pill: projected + season avg (gracefully handles missing season_min)
+    const avgMin = p.season_min || p.avg_min || null;
     const minPillText = (p.predMin && avgMin)
       ? `${p.predMin}m <span style="color:var(--color-text-muted);font-weight:600">/ ${avgMin} avg</span>`
       : (p.predMin ? `${p.predMin} min` : '');

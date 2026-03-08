@@ -116,6 +116,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
 | `/api/lab/auto-improve` | GET | Cron: auto-tune model (requires CRON_SECRET when set) |
+| `/api/lab/skip-uploads` | POST | Record dates the user skips uploading |
 
 ## Cron Schedule (UTC)
 
@@ -140,7 +141,7 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 
 **GitHub Write Retry**: Exponential backoff (1s, 2s, 4s) on concurrent write conflicts (HTTP 422 SHA mismatch). Fresh SHA fetch on each retry.
 
-**Cache TTLs**: Game final (3 min), model config (5 min), RotoWire (30 min), odds (1 hour). Explicit invalidation via `/api/refresh`.
+**Cache TTLs**: Game final (60s when locked, 180s pre-slate), model config (5 min), RotoWire (30 min), odds (1 hour). Explicit invalidation via `/api/refresh`.
 
 **Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
 

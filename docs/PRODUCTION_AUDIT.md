@@ -98,13 +98,13 @@
 ### 4.1 Verdict
 
 - **ignoreCommand:** `git diff --quiet HEAD~1 HEAD -- . ':!data' ':!.github'` — builds skip when only `data/` or `.github/` change. Correct for avoiding redeploys on data-only commits.
-- **Crons:**
-  - `/api/refresh` at 19:00 and 20:00 UTC — aligns with lock window (e.g. 7pm/8pm CT).
+- **Crons (current):**
+  - `/api/refresh` at 19:00 UTC only.
   - `/api/lab/auto-improve` at 09:00 UTC — daily.
-  - `/api/refresh-line-odds` at :00 and :55 — hourly and pre-lock.
-  - `/api/auto-resolve-line` at :15, :30, :45 — every 15 min.
+  - `/api/refresh-line-odds` at :55 each hour — hourly pre-lock.
+  - `/api/auto-resolve-line` at :00 and :30 each hour — every 30 min.
 - **maxDuration:** 300s (Pro plan). Documented.
-- No cron secret; any client can call these endpoints.
+- **Cron secret (implemented):** `CRON_SECRET` env var; when set, cron-only endpoints require `Authorization: Bearer <CRON_SECRET>`.
 
 ### 4.2 Deployment recommendations
 
