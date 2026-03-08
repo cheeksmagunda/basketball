@@ -2966,98 +2966,105 @@ def _picks_response(picks, **extra):
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day(request: Request):
     """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
-    Once today's primary pick is resolved, rotates to tomorrow's slate."""
+    Once today's primary pick is resolved, rotates to tomorrow's slate. Never returns 500."""
     rl = _check_rate_limit(request, "line-of-the-day")
     if rl is not None:
         return rl
-    cached = _cg("line_v1")
-    if cached and cached.get("pick"):
-        today_str = _et_date().isoformat()
-        cached_pick = cached["pick"]
-        pick_date = cached_pick.get("date", today_str)
-        already_resolved = cached_pick.get("result") not in (None, "", "pending")
-        both_directions = cached.get("over_pick") and cached.get("under_pick")
-        if not already_resolved and pick_date == today_str and both_directions:
-            return JSONResponse(cached)
+    try:
+        cached = _cg("line_v1")
+        if cached and cached.get("pick"):
+            today_str = _et_date().isoformat()
+            cached_pick = cached["pick"]
+            pick_date = cached_pick.get("date", today_str)
+            already_resolved = cached_pick.get("result") not in (None, "", "pending")
+            both_directions = cached.get("over_pick") and cached.get("under_pick")
+            if not already_resolved and pick_date == today_str and both_directions:
+                return JSONResponse(cached)
 
-    today = _et_date()
-    today_str = today.isoformat()
-    tomorrow = today + timedelta(days=1)
-    tomorrow_str = tomorrow.isoformat()
+        today = _et_date()
+        today_str = today.isoformat()
+        tomorrow = today + timedelta(days=1)
+        tomorrow_str = tomorrow.isoformat()
 
-    today_picks = _load_line_pick_for_date(today_str)
-    today_primary = _primary_pick(today_picks)
+        today_picks = _load_line_pick_for_date(today_str)
+        today_primary = _primary_pick(today_picks)
 
-    # If today's primary pick is resolved, rotate to tomorrow's slate
-    if today_primary and today_primary.get("result") not in (None, "", "pending"):
-        tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
-        tomorrow_primary = _primary_pick(tomorrow_picks)
-        if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
-            _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
-            result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
-                                     resolved_today=today_primary)
+        # If today's primary pick is resolved, rotate to tomorrow's slate
+        if today_primary and today_primary.get("result") not in (None, "", "pending"):
+            tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
+            tomorrow_primary = _primary_pick(tomorrow_picks)
+            if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
+                _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
+                result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
+                                         resolved_today=today_primary)
+                _cs("line_v1", result)
+                return JSONResponse(result)
+            # Generate tomorrow's picks fresh
+            eng_result, err = await _run_line_engine_for_date(tomorrow)
+            if err or not eng_result or not eng_result.get("pick"):
+                return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
+                                     "error": "next_slate_pending", "resolved_today": today_primary})
+            # Tag primary pick with tomorrow's date and save
+            if eng_result.get("pick"):
+                eng_result["pick"]["date"] = tomorrow_str
+            eng_result["resolved_today"] = today_primary
+            _cs("line_v1", eng_result)
+            try:
+                tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
+                existing, _ = _github_get_file(tomorrow_json)
+                if not existing:
+                    saves = {
+                        "over_pick":  eng_result.get("over_pick"),
+                        "under_pick": eng_result.get("under_pick"),
+                    }
+                    _github_write_file(tomorrow_json, json.dumps(saves),
+                                       f"line picks for {tomorrow_str}")
+            except Exception: pass
+            return JSONResponse(eng_result)
+
+        # Today's picks exist — serve if both directions present, else fill missing direction
+        if today_picks:
+            missing_over  = not today_picks.get("over_pick")
+            missing_under = not today_picks.get("under_pick")
+            if missing_over or missing_under:
+                # One direction missing (legacy single-pick) — run engine to fill the gap
+                eng_result, err = await _run_line_engine_for_date(today)
+                if not err and eng_result:
+                    if missing_over and eng_result.get("over_pick"):
+                        today_picks["over_pick"] = eng_result["over_pick"]
+                    if missing_under and eng_result.get("under_pick"):
+                        today_picks["under_pick"] = eng_result["under_pick"]
+                    # Persist updated dual-pick JSON
+                    try:
+                        json_path = f"data/lines/{today_str}_pick.json"
+                        _github_write_file(json_path, json.dumps(today_picks),
+                                           f"backfill missing direction for {today_str}")
+                    except Exception: pass
+            # Enrich picks loaded from GitHub with season_avg, proj_min, avg_min, game_time, recent_form_bars
+            _enrich_loaded_line_picks(today_picks, today)
+            result = _picks_response(today_picks, from_github=True, slate_summary=None)
             _cs("line_v1", result)
             return JSONResponse(result)
-        # Generate tomorrow's picks fresh
-        eng_result, err = await _run_line_engine_for_date(tomorrow)
+
+        # No saved picks yet — run the engine for today
+        eng_result, err = await _run_line_engine_for_date(today)
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                 "error": "next_slate_pending", "resolved_today": today_primary})
-        # Tag primary pick with tomorrow's date and save
-        if eng_result.get("pick"):
-            eng_result["pick"]["date"] = tomorrow_str
-        eng_result["resolved_today"] = today_primary
+                                 "error": err or "no_projections"}, status_code=200)
+        for key in ("over_pick", "under_pick"):
+            pick = eng_result.get(key)
+            if pick and pick.get("player_name") and pick.get("stat_type"):
+                l5 = _get_last5_game_stats(pick["player_name"], pick["stat_type"])
+                if l5 is not None:
+                    pick["recent_form_values"] = l5
         _cs("line_v1", eng_result)
-        try:
-            tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
-            existing, _ = _github_get_file(tomorrow_json)
-            if not existing:
-                saves = {
-                    "over_pick":  eng_result.get("over_pick"),
-                    "under_pick": eng_result.get("under_pick"),
-                }
-                _github_write_file(tomorrow_json, json.dumps(saves),
-                                   f"line picks for {tomorrow_str}")
-        except Exception: pass
         return JSONResponse(eng_result)
-
-    # Today's picks exist — serve if both directions present, else fill missing direction
-    if today_picks:
-        missing_over  = not today_picks.get("over_pick")
-        missing_under = not today_picks.get("under_pick")
-        if missing_over or missing_under:
-            # One direction missing (legacy single-pick) — run engine to fill the gap
-            eng_result, err = await _run_line_engine_for_date(today)
-            if not err and eng_result:
-                if missing_over and eng_result.get("over_pick"):
-                    today_picks["over_pick"] = eng_result["over_pick"]
-                if missing_under and eng_result.get("under_pick"):
-                    today_picks["under_pick"] = eng_result["under_pick"]
-                # Persist updated dual-pick JSON
-                try:
-                    json_path = f"data/lines/{today_str}_pick.json"
-                    _github_write_file(json_path, json.dumps(today_picks),
-                                       f"backfill missing direction for {today_str}")
-                except Exception: pass
-        # Enrich picks loaded from GitHub with season_avg, proj_min, avg_min, game_time, recent_form_bars
-        _enrich_loaded_line_picks(today_picks, today)
-        result = _picks_response(today_picks, from_github=True, slate_summary=None)
-        _cs("line_v1", result)
-        return JSONResponse(result)
-
-    # No saved picks yet — run the engine for today
-    eng_result, err = await _run_line_engine_for_date(today)
-    if err or not eng_result or not eng_result.get("pick"):
-        return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                             "error": err or "no_projections"}, status_code=200)
-    for key in ("over_pick", "under_pick"):
-        pick = eng_result.get(key)
-        if pick and pick.get("player_name") and pick.get("stat_type"):
-            l5 = _get_last5_game_stats(pick["player_name"], pick["stat_type"])
-            if l5 is not None:
-                pick["recent_form_values"] = l5
-    _cs("line_v1", eng_result)
-    return JSONResponse(eng_result)
+    except Exception as e:
+        print(f"[line-of-the-day] error: {e}")
+        return JSONResponse(
+            {"pick": None, "over_pick": None, "under_pick": None, "error": "server_error"},
+            status_code=200,
+        )
 
 
 LINE_FIELDS = LINE_CSV_HEADER.split(",")
