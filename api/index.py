@@ -2224,12 +2224,16 @@ async def save_actuals(payload: dict = Body(...)):
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=500)
 
-    # Auto-generate audit JSON — compare actuals against predictions for same date.
-    # Saved to data/audit/{date}.json so Ben always has fresh accuracy data.
-    audit = _compute_audit(date_str)
-    if audit:
-        audit_path = f"data/audit/{date_str}.json"
-        _github_write_file(audit_path, json.dumps(audit, indent=2), f"audit for {date_str}")
+    # Auto-generate audit JSON — only when real_scores data is present.
+    # Audit compares predicted RS vs actual RS; meaningless without RS actuals.
+    upload_source = players[0].get("source", "") if players else ""
+    rs_in_csv = "real_scores" in (existing or "")
+    audit = None
+    if upload_source == "real_scores" or rs_in_csv:
+        audit = _compute_audit(date_str)
+        if audit:
+            audit_path = f"data/audit/{date_str}.json"
+            _github_write_file(audit_path, json.dumps(audit, indent=2), f"audit for {date_str}")
 
     return {"status": "saved", "path": path, "rows": len(rows), "audit": audit}
 
