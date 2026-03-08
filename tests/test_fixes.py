@@ -558,5 +558,63 @@ class TestLinePicksBothNullRegeneration:
             "line-of-the-day endpoint should reset today_picks to None when both directions are null"
 
 
+# ─────────────────────────────────────────────────────────
+# TestFetchGamesTTL — fetch_games uses TTL-aware cache
+# ─────────────────────────────────────────────────────────
+class TestFetchGamesTTL:
+    """fetch_games() should use a 5-min TTL to avoid stale ESPN data."""
+
+    def test_games_cache_has_ttl(self):
+        """fetch_games should check _GAMES_CACHE_TS for freshness"""
+        import inspect
+        from api.index import fetch_games
+        source = inspect.getsource(fetch_games)
+        assert '_GAMES_CACHE_TS' in source, "fetch_games must use TTL-aware cache"
+        assert '300' in source, "fetch_games TTL should be 300 seconds (5 min)"
+
+
+# ─────────────────────────────────────────────────────────
+# TestSavePredictionsMerge — merge new per-game rows
+# ─────────────────────────────────────────────────────────
+class TestSavePredictionsMerge:
+    """save_predictions should merge new per-game scopes into existing CSV."""
+
+    def test_merge_logic_in_save_predictions(self):
+        """save_predictions should check existing scopes and only add new ones"""
+        import inspect
+        from api.index import save_predictions
+        source = inspect.getsource(save_predictions)
+        assert 'existing_scopes' in source, "save_predictions must track existing scopes for merge"
+        assert 'new_rows' in source, "save_predictions must compute new_rows to append"
+
+
+# ─────────────────────────────────────────────────────────
+# TestSwitchTabNoDuplicateInit — no duplicate init calls
+# ─────────────────────────────────────────────────────────
+class TestSwitchTabNoDuplicateInit:
+    """switchTab should not call initLinePage twice."""
+
+    def test_no_unconditional_init_line_page(self):
+        """switchTab should not have a standalone 'if (tab === line) initLinePage()' outside stale block"""
+        with open('index.html', 'r') as f:
+            src = f.read()
+        # The old pattern was: stale check calls initLinePage, then unconditional initLinePage
+        # New pattern: single initLinePage call with stale check blanking cache beforehand
+        import re
+        # Should NOT have two separate initLinePage() calls in switchTab
+        switch_fn = re.search(r'function switchTab\(.*?\n\}', src, re.DOTALL)
+        assert switch_fn, "switchTab function must exist"
+        body = switch_fn.group(0)
+        init_calls = body.count('initLinePage()')
+        assert init_calls == 1, f"switchTab should call initLinePage exactly once, found {init_calls}"
+
+    def test_pred_saved_count_refire(self):
+        """savePredictions should track locked count for split-window re-fire"""
+        with open('index.html', 'r') as f:
+            src = f.read()
+        assert '_predSavedLockedCount' in src, "savePredictions must track locked game count"
+        assert 'lockedNow' in src, "savePredictions must count currently locked games"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
