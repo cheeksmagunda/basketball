@@ -1140,7 +1140,6 @@
         <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p></div>
       </div>
       <div id="linePickWrap" style="display:none">
-        <div id="lineResolvedToday" style="display:none;margin-bottom:12px"></div>
         <div id="lineNoPickMsg" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:center;font-size:0.78rem;color:var(--muted)"></div>
         <div id="linePickCard"></div>
         <div id="lineSlateSummary" style="margin-top:16px"></div>
@@ -2348,20 +2347,6 @@ async function initLinePage() {
     const data = await r.json();
     document.getElementById('lineLoading').style.display = 'none';
 
-    // Show resolved-today banner when we've rotated to tomorrow's pick
-    const resolvedToday = data.resolved_today;
-    const resolvedTodayEl = document.getElementById('lineResolvedToday');
-    // Suppress the resolved banner if the rotation picked the same player again —
-    // showing both cards simultaneously creates the confusing "Over AND Under" duplicate.
-    const samePlayerRotation = resolvedToday && data.pick &&
-      (resolvedToday.player_name || '').toLowerCase() === (data.pick.player_name || '').toLowerCase();
-    if (resolvedToday && resolvedToday.result && resolvedToday.result !== 'pending' && !samePlayerRotation) {
-      resolvedTodayEl.style.display = 'block';
-      resolvedTodayEl.innerHTML = renderResolvedTodayBanner(resolvedToday);
-    } else {
-      resolvedTodayEl.style.display = 'none';
-    }
-
     if (!data.pick) {
       // Special case: today resolved, tomorrow's slate not posted yet
       if (data.error === 'next_slate_pending') {
@@ -2613,12 +2598,6 @@ function closeLinePickModal() {
   document.body.style.overflow = '';
 }
 
-function renderResolvedTodayBanner(pick) {
-  return '<div style="opacity:0.6;margin-bottom:4px">'
-    + '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Yesterday&rsquo;s Pick</div>'
-    + renderLinePickCard(pick, false)
-    + '</div>';
-}
 
 function renderNextSlatePending() {
   return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center">
