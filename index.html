@@ -1330,13 +1330,22 @@
         </div>
       </div>
     </div>
-    <!-- Locked state -->
+    <!-- Locked state (only when server explicitly returned locked=true) -->
     <div id="labLocked" style="display:none">
       <div class="empty-state" style="margin-top:32px">
         <span class="icon" style="font-size:2rem">🔒</span>
         <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Ben is Locked</h3>
         <p id="labLockedReason" style="color:var(--text-dim)">Slate in progress</p>
         <p id="labLockedUnlock" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
+      </div>
+    </div>
+    <!-- Connection error (fetch failed — we do not know if Ben is locked or not) -->
+    <div id="labConnectionError" style="display:none">
+      <div class="empty-state" style="margin-top:32px">
+        <span class="icon" style="font-size:2rem">📡</span>
+        <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Couldn't check status</h3>
+        <p id="labConnectionErrorReason" style="color:var(--text-dim)">Unable to reach server. Tap Retry to try again.</p>
+        <p id="labConnectionErrorAction" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
       </div>
     </div>
     <!-- Unlocked state -->
@@ -3092,6 +3101,22 @@ const LAB = {
   pendingImage: null, // {base64, mediaType, dataUrl} — attached to next send, cleared after
 };
 
+function _isLabStatusErrorFallback(status) {
+  // Backend returns locked=true with this reason when it hits an exception (ESPN timeout, etc.).
+  // We treat that as "status unknown" and never show "BEN IS LOCKED" for it.
+  var r = (status.reason || '').toLowerCase();
+  return r.indexOf('try again') !== -1 || r.indexOf('temporarily unavailable') !== -1;
+}
+
+function _showLabStatusUnknown() {
+  var _ub = document.getElementById('benUploadBanner');
+  if (_ub) _ub.style.display = 'none';
+  document.getElementById('labLocked').style.display = 'none';
+  document.getElementById('labConnectionError').style.display = 'block';
+  document.getElementById('labConnectionErrorReason').textContent = 'Server couldn\'t determine status. Tap Retry.';
+  document.getElementById('labConnectionErrorAction').innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
+}
+
 async function initLabPage() {
   // Re-check status if tab revisited after 10+ minutes (lock state may have changed)
   const stale = Date.now() - LAB.initAt > 10 * 60 * 1000;
@@ -3109,6 +3134,7 @@ async function initLabPage() {
 
   document.getElementById('labLoading').style.display = 'block';
   document.getElementById('labLocked').style.display   = 'none';
+  document.getElementById('labConnectionError').style.display = 'none';
   document.getElementById('labUnlocked').style.display = 'none';
   var _ub0 = document.getElementById('benUploadBanner');
   if (_ub0) _ub0.style.display = 'none';
@@ -3122,6 +3148,13 @@ async function initLabPage() {
     const status = await r.json();
     document.getElementById('labLoading').style.display = 'none';
 
+    // Backend returns locked=true on any exception ("Server temporarily unavailable — try again").
+    // Don't show "BEN IS LOCKED" for that — show "Couldn't determine status" so we only show
+    // locked when we actually know the slate is in progress.
+    if (status.locked && _isLabStatusErrorFallback(status)) {
+      _showLabStatusUnknown();
+      return;
+    }
     if (status.locked) {
       await showLabLocked(status);
     } else {
@@ -3134,14 +3167,20 @@ async function initLabPage() {
       if (!r2.ok) throw new Error('Retry failed: HTTP ' + r2.status);
       const status = await r2.json();
       document.getElementById('labLoading').style.display = 'none';
+      if (status.locked && _isLabStatusErrorFallback(status)) {
+        _showLabStatusUnknown();
+        return;
+      }
       if (status.locked) { await showLabLocked(status); }
       else { await showLabUnlocked(status); }
       return;
-    } catch(e2) { /* fall through to error UI */ }
+    } catch(e2) { /* fall through to connection-error UI */ }
     document.getElementById('labLoading').style.display = 'none';
-    document.getElementById('labLocked').style.display = 'block';
-    document.getElementById('labLockedReason').innerHTML = 'Unable to reach server — defaulting to locked';
-    document.getElementById('labLockedUnlock').innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
+    // Show connection error only — we never say "Ben is locked" when we didn't get a response
+    var _ub = document.getElementById('benUploadBanner');
+    if (_ub) _ub.style.display = 'none';
+    document.getElementById('labConnectionError').style.display = 'block';
+    document.getElementById('labConnectionErrorAction').innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
   }
 }
 
@@ -3160,6 +3199,7 @@ function _updateLabLockedStatus(status) {
 }
 
 async function showLabLocked(status) {
+  document.getElementById('labConnectionError').style.display = 'none';
   document.getElementById('labLocked').style.display = 'block';
   _updateLabLockedStatus(status);
 
@@ -3201,6 +3241,8 @@ async function showLabUnlocked(status) {
   // Explicitly stop lock polling to prevent memory leak on rapid flickers
   if (LAB._lockPoll) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
 
+  document.getElementById('labConnectionError').style.display = 'none';
+  document.getElementById('labLocked').style.display = 'none';
   document.getElementById('labUnlocked').style.display = 'flex';
 
   // Load briefing + config + line data + slate + today's log in parallel (silently)

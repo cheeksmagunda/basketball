@@ -184,7 +184,7 @@ After all games are final and Ben unlocks:
 - During lock: shows locked state with **total games remaining** (in-progress + scheduled) and estimated unlock based on **last game of the day** + 2.5h
 - During unlock: full chat capabilities + upload banner (if pending date exists)
 - **Break between game windows**: if early games finish but more are scheduled, Ben briefly unlocks with "Break — N games later today". Polling detects re-lock when next game window starts.
-- **4 failure paths hardened**: (1) ESPN outage — `_all_games_final` requires `finals > 0`, (2) split-window — `any(_is_locked(st))` checks ALL games, (3) ESPN down — GitHub lock file fallback before unlocking, (4) frontend API failure — defaults to locked state
+- **4 failure paths hardened**: (1) ESPN outage — `_all_games_final` requires `finals > 0`, (2) split-window — `any(_is_locked(st))` checks ALL games, (3) ESPN down — GitHub lock file fallback before unlocking, (4) frontend fetch failure — shows **connection error** ("Couldn't check status"), never "BEN IS LOCKED". (5) Backend exception path: when `/api/lab/status` catches an exception it returns 200 with `locked: true` and reason "Server temporarily unavailable — try again"; the frontend treats that as **status unknown** (`_isLabStatusErrorFallback`) and shows "Server couldn't determine status. Tap Retry." instead of "BEN IS LOCKED", so the locked banner only appears when the server actually knows the slate is in progress.
 
 ### Keyboard / Nav Behavior (Ben tab)
 - On **mobile**: focusing `#labInput` hides the bottom nav and expands `#tab-lab` to fill freed keyboard space via `lab-kb-open` CSS class. Blur restores everything.
