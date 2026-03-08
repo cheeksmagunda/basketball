@@ -2504,7 +2504,7 @@ async function _startLineLivePoll(overPick, underPick) {
 
   await _poll();
   if (LINE_LIVE_POLL === null) { // only start interval if game still live after first poll
-    LINE_LIVE_POLL = setInterval(_poll, 30000);
+    LINE_LIVE_POLL = setInterval(_poll, 60000);
   }
 }
 
@@ -2930,11 +2930,16 @@ async function initLabPage() {
 
 function _updateLabLockedStatus(status) {
   document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
+  var el = document.getElementById('labLockedUnlock');
+  if (status.reason && status.reason.indexOf('try again') !== -1) {
+    el.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.initialized=false;initLabPage()">Retry</button>';
+    return;
+  }
   var tzOpts = {hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'};
   const estUnlock = status.estimated_unlock
     ? 'Estimated unlock: ' + new Date(status.estimated_unlock).toLocaleTimeString('en-US',tzOpts)
     : (status.next_lock_time ? 'Locks at ' + new Date(status.next_lock_time).toLocaleTimeString('en-US',tzOpts) : '');
-  document.getElementById('labLockedUnlock').textContent = estUnlock;
+  el.textContent = estUnlock;
 }
 
 async function showLabLocked(status) {
@@ -2972,7 +2977,7 @@ async function showLabLocked(status) {
         _updateLabLockedStatus(s);
       }
     }).catch(function() {});
-  }, 60000);  // 1 minute: faster unlock detection vs 3 min (improved responsiveness)
+  }, 120000);  // 2 minutes: reduce Vercel invocations while keeping unlock detection
 }
 
 async function showLabUnlocked(status) {

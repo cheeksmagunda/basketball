@@ -92,7 +92,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear cache + config cache (cron at 7pm/8pm UTC; requires CRON_SECRET when set) |
+| `/api/refresh` | GET | Clear cache + config cache (cron at 7pm UTC; requires CRON_SECRET when set) |
 
 ### Line of the Day
 | Endpoint | Method | Purpose |
@@ -203,7 +203,7 @@ Predictions lock 5 minutes before the earliest game starts (lock window). Once l
 
 ### Lock Cache Behavior
 - Lock cache (`/tmp/nba_locks_v1/`) survives within a warm Vercel instance
-- Cache TTL during locked slate: **30 seconds** (enables event-driven detection)
+- Cache TTL during locked slate: **60 seconds** (balanced for event-driven detection and Vercel cost)
 - Cache TTL pre-slate: **180 seconds** (normal polling)
 - On cache expiration, immediately checks ESPN to see if games are done
 - On cold start with no cache, `data/locks/{date}_slate.json` on GitHub is the recovery source
@@ -281,7 +281,7 @@ The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs
 - Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
 
 ### Odds Refresh Pipeline
-- **Crons**: `0 * * * *` (hourly) + `55 * * * *` (every :55, hits common 6:55 PM ET lock)
+- **Cron**: `55 * * * *` (once per hour at :55; hits common 6:55 PM ET lock)
 - **Helpers**: `_abbr_matches(abbr, full_name)` maps ESPN abbrs → Odds API team name fragments; `_fetch_odds_line(player, stat, team, opp)` makes 2-step Odds API call (events list → event player props)
 - **Lock freeze**: `/api/refresh-line-odds` checks `_is_locked(earliest)` — no-op if locked
 - **REFRESH button**: calls `/api/refresh-line-odds` then reloads Line page data
@@ -299,14 +299,14 @@ Note: `predictSubNav` and `lineSubNav` are now **inline elements** (not fixed/fl
 
 ## Cron Schedule (vercel.json)
 
+Crons and frontend poll intervals are tuned to reduce Vercel invocations while preserving lock/unlock, odds refresh, and line-resolve behavior.
+
 | Schedule (UTC) | Endpoint | Purpose |
 |----------------|----------|---------|
 | `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
-| `0 20 * * *` | `/api/refresh` | Second cache clear pass |
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement |
-| `0 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync |
-| `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET window) |
-| `15,30,45 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends |
+| `55 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync (at :55) |
+| `0,30 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends |
 
 ## Deployment Pipeline
 
@@ -339,10 +339,10 @@ The system now uses **game completion events** instead of clock-based timeouts f
 3. **Enables next slate** — New games become draftable within seconds of previous slate completion
 
 ### Cache TTL Optimization (Adaptive)
-- **Locked slate**: Cache TTL reduced to **30 seconds** (from 180s)
+- **Locked slate**: Cache TTL **60 seconds** (from 180s; balances responsiveness and Vercel cost)
 - **Pre-slate**: Cache TTL remains 180 seconds
-- During locked periods, the backend refreshes game status every 30s instead of waiting 3 minutes
-- Enables sub-minute detection of slate completion without hammering ESPN API
+- During locked periods, the backend refreshes game status every 60s instead of waiting 3 minutes
+- Unlock still detected within the next frontend poll (2 min Lab, 1 min Line when relevant)
 
 ### Aggressive ESPN Fallback (4.5-Hour Rule)
 If ESPN API delays updating game status to "Final":
@@ -353,7 +353,7 @@ If ESPN API delays updating game status to "Final":
 
 ### Event-Driven Frontend Unlock
 When line polling detects games finished (`status === 'final'`):
-- Immediately triggers `/api/lab/status` check instead of waiting for next poll cycle (~30-60s)
+- Immediately triggers `/api/lab/status` check instead of waiting for next poll cycle (~1-2 min)
 - If Lab is active and unlocks, shows upload banner instantly
 - Falls back to auto-resolve cron if Ben not open
 
@@ -383,12 +383,11 @@ Backend uses Python `ThreadPoolExecutor` for parallel processing:
 - 8 workers matches typical Vercel CPU core availability
 
 ### Polling Interval Tuning
-- **Lab lock polling**: Reduced from 3 minutes → 1 minute (line 2835 in `index.html`)
-  - Faster detection of end-of-slate unlock
-  - Users see upload banner within ~1 min instead of up to 3 min
-- **Line live stat polling**: Max 5 consecutive failures (150s tolerance) before fallback to cron-based resolution
+- **Lab lock polling**: 2 minutes (reduces Vercel invocations; line ~2980 in `index.html`)
+  - Unlock detected within ~2 min; user can tap Retry for immediate check
+- **Line live stat polling**: 1 minute; max 5 consecutive failures (300s tolerance) before fallback to cron
   - Prevents indefinite polling on persistent network failures
-  - Falls back to `/api/auto-resolve-line` cron (15/30/45 min marks)
+  - Falls back to `/api/auto-resolve-line` cron (0/30 min marks)
 
 ### GitHub API Retry Logic
 `_github_write_file()` (api/index.py lines 75-110) implements exponential backoff for concurrent write conflicts:
@@ -471,8 +470,8 @@ TestComputeAudit        — MAE calculation, no-data guard, zero-RS skip, miss s
 TestGitHubWriteRetry    — 422 SHA conflict, 1s/2s/4s backoff, max-retry error return
 TestSaveActualsAuditGate — audit only fires when real_scores data is present
 TestAutoResolveMidnight — pick_date vs et_date divergence after midnight
-TestCacheTTLs           — 3 min games, 5 min config, 30 min RotoWire, 30s locked TTL
-TestPollingIntervals    — 60s lab lock, 30s line live, 150s failure cutoff
+TestCacheTTLs           — 3 min games, 5 min config, 30 min RotoWire, 60s locked TTL
+TestPollingIntervals    — 120s lab lock, 60s line live, 300s failure cutoff
 ```
 
 Run with: `pytest tests/test_fixes.py -v`

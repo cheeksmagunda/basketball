@@ -3367,7 +3367,7 @@ def _all_games_final(games):
     # Determine if slate is locked. During locked slate, use 30s TTL for responsiveness.
     # This enables event-driven unlock detection without hammering ESPN API.
     slate_locked = any(_is_locked(g.get("startTime", "")) for g in games if g.get("startTime"))
-    cache_ttl = 30 if slate_locked else 180
+    cache_ttl = 60 if slate_locked else 180
 
     # Cache valid only if within TTL AND still the same ET date
     if (_GAMES_FINAL_CACHE["result"] is not None

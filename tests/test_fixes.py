@@ -296,8 +296,8 @@ class TestCacheTTLs:
     def test_rotowire_cache_30min(self):
         assert 1800 == 30 * 60
 
-    def test_lock_cache_during_slate_30s(self):
-        assert 30 < 180  # locked TTL tighter than pre-slate TTL
+    def test_lock_cache_during_slate_60s(self):
+        assert 60 < 180  # locked TTL tighter than pre-slate TTL
 
 
 # ─────────────────────────────────────────────────────────
@@ -306,16 +306,16 @@ class TestCacheTTLs:
 class TestPollingIntervals:
     """Frontend polling intervals match documented values"""
 
-    def test_lab_lock_poll_60s(self):
-        """Lab status polled every 60s (1 min) while locked"""
+    def test_lab_lock_poll_120s(self):
+        """Lab status polled every 120s (2 min) while locked"""
+        assert 120000 / 1000 == 120
+
+    def test_line_live_poll_60s(self):
         assert 60000 / 1000 == 60
 
-    def test_line_live_poll_30s(self):
-        assert 30000 / 1000 == 30
-
-    def test_line_failure_cutoff_150s_tolerance(self):
-        """5 failures × 30s = 150s before falling back to cron"""
-        assert 5 * 30 == 150
+    def test_line_failure_cutoff_300s_tolerance(self):
+        """5 failures × 60s = 300s before falling back to cron"""
+        assert 5 * 60 == 300
 
 
 if __name__ == "__main__":
