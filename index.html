@@ -2091,33 +2091,29 @@ function _initUploadBanner() {
   const _ulFlags = JSON.parse(localStorage.getItem('benUploads_' + _pendingDate) || '{}');
   const _allDone = _ulFlags.real_scores && _ulFlags.top_drafts && _ulFlags.starting_5 && _ulFlags.moonshot;
   _ub.style.display = _allDone ? 'none' : 'block';
-  // Set banner title with the pending date
+  // Set banner title with the pending date + progress counter
   const _title = document.getElementById('benBannerTitle');
   if (_title) {
     const d = new Date(_pendingDate + 'T12:00:00');
     const dayStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    _title.textContent = '📋 Log Results — ' + dayStr;
+    const doneCount = [_ulFlags.real_scores, _ulFlags.top_drafts, _ulFlags.starting_5, _ulFlags.moonshot].filter(Boolean).length;
+    _title.textContent = '📋 Log Results — ' + dayStr + (doneCount > 0 ? '  ' + doneCount + '/4' : '');
   }
-  // Restore green/disabled state for any already-completed button
-  const _restoreBtn = (id, label) => {
-    const b = document.getElementById(id);
-    if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)';
-             b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)';
-             b.disabled = true; }
-  };
-  if (_ulFlags.real_scores) _restoreBtn('benBannerRSBtn',  '✓ Real Scores');
-  if (_ulFlags.top_drafts)  _restoreBtn('benBannerWinBtn', '✓ Top Drafts');
-  if (_ulFlags.starting_5)  _restoreBtn('benBannerS5Btn',  '✓ Starting 5');
-  if (_ulFlags.moonshot)    _restoreBtn('benBannerMSBtn',  '✓ Moonshot');
+  // Hide already-completed buttons — user only sees what's still needed
+  const _hideBtn = (id) => { const b = document.getElementById(id); if (b) b.style.display = 'none'; };
+  if (_ulFlags.real_scores) _hideBtn('benBannerRSBtn');
+  if (_ulFlags.top_drafts)  _hideBtn('benBannerWinBtn');
+  if (_ulFlags.starting_5)  _hideBtn('benBannerS5Btn');
+  if (_ulFlags.moonshot)    _hideBtn('benBannerMSBtn');
 }
 
-// Hide upload banner once all 4 uploads are done (all buttons marked green)
+// Hide upload banner once all 4 uploads are done — uses localStorage as source of truth
+// (DOM button state unreliable after hide-on-complete)
 function _checkBannerDone() {
-  const rs  = document.getElementById('benBannerRSBtn');
-  const win = document.getElementById('benBannerWinBtn');
-  const s5  = document.getElementById('benBannerS5Btn');
-  const ms  = document.getElementById('benBannerMSBtn');
-  if (rs?.disabled && win?.disabled && s5?.disabled && ms?.disabled) {
+  const pendingDate = LAB.briefing?.pending_upload_date;
+  if (!pendingDate) return;
+  const _u = JSON.parse(localStorage.getItem('benUploads_' + pendingDate) || '{}');
+  if (_u.real_scores && _u.top_drafts && _u.starting_5 && _u.moonshot) {
     const banner = document.getElementById('benUploadBanner');
     if (banner) {
       banner.style.maxHeight = '0';
@@ -2212,7 +2208,19 @@ async function _handleBenUpload(file, type, source) {
     if (!data.players?.length) throw new Error(data.error || 'No players found');
 
     const today = LAB.briefing?.pending_upload_date || _etToday();
+    // _markDone: permanent green (used for chat buttons)
     const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
+    // _markBannerDone: flash green → update X/4 counter → hide after 1.5s
+    const _markBannerDone = (id, label, date) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true;
+      const _uf = JSON.parse(localStorage.getItem('benUploads_' + date) || '{}');
+      const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot].filter(Boolean).length;
+      const _t = document.getElementById('benBannerTitle');
+      if (_t) { const d = new Date(date + 'T12:00:00'); const ds = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/4' : ''); }
+      setTimeout(() => { b.style.display = 'none'; }, 1500);
+    };
 
     if (type === 'real_scores' || type === 'starting_5' || type === 'moonshot') {
       // All three save to the same actuals CSV (merge by player name).
@@ -2225,11 +2233,11 @@ async function _handleBenUpload(file, type, source) {
       });
       if (!_saveRes.ok) throw new Error(`Save actuals failed (${_saveRes.status})`);
 
-      // Mark buttons done (banner + chat if exists)
-      _markDone(bannerBtnId, _labels[type]);
+      // Write localStorage first so counter in _markBannerDone reads the updated count
+      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      _markBannerDone(bannerBtnId, _labels[type], today);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
-      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
 
       // Build summary
       const playerList = data.players.map(p => `${p.player_name || p.name}: ${p.actual_rs ?? '?'} RS${p.actual_card_boost ? ' +' + p.actual_card_boost + 'x boost' : ''}`).join(', ');
@@ -2273,7 +2281,7 @@ async function _handleBenUpload(file, type, source) {
       }));
       if (leaderboardPlayers.length) {
         try {
-          const _lr = await fetch('/api/save-actuals', {
+          const _lr = await fetchWithTimeout('/api/save-actuals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ date: today, players: leaderboardPlayers }),
@@ -2281,10 +2289,10 @@ async function _handleBenUpload(file, type, source) {
           if (!_lr.ok) throw new Error('HTTP ' + _lr.status);
         } catch(e) { _appendMsg('assistant', 'Failed to save leaderboard — try again.'); return; }
       }
-      _markDone(bannerBtnId, _labels[type]);
+      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      _markBannerDone(bannerBtnId, _labels[type], today);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
-      { const _lsKey = 'benUploads_' + today; const _u = JSON.parse(localStorage.getItem(_lsKey) || '{}'); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       const winnerStr = leaderboardPlayers.length
         ? leaderboardPlayers.slice(0,6).map(p => `${p.player_name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')
         : `${data.players.length} entries parsed`;
