@@ -222,6 +222,7 @@ Predictions lock 5 minutes before the earliest game tip-off. **Slates unlock bas
 - All slate-level checks use `any(_is_locked(st))` to handle split-window days (2 PM + 9 PM games)
 - **Triple-gated prediction saves** — frontend `SLATE.locked` check, backend `any(_is_locked(...))` HTTP 409 guard, and cron guard
 - Two write paths to `data/predictions/`: the `/api/save-predictions` endpoint and inline save at lock-promotion in `/api/slate`
+- **Lab status resilience:** `/api/lab/status` is wrapped in try/except; on exception it returns 200 with `locked: true` and "Server temporarily unavailable — try again" so the Ben tab shows a retry instead of a failed fetch. See [docs/LOCK_AND_ROUTING_AUDIT.md](docs/LOCK_AND_ROUTING_AUDIT.md).
 
 ## Known Limitations
 

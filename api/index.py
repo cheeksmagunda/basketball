@@ -3442,92 +3442,102 @@ def _all_games_final(games):
 
 @app.get("/api/lab/status")
 async def lab_status():
-    """Return Lab lock status based on slate state and game completion."""
-    games = fetch_games()
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    """Return Lab lock status based on slate state and game completion.
+    On any exception (ESPN timeout, config load, etc.) returns 200 with locked=True
+    so the frontend shows a retryable message instead of a generic fetch failure."""
+    try:
+        games = fetch_games()
+        draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
 
-    # If games are currently in progress (slate locked, games not yet final).
-    # Check ALL game start times — not just earliest. On a 6-game Saturday slate,
-    # the earliest game (e.g. 2 PM) expires its 6h lock window by 8 PM, but late
-    # games (7-10 PM tips) are still live. Using min() caused Ben to unlock mid-slate.
-    start_times = [g["startTime"] for g in games if g.get("startTime")]
-    slate_locked = any(_is_locked(st) for st in start_times) if start_times else False
-    earliest = min(start_times) if start_times else None
+        # If games are currently in progress (slate locked, games not yet final).
+        # Check ALL game start times — not just earliest. On a 6-game Saturday slate,
+        # the earliest game (e.g. 2 PM) expires its 6h lock window by 8 PM, but late
+        # games (7-10 PM tips) are still live. Using min() caused Ben to unlock mid-slate.
+        start_times = [g["startTime"] for g in games if g.get("startTime")]
+        slate_locked = any(_is_locked(st) for st in start_times) if start_times else False
+        earliest = min(start_times) if start_times else None
 
-    all_final, remaining, finals, latest_remaining_start = _all_games_final(games)
+        all_final, remaining, finals, latest_remaining_start = _all_games_final(games)
 
-    cfg = _load_config()
-    cfg_version = cfg.get("version", 1)
-    last_change = (cfg.get("changelog") or [{}])[-1]
+        cfg = _load_config()
+        cfg_version = cfg.get("version", 1)
+        last_change = (cfg.get("changelog") or [{}])[-1]
 
-    if all_final:
-        # All started games confirmed done (requires finals > 0 from _all_games_final,
-        # so ESPN outages/empty responses won't falsely trigger this path).
-        next_lock = None
-        upcoming = 0
-        if draftable:
-            lock_buf = _cfg("projection.lock_buffer_minutes", 5)
-            ns = min(g["startTime"] for g in draftable if g.get("startTime"))
-            gs = datetime.fromisoformat(ns.replace("Z", "+00:00"))
-            next_lock = (gs - timedelta(minutes=lock_buf)).isoformat()
-            upcoming = len(draftable)
-        reason = "All games final" if not upcoming else f"Break — {upcoming} game{'s' if upcoming != 1 else ''} later today"
-        return {
-            "locked": False,
-            "reason": reason,
-            "current_config_version": cfg_version,
-            "games_remaining": upcoming,
-            "games_final": finals,
-            "next_lock_time": next_lock,
-        }
-    elif slate_locked:
-        # Total remaining = all games on slate minus finals (includes in-progress + scheduled).
-        # Showing only in-progress games was misleading (e.g. "1 remaining" when 5 more scheduled).
-        total_remaining = len(games) - finals
-
-        # Estimate unlock from the LAST game of the day, not the last in-progress game.
-        # Using latest_remaining_start showed 4:30 PM when the real unlock was 10 PM.
-        est_unlock = None
-        latest_start = max(start_times) if start_times else earliest
-        if latest_start:
-            try:
-                gs = datetime.fromisoformat(latest_start.replace("Z", "+00:00"))
-                est_unlock = (gs + timedelta(hours=2, minutes=30)).isoformat()
-            except Exception: pass
+        if all_final:
+            # All started games confirmed done (requires finals > 0 from _all_games_final,
+            # so ESPN outages/empty responses won't falsely trigger this path).
+            next_lock = None
+            upcoming = 0
+            if draftable:
+                lock_buf = _cfg("projection.lock_buffer_minutes", 5)
+                ns = min(g["startTime"] for g in draftable if g.get("startTime"))
+                gs = datetime.fromisoformat(ns.replace("Z", "+00:00"))
+                next_lock = (gs - timedelta(minutes=lock_buf)).isoformat()
+                upcoming = len(draftable)
+            reason = "All games final" if not upcoming else f"Break — {upcoming} game{'s' if upcoming != 1 else ''} later today"
+            return {
+                "locked": False,
+                "reason": reason,
+                "current_config_version": cfg_version,
+                "games_remaining": upcoming,
+                "games_final": finals,
+                "next_lock_time": next_lock,
+            }
+        elif slate_locked:
+            # Total remaining = all games on slate minus finals (includes in-progress + scheduled).
+            total_remaining = len(games) - finals
+            est_unlock = None
+            latest_start = max(start_times) if start_times else earliest
+            if latest_start:
+                try:
+                    gs = datetime.fromisoformat(latest_start.replace("Z", "+00:00"))
+                    est_unlock = (gs + timedelta(hours=2, minutes=30)).isoformat()
+                except Exception: pass
+            return {
+                "locked": True,
+                "reason": f"Slate in progress — {total_remaining} game{'s' if total_remaining != 1 else ''} remaining",
+                "current_config_version": cfg_version,
+                "games_remaining": total_remaining,
+                "games_final": finals,
+                "estimated_unlock": est_unlock,
+            }
+        else:
+            # Pre-slate — lab is open. If no games and no finals, check GitHub lock file (ESPN down).
+            if not games and not finals:
+                try:
+                    today_str = _et_date().strftime("%Y-%m-%d")
+                    lock_content, _ = _github_get_file(f"data/locks/{today_str}_slate.json")
+                    if lock_content:
+                        return {
+                            "locked": True,
+                            "reason": "ESPN unavailable — defaulting to locked (games scheduled today)",
+                            "current_config_version": cfg_version,
+                            "games_remaining": 0,
+                            "games_final": 0,
+                        }
+                except Exception:
+                    pass
+            return {
+                "locked": False,
+                "reason": "Pre-slate window",
+                "current_config_version": cfg_version,
+                "games_remaining": 0,
+                "games_final": 0,
+                "next_lock_time": None,
+            }
+    except Exception as e:
+        print(f"[lab/status] error: {e}")
+        try:
+            cfg = _load_config()
+            cfg_version = cfg.get("version", 1)
+        except Exception:
+            cfg_version = 1
         return {
             "locked": True,
-            "reason": f"Slate in progress — {total_remaining} game{'s' if total_remaining != 1 else ''} remaining",
-            "current_config_version": cfg_version,
-            "games_remaining": total_remaining,
-            "games_final": finals,
-            "estimated_unlock": est_unlock,
-        }
-    else:
-        # Pre-slate — lab is open.
-        # Safety check: if we have no games AND no finals, ESPN may be down.
-        # Check lock files on GitHub as a fallback before unlocking.
-        if not games and not finals:
-            try:
-                today_str = _et_date().strftime("%Y-%m-%d")
-                lock_data = _github_get_file(f"data/locks/{today_str}_slate.json")
-                if lock_data:
-                    # A lock file exists for today — games were scheduled. ESPN is likely down.
-                    return {
-                        "locked": True,
-                        "reason": "ESPN unavailable — defaulting to locked (games scheduled today)",
-                        "current_config_version": cfg_version,
-                        "games_remaining": 0,
-                        "games_final": 0,
-                    }
-            except Exception:
-                pass
-        return {
-            "locked": False,
-            "reason": "Pre-slate window",
+            "reason": "Server temporarily unavailable — try again",
             "current_config_version": cfg_version,
             "games_remaining": 0,
             "games_final": 0,
-            "next_lock_time": None,
         }
 
 
