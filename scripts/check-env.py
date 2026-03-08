@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Verify required and optional env vars for local or deployed runs. Exit 1 if any required var is missing."""
+"""Verify required and optional env vars for local or deployed runs. Exit 1 if any required var is missing.
+
+Only prints variable names and presence (missing/set). Never prints or logs secret values."""
 import os
 import sys
 from pathlib import Path
 
-# Load .env from repo root when running locally
+# Load .env from repo root when running locally (do not commit .env; it is in .gitignore)
 _root = Path(__file__).resolve().parent.parent
 _env = _root / ".env"
 if _env.exists():

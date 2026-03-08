@@ -1,3 +1,12 @@
+"""
+Oracle API — FastAPI backend for the Real Sports NBA draft optimizer.
+
+Single-entry backend: all HTTP routes, projection pipeline, slate/picks computation,
+Line of the Day engine, and Lab (Ben) chat live here. Uses api.real_score, api.asset_optimizer,
+api.line_engine, and api.rotowire for domain logic. Config from data/model-config.json (GitHub);
+secrets from environment variables only (never in code). Global exception handler returns
+generic 500 to clients and logs full traceback server-side.
+"""
 import json
 import copy
 import csv
@@ -10,6 +19,8 @@ import base64
 import threading
 import time
 import uuid
+from typing import Any, Optional, Tuple
+
 import numpy as np
 import requests
 from datetime import datetime, timedelta, timezone
@@ -37,6 +48,18 @@ except ImportError:
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch any unhandled exception; log server-side only, return generic 500 to client."""
+    import traceback
+    print(f"[unhandled] {request.method} {request.url.path}: {exc}", flush=True)
+    traceback.print_exc()
+    return JSONResponse(
+        content={"error": "An unexpected error occurred"},
+        status_code=500,
+    )
 
 
 @app.middleware("http")
@@ -74,7 +97,7 @@ _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
 if _missing_env:
     print(f"[WARN] Missing env vars: {_missing_env} — affected features will be degraded")
 
-def _github_get_file(path):
+def _github_get_file(path: str) -> Tuple[Optional[str], Optional[str]]:
     """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return None, None
@@ -89,7 +112,7 @@ def _github_get_file(path):
         return content, data["sha"]
     return None, None
 
-def _github_list_dir(path):
+def _github_list_dir(path: str) -> list:
     """List files in a GitHub repo directory. Returns list of {name, path} dicts."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return []
@@ -102,7 +125,7 @@ def _github_list_dir(path):
         return r.json()
     return []
 
-def _github_write_file(path, content, message="auto-update", max_retries=3):
+def _github_write_file(path: str, content: str, message: str = "auto-update", max_retries: int = 3) -> dict:
     """Create or update a file in the GitHub repo via Contents API.
 
     Retries on 422 Conflict (SHA mismatch) with exponential backoff to handle
@@ -511,7 +534,7 @@ def _enrich_projections_with_l5(projections):
                 p["recent_ast"] = round(sum(l5) / len(l5), 1)
 
 
-def _is_locked(start_time_iso):
+def _is_locked(start_time_iso: Optional[str]) -> bool:
     """Returns True if current UTC time is within lock_buffer_minutes of game start.
     Returns False only for games >6h past start (well past any possible final buzzer)."""
     try:
@@ -539,7 +562,7 @@ def _is_completed(start_time_iso):
     except Exception:
         return False
 
-def _et_date():
+def _et_date() -> str:
     """Current date in Eastern Time (handles EST/EDT)."""
     try:
         from zoneinfo import ZoneInfo
@@ -556,7 +579,7 @@ def _et_date():
 # _fetch_athlete: returns blended season+recent stats dict for a player
 # fetch_games: returns today's game list with lock/complete status
 # ─────────────────────────────────────────────────────────────────────────────
-def _safe_float(v, default=0.0):
+def _safe_float(v: Any, default: float = 0.0) -> float:
     try: return float(v) if v is not None else default
     except: return default
 
@@ -1892,7 +1915,7 @@ def _require_cron_secret(request: Request):
 
 
 @app.get("/api/health")
-async def health():
+async def health() -> dict:
     """Lightweight health check for uptime monitoring. Returns 200 and optionally checks GitHub + config."""
     out = {"status": "ok"}
     try:
@@ -1910,14 +1933,14 @@ async def health():
 
 
 @app.get("/api/version")
-async def version():
+async def version() -> dict:
     """Return build/deploy identifier for 'what is deployed' checks. Set VERCEL_GIT_COMMIT_SHA at build time."""
     sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
     return {"version": sha[:7] if sha else "unknown"}
 
 
 @app.get("/api/games")
-async def get_games():
+async def get_games() -> dict:
     """Never returns 500; on exception returns 200 with empty list."""
     try:
         games = fetch_games()
@@ -2106,7 +2129,7 @@ def _get_slate_impl():
 
 
 @app.get("/api/slate")
-async def get_slate():
+async def get_slate() -> dict:
     """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling."""
     try:
         return _get_slate_impl()

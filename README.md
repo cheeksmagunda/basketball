@@ -131,6 +131,8 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 
 ## Responsiveness & Reliability
 
+**Error boundaries**: Backend uses a global exception handler — unhandled exceptions log server-side and return a generic 500 with no stack trace or internal detail. Frontend uses `_safeParseLocalStorage()` for all localStorage JSON and `_el()` with null checks in critical paths; Lab lock poll logs fetch failures; Lab chat has a 60s connection timeout.
+
 **Fetch Timeout Protection**: All frontend API calls enforce hard timeouts (10s default, 30s screenshots) via `Promise.race()` and `AbortController`. Prevents indefinite UI hangs on slow backend.
 
 **Worker Pool Optimization**: Backend uses 8 parallel workers (up from 4) for game processing, slate computation, picks analysis, and audit runs. Handles 14-game Saturdays efficiently.
@@ -158,6 +160,8 @@ Users can skip uploading results for specific slates without affecting model lea
 **Why skip?**: Incomplete drafts, test scenarios, or unreliable Real Sports data. Prevents outliers from skewing model retraining.
 
 ## Environment Variables
+
+All secrets and config live in **environment variables only** — never hardcoded or committed. For local dev, use a `.env` file in the repo root (listed in `.gitignore`; do not commit). For production, set variables in the Vercel project dashboard.
 
 | Variable | Purpose |
 |----------|---------|
