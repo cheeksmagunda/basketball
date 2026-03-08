@@ -53,9 +53,11 @@ df['avg_pts'] = g['PTS'].transform(lambda x: x.expanding().mean().shift(1))
 df['recent_min'] = g['MIN'].transform(lambda x: x.rolling(5).mean().shift(1))
 
 # Feature 4: Usage trend (recent/season minutes ratio)
+# Clipping constants must match api/index.py inference
+USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
 df = df.dropna(subset=['avg_min', 'avg_pts', 'recent_min'])
 df['usage_trend'] = np.where(df['avg_min'] > 0, df['recent_min'] / df['avg_min'], 1.0)
-df['usage_trend'] = df['usage_trend'].clip(0.90, 1.50)
+df['usage_trend'] = df['usage_trend'].clip(USAGE_TREND_MIN, USAGE_TREND_MAX)
 
 # Feature 5: Opponent defensive rating — avg points scored against each team
 # (actual points allowed per player, a real measure of defensive permissiveness)
