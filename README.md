@@ -125,6 +125,34 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `0 * * * *` | `/api/refresh-line-odds` | Hourly odds sync from Odds API |
 | `55 * * * *` | `/api/refresh-line-odds` | Pre-lock odds sync (hits 6:55 PM ET lock window) |
 
+## Responsiveness & Reliability
+
+**Fetch Timeout Protection**: All frontend API calls enforce hard timeouts (10s default, 30s screenshots) via `Promise.race()` and `AbortController`. Prevents indefinite UI hangs on slow backend.
+
+**Worker Pool Optimization**: Backend uses 8 parallel workers (up from 4) for game processing, slate computation, picks analysis, and audit runs. Handles 14-game Saturdays efficiently.
+
+**Polling Intervals**:
+- Lab lock status: 1-minute checks (faster unlock detection)
+- Line live stat: Max 5 consecutive failures (150s tolerance) before fallback to cron
+
+**GitHub Write Retry**: Exponential backoff (1s, 2s, 4s) on concurrent write conflicts (HTTP 422 SHA mismatch). Fresh SHA fetch on each retry.
+
+**Cache TTLs**: Game final (3 min), model config (5 min), RotoWire (30 min), odds (1 hour). Explicit invalidation via `/api/refresh`.
+
+**Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
+
+**ESPN API Fallback**: If game status not updated for 4+ hours, mark as final. Requires at least one game in Final status before unlocking (safety against outages).
+
+## Skip Uploads Feature
+
+Users can skip uploading results for specific slates without affecting model learning.
+
+**UI**: Ben upload banner includes "Skip All" button (muted, right-aligned). Clicking hides banner and records the skip server-side.
+
+**Data**: `data/skipped-uploads.json` tracks skipped dates. `save-actuals` silently skips processing for marked dates. Users can upload later if they change their mind.
+
+**Why skip?**: Incomplete drafts, test scenarios, or unreliable Real Sports data. Prevents outliers from skewing model retraining.
+
 ## Environment Variables
 
 | Variable | Purpose |
@@ -150,6 +178,7 @@ All persistent data stored in the GitHub repo via Contents API:
 - `data/lines/{date}_pick.json` — dual-pick format `{over_pick, under_pick}` with odds fields
 - `data/locks/{date}_slate.json` — cold-start lock recovery (written at lock-promotion time)
 - `data/model-config.json` — runtime model parameters (5-min cache, fallback to defaults)
+- `data/skipped-uploads.json` — user-selected dates to skip uploading (persists skip decisions)
 
 ## Local Development
 

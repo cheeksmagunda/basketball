@@ -1191,6 +1191,10 @@
             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             🚀 Moonshot
           </button>
+          <button id="benBannerSkipBtn" onclick="_benSkipAllUploads()"
+            style="background:transparent;border:1px solid var(--muted);border-radius:8px;color:var(--muted);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.75rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s;margin-left:auto">
+            ⊘ Skip All
+          </button>
         </div>
       </div>
     </div>
@@ -2133,6 +2137,45 @@ function _benTriggerUpload(type, source) {
   input.accept = 'image/*';
   input.onchange = () => _handleBenUpload(input.files[0], type, source);
   input.click();
+}
+
+async function _benSkipAllUploads() {
+  /**
+   * Skip uploading results for the pending slate date.
+   * Hides banner, marks date as skipped in localStorage and backend,
+   * prevents screenshot processing (doesn't affect learning).
+   */
+  const pendingDate = LAB.briefing?.pending_upload_date || _etToday();
+
+  // Store in localStorage to persist across sessions
+  const skippedDates = JSON.parse(localStorage.getItem('benSkippedUploadDates') || '[]');
+  if (!skippedDates.includes(pendingDate)) {
+    skippedDates.push(pendingDate);
+    localStorage.setItem('benSkippedUploadDates', JSON.stringify(skippedDates));
+  }
+
+  // Notify backend to skip screenshot processing for this date
+  try {
+    await fetchWithTimeout('/api/lab/skip-uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: pendingDate })
+    }, 10000);
+  } catch (e) {
+    console.warn('[skip-uploads] Backend notification failed:', e);
+    // Continue anyway — local skip is recorded
+  }
+
+  // Hide banner
+  const banner = document.getElementById('benUploadBanner');
+  if (banner) {
+    banner.style.maxHeight = '0';
+    banner.style.opacity = '0';
+    banner.style.marginBottom = '0';
+    setTimeout(() => { banner.style.display = 'none'; }, 400);
+  }
+
+  console.log(`[ben] Skipped uploads for ${pendingDate}`);
 }
 
 async function _handleBenUpload(file, type, source) {
