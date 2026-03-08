@@ -3239,6 +3239,20 @@ def _all_games_final(games):
     # are 0 — that's NOT confirmation games are final. Only unlock when we have
     # positive evidence (at least one completed game) or it's genuinely a no-game day.
     all_final = (remaining == 0 and finals > 0)
+
+    # Fallback: if ESPN isn't marking games as complete but they've been running
+    # for 4+ hours, treat as final anyway. This handles ESPN API delays where
+    # games finish but status updates lag (common in high-traffic periods).
+    # NBA games max ~3.5h; 4h buffer includes OT and processing delays.
+    if not all_final and remaining > 0 and latest_remaining and finals > 0:
+        try:
+            latest_dt = datetime.fromisoformat(latest_remaining.replace("Z", "+00:00"))
+            hours_since_start = (now_ts - latest_dt.timestamp()) / 3600
+            if hours_since_start >= 4.0:
+                all_final = True
+        except Exception:
+            pass
+
     result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
     return result
