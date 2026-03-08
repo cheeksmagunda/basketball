@@ -2428,6 +2428,68 @@ async def log_get(date: str = Query(None)):
     }
 
 
+@app.get("/api/log/actuals-stats")
+async def log_actuals_stats(date: str = Query(None)):
+    """Fetch actual box score stats (PTS, REB, AST, STL, BLK, MIN) from ESPN
+    for all players on a given date's completed games. Returns a map of
+    player_name -> {pts, reb, ast, stl, blk, min}. Cached for 24h since
+    historical box scores don't change."""
+    date_str = date or _et_date().isoformat()
+    cache_key = f"actuals_stats_{date_str}"
+    cached = _cg(cache_key)
+    if cached is not None:
+        return cached
+
+    from datetime import date as date_cls
+    try:
+        d = date_cls.fromisoformat(date_str)
+    except Exception:
+        return {"error": "Invalid date format", "players": {}}
+
+    games = fetch_games(d)
+    if not games:
+        result = {"date": date_str, "players": {}}
+        _cs(cache_key, result)
+        return result
+
+    player_stats = {}
+    want_labels = {"MIN", "PTS", "REB", "AST", "STL", "BLK"}
+
+    for game in games:
+        game_id = game.get("gameId")
+        if not game_id:
+            continue
+        data = _espn_get(f"{ESPN}/summary?event={game_id}")
+        if not data:
+            continue
+        for team_block in data.get("boxscore", {}).get("players", []):
+            stats_sections = team_block.get("statistics", [])
+            if not stats_sections:
+                continue
+            labels = stats_sections[0].get("labels", [])
+            idx_map = {l: i for i, l in enumerate(labels) if l in want_labels}
+            for ath in stats_sections[0].get("athletes", []):
+                name = ath.get("athlete", {}).get("displayName", "")
+                if not name:
+                    continue
+                vals = ath.get("stats", [])
+                pdata = {}
+                for lbl, key in [("PTS","pts"),("REB","reb"),("AST","ast"),
+                                  ("STL","stl"),("BLK","blk"),("MIN","min")]:
+                    if lbl in idx_map and idx_map[lbl] < len(vals):
+                        try:
+                            raw = vals[idx_map[lbl]]
+                            pdata[key] = float(raw.split(":")[0]) if ":" in str(raw) else float(raw)
+                        except (ValueError, TypeError):
+                            pdata[key] = 0.0
+                if pdata:
+                    player_stats[name] = pdata
+
+    result = {"date": date_str, "players": player_stats}
+    _cs(cache_key, result)
+    return result
+
+
 @app.get("/api/audit/get")
 async def audit_get(date: str = Query(None)):
     """Return pre-computed audit JSON for a date (or compute live if missing)."""

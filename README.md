@@ -41,7 +41,7 @@ server.py              — Local dev server (uvicorn)
 | **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
 | **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh hourly. Resolved picks only in Recent Picks history |
 | **Ben** | Chat interface (Claude Opus). Locked during games, unlocked after final. End-of-day upload flow |
-| **History** | Historical drill-down — predictions vs actuals, read-only |
+| **History** | Historical drill-down — graded cards (Actual RS + ESPN box scores vs projections, hit/miss coloring). Pending state before uploads |
 
 ## Scoring Pipeline
 
@@ -90,6 +90,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc, top misses) |
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
+| `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) per player for completed games |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set) |
 

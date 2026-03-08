@@ -677,6 +677,44 @@
     .actual-rs-pill.hit { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
     .actual-rs-pill.miss { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
 
+    /* Graded card states — hit/miss accent bar + glow */
+    .player-card.graded-hit::before { background: var(--green) !important; box-shadow: 2px 0 12px rgba(34,197,94,0.4) !important; }
+    .player-card.graded-miss::before { background: #FF8A80 !important; box-shadow: 2px 0 12px rgba(255,138,128,0.3) !important; }
+
+    /* Pending results indicator */
+    .pending-results {
+      font-size: 0.68rem; font-style: italic; color: #8A96A3;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+
+    /* Graded stat grid — 3-row layout */
+    .stat-col-actual {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.88rem; font-weight: 800; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-col-actual.stat-hit { color: #00E676; }
+    .stat-col-actual.stat-miss { color: #FF8A80; }
+    .stat-col-proj {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.52rem; font-weight: 600; color: #8A96A3;
+      line-height: 1; margin-top: 1px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Score column graded state */
+    .score-actual {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 2rem; font-weight: 900; line-height: 1;
+    }
+    .score-actual.score-hit { color: #00E676; }
+    .score-actual.score-miss { color: #FF8A80; }
+    .score-proj-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.62rem; font-weight: 700; color: #8A96A3;
+      margin-top: 2px;
+    }
+
 
     /* Result cards */
     .result-section-label {
@@ -1855,6 +1893,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
     ? (isUpside ? 'var(--log-upside)' : 'var(--log-chalk)')
     : (isUpside ? 'var(--upside)' : 'var(--chalk)');
   const actualsMap = opts.actualsMap || {};
+  const statsActualsMap = opts.statsActualsMap || {};
 
   el.innerHTML = picks.map((p, i) => {
     const tc = TEAM_COLORS[p.team] || (isLog ? '#7ba4c8' : '#4f8ef7');
@@ -1864,14 +1903,23 @@ function renderCards(picks, containerId, mode, opts = {}) {
       return `rgba(${r},${g},${b},0.06)`;
     })();
 
-    // Actual RS pill for log cards
-    let actualPill = '';
-    if (isLog) {
-      const act = actualsMap[p.name];
-      if (act !== undefined) {
-        const pred = parseFloat(p.rating) || 0;
-        const cls = act >= pred * 0.85 ? 'hit' : 'miss';
-        actualPill = `<span class="actual-rs-pill ${cls}">RS ${act}</span>`;
+    const actRS = isLog ? actualsMap[p.name] : undefined;
+    const hasActuals = actRS !== undefined;
+    const predRS = parseFloat(p.rating) || 0;
+    const isHit = hasActuals && actRS >= predRS * 0.85;
+
+    // Find ESPN box score stats for this player (fuzzy match by last name)
+    let playerStats = null;
+    if (isLog && hasActuals) {
+      playerStats = statsActualsMap[p.name];
+      if (!playerStats) {
+        const nameLower = p.name.toLowerCase();
+        for (const [k, v] of Object.entries(statsActualsMap)) {
+          if (k.toLowerCase() === nameLower ||
+              k.toLowerCase().split(' ').pop() === nameLower.split(' ').pop()) {
+            playerStats = v; break;
+          }
+        }
       }
     }
 
@@ -1879,28 +1927,69 @@ function renderCards(picks, containerId, mode, opts = {}) {
     const contextPills = [
       p.est_mult && `<span class="stat-context-pill">+${p.est_mult}x card</span>`,
       p.predMin && `<span class="stat-context-pill">${p.predMin} min</span>`,
-      actualPill,
       (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:#FFB4B4;border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
+      (isLog && !hasActuals) ? '<span class="pending-results">Waiting for results</span>' : '',
     ].filter(Boolean);
 
     // Core stat columns (PTS / REB / AST / STL / BLK)
     const statCols = [
-      p.pts && {v: p.pts, l: 'PTS'},
-      p.reb && {v: p.reb, l: 'REB'},
-      p.ast && {v: p.ast, l: 'AST'},
-      p.stl && {v: p.stl, l: 'STL'},
-      p.blk && {v: p.blk, l: 'BLK'},
+      p.pts && {v: p.pts, l: 'PTS', k: 'pts'},
+      p.reb && {v: p.reb, l: 'REB', k: 'reb'},
+      p.ast && {v: p.ast, l: 'AST', k: 'ast'},
+      p.stl && {v: p.stl, l: 'STL', k: 'stl'},
+      p.blk && {v: p.blk, l: 'BLK', k: 'blk'},
     ].filter(Boolean);
 
-    const statsHtml = `
-      ${contextPills.length ? `<div class="stat-context-row">${contextPills.join('')}</div>` : ''}
-      ${statCols.length ? `<div class="stat-grid-row">${statCols.map(s => `<div class="stat-col"><div class="stat-col-val">${s.v}</div><div class="stat-col-lbl">${s.l}</div></div>`).join('')}</div>` : ''}`;
+    let statsHtml;
+    if (isLog && hasActuals && playerStats) {
+      // Graded 3-row layout: Label / Actual / Projected
+      const gradedCols = statCols.map(s => {
+        const actual = playerStats[s.k] != null ? parseFloat(playerStats[s.k]).toFixed(0) : null;
+        const proj = parseFloat(s.v) || 0;
+        const colorCls = actual != null ? (parseFloat(actual) >= proj ? 'stat-hit' : 'stat-miss') : '';
+        return `<div class="stat-col">
+          <div class="stat-col-lbl">${s.l}</div>
+          ${actual != null
+            ? `<div class="stat-col-actual ${colorCls}">${actual}</div><div class="stat-col-proj">${s.v}</div>`
+            : `<div class="stat-col-val">${s.v}</div>`}
+        </div>`;
+      }).join('');
+      statsHtml = `
+        ${contextPills.length ? `<div class="stat-context-row">${contextPills.join('')}</div>` : ''}
+        ${gradedCols ? `<div class="stat-grid-row">${gradedCols}</div>` : ''}`;
+    } else {
+      statsHtml = `
+        ${contextPills.length ? `<div class="stat-context-row">${contextPills.join('')}</div>` : ''}
+        ${statCols.length ? `<div class="stat-grid-row">${statCols.map(s => `<div class="stat-col"><div class="stat-col-val">${s.v}</div><div class="stat-col-lbl">${s.l}</div></div>`).join('')}</div>` : ''}`;
+    }
 
     const logCardClass = isLog ? ' log-card' : '';
+    const gradedClass = (isLog && hasActuals) ? (isHit ? ' graded-hit' : ' graded-miss') : '';
     const logScoreColorVar = isLog ? `--log-score-color:${scoreColor};` : '';
 
+    // Score column: graded shows Actual RS prominently, Projected RS beneath
+    let scoreColHtml;
+    if (isLog && hasActuals) {
+      const scoreCls = isHit ? 'score-hit' : 'score-miss';
+      scoreColHtml = `
+        <div class="score-col" style="--score-color:${scoreColor};">
+          <div class="score-actual ${scoreCls}">${actRS}</div>
+          <span class="score-label">RS</span>
+          <div class="score-proj-label">Proj ${p.rating}</div>
+          ${(() => { const h = _slotHeat(parseInt(p.slot)||3); return `<div class="slot-badge" style="background:${h.bg};border-color:${h.bc};color:${h.c}">${p.slot || '—'}</div>`; })()}
+        </div>`;
+    } else {
+      scoreColHtml = `
+        <div class="score-col" style="--score-color:${scoreColor};">
+          <div class="score-num">${p.rating}</div>
+          <span class="score-label">RS</span>
+          ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:rgba(147,197,253,0.7);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
+          ${(() => { const h = _slotHeat(parseInt(p.slot)||3); return `<div class="slot-badge" style="background:${h.bg};border-color:${h.bc};color:${h.c}">${p.slot || '—'}</div>`; })()}
+        </div>`;
+    }
+
     return `
-      <div class="player-card${logCardClass}" style="--tcolor:${tc};--tcolor-alpha:${tcAlpha};${logScoreColorVar}${!isLog ? `--score-color:${scoreColor};` : ''}animation-delay:${i*0.06}s">
+      <div class="player-card${logCardClass}${gradedClass}" style="--tcolor:${tc};--tcolor-alpha:${tcAlpha};${logScoreColorVar}${!isLog ? `--score-color:${scoreColor};` : ''}animation-delay:${i*0.06}s">
         <div class="rank-badge">${p.slot || (i+1)}</div>
         <div class="player-info">
           <div class="player-meta">
@@ -1909,12 +1998,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
           <div class="player-name">${p.name}</div>
           <div class="stat-pills">${statsHtml}</div>
         </div>
-        <div class="score-col" style="--score-color:${scoreColor};">
-          <div class="score-num">${p.rating}</div>
-          <span class="score-label">RS</span>
-          ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:rgba(147,197,253,0.7);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
-          ${(() => { const h = _slotHeat(parseInt(p.slot)||3); return `<div class="slot-badge" style="background:${h.bg};border-color:${h.bc};color:${h.c}">${p.slot || '—'}</div>`; })()}
-        </div>
+        ${scoreColHtml}
       </div>`;
   }).join('');
 }
@@ -2135,7 +2219,7 @@ function switchLogTab(tab) {
   renderLogDrillCards();
 }
 
-function renderLogDrillCards() {
+async function renderLogDrillCards() {
   const data = LOG.data;
   const scope = LOG.scope;
   const tab = LOG.currentTab;
@@ -2157,6 +2241,25 @@ function renderLogDrillCards() {
     });
   }
 
+  // Fetch ESPN box score stats (cached on LOG to avoid re-fetching on tab switch)
+  let statsActualsMap = {};
+  const dateStr = LOG.selectedDate;
+  if (dateStr && data.has_actuals) {
+    if (LOG._statsCache && LOG._statsCacheDate === dateStr) {
+      statsActualsMap = LOG._statsCache;
+    } else {
+      try {
+        const r = await fetchWithTimeout(`/api/log/actuals-stats?date=${dateStr}`, {}, 15000);
+        if (r.ok) {
+          const resp = await r.json();
+          statsActualsMap = resp.players || {};
+          LOG._statsCache = statsActualsMap;
+          LOG._statsCacheDate = dateStr;
+        }
+      } catch(e) { /* non-fatal — cards render without ESPN stats */ }
+    }
+  }
+
   // Normalize player objects from CSV format (include stat pills if stored)
   const normalized = players.map((p, i) => ({
     name: p.name || p.player_name || '',
@@ -2173,7 +2276,7 @@ function renderLogDrillCards() {
     slot: p.slot || `${i+1}`,
   }));
 
-  renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap });
+  renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap, statsActualsMap });
 }
 
 // Initialize upload banner — shows if there's a pending date with incomplete uploads.
