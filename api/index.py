@@ -3030,8 +3030,9 @@ def _primary_pick(picks):
     return over or under
 
 
-async def _run_line_engine_for_date(date, skip_l5=False):
+def _run_line_engine_for_date(date, skip_l5=False):
     """Run the full line engine pipeline for a given date (datetime.date).
+    Blocking — call via asyncio.to_thread() from async endpoints.
     skip_l5: skip expensive nba_api L5 enrichment (used in cron/retry paths for speed)."""
     games = fetch_games(date)
     if not games:
@@ -3118,7 +3119,7 @@ async def get_line_of_the_day(request: Request):
                 _cs("line_v1", result)
                 return JSONResponse(result)
             # Generate tomorrow's picks fresh
-            eng_result, err = await _run_line_engine_for_date(tomorrow)
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, tomorrow)
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                      "error": "next_slate_pending", "resolved_today": today_primary})
@@ -3149,7 +3150,7 @@ async def get_line_of_the_day(request: Request):
             missing_under = not today_picks.get("under_pick")
             if missing_over or missing_under:
                 # One direction missing (legacy single-pick) — run engine to fill the gap
-                eng_result, err = await _run_line_engine_for_date(today)
+                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
                 if not err and eng_result:
                     if missing_over and eng_result.get("over_pick"):
                         today_picks["over_pick"] = eng_result["over_pick"]
@@ -3168,12 +3169,12 @@ async def get_line_of_the_day(request: Request):
             return JSONResponse(result)
 
         # No saved picks yet — run the engine for today
-        eng_result, err = await _run_line_engine_for_date(today)
+        eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
         if err or not eng_result or not eng_result.get("pick"):
             # Retry once after 2s — cold-start ESPN caches warm on first attempt
             print(f"[line-of-the-day] first attempt failed ({err}), retrying with skip_l5...")
             await asyncio.sleep(2)
-            eng_result, err = await _run_line_engine_for_date(today, skip_l5=True)
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                  "error": err or "no_projections"}, status_code=200)
@@ -3647,7 +3648,7 @@ async def auto_resolve_line(request: Request):
                 # Wrap generation in timeout to prevent hangs
                 try:
                     eng_result, err = await asyncio.wait_for(
-                        _run_line_engine_for_date(next_day, skip_l5=True),
+                        asyncio.to_thread(_run_line_engine_for_date, next_day, True),
                         timeout=120.0
                     )
                 except asyncio.TimeoutError:
