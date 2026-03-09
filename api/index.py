@@ -3091,8 +3091,7 @@ async def get_line_of_the_day(request: Request):
             cached_pick = cached["pick"]
             pick_date = cached_pick.get("date", today_str)
             already_resolved = cached_pick.get("result") not in (None, "", "pending")
-            both_directions = cached.get("over_pick") and cached.get("under_pick")
-            if not already_resolved and pick_date == today_str and both_directions:
+            if not already_resolved and pick_date in (today_str, tomorrow_str):
                 return JSONResponse(cached)
 
         today = _et_date()
