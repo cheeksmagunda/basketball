@@ -2938,6 +2938,9 @@ function _renderLineLOTDFromState() {
     }
     linePickWrap.style.display = 'block';
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
+    // Auto-correct direction: if the selected direction has no pick but the other does, switch
+    if (!LINE_OVER_PICK && LINE_UNDER_PICK && LINE_DIR === 'over') LINE_DIR = 'under';
+    else if (!LINE_UNDER_PICK && LINE_OVER_PICK && LINE_DIR === 'under') LINE_DIR = 'over';
     switchLineDir(LINE_DIR);
     lineEmptyEl.style.display = 'none';
     // Ensure history section is visible once picks load successfully
