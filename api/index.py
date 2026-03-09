@@ -3113,6 +3113,25 @@ async def get_line_of_the_day(request: Request):
             tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
             tomorrow_primary = _primary_pick(tomorrow_picks)
             if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
+                # Fill any missing direction before serving — same logic as today's path
+                _missing_over  = not (tomorrow_picks or {}).get("over_pick")
+                _missing_under = not (tomorrow_picks or {}).get("under_pick")
+                if _missing_over or _missing_under:
+                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, tomorrow)
+                    if not _fill_err and _fill:
+                        if _missing_over and _fill.get("over_pick"):
+                            tomorrow_picks["over_pick"] = _fill["over_pick"]
+                        if _missing_under and _fill.get("under_pick"):
+                            tomorrow_picks["under_pick"] = _fill["under_pick"]
+                        try:
+                            _github_write_file(
+                                f"data/lines/{tomorrow_str}_pick.json",
+                                json.dumps({"over_pick": tomorrow_picks.get("over_pick"),
+                                            "under_pick": tomorrow_picks.get("under_pick")}),
+                                f"fill missing direction for {tomorrow_str}"
+                            )
+                        except Exception:
+                            pass
                 _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
                 result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
@@ -3123,9 +3142,10 @@ async def get_line_of_the_day(request: Request):
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                      "error": "next_slate_pending", "resolved_today": today_primary})
-            # Tag primary pick with tomorrow's date and save
-            if eng_result.get("pick"):
-                eng_result["pick"]["date"] = tomorrow_str
+            # Tag all picks with tomorrow's date
+            for _key in ("pick", "over_pick", "under_pick"):
+                if eng_result.get(_key):
+                    eng_result[_key]["date"] = tomorrow_str
             eng_result["resolved_today"] = today_primary
             _cs("line_v1", eng_result)
             try:
