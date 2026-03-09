@@ -2946,6 +2946,15 @@ def _get_projections_for_date(date_obj):
     return all_proj, draftable
 
 
+def _pick_has_display_fields(pick):
+    """Check if a pick already has all fields needed for frontend display.
+    When True, skip the expensive enrichment pipeline entirely."""
+    if not pick:
+        return True  # null pick needs no enrichment
+    _required = ("season_avg", "proj_min", "avg_min", "recent_form_bars")
+    return all(pick.get(f) is not None for f in _required)
+
+
 def _enrich_loaded_line_picks(picks_dict, date_obj):
     """Enrich over_pick and under_pick with season_avg, proj_min, avg_min, game_time, recent_form_bars when loaded from GitHub.
     Only runs the full projection pipeline when enrichment fields are actually missing — skips it
@@ -2954,7 +2963,7 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
         return
     _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars")
     def _needs_proj(pick):
-        return bool(pick) and any(pick.get(f) is None or (f == "game_time" and not pick.get(f)) for f in _enrich_fields)
+        return bool(pick) and any(pick.get(f) is None for f in _enrich_fields)
     needs_proj = any(_needs_proj(picks_dict.get(k)) for k in ("over_pick", "under_pick"))
     if needs_proj:
         all_proj, draftable = _get_projections_for_date(date_obj)
@@ -3142,7 +3151,9 @@ async def get_line_of_the_day(request: Request):
                             )
                         except Exception:
                             pass
-                _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
+                if not (_pick_has_display_fields(tomorrow_picks.get("over_pick")) and
+                        _pick_has_display_fields(tomorrow_picks.get("under_pick"))):
+                    _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
                 result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 _cs("line_v1", result)
@@ -3193,8 +3204,10 @@ async def get_line_of_the_day(request: Request):
                         _github_write_file(json_path, json.dumps(today_picks),
                                            f"backfill missing direction for {today_str}")
                     except Exception: pass
-            # Enrich picks loaded from GitHub with season_avg, proj_min, avg_min, game_time, recent_form_bars
-            _enrich_loaded_line_picks(today_picks, today)
+            # Skip enrichment when picks already have all display fields (avoids 30-60s projection pipeline)
+            if not (_pick_has_display_fields(today_picks.get("over_pick")) and
+                    _pick_has_display_fields(today_picks.get("under_pick"))):
+                _enrich_loaded_line_picks(today_picks, today)
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             _cs("line_v1", result)
             return JSONResponse(result)
