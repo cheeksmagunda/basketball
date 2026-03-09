@@ -2916,7 +2916,7 @@ async function fetchLineOfTheDay() {
   for (var _lineAttempt = 1; _lineAttempt <= _lineMaxAttempts; _lineAttempt++) {
     var r;
     try {
-      r = await fetchWithTimeout('/api/line-of-the-day', {}, 45000);
+      r = await fetchWithTimeout('/api/line-of-the-day', {}, 10000);
       if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
       var data = await r.json();
       LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
@@ -2983,7 +2983,7 @@ async function fetchLineHistory() {
   LINE_HISTORY_STATE = asyncStateLoading(LINE_HISTORY_STATE);
   _renderLineHistoryFromState();
   try {
-    const hr = await fetchWithTimeout('/api/line-history');
+    const hr = await fetchWithTimeout('/api/line-history', {}, 10000);
     if (!hr.ok) throw new Error('line-history HTTP ' + hr.status);
     const hist = await hr.json();
     LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);

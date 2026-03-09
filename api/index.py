@@ -3610,19 +3610,33 @@ async def auto_resolve_line(request: Request):
             line_cache.unlink()
     except Exception: pass
 
-    # If BOTH picks are now resolved, pre-generate the next day's picks.
+    # Pre-generate next day's picks when today's slate is complete.
+    # Don't wait for BOTH picks to resolve individually (they finish async);
+    # instead, check if any game is final and at least one pick resolved.
     # Use pick_date + 1 day (not _et_date() + 1 day) so a midnight-rollover
     # case generates picks for Day+1 rather than Day+2.
     over_done  = pick_data.get("over_pick", {}).get("result") not in (None, "", "pending")
     under_done = pick_data.get("under_pick", {}).get("result") not in (None, "", "pending")
-    if over_done and under_done:
+    # Trigger generation if ANY pick resolved (at least one game finished),
+    # OR if called but no picks resolved yet (let it retry on next cron cycle).
+    if over_done or under_done or resolved_any:
         try:
             next_day = (datetime.strptime(pick_date, "%Y-%m-%d") + timedelta(days=1)).date()
             next_day_str = next_day.isoformat()
             tomorrow_json = f"data/lines/{next_day_str}_pick.json"
             existing_tomorrow, _ = _github_get_file(tomorrow_json)
             if not existing_tomorrow:
-                eng_result, err = await _run_line_engine_for_date(next_day)
+                # Wrap generation in timeout to prevent hangs
+                try:
+                    eng_result, err = await asyncio.wait_for(
+                        _run_line_engine_for_date(next_day),
+                        timeout=45.0
+                    )
+                except asyncio.TimeoutError:
+                    err = "timeout"
+                    eng_result = None
+                    print(f"[auto-resolve] next-day generation TIMEOUT for {next_day_str}")
+
                 if not err and eng_result and eng_result.get("pick"):
                     saves = {
                         "over_pick":  eng_result.get("over_pick"),
@@ -3631,6 +3645,8 @@ async def auto_resolve_line(request: Request):
                     _github_write_file(tomorrow_json, json.dumps(saves),
                                        f"line picks for {next_day_str}")
                     results["next_day"] = next_day_str
+                elif err:
+                    print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err}")
         except Exception as e:
             print(f"[auto-resolve] next-day generation err: {e}")
 
