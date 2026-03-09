@@ -3103,10 +3103,13 @@ async def get_line_of_the_day(request: Request):
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
 
-        # Rotate to tomorrow when BOTH picks are resolved (aligned with auto-resolve next-day gate)
-        _over_resolved = (today_picks or {}).get("over_pick", {}).get("result") not in (None, "", "pending")
-        _under_resolved = (today_picks or {}).get("under_pick", {}).get("result") not in (None, "", "pending")
-        _both_resolved = _over_resolved and _under_resolved
+        # Rotate to tomorrow when all *existing* picks are resolved.
+        # A null/missing direction is vacuously resolved — only block on picks that actually exist.
+        _over_pick_data  = (today_picks or {}).get("over_pick") or {}
+        _under_pick_data = (today_picks or {}).get("under_pick") or {}
+        _over_resolved   = not _over_pick_data or _over_pick_data.get("result") not in (None, "", "pending")
+        _under_resolved  = not _under_pick_data or _under_pick_data.get("result") not in (None, "", "pending")
+        _both_resolved   = _over_resolved and _under_resolved
         if today_primary and _both_resolved:
             tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
             tomorrow_primary = _primary_pick(tomorrow_picks)
