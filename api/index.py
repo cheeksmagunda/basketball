@@ -3091,8 +3091,11 @@ async def get_line_of_the_day(request: Request):
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
 
-        # If today's primary pick is resolved, rotate to tomorrow's slate
-        if today_primary and today_primary.get("result") not in (None, "", "pending"):
+        # Rotate to tomorrow when BOTH picks are resolved (aligned with auto-resolve next-day gate)
+        _over_resolved = (today_picks or {}).get("over_pick", {}).get("result") not in (None, "", "pending")
+        _under_resolved = (today_picks or {}).get("under_pick", {}).get("result") not in (None, "", "pending")
+        _both_resolved = _over_resolved and _under_resolved
+        if today_primary and _both_resolved:
             tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
             tomorrow_primary = _primary_pick(tomorrow_picks)
             if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
@@ -3198,12 +3201,7 @@ async def save_line(payload: dict = Body(...)):
     if not primary:
         return JSONResponse({"error": "No pick provided"}, status_code=400)
 
-    # Dedup on JSON — CSV may exist without JSON (legacy bug), so always ensure JSON is written.
-    existing_json, _ = _github_get_file(json_path)
-    if existing_json:
-        return {"status": "already_saved", "path": json_path}
-
-    # Write CSV using primary pick (for history / resolve compatibility)
+    # Always ensure CSV exists (for history / resolve compatibility)
     existing_csv, _ = _github_get_file(csv_path)
     if not existing_csv:
         row = ",".join(_csv_escape(str(primary.get(k, ""))) for k in [
@@ -3215,6 +3213,11 @@ async def save_line(payload: dict = Body(...)):
         result = _github_write_file(csv_path, csv_content, f"line pick for {today}")
         if result.get("error"):
             return JSONResponse({"error": result["error"]}, status_code=500)
+
+    # Dedup on JSON — if JSON already exists, CSV is now guaranteed to exist too
+    existing_json, _ = _github_get_file(json_path)
+    if existing_json:
+        return {"status": "already_saved", "path": json_path}
 
     # Write JSON with both picks (new dual-pick format)
     saves = {"over_pick": over_pick or pick, "under_pick": under_pick}
@@ -3425,10 +3428,26 @@ async def resolve_line(payload: dict = Body(...)):
     return {"status": "resolved", "result": result, "actual": actual_f}
 
 
-def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = None) -> "float | None":
+def _strip_name_suffix(n: str) -> str:
+    """Strip common name suffixes (Jr., Sr., III, II, IV) for fuzzy matching."""
+    return re.sub(r'\s+(jr\.?|sr\.?|iii|ii|iv)\s*$', '', n, flags=re.IGNORECASE).strip()
+
+def _name_matches(player_lower: str, espn_name_lower: str) -> bool:
+    """Check if player name matches ESPN name, with suffix-stripped fallback."""
+    if player_lower in espn_name_lower or espn_name_lower in player_lower:
+        return True
+    stripped_player = _strip_name_suffix(player_lower)
+    stripped_espn = _strip_name_suffix(espn_name_lower)
+    if stripped_player and stripped_espn:
+        return stripped_player in stripped_espn or stripped_espn in stripped_player
+    return False
+
+def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = None, team: str = None) -> "float | None":
     """Fetch a player's final boxscore stat from ESPN for today's (or a given) games.
     stat_type is the line pick type: 'points', 'rebounds', 'assists', etc.
     date_str: optional YYYYMMDD string; defaults to today in ET.
+    team: optional team abbreviation (e.g. 'CLE') — when provided, returns 0.0 for DNP
+    players whose team's game is final but they don't appear in the boxscore.
     Returns the numeric value or None if not found / game not final."""
     label_map = {
         "points": "PTS", "pts": "PTS",
@@ -3443,6 +3462,7 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
 
     query_date = date_str if date_str else _et_date().strftime("%Y%m%d")
     data = _espn_get(f"{ESPN}/scoreboard?dates={query_date}")
+    team_played_in_final = False
     for ev in data.get("events", []):
         # Only use completed games
         completed = ev.get("status", {}).get("type", {}).get("completed", False)
@@ -3451,6 +3471,9 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
         game_id = ev.get("id", "")
         box = _espn_get(f"{ESPN}/summary?event={game_id}")
         for team_block in box.get("boxscore", {}).get("players", []):
+            team_abbr = team_block.get("team", {}).get("abbreviation", "")
+            if team and team.upper() == team_abbr.upper():
+                team_played_in_final = True
             stats = team_block.get("statistics", [])
             if not stats:
                 continue
@@ -3460,13 +3483,17 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
             idx = labels.index(espn_label)
             for ath in stats[0].get("athletes", []):
                 name = ath.get("athlete", {}).get("displayName", "")
-                if player_lower in name.lower() or name.lower() in player_lower:
+                if _name_matches(player_lower, name.lower()):
                     vals = ath.get("stats", [])
                     if idx < len(vals):
                         try:
                             return float(vals[idx])
                         except (ValueError, TypeError):
                             return None
+    # DNP fallback: player's team played in a completed game but player not in boxscore
+    if team and team_played_in_final:
+        print(f"[resolve] {player_name} not in boxscore (DNP) — returning 0.0 for {stat_type}")
+        return 0.0
     return None
 
 
@@ -3529,7 +3556,7 @@ async def auto_resolve_line(request: Request):
         if not player_name:
             continue
 
-        actual = _fetch_player_final_stat(player_name, stat_type, date_str=espn_date)
+        actual = _fetch_player_final_stat(player_name, stat_type, date_str=espn_date, team=pick.get("team"))
         if actual is None:
             results[direction] = {"status": "game_not_final", "player": player_name}
             continue
@@ -3551,8 +3578,16 @@ async def auto_resolve_line(request: Request):
     _github_write_file(json_path, json.dumps(pick_data),
                        f"auto-resolve line {pick_date}")
 
-    # Update CSV for the primary pick (first row matches primary direction)
+    # Update or create CSV for the primary pick (first row matches primary direction)
     csv_existing, _ = _github_get_file(csv_path)
+    if not csv_existing:
+        # CSV was never created (save_line dedup returned early) — create it now
+        primary = _primary_pick(pick_data)
+        if primary:
+            row_vals = [pick_date] + [_csv_escape(str(primary.get(k, ""))) for k in LINE_FIELDS[1:]]
+            csv_existing = LINE_CSV_HEADER + "\n" + ",".join(row_vals) + "\n"
+            _github_write_file(csv_path, csv_existing, f"line csv for {pick_date}")
+            print(f"[auto-resolve] created missing CSV for {pick_date}")
     if csv_existing:
         rows = _parse_csv(csv_existing, LINE_FIELDS)
         if rows:
