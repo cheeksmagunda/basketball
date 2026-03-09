@@ -628,6 +628,8 @@ If slate, line, and/or log all fail to load:
 | Predict tab next-day transition | `index.html` | `loadSlate()` busts stale previous-day predictions; Predict tab no longer stuck on finished slate after midnight rollover |
 | `next_slate_pending` re-fetch fix | `index.html` | `_renderLineLOTDFromState()` resets `LINE_LOADED_DATE = ''` on `next_slate_pending` so next tab visit re-fetches; prevents stale "Tomorrow's pick coming soon" after picks become available |
 | Retry button on pending card | `index.html` | `renderNextSlatePending()` now includes a "Check for picks" button that calls `fetchLineOfTheDay()` directly |
+| `_enrich_loaded_line_picks` cold-start fix | `api/index.py` | Skip `_get_projections_for_date` (full 5-game projection pipeline, 30-60s) when picks already have all display fields; only fetch nba_api L5 for `recent_form_values`; prevents `/api/line-of-the-day` timeout on cold start |
+| `line_history` parallel fetch + 3-min cache | `api/index.py` | CSV + JSON files fetched in parallel via `ThreadPoolExecutor(8)`; 3-min result cache (`line_history_v1`) avoids repeated cold-start GitHub round-trips; cache cleared by `/api/refresh` |
 
 ## Production audit
 

@@ -2947,17 +2947,27 @@ def _get_projections_for_date(date_obj):
 
 
 def _enrich_loaded_line_picks(picks_dict, date_obj):
-    """Enrich over_pick and under_pick with season_avg, proj_min, avg_min, game_time, recent_form_bars when loaded from GitHub."""
+    """Enrich over_pick and under_pick with season_avg, proj_min, avg_min, game_time, recent_form_bars when loaded from GitHub.
+    Only runs the full projection pipeline when enrichment fields are actually missing — skips it
+    entirely when the stored picks already have all display fields (avoids 30-60s cold-start hit)."""
     if not picks_dict:
         return
-    all_proj, draftable = _get_projections_for_date(date_obj)
-    if not all_proj or not draftable:
-        return
-    game_ctx_map = _game_lookup_from_games(draftable)
+    _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars")
+    def _needs_proj(pick):
+        return bool(pick) and any(pick.get(f) is None or (f == "game_time" and not pick.get(f)) for f in _enrich_fields)
+    needs_proj = any(_needs_proj(picks_dict.get(k)) for k in ("over_pick", "under_pick"))
+    if needs_proj:
+        all_proj, draftable = _get_projections_for_date(date_obj)
+        if all_proj and draftable:
+            game_ctx_map = _game_lookup_from_games(draftable)
+            for key in ("over_pick", "under_pick"):
+                pick = picks_dict.get(key)
+                if pick:
+                    _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
+    # Always try to add real last-5 values (not stored in JSON at generation time)
     for key in ("over_pick", "under_pick"):
         pick = picks_dict.get(key)
-        if pick:
-            _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
+        if pick and "recent_form_values" not in pick:
             pname, st = pick.get("player_name"), pick.get("stat_type")
             if pname and st:
                 l5 = _get_last5_game_stats(pname, st)
@@ -3714,14 +3724,34 @@ async def auto_resolve_line(request: Request):
 @app.get("/api/line-history")
 async def line_history():
     """Return recent Line of the Day picks with results."""
+    # Short-lived cache (3 min TTL) so cold-start repeat callers don't each hit GitHub sequentially
+    _hist_cached = _cg("line_history_v1")
+    if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
+        if time.time() - _hist_cached.get("ts", 0) < 180:
+            return _hist_cached["data"]
+
     items = _github_list_dir("data/lines")
-    results = []
-    for item in sorted(items, key=lambda x: x.get("name", ""), reverse=True)[:30]:
+    csv_items = [item for item in sorted(items, key=lambda x: x.get("name", ""), reverse=True)[:30]
+                 if item.get("name", "").endswith(".csv")]
+
+    # Fetch all CSV + JSON files in parallel to avoid sequential GitHub round-trips on cold start
+    def _fetch_date_files(item):
         name = item.get("name", "")
-        if not name.endswith(".csv"):
-            continue
-        date_str = name[:-4]  # strip .csv
-        content, _ = _github_get_file(f"data/lines/{name}")
+        date_str = name[:-4]
+        csv_raw, _ = _github_get_file(f"data/lines/{name}")
+        json_raw, _ = _github_get_file(f"data/lines/{date_str}_pick.json")
+        return date_str, csv_raw, json_raw
+
+    fetched = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for date_str, csv_raw, json_raw in pool.map(_fetch_date_files, csv_items):
+            fetched[date_str] = (csv_raw, json_raw)
+
+    results = []
+    for item in csv_items:
+        name = item.get("name", "")
+        date_str = name[:-4]
+        content, json_raw = fetched.get(date_str, (None, None))
         if not content:
             continue
         rows = _parse_csv(content, LINE_FIELDS)
@@ -3731,7 +3761,6 @@ async def line_history():
 
         # Try JSON for both-direction picks (over + under per day).
         # CSV only stores the primary pick; JSON has both.
-        json_raw, _ = _github_get_file(f"data/lines/{date_str}_pick.json")
         if json_raw:
             try:
                 jd = json.loads(json_raw)
@@ -3830,7 +3859,7 @@ async def line_history():
         else:
             break
 
-    return {
+    out = {
         "picks":        results,
         "hit_rate":     hit_rate,
         "total_picks":  len(results),
@@ -3838,6 +3867,8 @@ async def line_history():
         "streak":       streak,
         "streak_type":  streak_type,
     }
+    _cs("line_history_v1", {"data": out, "ts": time.time()})
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════════
