@@ -21,6 +21,7 @@ import base64
 import threading
 import time
 import uuid
+import asyncio
 from typing import Any, Optional, Tuple
 
 import numpy as np
