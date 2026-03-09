@@ -2956,7 +2956,7 @@ async function fetchLineOfTheDay() {
   for (var _lineAttempt = 1; _lineAttempt <= _lineMaxAttempts; _lineAttempt++) {
     var r;
     try {
-      r = await fetchWithTimeout('/api/line-of-the-day', {}, 10000);
+      r = await fetchWithTimeout('/api/line-of-the-day', {}, 45000);
       if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
       var data = await r.json();
       LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
@@ -3036,15 +3036,16 @@ async function fetchLineHistory() {
 
 async function initLinePage() {
   const todayET = _etToday();
-  const alreadyLoaded = LINE_LOADED_DATE === todayET && LINE_LOTD_STATE.status === 'success';
-  if (alreadyLoaded) {
-    _renderLineLOTDFromState(); // paint cached pick immediately so no skeleton flash
+  const dateChanged = LINE_LOADED_DATE !== todayET;
+  if (!dateChanged) {
+    // Same day — re-render current state without hiding history or re-fetching
+    _renderLineLOTDFromState();
     switchLineDir(LINE_DIR);
-    // Only re-fetch history if not already cached — prevents skeleton flash on every tab switch
     if (!LINE_HIST_DATA) fetchLineHistory();
     else _renderLineHistoryFromState();
     return;
   }
+  // Date changed — full reload
   LINE_LOADED_DATE = todayET;
   document.getElementById('lineHistoryWrap').style.display = 'none';
   // Pre-warm backend on cold start (non-blocking, same pattern as Lab page)
