@@ -3414,11 +3414,13 @@ function switchLineDir(dir) {
       pickCard.style.display = '';
       pickCard.innerHTML = renderLinePickCard(pick, true);
       if (noMsg) noMsg.style.display = 'none';
-    } else if (LINE_PENDING_CARD) {
+    } else if (!LINE_OVER_PICK && !LINE_UNDER_PICK) {
+      // Both null — next_slate_pending or unloaded state. Show pending card; never "No X pick today."
       pickCard.style.display = '';
       pickCard.innerHTML = renderNextSlatePending();
       if (noMsg) noMsg.style.display = 'none';
     } else {
+      // One direction genuinely missing — show "No X pick today" only for that direction
       pickCard.style.display = 'none';
       if (noMsg) { noMsg.style.display = 'block'; noMsg.textContent = `No ${dir.toUpperCase()} pick today.`; }
     }
