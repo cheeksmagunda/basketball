@@ -1425,6 +1425,7 @@ let PICKS_DATA = null;
 let isFetching = false;
 let SLATE_LOADED_AT = 0;
 var _slateAutoRefreshCount = 0; // Cap for the delay<=0 retry loop (max 3)
+var _slateAutoRefreshTimer = null; // Prevent duplicate auto-refresh timers
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -1779,12 +1780,14 @@ async function loadSlate() {
         const lockAt = Math.min(...startMs) - 5 * 60 * 1000; // 5 min before first tipoff
         const delay = lockAt - now;
         if (delay > 0 && delay < 4 * 60 * 60 * 1000) { // only arm if ≤ 4 hours out
-          setTimeout(() => { if (!SLATE.locked) loadSlate(); }, delay + 2000);
+          clearTimeout(_slateAutoRefreshTimer);
+          _slateAutoRefreshTimer = setTimeout(() => { _slateAutoRefreshTimer = null; if (!SLATE.locked) loadSlate(); }, delay + 2000);
         } else if (delay <= 0 && _slateAutoRefreshCount < 3) {
           // Lock window already passed but backend returned unlocked (stale cache).
           // Retry after a short delay to pick up the locked state (max 3 retries).
           _slateAutoRefreshCount++;
-          setTimeout(() => { if (!SLATE.locked && !SLATE.all_complete) loadSlate(); }, 5000);
+          clearTimeout(_slateAutoRefreshTimer);
+          _slateAutoRefreshTimer = setTimeout(() => { _slateAutoRefreshTimer = null; if (!SLATE.locked && !SLATE.all_complete) loadSlate(); }, 5000);
         }
       }
     }
@@ -1952,7 +1955,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
   const actualsMap = opts.actualsMap || {};
   const statsActualsMap = opts.statsActualsMap || {};
 
-  el.innerHTML = picks.map((p, i) => {
+  const html = picks.map((p, i) => {
     const tc = TEAM_COLORS[p.team] || (isLog ? '#7ba4c8' : '#4f8ef7');
     const tcAlpha = (() => {
       const hex = tc.replace('#','');
