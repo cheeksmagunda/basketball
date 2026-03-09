@@ -16,7 +16,7 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predict | Line | Ben | History, vanilla JS)
+index.html             — 4-tab frontend (Predict | Line | Ben | Log, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
@@ -37,12 +37,12 @@ server.py              — Local dev server (uvicorn)
 
 ## UI Structure
 
-4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | History**
+4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | Log**
 
 - **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation. "Slate-Wide | Game" sub-tabs inline at top of tab.
 - **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Odds refresh hourly from Odds API; pick cards show "Odds · [time] CT".
 - **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
-- **History**: Historical drill-down — date strip, game grid, graded prediction cards vs actuals (no user input — upload happens through Ben). Cards have two states: **Pending** ("Waiting for results") and **Graded** (actual RS + ESPN box score stats overlaid on projections with hit/miss coloring).
+- **Log**: Historical drill-down — date strip, game grid, graded prediction cards vs actuals (no user input — upload happens through Ben). Cards have two states: **Pending** ("Waiting for results") and **Graded** (actual RS + ESPN box score stats overlaid on projections with hit/miss coloring).
 
 ### Sub-Nav Tabs (inline, not floating)
 Both `predictSubNav` (Slate-Wide | Game) and `lineSubNav` (Over | Under) are inline `div.predict-sub-nav` elements positioned at the top of their respective tab pages. They match the `.mode-tab` visual language exactly — same height, padding, `border-radius:11px`, Barlow Condensed 800. Active states: predict = chalk blue, Over = gold (`--line`), Under = teal (`--lab`).
@@ -176,7 +176,7 @@ After all games are final and Ben unlocks:
 - On reload: already-done buttons hidden immediately (no stale green buttons cluttering the banner)
 - Audit gate: `save-actuals` only generates `data/audit/{date}.json` when `real_scores` data is present
 - All 4 upload types merge into the same actuals CSV (dedup by player name)
-- History page is **read-only** — no upload UI there
+- Log page is **read-only** — no upload UI there
 
 ### Lock System
 - **Locked** 5 minutes before first game tip-off (slate is in progress)
@@ -347,7 +347,7 @@ Single source of truth for UI consistency and future theming:
 | `--radius-card` | 14px — main containers, cards, modals |
 | `--tracking-caps` | 0.06em — letter-spacing for ALL CAPS labels |
 
-Use these tokens instead of hardcoded hex or pixel radii across Predict, Line, Ben, and History.
+Use these tokens instead of hardcoded hex or pixel radii across Predict, Line, Ben, and Log.
 
 ## Cron Schedule (vercel.json)
 
@@ -434,9 +434,9 @@ Affected endpoints: slate load, picks, games, save-predictions, screenshot parse
 
 ### Worker Pool Optimization
 Backend uses Python `ThreadPoolExecutor` for parallel processing:
-- **Increased from 4 → 8 workers** (game runner, slate processor, picks processor, audit runner)
+- **Standard pool: 8 workers** (game runner, slate processor, picks processor, audit runner, line engine)
+- **L5 enrichment pool: 10 workers** (nba_api per-player stat fetches — more I/O-bound)
 - Handles 14-game Saturdays efficiently without bottlenecking
-- 8 workers matches typical Vercel CPU core availability
 
 ### Polling Interval Tuning
 - **Lab lock polling**: 2 minutes (reduces Vercel invocations; see `initLabPage` in index.html, ~3135)
@@ -544,23 +544,45 @@ Two test modules; run both for full coverage:
 
 ```python
 # Test classes (pytest):
-TestSafeFloat           — numeric/None/empty string edge cases for _safe_float()
-TestIsLocked            — 5-min pre-tip buffer, 6h ceiling, split-window any() pattern
-TestComputeAudit        — MAE calculation, no-data guard, zero-RS skip, miss sorting
-TestGitHubWriteRetry    — 422 SHA conflict, 1s/2s/4s backoff, max-retry error return
-TestSaveActualsAuditGate — audit only fires when real_scores data is present
-TestAutoResolveMidnight — pick_date vs et_date divergence after midnight
-TestCacheTTLs           — 3 min games, 5 min config, 30 min RotoWire, 60s locked TTL
-TestPollingIntervals    — 120s lab lock, 60s line live, 300s failure cutoff
-TestLgbmFeatureAlignment — when bundle loaded, 11 features and 11th is recent_vs_season or recent_3g_trend
+TestSafeFloat               — numeric/None/empty string edge cases for _safe_float()
+TestIsLocked                — 5-min pre-tip buffer, 6h ceiling, split-window any() pattern
+TestComputeAudit            — MAE calculation, no-data guard, zero-RS skip, miss sorting
+TestGitHubWriteRetry        — 422 SHA conflict, 1s/2s/4s backoff, max-retry error return
+TestSaveActualsAuditGate    — audit only fires when real_scores data is present
+TestAutoResolveMidnight     — pick_date vs et_date divergence after midnight
+TestCacheTTLs               — 3 min games, 5 min config, 30 min RotoWire, 60s locked TTL
+TestPollingIntervals        — 120s lab lock, 60s line live, 300s failure cutoff
+TestRateLimitThreadSafe     — _check_rate_limit is thread-safe under concurrent calls
+TestLineConfig              — run_model_fallback and run_line_engine respect line_config min_confidence
+TestLgbmFeatureAlignment    — when bundle loaded, 11 features and 11th is recent_vs_season or recent_3g_trend
+TestSlateExceptionHandling  — slate endpoint catches exceptions and returns 200 with error key (never 500)
+TestGameSelectorLockDisplay — frontend populateGameSelector must NOT override per-game lock with slateLocked
+TestLinePrimaryPickFallback — LINE_OVER_PICK/UNDER_PICK populated from primary pick when directions null
+TestLinePicksBothNullRegeneration — backend regenerates picks when saved file has both directions null
+TestFetchGamesTTL           — fetch_games() enforces 5-min TTL to avoid stale ESPN data
+TestSavePredictionsMerge    — save_predictions merges new per-game scopes into existing CSV
+TestSwitchTabNoDuplicateInit — switchTab does not call initLinePage twice
 ```
 
-**tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions:
+**tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions, and contract guards:
 
 - **TestHelpers** — _et_date, _is_locked, _est_card_boost, cache roundtrip
 - **TestLineCacheLogic** — when line cache is served vs bypassed (today unresolved / resolved / yesterday)
 - **TestJSSyntax** — unescaped apostrophes in single-quoted strings; presence of renderCards, renderLinePickCard, initLinePage, loadSlate, switchTab; _etToday / LINE_LOADED_DATE / _predSavedDate
 - **TestCacheDateBoundary** — cache keys consistent with ET date
+- **TestBenBannerActualsDetection** — Ben upload banner hides when today's actuals already saved
+- **TestBannerGuardJS** — banner-visibility check in showLabUnlocked() uses correct localStorage keys
+- **TestNormalizePlayer** — _normalize_player() contract: all required fields present with correct types
+- **TestNormalizeLinePick** — _normalize_line_pick() contract: all required fields, result defaults to "pending"
+- **TestRealScoreEngine** — Monte Carlo closeness/clutch/momentum coefficients (pure numpy, no I/O)
+- **TestAssetOptimizer** — optimize_lineup() MILP slot assignment: chalk vs moonshot modes, edge cases
+- **TestConfigCoverage** — all major model floors read from model-config.json via _cfg()
+- **TestProjectPlayerContract** — project_player() returns all required fields after _normalize_player()
+- **TestLineEngineHelpers** — line_engine.py helpers with no external deps (_abbr_matches, stat meta)
+- **TestJSContractGuard** — frontend null guards for _normalize_line_pick fields added in Phase C
+- **TestLogGetNormalization** — log_get() builds player cards from CSV rows with correct field mapping
+- **TestUpdateConfigValidation** — /api/lab/update-config accepts dot-notation keys, rejects invalid paths
+- **TestFrontendAuditFixes** — regression guards for frontend null guards and .ok checks
 
 Run all: `pytest tests/ -v`  
 Run fast subset only: `pytest tests/test_fixes.py -v`  
@@ -573,7 +595,7 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
 - `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
-- History tab shows a 60-day date strip (no "Load more"); dates with stored data are highlighted via `/api/log/dates`.
+- Log tab shows a 60-day date strip (no "Load more"); dates with stored data are highlighted via `/api/log/dates`.
 - Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Exception: `/api/lab/chat` uses a raw streaming fetch (SSE) by design — no timeout on the stream body, only on connection.
 - Upload screenshot type validation is client-side trust only — the system cannot verify that a "Real Scores" button upload actually contains a Real Scores screenshot. Wrong uploads produce skewed audit data for that date.
 
@@ -592,7 +614,7 @@ If slate, line, and/or log all fail to load:
 | `fetchWithTimeout` on `/api/picks` | `index.html` | Was raw `fetch`, now 15s timeout |
 | `fetchWithTimeout` on `/api/audit/get` | `index.html` | Was raw `fetch`, now 10s timeout |
 | `fetchWithTimeout` on `top_drafts` save | `index.html` | Was raw `fetch`, now 10s timeout |
-| Drill-down auto-close on History tab return | `index.html` | `switchTab('log')` now calls `closeLogDrilldown()` before grid init |
+| Drill-down auto-close on Log tab return | `index.html` | `switchTab('log')` now calls `closeLogDrilldown()` before grid init |
 | Upload banner: hide completed buttons | `index.html` | On reload, done buttons hide immediately; on new upload, flash green → hide after 1.5s |
 | Upload banner: X/4 progress counter | `index.html` | Title updates live as each upload completes |
 | `_checkBannerDone` uses localStorage | `index.html` | DOM disabled state unreliable after hide; localStorage is source of truth |
@@ -601,6 +623,11 @@ If slate, line, and/or log all fail to load:
 | Skip All button relocated | `index.html` | Moved from button row to title bar (top-right) — semantic meta-action placement |
 | Rate-limit thread-safety | `api/index.py` | `_RATE_LIMIT_LOCK` wraps read-modify-write of `_RATE_LIMIT_STORE` so concurrent requests are safe |
 | Line config wired from model-config | `api/index.py`, `api/line_engine.py` | `run_line_engine(projections, games, line_config)`; `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`; projections enriched with real L5 before engine run |
+| Line tab auto-switch to available direction | `index.html` | `switchLineDir` auto-corrects to `under` if `over` has no pick and vice versa, instead of showing "No X pick today" |
+| `next_slate_pending` handling for both null | `index.html` | `switchLineDir` shows pending card (not "No X pick today") when both picks are null; prevents false "missing direction" message |
+| Predict tab next-day transition | `index.html` | `loadSlate()` busts stale previous-day predictions; Predict tab no longer stuck on finished slate after midnight rollover |
+| `next_slate_pending` re-fetch fix | `index.html` | `_renderLineLOTDFromState()` resets `LINE_LOADED_DATE = ''` on `next_slate_pending` so next tab visit re-fetches; prevents stale "Tomorrow's pick coming soon" after picks become available |
+| Retry button on pending card | `index.html` | `renderNextSlatePending()` now includes a "Check for picks" button that calls `fetchLineOfTheDay()` directly |
 
 ## Production audit
 

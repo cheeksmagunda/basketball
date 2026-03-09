@@ -2918,6 +2918,7 @@ function _renderLineLOTDFromState() {
     const data = st.data;
     if (data.error === 'next_slate_pending') {
       LINE_PENDING_CARD = true;
+      LINE_LOADED_DATE = ''; // bust so next tab visit re-fetches (picks may arrive at any time)
       linePickWrap.style.display = 'block';
       linePickCard.style.display = '';
       linePickCard.innerHTML = renderNextSlatePending();
@@ -3363,6 +3364,7 @@ function renderNextSlatePending() {
     <div style="font-size:1.4rem;margin-bottom:10px">🏀</div>
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">TOMORROW&rsquo;S PICK COMING SOON</div>
     <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Check back once the slate drops</div>
+    <button type="button" onclick="fetchLineOfTheDay()" style="margin-top:14px;font-family:inherit;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer">Check for picks</button>
   </div>`;
 }
 
