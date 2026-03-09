@@ -2734,6 +2734,7 @@ let LINE_LOADED_DATE = '';
 let LINE_DIR = 'under'; // active direction filter for line sub-nav
 let LINE_OVER_PICK  = null; // today's over pick
 let LINE_UNDER_PICK = null; // today's under pick
+let LINE_PENDING_CARD = false; // true when next_slate_pending — prevents "No X pick today" on tab switch
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
@@ -2902,10 +2903,14 @@ function _renderLineLOTDFromState() {
   if (st.status === 'success' && st.data) {
     const data = st.data;
     if (data.error === 'next_slate_pending') {
+      LINE_PENDING_CARD = true;
       linePickWrap.style.display = 'block';
+      linePickCard.style.display = '';
       linePickCard.innerHTML = renderNextSlatePending();
       lineSlateSummary.innerHTML = '';
       lineEmptyEl.style.display = 'none';
+      var lineNoPickMsg = _el('lineNoPickMsg');
+      if (lineNoPickMsg) lineNoPickMsg.style.display = 'none';
       return;
     }
     // Extract directional picks first — they may exist even when primary pick is null
@@ -2938,6 +2943,7 @@ function _renderLineLOTDFromState() {
     }
     linePickWrap.style.display = 'block';
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
+    LINE_PENDING_CARD = false;
     // Auto-correct direction: if the selected direction has no pick but the other does, switch
     if (!LINE_OVER_PICK && LINE_UNDER_PICK && LINE_DIR === 'over') LINE_DIR = 'under';
     else if (!LINE_UNDER_PICK && LINE_OVER_PICK && LINE_DIR === 'under') LINE_DIR = 'over';
@@ -3407,6 +3413,10 @@ function switchLineDir(dir) {
     if (pick) {
       pickCard.style.display = '';
       pickCard.innerHTML = renderLinePickCard(pick, true);
+      if (noMsg) noMsg.style.display = 'none';
+    } else if (LINE_PENDING_CARD) {
+      pickCard.style.display = '';
+      pickCard.innerHTML = renderNextSlatePending();
       if (noMsg) noMsg.style.display = 'none';
     } else {
       pickCard.style.display = 'none';

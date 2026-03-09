@@ -350,7 +350,8 @@ def run_model_fallback(projections, games, line_config=None):
     if not over_pick or not under_pick:
         last_resort = []
         for p in projections:
-            pred_min  = p.get("predMin", 0)
+            # Use season_min as fallback when predMin is 0 (common for future-date projections)
+            pred_min  = p.get("predMin", 0) or p.get("season_min", p.get("min", 0))
             team_abbr = p.get("team", "")
             gctx      = game_ctx_map.get(team_abbr, {})
             for stat_type, field, season_field, recent_field, min_season, min_min in stat_configs:

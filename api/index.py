@@ -3151,7 +3151,8 @@ async def get_line_of_the_day(request: Request):
             try:
                 tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
                 existing, _ = _github_get_file(tomorrow_json)
-                if not existing:
+                _existing_blank = existing and not existing.get("over_pick") and not existing.get("under_pick")
+                if not existing or _existing_blank:
                     saves = {
                         "over_pick":  eng_result.get("over_pick"),
                         "under_pick": eng_result.get("under_pick"),
