@@ -218,10 +218,10 @@ class TestJSSyntax:
         assert "_predSavedDate" in source, "_predSavedToday must be date-keyed (_predSavedDate)"
 
     def test_no_redundant_info_bars(self, script_lines):
-        """Redundant slateChips/headerMeta info bars must not exist in the codebase."""
+        """Redundant slateChips info bars must not exist in the codebase. headerMeta is valid."""
         html = (ROOT / "index.html").read_text()
         assert 'id="slateChips"' not in html, "slateChips element should be removed"
-        assert 'id="headerMeta"' not in html, "headerMeta element should be removed"
+        assert 'id="headerMeta"' in html, "headerMeta element should exist for game count/lock badges"
         assert ".lock-chip" not in html, "lock-chip CSS should be removed"
         assert ".game-chips" not in html, "game-chips CSS should be removed"
 

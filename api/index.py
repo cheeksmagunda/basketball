@@ -527,22 +527,27 @@ def _enrich_projections_with_l5(projections):
         return (p.get("predMin", 0) or 0) * (pts + reb + ast)
     candidates.sort(key=score, reverse=True)
     top = candidates[:50]
-    for p in top:
+    def _enrich_one(p):
         name = p.get("name") or ""
         if not name:
-            continue
-        if (p.get("season_pts", p.get("pts", 0)) or 0) >= 6:
-            l5 = _get_last5_game_stats(name, "points")
-            if l5 and len(l5) > 0:
-                p["recent_pts"] = round(sum(l5) / len(l5), 1)
-        if (p.get("season_reb", p.get("reb", 0)) or 0) >= 2:
-            l5 = _get_last5_game_stats(name, "rebounds")
-            if l5 and len(l5) > 0:
-                p["recent_reb"] = round(sum(l5) / len(l5), 1)
-        if (p.get("season_ast", p.get("ast", 0)) or 0) >= 1.5:
-            l5 = _get_last5_game_stats(name, "assists")
-            if l5 and len(l5) > 0:
-                p["recent_ast"] = round(sum(l5) / len(l5), 1)
+            return
+        try:
+            if (p.get("season_pts", p.get("pts", 0)) or 0) >= 6:
+                l5 = _get_last5_game_stats(name, "points")
+                if l5 and len(l5) > 0:
+                    p["recent_pts"] = round(sum(l5) / len(l5), 1)
+            if (p.get("season_reb", p.get("reb", 0)) or 0) >= 2:
+                l5 = _get_last5_game_stats(name, "rebounds")
+                if l5 and len(l5) > 0:
+                    p["recent_reb"] = round(sum(l5) / len(l5), 1)
+            if (p.get("season_ast", p.get("ast", 0)) or 0) >= 1.5:
+                l5 = _get_last5_game_stats(name, "assists")
+                if l5 and len(l5) > 0:
+                    p["recent_ast"] = round(sum(l5) / len(l5), 1)
+        except Exception as e:
+            print(f"[l5-enrich] {name}: {e}")
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        list(pool.map(_enrich_one, top))
 
 
 def _is_locked(start_time_iso: Optional[str]) -> bool:
@@ -3024,8 +3029,9 @@ def _primary_pick(picks):
     return over or under
 
 
-async def _run_line_engine_for_date(date):
-    """Run the full line engine pipeline for a given date (datetime.date)."""
+async def _run_line_engine_for_date(date, skip_l5=False):
+    """Run the full line engine pipeline for a given date (datetime.date).
+    skip_l5: skip expensive nba_api L5 enrichment (used in cron/retry paths for speed)."""
     games = fetch_games(date)
     if not games:
         return None, "no_games"
@@ -3041,12 +3047,17 @@ async def _run_line_engine_for_date(date):
             all_proj.extend(gp)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
-            for fut in as_completed({pool.submit(_run_game, g): g for g in target_games}):
-                try: all_proj.extend(fut.result())
-                except Exception as e: print(f"line proj err: {e}")
+            futs = {pool.submit(_run_game, g): g for g in target_games}
+            try:
+                for fut in as_completed(futs, timeout=60):
+                    try: all_proj.extend(fut.result(timeout=10))
+                    except Exception as e: print(f"line proj err: {e}")
+            except TimeoutError:
+                print(f"[line] game projection pool timed out after 60s, got {len(all_proj)} projections")
     if not all_proj:
         return None, "no_projections"
-    _enrich_projections_with_l5(all_proj)
+    if not skip_l5:
+        _enrich_projections_with_l5(all_proj)
     line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
     result = run_line_engine(all_proj, target_games, line_config)
     return result, None
@@ -3156,6 +3167,11 @@ async def get_line_of_the_day(request: Request):
 
         # No saved picks yet — run the engine for today
         eng_result, err = await _run_line_engine_for_date(today)
+        if err or not eng_result or not eng_result.get("pick"):
+            # Retry once after 2s — cold-start ESPN caches warm on first attempt
+            print(f"[line-of-the-day] first attempt failed ({err}), retrying with skip_l5...")
+            await asyncio.sleep(2)
+            eng_result, err = await _run_line_engine_for_date(today, skip_l5=True)
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                  "error": err or "no_projections"}, status_code=200)
@@ -3629,8 +3645,8 @@ async def auto_resolve_line(request: Request):
                 # Wrap generation in timeout to prevent hangs
                 try:
                     eng_result, err = await asyncio.wait_for(
-                        _run_line_engine_for_date(next_day),
-                        timeout=45.0
+                        _run_line_engine_for_date(next_day, skip_l5=True),
+                        timeout=120.0
                     )
                 except asyncio.TimeoutError:
                     err = "timeout"

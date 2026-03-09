@@ -136,6 +136,16 @@
       font-size: 0.72rem; font-weight: 700; color: var(--muted);
       letter-spacing: 0.14em; display: block; margin-top: 2px;
     }
+    /* Header right-side meta badges */
+    .header-meta {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    }
+    .header-badge {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.63rem; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--muted); white-space: nowrap;
+    }
+    .header-badge.locked { color: var(--green); }
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
       position: fixed;
@@ -1052,6 +1062,7 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
+    <div id="headerMeta" class="header-meta"></div>
   </header>
 
   <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
@@ -1793,6 +1804,35 @@ async function loadSlate() {
     }
 
     if (SLATE.locked) _slateAutoRefreshCount = 0; // Reset retry cap on successful lock
+
+    // Header meta badges (top-right: game count + date, lock/updated time)
+    const headerMeta = document.getElementById('headerMeta');
+    if (headerMeta) {
+      const isLocked = SLATE.locked === true;
+      const totalGames = (SLATE.games || []).length;
+      const draftable = (SLATE.games || []).filter(function(g) { return !g.locked; }).length;
+      const gameCount = isLocked ? totalGames : draftable;
+      const slateDate = SLATE.date || _etToday();
+      const d = new Date(slateDate + 'T12:00:00');
+      const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+      let lockLabel = 'Locked';
+      if (isLocked && SLATE.lock_time) {
+        try {
+          const raw = SLATE.lock_time;
+          const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
+          const lt = new Date(utcStr);
+          const ltStr = lt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+          lockLabel = 'Locked ' + ltStr + ' CT';
+        } catch(e) {}
+      }
+      const statusBadge = isLocked
+        ? '<div class="header-badge locked">' + lockLabel + '</div>'
+        : '<div class="header-badge">Updated ' + timeNow + ' CT</div>';
+      const countBadge = '<div class="header-badge">' + gameCount + ' Game' + (gameCount !== 1 ? 's' : '') + ' &middot; ' + dateStr + '</div>';
+      headerMeta.innerHTML = countBadge + statusBadge;
+    }
+
     switchSlate('chalk');
     savePredictions();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
