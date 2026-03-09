@@ -338,14 +338,63 @@ def run_model_fallback(projections, games, line_config=None):
                 "recent_form_bars": recent_form_bars,
             })
 
-    if not candidates:
-        return {"pick": None, "over_pick": None, "under_pick": None, "error": "no_edges"}
-
     candidates.sort(key=lambda c: c["confidence"], reverse=True)
     over_candidates  = [c for c in candidates if c["direction"] == "over"]
     under_candidates = [c for c in candidates if c["direction"] == "under"]
     over_pick  = over_candidates[0]  if over_candidates  else None
     under_pick = under_candidates[0] if under_candidates else None
+
+    # Last-resort pass: if one direction is still empty, find the best available
+    # pick for it by relaxing the edge threshold — guarantees both directions always
+    # produce a pick as long as any player is projected above or below their line.
+    if not over_pick or not under_pick:
+        last_resort = []
+        for p in projections:
+            pred_min  = p.get("predMin", 0)
+            team_abbr = p.get("team", "")
+            gctx      = game_ctx_map.get(team_abbr, {})
+            for stat_type, field, season_field, recent_field, min_season, min_min in stat_configs:
+                season_val = p.get(season_field, p.get(field, 0))
+                proj_val   = p.get(field, 0)
+                if season_val < min_season or pred_min < min_min or proj_val <= 0:
+                    continue
+                line      = round(round(season_val * 2) / 2, 1)
+                edge      = round(proj_val - line, 1)
+                if edge == 0:
+                    continue
+                direction = "over" if edge > 0 else "under"
+                if direction == "over" and over_pick:
+                    continue
+                if direction == "under" and under_pick:
+                    continue
+                avg_min = p.get("season_min", p.get("min", 0))
+                last_resort.append({
+                    "player_name": p["name"], "player_id": p.get("id", ""),
+                    "team": team_abbr, "opponent": gctx.get("opponent", ""),
+                    "stat_type": stat_type, "line": line, "direction": direction,
+                    "projection": proj_val, "edge": edge, "confidence": 52,
+                    "odds_over": None, "odds_under": None, "books_consensus": 0,
+                    "model_only": True, "signals": [],
+                    "narrative": f"Model projects {proj_val:.1f} {stat_type} vs the {line:.1f} baseline.",
+                    "season_avg": round(season_val, 1),
+                    "proj_min": round(pred_min, 1),
+                    "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
+                    "game_time": gctx.get("game_time", ""),
+                    "recent_form_bars": [1.0] * 5,
+                })
+        if last_resort:
+            last_resort.sort(key=lambda c: abs(c["edge"]), reverse=True)
+            if not over_pick:
+                lr_over = [c for c in last_resort if c["direction"] == "over"]
+                if lr_over:
+                    over_pick = lr_over[0]
+            if not under_pick:
+                lr_under = [c for c in last_resort if c["direction"] == "under"]
+                if lr_under:
+                    under_pick = lr_under[0]
+
+    if not candidates and not over_pick and not under_pick:
+        return {"pick": None, "over_pick": None, "under_pick": None, "error": "no_edges"}
     primary    = over_pick if (over_pick and (not under_pick or over_pick["confidence"] >= under_pick["confidence"])) else under_pick
     return {
         "pick": primary, "over_pick": over_pick, "under_pick": under_pick, "runner_up": None,
