@@ -3154,6 +3154,15 @@ async def get_line_of_the_day(request: Request):
                 if not (_pick_has_display_fields(tomorrow_picks.get("over_pick")) and
                         _pick_has_display_fields(tomorrow_picks.get("under_pick"))):
                     _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
+                else:
+                    for key in ("over_pick", "under_pick"):
+                        pick = tomorrow_picks.get(key)
+                        if pick and not pick.get("recent_form_values"):
+                            pname, st = pick.get("player_name"), pick.get("stat_type")
+                            if pname and st:
+                                l5 = _get_last5_game_stats(pname, st)
+                                if l5 is not None:
+                                    pick["recent_form_values"] = l5
                 result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 _cs("line_v1", result)
@@ -3208,6 +3217,16 @@ async def get_line_of_the_day(request: Request):
             if not (_pick_has_display_fields(today_picks.get("over_pick")) and
                     _pick_has_display_fields(today_picks.get("under_pick"))):
                 _enrich_loaded_line_picks(today_picks, today)
+            else:
+                # Fast-path: still fetch L5 if missing (lightweight, no projection pipeline)
+                for key in ("over_pick", "under_pick"):
+                    pick = today_picks.get(key)
+                    if pick and not pick.get("recent_form_values"):
+                        pname, st = pick.get("player_name"), pick.get("stat_type")
+                        if pname and st:
+                            l5 = _get_last5_game_stats(pname, st)
+                            if l5 is not None:
+                                pick["recent_form_values"] = l5
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             _cs("line_v1", result)
             return JSONResponse(result)
