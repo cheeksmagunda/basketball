@@ -2090,7 +2090,6 @@ function renderCards(picks, containerId, mode, opts = {}) {
           <div class="score-actual ${scoreCls}">${actRS}</div>
           <span class="score-label">RS</span>
           <div class="score-proj-label">Proj ${p.rating}</div>
-          ${(() => { const h = _slotHeat(parseInt(p.slot)||3); return `<div class="slot-badge" style="background:${h.bg};border-color:${h.bc};color:${h.c}">${p.slot || '—'}</div>`; })()}
         </div>`;
     } else {
       scoreColHtml = `
@@ -2098,7 +2097,6 @@ function renderCards(picks, containerId, mode, opts = {}) {
           <div class="score-num">${p.rating}</div>
           <span class="score-label">RS</span>
           ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:rgba(147,197,253,0.7);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
-          ${(() => { const h = _slotHeat(parseInt(p.slot)||3); return `<div class="slot-badge" style="background:${h.bg};border-color:${h.bc};color:${h.c}">${p.slot || '—'}</div>`; })()}
         </div>`;
     }
 
