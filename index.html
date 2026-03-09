@@ -2973,47 +2973,35 @@ function _renderLineLOTDFromState() {
 async function fetchLineOfTheDay() {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
   _renderLineLOTDFromState();
-  fetch('/api/auto-resolve-line').catch(function(){});
 
-  var _lineMaxAttempts = 2;
-  var _lineLastErr;
-  for (var _lineAttempt = 1; _lineAttempt <= _lineMaxAttempts; _lineAttempt++) {
-    var r;
-    try {
-      r = await fetchWithTimeout('/api/line-of-the-day', {}, 45000);
-      if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
-      var data = await r.json();
-      LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
-      _renderLineLOTDFromState();
-      if (data.pick) {
-        _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-        try {
-          var _slr = await fetchWithTimeout('/api/save-line', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-          });
-          if (!_slr.ok) console.warn('save-line failed:', _slr.status);
-        } catch(e) { /* non-fatal */ }
-        var primaryPick = data.pick;
-        var pickResult = primaryPick && primaryPick.result;
-        if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
-          await _tryAutoResolveLine(primaryPick);
-        }
-      }
-      return; // success — exit
-    } catch(e) {
-      _lineLastErr = e;
-      var reason = classifyFetchError(e, r);
-      console.warn('[line-of-the-day] attempt ' + _lineAttempt + ' failed:', reason, e && e.message ? e.message : '');
-      if (_lineAttempt < _lineMaxAttempts) {
-        await new Promise(function(resolve) { setTimeout(resolve, 3000); }); // 3s backoff
+  var r;
+  try {
+    r = await fetchWithTimeout('/api/line-of-the-day', {}, 45000);
+    if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
+    var data = await r.json();
+    LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
+    _renderLineLOTDFromState();
+    if (data.pick) {
+      _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+      try {
+        var _slr = await fetchWithTimeout('/api/save-line', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
+        });
+        if (!_slr.ok) console.warn('save-line failed:', _slr.status);
+      } catch(e) { /* non-fatal */ }
+      var primaryPick = data.pick;
+      var pickResult = primaryPick && primaryPick.result;
+      if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
+        await _tryAutoResolveLine(primaryPick);
       }
     }
+  } catch(e) {
+    console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
+    LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
+    _renderLineLOTDFromState();
   }
-  // All attempts exhausted
-  LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, _lineLastErr);
-  _renderLineLOTDFromState();
 }
 
 function retryLineOfTheDay() {
@@ -3076,6 +3064,8 @@ async function initLinePage() {
   fetchWithTimeout('/api/health', {}, 10000).catch(function(){});
   fetchLineOfTheDay();
   fetchLineHistory();
+  // Defer auto-resolve so it doesn't compete with line-of-the-day on cold start
+  setTimeout(function() { fetch('/api/auto-resolve-line').catch(function(){}); }, 5000);
 }
 
 const LINE_STAT_LABEL = { points: 'PTS', rebounds: 'REB', assists: 'AST' };
