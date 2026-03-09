@@ -1437,6 +1437,7 @@ let isFetching = false;
 let SLATE_LOADED_AT = 0;
 var _slateAutoRefreshCount = 0; // Cap for the delay<=0 retry loop (max 3)
 var _slateAutoRefreshTimer = null; // Prevent duplicate auto-refresh timers
+var _slateNextDayPoll = null;     // Poll for next-day slate after all_complete
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -1778,6 +1779,21 @@ async function loadSlate() {
     if (typeof LAB !== 'undefined') { LAB.cachedStatus = null; LAB.statusFetchedAt = 0; }
 
     if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
+
+    // When today's slate is fully done, poll every 5 min until next-day games appear.
+    if (SLATE.all_complete && !_slateNextDayPoll) {
+      _slateNextDayPoll = setInterval(() => {
+        const prevDate = SLATE.date;
+        loadSlate().catch(() => {});
+        // Self-clear once a fresh slate loads (checked after loadSlate updates SLATE)
+        setTimeout(() => {
+          if (SLATE.date !== prevDate || !SLATE.all_complete) {
+            clearInterval(_slateNextDayPoll);
+            _slateNextDayPoll = null;
+          }
+        }, 3000);
+      }, 5 * 60 * 1000);
+    }
 
     // If slate not yet locked AND games haven't all finished, schedule an auto-re-fetch
     // when the lock window opens so savePredictions fires once the slate locks.
@@ -3653,6 +3669,9 @@ async function showLabUnlocked(status) {
   [_el('labConnectionError'), _el('labLocked'), _el('labLoading')].forEach(e => { if (e) e.style.display = 'none'; });
   const labUnlockedShow = _el('labUnlocked');
   if (labUnlockedShow) labUnlockedShow.style.display = 'flex';
+
+  // Refresh Predict tab immediately when games finish — next-day slate appears right away
+  if (SLATE && SLATE.all_complete) loadSlate().catch(() => {});
 
   // Show chat UI immediately with whatever context is available
   if (!LAB.system) LAB.system = buildLabSystemPrompt();
