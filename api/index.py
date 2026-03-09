@@ -3085,19 +3085,18 @@ async def get_line_of_the_day(request: Request):
     if rl is not None:
         return rl
     try:
+        today = _et_date()
+        today_str = today.isoformat()
+        tomorrow = today + timedelta(days=1)
+        tomorrow_str = tomorrow.isoformat()
+
         cached = _cg("line_v1")
         if cached and cached.get("pick"):
-            today_str = _et_date().isoformat()
             cached_pick = cached["pick"]
             pick_date = cached_pick.get("date", today_str)
             already_resolved = cached_pick.get("result") not in (None, "", "pending")
             if not already_resolved and pick_date in (today_str, tomorrow_str):
                 return JSONResponse(cached)
-
-        today = _et_date()
-        today_str = today.isoformat()
-        tomorrow = today + timedelta(days=1)
-        tomorrow_str = tomorrow.isoformat()
 
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
