@@ -312,7 +312,7 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 ### Card Boost (`_est_card_boost`)
 - Default: exponential heuristic `scalar × decay_base^hype + base_offset`.
 - Log-formula path (calibrated, off by default): `log_a - log_b × log10(predicted_drafts)`. Activate with `card_boost.log_formula_active: true` in config once 50+ actuals collected.
-- Star player list in `card_boost.star_players` config (treated like big-market teams for ownership).
+- Continuous fame multiplier: `fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)` — replaces the old `star_players` hardcoded list. Tunable via `card_boost.fame_pts_base` (default 8.0) and `card_boost.fame_exponent` (default 2.5).
 
 ### Spread Adjustment (continuous, no cliff edges)
 - Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
