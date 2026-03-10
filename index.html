@@ -2963,7 +2963,7 @@ async function fetchLineOfTheDay() {
 
   var r;
   try {
-    r = await fetchWithTimeout('/api/line-of-the-day', {}, 60000);
+    r = await fetchWithTimeout('/api/line-of-the-day', {}, 90000);
     if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
     var data = await r.json();
     LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
@@ -3660,7 +3660,7 @@ async function showLabUnlocked(status) {
   // Load context data in background (non-blocking) — chat is usable while this runs
   // Reuse cached data from other tabs when available to avoid redundant API calls
   var _cachedLine = (LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'success' && LINE_LOTD_STATE.data)
-    ? Promise.resolve(LINE_LOTD_STATE.data) : fetchWithTimeout('/api/line-of-the-day', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
+    ? Promise.resolve(LINE_LOTD_STATE.data) : fetchWithTimeout('/api/line-of-the-day', {}, 30000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
   var _cachedSlate = SLATE
     ? Promise.resolve(SLATE) : fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
   Promise.allSettled([
