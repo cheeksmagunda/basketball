@@ -732,23 +732,23 @@ class TestPicksServeFromCache:
             content = json.loads(call_args[0][1])
             assert content.get("_busted") is True
 
-    def test_get_projections_for_date_checks_github_cache(self):
-        """_get_projections_for_date falls back to GitHub cache when /tmp is empty."""
+    def test_get_projections_for_date_skips_github_cache(self):
+        """_get_projections_for_date does NOT call GitHub cache (removed for latency)."""
         from api.index import _get_projections_for_date
-        game_data = {"game1": [{"name": "Player", "id": "123"}]}
         mock_games = [{"gameId": "game1", "startTime": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat()}]
+        mock_player = {"name": "Player", "id": "123", "home": True, "team": "BOS",
+                       "opp": "LAL", "gameId": "game1"}
 
         with patch("api.index.fetch_games", return_value=mock_games), \
              patch("api.index._is_completed", return_value=False), \
              patch("api.index._cg", return_value=None), \
-             patch("api.index._games_cache_from_github", return_value=game_data), \
-             patch("api.index._cs") as mock_cs:
+             patch("api.index._run_game", return_value=[mock_player]), \
+             patch("api.index._games_cache_from_github") as mock_gh:
             from datetime import date
             projs, games = _get_projections_for_date(date.today())
+            # GitHub cache should NOT be called in this path
+            mock_gh.assert_not_called()
             assert len(projs) == 1
-            assert projs[0]["name"] == "Player"
-            # Verify /tmp was warmed
-            mock_cs.assert_called()
 
 
 if __name__ == "__main__":

@@ -2972,19 +2972,6 @@ async function fetchLineOfTheDay() {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
   _renderLineLOTDFromState();
 
-  // After 12s still loading, show a "Generating picks…" message in the skeleton
-  var _slowTimer = setTimeout(function() {
-    if (LINE_LOTD_STATE.status !== 'loading') return;
-    var card = _el('linePickCard');
-    if (card && !card.querySelector('.line-slow-msg')) {
-      var m = document.createElement('p');
-      m.className = 'line-slow-msg';
-      m.style.cssText = 'text-align:center;font-size:0.72rem;color:var(--color-text-muted);margin:8px 0 0';
-      m.textContent = 'Generating picks\u2026';
-      card.appendChild(m);
-    }
-  }, 12000);
-
   var r;
   try {
     r = await fetchWithTimeout('/api/line-of-the-day', {}, 60000);
@@ -3008,8 +2995,6 @@ async function fetchLineOfTheDay() {
     console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
     LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
     _renderLineLOTDFromState();
-  } finally {
-    clearTimeout(_slowTimer);
   }
 }
 
