@@ -353,14 +353,14 @@ _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
         "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
-        "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.5,
+        "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.3,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
-        "star_players": ["Luka Doncic","Victor Wembanyama","Giannis Antetokounmpo","Jayson Tatum","Shai Gilgeous-Alexander","Nikola Jokic","Anthony Edwards","LeBron James","Stephen Curry","Kevin Durant","Damian Lillard","Trae Young","Devin Booker","Joel Embiid","Cade Cunningham","Paolo Banchero","Zion Williamson","Karl-Anthony Towns","Donovan Mitchell","De'Aaron Fox"],
         "log_formula_active": True,     # activated: calibrated against Mar 6 Real Sports actuals
         "log_a": 3.76,                  # intercept — fit to: 13d→3.0x, 134d→1.9x, 1.1k→1.0x, 9k→0x
         "log_b": 0.88,                  # slope — steeper = more separation stars vs role players
-        "log_ownership_scalar": 50.0,   # base scalar (low; star_hype_multiplier handles stars)
-        "star_hype_multiplier": 15.0,   # star players get 15x hype (predicts 5k-10k drafts)
+        "log_ownership_scalar": 50.0,   # base scalar for hype factor
+        "fame_pts_base": 8.0,           # PPG divisor for continuous fame multiplier
+        "fame_exponent": 2.5,           # exponent — higher = steeper separation (20ppg→11x, 10ppg→1x)
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1157,12 +1157,15 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     floor_val      = cb.get("floor", 0.2)
     base_offset    = cb.get("base_offset", 0.3)
     scalar         = cb.get("scalar", 3.4)
-    bm_mult        = cb.get("big_market_multiplier", 1.5)
+    bm_mult        = cb.get("big_market_multiplier", 1.3)
     big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"]))
 
-    # Stars drive high ownership regardless of team market — treat like big market
-    star_players = cb.get("star_players", [])
-    is_star = bool(player_name and any(_norm_last(s) == _norm_last(player_name) for s in star_players))
+    # Continuous fame multiplier based on PPG — replaces binary star_players list.
+    # High-PPG players drive disproportionate ownership regardless of team market.
+    # fame_mult: 8ppg→1.0x, 16ppg→4.8x, 21ppg→11x, 25ppg→17x
+    fame_pts_base = cb.get("fame_pts_base", 8.0)
+    fame_exponent = cb.get("fame_exponent", 2.5)
+    fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)
 
     # Log-formula path: boost = log_a - log_b * log10(predicted_drafts)
     # Calibrated against Real Sports actual data (March 6):
@@ -1172,20 +1175,17 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
         log_a      = cb.get("log_a", 3.76)
         log_b      = cb.get("log_b", 0.88)
         own_scalar = cb.get("log_ownership_scalar", 50.0)
-        star_mult  = cb.get("star_hype_multiplier", 15.0)
-        # Ownership proxy: PPG * minutes-weight * market/star factor
-        hype_factor = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
+        # Ownership proxy: PPG-squared * minutes-weight * big-market * continuous fame
+        hype_factor = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5 * fame_mult
         if team_abbr in big_markets:
             hype_factor *= bm_mult
-        if is_star:
-            hype_factor *= star_mult
         predicted_drafts = max(1, own_scalar * hype_factor)
         boost = log_a - log_b * np.log10(predicted_drafts)
         return round(min(max(boost, floor_val), ceiling), 1)
 
-    # Exponential heuristic (default until log formula is calibrated with actuals)
-    hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5
-    if team_abbr in big_markets or is_star:
+    # Exponential heuristic (fallback when log_formula_active is False)
+    hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5 * fame_mult
+    if team_abbr in big_markets:
         hype *= bm_mult
     boost = scalar * (decay_base ** hype) + base_offset
     return round(min(max(boost, floor_val), ceiling), 1)
