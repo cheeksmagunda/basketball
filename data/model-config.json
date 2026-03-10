@@ -1,7 +1,7 @@
 {
-  "version": 7,
-  "updated_at": "2026-03-07T18:00:00Z",
-  "updated_by": "mar6-audit-calibration",
+  "version": 9,
+  "updated_at": "2026-03-10T00:00:00Z",
+  "updated_by": "mar8-screenshot-calibration",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -51,13 +51,18 @@
       "Jaylen Brown",
       "Kon Knueppel",
       "Reed Sheppard",
-      "Donovan Clingan"
+      "Donovan Clingan",
+      "Austin Reaves",
+      "Jalen Brunson",
+      "Scottie Barnes",
+      "RJ Barrett"
     ],
     "log_formula_active": true,
     "log_a": 3.76,
     "log_b": 0.88,
     "log_ownership_scalar": 50.0,
-    "star_hype_multiplier": 15.0
+    "star_hype_multiplier": 15.0,
+    "pool_size_estimate": 10000
   },
   "game_script": {
     "defensive_grind_ceiling": 220,
@@ -114,7 +119,7 @@
   },
   "cascade": {
     "redistribution_rate": 0.7,
-    "per_player_cap_minutes": 3.0,
+    "per_player_cap_minutes": 2.0,
     "center_forward_share": 0.3
   },
   "projection": {
@@ -142,7 +147,8 @@
     "SAC",
     "MEM",
     "WAS",
-    "DAL"
+    "DAL",
+    "POR"
   ],
   "lineup": {
     "chalk_rating_floor": 2.0,
@@ -214,6 +220,11 @@
       "version": 8,
       "date": "2026-03-08",
       "change": "Line of the Day: projections enriched with real last-5 game stats (nba_api) before engine run so over/under picks use actual recent form. Line section de-hardcoded: recent_form_over_ratio (1.08), recent_form_under_ratio (0.92), min_edge_pts (2.0), min_edge_other (1.5) now tunable via Ben."
+    },
+    {
+      "version": 9,
+      "date": "2026-03-10",
+      "change": "Mar 8 screenshot audit (10-game Sunday slate): (1) star_players expanded: +Austin Reaves (160 drafts → +0.5x actual; LAL brand drives outsized ownership vs RS output), +Jalen Brunson (3.2k drafts → +0.4x; NYK franchise player model was massively underestimating), +Scottie Barnes (2.2k drafts → +0.5x; TOR franchise star), +RJ Barrett (9 drafts → +1.0x; star-penalized by app despite low drafts). (2) cascade.per_player_cap_minutes 3.0 → 2.0: Sunday moonshot cascade picks (Schroeder +3.0 min → RS 0.4, Robinson +3.0 → RS 1.0, Chapel +3.0 → RS 0.8) all missed badly — 3 min bonus was too aggressive. (3) development_teams: added POR (Scoot Henderson — 4 drafts, RS 5.3, +2.5x — top value Sunday but not in model's moonshot universe). (4) card_boost.pool_size_estimate=10000 added for future calibrate-boost endpoint."
     }
   ]
 }
