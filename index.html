@@ -3117,11 +3117,20 @@ function _buildLineConclusion(pick) {
   const proj = pick.projection != null && pick.projection !== '' ? Number(pick.projection).toFixed(1) : null;
   const edge = pick.edge != null ? Number(pick.edge) : null;
   const base = pick.season_avg != null && pick.season_avg !== '' ? pick.season_avg : (pick.line != null && pick.line !== '' ? Number(pick.line) : null);
-  const conf = pick.confidence != null ? pick.confidence : 0;
   const stat = (pick.stat_type || 'points').toLowerCase();
   const hasBase = proj != null && edge != null && base != null;
   const signals = (pick.signals && Array.isArray(pick.signals)) ? pick.signals : [];
-  const details = signals.map(s => typeof s === 'string' ? s : (s && (s.detail || s.type || ''))).filter(Boolean);
+  const details = signals
+    .map(s => typeof s === 'string' ? s : (s && (s.detail || s.type || '')))
+    .filter(Boolean)
+    .map(d => {
+      // Sync cascade signal with the actual proj_min/avg_min shown in the MIN column
+      if (/injury upgrade/i.test(d) && pick.proj_min != null && pick.avg_min != null) {
+        const diff = (Number(pick.proj_min) - Number(pick.avg_min)).toFixed(1);
+        return `Injury upgrade — +${diff} projected minutes`;
+      }
+      return d;
+    });
 
   let intro = '';
   if (pick.narrative && pick.narrative.trim()) {
@@ -3132,16 +3141,14 @@ function _buildLineConclusion(pick) {
     const baseStr = typeof base === 'number' ? base.toFixed(1) : String(base);
     intro = `Model projects ${proj} ${stat} — a ${edgeStr} edge vs the ${baseStr} season baseline.`;
   }
-  if (!intro && !details.length && !conf) return '';
+  if (!intro && !details.length) return '';
 
   let driven = '';
   if (details.length) {
     const text = details.map(d => _escapeHtml(String(d).trim())).join(', ');
     driven = ` <span class="line-conclusion-highlight">This is driven by ${text}.</span>`;
   }
-  const hasConfInIntro = intro && /\d+%\s*confidence/i.test(intro);
-  const confidenceStr = (conf && !hasConfInIntro) ? ` (${conf}% confidence).` : '';
-  const full = _escapeHtml(intro) + driven + _escapeHtml(confidenceStr);
+  const full = _escapeHtml(intro) + driven;
   return full.trim() ? `<p class="line-pick-conclusion">${full}</p>` : '';
 }
 
