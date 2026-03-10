@@ -3210,7 +3210,7 @@ def _pick_has_display_fields(pick):
     When True, skip the expensive enrichment pipeline entirely."""
     if not pick:
         return True  # null pick needs no enrichment
-    _required = ("season_avg", "proj_min", "avg_min", "recent_form_bars", "recent_form_values")
+    _required = ("season_avg", "proj_min", "avg_min", "recent_form_bars")
     return all(pick.get(f) is not None for f in _required)
 
 
@@ -3232,15 +3232,8 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
                 pick = picks_dict.get(key)
                 if pick:
                     _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
-    # Always try to add real last-5 values (not stored in JSON at generation time)
-    for key in ("over_pick", "under_pick"):
-        pick = picks_dict.get(key)
-        if pick and not pick.get("recent_form_values"):
-            pname, st = pick.get("player_name"), pick.get("stat_type")
-            if pname and st:
-                l5 = _get_last5_game_stats(pname, st)
-                if l5:
-                    pick["recent_form_values"] = l5
+    # L5 (recent_form_values) is handled asynchronously at the endpoint level to avoid
+    # blocking the event loop. See _add_l5_if_missing() in /api/line-of-the-day.
 
 
 def _load_line_pick_for_date(date_str: str):
@@ -3402,6 +3395,20 @@ async def get_line_of_the_day(request: Request):
                 if cached:
                     return JSONResponse(cached)
 
+        # Async L5 helper: fetch real last-5 values for picks missing them.
+        # Uses asyncio.to_thread so nba_api never blocks the event loop.
+        # Both picks are fetched in parallel via asyncio.gather.
+        async def _add_l5_if_missing(picks_dict):
+            async def _one(key):
+                pick = picks_dict.get(key)
+                if pick and not pick.get("recent_form_values"):
+                    pname, st = pick.get("player_name"), pick.get("stat_type")
+                    if pname and st:
+                        l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
+                        if l5:
+                            pick["recent_form_values"] = l5
+            await asyncio.gather(_one("over_pick"), _one("under_pick"))
+
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
 
@@ -3441,19 +3448,23 @@ async def get_line_of_the_day(request: Request):
                             )
                         except Exception:
                             pass
-                _had_l5_next = {k: bool((next_picks.get(k) or {}).get("recent_form_values"))
-                                for k in ("over_pick", "under_pick")}
                 if not (_pick_has_display_fields(next_picks.get("over_pick")) and
                         _pick_has_display_fields(next_picks.get("under_pick"))):
                     _enrich_loaded_line_picks(next_picks, next_slate)
-                    if any(not _had_l5_next[k] and bool((next_picks.get(k) or {}).get("recent_form_values"))
-                           for k in ("over_pick", "under_pick")):
-                        try:
-                            _github_write_file(f"data/lines/{next_slate_str}_pick.json",
-                                               json.dumps({"over_pick": next_picks.get("over_pick"),
-                                                           "under_pick": next_picks.get("under_pick")}),
-                                               f"persist L5 for {next_slate_str}")
-                        except Exception: pass
+                _had_l5_next = {k: bool((next_picks.get(k) or {}).get("recent_form_values"))
+                                for k in ("over_pick", "under_pick")}
+                try:
+                    await asyncio.wait_for(_add_l5_if_missing(next_picks), timeout=8.0)
+                except asyncio.TimeoutError:
+                    pass
+                if any(not _had_l5_next[k] and bool((next_picks.get(k) or {}).get("recent_form_values"))
+                       for k in ("over_pick", "under_pick")):
+                    try:
+                        _github_write_file(f"data/lines/{next_slate_str}_pick.json",
+                                           json.dumps({"over_pick": next_picks.get("over_pick"),
+                                                       "under_pick": next_picks.get("under_pick")}),
+                                           f"persist L5 for {next_slate_str}")
+                    except Exception: pass
                 result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 result["_cached_at"] = datetime.utcnow().isoformat()
@@ -3506,24 +3517,26 @@ async def get_line_of_the_day(request: Request):
                         _github_write_file(json_path, json.dumps(today_picks),
                                            f"backfill missing direction for {today_str}")
                     except Exception: pass
-            # Skip enrichment when picks already have all display fields including L5.
-            # _pick_has_display_fields now includes recent_form_values so this fires when L5 is missing.
-            # _enrich_loaded_line_picks only runs the expensive projection pipeline if projection
-            # fields are absent; L5 fetch is a lightweight separate step.
-            _had_l5 = {k: bool((today_picks.get(k) or {}).get("recent_form_values"))
-                       for k in ("over_pick", "under_pick")}
+            # Sync projection enrichment — only runs when projection fields are missing
             if not (_pick_has_display_fields(today_picks.get("over_pick")) and
                     _pick_has_display_fields(today_picks.get("under_pick"))):
                 _enrich_loaded_line_picks(today_picks, today)
-                # Write L5 back to GitHub for all-day persistence across cold starts
-                if any(not _had_l5[k] and bool((today_picks.get(k) or {}).get("recent_form_values"))
-                       for k in ("over_pick", "under_pick")):
-                    try:
-                        _github_write_file(f"data/lines/{today_str}_pick.json",
-                                           json.dumps({"over_pick": today_picks.get("over_pick"),
-                                                       "under_pick": today_picks.get("under_pick")}),
-                                           f"persist L5 for {today_str}")
-                    except Exception: pass
+            # Async L5 enrichment — non-blocking, parallel; bounded so it never causes timeout
+            _had_l5 = {k: bool((today_picks.get(k) or {}).get("recent_form_values"))
+                       for k in ("over_pick", "under_pick")}
+            try:
+                await asyncio.wait_for(_add_l5_if_missing(today_picks), timeout=8.0)
+            except asyncio.TimeoutError:
+                pass
+            # Write L5 back to GitHub for all-day persistence across cold starts
+            if any(not _had_l5[k] and bool((today_picks.get(k) or {}).get("recent_form_values"))
+                   for k in ("over_pick", "under_pick")):
+                try:
+                    _github_write_file(f"data/lines/{today_str}_pick.json",
+                                       json.dumps({"over_pick": today_picks.get("over_pick"),
+                                                   "under_pick": today_picks.get("under_pick")}),
+                                       f"persist L5 for {today_str}")
+                except Exception: pass
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             result["_cached_at"] = datetime.utcnow().isoformat()
             _cs("line_v1", result)
