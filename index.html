@@ -2759,7 +2759,6 @@ let LINE_LOADED_DATE = '';
 let LINE_DIR = 'under'; // active direction filter for line sub-nav
 let LINE_OVER_PICK  = null; // today's over pick
 let LINE_UNDER_PICK = null; // today's under pick
-let LINE_PENDING_CARD = false; // true when next_slate_pending — prevents "No X pick today" on tab switch
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
@@ -2927,18 +2926,6 @@ function _renderLineLOTDFromState() {
   }
   if (st.status === 'success' && st.data) {
     const data = st.data;
-    if (data.error === 'next_slate_pending') {
-      LINE_PENDING_CARD = true;
-      LINE_LOADED_DATE = ''; // bust so next tab visit re-fetches (picks may arrive at any time)
-      linePickWrap.style.display = 'block';
-      linePickCard.style.display = '';
-      linePickCard.innerHTML = renderNextSlatePending();
-      lineSlateSummary.innerHTML = '';
-      lineEmptyEl.style.display = 'none';
-      var lineNoPickMsg = _el('lineNoPickMsg');
-      if (lineNoPickMsg) lineNoPickMsg.style.display = 'none';
-      return;
-    }
     // Extract directional picks first — they may exist even when primary pick is null
     LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
     LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
@@ -2969,7 +2956,6 @@ function _renderLineLOTDFromState() {
     }
     linePickWrap.style.display = 'block';
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
-    LINE_PENDING_CARD = false;
     // Auto-correct direction: if the selected direction has no pick but the other does, switch
     if (!LINE_OVER_PICK && LINE_UNDER_PICK && LINE_DIR === 'over') LINE_DIR = 'under';
     else if (!LINE_UNDER_PICK && LINE_OVER_PICK && LINE_DIR === 'under') LINE_DIR = 'over';
@@ -3360,14 +3346,6 @@ function closeLinePickModal() {
 }
 
 
-function renderNextSlatePending() {
-  return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center">
-    <div style="font-size:1.4rem;margin-bottom:10px">🏀</div>
-    <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">NEXT PICK LOADING</div>
-    <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Today&rsquo;s slate is complete. Next pick drops with tomorrow&rsquo;s games.</div>
-    <button type="button" onclick="fetchLineOfTheDay()" style="margin-top:14px;font-family:inherit;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);padding:4px 10px;cursor:pointer">Refresh</button>
-  </div>`;
-}
 
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeLinePickModal();
@@ -3432,9 +3410,8 @@ function switchLineDir(dir) {
       pickCard.innerHTML = renderLinePickCard(pick, true);
       if (noMsg) noMsg.style.display = 'none';
     } else if (!LINE_OVER_PICK && !LINE_UNDER_PICK) {
-      // Both null — next_slate_pending or unloaded state. Show pending card; never "No X pick today."
-      pickCard.style.display = '';
-      pickCard.innerHTML = renderNextSlatePending();
+      // Both null — no picks available yet. Hide the card; the empty state is handled above.
+      pickCard.style.display = 'none';
       if (noMsg) noMsg.style.display = 'none';
     } else {
       // One direction genuinely missing — show "No X pick today" only for that direction

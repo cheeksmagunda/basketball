@@ -3144,7 +3144,7 @@ async def get_line_of_the_day(request: Request):
             next_slate = _find_next_slate_date(today + timedelta(days=1))
             if not next_slate:
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                     "error": "next_slate_pending", "resolved_today": today_primary})
+                                     "error": "no_games", "resolved_today": today_primary})
             next_slate_str = next_slate.isoformat()
             next_picks = _load_line_pick_for_date(next_slate_str)
             next_primary = _primary_pick(next_picks)
@@ -3188,7 +3188,7 @@ async def get_line_of_the_day(request: Request):
             eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                     "error": "next_slate_pending", "resolved_today": today_primary})
+                                     "error": err or "no_edges", "resolved_today": today_primary})
             # Tag all picks with next slate's date
             for _key in ("pick", "over_pick", "under_pick"):
                 if eng_result.get(_key):
@@ -3708,6 +3708,12 @@ async def auto_resolve_line(request: Request):
         if line_cache.exists():
             line_cache.unlink()
     except Exception: pass
+    # Bust history cache so resolved picks appear immediately in /api/line-history
+    try:
+        hist_cache = _cp("line_history_v1")
+        if hist_cache.exists():
+            hist_cache.unlink()
+    except Exception: pass
 
     # Pre-generate next day's picks when today's slate is complete.
     # Don't wait for BOTH picks to resolve individually (they finish async);
@@ -3781,33 +3787,31 @@ async def line_history():
             return _hist_cached["data"]
 
     items = _github_list_dir("data/lines")
-    csv_items = [item for item in sorted(items, key=lambda x: x.get("name", ""), reverse=True)[:30]
-                 if item.get("name", "").endswith(".csv")]
+    # Collect unique dates from both CSV files and JSON pick files so JSON-only
+    # dates (where CSV write failed or save_line was never called from the frontend)
+    # still appear in history — the JSON has the resolved results.
+    csv_dates  = {i["name"][:-4]  for i in items if i.get("name", "").endswith(".csv")}
+    json_dates = {i["name"][:-10] for i in items if i.get("name", "").endswith("_pick.json")}
+    all_dates  = sorted(csv_dates | json_dates, reverse=True)[:30]
 
-    # Fetch all CSV + JSON files in parallel to avoid sequential GitHub round-trips on cold start
-    def _fetch_date_files(item):
-        name = item.get("name", "")
-        date_str = name[:-4]
-        csv_raw, _ = _github_get_file(f"data/lines/{name}")
+    # Fetch CSV + JSON for each date in parallel
+    def _fetch_date_files(date_str):
+        csv_raw,  _ = _github_get_file(f"data/lines/{date_str}.csv")
         json_raw, _ = _github_get_file(f"data/lines/{date_str}_pick.json")
         return date_str, csv_raw, json_raw
 
     fetched = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for date_str, csv_raw, json_raw in pool.map(_fetch_date_files, csv_items):
+        for date_str, csv_raw, json_raw in pool.map(_fetch_date_files, all_dates):
             fetched[date_str] = (csv_raw, json_raw)
 
     results = []
-    for item in csv_items:
-        name = item.get("name", "")
-        date_str = name[:-4]
+    for date_str in all_dates:
         content, json_raw = fetched.get(date_str, (None, None))
-        if not content:
+        if not content and not json_raw:
             continue
-        rows = _parse_csv(content, LINE_FIELDS)
-        if not rows:
-            continue
-        csv_primary = rows[0]
+        rows = _parse_csv(content, LINE_FIELDS) if content else []
+        csv_primary = rows[0] if rows else {}
 
         # Try JSON for both-direction picks (over + under per day).
         # CSV only stores the primary pick; JSON has both.
