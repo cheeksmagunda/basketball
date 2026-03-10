@@ -2220,7 +2220,7 @@ function buildLogDateStrip() {
     <button class="date-chip${(LOG.selectedDate === c.iso) || (!LOG.selectedDate && c.isToday) ? ' active' : ''}" data-date="${c.iso}" onclick="selectLogDate('${c.iso}')">
       <span class="date-chip-day">${c.dayLabel}</span>
       <span class="date-chip-num">${c.numLabel}</span>
-      <span class="date-chip-dot${!c.hasData ? ' hidden-dot' : !c.isToday ? ' historical-dot' : ''}"></span>
+      <span class="date-chip-dot${c.isToday ? '' : c.hasData ? ' historical-dot' : ' hidden-dot'}"></span>
     </button>`).join('');
 }
 
