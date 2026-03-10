@@ -62,8 +62,15 @@
       --color-text-muted: #8A96A3;
       --radius-pill: 9999px;
       --radius-card: 14px;
+      --radius-md: 12px;
+      --radius-sm: 6px;
+      --radius-xs: 3px;
       --font-size-micro: 0.65rem;
       --tracking-caps: 0.06em;
+      --surface-overlay: rgba(255,255,255,0.04);
+      --surface-overlay-md: rgba(255,255,255,0.08);
+      --green-rgb: 34,197,94;
+      --red-rgb: 244,63,94;
       /* Decorative one-offs */
       --color-injury-bg: #3B1C1C;
       --color-line-under: #5eead4;
@@ -126,7 +133,7 @@
       flex-shrink: 0;
     }
     .logo-icon {
-      width: 44px; height: 44px; border-radius: 12px;
+      width: 44px; height: 44px; border-radius: var(--radius-md);
       background: var(--chalk);
       display: flex; align-items: center; justify-content: center;
       font-size: 1.3rem;
@@ -315,12 +322,12 @@
       margin-bottom: 3px; display: flex; align-items: center; gap: 6px;
     }
     .pos-pill {
-      background: var(--border-bright); border-radius: 3px;
+      background: var(--border-bright); border-radius: var(--radius-xs);
       padding: 1px 5px; font-size: 0.6rem; margin-left: 4px;
     }
     .injury-badge {
       background: var(--color-injury-bg); color: var(--color-danger);
-      border: 1px solid rgba(255,180,180,0.2); border-radius: 3px;
+      border: 1px solid rgba(255,180,180,0.2); border-radius: var(--radius-xs);
       padding: 1px 5px; font-size: 0.55rem; font-weight: 800;
       letter-spacing: 0.08em;
     }
@@ -336,7 +343,7 @@
     .stat-context-pill {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+      background: var(--surface-overlay); border: 1px solid var(--surface-overlay-md);
       border-radius: 20px; padding: 2px 8px;
       color: var(--text-dim); white-space: nowrap;
     }
@@ -392,14 +399,14 @@
       color: var(--score-color, var(--chalk));
       background: rgba(79,142,247,0.1);
       border: 1px solid rgba(79,142,247,0.2);
-      border-radius: 4px; padding: 2px 6px;
+      border-radius: var(--radius-xs); padding: 2px 6px;
       display: inline-block; margin-top: 4px;
     }
 
     .mult-badge {
       background: rgba(255,215,0,0.1); color: var(--color-warning);
       border: 1px solid rgba(255,215,0,0.25);
-      font-size: 0.6rem; padding: 2px 6px; border-radius: 4px;
+      font-size: 0.6rem; padding: 2px 6px; border-radius: var(--radius-xs);
     }
 
     /* ── SKELETON LOADING ── */
@@ -412,9 +419,9 @@
       display: flex; align-items: center; gap: 14px;
     }
     .skel-block {
-      background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+      background: linear-gradient(90deg, var(--surface-overlay) 25%, var(--surface-overlay-md) 50%, var(--surface-overlay) 75%);
       background-size: 200% 100%;
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       animation: shimmer 1.4s infinite;
     }
     @keyframes shimmer { to { background-position: -200% 0; } }
@@ -438,7 +445,7 @@
       color: var(--text);
       border: 1px solid var(--border-bright);
       padding: 14px 40px 14px 16px;
-      border-radius: 12px;
+      border-radius: var(--radius-md);
       appearance: none;
       outline: none;
       font-family: 'Barlow Condensed', sans-serif;
@@ -457,7 +464,7 @@
       font-size: 0.95rem; font-weight: 900;
       letter-spacing: 0.08em; text-transform: uppercase;
       padding: 13px;
-      border-radius: 12px;
+      border-radius: var(--radius-md);
       border: none; cursor: pointer;
       transition: all 0.2s;
       box-shadow: 0 3px 16px var(--chalk-glow);
@@ -514,8 +521,8 @@
 
     /* ── ERROR BANNER ── */
     .error-banner {
-      background: rgba(244,63,94,0.1);
-      border: 1px solid rgba(244,63,94,0.3);
+      background: rgba(var(--red-rgb),0.1);
+      border: 1px solid rgba(var(--red-rgb),0.3);
       border-radius: 10px;
       padding: 12px 16px;
       font-size: 0.82rem; color: var(--color-danger);
@@ -634,13 +641,13 @@
     .actual-rs-pill {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 0.68rem; font-weight: 700; padding: 2px 6px;
-      border-radius: 4px;
+      border-radius: var(--radius-xs);
     }
-    .actual-rs-pill.hit { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
-    .actual-rs-pill.miss { background: rgba(244,63,94,0.1); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
+    .actual-rs-pill.hit { background: rgba(var(--green-rgb),0.12); color: var(--green); border: 1px solid rgba(var(--green-rgb),0.25); }
+    .actual-rs-pill.miss { background: rgba(var(--red-rgb),0.1); color: var(--red); border: 1px solid rgba(var(--red-rgb),0.2); }
 
     /* Graded card states — hit/miss accent bar + glow */
-    .player-card.graded-hit::before { background: var(--green) !important; box-shadow: 2px 0 12px rgba(34,197,94,0.4) !important; }
+    .player-card.graded-hit::before { background: var(--green) !important; box-shadow: 2px 0 12px rgba(var(--green-rgb),0.4) !important; }
     .player-card.graded-miss::before { background: var(--color-danger) !important; box-shadow: 2px 0 12px rgba(255,138,128,0.3) !important; }
 
     /* Pending results indicator */
@@ -782,7 +789,7 @@
       margin-top: 20px;
       padding: 12px 14px;
       background: rgba(255, 255, 255, 0.03);
-      border-radius: 8px;
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
     }
     .line-pick-conclusion {
@@ -815,7 +822,7 @@
     .line-summary-chip {
       font-size: 0.68rem; color: var(--muted);
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 6px; padding: 4px 10px;
+      border-radius: var(--radius-sm); padding: 4px 10px;
     }
     .line-history-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -825,12 +832,13 @@
     .line-history-name { font-size: 0.78rem; font-weight: 600; color: var(--text); }
     .line-history-sub  { font-size: 0.65rem; color: var(--muted); }
     .line-result-pill {
-      font-size: var(--font-size-micro); font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      font-size: var(--font-size-micro); font-weight: 700; padding: 2px 8px; border-radius: var(--radius-xs);
       text-transform: uppercase; letter-spacing: 0.06em;
     }
-    .line-result-pill.hit     { background: rgba(34,197,94,0.2); color: var(--color-success); border: 1px solid rgba(34,197,94,0.45); }
-    .line-result-pill.miss    { background: rgba(244,63,94,0.1); color: var(--color-danger); border: 1px solid rgba(244,63,94,0.2); }
-    .line-result-pill.pending { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+    .line-result-pill.hit     { background: rgba(var(--green-rgb),0.2); color: var(--color-success); border: 1px solid rgba(var(--green-rgb),0.45); }
+    .line-result-pill.miss    { background: rgba(var(--red-rgb),0.1); color: var(--color-danger); border: 1px solid rgba(var(--red-rgb),0.2); }
+    .line-result-pill.pending { background: var(--surface-overlay); color: var(--muted); border: 1px solid var(--border); }
+    .btn-done { background: rgba(var(--green-rgb),0.2); border: 1px solid var(--green); color: var(--green); }
     .line-hist-tab {
       font-family: 'Barlow Condensed', sans-serif; font-size: 0.65rem; font-weight: 800;
       letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px;
@@ -842,7 +850,7 @@
     .line-hist-tab.active.under{ background: rgba(20,184,166,0.12); color: var(--lab);  border-color: rgba(20,184,166,0.3); }
     .line-hist-dir-pill {
       font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
-      text-transform: uppercase; padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
+      text-transform: uppercase; padding: 1px 6px; border-radius: var(--radius-xs); flex-shrink: 0;
     }
     .line-hist-dir-pill.over  { background: rgba(212,166,64,0.15); color: var(--line); border: 1px solid rgba(212,166,64,0.3); }
     .line-hist-dir-pill.under { background: rgba(20,184,166,0.12); color: var(--lab);  border: 1px solid rgba(20,184,166,0.25); }
@@ -862,7 +870,7 @@
     .lab-msg.assistant {
       align-self: flex-start;
       background: rgba(10,16,26,0.85);
-      border: 1px solid rgba(255,255,255,0.08);
+      border: 1px solid var(--surface-overlay-md);
       border-top: 1px solid rgba(20,184,166,0.2);
       border-radius: 4px 16px 16px 16px;
       color: var(--text);
@@ -875,7 +883,7 @@
     }
     .lab-msg .lab-table {
       width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 6px 0;
-      background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+      background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
     }
     .lab-msg .lab-table th, .lab-msg .lab-table td {
       padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border);
@@ -2641,12 +2649,12 @@ async function _handleBenUpload(file, type, source) {
 
     const today = LAB.briefing?.pending_upload_date || _etToday();
     // _markDone: permanent green (used for chat buttons)
-    const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true; } };
+    const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.classList.add('btn-done'); b.disabled = true; } };
     // _markBannerDone: flash green → update X/4 counter → hide after 1.5s
     const _markBannerDone = (id, label, date) => {
       const b = document.getElementById(id);
       if (!b) return;
-      b.textContent = label; b.style.background = 'rgba(34,197,94,0.2)'; b.style.border = '1px solid var(--green)'; b.style.color = 'var(--green)'; b.disabled = true;
+      b.textContent = label; b.classList.add('btn-done'); b.disabled = true;
       const _uf = _safeParseLocalStorage('benUploads_' + date, {});
       const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot].filter(Boolean).length;
       const _t = document.getElementById('benBannerTitle');
@@ -3063,8 +3071,6 @@ async function initLinePage() {
   // Date changed — full reload
   LINE_LOADED_DATE = todayET;
   document.getElementById('lineHistoryWrap').style.display = 'none';
-  // Pre-warm backend on cold start (non-blocking, same pattern as Lab page)
-  fetchWithTimeout('/api/health', {}, 10000).catch(function(){});
   fetchLineOfTheDay();
   fetchLineHistory();
   // Defer auto-resolve so it doesn't compete with line-of-the-day on cold start
@@ -3518,8 +3524,6 @@ async function initLabPage() {
   var _ub0 = _el('benUploadBanner');
   if (_ub0) _ub0.style.display = 'none';
 
-  fetchWithTimeout('/api/health', {}, 10000).catch(function(){}); // pre-warm (non-blocking)
-
   try {
     const r = await fetchWithTimeout('/api/lab/status', {}, 30000);
     if (!r.ok) throw new Error('Failed to load Lab status: HTTP ' + r.status);
@@ -3674,11 +3678,16 @@ async function showLabUnlocked(status) {
   if (!LAB.system) LAB.system = buildLabSystemPrompt();
 
   // Load context data in background (non-blocking) — chat is usable while this runs
+  // Reuse cached data from other tabs when available to avoid redundant API calls
+  var _cachedLine = (LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'success' && LINE_LOTD_STATE.data)
+    ? Promise.resolve(LINE_LOTD_STATE.data) : fetchWithTimeout('/api/line-of-the-day', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
+  var _cachedSlate = SLATE
+    ? Promise.resolve(SLATE) : fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
   Promise.allSettled([
     fetchWithTimeout('/api/lab/briefing', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     fetchWithTimeout('/api/lab/config-history', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetchWithTimeout('/api/line-of-the-day', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    _cachedLine,
+    _cachedSlate,
     fetchWithTimeout(`/api/log/get?date=${_etToday()}`).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
   ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes]) {
     if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
