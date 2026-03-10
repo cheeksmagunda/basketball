@@ -320,43 +320,6 @@ class TestAutoResolveMidnight:
 
 
 # ─────────────────────────────────────────────────────────
-# TestCacheTTLs — documented values match constants
-# ─────────────────────────────────────────────────────────
-class TestCacheTTLs:
-    """TTL values match CLAUDE.md documentation"""
-
-    def test_games_final_cache_3min(self):
-        assert 180 == 3 * 60
-
-    def test_config_cache_5min(self):
-        assert 300 == 5 * 60
-
-    def test_rotowire_cache_30min(self):
-        assert 1800 == 30 * 60
-
-    def test_lock_cache_during_slate_60s(self):
-        assert 60 < 180  # locked TTL tighter than pre-slate TTL
-
-
-# ─────────────────────────────────────────────────────────
-# TestPollingIntervals — code matches documentation
-# ─────────────────────────────────────────────────────────
-class TestPollingIntervals:
-    """Frontend polling intervals match documented values"""
-
-    def test_lab_lock_poll_120s(self):
-        """Lab status polled every 120s (2 min) while locked"""
-        assert 120000 / 1000 == 120
-
-    def test_line_live_poll_60s(self):
-        assert 60000 / 1000 == 60
-
-    def test_line_failure_cutoff_300s_tolerance(self):
-        """5 failures × 60s = 300s before falling back to cron"""
-        assert 5 * 60 == 300
-
-
-# ─────────────────────────────────────────────────────────
 # TestRateLimitThreadSafe — concurrent calls do not raise; limit enforced
 # ─────────────────────────────────────────────────────────
 class TestRateLimitThreadSafe:

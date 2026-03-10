@@ -523,7 +523,7 @@ def run_line_engine(projections, games, line_config=None):
         "slate_summary": {
             "games_evaluated": len(games),
             "props_scanned":   len(projections),
-            "edges_found":     2,
+            "edges_found":     (1 if over_pick else 0) + (1 if under_pick else 0),
             "timestamp":       datetime.now(timezone.utc).isoformat(),
             "model_only":      True,
         },

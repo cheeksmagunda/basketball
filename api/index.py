@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 import asyncio
+from statistics import mode, mean, StatisticsError
 from typing import Any, Optional, Tuple
 
 import numpy as np
@@ -56,7 +57,6 @@ app = FastAPI()
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch any unhandled exception; log server-side only, return generic 500 to client."""
-    import traceback
     print(f"[unhandled] {request.method} {request.url.path}: {exc}", flush=True)
     traceback.print_exc()
     return JSONResponse(
@@ -170,7 +170,6 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
             # Retry with fresh SHA fetch
             if r.status_code == 422 and attempt < max_retries - 1:
                 backoff_sec = (2 ** attempt)  # 1, 2, 4 seconds
-                import time
                 time.sleep(backoff_sec)
                 continue
 
@@ -181,7 +180,6 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
         except Exception as e:
             if attempt < max_retries - 1:
                 backoff_sec = (2 ** attempt)
-                import time
                 time.sleep(backoff_sec)
                 continue
             print(f"[github] write exception {path}: {e}")
@@ -474,6 +472,9 @@ for _p in [
 # ─────────────────────────────────────────────────────────────────────────────
 ESPN      = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
+ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+OPUS_MODEL  = "claude-opus-4-6"
 MIN_GATE  = 12          # Minimum projected minutes — lowered from 15 to catch
                         # deep bench (Clifford, Riley) who win in garbage time
 DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
@@ -594,7 +595,7 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
                 return vals
             except Exception as e:
                 if attempt == 0:
-                    import time; time.sleep(1)
+                    time.sleep(1)
                     continue
                 print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
                 return None
@@ -2565,14 +2566,14 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
     text = ""
     try:
         r = requests.post(
-            "https://api.anthropic.com/v1/messages",
+            f"{ANTHROPIC_API_BASE}/messages",
             headers={
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
             json={
-                "model": "claude-haiku-4-5-20251001",
+                "model": HAIKU_MODEL,
                 "max_tokens": 4096,
                 "messages": [{
                     "role": "user",
@@ -3156,7 +3157,6 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
         if not lines_over:
             return None
         # Consensus line = mode across books; fallback to average rounded to 0.5
-        from statistics import mode, mean, StatisticsError
         try:
             consensus = mode(lines_over)
         except StatisticsError:
@@ -4910,14 +4910,14 @@ RULES:
 
     try:
         haiku_resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
+            f"{ANTHROPIC_API_BASE}/messages",
             headers={
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
             json={
-                "model": "claude-haiku-4-5-20251001",
+                "model": HAIKU_MODEL,
                 "max_tokens": 256,
                 "messages": [{"role": "user", "content": haiku_prompt}],
             },
@@ -5034,7 +5034,7 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
         "content-type": "application/json",
     }
     base_body = {
-        "model":      "claude-opus-4-6",
+        "model":      OPUS_MODEL,
         "max_tokens": 2048,
         "system":     system,
         "tools":      _BEN_TOOLS,
@@ -5046,7 +5046,7 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
 
     def event_stream():
         try:
-            r = requests.post("https://api.anthropic.com/v1/messages",
+            r = requests.post(f"{ANTHROPIC_API_BASE}/messages",
                               headers=headers, json=base_body, timeout=45)
             r.raise_for_status()
             resp = r.json()
@@ -5075,7 +5075,7 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
                     {"role": "user",      "content": tool_results},
                 ]
                 r_next = requests.post(
-                    "https://api.anthropic.com/v1/messages",
+                    f"{ANTHROPIC_API_BASE}/messages",
                     headers=headers,
                     json={**base_body, "messages": current_messages},
                     timeout=45,

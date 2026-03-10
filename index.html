@@ -1787,7 +1787,7 @@ async function loadSlate() {
     const slateTabsEl = _el('slateTabs');
     if (slateTabsEl) slateTabsEl.style.display = 'flex';
     SLATE_LOADED_AT = Date.now();
-    if (typeof LAB !== 'undefined') { LAB.cachedStatus = null; LAB.statusFetchedAt = 0; }
+    LAB.cachedStatus = null; LAB.statusFetchedAt = 0;
 
     if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
 
@@ -1863,12 +1863,10 @@ async function loadSlate() {
     switchSlate('chalk');
     savePredictions();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
-    if (typeof LAB !== 'undefined') {
-      fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(function(s) {
-        LAB.cachedStatus = s;
-        LAB.statusFetchedAt = Date.now();
-      }).catch(function() {});
-    }
+    fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(function(s) {
+      LAB.cachedStatus = s;
+      LAB.statusFetchedAt = Date.now();
+    }).catch(function() {});
   } catch(e) {
     // Auto-retry up to 2 times — cold start warms the function so retries succeed fast
     if (_slateRetryCount < 2) {
@@ -1995,15 +1993,6 @@ async function runAnalysis() {
 // ════════════════════════════════════════════════════════════════════
 // CARD RENDERING — grep: renderCards, player-card, TEAM_COLORS, tcolor, rank-badge
 // ════════════════════════════════════════════════════════════════════
-const _SLOT_HEAT = {
-  1: {c:'#FFD700', bg:'rgba(255,215,0,0.10)', bc:'rgba(255,215,0,0.30)'},
-  2: {c:'#FFA726', bg:'rgba(255,167,38,0.10)', bc:'rgba(255,167,38,0.28)'},
-  3: {c:'#FF9800', bg:'rgba(255,152,0,0.10)', bc:'rgba(255,152,0,0.25)'},
-  4: {c:'#4DB6AC', bg:'rgba(77,182,172,0.10)', bc:'rgba(77,182,172,0.22)'},
-  5: {c:'#64B5F6', bg:'rgba(100,181,246,0.10)', bc:'rgba(100,181,246,0.20)'},
-};
-function _slotHeat(slot) { return _SLOT_HEAT[slot] || _SLOT_HEAT[3]; }
-
 function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
@@ -3457,6 +3446,10 @@ function _isLabStatusErrorFallback(status) {
   return r.indexOf('try again') !== -1 || r.indexOf('temporarily unavailable') !== -1;
 }
 
+function _resetLabAndRetry() {
+  LAB.cachedStatus = null; LAB.statusFetchedAt = 0; LAB.initialized = false; initLabPage();
+}
+
 function _showLabStatusUnknown() {
   var _ub = document.getElementById('benUploadBanner');
   if (_ub) _ub.style.display = 'none';
@@ -3467,7 +3460,7 @@ function _showLabStatusUnknown() {
   if (labLockedEl) labLockedEl.style.display = 'none';
   if (labConnErr) labConnErr.style.display = 'block';
   if (labConnReason) labConnReason.textContent = 'Server couldn\'t determine status. Tap Retry.';
-  if (labConnAction) labConnAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.cachedStatus=null;LAB.statusFetchedAt=0;LAB.initialized=false;initLabPage()">Retry</button>';
+  if (labConnAction) labConnAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="_resetLabAndRetry()">Retry</button>';
 }
 
 async function initLabPage() {
@@ -3585,7 +3578,7 @@ async function initLabPage() {
     const connErr = _el('labConnectionError');
     const connAction = _el('labConnectionErrorAction');
     if (connErr) connErr.style.display = 'block';
-    if (connAction) connAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.cachedStatus=null;LAB.statusFetchedAt=0;LAB.initialized=false;initLabPage()">Retry</button>';
+    if (connAction) connAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="_resetLabAndRetry()">Retry</button>';
   }
 }
 
@@ -3593,7 +3586,7 @@ function _updateLabLockedStatus(status) {
   document.getElementById('labLockedReason').textContent = status.reason || 'Lab locked';
   var el = document.getElementById('labLockedUnlock');
   if (status.reason && status.reason.indexOf('try again') !== -1) {
-    el.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="LAB.cachedStatus=null;LAB.statusFetchedAt=0;LAB.initialized=false;initLabPage()">Retry</button>';
+    el.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="_resetLabAndRetry()">Retry</button>';
     return;
   }
   var tzOpts = {hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'};
@@ -3682,9 +3675,6 @@ async function showLabUnlocked(status) {
     LAB.system = buildLabSystemPrompt();
     // Upload banner (needs briefing data)
     _initUploadBanner();
-    if (LAB.messages.filter(function(m) { return !m.hidden; }).length === 0 && LAB.slateData?.games?.length && status.games_final > 0) {
-      _renderBenEodPrompt();
-    }
   });
 }
 
