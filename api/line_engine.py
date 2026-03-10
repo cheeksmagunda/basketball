@@ -315,7 +315,7 @@ def run_model_fallback(projections, games, line_config=None):
             confidence = round(min(52 + edge_score + signal_bonus, 80))
             narrative  = (
                 f"Model projects {proj_val:.1f} {stat_type} — a {abs(edge):.1f} edge "
-                f"vs the {line:.1f} season baseline at {confidence}% confidence."
+                f"vs the {line:.1f} season baseline."
             )
             edge_pct = (abs(edge) / line * 100.0) if line and line > 0 else 0.0
             if confidence < min_confidence or (min_edge_pct > 0 and edge_pct < min_edge_pct):
