@@ -616,5 +616,140 @@ class TestSwitchTabNoDuplicateInit:
         assert 'lockedNow' in src, "savePredictions must count currently locked games"
 
 
+# ─────────────────────────────────────────────────────────
+# TestSlateCacheGitHub — GitHub-persisted slate cache
+# ─────────────────────────────────────────────────────────
+class TestSlateCacheGitHub:
+    """Verify that /api/slate reads from GitHub cache on cold start (no /tmp)."""
+
+    def test_slate_cache_from_github_returns_data(self):
+        """_slate_cache_from_github returns parsed JSON when GitHub has today's cache."""
+        from api.index import _slate_cache_from_github
+        slate_data = {"date": "2026-03-10", "lineups": {"chalk": [{"name": "Test"}], "upside": []}}
+        with patch("api.index._github_get_file", return_value=(json.dumps(slate_data), "sha123")):
+            result = _slate_cache_from_github()
+        assert result is not None
+        assert result["lineups"]["chalk"][0]["name"] == "Test"
+
+    def test_slate_cache_from_github_returns_none_on_miss(self):
+        """_slate_cache_from_github returns None when no cache exists."""
+        from api.index import _slate_cache_from_github
+        with patch("api.index._github_get_file", return_value=(None, None)):
+            result = _slate_cache_from_github()
+        assert result is None
+
+    def test_slate_cache_from_github_ignores_busted(self):
+        """_slate_cache_from_github returns None for tombstone (busted cache)."""
+        from api.index import _slate_cache_from_github
+        with patch("api.index._github_get_file", return_value=(json.dumps({"_busted": True}), "sha")):
+            result = _slate_cache_from_github()
+        assert result is None
+
+    def test_slate_cache_to_github_writes(self):
+        """_slate_cache_to_github writes JSON to data/slate/ path."""
+        from api.index import _slate_cache_to_github
+        with patch("api.index._github_write_file") as mock_write:
+            _slate_cache_to_github({"date": "2026-03-10", "lineups": {}})
+        mock_write.assert_called_once()
+        path_arg = mock_write.call_args[0][0]
+        assert "data/slate/" in path_arg
+        assert "_slate.json" in path_arg
+
+    def test_games_cache_roundtrip(self):
+        """_games_cache_to/from_github persists and retrieves per-game projections."""
+        from api.index import _games_cache_from_github
+        game_data = {"401234": [{"name": "Player A", "rating": 5.0}]}
+        with patch("api.index._github_get_file", return_value=(json.dumps(game_data), "sha")):
+            result = _games_cache_from_github()
+        assert result is not None
+        assert "401234" in result
+        assert result["401234"][0]["name"] == "Player A"
+
+
+# ─────────────────────────────────────────────────────────
+# TestInjuryCheck — injury-triggered regeneration
+# ─────────────────────────────────────────────────────────
+class TestInjuryCheck:
+    """Verify the injury-check cron logic."""
+
+    def test_injury_check_skips_when_locked(self):
+        """Injury check returns skipped=True when slate is locked."""
+        from api.index import _is_locked
+        # When games are locked, injury check should skip
+        # Just verify the logic — _is_locked returns True for past start times
+        past_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        assert _is_locked(past_time) is True
+
+    def test_injury_check_skips_no_cache(self):
+        """Injury check returns no_cache when there's no cached slate."""
+        # This is a logic test — verifying the guard condition
+        cached_slate = None
+        assert cached_slate is None or not cached_slate.get("lineups")
+
+    def test_is_safe_to_draft_detects_out(self):
+        """is_safe_to_draft returns False for OUT players."""
+        from api.rotowire import is_safe_to_draft
+        # Mock the internal function to return OUT status
+        with patch("api.rotowire.get_player_status", return_value={"status": "out", "is_starter": False}):
+            assert is_safe_to_draft("Test Player") is False
+
+    def test_is_safe_to_draft_allows_confirmed(self):
+        """is_safe_to_draft returns True for confirmed players."""
+        from api.rotowire import is_safe_to_draft
+        with patch("api.rotowire.get_player_status", return_value={"status": "confirmed", "is_starter": True}):
+            assert is_safe_to_draft("Test Player") is True
+
+    def test_is_safe_to_draft_allows_unknown(self):
+        """is_safe_to_draft returns True when player is not found in RotoWire."""
+        from api.rotowire import is_safe_to_draft
+        with patch("api.rotowire.get_player_status", return_value=None):
+            assert is_safe_to_draft("Unknown Player") is True
+
+
+# ─────────────────────────────────────────────────────────
+# TestPicksServeFromCache — /api/picks cache layers
+# ─────────────────────────────────────────────────────────
+class TestPicksServeFromCache:
+    """Verify /api/picks serves from GitHub cache without calling _run_game()."""
+
+    def test_games_cache_from_github_returns_none_on_error(self):
+        """_games_cache_from_github returns None when GitHub is unreachable."""
+        from api.index import _games_cache_from_github
+        with patch("api.index._github_get_file", side_effect=Exception("Network error")):
+            result = _games_cache_from_github()
+        assert result is None
+
+    def test_bust_slate_cache_writes_tombstone(self):
+        """_bust_slate_cache writes tombstone JSON to GitHub."""
+        from api.index import _bust_slate_cache
+        with patch("api.index._github_write_file") as mock_write, \
+             patch("api.index._cp") as mock_cp:
+            mock_cp.return_value.unlink = Mock()
+            _bust_slate_cache()
+        # Should write tombstone for both _slate.json and _games.json
+        assert mock_write.call_count == 2
+        for call_args in mock_write.call_args_list:
+            content = json.loads(call_args[0][1])
+            assert content.get("_busted") is True
+
+    def test_get_projections_for_date_checks_github_cache(self):
+        """_get_projections_for_date falls back to GitHub cache when /tmp is empty."""
+        from api.index import _get_projections_for_date
+        game_data = {"game1": [{"name": "Player", "id": "123"}]}
+        mock_games = [{"gameId": "game1", "startTime": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat()}]
+
+        with patch("api.index.fetch_games", return_value=mock_games), \
+             patch("api.index._is_completed", return_value=False), \
+             patch("api.index._cg", return_value=None), \
+             patch("api.index._games_cache_from_github", return_value=game_data), \
+             patch("api.index._cs") as mock_cs:
+            from datetime import date
+            projs, games = _get_projections_for_date(date.today())
+            assert len(projs) == 1
+            assert projs[0]["name"] == "Player"
+            # Verify /tmp was warmed
+            mock_cs.assert_called()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

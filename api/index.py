@@ -229,6 +229,91 @@ def _slate_restore_from_github():
         print(f"slate restore err: {e}")
     return None
 
+
+# ── GitHub-Persisted Slate & Game Projection Cache ──
+# grep: SLATE CACHE
+# Pre-computed predictions are persisted to data/slate/ so that cold-start
+# Vercel instances serve the same picks without re-running the prediction engine.
+# Pattern mirrors data/locks/ and data/lines/ — date-keyed JSON files on GitHub.
+
+def _slate_cache_to_github(slate_data: dict):
+    """Persist today's generated slate to GitHub for cold-start recovery.
+    Deduped by date — overwrites same-day file on regeneration (injury/config change)."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/slate/{today}_slate.json"
+        content = json.dumps(slate_data, default=str)
+        _github_write_file(path, content, f"slate cache {today}")
+    except Exception as e:
+        print(f"[slate-cache] write err: {e}")
+
+def _slate_cache_from_github():
+    """Load today's cached slate from GitHub. Returns dict or None."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/slate/{today}_slate.json"
+        content, _ = _github_get_file(path)
+        if content:
+            data = json.loads(content)
+            # Ignore tombstone / busted cache
+            if data.get("_busted"):
+                return None
+            return data
+    except Exception as e:
+        print(f"[slate-cache] read err: {e}")
+    return None
+
+def _games_cache_to_github(all_game_projections: dict):
+    """Persist per-game projections {gameId: [players...]} to GitHub.
+    Allows /api/picks to serve from cache without re-running _run_game()."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/slate/{today}_games.json"
+        content = json.dumps(all_game_projections, default=str)
+        _github_write_file(path, content, f"game projections {today}")
+    except Exception as e:
+        print(f"[games-cache] write err: {e}")
+
+def _games_cache_from_github():
+    """Load per-game projections from GitHub. Returns {gameId: [...]} or None."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/slate/{today}_games.json"
+        content, _ = _github_get_file(path)
+        if content:
+            return json.loads(content)
+    except Exception as e:
+        print(f"[games-cache] read err: {e}")
+    return None
+
+def _bust_slate_cache():
+    """Clear today's slate cache from /tmp AND GitHub so next request regenerates.
+    Called by /api/refresh and /api/lab/update-config."""
+    today = _et_date().isoformat()
+    # Clear /tmp caches
+    for key in ["slate_v5"]:
+        try:
+            _cp(key).unlink()
+        except Exception:
+            pass
+    # Clear per-game /tmp caches
+    try:
+        for f in CACHE_DIR.glob("*.json"):
+            # game_proj_ keys are hashed, so just clear all cache files
+            # (they'll regenerate on next request)
+            pass  # Don't clear ALL — just bust slate. Per-game will be rebuilt.
+    except Exception:
+        pass
+    # Bust GitHub cache by writing a tombstone (cheaper than DELETE which needs SHA)
+    for suffix in ["_slate.json", "_games.json"]:
+        try:
+            path = f"data/slate/{today}{suffix}"
+            _github_write_file(path, json.dumps({"_busted": True}),
+                               f"bust slate cache {today}")
+        except Exception:
+            pass
+
+
 def _csv_escape(v):
     """Escape a value for CSV (quote if it contains commas or quotes)."""
     s = str(v)
@@ -513,6 +598,9 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
                     continue
                 print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
                 return None
+    except Exception as e:
+        print(f"[L5] outer error for {player_name!r}: {e}")
+        return None
 
 
 def _enrich_projections_with_l5(projections):
@@ -2159,6 +2247,7 @@ def _get_slate_impl():
                 "locked": True, "draftable_count": len(draftable_games),
                 "lock_time": lock_time}
 
+    # ── Layer 1: /tmp cache (warm Vercel instance) ──
     cached = _cg("slate_v5")
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
@@ -2168,20 +2257,51 @@ def _get_slate_impl():
             cached.setdefault("draftable_count", len(draftable_games))
             return cached
 
+    # ── Layer 2: GitHub persistent cache (cold-start recovery) ──
+    gh_cached = _slate_cache_from_github()
+    if gh_cached:
+        has_players = gh_cached.get("lineups", {}).get("chalk") or gh_cached.get("lineups", {}).get("upside")
+        if has_players or not draftable_games:
+            gh_cached["locked"] = locked
+            gh_cached.setdefault("draftable_count", len(draftable_games))
+            if lock_time:
+                gh_cached.setdefault("lock_time", lock_time)
+            # Warm /tmp cache for subsequent requests on this instance
+            _cs("slate_v5", gh_cached)
+            # Also warm per-game /tmp caches from GitHub
+            try:
+                gh_games = _games_cache_from_github()
+                if gh_games:
+                    for gid, projs in gh_games.items():
+                        _cs(f"game_proj_{gid}", projs)
+            except Exception:
+                pass
+            return gh_cached
+
+    # ── Layer 3: First run of the day — generate fresh, then persist ──
     all_proj = []
+    game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for fut in as_completed({pool.submit(_run_game, g): g for g in draftable_games}):
-            try: all_proj.extend(fut.result())
-            except Exception as e: print(f"slate err: {e}")
+        futs = {pool.submit(_run_game, g): g for g in draftable_games}
+        for fut in as_completed(futs):
+            try:
+                game = futs[fut]
+                projs = fut.result()
+                all_proj.extend(projs)
+                game_proj_map[game["gameId"]] = projs
+            except Exception as e:
+                print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
     result = {"date": _et_date().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
               "draftable_count": len(draftable_games), "lock_time": lock_time}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
+        # Persist to GitHub so all Vercel instances serve the same picks
+        _slate_cache_to_github(result)
+        if game_proj_map:
+            _games_cache_to_github(game_proj_map)
         if not locked:
-            # Proactively save GitHub backup on every pre-lock computation so cold-start
-            # instances after lock can recover correct picks without needing a warm /tmp.
             _slate_backup_to_github(result)
     if locked:
         _ls("slate_v5_locked", result)
@@ -2266,7 +2386,18 @@ async def get_picks(gameId: str = Query(...)):
                 "lineups": {"chalk": [], "upside": []},
                 "locked": True, "injuries": []}
 
-    projections = _run_game(game)
+    # Try /tmp cache first (populated by /api/slate or previous /api/picks)
+    cache_key = f"game_proj_{gameId}"
+    projections = _cg(cache_key)
+    if not projections:
+        # Try GitHub persistent cache (populated by first slate run of the day)
+        gh_games = _games_cache_from_github()
+        if gh_games and gameId in gh_games:
+            projections = gh_games[gameId]
+            _cs(cache_key, projections)  # warm /tmp for next call
+    if not projections:
+        # True cold start with no cache anywhere — run engine (rare after first daily run)
+        projections = _run_game(game)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
     chalk, upside = _build_game_lineups(projections, game)
@@ -2848,7 +2979,114 @@ async def refresh(request: Request):
     try:
         _rw_clear()
     except Exception: pass
+    # Bust GitHub-persisted slate cache so next request regenerates fresh
+    try:
+        _bust_slate_cache()
+    except Exception: pass
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# INJURY CHECK CRON
+# grep: /api/injury-check
+# Every 2h: check RotoWire for newly OUT/questionable players in cached picks.
+# If any cached player is affected, regenerate only that game's projections.
+# ═════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/injury-check")
+async def injury_check(request: Request):
+    """Cron (every 2h): check RotoWire for newly OUT/questionable players in cached picks.
+    If any cached player is OUT/questionable, regenerate affected games only."""
+    if not _require_cron_secret(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    today = _et_date().isoformat()
+
+    # Don't run if slate is locked — picks are frozen post-lock
+    games = fetch_games()
+    start_times = [g["startTime"] for g in games if g.get("startTime")]
+    if start_times and any(_is_locked(st) for st in start_times):
+        return {"status": "locked", "skipped": True}
+
+    if not games:
+        return {"status": "no_games", "skipped": True}
+
+    # Load current cached slate (try /tmp first, then GitHub)
+    cached_slate = _cg("slate_v5") or _slate_cache_from_github()
+    if not cached_slate or not cached_slate.get("lineups"):
+        return {"status": "no_cache", "skipped": True}
+
+    # Get fresh RotoWire statuses (bust cache to get latest injury news)
+    _rw_clear()
+    rw_statuses = get_all_statuses()
+    if not rw_statuses:
+        # RotoWire down — can't check injuries, serve existing cache
+        return {"status": "rotowire_unavailable", "skipped": True}
+
+    # Check if any player in Starting 5 or Moonshot is newly OUT/questionable
+    injured_games = set()
+    affected_players = []
+    for lineup_type in ["chalk", "upside"]:
+        for player in cached_slate["lineups"].get(lineup_type, []):
+            pname = player.get("name", "")
+            if pname and not is_safe_to_draft(pname):
+                affected_players.append(pname)
+                # Find which game this player belongs to
+                pteam = player.get("team", "")
+                for g in games:
+                    if pteam in (g.get("home", {}).get("abbr", ""),
+                                 g.get("away", {}).get("abbr", "")):
+                        injured_games.add(g["gameId"])
+                        break
+
+    if not injured_games:
+        return {"status": "ok", "injuries_found": 0, "checked_players": len(
+            [p for lt in ["chalk", "upside"]
+             for p in cached_slate["lineups"].get(lt, [])])}
+
+    print(f"[injury-check] {len(injured_games)} games affected by injuries: {affected_players}")
+
+    # Load existing per-game projections from GitHub
+    all_game_projs = _games_cache_from_github() or {}
+
+    # Regenerate only affected games
+    games_map = {g["gameId"]: g for g in games}
+    for gid in injured_games:
+        game = games_map.get(gid)
+        if not game:
+            continue
+        # Clear per-game /tmp cache to force fresh computation
+        try:
+            _cp(f"game_proj_{gid}").unlink()
+        except Exception:
+            pass
+        try:
+            projections = _run_game(game)
+            if projections:
+                all_game_projs[gid] = projections
+                _cs(f"game_proj_{gid}", projections)
+        except Exception as e:
+            print(f"[injury-check] game {gid} regen err: {e}")
+
+    # Rebuild full slate lineups with updated projections
+    all_proj = []
+    for gid, projs in all_game_projs.items():
+        all_proj.extend(projs)
+
+    if not all_proj:
+        return {"status": "regen_failed", "injuries_found": len(injured_games)}
+
+    chalk, upside = _build_lineups(all_proj)
+    result = {**cached_slate, "lineups": {"chalk": chalk, "upside": upside}}
+
+    # Persist updated slate to /tmp + GitHub
+    _cs("slate_v5", result)
+    _slate_cache_to_github(result)
+    _games_cache_to_github(all_game_projs)
+
+    return {"status": "ok", "injuries_found": len(injured_games),
+            "affected_players": affected_players,
+            "regenerated_games": list(injured_games)}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -2937,16 +3175,29 @@ LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direc
 
 
 def _get_projections_for_date(date_obj):
-    """Return (all_proj, draftable_games) for the given date for line-engine enrichment."""
+    """Return (all_proj, draftable_games) for the given date for line-engine enrichment.
+    Checks /tmp cache, then GitHub persistent cache, then runs the full pipeline as a last resort."""
     games = fetch_games(date_obj)
     draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
     if not draftable:
         return [], []
     all_proj = []
+    # Layer 1: /tmp per-game cache
     for g in draftable:
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
+    # Layer 2: GitHub persistent per-game cache
+    if not all_proj:
+        gh_games = _games_cache_from_github()
+        if gh_games:
+            for g in draftable:
+                gid = g["gameId"]
+                if gid in gh_games:
+                    projs = gh_games[gid]
+                    all_proj.extend(projs)
+                    _cs(f"game_proj_{gid}", projs)  # warm /tmp
+    # Layer 3: Full pipeline (rare — only on first run before slate has been generated)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
@@ -3085,10 +3336,22 @@ def _run_line_engine_for_date(date, skip_l5=False):
     # (_run_game cache is keyed by gameId, survives across lock).
     target_games = draftable if draftable else games
     all_proj = []
+    # Layer 1: /tmp per-game cache
     for g in target_games:
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
+    # Layer 2: GitHub persistent per-game cache
+    if not all_proj:
+        gh_games = _games_cache_from_github()
+        if gh_games:
+            for g in target_games:
+                gid = g["gameId"]
+                if gid in gh_games:
+                    projs = gh_games[gid]
+                    all_proj.extend(projs)
+                    _cs(f"game_proj_{gid}", projs)  # warm /tmp
+    # Layer 3: Full pipeline (rare — only if no cache exists yet)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
@@ -4360,6 +4623,10 @@ async def lab_update_config(payload: dict = Body(...)):
     # Clear config cache so new values take effect immediately
     try:
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
+    except Exception: pass
+    # Bust slate cache so next request regenerates with new config params
+    try:
+        _bust_slate_cache()
     except Exception: pass
 
     return {"status": "applied", "version": new_version, "changes": changes}
