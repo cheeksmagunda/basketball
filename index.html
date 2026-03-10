@@ -3437,6 +3437,7 @@ const LAB = {
   pendingImage: null,
   cachedStatus: null,   // JSON from /api/lab/status — avoid refetch on quick tab revisit
   statusFetchedAt: 0,   // timestamp; invalidate on Retry or after 10 min or when loadSlate completes
+  locked: false,        // mirrors last known lock state; used by line poll event-trigger
 };
 
 function _isLabStatusErrorFallback(status) {
@@ -3597,6 +3598,7 @@ function _updateLabLockedStatus(status) {
 }
 
 async function showLabLocked(status) {
+  LAB.locked = true;
   document.getElementById('labConnectionError').style.display = 'none';
   document.getElementById('labLocked').style.display = 'block';
   _updateLabLockedStatus(status);
@@ -3641,6 +3643,7 @@ async function showLabLocked(status) {
 }
 
 async function showLabUnlocked(status) {
+  LAB.locked = false;
   // Explicitly stop lock polling to prevent memory leak on rapid flickers
   if (LAB._lockPoll) { clearInterval(LAB._lockPoll); LAB._lockPoll = null; }
 
