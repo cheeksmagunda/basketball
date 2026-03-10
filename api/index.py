@@ -3187,17 +3187,8 @@ def _get_projections_for_date(date_obj):
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
-    # Layer 2: GitHub persistent per-game cache
-    if not all_proj:
-        gh_games = _games_cache_from_github()
-        if gh_games:
-            for g in draftable:
-                gid = g["gameId"]
-                if gid in gh_games:
-                    projs = gh_games[gid]
-                    all_proj.extend(projs)
-                    _cs(f"game_proj_{gid}", projs)  # warm /tmp
-    # Layer 3: Full pipeline (rare — only on first run before slate has been generated)
+    # Full pipeline if no /tmp cache (skip GitHub games cache here — it adds
+    # latency and the line engine still needs Haiku calls regardless)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
@@ -3336,22 +3327,14 @@ def _run_line_engine_for_date(date, skip_l5=False):
     # (_run_game cache is keyed by gameId, survives across lock).
     target_games = draftable if draftable else games
     all_proj = []
-    # Layer 1: /tmp per-game cache
+    # /tmp per-game cache (warm instance — populated by /api/slate or previous calls)
     for g in target_games:
         gp = _cg(f"game_proj_{g['gameId']}")
         if gp:
             all_proj.extend(gp)
-    # Layer 2: GitHub persistent per-game cache
-    if not all_proj:
-        gh_games = _games_cache_from_github()
-        if gh_games:
-            for g in target_games:
-                gid = g["gameId"]
-                if gid in gh_games:
-                    projs = gh_games[gid]
-                    all_proj.extend(projs)
-                    _cs(f"game_proj_{gid}", projs)  # warm /tmp
-    # Layer 3: Full pipeline (rare — only if no cache exists yet)
+    # Full pipeline if no /tmp cache (skip GitHub games cache here — it adds latency
+    # and the line engine still needs Haiku calls regardless, so the savings are minimal
+    # vs the risk of timing out on cold start)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=8) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
