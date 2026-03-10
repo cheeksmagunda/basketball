@@ -3125,17 +3125,19 @@ function _buildLineConclusion(pick) {
     .filter(Boolean)
     .map(d => {
       // Sync cascade signal with the actual proj_min/avg_min shown in the MIN column
-      if (/injury upgrade/i.test(d) && pick.proj_min != null && pick.avg_min != null) {
+      if (/injury upgrade|cascade/i.test(d) && pick.proj_min != null && pick.avg_min != null) {
         const diff = (Number(pick.proj_min) - Number(pick.avg_min)).toFixed(1);
-        return `Injury upgrade — +${diff} projected minutes`;
+        const sign = Number(diff) >= 0 ? '+' : '';
+        const label = Number(diff) >= 0 ? 'Injury upgrade' : 'Injury downgrade';
+        return `${label} — ${sign}${diff} projected minutes`;
       }
       return d;
     });
 
   let intro = '';
   if (pick.narrative && pick.narrative.trim()) {
-    intro = pick.narrative.trim();
-    if (!intro.endsWith('.')) intro += '.';
+    intro = pick.narrative.trim().replace(/ at \d+% confidence\.?/i, '').trim();
+    if (intro && !intro.endsWith('.')) intro += '.';
   } else if (hasBase) {
     const edgeStr = (edge > 0 ? '+' : '') + Number(edge).toFixed(1);
     const baseStr = typeof base === 'number' ? base.toFixed(1) : String(base);
