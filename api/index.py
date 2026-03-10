@@ -3454,9 +3454,9 @@ async def get_line_of_the_day(request: Request):
                 _had_l5_next = {k: bool((next_picks.get(k) or {}).get("recent_form_values"))
                                 for k in ("over_pick", "under_pick")}
                 try:
-                    await asyncio.wait_for(_add_l5_if_missing(next_picks), timeout=8.0)
+                    await asyncio.wait_for(_add_l5_if_missing(next_picks), timeout=25.0)
                 except asyncio.TimeoutError:
-                    pass
+                    print("[L5] load-path fetch timed out after 25s (next-slate)")
                 if any(not _had_l5_next[k] and bool((next_picks.get(k) or {}).get("recent_form_values"))
                        for k in ("over_pick", "under_pick")):
                     try:
@@ -3525,9 +3525,9 @@ async def get_line_of_the_day(request: Request):
             _had_l5 = {k: bool((today_picks.get(k) or {}).get("recent_form_values"))
                        for k in ("over_pick", "under_pick")}
             try:
-                await asyncio.wait_for(_add_l5_if_missing(today_picks), timeout=8.0)
+                await asyncio.wait_for(_add_l5_if_missing(today_picks), timeout=25.0)
             except asyncio.TimeoutError:
-                pass
+                print("[L5] load-path fetch timed out after 25s (today)")
             # Write L5 back to GitHub for all-day persistence across cold starts
             if any(not _had_l5[k] and bool((today_picks.get(k) or {}).get("recent_form_values"))
                    for k in ("over_pick", "under_pick")):
