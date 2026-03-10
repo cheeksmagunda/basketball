@@ -484,24 +484,35 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
         if not match:
             match = next((p for p in all_players if name_clean.lower() in ((p.get("full_name") or "").lower())), None)
         if not match:
+            print(f"[L5] player not found: {player_name!r} (tried variants + substring)")
             return None
         nba_id = match.get("id")
         if not nba_id:
             return None
-        log = playergamelog.PlayerGameLog(player_id=nba_id, season=season, season_type_all_star="Regular Season")
-        df = log.get_data_frames()
-        if not df or df[0].empty:
-            return []  # do not cache empty; next request will retry
-        tbl = df[0]
-        if col not in tbl.columns:
-            return []
-        vals = [round(float(v), 1) for v in tbl[col].astype(float).tolist()[:5]]
-        payload = {"v": vals, "ts": datetime.now(timezone.utc).isoformat()}
-        _cs(cache_key, payload)
-        return vals
-    except Exception as e:
-        print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
-        return None
+        for attempt in range(2):
+            try:
+                log = playergamelog.PlayerGameLog(
+                    player_id=nba_id, season=season,
+                    season_type_all_star="Regular Season", timeout=30
+                )
+                df = log.get_data_frames()
+                if not df or df[0].empty:
+                    print(f"[L5] empty game log for {player_name!r} id={nba_id} season={season}")
+                    return []  # do not cache empty; next request will retry
+                tbl = df[0]
+                if col not in tbl.columns:
+                    print(f"[L5] col {col!r} missing for {player_name!r}, cols={list(tbl.columns)}")
+                    return []
+                vals = [round(float(v), 1) for v in tbl[col].astype(float).tolist()[:5]]
+                payload = {"v": vals, "ts": datetime.now(timezone.utc).isoformat()}
+                _cs(cache_key, payload)
+                return vals
+            except Exception as e:
+                if attempt == 0:
+                    import time; time.sleep(1)
+                    continue
+                print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
+                return None
 
 
 def _enrich_projections_with_l5(projections):
@@ -2976,11 +2987,11 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
     # Always try to add real last-5 values (not stored in JSON at generation time)
     for key in ("over_pick", "under_pick"):
         pick = picks_dict.get(key)
-        if pick and "recent_form_values" not in pick:
+        if pick and not pick.get("recent_form_values"):
             pname, st = pick.get("player_name"), pick.get("stat_type")
             if pname and st:
                 l5 = _get_last5_game_stats(pname, st)
-                if l5 is not None:
+                if l5:
                     pick["recent_form_values"] = l5
 
 
@@ -3188,7 +3199,7 @@ async def get_line_of_the_day(request: Request):
                             pname, st = pick.get("player_name"), pick.get("stat_type")
                             if pname and st:
                                 l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
-                                if l5 is not None:
+                                if l5:
                                     pick["recent_form_values"] = l5
                     await asyncio.gather(_fetch_next_l5("over_pick"), _fetch_next_l5("under_pick"))
                     # Persist L5 back to GitHub so it survives cold starts
@@ -3268,7 +3279,7 @@ async def get_line_of_the_day(request: Request):
                         pname, st = pick.get("player_name"), pick.get("stat_type")
                         if pname and st:
                             l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
-                            if l5 is not None:
+                            if l5:
                                 pick["recent_form_values"] = l5
                 await asyncio.gather(_fetch_today_l5("over_pick"), _fetch_today_l5("under_pick"))
                 # Persist L5 back to GitHub so it survives cold starts (avoids repeated nba_api calls)
@@ -3301,12 +3312,13 @@ async def get_line_of_the_day(request: Request):
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                  "error": err or "no_projections"}, status_code=200)
-        for key in ("over_pick", "under_pick"):
+        async def _enrich_new_pick_l5(key):
             pick = eng_result.get(key)
             if pick and pick.get("player_name") and pick.get("stat_type"):
-                l5 = _get_last5_game_stats(pick["player_name"], pick["stat_type"])
-                if l5 is not None:
+                l5 = await asyncio.to_thread(_get_last5_game_stats, pick["player_name"], pick["stat_type"])
+                if l5:
                     pick["recent_form_values"] = l5
+        await asyncio.gather(_enrich_new_pick_l5("over_pick"), _enrich_new_pick_l5("under_pick"))
         # Auto-save to GitHub so picks persist across cold starts and future visits.
         # Without this, picks only exist in memory/cache and are lost on cold start.
         try:
