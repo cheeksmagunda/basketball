@@ -3376,6 +3376,18 @@ async def get_line_of_the_day(request: Request):
         today = _et_date()
         today_str = today.isoformat()
 
+        # L5 helper defined early so it can be used on both the cache path and the load path.
+        async def _add_l5_if_missing(picks_dict):
+            async def _one(key):
+                pick = picks_dict.get(key)
+                if pick and not pick.get("recent_form_values"):
+                    pname, st = pick.get("player_name"), pick.get("stat_type")
+                    if pname and st:
+                        l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
+                        if l5:
+                            pick["recent_form_values"] = l5
+            await asyncio.gather(_one("over_pick"), _one("under_pick"))
+
         cached = _cg("line_v1")
         if cached and cached.get("pick"):
             cached_pick = cached["pick"]
@@ -3393,21 +3405,30 @@ async def get_line_of_the_day(request: Request):
                     except Exception:
                         pass
                 if cached:
+                    # If L5 missing, fire background task → updates cache for next load (no latency added)
+                    _missing_l5 = any(
+                        (cached.get(k) or {}) and not (cached.get(k) or {}).get("recent_form_values")
+                        for k in ("over_pick", "under_pick")
+                    )
+                    if _missing_l5:
+                        async def _bg_l5():
+                            try:
+                                await asyncio.wait_for(_add_l5_if_missing(cached), timeout=45.0)
+                                if any((cached.get(k) or {}).get("recent_form_values")
+                                       for k in ("over_pick", "under_pick")):
+                                    _cs("line_v1", cached)
+                                    try:
+                                        _github_write_file(
+                                            f"data/lines/{today_str}_pick.json",
+                                            json.dumps({"over_pick": cached.get("over_pick"),
+                                                        "under_pick": cached.get("under_pick")}),
+                                            f"persist L5 for {today_str}")
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                        asyncio.create_task(_bg_l5())
                     return JSONResponse(cached)
-
-        # Async L5 helper: fetch real last-5 values for picks missing them.
-        # Uses asyncio.to_thread so nba_api never blocks the event loop.
-        # Both picks are fetched in parallel via asyncio.gather.
-        async def _add_l5_if_missing(picks_dict):
-            async def _one(key):
-                pick = picks_dict.get(key)
-                if pick and not pick.get("recent_form_values"):
-                    pname, st = pick.get("player_name"), pick.get("stat_type")
-                    if pname and st:
-                        l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
-                        if l5:
-                            pick["recent_form_values"] = l5
-            await asyncio.gather(_one("over_pick"), _one("under_pick"))
 
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
