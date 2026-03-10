@@ -458,7 +458,7 @@ def _get_last5_game_stats(player_name: str, stat_type: str):
         if isinstance(cached, dict) and "v" in cached and "ts" in cached:
             try:
                 ts = datetime.fromisoformat(cached["ts"].replace("Z", "+00:00"))
-                if (datetime.now(timezone.utc) - ts).total_seconds() < 30 * 60:
+                if (datetime.now(timezone.utc) - ts).total_seconds() < 12 * 3600:
                     return cached["v"]
             except Exception:
                 pass
