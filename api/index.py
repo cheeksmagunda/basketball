@@ -515,140 +515,6 @@ def _lg(k, date_str=None): return json.loads(_lp(k, date_str).read_text()) if _l
 def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
 
 
-def _l5_name_variants(name: str):
-    """Return list of name variants to try for nba_api lookup (e.g. Sam -> Samuel)."""
-    name = (name or "").strip()
-    if not name:
-        return []
-    out = [name]
-    first, _, last = name.partition(" ")
-    # Common first-name shortenings that nba_api may store in full form
-    expand = {"Sam": "Samuel", "Mike": "Michael", "Matt": "Matthew", "Dan": "Daniel", "Jon": "Jonathan", "Josh": "Joshua", "Joe": "Joseph", "Tom": "Thomas", "Jim": "James", "Bill": "William"}
-    if first and last and first in expand:
-        out.append(expand[first] + " " + last)
-    return out
-
-
-def _get_last5_game_stats(player_name: str, stat_type: str):
-    """Fetch actual last-5-game stat values (PTS/REB/AST) via nba_api. Returns list of up to 5 floats (most recent first) or None on failure. Cached 12 hours."""
-    if not player_name or not player_name.strip():
-        return None
-    stat_type = (stat_type or "points").lower()
-    col = "PTS" if stat_type == "points" else ("REB" if stat_type == "rebounds" else "AST")
-    name_clean = player_name.strip()
-    cache_key = f"l5_{hashlib.md5(f'{name_clean.lower()}:{stat_type}'.encode()).hexdigest()}"
-    cached = _cg(cache_key)
-    if cached is not None:
-        if isinstance(cached, list):
-            return cached if len(cached) > 0 else None  # don't serve cached empty; retry to get real L5
-        if isinstance(cached, dict) and "v" in cached and "ts" in cached:
-            try:
-                ts = datetime.fromisoformat(cached["ts"].replace("Z", "+00:00"))
-                if (datetime.now(timezone.utc) - ts).total_seconds() < 12 * 3600:
-                    return cached["v"]
-            except Exception:
-                pass
-    try:
-        from nba_api.stats.static import players as nba_players
-        from nba_api.stats.endpoints import playergamelog
-        now = datetime.now(timezone.utc)
-        y, m = now.year, now.month
-        season = f"{y}-{str(y+1)[-2:]}" if m >= 10 else f"{y-1}-{str(y)[-2:]}"
-        all_players = nba_players.get_players()
-        match = None
-        for try_name in _l5_name_variants(name_clean):
-            match = next((p for p in all_players if (p.get("full_name") or "").strip() == try_name), None)
-            if match:
-                break
-        if not match:
-            base = name_clean
-            for suffix in (" Jr.", " Jr", " III", " II", " IV", " Sr."):
-                if base.endswith(suffix):
-                    base = base[: -len(suffix)].strip()
-                    break
-            match = next((p for p in all_players if (p.get("full_name") or "").strip() == base), None)
-        if not match:
-            match = next((p for p in all_players if name_clean.lower() in ((p.get("full_name") or "").lower())), None)
-        if not match:
-            print(f"[L5] player not found: {player_name!r} (tried variants + substring)")
-            return None
-        nba_id = match.get("id")
-        if not nba_id:
-            return None
-        for attempt in range(2):
-            try:
-                log = playergamelog.PlayerGameLog(
-                    player_id=nba_id, season=season,
-                    season_type_all_star="Regular Season", timeout=30
-                )
-                df = log.get_data_frames()
-                if not df or df[0].empty:
-                    print(f"[L5] empty game log for {player_name!r} id={nba_id} season={season}")
-                    return []  # do not cache empty; next request will retry
-                tbl = df[0]
-                if col not in tbl.columns:
-                    print(f"[L5] col {col!r} missing for {player_name!r}, cols={list(tbl.columns)}")
-                    return []
-                vals = [round(float(v), 1) for v in tbl[col].astype(float).tolist()[:5]]
-                payload = {"v": vals, "ts": datetime.now(timezone.utc).isoformat()}
-                _cs(cache_key, payload)
-                return vals
-            except Exception as e:
-                if attempt == 0:
-                    time.sleep(1)
-                    continue
-                print(f"[L5] nba_api last5 failed for {player_name!r} {stat_type}: {e}")
-                return None
-    except Exception as e:
-        print(f"[L5] outer error for {player_name!r}: {e}")
-        return None
-
-
-def _enrich_projections_with_l5(projections):
-    """Overwrite recent_pts/recent_reb/recent_ast with real L5 means when available, so the line engine uses actual last-5 form. Mutates projections in place. Caps to top N candidates to bound nba_api calls."""
-    if not projections:
-        return
-    # Line candidates: predMin >= 15 and at least one stat meets line_engine-style threshold
-    def is_candidate(p):
-        pred_min = p.get("predMin", 0) or 0
-        if pred_min < 15:
-            return False
-        sp = p.get("season_pts", p.get("pts", 0)) or 0
-        sr = p.get("season_reb", p.get("reb", 0)) or 0
-        sa = p.get("season_ast", p.get("ast", 0)) or 0
-        return sp >= 6 or sr >= 2 or sa >= 1.5
-    candidates = [p for p in projections if is_candidate(p)]
-    if not candidates:
-        return
-    # Cap to top 50 by relevance to limit latency
-    def score(p):
-        pts = p.get("pts", 0) or 0
-        reb = p.get("reb", 0) or 0
-        ast = p.get("ast", 0) or 0
-        return (p.get("predMin", 0) or 0) * (pts + reb + ast)
-    candidates.sort(key=score, reverse=True)
-    top = candidates[:50]
-    def _enrich_one(p):
-        name = p.get("name") or ""
-        if not name:
-            return
-        try:
-            if (p.get("season_pts", p.get("pts", 0)) or 0) >= 6:
-                l5 = _get_last5_game_stats(name, "points")
-                if l5 and len(l5) > 0:
-                    p["recent_pts"] = round(sum(l5) / len(l5), 1)
-            if (p.get("season_reb", p.get("reb", 0)) or 0) >= 2:
-                l5 = _get_last5_game_stats(name, "rebounds")
-                if l5 and len(l5) > 0:
-                    p["recent_reb"] = round(sum(l5) / len(l5), 1)
-            if (p.get("season_ast", p.get("ast", 0)) or 0) >= 1.5:
-                l5 = _get_last5_game_stats(name, "assists")
-                if l5 and len(l5) > 0:
-                    p["recent_ast"] = round(sum(l5) / len(l5), 1)
-        except Exception as e:
-            print(f"[l5-enrich] {name}: {e}")
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        list(pool.map(_enrich_one, top))
 
 
 def _is_locked(start_time_iso: Optional[str]) -> bool:
@@ -1736,7 +1602,6 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
     "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
-    "recent_form_values",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1769,7 +1634,6 @@ def _normalize_line_pick(p: dict) -> dict:
         "avg_min":         p.get("avg_min"),
         "game_time":       p.get("game_time", ""),
         "recent_form_bars": p.get("recent_form_bars"),
-        "recent_form_values": p.get("recent_form_values"),
     }
     # Pass through any extra fields (e.g. _live tracker, future additions)
     extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}
@@ -3210,7 +3074,7 @@ def _pick_has_display_fields(pick):
     When True, skip the expensive enrichment pipeline entirely."""
     if not pick:
         return True  # null pick needs no enrichment
-    _required = ("season_avg", "proj_min", "avg_min", "recent_form_bars")
+    _required = ("season_avg", "proj_min", "avg_min")
     return all(pick.get(f) is not None for f in _required)
 
 
@@ -3232,8 +3096,7 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
                 pick = picks_dict.get(key)
                 if pick:
                     _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
-    # L5 (recent_form_values) is handled asynchronously at the endpoint level to avoid
-    # blocking the event loop. See _add_l5_if_missing() in /api/line-of-the-day.
+
 
 
 def _load_line_pick_for_date(date_str: str):
@@ -3313,10 +3176,9 @@ def _find_next_slate_date(start_date, max_days=7):
     return None
 
 
-def _run_line_engine_for_date(date, skip_l5=False):
+def _run_line_engine_for_date(date):
     """Run the full line engine pipeline for a given date (datetime.date).
-    Blocking — call via asyncio.to_thread() from async endpoints.
-    skip_l5: skip expensive nba_api L5 enrichment (used in cron/retry paths for speed)."""
+    Blocking — call via asyncio.to_thread() from async endpoints."""
     games = fetch_games(date)
     if not games:
         return None, "no_games"
@@ -3345,8 +3207,6 @@ def _run_line_engine_for_date(date, skip_l5=False):
                 print(f"[line] game projection pool timed out after 60s, got {len(all_proj)} projections")
     if not all_proj:
         return None, "no_projections"
-    if not skip_l5:
-        _enrich_projections_with_l5(all_proj)
     line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
     result = run_line_engine(all_proj, target_games, line_config)
     return result, None
@@ -3376,18 +3236,6 @@ async def get_line_of_the_day(request: Request):
         today = _et_date()
         today_str = today.isoformat()
 
-        # L5 helper defined early so it can be used on both the cache path and the load path.
-        async def _add_l5_if_missing(picks_dict):
-            async def _one(key):
-                pick = picks_dict.get(key)
-                if pick and not pick.get("recent_form_values"):
-                    pname, st = pick.get("player_name"), pick.get("stat_type")
-                    if pname and st:
-                        l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
-                        if l5:
-                            pick["recent_form_values"] = l5
-            await asyncio.gather(_one("over_pick"), _one("under_pick"))
-
         cached = _cg("line_v1")
         if cached and cached.get("pick"):
             cached_pick = cached["pick"]
@@ -3405,29 +3253,6 @@ async def get_line_of_the_day(request: Request):
                     except Exception:
                         pass
                 if cached:
-                    # If L5 missing, fire background task → updates cache for next load (no latency added)
-                    _missing_l5 = any(
-                        (cached.get(k) or {}) and not (cached.get(k) or {}).get("recent_form_values")
-                        for k in ("over_pick", "under_pick")
-                    )
-                    if _missing_l5:
-                        async def _bg_l5():
-                            try:
-                                await asyncio.wait_for(_add_l5_if_missing(cached), timeout=45.0)
-                                if any((cached.get(k) or {}).get("recent_form_values")
-                                       for k in ("over_pick", "under_pick")):
-                                    _cs("line_v1", cached)
-                                    try:
-                                        _github_write_file(
-                                            f"data/lines/{today_str}_pick.json",
-                                            json.dumps({"over_pick": cached.get("over_pick"),
-                                                        "under_pick": cached.get("under_pick")}),
-                                            f"persist L5 for {today_str}")
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
-                        asyncio.create_task(_bg_l5())
                     return JSONResponse(cached)
 
         today_picks = _load_line_pick_for_date(today_str)
@@ -3454,7 +3279,7 @@ async def get_line_of_the_day(request: Request):
                 _missing_over  = not (next_picks or {}).get("over_pick")
                 _missing_under = not (next_picks or {}).get("under_pick")
                 if _missing_over or _missing_under:
-                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, next_slate, True)
+                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
                     if not _fill_err and _fill:
                         if _missing_over and _fill.get("over_pick"):
                             next_picks["over_pick"] = _fill["over_pick"]
@@ -3472,27 +3297,13 @@ async def get_line_of_the_day(request: Request):
                 if not (_pick_has_display_fields(next_picks.get("over_pick")) and
                         _pick_has_display_fields(next_picks.get("under_pick"))):
                     _enrich_loaded_line_picks(next_picks, next_slate)
-                _had_l5_next = {k: bool((next_picks.get(k) or {}).get("recent_form_values"))
-                                for k in ("over_pick", "under_pick")}
-                try:
-                    await asyncio.wait_for(_add_l5_if_missing(next_picks), timeout=25.0)
-                except asyncio.TimeoutError:
-                    print("[L5] load-path fetch timed out after 25s (next-slate)")
-                if any(not _had_l5_next[k] and bool((next_picks.get(k) or {}).get("recent_form_values"))
-                       for k in ("over_pick", "under_pick")):
-                    try:
-                        _github_write_file(f"data/lines/{next_slate_str}_pick.json",
-                                           json.dumps({"over_pick": next_picks.get("over_pick"),
-                                                       "under_pick": next_picks.get("under_pick")}),
-                                           f"persist L5 for {next_slate_str}")
-                    except Exception: pass
                 result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 result["_cached_at"] = datetime.utcnow().isoformat()
                 _cs("line_v1", result)
                 return JSONResponse(result)
             # Generate next slate's picks fresh
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate, True)
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                      "error": err or "no_edges", "resolved_today": today_primary})
@@ -3526,7 +3337,7 @@ async def get_line_of_the_day(request: Request):
             missing_under = not today_picks.get("under_pick")
             if missing_over or missing_under:
                 # One direction missing (legacy single-pick) — run engine to fill the gap
-                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
+                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
                 if not err and eng_result:
                     if missing_over and eng_result.get("over_pick"):
                         today_picks["over_pick"] = eng_result["over_pick"]
@@ -3542,46 +3353,20 @@ async def get_line_of_the_day(request: Request):
             if not (_pick_has_display_fields(today_picks.get("over_pick")) and
                     _pick_has_display_fields(today_picks.get("under_pick"))):
                 _enrich_loaded_line_picks(today_picks, today)
-            # Async L5 enrichment — non-blocking, parallel; bounded so it never causes timeout
-            _had_l5 = {k: bool((today_picks.get(k) or {}).get("recent_form_values"))
-                       for k in ("over_pick", "under_pick")}
-            try:
-                await asyncio.wait_for(_add_l5_if_missing(today_picks), timeout=25.0)
-            except asyncio.TimeoutError:
-                print("[L5] load-path fetch timed out after 25s (today)")
-            # Write L5 back to GitHub for all-day persistence across cold starts
-            if any(not _had_l5[k] and bool((today_picks.get(k) or {}).get("recent_form_values"))
-                   for k in ("over_pick", "under_pick")):
-                try:
-                    _github_write_file(f"data/lines/{today_str}_pick.json",
-                                       json.dumps({"over_pick": today_picks.get("over_pick"),
-                                                   "under_pick": today_picks.get("under_pick")}),
-                                       f"persist L5 for {today_str}")
-                except Exception: pass
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             result["_cached_at"] = datetime.utcnow().isoformat()
             _cs("line_v1", result)
             return JSONResponse(result)
 
         # No saved picks yet — generate today's picks.
-        # skip_l5=True: skips bulk nba_api L5 enrichment (20-35s on cold stats.nba.com) to stay
-        # under the 60s frontend timeout. Per-pick real L5 (recent_form_values) is still added
-        # below for the 2 final picks. recent_form_bars is still set via ratio from projections.
-        eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
+        eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
         if err or not eng_result or not eng_result.get("pick"):
             # Retry once — ESPN connections sometimes fail on first cold-start attempt
             print(f"[line-of-the-day] first attempt failed ({err}), retrying...")
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                  "error": err or "no_projections"}, status_code=200)
-        async def _enrich_new_pick_l5(key):
-            pick = eng_result.get(key)
-            if pick and pick.get("player_name") and pick.get("stat_type"):
-                l5 = await asyncio.to_thread(_get_last5_game_stats, pick["player_name"], pick["stat_type"])
-                if l5:
-                    pick["recent_form_values"] = l5
-        await asyncio.gather(_enrich_new_pick_l5("over_pick"), _enrich_new_pick_l5("under_pick"))
         # Auto-save to GitHub so picks persist across cold starts and future visits.
         # Without this, picks only exist in memory/cache and are lost on cold start.
         try:
@@ -4054,7 +3839,7 @@ async def auto_resolve_line(request: Request):
                 # Wrap generation in timeout to prevent hangs
                 try:
                     eng_result, err = await asyncio.wait_for(
-                        asyncio.to_thread(_run_line_engine_for_date, next_day, True),
+                        asyncio.to_thread(_run_line_engine_for_date, next_day),
                         timeout=120.0
                     )
                 except asyncio.TimeoutError:
