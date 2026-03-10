@@ -2920,7 +2920,7 @@ function _renderLineLOTDFromState() {
       const icon = lineEmptyEl.querySelector('.icon');
       if (icon) icon.textContent = '📡';
       const msg = _el('lineEmptyMsg');
-      if (msg) msg.textContent = 'Line pick didn\'t load. Tap Retry.';
+      if (msg) msg.textContent = 'Couldn\'t reach the server. Tap Retry.';
       lineEmptyEl.style.display = 'flex';
     }
     return;
@@ -3363,9 +3363,9 @@ function closeLinePickModal() {
 function renderNextSlatePending() {
   return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center">
     <div style="font-size:1.4rem;margin-bottom:10px">🏀</div>
-    <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">TOMORROW&rsquo;S PICK COMING SOON</div>
-    <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Check back once the slate drops</div>
-    <button type="button" onclick="fetchLineOfTheDay()" style="margin-top:14px;font-family:inherit;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer">Check for picks</button>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--fg);letter-spacing:0.04em">NEXT PICK LOADING</div>
+    <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">Today&rsquo;s slate is complete. Next pick drops with tomorrow&rsquo;s games.</div>
+    <button type="button" onclick="fetchLineOfTheDay()" style="margin-top:14px;font-family:inherit;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);padding:4px 10px;cursor:pointer">Refresh</button>
   </div>`;
 }
 
