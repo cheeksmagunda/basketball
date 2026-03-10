@@ -2994,19 +2994,15 @@ async function fetchLineOfTheDay() {
     _renderLineLOTDFromState();
     if (data.pick) {
       _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-      try {
-        var _slr = await fetchWithTimeout('/api/save-line', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-        });
-        if (!_slr.ok) console.warn('save-line failed:', _slr.status);
-      } catch(e) { /* non-fatal */ }
-      var primaryPick = data.pick;
-      var pickResult = primaryPick && primaryPick.result;
-      if (primaryPick && (!pickResult || pickResult === 'pending') && !data.resolved_today) {
-        await _tryAutoResolveLine(primaryPick);
-      }
+      // Save picks to GitHub as a safety net (backend auto-saves, but this catches failures).
+      // Fire-and-forget — don't block rendering on this.
+      fetchWithTimeout('/api/save-line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
+      }).catch(function() {});
+      // Auto-resolve is cron-driven (0,30 * * * *). _startLineLivePoll triggers
+      // _tryAutoResolveLine when the game finishes — no need to call it here.
     }
   } catch(e) {
     console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
@@ -3019,6 +3015,14 @@ async function fetchLineOfTheDay() {
 
 function retryLineOfTheDay() {
   fetchLineOfTheDay();
+}
+
+function renderNextSlatePending() {
+  return '<div style="text-align:center;padding:24px 16px;color:var(--color-text-muted);font-size:0.82rem">'
+    + '<div style="font-size:1.4rem;margin-bottom:8px">🏀</div>'
+    + '<div style="margin-bottom:12px">Tomorrow\'s picks are on their way.</div>'
+    + '<button type="button" class="secondary-btn" style="font-size:0.72rem" onclick="LINE_LOADED_DATE=\'\';fetchLineOfTheDay()">Check for picks</button>'
+    + '</div>';
 }
 
 function _renderLineHistoryFromState() {
@@ -3075,8 +3079,6 @@ async function initLinePage() {
   document.getElementById('lineHistoryWrap').style.display = 'none';
   fetchLineOfTheDay();
   fetchLineHistory();
-  // Defer auto-resolve so it doesn't compete with line-of-the-day on cold start
-  setTimeout(function() { fetch('/api/auto-resolve-line').catch(function(){}); }, 5000);
 }
 
 const LINE_STAT_LABEL = { points: 'PTS', rebounds: 'REB', assists: 'AST' };
