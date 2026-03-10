@@ -3172,14 +3172,15 @@ async def get_line_of_the_day(request: Request):
                         _pick_has_display_fields(next_picks.get("under_pick"))):
                     _enrich_loaded_line_picks(next_picks, next_slate)
                 else:
-                    for key in ("over_pick", "under_pick"):
+                    async def _fetch_next_l5(key):
                         pick = next_picks.get(key)
                         if pick and not pick.get("recent_form_values"):
                             pname, st = pick.get("player_name"), pick.get("stat_type")
                             if pname and st:
-                                l5 = _get_last5_game_stats(pname, st)
+                                l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
                                 if l5 is not None:
                                     pick["recent_form_values"] = l5
+                    await asyncio.gather(_fetch_next_l5("over_pick"), _fetch_next_l5("under_pick"))
                 result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 _cs("line_v1", result)
@@ -3235,15 +3236,16 @@ async def get_line_of_the_day(request: Request):
                     _pick_has_display_fields(today_picks.get("under_pick"))):
                 _enrich_loaded_line_picks(today_picks, today)
             else:
-                # Fast-path: still fetch L5 if missing (lightweight, no projection pipeline)
-                for key in ("over_pick", "under_pick"):
+                # Fast-path: fetch L5 in parallel to avoid sequential blocking (each can take 10-30s on cold start)
+                async def _fetch_today_l5(key):
                     pick = today_picks.get(key)
                     if pick and not pick.get("recent_form_values"):
                         pname, st = pick.get("player_name"), pick.get("stat_type")
                         if pname and st:
-                            l5 = _get_last5_game_stats(pname, st)
+                            l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
                             if l5 is not None:
                                 pick["recent_form_values"] = l5
+                await asyncio.gather(_fetch_today_l5("over_pick"), _fetch_today_l5("under_pick"))
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             _cs("line_v1", result)
             return JSONResponse(result)
