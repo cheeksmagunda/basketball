@@ -34,3 +34,33 @@ DAL @ ATL,upside,1.8x,Buddy Hield,2990984,ATL,G,3.4,1.9,22.4,11.2,3.2,1.9,0.8,0.
 DAL @ ATL,upside,1.6x,Caleb Martin,3138160,DAL,F,2.7,2.7,20.4,5.8,3.1,1.5,0.8,0.3
 DAL @ ATL,upside,1.4x,Marvin Bagley III,4277848,DAL,F,3.2,1.8,22.4,11.2,6.3,1.1,0.5,0.7
 DAL @ ATL,upside,1.2x,Zaccharie Risacher,5211175,ATL,F,3.1,1.9,25.7,10.8,3.6,1.3,0.8,0.5
+PHX @ MIL,chalk,2.0x,Myles Turner,3133628,MIL,C,4.0,1.5,29.8,13.1,6.0,1.4,0.7,1.9
+PHX @ MIL,chalk,1.8x,Kyle Kuzma,3134907,MIL,F,3.5,1.3,30.3,14.8,5.5,2.6,0.6,0.5
+PHX @ MIL,chalk,1.6x,Giannis Antetokounmpo,3032977,MIL,F,5.1,0.3,32.4,25.8,9.9,5.2,1.1,0.9
+PHX @ MIL,chalk,1.4x,Jalen Green,4437244,PHX,G,3.5,1.0,27.5,17.3,3.7,2.8,1.0,0.2
+PHX @ MIL,chalk,1.2x,Devin Booker,3136193,PHX,G,3.9,0.4,33.9,24.7,4.0,5.7,0.9,0.3
+PHX @ MIL,upside,2.0x,Royce O'Neale,2583632,PHX,F,3.2,2.2,29.9,8.6,4.8,2.6,0.9,0.4
+PHX @ MIL,upside,1.8x,Oso Ighodaro,4601023,PHX,F,2.8,2.7,22.0,5.5,4.5,1.8,0.8,0.6
+PHX @ MIL,upside,1.6x,Taurean Prince,2990962,MIL,F,2.9,2.4,24.9,8.0,2.6,1.4,0.8,0.3
+PHX @ MIL,upside,1.4x,Ryan Dunn,4888725,PHX,F,2.6,2.6,21.5,6.1,4.0,1.2,0.8,0.5
+PHX @ MIL,upside,1.2x,Gary Harris,2999547,MIL,G,2.5,2.6,22.0,6.2,1.8,1.4,0.8,0.2
+BOS @ SA,chalk,2.0x,Victor Wembanyama,5104157,SA,F,5.5,0.6,30.9,23.4,11.0,3.2,1.1,3.2
+BOS @ SA,chalk,1.8x,Stephon Castle,4845367,SA,G,3.8,1.3,28.8,15.9,4.5,6.0,1.2,0.3
+BOS @ SA,chalk,1.6x,Jayson Tatum,4065648,BOS,F,4.6,0.7,32.8,20.5,7.4,4.2,0.8,0.3
+BOS @ SA,chalk,1.4x,De'Aaron Fox,4066259,SA,G,4.2,0.8,32.2,20.1,3.8,6.2,1.3,0.3
+BOS @ SA,chalk,1.2x,Jaylen Brown,3917376,BOS,G,4.6,0.4,33.1,24.2,6.3,4.0,1.0,0.4
+BOS @ SA,upside,2.0x,Derrick White,3078576,BOS,G,3.8,1.2,31.4,15.3,4.0,5.0,1.1,1.2
+BOS @ SA,upside,1.8x,Keldon Johnson,4395723,SA,F,3.3,1.5,26.9,14.1,5.5,1.6,0.7,0.1
+BOS @ SA,upside,1.6x,Dylan Harper,5037871,SA,G,2.9,1.9,22.1,11.2,3.2,3.7,0.9,0.3
+BOS @ SA,upside,1.4x,Neemias Queta,4397424,BOS,C,2.6,2.3,20.4,8.3,6.8,1.2,0.7,1.1
+BOS @ SA,upside,1.2x,Sam Hauser,4065804,BOS,F,2.2,2.3,23.3,8.6,3.5,1.2,0.5,0.3
+TOR @ HOU,chalk,2.0x,Clint Capela,3102529,HOU,C,3.5,2.6,20.6,7.5,7.2,0.8,0.6,1.1
+TOR @ HOU,chalk,1.8x,Scottie Barnes,4433134,TOR,F,4.5,1.0,36.4,18.2,7.8,5.2,1.3,1.4
+TOR @ HOU,chalk,1.6x,Jabari Smith Jr.,4432639,HOU,F,3.5,1.4,35.4,14.4,7.1,1.6,0.7,0.9
+TOR @ HOU,chalk,1.4x,Alperen Sengun,4871144,HOU,C,4.2,1.0,32.7,18.6,8.8,5.2,1.2,1.0
+TOR @ HOU,chalk,1.2x,Brandon Ingram,3913176,TOR,F,3.9,0.8,35.5,20.7,5.5,4.0,0.8,0.7
+TOR @ HOU,upside,2.0x,Jamal Shead,4432241,TOR,G,2.6,2.6,22.6,6.9,1.9,4.9,0.9,0.1
+TOR @ HOU,upside,1.8x,Dorian Finney-Smith,2578185,HOU,F,2.4,2.7,24.4,5.7,3.5,1.1,0.6,0.2
+TOR @ HOU,upside,1.6x,Josh Okogie,4065663,HOU,G,2.3,2.8,20.7,5.7,2.8,0.9,0.9,0.3
+TOR @ HOU,upside,1.4x,Ja'Kobe Walter,4684272,TOR,G,2.4,2.6,20.9,7.0,2.5,1.2,0.9,0.2
+TOR @ HOU,upside,1.2x,Tari Eason,4433192,HOU,F,3.1,2.0,26.5,10.8,6.3,1.5,1.4,0.7
