@@ -2908,6 +2908,7 @@ function _renderLineLOTDFromState() {
 
   if (loading) {
     linePickWrap.style.display = 'block';
+    linePickCard.style.display = '';  // reset in case switchLineDir hid it
     linePickCard.innerHTML = renderLinePickCardSkeleton();
     lineSlateSummary.innerHTML = '';
     lineEmptyEl.style.display = 'none';
@@ -2971,9 +2972,22 @@ async function fetchLineOfTheDay() {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
   _renderLineLOTDFromState();
 
+  // After 12s still loading, show a "Generating picks…" message in the skeleton
+  var _slowTimer = setTimeout(function() {
+    if (LINE_LOTD_STATE.status !== 'loading') return;
+    var card = _el('linePickCard');
+    if (card && !card.querySelector('.line-slow-msg')) {
+      var m = document.createElement('p');
+      m.className = 'line-slow-msg';
+      m.style.cssText = 'text-align:center;font-size:0.72rem;color:var(--color-text-muted);margin:8px 0 0';
+      m.textContent = 'Generating picks\u2026';
+      card.appendChild(m);
+    }
+  }, 12000);
+
   var r;
   try {
-    r = await fetchWithTimeout('/api/line-of-the-day', {}, 45000);
+    r = await fetchWithTimeout('/api/line-of-the-day', {}, 60000);
     if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
     var data = await r.json();
     LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
@@ -2998,6 +3012,8 @@ async function fetchLineOfTheDay() {
     console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
     LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
     _renderLineLOTDFromState();
+  } finally {
+    clearTimeout(_slowTimer);
   }
 }
 
@@ -3410,8 +3426,12 @@ function switchLineDir(dir) {
       pickCard.innerHTML = renderLinePickCard(pick, true);
       if (noMsg) noMsg.style.display = 'none';
     } else if (!LINE_OVER_PICK && !LINE_UNDER_PICK) {
-      // Both null — no picks available yet. Hide the card; the empty state is handled above.
-      pickCard.style.display = 'none';
+      // Both null — if still loading, keep skeleton visible; only hide when confirmed no picks
+      if (LINE_LOTD_STATE.status === 'loading' || LINE_LOTD_STATE.status === 'initial') {
+        pickCard.style.display = '';
+      } else {
+        pickCard.style.display = 'none';
+      }
       if (noMsg) noMsg.style.display = 'none';
     } else {
       // One direction genuinely missing — show "No X pick today" only for that direction
