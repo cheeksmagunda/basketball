@@ -16,7 +16,7 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predict | Line | Ben | History)
+index.html             — 4-tab frontend (Predict | Line | Ben | Log, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
@@ -29,7 +29,9 @@ data/predictions/      — Git-tracked daily prediction CSVs
 data/actuals/          — Git-tracked daily actual result CSVs
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
-data/locks/            — Cold-start recovery: {date}_slate.json written at lock time
+data/slate/            — GitHub-persisted prediction cache (cold-start recovery)
+data/locks/            — Cold-start lock recovery: {date}_slate.json at lock time
+data/skipped-uploads.json — User-selected dates to skip uploading
 vercel.json            — Vercel config (routes, crons, 300s timeout)
 server.py              — Local dev server (uvicorn)
 ```
@@ -41,7 +43,7 @@ server.py              — Local dev server (uvicorn)
 | **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
 | **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh hourly. Resolved picks only in Recent Picks history |
 | **Ben** | Chat interface (Claude Opus). Locked during games, unlocked after final. End-of-day upload flow |
-| **History** | Historical drill-down — graded cards (Actual RS + ESPN box scores vs projections, hit/miss coloring). Pending state before uploads |
+| **Log** | Historical drill-down — graded cards (Actual RS + ESPN box scores vs projections, hit/miss coloring). Pending state before uploads |
 
 ## Scoring Pipeline
 
@@ -55,6 +57,16 @@ ESPN API (games, rosters, injuries, spreads)
   → Card Boost estimate (inverse ownership heuristic)
   → MILP slot optimizer → Starting 5 + Moonshot lineups
 ```
+
+## 3-Layer Prediction Cache
+
+Predictions are generated **once per day** and cached across three layers:
+
+1. **`/tmp`** (warm Vercel instance) — fastest, ephemeral on cold start
+2. **GitHub `data/slate/`** — persistent `{date}_slate.json` + `{date}_games.json`, survives cold starts
+3. **Full pipeline** — ESPN + LightGBM + Monte Carlo + MILP; only runs on true first request of the day
+
+Subsequent visits serve from cache. Injury-triggered regeneration (`/api/injury-check` cron) only re-runs affected games. Config changes (`/api/lab/update-config`) bust the cache so the next request regenerates with new params.
 
 ## Two Lineup Types
 
@@ -93,6 +105,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) per player for completed games |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set) |
+| `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
 
 ### Line of the Day
 | Endpoint | Method | Description |
@@ -128,6 +141,7 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model params if ≥3% MAE improvement |
 | `55 * * * *` | `/api/refresh-line-odds` | Hourly odds sync (at :55; hits 6:55 PM ET lock window) |
 | `0,30 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (requires CRON_SECRET when set) |
+| `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
 
 ## Responsiveness & Reliability
 
@@ -143,7 +157,7 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 
 **GitHub Write Retry**: Exponential backoff (1s, 2s, 4s) on concurrent write conflicts (HTTP 422 SHA mismatch). Fresh SHA fetch on each retry.
 
-**Cache TTLs**: Game final (60s when locked, 180s pre-slate), model config (5 min), RotoWire (30 min), odds (1 hour). Explicit invalidation via `/api/refresh`.
+**Cache TTLs**: Game final (60s when locked, 180s pre-slate), model config (5 min), RotoWire (30 min), odds (1 hour), slate cache (1 day, GitHub-persisted). Explicit invalidation via `/api/refresh` or `_bust_slate_cache()`.
 
 **Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
 
@@ -186,6 +200,8 @@ All persistent data stored in the GitHub repo via Contents API:
 - `data/audit/{date}.json` — pre-computed accuracy audit
 - `data/lines/{date}.csv` — primary pick for result tracking/resolve
 - `data/lines/{date}_pick.json` — dual-pick format `{over_pick, under_pick}` with odds fields
+- `data/slate/{date}_slate.json` — GitHub-persisted full slate cache (Starting 5 + Moonshot lineups)
+- `data/slate/{date}_games.json` — GitHub-persisted per-game projections (keyed by gameId)
 - `data/locks/{date}_slate.json` — cold-start lock recovery (written at lock-promotion time)
 - `data/model-config.json` — runtime model parameters (5-min cache, fallback to defaults)
 - `data/skipped-uploads.json` — user-selected dates to skip uploading (persists skip decisions)
