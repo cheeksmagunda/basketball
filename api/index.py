@@ -3153,7 +3153,7 @@ async def get_line_of_the_day(request: Request):
                 _missing_over  = not (next_picks or {}).get("over_pick")
                 _missing_under = not (next_picks or {}).get("under_pick")
                 if _missing_over or _missing_under:
-                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
+                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, next_slate, True)
                     if not _fill_err and _fill:
                         if _missing_over and _fill.get("over_pick"):
                             next_picks["over_pick"] = _fill["over_pick"]
@@ -3185,7 +3185,7 @@ async def get_line_of_the_day(request: Request):
                 _cs("line_v1", result)
                 return JSONResponse(result)
             # Generate next slate's picks fresh
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate, True)
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                      "error": err or "no_edges", "resolved_today": today_primary})
@@ -3218,7 +3218,7 @@ async def get_line_of_the_day(request: Request):
             missing_under = not today_picks.get("under_pick")
             if missing_over or missing_under:
                 # One direction missing (legacy single-pick) — run engine to fill the gap
-                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
                 if not err and eng_result:
                     if missing_over and eng_result.get("over_pick"):
                         today_picks["over_pick"] = eng_result["over_pick"]
@@ -3248,12 +3248,14 @@ async def get_line_of_the_day(request: Request):
             _cs("line_v1", result)
             return JSONResponse(result)
 
-        # No saved picks yet — run the engine for today
-        eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+        # No saved picks yet — generate today's picks.
+        # skip_l5=True: skips bulk nba_api L5 enrichment (20-35s on cold stats.nba.com) to stay
+        # under the 60s frontend timeout. Per-pick real L5 (recent_form_values) is still added
+        # below for the 2 final picks. recent_form_bars is still set via ratio from projections.
+        eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
         if err or not eng_result or not eng_result.get("pick"):
-            # Retry once after 2s — cold-start ESPN caches warm on first attempt
-            print(f"[line-of-the-day] first attempt failed ({err}), retrying with skip_l5...")
-            await asyncio.sleep(2)
+            # Retry once — ESPN connections sometimes fail on first cold-start attempt
+            print(f"[line-of-the-day] first attempt failed ({err}), retrying...")
             eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today, True)
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
