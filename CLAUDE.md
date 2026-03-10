@@ -27,6 +27,7 @@ data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
 data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
 data/audit/            — Git-tracked daily audit JSONs (auto-generated on save-actuals)
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
+data/slate/            — GitHub-persisted prediction cache ({date}_slate.json, {date}_games.json)
 data/locks/            — Cold-start recovery: {date}_slate.json written at lock-promotion time
 data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
 lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
@@ -63,6 +64,7 @@ grep: LOG PAGE                 — initLogPage, selectLogDate, renderLogGrid, op
 grep: LINE PAGE                — initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
 grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt, _handleBenUpload
 grep: github_storage           — _github_get_file, _github_write_file
+grep: SLATE CACHE GITHUB       — _slate_cache_to_github, _games_cache_from_github, _bust_slate_cache
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
 grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
 grep: INJURY CASCADE           — _cascade_minutes, _pos_group
@@ -70,6 +72,7 @@ grep: CARD BOOST               — _est_card_boost, _dfs_score
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
 grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
+grep: INJURY CHECK             — /api/injury-check, RotoWire re-check, affected game regeneration
 grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/health, /api/version
 grep: LINE OF THE DAY ENGINE   — /api/line-of-the-day, run_line_engine
 grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
@@ -94,6 +97,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) for all players on a date's completed games |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear cache + config cache (cron at 7pm UTC; requires CRON_SECRET when set) |
+| `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only (requires CRON_SECRET when set) |
 
 ### Line of the Day
 | Endpoint | Method | Purpose |
@@ -135,7 +139,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
 - `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
 - `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day)
-- `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`) require `Authorization: Bearer <CRON_SECRET>`. Vercel injects this when invoking crons.
+- `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Vercel injects this when invoking crons.
 - `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
 
 **OpenAPI docs:** FastAPI serves `/docs` (Swagger UI) and `/redoc` in production. Use them to browse and try endpoints. When `DOCS_SECRET` is set, append `?docs_key=<DOCS_SECRET>` to the URL or send the header to access.
@@ -149,6 +153,30 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 - **Fallback to defaults** if GitHub is unreachable — app never breaks
 - Use `_cfg("dot.path", default)` helper anywhere in `api/index.py` to read config
 - `/api/refresh` also clears the config cache for immediate effect
+
+## 3-Layer Slate Cache (Generate Once, Serve Cached)
+
+Predictions are generated **once per day** and cached. Subsequent requests serve from cache instead of re-running the full pipeline (ESPN + LightGBM + Monte Carlo + MILP). This reduces API calls from N per user visit to ~6-8 per day max.
+
+### Cache Layers
+1. **Layer 1 — `/tmp` (warm Vercel instance)**: In-memory file cache. Fastest, but ephemeral on cold start.
+2. **Layer 2 — GitHub persistent cache (`data/slate/`)**: `{date}_slate.json` (full slate with lineups) and `{date}_games.json` (per-game projections keyed by gameId). Survives cold starts. Used by `/api/slate` and `/api/picks`.
+3. **Layer 3 — Full pipeline**: ESPN → injury cascade → LightGBM → Monte Carlo RS → card boost → MILP optimizer. Only runs when both Layer 1 and Layer 2 are empty (true first run of the day).
+
+### Cache Helpers (grep: SLATE CACHE GITHUB)
+- `_slate_cache_to_github(slate_data)` — writes today's slate to `data/slate/{date}_slate.json`
+- `_slate_cache_from_github()` — reads today's slate; returns `None` if missing or busted
+- `_games_cache_to_github(game_proj_map)` — writes per-game projections to `data/slate/{date}_games.json`
+- `_games_cache_from_github()` — reads per-game projections; returns `None` if missing or busted
+- `_bust_slate_cache()` — clears both `/tmp` and GitHub caches using tombstone pattern (`{"_busted": true}`)
+
+### Cache Invalidation
+- **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → next request regenerates with new params
+- **Manual refresh** (`/api/refresh`): calls `_bust_slate_cache()` → full cache clear
+- **Injury check** (`/api/injury-check`): regenerates only affected games, updates both layers
+
+### Where GitHub Cache is NOT Used
+The Line of the Day engine paths (`_run_line_engine_for_date()` and `_get_projections_for_date()`) skip the GitHub cache layer entirely. The extra ~1-2s GitHub API round-trip adds latency without benefit — the line engine still needs to run Haiku calls regardless. These paths go directly from `/tmp` cache to the full pipeline.
 
 ### Prediction model boundaries (grep: LINE CONFIG, line_engine config)
 
@@ -359,6 +387,7 @@ Crons and frontend poll intervals are tuned to reduce Vercel invocations while p
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement |
 | `55 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync (at :55) |
 | `0,30 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends |
+| `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
 
 ## Deployment Pipeline
 
@@ -464,6 +493,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | Lock status per game | 6 hours | 5 min before tip to 6h after (ceiling) | Natural expiration |
 | Line odds (`books_consensus`) | 1 hour | Bookmaker consensus line (refreshed by cron) | Hourly cron runs; slate-lock freeze |
 | L5 game stats (`_get_last5_game_stats`) | 30 min | Real last-5 PTS/REB/AST per player (nba_api) | Stored with ts in cache; TTL checked on read |
+| Slate cache (`data/slate/`) | 1 day | GitHub-persisted predictions (full slate + per-game) | `_bust_slate_cache()` via refresh, config change, or injury check |
 
 ### Midnight Rollover Handling
 `auto_resolve_line()` (api/index.py lines 2917-3040) correctly handles games finishing after midnight ET:
@@ -562,6 +592,9 @@ TestLinePicksBothNullRegeneration — backend regenerates picks when saved file 
 TestFetchGamesTTL           — fetch_games() enforces 5-min TTL to avoid stale ESPN data
 TestSavePredictionsMerge    — save_predictions merges new per-game scopes into existing CSV
 TestSwitchTabNoDuplicateInit — switchTab does not call initLinePage twice
+TestSlateCacheGitHub        — GitHub slate cache read/write, tombstone/busted handling, games cache roundtrip
+TestInjuryCheck             — injury-check lock guards, cache misses, RotoWire OUT/confirmed/unknown detection
+TestPicksServeFromCache     — per-game cache loading, GitHub fallback for picks, bust tombstone writes
 ```
 
 **tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions, and contract guards:
@@ -591,7 +624,7 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 ## Known Limitations
 
 - Rate limiting uses an in-memory store with a lock (thread-safe); it does not persist across Vercel instances, so limits are per-instance.
-- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. On cold start after lock, the frontend preserves the last displayed data client-side. `data/locks/{date}_slate.json` provides GitHub backup recovery.
+- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. GitHub-persisted caches (`data/slate/`, `data/locks/`) provide cold-start recovery for both predictions and lock state.
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
 - `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
@@ -630,6 +663,10 @@ If slate, line, and/or log all fail to load:
 | Retry button on pending card | `index.html` | `renderNextSlatePending()` now includes a "Check for picks" button that calls `fetchLineOfTheDay()` directly |
 | `_enrich_loaded_line_picks` cold-start fix | `api/index.py` | Skip `_get_projections_for_date` (full 5-game projection pipeline, 30-60s) when picks already have all display fields; only fetch nba_api L5 for `recent_form_values`; prevents `/api/line-of-the-day` timeout on cold start |
 | `line_history` parallel fetch + 3-min cache | `api/index.py` | CSV + JSON files fetched in parallel via `ThreadPoolExecutor(8)`; 3-min result cache (`line_history_v1`) avoids repeated cold-start GitHub round-trips; cache cleared by `/api/refresh` |
+| 3-layer slate cache (generate once per day) | `api/index.py` | `/tmp` → GitHub `data/slate/` → full pipeline. First request generates and persists; all subsequent requests serve from cache. Reduces API calls from N per visit to ~6-8 per day |
+| `/api/injury-check` cron endpoint | `api/index.py`, `vercel.json` | Every 2h: bust RotoWire cache, check cached players, regenerate only affected games. Lock-guarded, CRON_SECRET-protected |
+| GitHub cache removed from line engine | `api/index.py` | `_games_cache_from_github()` removed from `_run_line_engine_for_date()` and `_get_projections_for_date()` — added latency without benefit for line paths |
+| "Generating picks..." message removed | `index.html` | 12s setTimeout that showed misleading "Generating picks..." during Line page load removed; skeleton card provides sufficient loading feedback |
 
 ## Production audit
 
@@ -670,5 +707,5 @@ Provide the following to the new session to orient it quickly:
 3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push; verify on `basketball-chi-cyan.vercel.app`.
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
 5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LOG`, `LAB`, `LINE_DIR`, `LINE_OVER_PICK`, `LINE_UNDER_PICK`, `LINE_LOADED_DATE`
-6. **Cache**: Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/refresh` clears all caches + config.
+6. **Cache**: 3-layer: `/tmp` (ephemeral) → GitHub `data/slate/` (persistent) → full pipeline. Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/refresh` clears all caches + config. `_bust_slate_cache()` invalidates both layers.
 7. **Config**: `data/model-config.json` on GitHub — Ben/Lab writes here, backend reads with 5-min TTL.
