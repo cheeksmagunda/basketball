@@ -3049,6 +3049,18 @@ def _primary_pick(picks):
     return over or under
 
 
+def _find_next_slate_date(start_date, max_days=7):
+    """Find the next date with NBA games, starting from start_date (inclusive).
+    Returns a datetime.date or None if no games found within max_days.
+    fetch_games has a 5-min cache per date, so scanning a few dates is cheap."""
+    for i in range(max_days):
+        candidate = start_date + timedelta(days=i)
+        games = fetch_games(candidate)
+        if games:
+            return candidate
+    return None
+
+
 def _run_line_engine_for_date(date, skip_l5=False):
     """Run the full line engine pipeline for a given date (datetime.date).
     Blocking — call via asyncio.to_thread() from async endpoints.
@@ -3100,28 +3112,27 @@ def _picks_response(picks, **extra):
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day(request: Request):
     """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
-    Once today's primary pick is resolved, rotates to tomorrow's slate. Never returns 500."""
+    Once today's picks are resolved, rotates to the next slate with games (not just tomorrow). Never returns 500."""
     rl = _check_rate_limit(request, "line-of-the-day")
     if rl is not None:
         return rl
     try:
         today = _et_date()
         today_str = today.isoformat()
-        tomorrow = today + timedelta(days=1)
-        tomorrow_str = tomorrow.isoformat()
 
         cached = _cg("line_v1")
         if cached and cached.get("pick"):
             cached_pick = cached["pick"]
             pick_date = cached_pick.get("date", today_str)
             already_resolved = cached_pick.get("result") not in (None, "", "pending")
-            if not already_resolved and pick_date in (today_str, tomorrow_str):
+            # Serve cache if pick is unresolved and for today or any future slate
+            if not already_resolved and pick_date >= today_str:
                 return JSONResponse(cached)
 
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
 
-        # Rotate to tomorrow when all *existing* picks are resolved.
+        # Rotate to next slate when all *existing* picks are resolved.
         # A null/missing direction is vacuously resolved — only block on picks that actually exist.
         _over_pick_data  = (today_picks or {}).get("over_pick") or {}
         _under_pick_data = (today_picks or {}).get("under_pick") or {}
@@ -3129,66 +3140,72 @@ async def get_line_of_the_day(request: Request):
         _under_resolved  = not _under_pick_data or _under_pick_data.get("result") not in (None, "", "pending")
         _both_resolved   = _over_resolved and _under_resolved
         if today_primary and _both_resolved:
-            tomorrow_picks = _load_line_pick_for_date(tomorrow_str)
-            tomorrow_primary = _primary_pick(tomorrow_picks)
-            if tomorrow_primary and tomorrow_primary.get("result") in (None, "", "pending"):
+            # Find the next date with games (not just tomorrow — handles off-days, All-Star break)
+            next_slate = _find_next_slate_date(today + timedelta(days=1))
+            if not next_slate:
+                return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
+                                     "error": "next_slate_pending", "resolved_today": today_primary})
+            next_slate_str = next_slate.isoformat()
+            next_picks = _load_line_pick_for_date(next_slate_str)
+            next_primary = _primary_pick(next_picks)
+            if next_primary and next_primary.get("result") in (None, "", "pending"):
                 # Fill any missing direction before serving — same logic as today's path
-                _missing_over  = not (tomorrow_picks or {}).get("over_pick")
-                _missing_under = not (tomorrow_picks or {}).get("under_pick")
+                _missing_over  = not (next_picks or {}).get("over_pick")
+                _missing_under = not (next_picks or {}).get("under_pick")
                 if _missing_over or _missing_under:
-                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, tomorrow)
+                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
                     if not _fill_err and _fill:
                         if _missing_over and _fill.get("over_pick"):
-                            tomorrow_picks["over_pick"] = _fill["over_pick"]
+                            next_picks["over_pick"] = _fill["over_pick"]
                         if _missing_under and _fill.get("under_pick"):
-                            tomorrow_picks["under_pick"] = _fill["under_pick"]
+                            next_picks["under_pick"] = _fill["under_pick"]
                         try:
                             _github_write_file(
-                                f"data/lines/{tomorrow_str}_pick.json",
-                                json.dumps({"over_pick": tomorrow_picks.get("over_pick"),
-                                            "under_pick": tomorrow_picks.get("under_pick")}),
-                                f"fill missing direction for {tomorrow_str}"
+                                f"data/lines/{next_slate_str}_pick.json",
+                                json.dumps({"over_pick": next_picks.get("over_pick"),
+                                            "under_pick": next_picks.get("under_pick")}),
+                                f"fill missing direction for {next_slate_str}"
                             )
                         except Exception:
                             pass
-                if not (_pick_has_display_fields(tomorrow_picks.get("over_pick")) and
-                        _pick_has_display_fields(tomorrow_picks.get("under_pick"))):
-                    _enrich_loaded_line_picks(tomorrow_picks, tomorrow)
+                if not (_pick_has_display_fields(next_picks.get("over_pick")) and
+                        _pick_has_display_fields(next_picks.get("under_pick"))):
+                    _enrich_loaded_line_picks(next_picks, next_slate)
                 else:
                     for key in ("over_pick", "under_pick"):
-                        pick = tomorrow_picks.get(key)
+                        pick = next_picks.get(key)
                         if pick and not pick.get("recent_form_values"):
                             pname, st = pick.get("player_name"), pick.get("stat_type")
                             if pname and st:
                                 l5 = _get_last5_game_stats(pname, st)
                                 if l5 is not None:
                                     pick["recent_form_values"] = l5
-                result = _picks_response(tomorrow_picks, from_github=True, slate_summary=None,
+                result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 _cs("line_v1", result)
                 return JSONResponse(result)
-            # Generate tomorrow's picks fresh
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, tomorrow)
+            # Generate next slate's picks fresh
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                      "error": "next_slate_pending", "resolved_today": today_primary})
-            # Tag all picks with tomorrow's date
+            # Tag all picks with next slate's date
             for _key in ("pick", "over_pick", "under_pick"):
                 if eng_result.get(_key):
-                    eng_result[_key]["date"] = tomorrow_str
+                    eng_result[_key]["date"] = next_slate_str
             eng_result["resolved_today"] = today_primary
             _cs("line_v1", eng_result)
             try:
-                tomorrow_json = f"data/lines/{tomorrow_str}_pick.json"
-                existing, _ = _github_get_file(tomorrow_json)
+                next_json = f"data/lines/{next_slate_str}_pick.json"
+                existing, _ = _github_get_file(next_json)
                 _existing_blank = existing and not existing.get("over_pick") and not existing.get("under_pick")
                 if not existing or _existing_blank:
                     saves = {
                         "over_pick":  eng_result.get("over_pick"),
                         "under_pick": eng_result.get("under_pick"),
                     }
-                    _github_write_file(tomorrow_json, json.dumps(saves),
-                                       f"line picks for {tomorrow_str}")
+                    _github_write_file(next_json, json.dumps(saves),
+                                       f"line picks for {next_slate_str}")
             except Exception: pass
             return JSONResponse(eng_result)
 
@@ -3703,7 +3720,8 @@ async def auto_resolve_line(request: Request):
     # OR if called but no picks resolved yet (let it retry on next cron cycle).
     if over_done or under_done or resolved_any:
         try:
-            next_day = (datetime.strptime(pick_date, "%Y-%m-%d") + timedelta(days=1)).date()
+            _next_candidate = (datetime.strptime(pick_date, "%Y-%m-%d") + timedelta(days=1)).date()
+            next_day = _find_next_slate_date(_next_candidate) or _next_candidate
             next_day_str = next_day.isoformat()
             tomorrow_json = f"data/lines/{next_day_str}_pick.json"
             existing_tomorrow, _ = _github_get_file(tomorrow_json)
