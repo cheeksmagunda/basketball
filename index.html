@@ -2202,7 +2202,8 @@ function _renderLogGridFromState(dateStr) {
 }
 
 function buildLogDateStrip() {
-  const today = new Date();
+  const todayET = _etToday(); // YYYY-MM-DD in ET — consistent with backend date keys
+  const today = new Date(todayET + 'T12:00:00'); // noon anchor avoids DST edge cases
   const strip = document.getElementById('logDateStrip');
   const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const chips = [];
@@ -2224,9 +2225,7 @@ function buildLogDateStrip() {
 }
 
 async function initLogPage() {
-  const today = new Date();
-  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const todayStr = toLocalISO(today);
+  const todayStr = _etToday();
 
   LOG.selectedDate = todayStr;
   LOG._refetchedToday = false;
@@ -2236,7 +2235,7 @@ async function initLogPage() {
   LOG_STATE = asyncStateLoading(LOG_STATE);
   _renderLogGridFromState(todayStr);
 
-  const datesPromise = fetchWithTimeout('/api/log/dates').then(r => r.ok ? r.json() : Promise.reject(new Error('dates ' + r.status)));
+  const datesPromise = fetchWithTimeout('/api/log/dates', {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('dates ' + r.status)));
   const getPromise = fetchWithTimeout(`/api/log/get?date=${todayStr}`).then(r => r.ok ? r.json() : Promise.reject(new Error('get ' + r.status)));
 
   const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
@@ -2251,8 +2250,18 @@ async function initLogPage() {
     LOG.dateCache[todayStr] = { data, loadedAt: Date.now() };
     LOG.data = data;
     LOG_STATE = asyncStateSuccess(LOG_STATE, data);
+    // Smart default: if today has no predictions, jump to most recent date with data
+    if (!data.has_predictions && LOG.datesWithData.size > 0) {
+      const mostRecent = [...LOG.datesWithData].sort().reverse()[0];
+      if (mostRecent && mostRecent !== todayStr) { selectLogDate(mostRecent); return; }
+    }
     renderLogGrid(todayStr);
   } else {
+    // Even on error for today, jump to most recent date with data if available
+    if (LOG.datesWithData.size > 0) {
+      const mostRecent = [...LOG.datesWithData].sort().reverse()[0];
+      if (mostRecent) { selectLogDate(mostRecent); return; }
+    }
     LOG_STATE = asyncStateError(LOG_STATE, getRes.reason);
     _renderLogGridFromState(todayStr);
   }
@@ -2284,6 +2293,15 @@ async function selectLogDate(dateStr) {
     LOG.dateCache[dateStr] = { data, loadedAt: Date.now() };
     LOG.data = data;
     LOG_STATE = asyncStateSuccess(LOG_STATE, data);
+    // Update dot for this chip progressively (catches /api/log/dates timeout/failure)
+    if (data.has_predictions || data.has_actuals) {
+      LOG.datesWithData.add(dateStr);
+      const chip = document.querySelector(`.date-chip[data-date="${dateStr}"]`);
+      if (chip) {
+        const dot = chip.querySelector('.date-chip-dot');
+        if (dot) { dot.classList.remove('hidden-dot'); if (dateStr !== _etToday()) dot.classList.add('historical-dot'); }
+      }
+    }
     renderLogGrid(dateStr);
   } catch(e) {
     LOG_STATE = asyncStateError(LOG_STATE, e);
