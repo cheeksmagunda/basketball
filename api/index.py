@@ -530,7 +530,7 @@ def _l5_name_variants(name: str):
 
 
 def _get_last5_game_stats(player_name: str, stat_type: str):
-    """Fetch actual last-5-game stat values (PTS/REB/AST) via nba_api. Returns list of up to 5 floats (most recent first) or None on failure. Cached 30 min."""
+    """Fetch actual last-5-game stat values (PTS/REB/AST) via nba_api. Returns list of up to 5 floats (most recent first) or None on failure. Cached 12 hours."""
     if not player_name or not player_name.strip():
         return None
     stat_type = (stat_type or "points").lower()
@@ -3210,7 +3210,7 @@ def _pick_has_display_fields(pick):
     When True, skip the expensive enrichment pipeline entirely."""
     if not pick:
         return True  # null pick needs no enrichment
-    _required = ("season_avg", "proj_min", "avg_min", "recent_form_bars")
+    _required = ("season_avg", "proj_min", "avg_min", "recent_form_bars", "recent_form_values")
     return all(pick.get(f) is not None for f in _required)
 
 
@@ -3441,10 +3441,19 @@ async def get_line_of_the_day(request: Request):
                             )
                         except Exception:
                             pass
+                _had_l5_next = {k: bool((next_picks.get(k) or {}).get("recent_form_values"))
+                                for k in ("over_pick", "under_pick")}
                 if not (_pick_has_display_fields(next_picks.get("over_pick")) and
                         _pick_has_display_fields(next_picks.get("under_pick"))):
                     _enrich_loaded_line_picks(next_picks, next_slate)
-                # L5 (recent_form_values) stored at generation time — no re-fetch on load
+                    if any(not _had_l5_next[k] and bool((next_picks.get(k) or {}).get("recent_form_values"))
+                           for k in ("over_pick", "under_pick")):
+                        try:
+                            _github_write_file(f"data/lines/{next_slate_str}_pick.json",
+                                               json.dumps({"over_pick": next_picks.get("over_pick"),
+                                                           "under_pick": next_picks.get("under_pick")}),
+                                               f"persist L5 for {next_slate_str}")
+                        except Exception: pass
                 result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 result["_cached_at"] = datetime.utcnow().isoformat()
@@ -3497,12 +3506,24 @@ async def get_line_of_the_day(request: Request):
                         _github_write_file(json_path, json.dumps(today_picks),
                                            f"backfill missing direction for {today_str}")
                     except Exception: pass
-            # Skip enrichment when picks already have all display fields (avoids 30-60s projection pipeline)
-            # L5 (recent_form_values) is fetched once at generation time and stored in the GitHub JSON.
-            # Never re-fetch on load — use whatever is in the file; card falls back to recent_form_bars.
+            # Skip enrichment when picks already have all display fields including L5.
+            # _pick_has_display_fields now includes recent_form_values so this fires when L5 is missing.
+            # _enrich_loaded_line_picks only runs the expensive projection pipeline if projection
+            # fields are absent; L5 fetch is a lightweight separate step.
+            _had_l5 = {k: bool((today_picks.get(k) or {}).get("recent_form_values"))
+                       for k in ("over_pick", "under_pick")}
             if not (_pick_has_display_fields(today_picks.get("over_pick")) and
                     _pick_has_display_fields(today_picks.get("under_pick"))):
                 _enrich_loaded_line_picks(today_picks, today)
+                # Write L5 back to GitHub for all-day persistence across cold starts
+                if any(not _had_l5[k] and bool((today_picks.get(k) or {}).get("recent_form_values"))
+                       for k in ("over_pick", "under_pick")):
+                    try:
+                        _github_write_file(f"data/lines/{today_str}_pick.json",
+                                           json.dumps({"over_pick": today_picks.get("over_pick"),
+                                                       "under_pick": today_picks.get("under_pick")}),
+                                           f"persist L5 for {today_str}")
+                    except Exception: pass
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             result["_cached_at"] = datetime.utcnow().isoformat()
             _cs("line_v1", result)
