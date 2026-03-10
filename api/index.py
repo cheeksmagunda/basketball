@@ -3127,7 +3127,17 @@ async def get_line_of_the_day(request: Request):
             already_resolved = cached_pick.get("result") not in (None, "", "pending")
             # Serve cache if pick is unresolved and for today or any future slate
             if not already_resolved and pick_date >= today_str:
-                return JSONResponse(cached)
+                # Bypass if cache older than 2 hours — pick may have changed due to injury/projection update
+                _cached_at = cached.get("_cached_at")
+                if _cached_at:
+                    try:
+                        _age_s = (datetime.utcnow() - datetime.fromisoformat(_cached_at)).total_seconds()
+                        if _age_s > 7200:
+                            cached = None
+                    except Exception:
+                        pass
+                if cached:
+                    return JSONResponse(cached)
 
         today_picks = _load_line_pick_for_date(today_str)
         today_primary = _primary_pick(today_picks)
@@ -3181,8 +3191,22 @@ async def get_line_of_the_day(request: Request):
                                 if l5 is not None:
                                     pick["recent_form_values"] = l5
                     await asyncio.gather(_fetch_next_l5("over_pick"), _fetch_next_l5("under_pick"))
+                    # Persist L5 back to GitHub so it survives cold starts
+                    _l5_next_over = (next_picks.get("over_pick") or {}).get("recent_form_values")
+                    _l5_next_under = (next_picks.get("under_pick") or {}).get("recent_form_values")
+                    if _l5_next_over or _l5_next_under:
+                        try:
+                            _github_write_file(
+                                f"data/lines/{next_slate_str}_pick.json",
+                                json.dumps({"over_pick": next_picks.get("over_pick"),
+                                            "under_pick": next_picks.get("under_pick")}),
+                                f"persist L5 for {next_slate_str}"
+                            )
+                        except Exception:
+                            pass
                 result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
+                result["_cached_at"] = datetime.utcnow().isoformat()
                 _cs("line_v1", result)
                 return JSONResponse(result)
             # Generate next slate's picks fresh
@@ -3195,6 +3219,7 @@ async def get_line_of_the_day(request: Request):
                 if eng_result.get(_key):
                     eng_result[_key]["date"] = next_slate_str
             eng_result["resolved_today"] = today_primary
+            eng_result["_cached_at"] = datetime.utcnow().isoformat()
             _cs("line_v1", eng_result)
             try:
                 next_json = f"data/lines/{next_slate_str}_pick.json"
@@ -3246,7 +3271,21 @@ async def get_line_of_the_day(request: Request):
                             if l5 is not None:
                                 pick["recent_form_values"] = l5
                 await asyncio.gather(_fetch_today_l5("over_pick"), _fetch_today_l5("under_pick"))
+                # Persist L5 back to GitHub so it survives cold starts (avoids repeated nba_api calls)
+                _l5_over = (today_picks.get("over_pick") or {}).get("recent_form_values")
+                _l5_under = (today_picks.get("under_pick") or {}).get("recent_form_values")
+                if _l5_over or _l5_under:
+                    try:
+                        _github_write_file(
+                            f"data/lines/{today_str}_pick.json",
+                            json.dumps({"over_pick": today_picks.get("over_pick"),
+                                        "under_pick": today_picks.get("under_pick")}),
+                            f"persist L5 for {today_str}"
+                        )
+                    except Exception:
+                        pass
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
+            result["_cached_at"] = datetime.utcnow().isoformat()
             _cs("line_v1", result)
             return JSONResponse(result)
 
@@ -3278,6 +3317,7 @@ async def get_line_of_the_day(request: Request):
                 _github_write_file(json_path, json.dumps(saves), f"line picks for {today_str}")
         except Exception as _save_err:
             print(f"[line-of-the-day] auto-save err: {_save_err}")
+        eng_result["_cached_at"] = datetime.utcnow().isoformat()
         _cs("line_v1", eng_result)
         return JSONResponse(eng_result)
     except Exception as e:
