@@ -2771,6 +2771,10 @@ ACT_FIELDS = ["player_name","actual_rs","actual_card_boost","drafts","avg_finish
 async def log_dates():
     """Return sorted list of dates that have stored prediction or actual data. Never returns 500."""
     try:
+        cached = _cg("log_dates_v1")
+        if cached is not None and isinstance(cached, dict) and "data" in cached:
+            if time.time() - cached.get("ts", 0) < 180:
+                return cached["data"]
         dates = set()
         for prefix in ["data/predictions", "data/actuals"]:
             items = _github_list_dir(prefix)
@@ -2778,7 +2782,9 @@ async def log_dates():
                 name = item.get("name", "")
                 if name.endswith(".csv"):
                     dates.add(name[:-4])
-        return sorted(dates, reverse=True)
+        result = sorted(dates, reverse=True)
+        _cs("log_dates_v1", {"data": result, "ts": time.time()})
+        return result
     except Exception as e:
         print(f"[log/dates] error: {e}")
         return []
