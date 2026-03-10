@@ -778,13 +778,6 @@
     .line-pick-stat-avg {
       font-size: 0.6rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums;
     }
-    .line-pick-l5-row {
-      display: flex; align-items: center; gap: 10px; margin-top: 14px;
-    }
-    .line-pick-l5-row .line-pick-micro-lbl { margin-bottom: 0; flex-shrink: 0; }
-    .line-pick-l5-values { font-size: 0.8rem; font-variant-numeric: tabular-nums; font-weight: 700; }
-    .line-l5-sep { color: var(--muted); font-weight: 400; margin: 0 2px; }
-    .line-l5-num { font-family: inherit; }
     .line-pick-conclusion-wrap {
       margin-top: 20px;
       padding: 12px 14px;
@@ -3096,9 +3089,6 @@ function renderLinePickCardSkeleton() {
         <div class="skel-block" style="width:52px;height:24px;border-radius:var(--radius-pill)"></div>
         <div class="skel-block skel-line" style="height:14px;width:60px"></div>
       </div>
-      <div class="line-pick-l5-row">
-        <span class="line-pick-micro-lbl">L5</span><div class="skel-block skel-line" style="height:10px;width:120px"></div>
-      </div>
       <div class="line-pick-data-row">
         <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Baseline</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
         <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Edge</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
@@ -3158,19 +3148,6 @@ function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const statLabel = _lineStatLabel(pick.stat_type);
   const lineNum = parseFloat(pick.line) || 0;
-  const hasRealL5 = pick.recent_form_values && Array.isArray(pick.recent_form_values) && pick.recent_form_values.length;
-  const l5Values = hasRealL5
-    ? pick.recent_form_values.slice(0, 5).map(v => Math.round(Number(v)))
-    : [];
-  const l5Html = l5Values.length
-    ? l5Values.map((v, i) => {
-        const hit = dir === 'over' ? v >= lineNum : v < lineNum;
-        const color = hit ? (dir === 'over' ? 'var(--line)' : 'var(--lab)') : 'var(--color-danger)';
-        const sep = i < l5Values.length - 1 ? ' <span class="line-l5-sep">•</span> ' : '';
-        return `<span class="line-l5-num" style="color:${color}">${v}</span>${sep}`;
-      }).join('')
-    : '<span class="line-l5-num" style="color:var(--muted)">—</span>';
-
   // Live stat tracking section
   let liveSection = '';
   let winningClass = '';
@@ -3236,10 +3213,6 @@ function renderLinePickCard(pick, isPrimary) {
       <div class="line-direction-row">
         <span class="line-direction-pill ${dir}">${dir.toUpperCase()}</span>
         <div class="line-stat-val">${pick.line ?? '—'} ${statLabel.toLowerCase()}</div>
-      </div>
-      <div class="line-pick-l5-row">
-        <span class="line-pick-micro-lbl">L5</span>
-        <div class="line-pick-l5-values">${l5Html}</div>
       </div>
       <div class="line-pick-data-row">
         <div class="line-pick-data-col">
