@@ -3438,29 +3438,7 @@ async def get_line_of_the_day(request: Request):
                 if not (_pick_has_display_fields(next_picks.get("over_pick")) and
                         _pick_has_display_fields(next_picks.get("under_pick"))):
                     _enrich_loaded_line_picks(next_picks, next_slate)
-                else:
-                    async def _fetch_next_l5(key):
-                        pick = next_picks.get(key)
-                        if pick and not pick.get("recent_form_values"):
-                            pname, st = pick.get("player_name"), pick.get("stat_type")
-                            if pname and st:
-                                l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
-                                if l5:
-                                    pick["recent_form_values"] = l5
-                    await asyncio.gather(_fetch_next_l5("over_pick"), _fetch_next_l5("under_pick"))
-                    # Persist L5 back to GitHub so it survives cold starts
-                    _l5_next_over = (next_picks.get("over_pick") or {}).get("recent_form_values")
-                    _l5_next_under = (next_picks.get("under_pick") or {}).get("recent_form_values")
-                    if _l5_next_over or _l5_next_under:
-                        try:
-                            _github_write_file(
-                                f"data/lines/{next_slate_str}_pick.json",
-                                json.dumps({"over_pick": next_picks.get("over_pick"),
-                                            "under_pick": next_picks.get("under_pick")}),
-                                f"persist L5 for {next_slate_str}"
-                            )
-                        except Exception:
-                            pass
+                # L5 (recent_form_values) stored at generation time — no re-fetch on load
                 result = _picks_response(next_picks, from_github=True, slate_summary=None,
                                          resolved_today=today_primary)
                 result["_cached_at"] = datetime.utcnow().isoformat()
@@ -3514,33 +3492,11 @@ async def get_line_of_the_day(request: Request):
                                            f"backfill missing direction for {today_str}")
                     except Exception: pass
             # Skip enrichment when picks already have all display fields (avoids 30-60s projection pipeline)
+            # L5 (recent_form_values) is fetched once at generation time and stored in the GitHub JSON.
+            # Never re-fetch on load — use whatever is in the file; card falls back to recent_form_bars.
             if not (_pick_has_display_fields(today_picks.get("over_pick")) and
                     _pick_has_display_fields(today_picks.get("under_pick"))):
                 _enrich_loaded_line_picks(today_picks, today)
-            else:
-                # Fast-path: fetch L5 in parallel to avoid sequential blocking (each can take 10-30s on cold start)
-                async def _fetch_today_l5(key):
-                    pick = today_picks.get(key)
-                    if pick and not pick.get("recent_form_values"):
-                        pname, st = pick.get("player_name"), pick.get("stat_type")
-                        if pname and st:
-                            l5 = await asyncio.to_thread(_get_last5_game_stats, pname, st)
-                            if l5:
-                                pick["recent_form_values"] = l5
-                await asyncio.gather(_fetch_today_l5("over_pick"), _fetch_today_l5("under_pick"))
-                # Persist L5 back to GitHub so it survives cold starts (avoids repeated nba_api calls)
-                _l5_over = (today_picks.get("over_pick") or {}).get("recent_form_values")
-                _l5_under = (today_picks.get("under_pick") or {}).get("recent_form_values")
-                if _l5_over or _l5_under:
-                    try:
-                        _github_write_file(
-                            f"data/lines/{today_str}_pick.json",
-                            json.dumps({"over_pick": today_picks.get("over_pick"),
-                                        "under_pick": today_picks.get("under_pick")}),
-                            f"persist L5 for {today_str}"
-                        )
-                    except Exception:
-                        pass
             result = _picks_response(today_picks, from_github=True, slate_summary=None)
             result["_cached_at"] = datetime.utcnow().isoformat()
             _cs("line_v1", result)
