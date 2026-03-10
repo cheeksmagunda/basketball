@@ -1275,11 +1275,6 @@ def _cascade_minutes(roster, stats_map):
 #           same methodology. Avoids DNP risks from extreme low-ownership picks.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _norm_last(name):
-    """Normalize last name for star player matching (strips accents, lowercases)."""
-    last = name.strip().split()[-1] if name.strip() else name
-    return unicodedata.normalize('NFKD', last).encode('ascii', 'ignore').decode().lower()
-
 def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     """Estimate ADDITIVE card boost based on predicted draft popularity.
     All parameters read from runtime config (data/model-config.json).
