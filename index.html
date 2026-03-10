@@ -1268,6 +1268,11 @@
             style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
             🚀 Moonshot
           </button>
+          <button id="benBannerMDBtn" onclick="_benTriggerUpload('most_drafted','banner')"
+            style="background:var(--surface2);border:1px solid rgba(139,92,246,0.4);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s"
+            title="Upload Most Popular / ownership screen to calibrate card boost formula">
+            📊 Most Popular
+          </button>
         </div>
       </div>
     </div>
@@ -2625,15 +2630,17 @@ async function _benSkipAllUploads() {
 
 async function _handleBenUpload(file, type, source) {
   if (!file) return;
-  // Button ID mapping for all 4 upload types
+  // Button ID mapping for all upload types
   const _bannerBtnIds = {
     'real_scores': 'benBannerRSBtn', 'top_drafts': 'benBannerWinBtn',
     'starting_5': 'benBannerS5Btn',  'moonshot': 'benBannerMSBtn',
+    'most_drafted': 'benBannerMDBtn',
   };
   const _chatBtnIds = { 'real_scores': 'benUploadRSBtn', 'top_drafts': 'benUploadWinBtn' };
   const _labels = {
     'real_scores': '✓ Real Scores', 'top_drafts': '✓ Top Drafts',
     'starting_5': '✓ Starting 5',  'moonshot': '✓ Moonshot',
+    'most_drafted': '✓ Most Popular',
   };
 
   const bannerBtnId = _bannerBtnIds[type];
@@ -2649,6 +2656,7 @@ async function _handleBenUpload(file, type, source) {
   try {
     const form = new FormData();
     form.append('file', file);
+    if (type === 'most_drafted') form.append('screenshot_type', 'most_drafted');
     const r = await fetchWithTimeout('/api/parse-screenshot', { method: 'POST', body: form }, 30000);
     if (!r.ok) throw new Error('Upload failed (HTTP ' + r.status + ')');
     const data = await r.json();
@@ -2718,6 +2726,33 @@ async function _handleBenUpload(file, type, source) {
             LAB.system = buildLabSystemPrompt();
           } catch(e) {}
         }
+        await labCallClaude();
+      }
+
+    } else if (type === 'most_drafted') {
+      // most_drafted — ownership/popularity data for card boost calibration
+      const ownershipPlayers = data.players.filter(p => (p.player_name || p.name) && (p.draft_count != null || p.actual_card_boost != null));
+      if (ownershipPlayers.length) {
+        const _or = await fetchWithTimeout('/api/save-ownership', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: today, players: ownershipPlayers }),
+        }, 10000);
+        if (!_or.ok) throw new Error('Save ownership failed (' + _or.status + ')');
+      }
+      { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u.most_drafted = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      _markBannerDone(bannerBtnId, _labels[type], today);
+      // most_drafted is optional — does NOT gate _checkBannerDone (banner hides when 4/4 core done)
+      const ownerStr = ownershipPlayers.slice(0, 5).map(p => {
+        const n = p.player_name || p.name || '?';
+        const d = p.draft_count != null ? `${p.draft_count} drafts` : '';
+        const b = p.actual_card_boost != null ? `+${p.actual_card_boost}x` : '';
+        return `${n}${d ? ' ' + d : ''}${b ? ' ' + b : ''}`;
+      }).join(', ');
+      const summary = `Most Popular uploaded for ${today} (${ownershipPlayers.length} players). Top: ${ownerStr}. ` +
+        `You can now run GET /api/lab/calibrate-boost to fit the card boost formula to real ownership data.`;
+      if (_benAvailable) {
+        appendLabMessage('user', summary);
         await labCallClaude();
       }
 
@@ -3767,9 +3802,11 @@ APP STRUCTURE (4 tabs):
 
 DATA PIPELINE:
 - Screenshots → /api/parse-screenshot (Claude Haiku OCR) → /api/save-actuals → data/actuals/{date}.csv (source: my_draft or leaderboard)
+- Most Popular screenshots → /api/parse-screenshot (screenshot_type=most_drafted) → /api/save-ownership → data/ownership/{date}.csv (draft_count + actual_card_boost per player)
 - Predictions saved at lock → data/predictions/{date}.csv
 - Audit auto-generated at save-actuals → data/audit/{date}.json (MAE, directional accuracy, top misses)
 - Line picks → data/lines/{date}_pick.json (over_pick + under_pick) + data/lines/{date}.csv
+- Card boost calibration: GET /api/lab/calibrate-boost → fits log_a/log_b from ownership data → propose via update_config action${LAB.briefing?.ownership_calibration_available ? `\n- OWNERSHIP DATA AVAILABLE for dates: ${(LAB.briefing.ownership_dates || []).join(', ')}. Run GET /api/lab/calibrate-boost to fit the boost formula to real data.` : ''}
 
 VISION: You have full image analysis capability. When the user attaches a photo using the 📷 button (left of the input box), you will see the image directly and can read every number, name, and stat visible. Use this for ownership screens, leaderboards, RS results, draft compositions, anything. If asked whether you can process images, say YES and tell them to use the camera button.
 

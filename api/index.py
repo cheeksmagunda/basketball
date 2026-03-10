@@ -30,7 +30,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import FastAPI, Query, Body, File, UploadFile, Request
+from fastapi import FastAPI, Query, Body, File, Form, UploadFile, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
@@ -2522,8 +2522,17 @@ async def reset_uploads(body: dict):
 
 
 @app.post("/api/parse-screenshot")
-async def parse_screenshot(request: Request, file: UploadFile = File(...)):
-    """Parse a Real Sports app screenshot using Claude Vision API."""
+async def parse_screenshot(
+    request: Request,
+    file: UploadFile = File(...),
+    screenshot_type: str = Form(default="actuals"),
+):
+    """Parse a Real Sports app screenshot using Claude Vision API.
+
+    screenshot_type:
+      "actuals"     — default; extracts My Draft / Highest Value player RS data
+      "most_drafted" — extracts ownership leaderboard (player + draft_pct)
+    """
     rl = _check_rate_limit(request, "parse-screenshot")
     if rl is not None:
         return rl
@@ -2541,7 +2550,21 @@ async def parse_screenshot(request: Request, file: UploadFile = File(...)):
     if ct not in _ALLOWED_IMAGE_TYPES:
         return JSONResponse({"error": f"Unsupported image type: {ct or 'unknown'}. Allowed: png, jpeg, gif, webp"}, status_code=415)
 
-    prompt = """Extract ALL player data from this Real Sports app screenshot.
+    if screenshot_type == "most_drafted":
+        prompt = """Extract player ownership data from this Real Sports 'Most popular' or 'Most drafted' screenshot.
+
+For EACH player listed, extract:
+- rank: their position in the list as an integer (1, 2, 3...)
+- player_name: full player name exactly as shown
+- team: team abbreviation if visible (e.g. LAL, GSW, BOS), otherwise null
+- draft_count: number of drafts shown (e.g. "8.3k" → 8300, "492" → 492, "1.1k" → 1100)
+- actual_rs: the Real Score number shown with triangle symbol (e.g. "▽5.4" → 5.4, "▽3.7" → 3.7)
+- actual_card_boost: the card boost shown as "+X.Xx" (e.g. "+0.3x" → 0.3, "+2.2x" → 2.2). If no + symbol shown, set to null
+- avg_finish: average finish shown (e.g. "1st" → 1, "3rd" → 3), or null if not visible
+
+Return ONLY a JSON array of objects. No markdown, no explanation."""
+    else:
+        prompt = """Extract ALL player data from this Real Sports app screenshot.
 
 The screenshot may contain two sections:
 1. "My draft" - the user's own drafted players
@@ -4541,6 +4564,16 @@ async def lab_briefing():
     )
     pending_upload_date = next((d for d in pred_dates if d not in act_dates and d != today_iso), None)
 
+    # Check for ownership calibration data
+    try:
+        own_items = _github_list_dir("data/ownership") or []
+        own_dates = sorted(
+            [i["name"].replace(".csv", "") for i in own_items if i["name"].endswith(".csv")],
+            reverse=True,
+        )
+    except Exception:
+        own_dates = []
+
     return {
         "latest_slate":    latest_slate,
         "rolling_accuracy": {
@@ -4554,6 +4587,8 @@ async def lab_briefing():
             "last_change_date": (cfg.get("changelog") or [{}])[-1].get("date",""),
         },
         "pending_upload_date": pending_upload_date,
+        "ownership_calibration_available": len(own_dates) > 0,
+        "ownership_dates": own_dates[:5],
     }
 
 
@@ -5146,3 +5181,157 @@ async def lab_skip_uploads(payload: dict = Body(...)):
         # Non-critical — don't fail if we can't record skip
         print(f"[skip-uploads] Error recording skip for {date_str}: {e}")
         return {"status": "recorded_locally", "date": date_str}
+
+
+@app.post("/api/save-ownership")
+async def save_ownership(payload: dict = Body(...)):
+    """Save parsed Most Drafted / ownership data to GitHub as CSV.
+
+    Stores actual draft counts and card boosts per player for a given date.
+    Used by the calibrate-boost endpoint to fit the log_a/log_b formula
+    against real ownership data.
+
+    Body: { date: str, players: [{player_name|name, team, draft_count, actual_rs,
+                                   actual_card_boost, avg_finish, rank}] }
+    """
+    date_str = payload.get("date", _et_date().isoformat())
+    bad = _validate_date(date_str)
+    if bad: return bad
+
+    players = payload.get("players", [])
+    if not players:
+        return {"saved": 0, "date": date_str}
+
+    rows = ["player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at"]
+    ts = datetime.now(timezone.utc).isoformat()
+    saved = 0
+    for p in players:
+        name = str(p.get("player_name") or p.get("name", "")).strip().replace(",", " ")
+        if not name:
+            continue
+        team           = str(p.get("team") or "").upper().replace(",", "")
+        draft_count    = _safe_float(p.get("draft_count")) or 0
+        actual_rs      = _safe_float(p.get("actual_rs"))
+        actual_boost   = _safe_float(p.get("actual_card_boost"))
+        avg_finish     = _safe_float(p.get("avg_finish"))
+        rank           = int(p.get("rank") or 0)
+        rows.append(
+            f"{name},{team},{int(draft_count)},"
+            f"{actual_rs if actual_rs is not None else ''},"
+            f"{actual_boost if actual_boost is not None else ''},"
+            f"{avg_finish if avg_finish is not None else ''},"
+            f"{rank},{ts}"
+        )
+        saved += 1
+
+    if saved == 0:
+        return {"saved": 0, "date": date_str}
+
+    content = "\n".join(rows) + "\n"
+    path    = f"data/ownership/{date_str}.csv"
+    try:
+        _github_write_file(path, content, f"ownership data {date_str} ({saved} players)")
+    except Exception as e:
+        print(f"[save-ownership] GitHub write failed: {e}")
+        return JSONResponse({"error": f"Failed to save ownership data: {str(e)}"}, status_code=500)
+
+    return {"saved": saved, "date": date_str}
+
+
+@app.get("/api/lab/calibrate-boost")
+async def lab_calibrate_boost():
+    """Fit card boost formula parameters (log_a, log_b) from real ownership data.
+
+    Reads data/ownership/{date}.csv (actual draft counts + card boosts) and
+    uses numpy least-squares to fit: boost = log_a - log_b * log10(draft_count).
+
+    Returns proposed params — does NOT auto-apply.
+    To apply: POST /api/lab/update-config with {"card_boost.log_a": X, "card_boost.log_b": Y}
+    """
+    try:
+        own_items = _github_list_dir("data/ownership") or []
+        own_dates = sorted(
+            [i["name"].replace(".csv", "") for i in own_items if i["name"].endswith(".csv")],
+            reverse=True,
+        )
+
+        if not own_dates:
+            return {"error": "No ownership data found. Upload a Most Drafted screenshot first.", "n_samples": 0}
+
+        cfg     = _load_config()
+        cb      = cfg.get("card_boost", {})
+        cur_a   = cb.get("log_a", 3.76)
+        cur_b   = cb.get("log_b", 0.88)
+        ceiling = cb.get("ceiling", 3.0)
+        floor_  = cb.get("floor", 0.2)
+        pool    = cb.get("pool_size_estimate", 10000)
+
+        # Collect (draft_count, actual_boost) pairs across all available dates
+        X_rows, y_vals, dates_used = [], [], []
+        for date_str in own_dates:
+            own_csv, _ = _github_get_file(f"data/ownership/{date_str}.csv")
+            if not own_csv:
+                continue
+            own_rows = _parse_csv(own_csv, ["player", "team", "draft_count", "actual_rs",
+                                             "actual_card_boost", "avg_finish", "rank", "saved_at"])
+            added = 0
+            for row in own_rows:
+                drafts = _safe_float(row.get("draft_count"))
+                boost  = _safe_float(row.get("actual_card_boost"))
+                if drafts is None or boost is None or drafts < 1 or boost <= 0:
+                    continue
+                # Clamp boost to [floor, ceiling] to ignore corrupted data
+                boost_clamped = min(ceiling, max(floor_, boost))
+                X_rows.append([1.0, -np.log10(drafts)])
+                y_vals.append(boost_clamped)
+                added += 1
+            if added:
+                dates_used.append(date_str)
+
+        n = len(X_rows)
+        if n < 4:
+            return {
+                "error": f"Not enough data points to fit (found {n}, need ≥4). "
+                         "Upload more Most Drafted screenshots.",
+                "n_samples": n,
+                "dates_with_data": dates_used,
+            }
+
+        X = np.array(X_rows)
+        y = np.array(y_vals)
+        coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+        prop_a = round(float(coeffs[0]), 3)
+        prop_b = round(float(coeffs[1]), 3)
+
+        # R² to assess quality of fit
+        y_hat  = X @ coeffs
+        ss_res = float(np.sum((y - y_hat) ** 2))
+        ss_tot = float(np.sum((y - float(np.mean(y))) ** 2))
+        r2     = round(1.0 - ss_res / ss_tot, 3) if ss_tot > 0 else None
+
+        # Sanity check — proposed params must be positive
+        if prop_a <= 0 or prop_b <= 0:
+            return {
+                "error": f"Fit produced invalid params (log_a={prop_a}, log_b={prop_b}). "
+                         "Data may be too noisy. Collect more dates.",
+                "current": {"log_a": cur_a, "log_b": cur_b},
+                "n_samples": n,
+                "r_squared": r2,
+            }
+
+        return {
+            "current":         {"log_a": cur_a, "log_b": cur_b},
+            "proposed":        {"log_a": prop_a, "log_b": prop_b},
+            "n_samples":       n,
+            "dates_used":      dates_used,
+            "r_squared":       r2,
+            "pool_size_used":  pool,
+            "note": (
+                f"To apply: POST /api/lab/update-config with "
+                f'{{\"card_boost.log_a\": {prop_a}, \"card_boost.log_b\": {prop_b}}}'
+            ),
+        }
+
+    except Exception as e:
+        print(f"[calibrate-boost] Error: {e}")
+        return {"error": str(e)}
