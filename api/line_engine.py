@@ -452,13 +452,16 @@ def run_line_engine(projections, games, line_config=None):
     if not projections:
         return {"pick": None, "error": "no_projections"}
 
-    # Filter out players who don't average enough season minutes — prevents
-    # fringe vets from qualifying on a single inflated projection day.
+    # Filter out players who don't average enough baseline minutes.
+    # Uses avg_min (blended, role-adjusted, pre-cascade) — NOT season_min, which
+    # is inflated for traded players (e.g. Kevin Love: season_min=25.8 pre-trade,
+    # but current role is only ~16.8 min). Fallback: predMin - cascade_bonus gives
+    # the same pre-cascade baseline for projections that predate the avg_min field.
     min_season_min = (line_config or {}).get("min_season_minutes", 20.0)
     if min_season_min > 0:
         projections = [
             p for p in projections
-            if (p.get("season_min") or p.get("min") or 0) >= min_season_min
+            if (p.get("avg_min") or (p.get("predMin", 0) - p.get("_cascade_bonus", 0)) or 0) >= min_season_min
         ]
 
     min_confidence = (line_config or {}).get("min_confidence", 50)

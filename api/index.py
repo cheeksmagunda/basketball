@@ -1487,6 +1487,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
+        "avg_min": round(avg_min, 1),       # blended baseline (role-adjusted, pre-cascade) — used by eligibility filters
         # Recent vs season stats — used by line engine for trend detection
         "season_min": round(stats.get("season_min", avg_min), 1),
         "season_pts": round(stats.get("season_pts", pts), 1),
@@ -1663,8 +1664,9 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # Season avg minutes floor — chalk demands reliable starters, not fringe rotation
-        if p.get("season_min", 0) < chalk_avg_min:
+        # Baseline avg minutes floor — uses blended role-adjusted avg, not full-season
+        # (season_min is inflated for traded players, avg_min reflects current role)
+        if p.get("avg_min", 0) < chalk_avg_min:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1715,8 +1717,9 @@ def _build_lineups(projections):
         # This is what kills the Conley / Wizards bench scrub problem.
         if p.get("predMin", 0) < min_floor:
             continue
-        # Season avg floor — prevents DNP-risk players inflated by speculative cascade bonus
-        if p.get("season_min", 0) < moon_cfg.get("min_avg_minutes", 10):
+        # Baseline avg floor — prevents DNP-risk players inflated by speculative cascade bonus
+        # Uses avg_min (blended, role-adjusted) not season_min (inflated for traded players)
+        if p.get("avg_min", 0) < moon_cfg.get("min_avg_minutes", 15):
             continue
 
         # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
