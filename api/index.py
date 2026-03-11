@@ -407,6 +407,7 @@ _CONFIG_DEFAULTS = {
         "recent_form_under_ratio": 0.92,
         "min_edge_pts": 2.0,
         "min_edge_other": 1.5,
+        "min_season_minutes": 20.0,
     },
 }
 

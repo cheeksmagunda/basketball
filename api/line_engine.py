@@ -452,6 +452,15 @@ def run_line_engine(projections, games, line_config=None):
     if not projections:
         return {"pick": None, "error": "no_projections"}
 
+    # Filter out players who don't average enough season minutes — prevents
+    # fringe vets from qualifying on a single inflated projection day.
+    min_season_min = (line_config or {}).get("min_season_minutes", 20.0)
+    if min_season_min > 0:
+        projections = [
+            p for p in projections
+            if (p.get("season_min") or p.get("min") or 0) >= min_season_min
+        ]
+
     min_confidence = (line_config or {}).get("min_confidence", 50)
 
     if not ANTHROPIC_API_KEY:
