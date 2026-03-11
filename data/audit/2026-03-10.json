@@ -1,0 +1,65 @@
+{
+  "date": "2026-03-10",
+  "players_compared": 6,
+  "mae": 2.3,
+  "directional_accuracy": 0.0,
+  "over_projected": 6,
+  "under_projected": 0,
+  "biggest_misses": [
+    {
+      "player": "Russell Westbrook",
+      "team": "SAC",
+      "predicted_rs": 5.6,
+      "actual_rs": 2.8,
+      "error": -2.8,
+      "drafts": "1400",
+      "actual_card_boost": "1.1"
+    },
+    {
+      "player": "Rudy Gobert",
+      "team": "MIN",
+      "predicted_rs": 4.3,
+      "actual_rs": 1.7,
+      "error": -2.6,
+      "drafts": "749",
+      "actual_card_boost": "1"
+    },
+    {
+      "player": "Rudy Gobert",
+      "team": "MIN",
+      "predicted_rs": 4.2,
+      "actual_rs": 1.7,
+      "error": -2.5,
+      "drafts": "749",
+      "actual_card_boost": "1"
+    },
+    {
+      "player": "Russell Westbrook",
+      "team": "SAC",
+      "predicted_rs": 4.8,
+      "actual_rs": 2.8,
+      "error": -2.0,
+      "drafts": "1400",
+      "actual_card_boost": "1.1"
+    },
+    {
+      "player": "Clint Capela",
+      "team": "HOU",
+      "predicted_rs": 3.5,
+      "actual_rs": 1.5,
+      "error": -2.0,
+      "drafts": "4",
+      "actual_card_boost": "3"
+    },
+    {
+      "player": "Clint Capela",
+      "team": "HOU",
+      "predicted_rs": 3.4,
+      "actual_rs": 1.5,
+      "error": -1.9,
+      "drafts": "4",
+      "actual_card_boost": "3"
+    }
+  ],
+  "generated_at": "2026-03-11T07:18:24.378131+00:00"
+}
