@@ -2531,36 +2531,38 @@ function _initUploadBanner() {
   const _pendingDate = LAB.briefing?.pending_upload_date || null;
   if (!_pendingDate) { _ub.style.display = 'none'; return; }
   const _ulFlags = _safeParseLocalStorage('benUploads_' + _pendingDate, {});
-  const _allDone = _ulFlags.real_scores && _ulFlags.top_drafts && _ulFlags.starting_5 && _ulFlags.moonshot;
+  const _allDone = _ulFlags.real_scores && _ulFlags.top_drafts && _ulFlags.starting_5 && _ulFlags.moonshot && _ulFlags.most_drafted;
   _ub.style.display = _allDone ? 'none' : 'block';
   // Set banner title with the pending date + progress counter
   const _title = document.getElementById('benBannerTitle');
   if (_title) {
     const d = new Date(_pendingDate + 'T12:00:00');
     const dayStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const doneCount = [_ulFlags.real_scores, _ulFlags.top_drafts, _ulFlags.starting_5, _ulFlags.moonshot].filter(Boolean).length;
-    _title.textContent = '📋 Log Results — ' + dayStr + (doneCount > 0 ? '  ' + doneCount + '/4' : '');
+    const doneCount = [_ulFlags.real_scores, _ulFlags.top_drafts, _ulFlags.starting_5, _ulFlags.moonshot, _ulFlags.most_drafted].filter(Boolean).length;
+    _title.textContent = '📋 Log Results — ' + dayStr + (doneCount > 0 ? '  ' + doneCount + '/5' : '');
   }
   // Hide already-completed buttons — user only sees what's still needed
   const _hideBtn = (id) => { const b = document.getElementById(id); if (b) b.style.display = 'none'; };
-  if (_ulFlags.real_scores) _hideBtn('benBannerRSBtn');
-  if (_ulFlags.top_drafts)  _hideBtn('benBannerWinBtn');
-  if (_ulFlags.starting_5)  _hideBtn('benBannerS5Btn');
-  if (_ulFlags.moonshot)    _hideBtn('benBannerMSBtn');
+  if (_ulFlags.real_scores)  _hideBtn('benBannerRSBtn');
+  if (_ulFlags.top_drafts)   _hideBtn('benBannerWinBtn');
+  if (_ulFlags.starting_5)   _hideBtn('benBannerS5Btn');
+  if (_ulFlags.moonshot)     _hideBtn('benBannerMSBtn');
+  if (_ulFlags.most_drafted) _hideBtn('benBannerMDBtn');
 }
 
-// Hide upload banner once all 4 uploads are done — uses localStorage as source of truth
+// Hide upload banner once all 5 uploads are done — uses localStorage as source of truth
 // (DOM button state unreliable after hide-on-complete)
 function _checkBannerDone() {
   const pendingDate = LAB.briefing?.pending_upload_date;
   if (!pendingDate) return;
   const _u = _safeParseLocalStorage('benUploads_' + pendingDate, {});
-  if (_u.real_scores && _u.top_drafts && _u.starting_5 && _u.moonshot) {
+  if (_u.real_scores && _u.top_drafts && _u.starting_5 && _u.moonshot && _u.most_drafted) {
     const banner = document.getElementById('benUploadBanner');
     if (banner) {
       banner.style.maxHeight = '0';
       banner.style.opacity   = '0';
       banner.style.marginBottom = '0';
+      setTimeout(() => { banner.style.display = 'none'; }, 400);
     }
   }
 }
@@ -2728,7 +2730,7 @@ async function _handleBenUpload(file, type, source) {
       }
       { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u.most_drafted = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
       _markBannerDone(bannerBtnId, _labels[type], today);
-      // most_drafted is optional — does NOT gate _checkBannerDone (banner hides when 4/4 core done)
+      _checkBannerDone();
       const ownerStr = ownershipPlayers.slice(0, 5).map(p => {
         const n = p.player_name || p.name || '?';
         const d = p.draft_count != null ? `${p.draft_count} drafts` : '';
