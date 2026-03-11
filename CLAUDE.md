@@ -193,17 +193,17 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 
 ### End-of-Day Upload Flow (in Ben)
 After all games are final and Ben unlocks:
-- Upload banner with 4 buttons: **📸 Real Scores**, **🏆 Top Drafts**, **⚡ Starting 5**, **🚀 Moonshot**
+- Upload banner with 5 buttons: **📸 Real Scores**, **🏆 Top Drafts**, **⚡ Starting 5**, **🚀 Moonshot**, **📊 Most Popular**
 - Banner **hidden during lock** — only shows when Ben is unlocked
-- Banner title shows pending date + live progress counter (e.g. "Log Results — Fri, Mar 6  2/4")
+- Banner title shows pending date + live progress counter (e.g. "Log Results — Fri, Mar 6  2/5")
 - `pending_upload_date` = most recent prediction date (excluding today) without actuals uploaded
 - **Skip All** button in top-right of banner header (meta-action on the date, not a data action)
 - `_handleBenUpload()` pipeline: `parse-screenshot → save-actuals → /api/audit/get → lab/briefing → labCallClaude()`
 - On successful upload: button flashes green for 1.5s, then **hides** (user only sees remaining uploads)
-- `_checkBannerDone()` uses **localStorage** as source of truth (not DOM disabled state, since buttons hide)
+- `_checkBannerDone()` uses **localStorage** as source of truth (not DOM disabled state, since buttons hide); fires on all 5 upload types including `most_drafted`
 - On reload: already-done buttons hidden immediately (no stale green buttons cluttering the banner)
 - Audit gate: `save-actuals` only generates `data/audit/{date}.json` when `real_scores` data is present
-- All 4 upload types merge into the same actuals CSV (dedup by player name)
+- Real Scores, Top Drafts, Starting 5, Moonshot merge into actuals CSV (dedup by player name); Most Popular saves to `data/ownership/{date}.csv`
 - Log page is **read-only** — no upload UI there
 
 ### Lock System
@@ -216,7 +216,7 @@ After all games are final and Ben unlocks:
 
 ### Lab status, banner, and degraded mode
 - **What "COULDN'T CHECK STATUS" indicates:** The request to `/api/lab/status` failed (timeout or network) before any response. Common on cold start when that endpoint is the first to hit the server (fetch_games + _all_games_final can exceed 30s).
-- **What the upload banner depends on:** The banner (LOG RESULTS with 4 upload buttons) is shown only inside `showLabUnlocked()`, which runs after a successful `locked: false` from `/api/lab/status`. So if status never succeeds, we never call `showLabUnlocked()` and never run `_initUploadBanner()` — hence the banner doesn't load.
+- **What the upload banner depends on:** The banner (LOG RESULTS with 5 upload buttons) is shown only inside `showLabUnlocked()`, which runs after a successful `locked: false` from `/api/lab/status`. So if status never succeeds, we never call `showLabUnlocked()` and never run `_initUploadBanner()` — hence the banner doesn't load.
 - **What else lab status gates:** Locked vs unlocked view, lock polling (2 min when locked), briefing/config/line/slate/log fetch (only when unlocked), chat input availability. The single status call is the gate for the whole Lab tab.
 - **Fixes:** (1) **Backend pre-slate fast path:** When no game has started yet (now &lt; earliest tip − lock buffer), `lab_status` returns "Pre-slate window" without calling `_all_games_final()` (saves ESPN scoreboard calls and reduces timeouts). (2) **Frontend degraded mode:** When status fails (fetch throw or server error fallback), the frontend tries `/api/lab/briefing`; if it succeeds and has `pending_upload_date`, we call `showLabUnlocked()` so the banner and chat appear even when status didn't complete.
 
@@ -292,7 +292,7 @@ Three independent gates prevent pre-lock saves:
 ## Two Lineup Types
 
 - **Starting 5 (chalk)**: MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent.
-- **Moonshot** (v2): Options strategy. Hard floor of 20 projected minutes + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = predMin × card_boost² × dev_team_bonus × rating`. Development/tanking team players get 1.25x boost. Philosophy: buy cheap lottery tickets (high minutes + low drafts), let positive variance do the work.
+- **Moonshot** (v2, tuned Mar 11): Options strategy. Hard floor of **15 projected minutes** (lowered from 20 to catch emergency starters) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
 
 ### Development Teams (configurable in model-config.json)
 Current default: `UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership. **This list is a seasonal snapshot** — update via Ben or directly in `data/model-config.json` as the standings shift.
@@ -313,6 +313,14 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - Default: exponential heuristic `scalar × decay_base^hype + base_offset`.
 - Log-formula path (calibrated, off by default): `log_a - log_b × log10(predicted_drafts)`. Activate with `card_boost.log_formula_active: true` in config once 50+ actuals collected.
 - Continuous fame multiplier: `fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)` — replaces the old `star_players` hardcoded list. Tunable via `card_boost.fame_pts_base` (default 8.0) and `card_boost.fame_exponent` (default 2.5).
+
+### Moonshot Formula (tuned Mar 11)
+`moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`
+
+Key knobs in `moonshot` section of model-config.json:
+- `min_minutes_floor`: 15 (lowered from 20) — catches emergency starters projected ~15-18 min pre-game
+- `card_boost_weight`: 2.5 (raised from 2.0) — ownership is the primary signal; boost^2.5 dominates
+- `big_pos_efficiency`: 0.65 — centers penalized; screens/rim-protection generate far fewer RS events per minute than guards/wings
 
 ### Spread Adjustment (continuous, no cliff edges)
 - Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
