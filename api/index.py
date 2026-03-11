@@ -335,7 +335,7 @@ def _predictions_to_csv(lineups, scope):
 
 CSV_HEADER = "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk"
 
-CACHE_DIR = Path("/tmp/nba_cache_v19")
+CACHE_DIR = Path("/tmp/nba_cache_v20")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)

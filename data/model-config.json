@@ -142,7 +142,7 @@
   },
   "moonshot": {
     "min_minutes_floor": 20,
-    "min_avg_minutes": 10,
+    "min_avg_minutes": 15,
     "min_card_boost": 1.0,
     "min_rating_floor": 2.0,
     "dev_team_boost": 1.25,
