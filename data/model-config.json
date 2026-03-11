@@ -121,6 +121,7 @@
   ],
   "lineup": {
     "chalk_rating_floor": 2.0,
+    "chalk_min_avg_minutes": 20,
     "game_chalk_rating_floor": 3.5,
     "avg_slot_multiplier": 1.6,
     "slot_multipliers": [
@@ -141,6 +142,7 @@
   },
   "moonshot": {
     "min_minutes_floor": 20,
+    "min_avg_minutes": 10,
     "min_card_boost": 1.0,
     "min_rating_floor": 2.0,
     "dev_team_boost": 1.25,

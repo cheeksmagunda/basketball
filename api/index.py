@@ -1640,6 +1640,7 @@ def _normalize_line_pick(p: dict) -> dict:
 def _build_lineups(projections):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
     chalk_floor = _cfg("lineup.chalk_rating_floor", 2.8)
+    chalk_avg_min = _cfg("lineup.chalk_min_avg_minutes", 20)
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
     boost_cap = proj_cfg.get("chalk_boost_cap", 1.5)
 
@@ -1661,6 +1662,9 @@ def _build_lineups(projections):
     chalk_eligible = []
     for p in projections:
         if p["rating"] < chalk_floor:
+            continue
+        # Season avg minutes floor — chalk demands reliable starters, not fringe rotation
+        if p.get("season_min", 0) < chalk_avg_min:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1710,6 +1714,9 @@ def _build_lineups(projections):
         # Hard minute floor — the single most important filter.
         # This is what kills the Conley / Wizards bench scrub problem.
         if p.get("predMin", 0) < min_floor:
+            continue
+        # Season avg floor — prevents DNP-risk players inflated by speculative cascade bonus
+        if p.get("season_min", 0) < moon_cfg.get("min_avg_minutes", 10):
             continue
 
         # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
