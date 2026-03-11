@@ -4117,10 +4117,11 @@ async def auto_resolve_line(request: Request):
 @app.get("/api/line-history")
 async def line_history():
     """Return recent Line of the Day picks with results."""
-    # Short-lived cache (3 min TTL) so cold-start repeat callers don't each hit GitHub sequentially
+    # 10-min cache TTL — history only changes when auto-resolve-line fires (every 30 min cron)
+    # or resolve-line is called manually (both clear line_history_v1).
     _hist_cached = _cg("line_history_v1")
     if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
-        if time.time() - _hist_cached.get("ts", 0) < 180:
+        if time.time() - _hist_cached.get("ts", 0) < 600:
             return _hist_cached["data"]
 
     items = _github_list_dir("data/lines")
@@ -4129,7 +4130,8 @@ async def line_history():
     # still appear in history — the JSON has the resolved results.
     csv_dates  = {i["name"][:-4]  for i in items if i.get("name", "").endswith(".csv")}
     json_dates = {i["name"][:-10] for i in items if i.get("name", "").endswith("_pick.json")}
-    all_dates  = sorted(csv_dates | json_dates, reverse=True)[:30]
+    # Cap at 14 days — UI shows 10 picks max; 30 dates meant up to 60 GitHub calls on cold start
+    all_dates  = sorted(csv_dates | json_dates, reverse=True)[:14]
 
     # Fetch CSV + JSON for each date in parallel
     def _fetch_date_files(date_str):
@@ -4143,6 +4145,10 @@ async def line_history():
             fetched[date_str] = (csv_raw, json_raw)
 
     results = []
+    # ESPN backfill tasks: collected in first pass, then run in parallel to avoid sequential I/O
+    # Each task: (p_copy, p_line, p_dir, date_str, json_key, jd_ref)
+    espn_queue = []
+
     for date_str in all_dates:
         content, json_raw = fetched.get(date_str, (None, None))
         if not content and not json_raw:
@@ -4156,8 +4162,8 @@ async def line_history():
             try:
                 jd = json.loads(json_raw)
                 added_dirs = set()
-                for key in ("over_pick", "under_pick"):
-                    p = jd.get(key)
+                for jkey in ("over_pick", "under_pick"):
+                    p = jd.get(jkey)
                     if not (p and isinstance(p, dict) and p.get("player_name")):
                         continue
                     p = dict(p)
@@ -4181,27 +4187,10 @@ async def line_history():
                                 p["result"] = "miss" if csv_primary["result"] == "hit" else "hit"
                             p["actual_stat"] = csv_primary.get("actual_stat", "")
                         elif date_str < _et_date().isoformat():
-                            # Different player from primary, historical date — ESPN lookup
-                            espn_date = date_str.replace("-", "")
-                            actual_hist = _fetch_player_final_stat(
-                                p.get("player_name", ""), p.get("stat_type", "points"), espn_date
-                            )
-                            if actual_hist is not None:
-                                p_line = _safe_float(p.get("line", 0))
-                                p_dir  = p.get("direction", "over")
-                                p["result"]      = "hit" if (actual_hist > p_line if p_dir == "over" else actual_hist < p_line) else "miss"
-                                p["actual_stat"] = str(actual_hist)
-                                # Write back to JSON so future history loads skip this ESPN call
-                                try:
-                                    jd[key]["result"]      = p["result"]
-                                    jd[key]["actual_stat"] = p["actual_stat"]
-                                    _github_write_file(
-                                        f"data/lines/{date_str}_pick.json",
-                                        json.dumps(jd),
-                                        f"backfill {date_str} {p.get('direction')} result"
-                                    )
-                                except Exception:
-                                    pass
+                            # Different player, historical date — queue for parallel ESPN lookup
+                            espn_queue.append((p, _safe_float(p.get("line", 0)), p.get("direction", "over"), date_str, jkey, jd))
+                            added_dirs.add(p.get("direction"))
+                            continue
                     # Only add resolved picks to history — pending picks belong
                     # on the main card, not in Recent Picks.
                     if p.get("result") and p["result"] not in ("pending", ""):
@@ -4218,14 +4207,44 @@ async def line_history():
         if csv_primary.get("result") and csv_primary["result"] not in ("pending", ""):
             results.append(_normalize_line_pick(csv_primary))
 
+    # Parallel ESPN backfill for secondary-direction picks with different players.
+    # These are rare (only fires when over/under are different players AND unresolved),
+    # but when they do occur they write the result back so future loads skip ESPN entirely.
+    if espn_queue:
+        def _backfill_espn(task):
+            p, p_line, p_dir, date_str, jkey, jd = task
+            actual = _fetch_player_final_stat(
+                p.get("player_name", ""), p.get("stat_type", "points"), date_str.replace("-", "")
+            )
+            return p, p_line, p_dir, actual, date_str, jkey, jd
+
+        with ThreadPoolExecutor(max_workers=min(len(espn_queue), 8)) as pool:
+            for p, p_line, p_dir, actual, date_str, jkey, jd in pool.map(_backfill_espn, espn_queue):
+                if actual is not None:
+                    p["result"]      = "hit" if (actual > p_line if p_dir == "over" else actual < p_line) else "miss"
+                    p["actual_stat"] = str(actual)
+                    # Write back to JSON so future history loads skip this ESPN call
+                    try:
+                        jd[jkey]["result"]      = p["result"]
+                        jd[jkey]["actual_stat"] = p["actual_stat"]
+                        _github_write_file(
+                            f"data/lines/{date_str}_pick.json",
+                            json.dumps(jd),
+                            f"backfill {date_str} {p.get('direction')} result"
+                        )
+                    except Exception:
+                        pass
+                if p.get("result") and p["result"] not in ("pending", ""):
+                    results.append(_normalize_line_pick(p))
+
     # Deduplicate by (player_name, direction): allow same player to appear as both
     # over and under on the same day, but prevent duplicates of the exact same pick.
     seen: set = set()
     deduped = []
     for r in results:
-        key = (r.get("player_name", ""), r.get("direction", ""))
-        if key not in seen:
-            seen.add(key)
+        dedup_key = (r.get("player_name", ""), r.get("direction", ""))
+        if dedup_key not in seen:
+            seen.add(dedup_key)
             deduped.append(r)
     results = deduped
 

@@ -3059,14 +3059,20 @@ function _renderLineHistoryFromState() {
   const stats = document.getElementById('lineHistoryStats');
   if (st.status === 'initial' || st.status === 'loading') {
     wrap.style.display = 'block';
-    stats.innerHTML = '';
-    list.innerHTML = '<div class="skeleton" style="height:48px;margin-bottom:8px"><div class="skel-block skel-line wide"></div><div class="skel-block skel-line narrow"></div></div>'.repeat(3);
+    if (st.data && st.data.picks && st.data.picks.length) {
+      // Stale data available — show it silently while refresh runs in background
+      renderLineHistory(st.data);
+      filterLineHistory(LINE_DIR);
+    } else {
+      stats.innerHTML = '';
+      list.innerHTML = '<div class="skeleton" style="height:48px;margin-bottom:8px"><div class="skel-block skel-line wide"></div><div class="skel-block skel-line narrow"></div></div>'.repeat(3);
+    }
     return;
   }
   if (st.status === 'error') {
     wrap.style.display = 'block';
     stats.innerHTML = '';
-    list.innerHTML = '<div class="empty-state" style="padding:16px"><span class="icon">📡</span><p>Couldn\'t load recent picks.</p></div>';
+    list.innerHTML = '<div class="empty-state" style="padding:16px"><span class="icon">📡</span><p>Couldn\'t load recent picks.</p><button onclick="fetchLineHistory()" style="margin-top:8px;font-size:0.75rem;padding:6px 14px;border-radius:var(--radius-pill);background:var(--surface2);border:1px solid var(--border);color:var(--color-text-muted);cursor:pointer">Try again</button></div>';
     return;
   }
   if (st.status === 'success' && st.data && st.data.picks && st.data.picks.length) {
@@ -3079,7 +3085,7 @@ async function fetchLineHistory() {
   LINE_HISTORY_STATE = asyncStateLoading(LINE_HISTORY_STATE);
   _renderLineHistoryFromState();
   try {
-    const hr = await fetchWithTimeout('/api/line-history', {}, 10000);
+    const hr = await fetchWithTimeout('/api/line-history', {}, 25000);
     if (!hr.ok) throw new Error('line-history HTTP ' + hr.status);
     const hist = await hr.json();
     LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
