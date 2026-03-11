@@ -695,7 +695,7 @@
     /* ── LINE PAGE ── */
     .line-pick-card {
       background: var(--surface);
-      border: 1px solid var(--line-card-border, rgba(212,166,64,0.3));
+      border: 1px solid var(--tcolor-border, rgba(212,166,64,0.3));
       border-radius: var(--radius-card); padding: 16px 18px;
       position: relative; overflow: hidden;
       transition: border-color 0.4s, box-shadow 0.4s;
@@ -720,7 +720,7 @@
       box-shadow: 0 0 22px var(--lab-glow), inset 0 0 12px rgba(20,184,166,0.08); }
     .line-pick-card::before {
       content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-      background: var(--line); box-shadow: 2px 0 12px var(--line-glow);
+      background: var(--tcolor, var(--line)); box-shadow: 2px 0 12px var(--tcolor-glow, var(--line-glow));
     }
     .line-pick-header {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px;
@@ -3265,8 +3265,14 @@ function renderLinePickCard(pick, isPrimary) {
   const avgMin = pick.avg_min != null && pick.avg_min !== '' ? (typeof pick.avg_min === 'number' ? pick.avg_min.toFixed(1) : String(pick.avg_min)) : '—';
   const conclusionHtml = _buildLineConclusion(pick);
 
+  const tcolor = TEAM_COLORS[pick.team] || '#d4a640';
+  const _thex = tcolor.replace('#', '');
+  const _tr = parseInt(_thex.slice(0,2), 16), _tg = parseInt(_thex.slice(2,4), 16), _tb = parseInt(_thex.slice(4,6), 16);
+  const tcolorBorder = `rgba(${_tr},${_tg},${_tb},0.30)`;
+  const tcolorGlow   = `rgba(${_tr},${_tg},${_tb},0.22)`;
+
   return `
-    <div class="line-pick-card${winningClass}">
+    <div class="line-pick-card${winningClass}" style="--tcolor:${tcolor};--tcolor-border:${tcolorBorder};--tcolor-glow:${tcolorGlow}">
       <div class="line-pick-header">
         <div class="line-pick-header-left">
           <div class="line-pick-name">${_escapeHtml(pick.player_name)}</div>
