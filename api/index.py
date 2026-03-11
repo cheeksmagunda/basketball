@@ -389,8 +389,9 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":2.0,
-        "dev_team_boost":1.25, "card_boost_weight":2.0, "minutes_weight":1.0,
+        "min_minutes_floor":15, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
+        "big_pos_efficiency":0.65,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
     "lineup": {
@@ -1671,27 +1672,31 @@ def _build_lineups(projections):
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
 
-    # ── MOONSHOT: March 5 overhaul ──────────────────────────────────────────
-    # Philosophy shift: moonshot is an OPTIONS STRATEGY. We're buying cheap
-    # lottery tickets — players with guaranteed court time and almost no drafts.
-    # We don't need to predict who will score; we need to be in the pool where
-    # if someone has a hot night, we're holding the ticket.
+    # ── MOONSHOT: March 5 overhaul (tuned March 11) ─────────────────────────
+    # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
+    # tickets — players with low ownership where a hot night pays off huge.
+    # We don't need to predict who will score; we need to be in the pool.
     #
-    # New formula: moonshot_ev = predMin × card_boost × dev_team_bonus
-    #   - Minutes = the player will actually be on the court (the ticket exists)
-    #   - Card boost = the payout multiplier (low ownership = huge boost)
-    #   - Dev team bonus = tanking teams give more predictable minutes
+    # Formula: moonshot_ev = (predMin^min_weight) × (boost^cb_weight)
+    #                        × team_bonus × rating × pos_efficiency
+    #   - Minutes floor (15) = player must be a real rotation piece
+    #     (lowered from 20 to catch emergency starters projected ~15-18 min)
+    #   - Card boost^2.5 = dominant signal; low ownership = massive payout
+    #     (raised from 2.0 — ownership is the true edge, minutes just confirm court time)
+    #   - big_pos_efficiency (0.65) = centers generate ~60% less RS per minute
+    #     than guards/wings; screens and rim protection don't accumulate RS events
     #
     # Hard filters:
-    #   - 20+ projected minutes (the player is a real rotation piece)
+    #   - 15+ projected minutes (the ticket exists — player will be on court)
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor = moon_cfg.get("min_minutes_floor", 20)
+    min_floor = moon_cfg.get("min_minutes_floor", 15)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
-    cb_weight = moon_cfg.get("card_boost_weight", 2.0)
+    cb_weight = moon_cfg.get("card_boost_weight", 2.5)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
+    big_eff   = moon_cfg.get("big_pos_efficiency", 0.65)
     dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
 
     chalk_names = {p["name"] for p in chalk}
@@ -1724,14 +1729,14 @@ def _build_lineups(projections):
         is_dev = p.get("team", "") in dev_teams
         team_bonus = dev_boost if is_dev else 1.0
 
-        # Moonshot EV: minutes × card_boost^weight × team_bonus
-        # Minutes ensure the player is on the court long enough for a hot night
-        # Card boost is weighted heavily because that's the payout multiplier
-        # Team bonus rewards dev-team players whose minutes are more certain
-        pred_min = p.get("predMin", 0)
-        boost = p.get("est_mult", 0.3)
+        # Moonshot EV: (minutes^w) × (boost^w) × team_bonus × rating × pos_efficiency
+        # pos_efficiency penalises centers — they get minutes but generate far fewer
+        # RS events (no steals, clutch shots, ball-handling plays) than guards/wings.
+        pred_min  = p.get("predMin", 0)
+        boost     = p.get("est_mult", 0.3)
+        pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
         moonshot_ev = round(
-            (pred_min ** min_weight) * (boost ** cb_weight) * team_bonus * p["rating"],
+            (pred_min ** min_weight) * (boost ** cb_weight) * team_bonus * p["rating"] * pos_eff,
             2
         )
 
@@ -1812,9 +1817,10 @@ def _build_game_lineups(projections, game):
 
     # MOONSHOT: per-game upside = minutes × RS potential (no card boost — same reason).
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
-    min_floor = moon_cfg.get("min_minutes_floor", 20)
+    min_floor = moon_cfg.get("min_minutes_floor", 15)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
+    big_eff   = moon_cfg.get("big_pos_efficiency", 0.65)
     use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
     dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
 
@@ -1840,8 +1846,9 @@ def _build_game_lineups(projections, game):
         is_dev = p.get("team", "") in dev_teams
         team_bonus = dev_boost if is_dev else 1.0
         pred_min = p.get("predMin", 0)
+        pos_eff  = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
         moonshot_ev = round(
-            (pred_min ** min_weight) * team_bonus * p["rating"],
+            (pred_min ** min_weight) * team_bonus * p["rating"] * pos_eff,
             2
         )
         moonshot_pool.append({**p, "moonshot_ev": moonshot_ev, "_is_dev_team": is_dev})
