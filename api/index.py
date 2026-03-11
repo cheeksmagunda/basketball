@@ -1923,20 +1923,33 @@ def _build_game_lineups(projections, game):
     Starting 5: MILP-optimized with min 2 players per team.
     Moonshot: Next 5 players by the same chalk_ev ranking (no separate contrarian algo).
     """
-    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
+    # Lower floor matches slate (2.8) so weaker-roster games still fill 5 players.
+    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 2.8)
     rescored = _apply_game_script(projections, game)
     chalk_eligible = [p for p in rescored if p["rating"] >= game_chalk_floor]
 
-    chalk = optimize_lineup(chalk_eligible, n=5, min_per_team=2, sort_key="chalk_ev",
+    # Per-game: card boost is irrelevant (everyone drafts from the same pool).
+    # Optimize purely by RS × slot multiplier — zero out est_mult for MILP.
+    chalk_no_boost = [{**p, "est_mult": 0} for p in chalk_eligible]
+    chalk = optimize_lineup(chalk_no_boost, n=5, min_per_team=2, sort_key="rating",
                             rating_key="rating", card_boost_key="est_mult")
 
-    # MOONSHOT: same March 5 overhaul — minutes × boost × dev_team ranking.
-    # Per-game version enforces team balance (min 2 per side).
+    # Fill to 5 if chalk pool was smaller than 5 after floor + injury filtering.
+    if len(chalk) < 5:
+        chalk_names = {p["name"] for p in chalk}
+        fill_pool = sorted(
+            [p for p in rescored if p["name"] not in chalk_names],
+            key=lambda p: p.get("rating", 0), reverse=True
+        )
+        for p in fill_pool:
+            if len(chalk) >= 5:
+                break
+            chalk.append(p)
+
+    # MOONSHOT: per-game upside = minutes × RS potential (no card boost — same reason).
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
     min_floor = moon_cfg.get("min_minutes_floor", 20)
-    min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
-    cb_weight = moon_cfg.get("card_boost_weight", 2.0)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
     use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
     dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
@@ -1955,8 +1968,6 @@ def _build_game_lineups(projections, game):
             continue
         if p.get("predMin", 0) < min_floor:
             continue
-        if p.get("est_mult", 0) < min_boost:
-            continue
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
         if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
@@ -1965,9 +1976,8 @@ def _build_game_lineups(projections, game):
         is_dev = p.get("team", "") in dev_teams
         team_bonus = dev_boost if is_dev else 1.0
         pred_min = p.get("predMin", 0)
-        boost = p.get("est_mult", 0.3)
         moonshot_ev = round(
-            (pred_min ** min_weight) * (boost ** cb_weight) * team_bonus * p["rating"],
+            (pred_min ** min_weight) * team_bonus * p["rating"],
             2
         )
         moonshot_pool.append({**p, "moonshot_ev": moonshot_ev, "_is_dev_team": is_dev})
