@@ -2668,8 +2668,9 @@ async def log_dates():
             if time.time() - cached.get("ts", 0) < 180:
                 return cached["data"]
         dates = set()
-        for prefix in ["data/predictions", "data/actuals"]:
-            items = _github_list_dir(prefix)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            dir_results = list(pool.map(_github_list_dir, ["data/predictions", "data/actuals"]))
+        for items in dir_results:
             for item in items:
                 name = item.get("name", "")
                 if name.endswith(".csv"):
@@ -2689,8 +2690,11 @@ async def log_get(date: str = Query(None)):
     bad = _validate_date(date_str)
     if bad: return bad
 
-    pred_csv, _ = _github_get_file(f"data/predictions/{date_str}.csv")
-    act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        (pred_csv, _), (act_csv, _) = list(pool.map(
+            _github_get_file,
+            [f"data/predictions/{date_str}.csv", f"data/actuals/{date_str}.csv"]
+        ))
 
     predictions = _parse_csv(pred_csv, PRED_FIELDS) if pred_csv else []
     actuals = _parse_csv(act_csv, ACT_FIELDS) if act_csv else []
@@ -2753,13 +2757,14 @@ async def log_actuals_stats(date: str = Query(None)):
     player_stats = {}
     want_labels = {"MIN", "PTS", "REB", "AST", "STL", "BLK"}
 
-    for game in games:
+    def _fetch_game_box(game):
         game_id = game.get("gameId")
         if not game_id:
-            continue
+            return {}
         data = _espn_get(f"{ESPN}/summary?event={game_id}")
         if not data:
-            continue
+            return {}
+        result = {}
         for team_block in data.get("boxscore", {}).get("players", []):
             stats_sections = team_block.get("statistics", [])
             if not stats_sections:
@@ -2781,7 +2786,12 @@ async def log_actuals_stats(date: str = Query(None)):
                         except (ValueError, TypeError):
                             pdata[key] = 0.0
                 if pdata:
-                    player_stats[name] = pdata
+                    result[name] = pdata
+        return result
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for game_result in pool.map(_fetch_game_box, games):
+            player_stats.update(game_result)
 
     result = {"date": date_str, "players": player_stats}
     _cs(cache_key, result)
