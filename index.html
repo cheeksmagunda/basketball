@@ -711,13 +711,6 @@
     .line-live-progress-bar { height: 100%; border-radius: 2px; transition: width 0.7s ease, background-color 0.4s; }
     .line-live-labels { display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.6rem; color: var(--muted); }
     .line-live-current { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 0.85rem; color: var(--text); }
-    /* Winning glow — direction-specific border + shadow */
-    .line-pick-card.live-winning-over {
-      border-color: var(--line);
-      box-shadow: 0 0 22px var(--line-glow), inset 0 0 12px rgba(212,166,64,0.08); }
-    .line-pick-card.live-winning-under {
-      border-color: var(--lab);
-      box-shadow: 0 0 22px var(--lab-glow), inset 0 0 12px rgba(20,184,166,0.08); }
     .line-pick-card::before {
       content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
       background: var(--tcolor, var(--line)); box-shadow: 2px 0 12px var(--tcolor-glow, var(--line-glow));
@@ -3214,7 +3207,6 @@ function renderLinePickCard(pick, isPrimary) {
 
   // Live stat tracking section
   let liveSection = '';
-  let winningClass = '';
   if (pick._live?.status === 'live') {
     const lv = pick._live;
     const current = lv.stat_current ?? 0;
@@ -3227,7 +3219,6 @@ function renderLinePickCard(pick, isPrimary) {
       : (lv.pace != null ? lv.pace <= lineVal : current < lineVal);
     const barColor = winning ? (isOver ? 'var(--line)' : 'var(--lab)') : 'var(--color-danger)';
     const periodStr = lv.period <= 4 ? `Q${lv.period}` : `OT${lv.period - 4}`;
-    winningClass = winning ? ` live-winning-${dir}` : '';
     liveSection = `
       <div class="line-live-section">
         <div class="line-live-header">
@@ -3272,7 +3263,7 @@ function renderLinePickCard(pick, isPrimary) {
   const tcolorGlow   = `rgba(${_tr},${_tg},${_tb},0.22)`;
 
   return `
-    <div class="line-pick-card${winningClass}" style="--tcolor:${tcolor};--tcolor-border:${tcolorBorder};--tcolor-glow:${tcolorGlow}">
+    <div class="line-pick-card" style="--tcolor:${tcolor};--tcolor-border:${tcolorBorder};--tcolor-glow:${tcolorGlow}">
       <div class="line-pick-header">
         <div class="line-pick-header-left">
           <div class="line-pick-name">${_escapeHtml(pick.player_name)}</div>
