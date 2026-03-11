@@ -122,6 +122,7 @@
   "lineup": {
     "chalk_rating_floor": 2.0,
     "chalk_min_avg_minutes": 20,
+    "chalk_max_per_team": 2,
     "game_chalk_rating_floor": 3.5,
     "avg_slot_multiplier": 1.6,
     "slot_multipliers": [

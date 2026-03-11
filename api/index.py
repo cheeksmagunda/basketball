@@ -335,7 +335,7 @@ def _predictions_to_csv(lineups, scope):
 
 CSV_HEADER = "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk"
 
-CACHE_DIR = Path("/tmp/nba_cache_v20")
+CACHE_DIR = Path("/tmp/nba_cache_v21")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -1675,9 +1675,10 @@ def _build_lineups(projections):
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
+    chalk_max_team = _cfg("lineup.chalk_max_per_team", 2)
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="est_mult",
-                            max_per_team=0)
+                            max_per_team=chalk_max_team)
 
     # ── MOONSHOT: March 5 overhaul (tuned March 11) ─────────────────────────
     # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
