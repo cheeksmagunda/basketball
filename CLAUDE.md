@@ -294,6 +294,19 @@ Three independent gates prevent pre-lock saves:
 - **Starting 5 (chalk)**: MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent.
 - **Moonshot** (v2, tuned Mar 11): Options strategy. Hard floor of **15 projected minutes** (lowered from 20 to catch emergency starters) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
 
+### Minutes Floors by Context
+
+| Context | Floor | Field | Config Key |
+|---------|-------|-------|-----------|
+| Full slate Starting 5 | 20 min | `avg_min` | `lineup.chalk_min_avg_minutes` |
+| Full slate Moonshot | 15 min | `predMin` | `moonshot.min_minutes_floor` |
+| Per-game Starting 5 | 18 min | `avg_min` | `lineup.game_chalk_min_avg_minutes` |
+| Per-game Moonshot | 12 min | `predMin` | `moonshot.game_min_minutes_floor` |
+| Line OVER | 20 min | `avg_min` | `line.min_season_minutes` |
+| Line UNDER | 20 min | `avg_min` | same — not direction-specific |
+
+Per-game floors are looser than full-slate because per-game pools are smaller (10–16 players vs. 100+), so stricter floors would often leave fewer than 5 eligible candidates. Card boost is excluded from per-game moonshot — in a single-game context everyone drafts from the same pool, so ownership edge doesn't apply.
+
 ### Development Teams (configurable in model-config.json)
 Current default: `UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership. **This list is a seasonal snapshot** — update via Ben or directly in `data/model-config.json` as the standings shift.
 
@@ -318,7 +331,8 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`
 
 Key knobs in `moonshot` section of model-config.json:
-- `min_minutes_floor`: 15 (lowered from 20) — catches emergency starters projected ~15-18 min pre-game
+- `min_minutes_floor`: 15 — full-slate predMin floor; catches emergency starters projected ~15-18 min pre-game
+- `game_min_minutes_floor`: 12 — per-game predMin floor (looser; smaller pool)
 - `card_boost_weight`: 2.5 (raised from 2.0) — ownership is the primary signal; boost^2.5 dominates
 - `big_pos_efficiency`: 0.65 — centers penalized; screens/rim-protection generate far fewer RS events per minute than guards/wings
 

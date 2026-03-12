@@ -389,7 +389,7 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":15, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":15, "game_min_minutes_floor":12, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.65,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -398,6 +398,7 @@ _CONFIG_DEFAULTS = {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
         "game_chalk_rating_floor": 3.5,
         "chalk_min_avg_minutes": 20,    # floor for chalk lineup candidates (avg_min)
+        "game_chalk_min_avg_minutes": 18,  # per-game chalk avg_min floor (looser than full-slate)
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
     },
@@ -1802,8 +1803,10 @@ def _apply_game_script(projections, game):
 def _build_game_lineups(projections, game):
     """Build lineups for a single-game draft with team balance + game script.
 
-    Starting 5: MILP-optimized with min 2 players per team.
-    Moonshot: Next 5 players by the same chalk_ev ranking (no separate contrarian algo).
+    Starting 5: MILP-optimized with min 2 players per team. Players must meet
+    avg_min and rating floors (card boost zeroed out — irrelevant in per-game context).
+    Moonshot: Top 5 by moonshot_ev (predMin × team_bonus × rating × pos_efficiency).
+    Card boost omitted — per-game pool is shared, so ownership edge doesn't apply.
     """
     # Lower floor matches slate (2.8) so weaker-roster games still fill 5 players.
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 2.8)
@@ -1822,10 +1825,13 @@ def _build_game_lineups(projections, game):
                             rating_key="rating", card_boost_key="est_mult")
 
     # Fill to 5 if chalk pool was smaller than 5 after floor + injury filtering.
+    # Apply the same avg_min floor so sub-floor players don't sneak in via the fill path.
     if len(chalk) < 5:
         chalk_names = {p["name"] for p in chalk}
         fill_pool = sorted(
-            [p for p in rescored if p["name"] not in chalk_names],
+            [p for p in rescored
+             if p["name"] not in chalk_names
+             and p.get("avg_min", 0) >= game_chalk_min_avg_min],
             key=lambda p: p.get("rating", 0), reverse=True
         )
         for p in fill_pool:
