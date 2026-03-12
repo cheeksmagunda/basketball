@@ -1663,9 +1663,10 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # SLATE-WIDE CHALK: Requires min 20 minutes (avg/recent metrics)
-        avg_recent_min = max(p.get("season_min", 0), p.get("recent_min", 0))
-        if avg_recent_min < 20.0:
+        # SLATE-WIDE CHALK: Requires min 20 recent minutes.
+        # Season averages can be stale (e.g. Olynyk 22 season / 8.9 recent);
+        # only recent form reflects actual current rotation usage.
+        if p.get("recent_min", 0) < 20.0:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1712,9 +1713,10 @@ def _build_lineups(projections):
         if p["name"] in chalk_names:
             continue
 
-        # Hard minute floor — the single most important filter.
-        # This is what kills the Conley / Wizards bench scrub problem.
-        if p.get("predMin", 0) < min_floor:
+        # Hard minute floor — recent minutes, not projected.
+        # Season averages and cascade-inflated projections can overstate
+        # actual court time for players whose role has shrunk.
+        if p.get("recent_min", 0) < min_floor:
             continue
 
         # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
@@ -1802,10 +1804,10 @@ def _build_game_lineups(projections, game):
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 2.8)
     rescored = _apply_game_script(projections, game)
 
-    # PER-GAME: Requires min 20 minutes (projected metric)
+    # PER-GAME: Requires min 20 recent minutes — same philosophy as slate-wide.
     eligible_pool = [
         p for p in rescored
-        if p.get("predMin", 0) >= 20.0 and p["rating"] >= game_chalk_floor
+        if p.get("recent_min", 0) >= 20.0 and p["rating"] >= game_chalk_floor
     ]
 
     # Per-game: card boost is irrelevant (everyone drafts from the same pool).
@@ -1818,7 +1820,7 @@ def _build_game_lineups(projections, game):
     if len(the_lineup) < 5:
         lineup_names = {p["name"] for p in the_lineup}
         fill_pool = sorted(
-            [p for p in rescored if p["name"] not in lineup_names and p.get("predMin", 0) >= 20.0],
+            [p for p in rescored if p["name"] not in lineup_names and p.get("recent_min", 0) >= 20.0],
             key=lambda p: p.get("rating", 0), reverse=True
         )
         for p in fill_pool:
