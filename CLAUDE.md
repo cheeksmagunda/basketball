@@ -40,7 +40,7 @@ server.py              — Local dev server (uvicorn)
 
 4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | Log**
 
-- **Predict**: Live slate optimizer (Starting 5 + Moonshot), per-game analysis, Magic 8-ball loading animation. "Slate-Wide | Game" sub-tabs inline at top of tab.
+- **Predict**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis ("THE LINE UP" — single 5-player format, no card boost). "Slate-Wide | Game" sub-tabs inline at top of tab. Magic 8-ball loading animation.
 - **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Odds refresh hourly from Odds API; pick cards show "Odds · [time] CT".
 - **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
 - **Log**: Historical drill-down — date strip, game grid, graded prediction cards vs actuals (no user input — upload happens through Ben). Cards have two states: **Pending** ("Waiting for results") and **Graded** (actual RS + ESPN box score stats overlaid on projections with hit/miss coloring).
@@ -289,10 +289,16 @@ Three independent gates prevent pre-lock saves:
 - **Backend guard**: `if not any(_is_locked(st) ...)` → HTTP 409 in `/api/save-predictions`
 - **Cron guard**: `/api/refresh` only calls `save_predictions()` if `any(_is_locked(...))`
 
-## Two Lineup Types
+## Three Lineup Modes
 
-- **Starting 5 (chalk)**: MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent.
-- **Moonshot** (v2, tuned Mar 11): Options strategy. Hard floor of **15 projected minutes** (lowered from 20 to catch emergency starters) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
+### Slate-Wide: Starting 5 (chalk)
+MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 20-minute avg/recent floor** (`max(season_min, recent_min) >= 20`).
+
+### Slate-Wide: Moonshot
+Options strategy. Hard floor of **17 projected minutes** + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
+
+### Per-Game: THE LINE UP
+Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant. Optimized purely by projected Real Score × slot multiplier (`est_mult` zeroed out for MILP). **Requires 20-minute projected floor.** Min 2 players per team enforced. Game script adjustments applied.
 
 ### Development Teams (configurable in model-config.json)
 Current default: `UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership. **This list is a seasonal snapshot** — update via Ben or directly in `data/model-config.json` as the standings shift.

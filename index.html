@@ -1426,7 +1426,7 @@ const TEAM_COLORS = {
 /**
  * API shapes and tab init (grep: GLOBAL STATE)
  * - SLATE: /api/slate response — { date, locked, games[], lineups: { chalk[], upside[] }, error? }.
- * - PICKS_DATA: /api/picks per gameId — { chalk[], upside[], game }.
+ * - PICKS_DATA: /api/picks per gameId — { lineups: { the_lineup[] }, game, gameScript, locked, injuries }.
  * - LINE_LOTD_STATE: AsyncState for Line tab — data = { pick, over_pick?, under_pick?, error? }; pick has stat_type, line, narrative, game_time, etc.
  * - LAB: Ben tab — messages[], briefing, cachedStatus, system; init on first visit; lock poll when locked.
  * - LOG: History tab — selectedDate, data (from /api/log/get), dateCache; init on first visit via initLogPage → buildLogDateStrip, selectLogDate.
@@ -3775,7 +3775,7 @@ ${upside.map(fmtPlayer).join('\n') || '  (none)'}`;
   return `You are Ben — the Oracle's autonomous NBA analytics and engineering assistant. Full authority: data, config, and code.
 
 APP STRUCTURE (4 tabs):
-- PREDICT: Daily lineup optimizer. Starting 5 = chalk (conservative, high-RS + moderate boost). Moonshot = high-boost upside plays (low ownership, 20+ min floor, RotoWire cleared). Slate locks 5 min before first tip. Per-game analysis available.
+- PREDICT: Daily lineup optimizer. Slate-Wide: Starting 5 = chalk (conservative, high-RS + moderate boost, 20-min avg/recent floor). Moonshot = high-boost upside plays (low ownership, 17+ min projected floor, RotoWire cleared). Per-Game: single "THE LINE UP" format (5 players, 20-min projected floor, no card boost — same 2-team pool). Slate locks 5 min before first tip.
 - LINE: Line of the Day — Over and Under prop picks. Over/Under sub-nav defaults to Under. History strip shows streak and hit rate.
 - BEN (here): Unlocked pre-game and post-game. Locked during play. End-of-day upload prompt auto-appears when all games finish.
 - HISTORY: Read-only. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player. Upload goes through Ben, not History.
