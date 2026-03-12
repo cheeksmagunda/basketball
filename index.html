@@ -2392,18 +2392,20 @@ function renderLogGrid(dateStr) {
       </div>`;
   }
 
-  // Per-game cards — only show when that scope has draft content (chalk or upside).
+  // Per-game cards — only show when that scope has draft content (chalk, upside, or the_lineup).
   gameScopes.forEach(scope => {
     const chalkCount = scopes[scope]?.chalk?.length || 0;
     const upsideCount = scopes[scope]?.upside?.length || 0;
-    if (chalkCount + upsideCount === 0) return;
+    const theLineupCount = scopes[scope]?.the_lineup?.length || 0;
+    const totalCount = chalkCount + upsideCount + theLineupCount;
+    if (totalCount === 0) return;
     html += `
       <div class="log-game-card" data-scope="${scope.replace(/"/g, '&quot;')}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div class="log-game-matchup">${scope}</div>
           <span style="color:var(--muted);font-size:1rem;margin-left:6px">›</span>
         </div>
-        <div class="log-game-meta">${chalkCount} players${hasActuals ? ' · Results' : ''}</div>
+        <div class="log-game-meta">${totalCount} players${hasActuals ? ' · Results' : ''}</div>
       </div>`;
   });
 
@@ -2429,7 +2431,10 @@ function renderLogGrid(dateStr) {
 function openLogDrilldown(scope, gameLabel) {
   LOG.scope = scope;
   LOG.gameLabel = gameLabel;
-  LOG.currentTab = 'chalk';
+
+  // Slate uses chalk/upside tabs; per-game uses the_lineup (no tabs)
+  const isSlate = scope === 'slate';
+  LOG.currentTab = isSlate ? 'chalk' : 'the_lineup';
 
   document.getElementById('logGridView').style.display = 'none';
   document.getElementById('logDrillView').style.display = 'block';
@@ -2440,6 +2445,10 @@ function openLogDrilldown(scope, gameLabel) {
 
   document.getElementById('logDrillTitle').textContent = gameLabel || scope;
   document.getElementById('logDrillDate').textContent = dateLabel;
+
+  // Show chalk/upside tabs for slate, hide for per-game
+  const tabs = document.getElementById('logDrillTabs');
+  tabs.style.display = isSlate ? 'flex' : 'none';
 
   renderLogDrillCards();
 }
