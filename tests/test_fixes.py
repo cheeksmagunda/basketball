@@ -690,8 +690,8 @@ class TestPicksServeFromCache:
              patch("api.index._cp") as mock_cp:
             mock_cp.return_value.unlink = Mock()
             _bust_slate_cache()
-        # Tombstones for _slate.json, _games.json, plus bust sentinel _bust.json
-        assert mock_write.call_count == 3
+        # Tombstones for _slate.json, _games.json, _bust.json, plus locks/_slate.json
+        assert mock_write.call_count == 4
         for call_args in mock_write.call_args_list:
             content = json.loads(call_args[0][1])
             assert content.get("_busted") is True
