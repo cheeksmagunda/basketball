@@ -1185,7 +1185,10 @@
   <div id="tab-line" class="tab-page">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Line of the Day</div>
-      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetchWithTimeout('/api/refresh-line-odds', {}, 10000);}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      <div style="display:flex;gap:6px">
+        <button onclick="_regenerateLinePicks()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRegenBtn">↺ New Pick</button>
+        <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetchWithTimeout('/api/refresh-line-odds', {}, 10000);}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      </div>
     </div>
     <!-- Over | Under direction filter — inline at top, matches Slate-Wide | Game tabs -->
     <div class="predict-sub-nav" id="lineSubNav" style="margin-top:14px">
@@ -1269,6 +1272,7 @@
         <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;margin:12px 0 6px">Ben is Locked</h3>
         <p id="labLockedReason" style="color:var(--text-dim)">Slate in progress</p>
         <p id="labLockedUnlock" style="font-size:0.72rem;color:var(--muted);margin-top:6px"></p>
+        <button type="button" class="secondary-btn" style="margin-top:14px;font-size:0.72rem;opacity:0.7" onclick="_forceCheckLabStatus()">Force Check</button>
       </div>
     </div>
     <!-- Connection error (fetch failed — we do not know if Ben is locked or not) -->
@@ -3621,6 +3625,37 @@ async function initLabPage() {
     if (connErr) connErr.style.display = 'block';
     if (connAction) connAction.innerHTML = '<button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="_resetLabAndRetry()">Retry</button>';
   }
+}
+
+async function _regenerateLinePicks() {
+  // Clear the /tmp line pick cache and reload fresh picks from the engine.
+  const btn = _el('lineRegenBtn');
+  if (btn) { btn.textContent = '...'; btn.disabled = true; }
+  try {
+    await fetchWithTimeout('/api/line/refresh', { method: 'POST' }, 10000);
+  } catch(e) {}
+  LINE_LOADED_DATE = '';
+  await initLinePage();
+  if (btn) { btn.textContent = '↺ New Pick'; btn.disabled = false; }
+}
+
+function _forceCheckLabStatus() {
+  // Bypass the 60s ESPN scoreboard cache and force an immediate re-check.
+  // Called by the "Force Check" button on the Ben locked screen.
+  fetchWithTimeout('/api/lab/status?fresh=1', {}, 15000)
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+    .then(async function(s) {
+      if (!s.locked) {
+        LAB.initialized = false;
+        var labLockedEl = _el('labLocked'); if (labLockedEl) labLockedEl.style.display = 'none';
+        var labLoad = _el('labLoading'); if (labLoad) labLoad.style.display = 'block';
+        await showLabUnlocked(s);
+        if (labLoad) labLoad.style.display = 'none';
+      } else {
+        _updateLabLockedStatus(s);
+      }
+    })
+    .catch(function(e) { console.warn('[lab] Force check failed:', e && e.message ? e.message : e); });
 }
 
 function _updateLabLockedStatus(status) {

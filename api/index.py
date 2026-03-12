@@ -3325,13 +3325,15 @@ async def get_line_of_the_day(request: Request):
                     except Exception:
                         pass
                 if cached:
-                    # Bust cache if any direction fails the minutes floor —
-                    # catches picks cached before this filter existed.
+                    # Bust cache if any direction fails the minutes floor or has empty team —
+                    # catches picks cached before these filters existed.
                     _floor_c = _cfg("line.min_season_minutes", 20.0)
                     if _floor_c > 0:
                         for _ck in ("over_pick", "under_pick"):
-                            _cp_val = (cached.get(_ck) or {}).get("avg_min")
-                            if _cp_val is not None and _cp_val < _floor_c:
+                            _ck_pick = (cached.get(_ck) or {})
+                            _cp_val = _ck_pick.get("avg_min")
+                            _cp_team = _ck_pick.get("team", "")
+                            if (_cp_val is not None and _cp_val < _floor_c) or not _cp_team:
                                 cached = None
                                 break
                 if cached:
@@ -3424,9 +3426,10 @@ async def get_line_of_the_day(request: Request):
                 _p = today_picks.get(_dir)
                 if _p:
                     _avg = _p.get("avg_min")
-                    if _avg is None or _avg < _floor:
+                    _team = _p.get("team", "")
+                    if _avg is None or _avg < _floor or not _team:
                         print(f"[line-of-the-day] discarding {_dir} {_p.get('player_name')} "
-                              f"avg_min={_avg} < floor={_floor}, will regenerate")
+                              f"avg_min={_avg} team='{_team}' — floor or empty team")
                         today_picks[_dir] = None
         if today_picks:
             missing_over  = not today_picks.get("over_pick")
@@ -3463,6 +3466,18 @@ async def get_line_of_the_day(request: Request):
         if err or not eng_result or not eng_result.get("pick"):
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                  "error": err or "no_projections"}, status_code=200)
+        # Validate generated picks: discard any direction missing team or below floor.
+        # Prevents empty-team (gold card) and sub-floor players from being cached/served.
+        _floor_gen = _cfg("line.min_season_minutes", 20.0)
+        for _gk in ("over_pick", "under_pick"):
+            _gp = eng_result.get(_gk)
+            if _gp:
+                _gavg = _gp.get("avg_min", 0) or 0
+                _gteam = _gp.get("team", "")
+                if not _gteam or (_gavg > 0 and _gavg < _floor_gen):
+                    print(f"[line-gen] discarding {_gk} {_gp.get('player_name')} "
+                          f"team='{_gteam}' avg_min={_gavg}")
+                    eng_result[_gk] = None
         # Auto-save to GitHub so picks persist across cold starts and future visits.
         # Without this, picks only exist in memory/cache and are lost on cold start.
         try:
@@ -3523,6 +3538,22 @@ async def save_line(payload: dict = Body(...)):
     _github_write_file(json_path, json.dumps(saves), f"line picks json for {today}")
 
     return {"status": "saved", "path": json_path}
+
+
+@app.post("/api/line/refresh")
+async def refresh_line_picks():
+    """Clear the line_v1 in-memory cache so the next GET /api/line-of-the-day
+    regenerates picks fresh from the engine. Does not touch slate or predictions.
+    No CRON_SECRET required — only evicts the local /tmp pick cache."""
+    try:
+        cache_file = CACHE_DIR / "line_v1.json"
+        removed = False
+        if cache_file.exists():
+            cache_file.unlink()
+            removed = True
+        return JSONResponse({"status": "ok", "cache_cleared": removed})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.get("/api/refresh-line-odds")
@@ -4228,7 +4259,7 @@ def _all_games_final(games):
         try:
             latest_dt = datetime.fromisoformat(latest_remaining.replace("Z", "+00:00"))
             hours_since_start = (now_ts - latest_dt.timestamp()) / 3600
-            if hours_since_start >= 4.5:
+            if hours_since_start >= 3.5:
                 all_final = True
                 print(f"[espn fallback] latest_remaining running {hours_since_start:.1f}h — forcing all_final=True (ESPN lagged)")
         except Exception:
@@ -4247,10 +4278,14 @@ def _all_games_final(games):
 
 
 @app.get("/api/lab/status")
-async def lab_status():
+async def lab_status(fresh: int = 0):
     """Return Lab lock status based on slate state and game completion.
+    Pass ?fresh=1 to bypass the 60s ESPN scoreboard cache and force an immediate re-check.
     On any exception (ESPN timeout, config load, etc.) returns 200 with locked=True
     so the frontend shows a retryable message instead of a generic fetch failure."""
+    if fresh:
+        _GAMES_FINAL_CACHE["result"] = None
+        _GAMES_FINAL_CACHE["ts"] = 0
     try:
         games = fetch_games()
         draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
