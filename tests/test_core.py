@@ -1107,6 +1107,13 @@ class TestJSContractGuard:
             "cold-start locked response will crash the app"
         )
 
+    def test_optional_chaining_on_lineups_the_lineup(self, script_source):
+        """Per-game lineups?.the_lineup? guard must be present."""
+        assert "lineups?.the_lineup?.length" in script_source, (
+            "Missing optional-chain null guard on lineups.the_lineup — "
+            "per-game cold-start locked response will crash the app"
+        )
+
     def test_parse_float_line_has_fallback(self, script_source):
         """parseFloat(pick.line) must have a || 0 fallback to prevent NaN."""
         assert "parseFloat(pick.line) || 0" in script_source, (
