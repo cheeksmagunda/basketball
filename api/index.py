@@ -1697,6 +1697,10 @@ def _build_lineups(projections):
         # only recent form reflects actual current rotation usage.
         if p.get("recent_min", 0) < 20.0:
             continue
+        # Also require projected minutes >= 20 so eligibility matches what we display.
+        # ESPN recent_min can be a longer/warmer split; predMin is what we project for tonight.
+        if float(p.get("predMin") or 0) < 20.0:
+            continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
