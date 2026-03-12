@@ -208,7 +208,11 @@ def _slate_backup_to_github(slate_data: dict):
         path = f"data/locks/{today}_slate.json"
         existing, _ = _github_get_file(path)
         if existing:
-            return  # already saved today
+            try:
+                if not json.loads(existing).get("_busted"):
+                    return  # Valid lock file already exists — don't overwrite
+            except Exception:
+                return  # Can't parse existing — treat as valid and skip
         content = json.dumps(slate_data, default=str)
         _github_write_file(path, content, f"slate lock backup {today}")
     except Exception as e:
@@ -222,7 +226,10 @@ def _slate_restore_from_github():
         path = f"data/locks/{today}_slate.json"
         content, _ = _github_get_file(path)
         if content:
-            return json.loads(content)
+            data = json.loads(content)
+            if data.get("_busted"):
+                return None  # Tombstoned by _bust_slate_cache — treat as cache miss
+            return data
     except Exception as e:
         print(f"slate restore err: {e}")
     return None
@@ -335,6 +342,16 @@ def _bust_slate_cache():
         )
     except Exception as e:
         print(f"[bust-slate] bust sentinel write err: {e}")
+    # Also tombstone the lock file — _slate_restore_from_github must not serve stale
+    # data after an explicit bust (e.g. when predMin filter excluded wrong players).
+    # Without this, cold-start locked requests serve the old lock file forever, since
+    # the locked path returns before reaching the slate cache or pipeline.
+    try:
+        lock_path = f"data/locks/{today}_slate.json"
+        _github_write_file(lock_path, json.dumps({"_busted": True}),
+                           f"bust slate cache {today}")
+    except Exception as e:
+        print(f"[bust-slate] lock tombstone err {lock_path}: {e}")
 
 
 def _csv_escape(v):
@@ -2127,13 +2144,10 @@ def _get_slate_impl():
             gh_backup.setdefault("draftable_count", len(draftable_games))
             _ls("slate_v5_locked", gh_backup)
             return gh_backup
-        # No cache anywhere post-lock — return empty locked state.
-        # Computing fresh would use post-tip ESPN data and produce wrong picks vs
-        # what users saw pre-lock. Frontend preserves displayed picks client-side.
-        return {"date": _et_date().isoformat(), "games": games,
-                "lineups": {"chalk": [], "upside": []},
-                "locked": True, "draftable_count": len(draftable_games),
-                "lock_time": lock_time}
+        # Lock file missing or busted (tombstoned by _bust_slate_cache) — fall through
+        # to the full pipeline for forced regeneration. This handles the case where an
+        # admin bust was requested to fix bad lineups in the lock file (e.g. predMin
+        # filter change). The pipeline runs with draftable games still in progress.
 
     # ── Layer 1: /tmp cache (warm Vercel instance) ──
     cached = _cg("slate_v5")
@@ -2195,8 +2209,11 @@ def _get_slate_impl():
             print(f"[slate-cache] clear bust err: {e}")
         if game_proj_map:
             _games_cache_to_github(game_proj_map)
-        if not locked:
-            _slate_backup_to_github(result)
+        # Write lock backup for both pre-lock and post-lock regeneration.
+        # Pre-lock: normal first-run backup. Post-lock: admin forced regeneration
+        # (e.g. after bust busted the lock file to fix wrong lineups).
+        # _slate_backup_to_github overwrites tombstones but skips valid existing files.
+        _slate_backup_to_github(result)
     if locked:
         _ls("slate_v5_locked", result)
     return result
