@@ -294,12 +294,10 @@ def _bust_slate_cache():
             _cp(key).unlink()
         except Exception:
             pass
-    # Clear per-game /tmp caches
+    # Clear all /tmp cache files (slate + per-game); they'll regenerate with new config
     try:
         for f in CACHE_DIR.glob("*.json"):
-            # game_proj_ keys are hashed, so just clear all cache files
-            # (they'll regenerate on next request)
-            pass  # Don't clear ALL — just bust slate. Per-game will be rebuilt.
+            f.unlink(missing_ok=True)
     except Exception:
         pass
     # Bust GitHub cache by writing a tombstone (cheaper than DELETE which needs SHA)
