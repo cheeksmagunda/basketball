@@ -3389,6 +3389,20 @@ async def get_line_of_the_day(request: Request):
         # If both directions are null, treat as no saved picks and regenerate from scratch
         if today_picks and not today_picks.get("over_pick") and not today_picks.get("under_pick"):
             today_picks = None
+        # Floor validation: discard any saved pick whose player doesn't meet the minutes floor.
+        # The floor is enforced at generation time in run_line_engine(), but pre-generated picks
+        # (written before this filter existed) bypass generation entirely. Nulling here causes
+        # the existing missing-direction path below to regenerate the direction fresh.
+        _floor = _cfg("line.min_season_minutes", 20.0)
+        if _floor > 0 and today_picks:
+            for _dir in ("over_pick", "under_pick"):
+                _p = today_picks.get(_dir)
+                if _p:
+                    _avg = _p.get("avg_min")
+                    if _avg is not None and _avg < _floor:
+                        print(f"[line-of-the-day] discarding {_dir} {_p.get('player_name')} "
+                              f"avg_min={_avg} < floor={_floor}, will regenerate")
+                        today_picks[_dir] = None
         if today_picks:
             missing_over  = not today_picks.get("over_pick")
             missing_under = not today_picks.get("under_pick")
