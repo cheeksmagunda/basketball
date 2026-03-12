@@ -153,17 +153,6 @@
       text-transform: uppercase; color: var(--muted); white-space: nowrap;
     }
     .header-badge.locked { color: var(--green); }
-    .header-right {
-      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-    }
-    .header-refresh-btn {
-      font-family: 'Barlow Condensed', sans-serif; font-size: 0.65rem; font-weight: 800;
-      letter-spacing: 0.08em; text-transform: uppercase; background: transparent;
-      border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
-      padding: 5px 10px; cursor: pointer; white-space: nowrap;
-    }
-    .header-refresh-btn:hover:not(:disabled) { color: var(--chalk); border-color: var(--chalk); }
-    .header-refresh-btn:disabled { opacity: 0.6; cursor: not-allowed; }
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
       position: fixed;
@@ -1070,10 +1059,7 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
-    <div class="header-right">
-      <div id="headerMeta" class="header-meta"></div>
-      <button type="button" id="refreshPicksBtn" class="header-refresh-btn" onclick="refreshPicks()">Refresh picks</button>
-    </div>
+    <div id="headerMeta" class="header-meta"></div>
   </header>
 
   <!-- ══ BOTTOM TAB NAVIGATION — Dribbble floating card ══ -->
@@ -1716,23 +1702,6 @@ async function initGameSelector() {
       }, 5000);
     }
   }
-}
-
-// Bust slate cache and reload picks (header "Refresh picks" button).
-async function refreshPicks() {
-  const btn = document.getElementById('refreshPicksBtn');
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  const origText = btn.textContent;
-  btn.textContent = '...';
-  try {
-    await fetchWithTimeout('/api/bust-slate', {}, 15000);
-    await loadSlate();
-  } catch (e) {
-    console.warn('Refresh picks failed', e);
-  }
-  btn.disabled = false;
-  btn.textContent = origText;
 }
 
 // ════════════════════════════════════════════════════════════════════

@@ -186,6 +186,8 @@ All secrets and config live in **environment variables only** — never hardcode
 | `CRON_SECRET` | (optional) Secures cron-only endpoints; Vercel sends as Bearer token when invoking crons |
 | `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
 
+**Clear cache on deploy:** Every non-bot push to `main` runs the GitHub Action `clear-cache-on-deploy.yml`, which calls `GET /api/refresh` so production caches (tmp + GitHub slate) are reset. Set **repository secrets**: `PRODUCTION_URL` (e.g. `https://your-app.vercel.app`) and `CRON_SECRET` (same value as in Vercel). If either is missing, the workflow skips without failing.
+
 ## LightGBM Model
 
 **11 features**: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_vs_season, games_played`
