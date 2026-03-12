@@ -289,7 +289,7 @@ def _bust_slate_cache():
     Called by /api/refresh and /api/lab/update-config."""
     today = _et_date().isoformat()
     # Clear /tmp caches
-    for key in ["slate_v5"]:
+    for key in ["slate_v6"]:
         try:
             _cp(key).unlink()
         except Exception:
@@ -335,7 +335,7 @@ def _predictions_to_csv(lineups, scope):
 
 CSV_HEADER = "scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk"
 
-CACHE_DIR = Path("/tmp/nba_cache_v21")
+CACHE_DIR = Path("/tmp/nba_cache_v22")
 CACHE_DIR.mkdir(exist_ok=True)
 LOCK_DIR = Path("/tmp/nba_locks_v1")
 LOCK_DIR.mkdir(exist_ok=True)
@@ -397,6 +397,7 @@ _CONFIG_DEFAULTS = {
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
         "game_chalk_rating_floor": 3.5,
+        "chalk_min_avg_minutes": 20,    # floor for chalk lineup candidates (avg_min)
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
     },
@@ -1970,7 +1971,7 @@ def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
     # Fast path: if today's locked slate is already in memory, skip ALL external calls.
     today_str = _et_date().isoformat()
-    _lk_pre = _lg("slate_v5_locked")
+    _lk_pre = _lg("slate_v6_locked")
     if _lk_pre and _lk_pre.get("date") == today_str:
         _lk_pre["locked"] = True
         _lk_pre.setdefault("draftable_count", 0)
@@ -1981,7 +1982,7 @@ def _get_slate_impl():
     if _gh_pre and _gh_pre.get("date") == today_str and _gh_pre.get("locked"):
         _gh_pre["locked"] = True
         _gh_pre.setdefault("draftable_count", 0)
-        _ls("slate_v5_locked", _gh_pre)
+        _ls("slate_v6_locked", _gh_pre)
         return _gh_pre
 
     games = fetch_games()
@@ -1995,7 +1996,7 @@ def _get_slate_impl():
         _, remaining_yesterday, _, _ = _all_games_final(games)
         if remaining_yesterday > 0:
             yesterday = (_et_date() - timedelta(days=1)).isoformat()
-            lock_cached = _lg("slate_v5_locked", yesterday)
+            lock_cached = _lg("slate_v6_locked", yesterday)
             if lock_cached:
                 lock_cached["locked"] = True
                 lock_cached.setdefault("all_complete", False)
@@ -2006,7 +2007,7 @@ def _get_slate_impl():
                     gh = json.loads(content)
                     gh["locked"] = True
                     gh.setdefault("all_complete", False)
-                    _ls("slate_v5_locked", gh, yesterday)
+                    _ls("slate_v6_locked", gh, yesterday)
                     return gh
             except Exception:
                 pass
@@ -2028,16 +2029,16 @@ def _get_slate_impl():
         # Check in-memory lock cache FIRST — avoids an ESPN call on warm instances.
         # The cached all_complete value is at most 60s stale (lock cache TTL), which is
         # acceptable since the frontend polls for the games-final transition.
-        lock_cached = _lg("slate_v5_locked")
+        lock_cached = _lg("slate_v6_locked")
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", 0)
             return lock_cached
 
         # Cache miss (cold start) — check regular /tmp cache and GitHub backup BEFORE
-        # calling ESPN. _cg("slate_v5") survives longer than the lock cache on partial
+        # calling ESPN. _cg("slate_v6") survives longer than the lock cache on partial
         # warm instances; GitHub backup exists on true cold starts after lock-promotion.
-        reg_cached = _cg("slate_v5")
+        reg_cached = _cg("slate_v6")
         gh_backup = None if reg_cached else _slate_restore_from_github()
         # Now call ESPN once to get all_complete status (only reached on cold start).
         all_final, remaining, finals, _lrs = _all_games_final(games)
@@ -2047,7 +2048,7 @@ def _get_slate_impl():
             reg_cached["locked"] = True
             reg_cached["all_complete"] = all_complete
             reg_cached.setdefault("draftable_count", 0)
-            _ls("slate_v5_locked", reg_cached)
+            _ls("slate_v6_locked", reg_cached)
             _slate_backup_to_github(reg_cached)
             return reg_cached
         if gh_backup is None:
@@ -2056,7 +2057,7 @@ def _get_slate_impl():
             gh_backup["locked"] = True
             gh_backup["all_complete"] = all_complete
             gh_backup.setdefault("draftable_count", 0)
-            _ls("slate_v5_locked", gh_backup)
+            _ls("slate_v6_locked", gh_backup)
             return gh_backup
         return {"date": _et_date().isoformat(), "games": games,
                 "lineups": {"chalk": [], "upside": []},
@@ -2085,19 +2086,19 @@ def _get_slate_impl():
             pass
 
     if locked:
-        lock_cached = _lg("slate_v5_locked")
+        lock_cached = _lg("slate_v6_locked")
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", len(draftable_games))
             if lock_time: lock_cached.setdefault("lock_time", lock_time)
             return lock_cached
         # Check regular cache and promote to lock cache
-        cached = _cg("slate_v5")
+        cached = _cg("slate_v6")
         if cached:
             cached["locked"] = True
             cached.setdefault("draftable_count", len(draftable_games))
             if lock_time: cached.setdefault("lock_time", lock_time)
-            _ls("slate_v5_locked", cached)
+            _ls("slate_v6_locked", cached)
             _slate_backup_to_github(cached)
             # Inline slate prediction save at lock-promotion time.
             # Cold-start Lambdas handling the follow-up /api/save-predictions won't
@@ -2126,7 +2127,7 @@ def _get_slate_impl():
         if gh_backup:
             gh_backup["locked"] = True
             gh_backup.setdefault("draftable_count", len(draftable_games))
-            _ls("slate_v5_locked", gh_backup)
+            _ls("slate_v6_locked", gh_backup)
             return gh_backup
         # No cache anywhere post-lock — return empty locked state.
         # Computing fresh would use post-tip ESPN data and produce wrong picks vs
@@ -2137,7 +2138,7 @@ def _get_slate_impl():
                 "lock_time": lock_time}
 
     # ── Layer 1: /tmp cache (warm Vercel instance) ──
-    cached = _cg("slate_v5")
+    cached = _cg("slate_v6")
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
         has_players = cached.get("lineups", {}).get("chalk") or cached.get("lineups", {}).get("upside")
@@ -2151,21 +2152,35 @@ def _get_slate_impl():
     if gh_cached:
         has_players = gh_cached.get("lineups", {}).get("chalk") or gh_cached.get("lineups", {}).get("upside")
         if has_players or not draftable_games:
-            gh_cached["locked"] = locked
-            gh_cached.setdefault("draftable_count", len(draftable_games))
-            if lock_time:
-                gh_cached.setdefault("lock_time", lock_time)
-            # Warm /tmp cache for subsequent requests on this instance
-            _cs("slate_v5", gh_cached)
-            # Also warm per-game /tmp caches from GitHub
-            try:
-                gh_games = _games_cache_from_github()
-                if gh_games:
-                    for gid, projs in gh_games.items():
-                        _cs(f"game_proj_{gid}", projs)
-            except Exception:
-                pass
-            return gh_cached
+            # Floor validation: bust cache if any chalk player's avg_min is below the floor.
+            # Catches slates generated before chalk_min_avg_minutes filter was added.
+            _chalk_floor = _cfg("lineup.chalk_min_avg_minutes", 20)
+            _chalk_players = (gh_cached.get("lineups") or {}).get("chalk") or []
+            _floor_fail = any(
+                (p.get("avg_min") or 0) < _chalk_floor
+                for p in _chalk_players
+                if p.get("avg_min") is not None
+            )
+            if _floor_fail:
+                print(f"[slate] busting GitHub cache — chalk player below avg_min floor {_chalk_floor}")
+                _bust_slate_cache()
+                gh_cached = None
+            else:
+                gh_cached["locked"] = locked
+                gh_cached.setdefault("draftable_count", len(draftable_games))
+                if lock_time:
+                    gh_cached.setdefault("lock_time", lock_time)
+                # Warm /tmp cache for subsequent requests on this instance
+                _cs("slate_v6", gh_cached)
+                # Also warm per-game /tmp caches from GitHub
+                try:
+                    gh_games = _games_cache_from_github()
+                    if gh_games:
+                        for gid, projs in gh_games.items():
+                            _cs(f"game_proj_{gid}", projs)
+                except Exception:
+                    pass
+                return gh_cached
 
     # ── Layer 3: First run of the day — generate fresh, then persist ──
     all_proj = []
@@ -2185,7 +2200,7 @@ def _get_slate_impl():
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
               "draftable_count": len(draftable_games), "lock_time": lock_time}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
-        _cs("slate_v5", result)
+        _cs("slate_v6", result)
         # Persist to GitHub so all Vercel instances serve the same picks
         _slate_cache_to_github(result)
         if game_proj_map:
@@ -2193,7 +2208,7 @@ def _get_slate_impl():
         if not locked:
             _slate_backup_to_github(result)
     if locked:
-        _ls("slate_v5_locked", result)
+        _ls("slate_v6_locked", result)
     return result
 
 
@@ -2321,7 +2336,7 @@ async def save_predictions():
 
     # Gather slate predictions — try all cache layers before giving up
     rows = []
-    cached_slate = _cg("slate_v5") or _lg("slate_v5_locked")
+    cached_slate = _cg("slate_v6") or _lg("slate_v6_locked")
     if not cached_slate:
         cached_slate = _slate_restore_from_github()
     if cached_slate and cached_slate.get("lineups"):
@@ -2383,7 +2398,7 @@ async def save_predictions():
 
     # Also write the slate backup now so cold-start instances can recover after lock,
     # even if this Vercel instance dies before the lock window promotes the reg cache.
-    cached_slate_for_backup = _cg("slate_v5")
+    cached_slate_for_backup = _cg("slate_v6")
     if cached_slate_for_backup:
         _slate_backup_to_github(cached_slate_for_backup)
 
@@ -2874,7 +2889,7 @@ async def refresh(request: Request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     # Auto-save predictions BEFORE clearing cache, if the slate is currently locked.
     # Cron safety net: ensures predictions persist even if no user visits at lock time.
-    # Must run first — save_predictions() reads from _cg("slate_v5") which gets wiped below.
+    # Must run first — save_predictions() reads from _cg("slate_v6") which gets wiped below.
     auto_saved = False
     try:
         games = fetch_games()
@@ -2940,7 +2955,7 @@ async def injury_check(request: Request):
         return {"status": "no_games", "skipped": True}
 
     # Load current cached slate (try /tmp first, then GitHub)
-    cached_slate = _cg("slate_v5") or _slate_cache_from_github()
+    cached_slate = _cg("slate_v6") or _slate_cache_from_github()
     if not cached_slate or not cached_slate.get("lineups"):
         return {"status": "no_cache", "skipped": True}
 
@@ -3008,7 +3023,7 @@ async def injury_check(request: Request):
     result = {**cached_slate, "lineups": {"chalk": chalk, "upside": upside}}
 
     # Persist updated slate to /tmp + GitHub
-    _cs("slate_v5", result)
+    _cs("slate_v6", result)
     _slate_cache_to_github(result)
     _games_cache_to_github(all_game_projs)
 
