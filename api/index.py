@@ -760,7 +760,9 @@ def _fetch_athlete(pid):
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
-            blended["recent_min"] = season["min"]
+            # Use actual recent minutes when we have them (even if < 10), so chalk/moonshot
+            # floors exclude low-usage players; fall back to season only when no recent split.
+            blended["recent_min"] = recent_raw_min if recent_raw_min is not None else season["min"]
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_reb"] = season["reb"]
