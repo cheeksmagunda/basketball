@@ -586,10 +586,11 @@ class TestSlateCacheGitHub:
     """Verify that /api/slate reads from GitHub cache on cold start (no /tmp)."""
 
     def test_slate_cache_from_github_returns_data(self):
-        """_slate_cache_from_github returns parsed JSON when GitHub has today's cache."""
+        """_slate_cache_from_github returns parsed JSON when GitHub has today's cache (no bust sentinel)."""
         from api.index import _slate_cache_from_github
         slate_data = {"date": "2026-03-10", "lineups": {"chalk": [{"name": "Test"}], "upside": []}}
-        with patch("api.index._github_get_file", return_value=(json.dumps(slate_data), "sha123")):
+        # First call: bust file (None = no bust); second: slate file
+        with patch("api.index._github_get_file", side_effect=[(None, None), (json.dumps(slate_data), "sha123")]):
             result = _slate_cache_from_github()
         assert result is not None
         assert result["lineups"]["chalk"][0]["name"] == "Test"
@@ -597,14 +598,14 @@ class TestSlateCacheGitHub:
     def test_slate_cache_from_github_returns_none_on_miss(self):
         """_slate_cache_from_github returns None when no cache exists."""
         from api.index import _slate_cache_from_github
-        with patch("api.index._github_get_file", return_value=(None, None)):
+        with patch("api.index._github_get_file", side_effect=[(None, None), (None, None)]):
             result = _slate_cache_from_github()
         assert result is None
 
     def test_slate_cache_from_github_ignores_busted(self):
-        """_slate_cache_from_github returns None for tombstone (busted cache)."""
+        """_slate_cache_from_github returns None when bust sentinel exists (skips slate read)."""
         from api.index import _slate_cache_from_github
-        with patch("api.index._github_get_file", return_value=(json.dumps({"_busted": True}), "sha")):
+        with patch("api.index._github_get_file", return_value=(json.dumps({"_busted": True, "at": "2026-03-10T00:00:00Z"}), "sha")):
             result = _slate_cache_from_github()
         assert result is None
 
@@ -683,17 +684,23 @@ class TestPicksServeFromCache:
         assert result is None
 
     def test_bust_slate_cache_writes_tombstone(self):
-        """_bust_slate_cache writes tombstone JSON to GitHub."""
+        """_bust_slate_cache writes tombstone + bust sentinel to GitHub."""
         from api.index import _bust_slate_cache
         with patch("api.index._github_write_file") as mock_write, \
              patch("api.index._cp") as mock_cp:
             mock_cp.return_value.unlink = Mock()
             _bust_slate_cache()
-        # Should write tombstone for both _slate.json and _games.json
-        assert mock_write.call_count == 2
+        # Tombstones for _slate.json, _games.json, plus bust sentinel _bust.json
+        assert mock_write.call_count == 3
         for call_args in mock_write.call_args_list:
             content = json.loads(call_args[0][1])
             assert content.get("_busted") is True
+        # Bust sentinel has "at" timestamp
+        paths = [c[0][0] for c in mock_write.call_args_list]
+        bust_calls = [i for i, p in enumerate(paths) if "_bust.json" in p]
+        assert len(bust_calls) == 1
+        bust_content = json.loads(mock_write.call_args_list[bust_calls[0]][0][1])
+        assert "at" in bust_content
 
     def test_get_projections_for_date_skips_github_cache(self):
         """_get_projections_for_date does NOT call GitHub cache (removed for latency)."""
