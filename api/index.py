@@ -1890,11 +1890,17 @@ def _check_rate_limit(request: Request, path_key: str):
 
 
 def _require_cron_secret(request: Request):
-    """Return True if request is authorized (cron or no CRON_SECRET set). Used by cron-only endpoints."""
+    """Return True if request is authorized (cron or no CRON_SECRET set). Used by cron-only endpoints.
+    Accepts Authorization: Bearer <CRON_SECRET> or ?key=<CRON_SECRET> so manual GET /api/refresh works
+    (e.g. myurl/api/refresh?key=SECRET). Keep the URL private — it is sensitive."""
     if not CRON_SECRET:
         return True  # backward compat: no secret configured => allow
     auth = request.headers.get("authorization", "")
-    return auth == f"Bearer {CRON_SECRET}"
+    if auth == f"Bearer {CRON_SECRET}":
+        return True
+    if request.query_params.get("key") == CRON_SECRET:
+        return True
+    return False
 
 
 @app.get("/api/health")
