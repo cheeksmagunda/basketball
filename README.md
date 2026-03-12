@@ -70,7 +70,7 @@ Subsequent visits serve from cache. Injury-triggered regeneration (`/api/injury-
 
 ## Two Lineup Types
 
-**Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Consistent, conservative.
+**Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Requires ≥20 recent and projected minutes so low-rotation players are excluded. Consistent, conservative.
 
 **Moonshot** — Options strategy. Hard requirements: ≥20 projected minutes, RotoWire lineup confirmation, ≥2.0 RS rating. Ranked by `moonshot_ev = predMin × card_boost² × dev_team_bonus × rating`. Development team players get 1.25x boost. Buys lottery tickets on high-minutes low-drafts players.
 
