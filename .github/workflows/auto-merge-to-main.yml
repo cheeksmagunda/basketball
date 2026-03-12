@@ -1,9 +1,11 @@
 name: Auto-merge to main
 
+# Pushing to claude/* or fix/* auto-merges that branch into main (then Vercel deploys).
 on:
   push:
     branches:
       - 'claude/**'
+      - 'fix/**'
 
 jobs:
   merge:

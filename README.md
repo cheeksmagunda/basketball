@@ -234,10 +234,12 @@ Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.).
 
 ## Deployment
 
-Push to the feature branch — `auto-merge-to-main.yml` merges to `main` → Vercel auto-deploys.
+Push to a feature branch — `auto-merge-to-main.yml` merges it into `main` → Vercel auto-deploys. Branches that auto-merge: **`claude/**`** and **`fix/**`**.
 
 ```bash
 git push -u origin claude/your-branch
+# or
+git push -u origin fix/your-branch
 ```
 
 ## Monitoring / Health check
