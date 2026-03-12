@@ -1131,9 +1131,8 @@
         <div style="font-size:0.78rem;color:var(--muted);letter-spacing:0.04em">Select a game above to generate analysis</div>
       </div>
 
-      <div class="mode-tabs" id="picksTabsWrap" style="display:none;">
-        <button class="mode-tab active" data-t="chalk" onclick="switchPicksTab('chalk')">⚡ Starting 5</button>
-        <button class="mode-tab" data-t="upside" onclick="switchPicksTab('upside')">🚀 Moonshot</button>
+      <div id="theLineupHeader" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;color:var(--chalk);margin-bottom:14px;text-align:center;">
+        🎯 The Line Up
       </div>
       <div id="gameScriptBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:8px 14px;margin:8px 0 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card)"></div>
       <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-card)"></div>
@@ -1881,11 +1880,6 @@ async function loadSlate() {
   }
 }
 
-function switchPicksTab(tab) {
-  document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
-  if (PICKS_DATA) renderCards(PICKS_DATA.lineups[tab] || [], 'picksList', tab);
-}
-
 function switchSlate(tab) {
   document.querySelectorAll('#slateTabs .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
   if (SLATE) renderCards(SLATE.lineups[tab] || [], 'slateList', tab);
@@ -1928,14 +1922,13 @@ async function runAnalysis() {
     }
     const picksData = await r.json();
     PICKS_STATE = asyncStateSuccess(PICKS_STATE, picksData);
-    if (picksData.locked && !picksData.lineups?.chalk?.length && PICKS_DATA) {
+    if (picksData.locked && !picksData.lineups?.the_lineup?.length && PICKS_DATA) {
       PICKS_DATA.locked = true;
     } else {
       PICKS_DATA = picksData;
     }
-    document.getElementById('picksTabsWrap').style.display = 'flex';
-    document.querySelectorAll('#picksTabsWrap .mode-tab').forEach(t =>
-      t.classList.toggle('active', t.dataset.t === 'chalk'));
+    // Show the single-mode header
+    document.getElementById('theLineupHeader').style.display = 'block';
 
     const badge = document.getElementById('gameScriptBadge');
     if (PICKS_DATA.gameScript) {
@@ -1965,7 +1958,7 @@ async function runAnalysis() {
       injBadge.style.display = 'none';
     }
 
-    renderCards(PICKS_DATA.lineups.chalk, 'picksList', 'chalk');
+    renderCards(PICKS_DATA.lineups.the_lineup, 'picksList', 'the_lineup');
     savePredictions();
   } catch(e) {
     PICKS_STATE = asyncStateError(PICKS_STATE, e);

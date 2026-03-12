@@ -322,7 +322,7 @@ def _csv_escape(v):
 def _predictions_to_csv(lineups, scope):
     """Convert lineup dicts to CSV rows."""
     rows = []
-    for lineup_type, players in [("chalk", lineups.get("chalk", [])), ("upside", lineups.get("upside", []))]:
+    for lineup_type, players in [("chalk", lineups.get("chalk", [])), ("upside", lineups.get("upside", [])), ("the_lineup", lineups.get("the_lineup", []))]:
         for p in players:
             rows.append(",".join(_csv_escape(v) for v in [
                 scope, lineup_type, p.get("slot", ""), p.get("name", ""),
@@ -1489,6 +1489,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "_cascade_bonus": round(cascade_bonus, 1),
         # Recent vs season stats — used by line engine for trend detection
         "season_min": round(stats.get("season_min", avg_min), 1),
+        "recent_min": round(recent_min, 1),
         "season_pts": round(stats.get("season_pts", pts), 1),
         "recent_pts": round(stats.get("recent_pts", pts), 1),
         "season_reb": round(stats.get("season_reb", reb), 1),
@@ -1662,6 +1663,10 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
+        # SLATE-WIDE CHALK: Requires min 20 minutes (avg/recent metrics)
+        avg_recent_min = max(p.get("season_min", 0), p.get("recent_min", 0))
+        if avg_recent_min < 20.0:
+            continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
@@ -1692,7 +1697,7 @@ def _build_lineups(projections):
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor = moon_cfg.get("min_minutes_floor", 15)
+    min_floor = moon_cfg.get("min_minutes_floor", 17)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.5)
@@ -1788,76 +1793,40 @@ def _apply_game_script(projections, game):
 
 
 def _build_game_lineups(projections, game):
-    """Build lineups for a single-game draft with team balance + game script.
+    """Build exactly ONE lineup ('THE LINE UP') for a single-game draft.
 
-    Starting 5: MILP-optimized with min 2 players per team.
-    Moonshot: Next 5 players by the same chalk_ev ranking (no separate contrarian algo).
+    Per-game drafts restrict to a single 5-player format. No Starting 5 / Moonshot
+    split — both users draft from the same 2-team pool, so card boost is irrelevant.
+    Optimized purely by projected Real Score × slot multiplier.
     """
-    # Lower floor matches slate (2.8) so weaker-roster games still fill 5 players.
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 2.8)
     rescored = _apply_game_script(projections, game)
-    chalk_eligible = [p for p in rescored if p["rating"] >= game_chalk_floor]
+
+    # PER-GAME: Requires min 20 minutes (projected metric)
+    eligible_pool = [
+        p for p in rescored
+        if p.get("predMin", 0) >= 20.0 and p["rating"] >= game_chalk_floor
+    ]
 
     # Per-game: card boost is irrelevant (everyone drafts from the same pool).
     # Optimize purely by RS × slot multiplier — zero out est_mult for MILP.
-    chalk_no_boost = [{**p, "est_mult": 0} for p in chalk_eligible]
-    chalk = optimize_lineup(chalk_no_boost, n=5, min_per_team=2, sort_key="rating",
-                            rating_key="rating", card_boost_key="est_mult")
+    no_boost = [{**p, "est_mult": 0} for p in eligible_pool]
+    the_lineup = optimize_lineup(no_boost, n=5, min_per_team=2, sort_key="rating",
+                                 rating_key="rating", card_boost_key="est_mult")
 
-    # Fill to 5 if chalk pool was smaller than 5 after floor + injury filtering.
-    if len(chalk) < 5:
-        chalk_names = {p["name"] for p in chalk}
+    # Fill to 5 if the pool was smaller than 5 after floor filtering
+    if len(the_lineup) < 5:
+        lineup_names = {p["name"] for p in the_lineup}
         fill_pool = sorted(
-            [p for p in rescored if p["name"] not in chalk_names],
+            [p for p in rescored if p["name"] not in lineup_names and p.get("predMin", 0) >= 20.0],
             key=lambda p: p.get("rating", 0), reverse=True
         )
         for p in fill_pool:
-            if len(chalk) >= 5:
+            if len(the_lineup) >= 5:
                 break
-            chalk.append(p)
+            the_lineup.append(p)
 
-    # MOONSHOT: per-game upside = minutes × RS potential (no card boost — same reason).
-    moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
-    min_floor = moon_cfg.get("min_minutes_floor", 15)
-    dev_boost = moon_cfg.get("dev_team_boost", 1.25)
-    min_weight = moon_cfg.get("minutes_weight", 1.0)
-    big_eff   = moon_cfg.get("big_pos_efficiency", 0.65)
-    use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
-    dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
-
-    chalk_names = {p["name"] for p in chalk}
-    rw_statuses = {}
-    if use_rotowire:
-        try:
-            rw_statuses = get_all_statuses()
-        except Exception:
-            pass
-
-    moonshot_pool = []
-    for p in rescored:
-        if p["name"] in chalk_names:
-            continue
-        if p.get("predMin", 0) < min_floor:
-            continue
-        if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
-            continue
-        if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
-            continue
-
-        is_dev = p.get("team", "") in dev_teams
-        team_bonus = dev_boost if is_dev else 1.0
-        pred_min = p.get("predMin", 0)
-        pos_eff  = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
-        moonshot_ev = round(
-            (pred_min ** min_weight) * team_bonus * p["rating"] * pos_eff,
-            2
-        )
-        moonshot_pool.append({**p, "moonshot_ev": moonshot_ev, "_is_dev_team": is_dev})
-
-    upside = optimize_lineup(moonshot_pool, n=5, min_per_team=2, sort_key="moonshot_ev",
-                             rating_key="rating", card_boost_key="est_mult")
-
-    return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
+    return {"the_lineup": [_normalize_player(p) for p in the_lineup]}
 
 def _get_injuries(game):
     """Get list of OUT players for a game (from cached roster data)."""
@@ -2217,11 +2186,11 @@ def _compute_game_picks(game):
         projections = _run_game(game)
         if not projections:
             return None
-        chalk, upside = _build_game_lineups(projections, game)
+        lineups_dict = _build_game_lineups(projections, game)
         result = {
             "date": _et_date().isoformat(), "game": game,
             "gameScript": _game_script_label(game.get("total")),
-            "lineups": {"chalk": chalk, "upside": upside},
+            "lineups": lineups_dict,
             "locked": True, "injuries": _get_injuries(game),
         }
         _cs(f"picks_{gid}", result)
@@ -2261,7 +2230,7 @@ async def get_picks(gameId: str = Query(...)):
             return auto
         return {"date": _et_date().isoformat(), "game": game,
                 "gameScript": None,
-                "lineups": {"chalk": [], "upside": []},
+                "lineups": {"the_lineup": []},
                 "locked": True, "injuries": []}
 
     # Try /tmp cache first (populated by /api/slate or previous /api/picks)
@@ -2278,13 +2247,13 @@ async def get_picks(gameId: str = Query(...)):
         projections = _run_game(game)
     if not projections:
         return JSONResponse({"error": "No projections available."}, status_code=503)
-    chalk, upside = _build_game_lineups(projections, game)
+    lineups_dict = _build_game_lineups(projections, game)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
 
     result = {"date": _et_date().isoformat(), "game": game,
               "gameScript": script,
-              "lineups": {"chalk": chalk, "upside": upside},
+              "lineups": lineups_dict,
               "locked": locked,
               "injuries": injuries}
     # Cache picks so they survive as lock snapshot if slate locks later
