@@ -2892,8 +2892,7 @@ async def hindsight(payload: dict = Body(...)):
 
 @app.get("/api/refresh")
 async def refresh(request: Request):
-    if not _require_cron_secret(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    # No auth required — cache clearing is non-destructive and user-facing.
     # Auto-save predictions BEFORE clearing cache, if the slate is currently locked.
     # Cron safety net: ensures predictions persist even if no user visits at lock time.
     # Must run first — save_predictions() reads from _cg("slate_v5") which gets wiped below.
