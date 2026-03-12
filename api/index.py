@@ -34,18 +34,6 @@ from fastapi import FastAPI, Query, Body, File, Form, UploadFile, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
-# #region agent log
-def _dbg(payload: dict):
-    _p = {"sessionId": "8c893a", "timestamp": int(time.time() * 1000), **payload}
-    try:
-        logpath = Path(__file__).resolve().parents[1] / ".cursor" / "debug-8c893a.log"
-        logpath.parent.mkdir(parents=True, exist_ok=True)
-        with open(logpath, "a") as f:
-            f.write(json.dumps(_p) + "\n")
-    except Exception:
-        pass
-# #endregion
-
 # Load .env before importing ecosystem modules so module-level os.getenv() calls
 # (e.g. ANTHROPIC_API_KEY in line_engine.py) pick up local env vars correctly.
 load_dotenv()
@@ -258,14 +246,21 @@ def _slate_cache_to_github(slate_data: dict):
         print(f"[slate-cache] write err: {e}")
 
 def _slate_cache_from_github():
-    """Load today's cached slate from GitHub. Returns dict or None."""
+    """Load today's cached slate from GitHub. Returns dict or None.
+    Checks bust sentinel first so all instances skip Layer 2 after a refresh
+    even when the main slate file is still stale (replication/cache)."""
     try:
         today = _et_date().isoformat()
+        bust_path = f"data/slate/{today}_bust.json"
+        bust_content, _ = _github_get_file(bust_path)
+        if bust_content:
+            bust_data = json.loads(bust_content)
+            if bust_data.get("_busted") or bust_data.get("at"):
+                return None
         path = f"data/slate/{today}_slate.json"
         content, _ = _github_get_file(path)
         if content:
             data = json.loads(content)
-            # Ignore tombstone / busted cache
             if data.get("_busted"):
                 return None
             return data
@@ -322,14 +317,24 @@ def _bust_slate_cache():
             f.unlink(missing_ok=True)
     except Exception:
         pass
-    # Bust GitHub cache by writing a tombstone (cheaper than DELETE which needs SHA)
+    # Bust GitHub cache: tombstone on slate/games + separate bust sentinel so all
+    # instances see "bust" even when the main slate file is still stale (replication).
     for suffix in ["_slate.json", "_games.json"]:
         try:
             path = f"data/slate/{today}{suffix}"
             _github_write_file(path, json.dumps({"_busted": True}),
                                f"bust slate cache {today}")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[bust-slate] tombstone write err {path}: {e}")
+    try:
+        bust_path = f"data/slate/{today}_bust.json"
+        _github_write_file(
+            bust_path,
+            json.dumps({"_busted": True, "at": datetime.now(timezone.utc).isoformat()}),
+            f"bust sentinel {today}",
+        )
+    except Exception as e:
+        print(f"[bust-slate] bust sentinel write err: {e}")
 
 
 def _csv_escape(v):
@@ -1684,9 +1689,6 @@ def _build_lineups(projections):
     # Mar 5 insight: Ace Bailey (RS 5.9 × boost 2.1) >>> Wemby (RS 7.1 × boost 0.3).
     # RotoWire filter applied here too — chalk can't include OUT/questionable players.
     chalk_eligible = []
-    # #region agent log
-    skipped_low_min = []
-    # #endregion
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
@@ -1694,9 +1696,6 @@ def _build_lineups(projections):
         # Season averages can be stale (e.g. Olynyk 22 season / 8.9 recent);
         # only recent form reflects actual current rotation usage.
         if p.get("recent_min", 0) < 20.0:
-            # #region agent log
-            skipped_low_min.append({"name": p.get("name"), "recent_min": p.get("recent_min")})
-            # #endregion
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1708,9 +1707,6 @@ def _build_lineups(projections):
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
-    # #region agent log
-    _dbg({"hypothesisId": "B", "location": "build_lineups", "message": "chalk eligibility", "data": {"chalk_final": [{"name": p.get("name"), "recent_min": p.get("recent_min")} for p in chalk], "skipped_low_recent_min": skipped_low_min}})
-    # #endregion
 
     # ── MOONSHOT: March 5 overhaul (tuned March 11) ─────────────────────────
     # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
@@ -2143,9 +2139,6 @@ def _get_slate_impl():
         if has_players or not draftable_games:
             cached["locked"] = locked
             cached.setdefault("draftable_count", len(draftable_games))
-            # #region agent log
-            _dbg({"hypothesisId": "A", "location": "get_slate_impl", "message": "slate from Layer 1 tmp", "data": {"chalk_names": [p.get("name") for p in (cached.get("lineups") or {}).get("chalk") or []]}})
-            # #endregion
             return cached
 
     # ── Layer 2: GitHub persistent cache (cold-start recovery) ──
@@ -2167,9 +2160,6 @@ def _get_slate_impl():
                         _cs(f"game_proj_{gid}", projs)
             except Exception:
                 pass
-            # #region agent log
-            _dbg({"hypothesisId": "A", "location": "get_slate_impl", "message": "slate from Layer 2 GitHub", "data": {"chalk_names": [p.get("name") for p in (gh_cached.get("lineups") or {}).get("chalk") or []]}})
-            # #endregion
             return gh_cached
 
     # ── Layer 3: First run of the day — generate fresh, then persist ──
@@ -2189,13 +2179,16 @@ def _get_slate_impl():
     result = {"date": _et_date().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
               "draftable_count": len(draftable_games), "lock_time": lock_time}
-    # #region agent log
-    _dbg({"hypothesisId": "A", "location": "get_slate_impl", "message": "slate from Layer 3 regenerate", "data": {"chalk_names": [p.get("name") for p in chalk]}})
-    # #endregion
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
         # Persist to GitHub so all Vercel instances serve the same picks
         _slate_cache_to_github(result)
+        # Clear bust sentinel so future cold starts can use this slate from GitHub
+        try:
+            today = _et_date().isoformat()
+            _github_write_file(f"data/slate/{today}_bust.json", "{}", f"clear bust {today}")
+        except Exception as e:
+            print(f"[slate-cache] clear bust err: {e}")
         if game_proj_map:
             _games_cache_to_github(game_proj_map)
         if not locked:
