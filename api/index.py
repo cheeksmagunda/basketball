@@ -2681,7 +2681,7 @@ async def log_get(date: str = Query(None)):
     for row in predictions:
         scope = row.get("scope", "")
         lt = row.get("lineup_type", "chalk")
-        scopes.setdefault(scope, {"chalk": [], "upside": []})[lt].append(_normalize_player({
+        scopes.setdefault(scope, {"chalk": [], "upside": [], "the_lineup": []})[lt].append(_normalize_player({
             "slot": row.get("slot", ""),
             "name": row.get("player_name", ""),
             "team": row.get("team", ""),
