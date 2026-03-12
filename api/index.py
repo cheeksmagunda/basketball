@@ -2828,6 +2828,16 @@ async def hindsight(payload: dict = Body(...)):
     return {"lineup": [_normalize_player(p) for p in lineup]}
 
 
+@app.get("/api/bust-slate")
+def bust_slate():
+    """Bust slate cache (tmp + GitHub) so next /api/slate regenerates. No auth — used by Predict Refresh picks button."""
+    try:
+        _bust_slate_cache()
+        return {"status": "ok", "message": "Slate cache busted; next request will regenerate."}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
 @app.get("/api/refresh")
 async def refresh(request: Request):
     if not _require_cron_secret(request):
