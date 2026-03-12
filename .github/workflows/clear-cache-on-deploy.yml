@@ -1,9 +1,8 @@
-# On every non-auto push to main, production deploys (Vercel). This workflow
-# calls GET /api/refresh so all caches (tmp + GitHub slate tombstone) are reset
-# and the next request uses the new code (e.g. recent_raw_min fix).
+# On every push to main (including auto-merge from fix/* or claude/*), production
+# deploys (Vercel). This workflow calls GET /api/refresh so all caches are reset
+# and the next request uses the new code.
 #
-# Requires repo secrets: PRODUCTION_URL (e.g. https://your-app.vercel.app),
-# CRON_SECRET (same value as in Vercel env for cron auth).
+# Requires repo secrets: PRODUCTION_URL, CRON_SECRET.
 name: Clear cache on production deploy
 
 on:
@@ -12,8 +11,6 @@ on:
 
 jobs:
   clear-cache:
-    # Only run when the push was not from our auto-merge bot (so "non-auto" = human merge/push)
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Wait for Vercel deploy
