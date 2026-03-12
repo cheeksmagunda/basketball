@@ -1807,8 +1807,13 @@ def _build_game_lineups(projections, game):
     """
     # Lower floor matches slate (2.8) so weaker-roster games still fill 5 players.
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 2.8)
+    game_chalk_min_avg_min = _cfg("lineup.game_chalk_min_avg_minutes", 18)
     rescored = _apply_game_script(projections, game)
-    chalk_eligible = [p for p in rescored if p["rating"] >= game_chalk_floor]
+    chalk_eligible = [
+        p for p in rescored
+        if p["rating"] >= game_chalk_floor
+        and p.get("avg_min", 0) >= game_chalk_min_avg_min
+    ]
 
     # Per-game: card boost is irrelevant (everyone drafts from the same pool).
     # Optimize purely by RS × slot multiplier — zero out est_mult for MILP.
@@ -1830,7 +1835,7 @@ def _build_game_lineups(projections, game):
 
     # MOONSHOT: per-game upside = minutes × RS potential (no card boost — same reason).
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
-    min_floor = moon_cfg.get("min_minutes_floor", 15)
+    min_floor = moon_cfg.get("game_min_minutes_floor", 12)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     min_weight = moon_cfg.get("minutes_weight", 1.0)
     big_eff   = moon_cfg.get("big_pos_efficiency", 0.65)

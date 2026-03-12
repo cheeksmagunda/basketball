@@ -124,6 +124,7 @@
     "chalk_min_avg_minutes": 20,
     "chalk_max_per_team": 2,
     "game_chalk_rating_floor": 3.5,
+    "game_chalk_min_avg_minutes": 18,
     "avg_slot_multiplier": 1.6,
     "slot_multipliers": [
       2.0,
@@ -142,7 +143,8 @@
     "min_edge_other": 1.5
   },
   "moonshot": {
-    "min_minutes_floor": 20,
+    "min_minutes_floor": 15,
+    "game_min_minutes_floor": 12,
     "min_avg_minutes": 15,
     "min_card_boost": 1.0,
     "min_rating_floor": 2.0,
