@@ -3310,6 +3310,16 @@ async def get_line_of_the_day(request: Request):
                     except Exception:
                         pass
                 if cached:
+                    # Bust cache if any direction fails the minutes floor —
+                    # catches picks cached before this filter existed.
+                    _floor_c = _cfg("line.min_season_minutes", 20.0)
+                    if _floor_c > 0:
+                        for _ck in ("over_pick", "under_pick"):
+                            _cp_val = (cached.get(_ck) or {}).get("avg_min")
+                            if _cp_val is not None and _cp_val < _floor_c:
+                                cached = None
+                                break
+                if cached:
                     return JSONResponse(cached)
 
         today_picks = _load_line_pick_for_date(today_str)
@@ -3399,7 +3409,7 @@ async def get_line_of_the_day(request: Request):
                 _p = today_picks.get(_dir)
                 if _p:
                     _avg = _p.get("avg_min")
-                    if _avg is not None and _avg < _floor:
+                    if _avg is None or _avg < _floor:
                         print(f"[line-of-the-day] discarding {_dir} {_p.get('player_name')} "
                               f"avg_min={_avg} < floor={_floor}, will regenerate")
                         today_picks[_dir] = None

@@ -418,16 +418,21 @@ def _enrich_pick_from_projections(pick, projections, game_ctx_map):
     season_field = meta["season_field"]
     recent_field = meta["recent_field"]
     for p in projections:
-        if p.get("name") == name and p.get("team") == team:
+        # Match by name + team; fall back to name-only when Claude returned empty team
+        if p.get("name") == name and (not team or p.get("team") == team):
+            # Backfill team if Claude left it empty
+            if not pick.get("team") and p.get("team"):
+                pick["team"] = p["team"]
             if "season_avg" not in pick or pick.get("season_avg") is None:
                 pick["season_avg"] = round(p.get(season_field, p.get(meta["field"], 0)), 1)
             if "proj_min" not in pick or pick.get("proj_min") is None:
                 pick["proj_min"] = round(p.get("predMin", 0), 1)
-            avg_min = p.get("season_min", p.get("min", 0))
+            # Use avg_min (role-adjusted, blended) — NOT season_min which is inflated for traded players
+            avg_min = p.get("avg_min", p.get("min", 0))
             if "avg_min" not in pick or pick.get("avg_min") is None:
                 pick["avg_min"] = round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0
             if "game_time" not in pick or not pick.get("game_time"):
-                pick["game_time"] = game_ctx_map.get(team, {}).get("game_time", "")
+                pick["game_time"] = game_ctx_map.get(p.get("team", team), {}).get("game_time", "")
             if "recent_form_bars" not in pick or not pick.get("recent_form_bars"):
                 season_val = p.get(season_field, p.get(meta["field"], 0)) or 0.01
                 recent_val = p.get(recent_field, pick.get("projection", 0))
