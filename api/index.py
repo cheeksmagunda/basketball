@@ -34,6 +34,18 @@ from fastapi import FastAPI, Query, Body, File, Form, UploadFile, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
+# #region agent log
+def _dbg(payload: dict):
+    _p = {"sessionId": "8c893a", "timestamp": int(time.time() * 1000), **payload}
+    try:
+        logpath = Path(__file__).resolve().parents[1] / ".cursor" / "debug-8c893a.log"
+        logpath.parent.mkdir(parents=True, exist_ok=True)
+        with open(logpath, "a") as f:
+            f.write(json.dumps(_p) + "\n")
+    except Exception:
+        pass
+# #endregion
+
 # Load .env before importing ecosystem modules so module-level os.getenv() calls
 # (e.g. ANTHROPIC_API_KEY in line_engine.py) pick up local env vars correctly.
 load_dotenv()
@@ -770,9 +782,11 @@ def _fetch_athlete(pid):
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
-            # Use actual recent minutes when we have them (even if < 10), so chalk/moonshot
-            # floors exclude low-usage players; fall back to season only when no recent split.
-            blended["recent_min"] = recent_raw_min if recent_raw_min is not None else season["min"]
+            # Use actual recent minutes when we have them (even if < 10). When there is
+            # no recent split at all (recent_raw_min is None), do NOT use season_min as
+            # proxy — that let Olynyk/Plumlee etc. pass the 20-min chalk filter. Use 0
+            # so chalk/moonshot filters exclude them until we have real recent data.
+            blended["recent_min"] = recent_raw_min if recent_raw_min is not None else 0.0
             blended["recent_pts"] = season["pts"]
             blended["season_pts"] = season["pts"]
             blended["recent_reb"] = season["reb"]
@@ -1670,6 +1684,9 @@ def _build_lineups(projections):
     # Mar 5 insight: Ace Bailey (RS 5.9 × boost 2.1) >>> Wemby (RS 7.1 × boost 0.3).
     # RotoWire filter applied here too — chalk can't include OUT/questionable players.
     chalk_eligible = []
+    # #region agent log
+    skipped_low_min = []
+    # #endregion
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
@@ -1677,6 +1694,9 @@ def _build_lineups(projections):
         # Season averages can be stale (e.g. Olynyk 22 season / 8.9 recent);
         # only recent form reflects actual current rotation usage.
         if p.get("recent_min", 0) < 20.0:
+            # #region agent log
+            skipped_low_min.append({"name": p.get("name"), "recent_min": p.get("recent_min")})
+            # #endregion
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1688,6 +1708,9 @@ def _build_lineups(projections):
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="est_mult",
                             max_per_team=0)
+    # #region agent log
+    _dbg({"hypothesisId": "B", "location": "build_lineups", "message": "chalk eligibility", "data": {"chalk_final": [{"name": p.get("name"), "recent_min": p.get("recent_min")} for p in chalk], "skipped_low_recent_min": skipped_low_min}})
+    # #endregion
 
     # ── MOONSHOT: March 5 overhaul (tuned March 11) ─────────────────────────
     # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
@@ -2120,6 +2143,9 @@ def _get_slate_impl():
         if has_players or not draftable_games:
             cached["locked"] = locked
             cached.setdefault("draftable_count", len(draftable_games))
+            # #region agent log
+            _dbg({"hypothesisId": "A", "location": "get_slate_impl", "message": "slate from Layer 1 tmp", "data": {"chalk_names": [p.get("name") for p in (cached.get("lineups") or {}).get("chalk") or []]}})
+            # #endregion
             return cached
 
     # ── Layer 2: GitHub persistent cache (cold-start recovery) ──
@@ -2141,6 +2167,9 @@ def _get_slate_impl():
                         _cs(f"game_proj_{gid}", projs)
             except Exception:
                 pass
+            # #region agent log
+            _dbg({"hypothesisId": "A", "location": "get_slate_impl", "message": "slate from Layer 2 GitHub", "data": {"chalk_names": [p.get("name") for p in (gh_cached.get("lineups") or {}).get("chalk") or []]}})
+            # #endregion
             return gh_cached
 
     # ── Layer 3: First run of the day — generate fresh, then persist ──
@@ -2160,6 +2189,9 @@ def _get_slate_impl():
     result = {"date": _et_date().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
               "draftable_count": len(draftable_games), "lock_time": lock_time}
+    # #region agent log
+    _dbg({"hypothesisId": "A", "location": "get_slate_impl", "message": "slate from Layer 3 regenerate", "data": {"chalk_names": [p.get("name") for p in chalk]}})
+    # #endregion
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
         # Persist to GitHub so all Vercel instances serve the same picks
