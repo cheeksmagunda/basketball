@@ -1,0 +1,40 @@
+# On every non-auto push to main, production deploys (Vercel). This workflow
+# calls GET /api/refresh so all caches (tmp + GitHub slate tombstone) are reset
+# and the next request uses the new code (e.g. recent_raw_min fix).
+#
+# Requires repo secrets: PRODUCTION_URL (e.g. https://your-app.vercel.app),
+# CRON_SECRET (same value as in Vercel env for cron auth).
+name: Clear cache on production deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  clear-cache:
+    # Only run when the push was not from our auto-merge bot (so "non-auto" = human merge/push)
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Vercel deploy
+        run: sleep 90
+
+      - name: Call /api/refresh to reset all caches
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$PRODUCTION_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::warning:: PRODUCTION_URL or CRON_SECRET not set; skipping cache clear."
+            exit 0
+          fi
+          url="${PRODUCTION_URL%/}/api/refresh"
+          echo "Calling $url ..."
+          resp=$(curl -s -w "\n%{http_code}" -X GET "$url" -H "Authorization: Bearer $CRON_SECRET" --connect-timeout 15 --max-time 60) || true
+          code=$(echo "$resp" | tail -n1)
+          body=$(echo "$resp" | sed '$d')
+          if [ "$code" = "200" ]; then
+            echo "Cache cleared: $body"
+          else
+            echo "::warning:: /api/refresh returned HTTP $code: $body"
+          fi

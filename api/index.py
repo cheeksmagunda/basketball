@@ -279,14 +279,24 @@ def _games_cache_from_github():
         path = f"data/slate/{today}_games.json"
         content, _ = _github_get_file(path)
         if content:
-            return json.loads(content)
+            data = json.loads(content)
+            if data.get("_busted"):
+                return None
+            return data
     except Exception as e:
         print(f"[games-cache] read err: {e}")
     return None
 
 def _bust_slate_cache():
     """Clear today's slate cache from /tmp AND GitHub so next request regenerates.
-    Called by /api/refresh and /api/lab/update-config."""
+    Called by /api/refresh and /api/lab/update-config.
+
+    If Starting 5 still shows low-recent-min players (e.g. Olynyk, Plumlee, Drummond)
+    after a bust: (1) Ensure this codebase is deployed with the recent_raw_min fix
+    (_fetch_athlete using recent_raw_min when recent split < 10). (2) On serverless,
+    each instance has its own /tmp; the tombstone on GitHub forces all instances to
+    treat slate cache as miss and regenerate. (3) If the app is still on an old deploy,
+    merge and deploy the fix, then trigger /api/refresh or wait for next slate load."""
     today = _et_date().isoformat()
     # Clear /tmp caches
     for key in ["slate_v5"]:
@@ -1880,11 +1890,17 @@ def _check_rate_limit(request: Request, path_key: str):
 
 
 def _require_cron_secret(request: Request):
-    """Return True if request is authorized (cron or no CRON_SECRET set). Used by cron-only endpoints."""
+    """Return True if request is authorized (cron or no CRON_SECRET set). Used by cron-only endpoints.
+    Accepts Authorization: Bearer <CRON_SECRET> or ?key=<CRON_SECRET> so manual GET /api/refresh works
+    (e.g. myurl/api/refresh?key=SECRET). Keep the URL private — it is sensitive."""
     if not CRON_SECRET:
         return True  # backward compat: no secret configured => allow
     auth = request.headers.get("authorization", "")
-    return auth == f"Bearer {CRON_SECRET}"
+    if auth == f"Bearer {CRON_SECRET}":
+        return True
+    if request.query_params.get("key") == CRON_SECRET:
+        return True
+    return False
 
 
 @app.get("/api/health")
@@ -2826,16 +2842,6 @@ async def hindsight(payload: dict = Body(...)):
                              sort_key="chalk_ev", rating_key="rating",
                              card_boost_key="est_mult")
     return {"lineup": [_normalize_player(p) for p in lineup]}
-
-
-@app.get("/api/bust-slate")
-def bust_slate():
-    """Bust slate cache (tmp + GitHub) so next /api/slate regenerates. No auth — used by Predict Refresh picks button."""
-    try:
-        _bust_slate_cache()
-        return {"status": "ok", "message": "Slate cache busted; next request will regenerate."}
-    except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.get("/api/refresh")

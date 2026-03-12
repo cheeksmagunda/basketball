@@ -104,7 +104,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
 | `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) per player for completed games |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set) |
+| `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set). Manual: `Authorization: Bearer <CRON_SECRET>` or `?key=<CRON_SECRET>` (keep URL private). |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
 
 ### Line of the Day
@@ -159,6 +159,8 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 
 **Cache TTLs**: Game final (60s when locked, 180s pre-slate), model config (5 min), RotoWire (30 min), odds (1 hour), slate cache (1 day, GitHub-persisted). Explicit invalidation via `/api/refresh` or `_bust_slate_cache()`.
 
+**Why hitting `/api/refresh` didn't reset picks (and how it's fixed):** (1) **Auth** — When `CRON_SECRET` is set, opening `myurl/api/refresh` in a browser sends no token, so the server returns 401 and does nothing. **Fix:** Call with `Authorization: Bearer <CRON_SECRET>` or use `myurl/api/refresh?key=<CRON_SECRET>` (keep the URL private). (2) **Games cache tombstone** — After a bust we write `{"_busted": true}` to the games file on GitHub; the reader now treats that as "no cache" instead of using it. (3) **Deploy vs. cache** — Picks are built from the deployed code; if production hadn't been updated (e.g. with the `recent_raw_min` fix), refresh would clear cache but the next rebuild would still use the old logic. Deploy the fix, then refresh (or rely on the new "clear cache on deploy" workflow).
+
 **Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
 
 **ESPN API Fallback**: If game status not updated for 4+ hours, mark as final. Requires at least one game in Final status before unlocking (safety against outages).
@@ -185,6 +187,8 @@ All secrets and config live in **environment variables only** — never hardcode
 | `ODDS_API_KEY` | The Odds API — player prop lines for Line of the Day |
 | `CRON_SECRET` | (optional) Secures cron-only endpoints; Vercel sends as Bearer token when invoking crons |
 | `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
+
+**Clear cache on deploy:** Every non-bot push to `main` runs the GitHub Action `clear-cache-on-deploy.yml`, which calls `GET /api/refresh` so production caches (tmp + GitHub slate) are reset. Set **repository secrets**: `PRODUCTION_URL` (e.g. `https://your-app.vercel.app`) and `CRON_SECRET` (same value as in Vercel). If either is missing, the workflow skips without failing.
 
 ## LightGBM Model
 
