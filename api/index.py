@@ -121,9 +121,12 @@ def _data_ref(path: str):
 
 _DATA_BRANCH_ENSURED = False
 
+_DATA_BRANCH_VERCEL_FIXED = False
+
 def _ensure_data_branch():
-    """Create branch 'data' from main if it does not exist. Idempotent."""
-    global _DATA_BRANCH_ENSURED
+    """Create branch 'data' from main if it does not exist. Idempotent.
+    Also ensures vercel.json on data branch skips builds (one-time fix)."""
+    global _DATA_BRANCH_ENSURED, _DATA_BRANCH_VERCEL_FIXED
     if _DATA_BRANCH_ENSURED or not GITHUB_TOKEN or not GITHUB_REPO:
         return
     try:
@@ -134,6 +137,9 @@ def _ensure_data_branch():
         )
         if r.status_code == 200:
             _DATA_BRANCH_ENSURED = True
+            # One-time fix: ensure data branch vercel.json skips builds
+            if not _DATA_BRANCH_VERCEL_FIXED:
+                _fix_data_branch_vercel_json()
             return
         if r.status_code != 404:
             return
@@ -153,6 +159,42 @@ def _ensure_data_branch():
             _DATA_BRANCH_ENSURED = True
     except Exception:
         pass
+
+
+def _fix_data_branch_vercel_json():
+    """Ensure data branch vercel.json has ignoreCommand that skips all builds.
+    Runs once per instance; no-op if already correct."""
+    global _DATA_BRANCH_VERCEL_FIXED
+    try:
+        content, sha = _github_get_file("vercel.json", ref_override=DATA_BRANCH)
+        if not content:
+            _DATA_BRANCH_VERCEL_FIXED = True
+            return
+        data = json.loads(content)
+        expected_prefix = 'if [ "$VERCEL_GIT_COMMIT_REF" = "data" ]; then exit 0; fi'
+        current = data.get("ignoreCommand", "")
+        if expected_prefix in current:
+            _DATA_BRANCH_VERCEL_FIXED = True
+            return
+        # Update ignoreCommand to skip builds on data branch
+        data["ignoreCommand"] = f'{expected_prefix}; git diff --quiet HEAD~1 HEAD -- . \':!data\' \':!.github\''
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/vercel.json"
+        payload = {
+            "message": "fix: skip Vercel builds on data branch",
+            "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode(),
+            "branch": DATA_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+        requests.put(url, json=payload, headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+        }, timeout=15)
+        _DATA_BRANCH_VERCEL_FIXED = True
+        print(f"[data-branch] Updated vercel.json ignoreCommand to skip builds")
+    except Exception as e:
+        print(f"[data-branch] vercel.json fix failed (non-fatal): {e}")
+        _DATA_BRANCH_VERCEL_FIXED = True  # Don't retry on error
 
 def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None).
@@ -243,12 +285,93 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
     return {"error": "GitHub write failed after maximum retries"}
 
 
+def _github_write_batch(files: list, message: str = "auto-update") -> dict:
+    """Write multiple files in a single commit using the Git Trees API.
+    files: list of {"path": str, "content": str}.
+    Uses the data branch for data/* paths (except model-config).
+    Falls back to sequential _github_write_file if tree API fails."""
+    if not GITHUB_TOKEN or not GITHUB_REPO or not files:
+        return {"error": "no files or credentials"}
+    # Determine branch — all files in a batch should target the same branch
+    branch = _data_ref(files[0]["path"]) or "main"
+    if branch != "main":
+        _ensure_data_branch()
+    h = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        # Get the current commit SHA for the target branch
+        ref_r = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{branch}",
+            headers=h, timeout=10,
+        )
+        if ref_r.status_code != 200:
+            raise ValueError(f"ref lookup failed: {ref_r.status_code}")
+        base_sha = ref_r.json()["object"]["sha"]
+        # Get the tree SHA of the base commit
+        commit_r = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/commits/{base_sha}",
+            headers=h, timeout=10,
+        )
+        if commit_r.status_code != 200:
+            raise ValueError(f"commit lookup failed: {commit_r.status_code}")
+        base_tree_sha = commit_r.json()["tree"]["sha"]
+        # Build tree entries
+        tree_entries = []
+        for f in files:
+            tree_entries.append({
+                "path": f["path"],
+                "mode": "100644",
+                "type": "blob",
+                "content": f["content"],
+            })
+        # Create new tree
+        tree_r = requests.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/trees",
+            json={"base_tree": base_tree_sha, "tree": tree_entries},
+            headers=h, timeout=15,
+        )
+        if tree_r.status_code not in (200, 201):
+            raise ValueError(f"tree create failed: {tree_r.status_code}")
+        new_tree_sha = tree_r.json()["sha"]
+        # Create commit
+        commit_create_r = requests.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/commits",
+            json={"message": message, "tree": new_tree_sha, "parents": [base_sha]},
+            headers=h, timeout=15,
+        )
+        if commit_create_r.status_code not in (200, 201):
+            raise ValueError(f"commit create failed: {commit_create_r.status_code}")
+        new_commit_sha = commit_create_r.json()["sha"]
+        # Update branch ref
+        ref_update_r = requests.patch(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{branch}",
+            json={"sha": new_commit_sha},
+            headers=h, timeout=10,
+        )
+        if ref_update_r.status_code != 200:
+            raise ValueError(f"ref update failed: {ref_update_r.status_code}")
+        return {"ok": True, "sha": new_commit_sha}
+    except Exception as e:
+        print(f"[github] batch write failed, falling back to sequential: {e}")
+        # Fallback: write files one at a time
+        for f in files:
+            try:
+                _github_write_file(f["path"], f["content"], message)
+            except Exception as e2:
+                print(f"[github] sequential fallback err {f['path']}: {e2}")
+        return {"ok": True, "fallback": True}
+
+
 def _github_delete_file(path, sha, message="auto-delete"):
-    """Delete a file from the GitHub repo via Contents API."""
+    """Delete a file from the GitHub repo via Contents API.
+    Routes data/* paths to data branch (same as write/read)."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return False
+    branch = _data_ref(path)
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    r = requests.delete(url, json={"message": message, "sha": sha}, headers={
+    payload = {"message": message, "sha": sha}
+    if branch:
+        payload["branch"] = branch
+    r = requests.delete(url, json=payload, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }, timeout=15)
@@ -379,34 +502,20 @@ def _bust_slate_cache():
             f.unlink(missing_ok=True)
     except Exception:
         pass
-    # Bust GitHub cache: tombstone on slate/games + separate bust sentinel so all
-    # instances see "bust" even when the main slate file is still stale (replication).
-    for suffix in ["_slate.json", "_games.json"]:
-        try:
-            path = f"data/slate/{today}{suffix}"
-            _github_write_file(path, json.dumps({"_busted": True}),
-                               f"bust slate cache {today}")
-        except Exception as e:
-            print(f"[bust-slate] tombstone write err {path}: {e}")
+    # Bust GitHub cache: single batched commit with all tombstones + sentinel.
+    # Previously 4 separate commits per bust — now 1 commit via Git Trees API.
+    bust_tombstone = json.dumps({"_busted": True})
+    bust_sentinel = json.dumps({"_busted": True, "at": datetime.now(timezone.utc).isoformat()})
+    bust_files = [
+        {"path": f"data/slate/{today}_slate.json", "content": bust_tombstone},
+        {"path": f"data/slate/{today}_games.json", "content": bust_tombstone},
+        {"path": f"data/slate/{today}_bust.json", "content": bust_sentinel},
+        {"path": f"data/locks/{today}_slate.json", "content": bust_tombstone},
+    ]
     try:
-        bust_path = f"data/slate/{today}_bust.json"
-        _github_write_file(
-            bust_path,
-            json.dumps({"_busted": True, "at": datetime.now(timezone.utc).isoformat()}),
-            f"bust sentinel {today}",
-        )
+        _github_write_batch(bust_files, f"bust slate cache {today}")
     except Exception as e:
-        print(f"[bust-slate] bust sentinel write err: {e}")
-    # Also tombstone the lock file — _slate_restore_from_github must not serve stale
-    # data after an explicit bust (e.g. when predMin filter excluded wrong players).
-    # Without this, cold-start locked requests serve the old lock file forever, since
-    # the locked path returns before reaching the slate cache or pipeline.
-    try:
-        lock_path = f"data/locks/{today}_slate.json"
-        _github_write_file(lock_path, json.dumps({"_busted": True}),
-                           f"bust slate cache {today}")
-    except Exception as e:
-        print(f"[bust-slate] lock tombstone err {lock_path}: {e}")
+        print(f"[bust-slate] batch write err: {e}")
 
 
 def _csv_escape(v):
@@ -483,11 +592,11 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":22.0,  # season avg floor for Starting 5 eligibility
+        "chalk_season_min_floor":30.0,  # season avg floor for Starting 5 eligibility
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":18, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.65,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -1791,11 +1900,10 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # SLATE-WIDE CHALK: Requires min 22 season avg minutes.
-        # Season average is the stable baseline for a player's role. Players with
-        # low season avg (e.g. Caruso 18.5 avg) belong in moonshot where their
-        # card boost upside is maximized, even if recent minutes are inflated.
-        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 22.0)
+        # SLATE-WIDE CHALK: Requires min 30 season avg minutes.
+        # Season average is the stable baseline for a player's role. Players under
+        # 30 min avg are role players whose RS output is too inconsistent for chalk.
+        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 30.0)
         if p.get("season_min", 0) < chalk_min_floor:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
@@ -1816,17 +1924,17 @@ def _build_lineups(projections):
     #
     # Formula: moonshot_ev = (predMin^min_weight) × (boost^cb_weight)
     #                        × team_bonus × rating × pos_efficiency
-    #   - Minutes floor (18 season avg) = player must be a real rotation piece
+    #   - Minutes floor (25 season avg) = player must be a real rotation piece
     #   - Card boost^2.5 = dominant signal; low ownership = massive payout
     #   - big_pos_efficiency (0.65) = centers generate ~60% less RS per minute
     #     than guards/wings; screens and rim protection don't accumulate RS events
     #
     # Hard filters:
-    #   - 18+ season avg minutes (stable rotation role baseline)
+    #   - 25+ season avg minutes (stable rotation role baseline)
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor = moon_cfg.get("min_minutes_floor", 18)
+    min_floor = moon_cfg.get("min_minutes_floor", 25)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.5)

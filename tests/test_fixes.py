@@ -595,8 +595,13 @@ class TestSlateCacheGitHub:
         """_slate_cache_from_github returns parsed JSON when GitHub has today's cache (no bust sentinel)."""
         from api.index import _slate_cache_from_github
         slate_data = {"date": "2026-03-10", "lineups": {"chalk": [{"name": "Test"}], "upside": []}}
-        # First call: bust file (None = no bust); second: slate file
-        with patch("api.index._github_get_file", side_effect=[(None, None), (json.dumps(slate_data), "sha123")]):
+        # Bust check loops over 2 refs (data branch=None, then main): both return no bust.
+        # Third call: slate file itself.
+        with patch("api.index._github_get_file", side_effect=[
+            (None, None),  # bust check on data branch
+            (None, None),  # bust check on main
+            (json.dumps(slate_data), "sha123"),  # slate file
+        ]):
             result = _slate_cache_from_github()
         assert result is not None
         assert result["lineups"]["chalk"][0]["name"] == "Test"
@@ -690,23 +695,24 @@ class TestPicksServeFromCache:
         assert result is None
 
     def test_bust_slate_cache_writes_tombstone(self):
-        """_bust_slate_cache writes tombstone + bust sentinel to GitHub."""
+        """_bust_slate_cache writes all tombstones in a single batch commit."""
         from api.index import _bust_slate_cache
-        with patch("api.index._github_write_file") as mock_write, \
+        with patch("api.index._github_write_batch") as mock_batch, \
              patch("api.index._ensure_data_branch"), \
              patch("api.index._cp") as mock_cp:
             mock_cp.return_value.unlink = Mock()
             _bust_slate_cache()
-        # Tombstones for _slate.json, _games.json, _bust.json, plus locks/_slate.json
-        assert mock_write.call_count == 4
-        for call_args in mock_write.call_args_list:
-            content = json.loads(call_args[0][1])
+        # Single batch call with 4 files
+        assert mock_batch.call_count == 1
+        files = mock_batch.call_args[0][0]
+        assert len(files) == 4
+        for f in files:
+            content = json.loads(f["content"])
             assert content.get("_busted") is True
         # Bust sentinel has "at" timestamp
-        paths = [c[0][0] for c in mock_write.call_args_list]
-        bust_calls = [i for i, p in enumerate(paths) if "_bust.json" in p]
-        assert len(bust_calls) == 1
-        bust_content = json.loads(mock_write.call_args_list[bust_calls[0]][0][1])
+        bust_files = [f for f in files if "_bust.json" in f["path"]]
+        assert len(bust_files) == 1
+        bust_content = json.loads(bust_files[0]["content"])
         assert "at" in bust_content
 
     def test_get_projections_for_date_skips_github_cache(self):

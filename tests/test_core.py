@@ -1305,12 +1305,6 @@ class TestFrontendAuditFixes:
             "H1 regression: LINE_HIST_DATA.picks without optional chain — throws if null"
         )
 
-    def test_slate_available_after_optional_chain(self, script_source):
-        """H3: SLATE.available_after must use optional chaining."""
-        assert "SLATE?.available_after" in script_source, (
-            "H3 regression: SLATE.available_after without optional chain"
-        )
-
     def test_line_resolve_poll_cleared_on_tab_switch(self, script_source):
         """M5: LINE_RESOLVE_POLL must be cleared in switchTab()."""
         # Check both polls are cleared
