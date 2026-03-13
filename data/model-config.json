@@ -1,7 +1,7 @@
 {
-  "version": 10,
-  "updated_at": "2026-03-12T00:00:00Z",
-  "updated_by": "mar12-minutes-floor-tuning",
+  "version": 11,
+  "updated_at": "2026-03-13T22:22:51Z",
+  "updated_by": "mar13-sync-stale-values",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -103,9 +103,10 @@
     "dnp_risk_min_threshold": 8.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
-    "chalk_season_min_floor": 22.0,
+    "chalk_season_min_floor": 30.0,
     "b2b_minute_penalty": 0.88,
-    "default_total": 222
+    "default_total": 222,
+    "chalk_recent_min_floor": 15.0
   },
   "development_teams": [
     "UTA",
@@ -138,17 +139,20 @@
     "recent_form_over_ratio": 1.08,
     "recent_form_under_ratio": 0.92,
     "min_edge_pts": 2.0,
-    "min_edge_other": 1.5
+    "min_edge_other": 1.5,
+    "min_season_minutes": 20.0
   },
   "moonshot": {
-    "min_minutes_floor": 18,
+    "min_minutes_floor": 25,
     "min_card_boost": 1.0,
     "min_rating_floor": 2.0,
     "dev_team_boost": 1.25,
-    "card_boost_weight": 2.0,
+    "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
-    "max_ownership_pct": 3.0
+    "max_ownership_pct": 3.0,
+    "min_recent_minutes_floor": 22,
+    "big_pos_efficiency": 0.65
   },
   "changelog": [
     {
@@ -200,6 +204,11 @@
       "version": 10,
       "date": "2026-03-12",
       "change": "Minutes floor tuning (season avg): (1) chalk_season_min_floor 20\u219222 (season avg) \u2014 Caruso (18.5 avg) is a moonshot-profile player (high card boost, low season role) not a Starting 5 pick; using season avg as the stable baseline keeps inflated recent splits from promoting low-role players. Configurable via projection.chalk_season_min_floor. (2) moonshot.min_minutes_floor 20\u219218 (season avg) \u2014 catches borderline role players averaging 18-20 min who were excluded by the old 20-min floor. Both floors now use season_min instead of recent_min for stability."
+    },
+    {
+      "version": 11,
+      "date": "2026-03-13",
+      "change": "Sync stale/missing config values that code-default changes never propagated: projection.chalk_season_min_floor 22\u219230; projection.chalk_recent_min_floor added (15.0); moonshot.min_minutes_floor 18\u219225; moonshot.card_boost_weight 2.0\u21922.5; moonshot.min_recent_minutes_floor added (22); moonshot.big_pos_efficiency added (0.65); line.min_season_minutes added (20.0)"
     }
   ]
 }

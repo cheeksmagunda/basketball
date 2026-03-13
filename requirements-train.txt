@@ -1,0 +1,5 @@
+# Training-only dependencies — used by train_lgbm.py and GitHub Actions retrain cron.
+# NOT needed on Vercel. Install separately: pip install -r requirements-train.txt
+nba-api>=1.10
+pandas>=2.0
+scikit-learn>=1.0
