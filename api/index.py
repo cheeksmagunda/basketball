@@ -593,10 +593,12 @@ _CONFIG_DEFAULTS = {
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
         "chalk_season_min_floor":30.0,  # season avg floor for Starting 5 eligibility
+        "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
+                                        # despite high season avg (e.g. demoted starter, rest-management)
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":25, "min_recent_minutes_floor":22, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.65,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -1900,11 +1902,15 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # SLATE-WIDE CHALK: Requires min 30 season avg minutes.
-        # Season average is the stable baseline for a player's role. Players under
-        # 30 min avg are role players whose RS output is too inconsistent for chalk.
+        # SLATE-WIDE CHALK: Requires min 30 season avg minutes (proven starter role)
+        # AND min 15 recent avg minutes (still in rotation — not demoted or resting).
+        # Season avg is the stable baseline; recent floor catches demoted starters
+        # (e.g. Drummond 25-min season avg → 8-min recent after role collapse).
         chalk_min_floor = _cfg("projection.chalk_season_min_floor", 30.0)
+        chalk_recent_floor = _cfg("projection.chalk_recent_min_floor", 15.0)
         if p.get("season_min", 0) < chalk_min_floor:
+            continue
+        if p.get("recent_min", 0) < chalk_recent_floor:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1924,17 +1930,27 @@ def _build_lineups(projections):
     #
     # Formula: moonshot_ev = (predMin^min_weight) × (boost^cb_weight)
     #                        × team_bonus × rating × pos_efficiency
-    #   - Minutes floor (25 season avg) = player must be a real rotation piece
+    #   - Minutes floor (season >= 25 OR recent >= 22) = real rotation piece;
+    #     OR logic allows recently-promoted players to qualify
     #   - Card boost^2.5 = dominant signal; low ownership = massive payout
     #   - big_pos_efficiency (0.65) = centers generate ~60% less RS per minute
     #     than guards/wings; screens and rim protection don't accumulate RS events
     #
     # Hard filters:
-    #   - 25+ season avg minutes (stable rotation role baseline)
+    #   - season avg >= 25 OR recent avg >= 22 (see note below)
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
+    #
+    # Minutes filter uses OR logic: qualify via established season role (season_min)
+    # OR current role (recent_min). This is intentional — the best moonshot targets
+    # are often players who were recently promoted (injury fill-in) and have low
+    # ownership because the market hasn't caught up yet. Requiring only season_min
+    # would exclude them. Requiring only recent_min risks one-game flukes (OT game,
+    # teammate fouled out). The OR lets promoted players through while the season
+    # floor prevents true fringe guys with a single inflated game from qualifying.
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor = moon_cfg.get("min_minutes_floor", 25)
+    min_floor        = moon_cfg.get("min_minutes_floor", 25)
+    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 22)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.5)
@@ -1949,11 +1965,10 @@ def _build_lineups(projections):
         if p["name"] in chalk_names:
             continue
 
-        # Hard minute floor — season average minutes.
-        # Season avg is the stable baseline for actual rotation role.
-        # Recent splits and cascade-inflated projections can overstate
-        # actual court time for players whose role has shifted.
-        if p.get("season_min", 0) < min_floor:
+        # Minutes floor: qualify via season avg (established role) OR recent avg
+        # (current role). Promoted players with low season avg but high recent avg
+        # are prime moonshot targets — low ownership, real court time tonight.
+        if p.get("season_min", 0) < min_floor and p.get("recent_min", 0) < min_recent_floor:
             continue
 
         # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
