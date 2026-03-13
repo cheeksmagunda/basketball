@@ -292,10 +292,10 @@ Three independent gates prevent pre-lock saves:
 ## Three Lineup Modes
 
 ### Slate-Wide: Starting 5 (chalk)
-MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 20-minute recent minutes floor** (`recent_min >= 20`). Season averages are ignored — only recent form reflects actual rotation usage.
+MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 22-minute season avg minutes floor** (`season_min >= 22`). Configurable via `projection.chalk_season_min_floor`.
 
 ### Slate-Wide: Moonshot
-Options strategy. Hard floor of **recent minutes >= min_minutes_floor** (default 15) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
+Options strategy. Hard floor of **season avg minutes >= min_minutes_floor** (default 18) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
 
 ### Per-Game: THE LINE UP
 Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant. Optimized purely by projected Real Score × slot multiplier (`est_mult` zeroed out for MILP). **Requires 20-minute recent minutes floor.** Min 2 players per team enforced. Game script adjustments applied.
@@ -324,7 +324,7 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`
 
 Key knobs in `moonshot` section of model-config.json:
-- `min_minutes_floor`: 15 (lowered from 20) — catches emergency starters projected ~15-18 min pre-game
+- `min_minutes_floor`: 18 (season avg) — stable rotation role baseline; catches borderline role players averaging 18-20 min
 - `card_boost_weight`: 2.5 (raised from 2.0) — ownership is the primary signal; boost^2.5 dominates
 - `big_pos_efficiency`: 0.65 — centers penalized; screens/rim-protection generate far fewer RS events per minute than guards/wings
 

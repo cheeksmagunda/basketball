@@ -1,7 +1,7 @@
 {
-  "version": 9,
-  "updated_at": "2026-03-10T00:00:00Z",
-  "updated_by": "mar8-screenshot-calibration",
+  "version": 10,
+  "updated_at": "2026-03-12T00:00:00Z",
+  "updated_by": "mar12-minutes-floor-tuning",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -103,6 +103,7 @@
     "dnp_risk_min_threshold": 8.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
+    "chalk_season_min_floor": 22.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222
   },
@@ -140,7 +141,7 @@
     "min_edge_other": 1.5
   },
   "moonshot": {
-    "min_minutes_floor": 20,
+    "min_minutes_floor": 18,
     "min_card_boost": 1.0,
     "min_rating_floor": 2.0,
     "dev_team_boost": 1.25,
@@ -194,6 +195,11 @@
       "version": 9,
       "date": "2026-03-10",
       "change": "Mar 8 screenshot audit (10-game Sunday slate): (1) star_players expanded: +Austin Reaves (160 drafts \u2192 +0.5x actual; LAL brand drives outsized ownership vs RS output), +Jalen Brunson (3.2k drafts \u2192 +0.4x; NYK franchise player model was massively underestimating), +Scottie Barnes (2.2k drafts \u2192 +0.5x; TOR franchise star), +RJ Barrett (9 drafts \u2192 +1.0x; star-penalized by app despite low drafts). (2) cascade.per_player_cap_minutes 3.0 \u2192 2.0: Sunday moonshot cascade picks (Schroeder +3.0 min \u2192 RS 0.4, Robinson +3.0 \u2192 RS 1.0, Chapel +3.0 \u2192 RS 0.8) all missed badly \u2014 3 min bonus was too aggressive. (3) development_teams: added POR (Scoot Henderson \u2014 4 drafts, RS 5.3, +2.5x \u2014 top value Sunday but not in model's moonshot universe). (4) card_boost.pool_size_estimate=10000 added for future calibrate-boost endpoint."
+    },
+    {
+      "version": 10,
+      "date": "2026-03-12",
+      "change": "Minutes floor tuning (season avg): (1) chalk_season_min_floor 20\u219222 (season avg) \u2014 Caruso (18.5 avg) is a moonshot-profile player (high card boost, low season role) not a Starting 5 pick; using season avg as the stable baseline keeps inflated recent splits from promoting low-role players. Configurable via projection.chalk_season_min_floor. (2) moonshot.min_minutes_floor 20\u219218 (season avg) \u2014 catches borderline role players averaging 18-20 min who were excluded by the old 20-min floor. Both floors now use season_min instead of recent_min for stability."
     }
   ]
 }
