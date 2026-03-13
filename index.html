@@ -1786,14 +1786,14 @@ async function loadSlate() {
     if (SLATE.all_complete && !_slateNextDayPoll) {
       _slateNextDayPoll = setInterval(() => {
         const prevDate = SLATE.date;
-        loadSlate().catch(() => {});
-        // Self-clear once a fresh slate loads (checked after loadSlate updates SLATE)
-        setTimeout(() => {
+        // Wait for loadSlate to actually complete before checking if date changed.
+        // Previous 3s setTimeout raced with the async fetch (can take 10-30s on cold start).
+        loadSlate().then(() => {
           if (SLATE.date !== prevDate || !SLATE.all_complete) {
             clearInterval(_slateNextDayPoll);
             _slateNextDayPoll = null;
           }
-        }, 3000);
+        }).catch(() => {});
       }, 5 * 60 * 1000);
     }
 

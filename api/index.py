@@ -2048,13 +2048,21 @@ def _get_slate_impl():
         # are final. Do NOT gate on finals>0: that causes an unlock bug during the first
         # ~30 min of play (before any game finishes) and on ESPN API failures.
 
-        # Check in-memory lock cache FIRST — avoids an ESPN call on warm instances.
-        # The cached all_complete value is at most 60s stale (lock cache TTL), which is
-        # acceptable since the frontend polls for the games-final transition.
+        # Check in-memory lock cache FIRST — avoids a full pipeline re-run.
+        # BUT: always re-check ESPN for all_complete so the frontend can detect
+        # game completion and transition to the next-day slate. _all_games_final
+        # has its own 60s internal cache, so this is cheap on warm instances.
         lock_cached = _lg("slate_v5_locked")
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", 0)
+            # Refresh all_complete from ESPN (cached 60s) so warm instances
+            # detect game completion instead of serving stale all_complete=False.
+            if not lock_cached.get("all_complete"):
+                all_final, _rem, _fin, _lrs = _all_games_final(games)
+                if all_final and _fin > 0:
+                    lock_cached["all_complete"] = True
+                    _ls("slate_v5_locked", lock_cached)
             return lock_cached
 
         # Cache miss (cold start) — check regular /tmp cache and GitHub backup BEFORE
@@ -2204,7 +2212,8 @@ def _get_slate_impl():
     chalk, upside = _build_lineups(all_proj)
     result = {"date": _et_date().isoformat(), "games": games,
               "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
-              "draftable_count": len(draftable_games), "lock_time": lock_time}
+              "all_complete": False, "draftable_count": len(draftable_games),
+              "lock_time": lock_time}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
         # Persist to GitHub so all Vercel instances serve the same picks
@@ -3521,12 +3530,12 @@ async def refresh_line_odds():
     No-op if slate is locked — odds freeze at the same boundary as picks (5 min before tip)."""
     today_str = _et_date().isoformat()
 
-    # Respect slate lock — stop updating once the slate is live
+    # Respect slate lock — stop updating once ANY game on the slate is locked.
+    # Uses any() pattern (not min()) to match /api/slate and /api/save-predictions:
+    # on split-window days, once the first game locks, odds freeze for the whole slate.
     games = fetch_games()
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
-    start_times = [g["startTime"] for g in draftable if g.get("startTime")]
-    earliest = min(start_times) if start_times else None
-    if earliest and _is_locked(earliest):
+    all_start_times = [g["startTime"] for g in games if g.get("startTime")]
+    if any(_is_locked(st) for st in all_start_times):
         return {"status": "locked", "message": "Slate locked — odds frozen"}
 
     picks = _load_line_pick_for_date(today_str)
@@ -4160,7 +4169,7 @@ def _all_games_final(games):
     now_ts = datetime.now(timezone.utc).timestamp()
     today_str = _et_date().strftime("%Y%m%d")
 
-    # Determine if slate is locked. During locked slate, use 30s TTL for responsiveness.
+    # Determine if slate is locked. During locked slate, use 60s TTL for responsiveness.
     # This enables event-driven unlock detection without hammering ESPN API.
     slate_locked = any(_is_locked(g.get("startTime", "")) for g in games if g.get("startTime"))
     cache_ttl = 60 if slate_locked else 180
