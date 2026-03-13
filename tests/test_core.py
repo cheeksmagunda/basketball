@@ -573,12 +573,15 @@ class TestNormalizePlayer:
             "season_pts": 22.1,
             "recent_pts": 25.3,
             "_cascade_bonus": 3.0,
-            "_is_dev_team": True,
         })
         assert result["season_pts"] == 22.1
         assert result["recent_pts"] == 25.3
         assert result["_cascade_bonus"] == 3.0
-        assert result["_is_dev_team"] is True
+
+    def test_is_dev_team_is_stripped(self):
+        """_is_dev_team is an internal moonshot flag — must never reach the frontend."""
+        result = self._norm({"name": "X", "_is_dev_team": True})
+        assert "_is_dev_team" not in result
 
     def test_string_fields_default_to_empty_string(self):
         """String fields missing from input must default to '' not None."""

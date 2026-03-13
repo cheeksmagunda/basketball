@@ -579,6 +579,9 @@ def _is_locked(start_time_iso: Optional[str]) -> bool:
 
 def _is_past_lock_window(start_time_iso):
     """Returns True if the game has passed its lock window (now >= start - lock_buf).
+    Intentionally has no 6-hour ceiling: once a game is past the lock window it is
+    never draftable again, even after it ends. Contrast with _is_locked(), which
+    returns False after 6h so the UI stops showing the game as "locked".
     Does NOT check ESPN completion status — use _all_games_final() for that."""
     try:
         lock_buf = _cfg("projection.lock_buffer_minutes", 5)
@@ -1645,6 +1648,7 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
     "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
+    "recent_form_values",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1675,8 +1679,9 @@ def _normalize_line_pick(p: dict) -> dict:
         "season_avg":      p.get("season_avg"),
         "proj_min":        p.get("proj_min"),
         "avg_min":         p.get("avg_min"),
-        "game_time":       p.get("game_time", ""),
-        "recent_form_bars": p.get("recent_form_bars"),
+        "game_time":          p.get("game_time", ""),
+        "recent_form_bars":   p.get("recent_form_bars"),
+        "recent_form_values": p.get("recent_form_values"),
     }
     # Pass through any extra fields (e.g. _live tracker, future additions)
     extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}
