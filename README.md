@@ -242,7 +242,7 @@ git push -u origin your-branch
 # Or push main directly: git checkout main && git merge your-branch && git push origin main
 ```
 
-Vercel skips builds when the **latest** commit only touches `data/` or `.github/` (see `ignoreCommand` in `vercel.json`). If the app has been writing bust/config commits to `main`, the tip can be data-only and your merge won’t trigger a build. Push a small code or doc change to `main` to force a production deploy.
+Vercel skips builds when the **latest** commit only touches `data/` or `.github/` (see Deployment below). If the app has been writing bust/config commits to `main`, the tip can be data-only and your merge won’t trigger a build. The app now writes all `data/*` (except `data/model-config.json`) to branch **`data`**, so `main` stays code-only and every push to `main` triggers a Vercel build. Branch `data` is created from `main` on first write.
 
 ## Monitoring / Health check
 

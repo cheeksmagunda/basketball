@@ -109,11 +109,60 @@ _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
 if _missing_env:
     print(f"[WARN] Missing env vars: {_missing_env} — affected features will be degraded")
 
-def _github_get_file(path: str) -> Tuple[Optional[str], Optional[str]]:
-    """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
+# Data branch: app writes to branch "data" so main stays code-only and Vercel builds on every push.
+# data/model-config.json stays on main (sync workflow + Lab). All other data/* use branch "data".
+DATA_BRANCH = "data"
+
+def _data_ref(path: str):
+    """Return branch name for path, or None for default (main)."""
+    if path.startswith("data/") and path != "data/model-config.json":
+        return DATA_BRANCH
+    return None
+
+_DATA_BRANCH_ENSURED = False
+
+def _ensure_data_branch():
+    """Create branch 'data' from main if it does not exist. Idempotent."""
+    global _DATA_BRANCH_ENSURED
+    if _DATA_BRANCH_ENSURED or not GITHUB_TOKEN or not GITHUB_REPO:
+        return
+    try:
+        h = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+        r = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{DATA_BRANCH}",
+            headers=h, timeout=10,
+        )
+        if r.status_code == 200:
+            _DATA_BRANCH_ENSURED = True
+            return
+        if r.status_code != 404:
+            return
+        r2 = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/main",
+            headers=h, timeout=10,
+        )
+        if r2.status_code != 200:
+            return
+        main_sha = r2.json()["object"]["sha"]
+        r3 = requests.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs",
+            json={"ref": f"refs/heads/{DATA_BRANCH}", "sha": main_sha},
+            headers=h, timeout=10,
+        )
+        if r3.status_code in (200, 201):
+            _DATA_BRANCH_ENSURED = True
+    except Exception:
+        pass
+
+def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+    """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None).
+    Uses branch 'data' for data/* except model-config so main stays code-only for Vercel."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return None, None
+    ref = ref_override if ref_override is not None else _data_ref(path)
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    if ref:
+        url += f"?ref={ref}"
     r = requests.get(url, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
@@ -124,11 +173,14 @@ def _github_get_file(path: str) -> Tuple[Optional[str], Optional[str]]:
         return content, data["sha"]
     return None, None
 
-def _github_list_dir(path: str) -> list:
-    """List files in a GitHub repo directory. Returns list of {name, path} dicts."""
+def _github_list_dir(path: str, ref_override: Optional[str] = None) -> list:
+    """List files in a GitHub repo directory. Uses branch 'data' for data/* except model-config."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return []
+    ref = ref_override if ref_override is not None else _data_ref(path)
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    if ref:
+        url += f"?ref={ref}"
     r = requests.get(url, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
@@ -139,23 +191,26 @@ def _github_list_dir(path: str) -> list:
 
 def _github_write_file(path: str, content: str, message: str = "auto-update", max_retries: int = 3) -> dict:
     """Create or update a file in the GitHub repo via Contents API.
-
-    Retries on 422 Conflict (SHA mismatch) with exponential backoff to handle
-    concurrent writes. This prevents data loss when multiple requests write to
-    the same path simultaneously."""
+    Writes to branch 'data' for data/* (except model-config) so main stays code-only for Vercel.
+    Retries on 422 Conflict (SHA mismatch) with exponential backoff."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return {"error": "GITHUB_TOKEN or GITHUB_REPO not configured"}
+    branch = _data_ref(path)
+    if branch:
+        _ensure_data_branch()
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
 
     for attempt in range(max_retries):
-        _, sha = _github_get_file(path)
+        _, sha = _github_get_file(path)  # uses data ref when path is data/*
         payload = {
             "message": message,
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
         }
         if sha:
             payload["sha"] = sha
+        if branch:
+            payload["branch"] = branch
 
         try:
             r = requests.put(url, json=payload, headers={
@@ -254,16 +309,16 @@ def _slate_cache_to_github(slate_data: dict):
 
 def _slate_cache_from_github():
     """Load today's cached slate from GitHub. Returns dict or None.
-    Checks bust sentinel first so all instances skip Layer 2 after a refresh
-    even when the main slate file is still stale (replication/cache)."""
+    Checks bust sentinel first (data branch and main so retrain workflow bust is seen)."""
     try:
         today = _et_date().isoformat()
         bust_path = f"data/slate/{today}_bust.json"
-        bust_content, _ = _github_get_file(bust_path)
-        if bust_content:
-            bust_data = json.loads(bust_content)
-            if bust_data.get("_busted") or bust_data.get("at"):
-                return None
+        for ref in (None, "main"):  # data branch first, then main (retrain writes bust to main)
+            bust_content, _ = _github_get_file(bust_path, ref_override=ref)
+            if bust_content:
+                bust_data = json.loads(bust_content)
+                if bust_data.get("_busted") or bust_data.get("at"):
+                    return None
         path = f"data/slate/{today}_slate.json"
         content, _ = _github_get_file(path)
         if content:

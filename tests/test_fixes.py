@@ -213,6 +213,7 @@ class TestGitHubWriteRetry:
         ok = self._make_response(201, {'content': {'sha': 'abc'}})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._ensure_data_branch'), \
              patch('api.index._github_get_file', return_value=('{}', 'oldsha')), \
              patch('requests.put', return_value=ok) as mock_put:
             result = _github_write_file('data/test.json', '{}', 'commit')
@@ -225,6 +226,7 @@ class TestGitHubWriteRetry:
         ok   = self._make_response(201, {'content': {'sha': 'newsha'}})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._ensure_data_branch'), \
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', side_effect=[fail, fail, ok]) as mock_put, \
              patch('time.sleep'):
@@ -237,6 +239,7 @@ class TestGitHubWriteRetry:
         fail = self._make_response(422, {'message': 'SHA mismatch'})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._ensure_data_branch'), \
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', return_value=fail), \
              patch('time.sleep'):
@@ -248,6 +251,7 @@ class TestGitHubWriteRetry:
         fail = self._make_response(422, {'message': 'SHA mismatch'})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
+             patch('api.index._ensure_data_branch'), \
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', return_value=fail), \
              patch('time.sleep') as mock_sleep:
@@ -598,9 +602,9 @@ class TestSlateCacheGitHub:
         assert result["lineups"]["chalk"][0]["name"] == "Test"
 
     def test_slate_cache_from_github_returns_none_on_miss(self):
-        """_slate_cache_from_github returns None when no cache exists."""
+        """_slate_cache_from_github returns None when no cache exists (bust check: data + main, then slate)."""
         from api.index import _slate_cache_from_github
-        with patch("api.index._github_get_file", side_effect=[(None, None), (None, None)]):
+        with patch("api.index._github_get_file", side_effect=[(None, None), (None, None), (None, None)]):
             result = _slate_cache_from_github()
         assert result is None
 
@@ -689,6 +693,7 @@ class TestPicksServeFromCache:
         """_bust_slate_cache writes tombstone + bust sentinel to GitHub."""
         from api.index import _bust_slate_cache
         with patch("api.index._github_write_file") as mock_write, \
+             patch("api.index._ensure_data_branch"), \
              patch("api.index._cp") as mock_cp:
             mock_cp.return_value.unlink = Mock()
             _bust_slate_cache()
