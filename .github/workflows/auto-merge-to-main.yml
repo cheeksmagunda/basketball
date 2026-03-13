@@ -1,15 +1,21 @@
 name: Auto-merge to main
 
 # Pushing to claude/* or fix/* auto-merges that branch into main (then Vercel deploys).
+# Concurrency: one merge at a time so two pushes don't race (second would fail on push).
 on:
   push:
     branches:
       - 'claude/**'
       - 'fix/**'
 
+concurrency:
+  group: auto-merge-to-main
+  cancel-in-progress: false
+
 jobs:
   merge:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:

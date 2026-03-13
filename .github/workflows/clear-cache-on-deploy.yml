@@ -2,16 +2,24 @@
 # deploys (Vercel). This workflow calls GET /api/refresh so all caches are reset
 # and the next request uses the new code.
 #
+# paths-ignore ensures we only run when *code* changes. Otherwise: workflow runs
+# -> /api/refresh -> backend writes to data/ (GitHub commit) -> push to main
+# -> workflow runs again -> infinite deploy loop and Vercel limit burn.
+#
 # Requires repo secrets: PRODUCTION_URL, CRON_SECRET.
 name: Clear cache on production deploy
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'data/**'
+      - '.github/**'
 
 jobs:
   clear-cache:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Wait for Vercel deploy
         run: sleep 90
