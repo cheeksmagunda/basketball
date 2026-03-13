@@ -1,7 +1,7 @@
 {
-  "version": 11,
-  "updated_at": "2026-03-13T22:22:51Z",
-  "updated_by": "mar13-sync-stale-values",
+  "version": 12,
+  "updated_at": "2026-03-13T23:45:00Z",
+  "updated_by": "mar13-moonshot-recent-floor",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -151,7 +151,7 @@
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
-    "min_recent_minutes_floor": 22,
+    "min_recent_minutes_floor": 25,
     "big_pos_efficiency": 0.65
   },
   "changelog": [
@@ -209,6 +209,11 @@
       "version": 11,
       "date": "2026-03-13",
       "change": "Sync stale/missing config values that code-default changes never propagated: projection.chalk_season_min_floor 22\u219230; projection.chalk_recent_min_floor added (15.0); moonshot.min_minutes_floor 18\u219225; moonshot.card_boost_weight 2.0\u21922.5; moonshot.min_recent_minutes_floor added (22); moonshot.big_pos_efficiency added (0.65); line.min_season_minutes added (20.0)"
+    },
+    {
+      "version": 12,
+      "date": "2026-03-13",
+      "change": "Moonshot minutes filter: raise min_recent_minutes_floor 22\u219225 to exclude recently-benched backups. Ensures all moonshot picks have \u226525 min/game average to filter out spot-use players like Capela (12.3), Robinson (19.3), DeAndre (18.3) who don't have consistent rotation roles."
     }
   ]
 }
