@@ -3514,10 +3514,62 @@ def _picks_response(picks, **extra):
     }
 
 
+def _get_mock_line_picks() -> dict:
+    """Return a fully-formed mock Line of the Day response for testing.
+    No Odds API, ESPN, LightGBM, or GitHub I/O. Safe to call anytime."""
+    today = _et_date().isoformat()
+    _mock_over = {
+        "player_name": "Mock Over Player", "player_id": "mock_over_001",
+        "team": "BOS", "opponent": "LAL", "direction": "over",
+        "stat_type": "points", "line": 24.5, "projection": 27.3,
+        "edge": 2.8, "confidence": 72, "date": today,
+        "narrative": "Mock over pick — trending above baseline in recent games.",
+        "signals": ["3 of last 5 over", "favorable matchup"],
+        "result": "pending", "actual_stat": None,
+        "season_avg": 23.1, "proj_min": 36.0, "avg_min": 34.5,
+        "game_time": "7:30 PM ET",
+        "recent_form_bars": [0.8, 1.1, 0.9, 1.2, 1.0],
+        "recent_form_values": [22, 28, 23, 31, 25],
+        "odds_over": -115, "odds_under": -105,
+        "books_consensus": 24.5, "line_updated_at": f"{today}T18:00:00Z",
+    }
+    _mock_under = {
+        "player_name": "Mock Under Player", "player_id": "mock_under_001",
+        "team": "LAL", "opponent": "BOS", "direction": "under",
+        "stat_type": "rebounds", "line": 8.5, "projection": 6.8,
+        "edge": -1.7, "confidence": 68, "date": today,
+        "narrative": "Mock under pick — recent opponents have slowed this player's rebounding.",
+        "signals": ["B2B tonight", "4 of last 5 under"],
+        "result": "pending", "actual_stat": None,
+        "season_avg": 8.2, "proj_min": 32.0, "avg_min": 33.0,
+        "game_time": "7:30 PM ET",
+        "recent_form_bars": [0.9, 0.7, 0.8, 0.75, 0.85],
+        "recent_form_values": [7, 6, 7, 6, 7],
+        "odds_over": -110, "odds_under": -110,
+        "books_consensus": 8.5, "line_updated_at": f"{today}T18:00:00Z",
+    }
+    over_norm  = _normalize_line_pick(_mock_over)
+    under_norm = _normalize_line_pick(_mock_under)
+    # Primary = higher confidence
+    primary = over_norm if over_norm["confidence"] >= under_norm["confidence"] else under_norm
+    return {
+        "mock": True,
+        "pick":       primary,
+        "over_pick":  over_norm,
+        "under_pick": under_norm,
+        "slate_summary": {
+            "games_evaluated": 2, "props_scanned": 12, "edges_found": 2,
+            "timestamp": f"{today}T00:00:00Z", "model_only": True,
+        },
+    }
+
+
 @app.get("/api/line-of-the-day")
-async def get_line_of_the_day(request: Request):
+async def get_line_of_the_day(request: Request, mock: bool = Query(False, description="Return deterministic mock picks for testing")):
     """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
     Once today's picks are resolved, rotates to the next slate with games (not just tomorrow). Never returns 500."""
+    if mock:
+        return _get_mock_line_picks()
     rl = _check_rate_limit(request, "line-of-the-day")
     if rl is not None:
         return rl
@@ -3711,8 +3763,13 @@ async def save_line(payload: dict = Body(...)):
     if existing_json:
         return {"status": "already_saved", "path": json_path}
 
-    # Write JSON with both picks (new dual-pick format)
-    saves = {"over_pick": over_pick or pick, "under_pick": under_pick}
+    # Write JSON with both picks (new dual-pick format).
+    # Direction-aware fallback: if directional picks are absent (legacy single-pick payload),
+    # slot the primary pick into the correct direction field based on its direction field
+    # rather than blindly assigning it to over_pick regardless of direction.
+    _over  = over_pick  or (pick if pick and pick.get("direction") == "over"  else None)
+    _under = under_pick or (pick if pick and pick.get("direction") == "under" else None)
+    saves = {"over_pick": _over, "under_pick": _under}
     _github_write_file(json_path, json.dumps(saves), f"line picks json for {today}")
 
     return {"status": "saved", "path": json_path}
@@ -3762,9 +3819,12 @@ async def refresh_line_odds():
         write_result = _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
         if write_result.get("error"):
             return JSONResponse({"status": "error", "message": write_result["error"]}, status_code=500)
-        cf = _cp("line_v1", today_str)
-        if cf.exists():
-            cf.unlink()
+        # Clear /tmp line cache so next /api/line-of-the-day reloads from GitHub (fresh odds).
+        # Also clear line_history cache — it embeds books_consensus and odds_* fields.
+        for _cache_key in ("line_v1", "line_history_v1"):
+            _cf = _cp(_cache_key, today_str)
+            if _cf.exists():
+                _cf.unlink()
 
     return {"status": "ok", "updated": updated, "timestamp": now_utc}
 

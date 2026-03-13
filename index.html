@@ -1184,7 +1184,7 @@
   <div id="tab-line" class="tab-page">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Line of the Day</div>
-      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetchWithTimeout('/api/refresh-line-odds', {}, 10000);}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
+      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{const r=await fetchWithTimeout('/api/refresh-line-odds',{},10000);if(!r.ok)throw new Error('HTTP '+r.status);}catch(e){b.textContent='Failed';setTimeout(()=>{b.textContent='Refresh';b.disabled=false;},2000);return;}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <!-- Over | Under direction filter — inline at top, matches Slate-Wide | Game tabs -->
     <div class="predict-sub-nav" id="lineSubNav" style="margin-top:14px">
