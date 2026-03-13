@@ -87,9 +87,7 @@ git push -u origin <your-feature-branch>
 
 # 4. Merge to main (choose one workflow)
 
-# Option A: If using GitHub PR + auto-merge workflow
-# Open a PR from <your-feature-branch> to main; merge via GitHub UI.
-# auto-merge-to-main.yml may merge to main automatically depending on your setup.
+# Option A: Open a PR from <your-feature-branch> to main; merge via GitHub UI.
 
 # Option B: Local merge to main and push
 git checkout main

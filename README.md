@@ -159,7 +159,7 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 
 **Cache TTLs**: Game final (60s when locked, 180s pre-slate), model config (5 min), RotoWire (30 min), odds (1 hour), slate cache (1 day, GitHub-persisted). Explicit invalidation via `/api/refresh` or `_bust_slate_cache()`.
 
-**Why hitting `/api/refresh` didn't reset picks (and how it's fixed):** (1) **Auth** — When `CRON_SECRET` is set, opening `myurl/api/refresh` in a browser sends no token, so the server returns 401 and does nothing. **Fix:** Call with `Authorization: Bearer <CRON_SECRET>` or use `myurl/api/refresh?key=<CRON_SECRET>` (keep the URL private). (2) **Games cache tombstone** — After a bust we write `{"_busted": true}` to the games file on GitHub; the reader now treats that as "no cache" instead of using it. (3) **Deploy vs. cache** — Picks are built from the deployed code; if production hadn't been updated (e.g. with the `recent_raw_min` fix), refresh would clear cache but the next rebuild would still use the old logic. Deploy the fix, then refresh (or rely on the new "clear cache on deploy" workflow).
+**Why hitting `/api/refresh` didn't reset picks (and how it's fixed):** (1) **Auth** — When `CRON_SECRET` is set, opening `myurl/api/refresh` in a browser sends no token, so the server returns 401 and does nothing. **Fix:** Call with `Authorization: Bearer <CRON_SECRET>` or use `myurl/api/refresh?key=<CRON_SECRET>` (keep the URL private). (2) **Games cache tombstone** — After a bust we write `{"_busted": true}` to the games file on GitHub; the reader now treats that as "no cache" instead of using it. (3) **Deploy vs. cache** — Picks are built from the deployed code; deploy the fix, then call `/api/refresh` (with auth) to clear caches.
 
 **Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
 
@@ -188,7 +188,7 @@ All secrets and config live in **environment variables only** — never hardcode
 | `CRON_SECRET` | (optional) Secures cron-only endpoints; Vercel sends as Bearer token when invoking crons |
 | `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
 
-**Clear cache on deploy:** Every non-bot push to `main` runs the GitHub Action `clear-cache-on-deploy.yml`, which calls `GET /api/refresh` so production caches (tmp + GitHub slate) are reset. Set **repository secrets**: `PRODUCTION_URL` (e.g. `https://your-app.vercel.app`) and `CRON_SECRET` (same value as in Vercel). If either is missing, the workflow skips without failing.
+**Cache refresh:** The `clear-cache-on-deploy` workflow was removed to prevent deploy loops. To reset production caches (e.g. after a config change), call `GET /api/refresh` with `Authorization: Bearer <CRON_SECRET>` or use the refresh cron. Repository secrets `PRODUCTION_URL` and `CRON_SECRET` are only needed if you re-add a post-deploy cache-clear workflow.
 
 ## LightGBM Model
 
@@ -234,12 +234,12 @@ Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.).
 
 ## Deployment
 
-Push to a feature branch — `auto-merge-to-main.yml` merges it into `main` → Vercel auto-deploys. Branches that auto-merge: **`claude/**`** and **`fix/**`**.
+Merge to `main` to deploy to production (Vercel builds from `main`). Open a PR from your feature branch and merge, or push directly:
 
 ```bash
-git push -u origin claude/your-branch
-# or
-git push -u origin fix/your-branch
+git push -u origin your-branch
+# Then: GitHub → Pull requests → New PR (base: main, compare: your-branch) → Merge
+# Or push main directly: git checkout main && git merge your-branch && git push origin main
 ```
 
 ## Monitoring / Health check

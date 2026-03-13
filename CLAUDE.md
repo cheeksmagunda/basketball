@@ -707,9 +707,9 @@ pip install -r requirements.txt
 python scripts/check-env.py   # verify required env vars (fail-fast)
 uvicorn server:app --reload
 
-# Deploy — push to your session branch; auto-merge-to-main.yml merges → main → Vercel
-# Branch naming convention: claude/<session-id>  (e.g. claude/codebase-analysis-e3rsW)
+# Deploy — merge to main (PR or local merge + push) → Vercel deploys from main
 git push -u origin <your-branch>
+# Then open PR main ← your-branch and merge, or: git checkout main && git merge <your-branch> && git push origin main
 
 # Verify on production
 # https://basketball-chi-cyan.vercel.app
@@ -720,7 +720,7 @@ git push -u origin <your-branch>
 When starting fresh in a new chat, Claude Code automatically reads this file for context.
 Provide the following to the new session to orient it quickly:
 
-1. **Branch**: Create a new `claude/<session-id>` branch (e.g. `claude/my-feature-xyz`). Push triggers auto-merge → main → Vercel. **Never push to main directly.**
+1. **Branch**: Work on a feature branch; merge to `main` via PR or local merge + push. Vercel deploys from `main`.
 2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
 3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push; verify on `basketball-chi-cyan.vercel.app`.
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
