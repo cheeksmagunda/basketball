@@ -1711,7 +1711,8 @@ var _slateRetryCount = 0;
 async function loadSlate() {
   SLATE_STATE = asyncStateLoading(SLATE_STATE);
   showLoader();
-  renderSkeletons('slateList', 5);
+  // Only show skeletons on first load — background polls keep existing cards visible
+  if (!SLATE) renderSkeletons('slateList', 5);
   try {
     const r = await fetchWithTimeout('/api/slate', {}, 30000);
     hideLoader();
