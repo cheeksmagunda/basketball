@@ -243,6 +243,82 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
     return {"error": "GitHub write failed after maximum retries"}
 
 
+def _github_write_batch(files: list, message: str = "auto-update") -> dict:
+    """Write multiple files in a single commit using the Git Trees API.
+    files: list of {"path": str, "content": str}.
+    Uses the data branch for data/* paths (except model-config).
+    Falls back to sequential _github_write_file if tree API fails."""
+    if not GITHUB_TOKEN or not GITHUB_REPO or not files:
+        return {"error": "no files or credentials"}
+    # Determine branch — all files in a batch should target the same branch
+    branch = _data_ref(files[0]["path"]) or "main"
+    if branch != "main":
+        _ensure_data_branch()
+    h = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        # Get the current commit SHA for the target branch
+        ref_r = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{branch}",
+            headers=h, timeout=10,
+        )
+        if ref_r.status_code != 200:
+            raise ValueError(f"ref lookup failed: {ref_r.status_code}")
+        base_sha = ref_r.json()["object"]["sha"]
+        # Get the tree SHA of the base commit
+        commit_r = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/commits/{base_sha}",
+            headers=h, timeout=10,
+        )
+        if commit_r.status_code != 200:
+            raise ValueError(f"commit lookup failed: {commit_r.status_code}")
+        base_tree_sha = commit_r.json()["tree"]["sha"]
+        # Build tree entries
+        tree_entries = []
+        for f in files:
+            tree_entries.append({
+                "path": f["path"],
+                "mode": "100644",
+                "type": "blob",
+                "content": f["content"],
+            })
+        # Create new tree
+        tree_r = requests.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/trees",
+            json={"base_tree": base_tree_sha, "tree": tree_entries},
+            headers=h, timeout=15,
+        )
+        if tree_r.status_code not in (200, 201):
+            raise ValueError(f"tree create failed: {tree_r.status_code}")
+        new_tree_sha = tree_r.json()["sha"]
+        # Create commit
+        commit_create_r = requests.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/commits",
+            json={"message": message, "tree": new_tree_sha, "parents": [base_sha]},
+            headers=h, timeout=15,
+        )
+        if commit_create_r.status_code not in (200, 201):
+            raise ValueError(f"commit create failed: {commit_create_r.status_code}")
+        new_commit_sha = commit_create_r.json()["sha"]
+        # Update branch ref
+        ref_update_r = requests.patch(
+            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{branch}",
+            json={"sha": new_commit_sha},
+            headers=h, timeout=10,
+        )
+        if ref_update_r.status_code != 200:
+            raise ValueError(f"ref update failed: {ref_update_r.status_code}")
+        return {"ok": True, "sha": new_commit_sha}
+    except Exception as e:
+        print(f"[github] batch write failed, falling back to sequential: {e}")
+        # Fallback: write files one at a time
+        for f in files:
+            try:
+                _github_write_file(f["path"], f["content"], message)
+            except Exception as e2:
+                print(f"[github] sequential fallback err {f['path']}: {e2}")
+        return {"ok": True, "fallback": True}
+
+
 def _github_delete_file(path, sha, message="auto-delete"):
     """Delete a file from the GitHub repo via Contents API."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
@@ -379,34 +455,20 @@ def _bust_slate_cache():
             f.unlink(missing_ok=True)
     except Exception:
         pass
-    # Bust GitHub cache: tombstone on slate/games + separate bust sentinel so all
-    # instances see "bust" even when the main slate file is still stale (replication).
-    for suffix in ["_slate.json", "_games.json"]:
-        try:
-            path = f"data/slate/{today}{suffix}"
-            _github_write_file(path, json.dumps({"_busted": True}),
-                               f"bust slate cache {today}")
-        except Exception as e:
-            print(f"[bust-slate] tombstone write err {path}: {e}")
+    # Bust GitHub cache: single batched commit with all tombstones + sentinel.
+    # Previously 4 separate commits per bust — now 1 commit via Git Trees API.
+    bust_tombstone = json.dumps({"_busted": True})
+    bust_sentinel = json.dumps({"_busted": True, "at": datetime.now(timezone.utc).isoformat()})
+    bust_files = [
+        {"path": f"data/slate/{today}_slate.json", "content": bust_tombstone},
+        {"path": f"data/slate/{today}_games.json", "content": bust_tombstone},
+        {"path": f"data/slate/{today}_bust.json", "content": bust_sentinel},
+        {"path": f"data/locks/{today}_slate.json", "content": bust_tombstone},
+    ]
     try:
-        bust_path = f"data/slate/{today}_bust.json"
-        _github_write_file(
-            bust_path,
-            json.dumps({"_busted": True, "at": datetime.now(timezone.utc).isoformat()}),
-            f"bust sentinel {today}",
-        )
+        _github_write_batch(bust_files, f"bust slate cache {today}")
     except Exception as e:
-        print(f"[bust-slate] bust sentinel write err: {e}")
-    # Also tombstone the lock file — _slate_restore_from_github must not serve stale
-    # data after an explicit bust (e.g. when predMin filter excluded wrong players).
-    # Without this, cold-start locked requests serve the old lock file forever, since
-    # the locked path returns before reaching the slate cache or pipeline.
-    try:
-        lock_path = f"data/locks/{today}_slate.json"
-        _github_write_file(lock_path, json.dumps({"_busted": True}),
-                           f"bust slate cache {today}")
-    except Exception as e:
-        print(f"[bust-slate] lock tombstone err {lock_path}: {e}")
+        print(f"[bust-slate] batch write err: {e}")
 
 
 def _csv_escape(v):

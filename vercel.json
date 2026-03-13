@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "exit 1",
+  "ignoreCommand": "git diff --quiet HEAD~1 HEAD -- . ':!data' ':!.github'",
   "headers": [
     {
       "source": "/index.html",
