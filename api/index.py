@@ -2006,8 +2006,16 @@ def _get_slate_impl():
     # yesterday's games are still in progress, hold yesterday's locked slate.
     # Handles the common case where a 10 PM ET tip-off runs past midnight and
     # _et_date() has already advanced to the next day.
+    # Time-gate: only applies before 6 AM ET — after that, today is a new slate day
+    # even if no games have started yet. Without this gate, the guard fires all day
+    # pre-tip-off (e.g. 2 PM ET) and incorrectly serves yesterday's stale slate.
+    try:
+        from zoneinfo import ZoneInfo as _ZI
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo as _ZI
+    _et_hour = datetime.now(_ZI("America/New_York")).hour
     any_today_started = any(_is_completed(g.get("startTime", "")) for g in games)
-    if not any_today_started:
+    if not any_today_started and _et_hour < 6:
         _, remaining_yesterday, _, _ = _all_games_final(games)
         if remaining_yesterday > 0:
             yesterday = (_et_date() - timedelta(days=1)).isoformat()
