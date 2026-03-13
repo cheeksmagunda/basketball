@@ -494,6 +494,12 @@ AI_FEATURES = None  # Feature list saved alongside model to verify alignment
 _LGBM_LOAD_ATTEMPTED = False
 _LGBM_LOAD_LOCK = threading.Lock()
 
+# ── Slate pipeline dedup: prevents duplicate full-pipeline runs on concurrent cold-start requests ──
+# If N requests arrive simultaneously and all miss the cache, the first acquires the lock and runs;
+# the rest wait (up to 120s) then serve from the warm cache populated by the first.
+_SLATE_GEN_LOCK = threading.Lock()
+_SLATE_GEN_IN_FLIGHT = False
+
 _LGBM_PATHS = [
     Path(__file__).parent.parent / "lgbm_model.pkl",
     Path(__file__).parent / "lgbm_model.pkl",
@@ -2173,8 +2179,17 @@ def _get_slate_impl():
             # No yesterday cache available — fall through to today's generation
 
     if not games:
-        return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []},
-                "locked": False, "draftable_count": 0}
+        today = _et_date()
+        next_slate = _find_next_slate_date(today + timedelta(days=1))
+        return {
+            "date": today.isoformat(),
+            "games": [],
+            "lineups": {"chalk": [], "upside": []},
+            "locked": False,
+            "draftable_count": 0,
+            "no_games": True,
+            "next_slate_date": next_slate.isoformat() if next_slate else None,
+        }
 
     # Only project games that are still draftable (not yet past lock window).
     draftable_games = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
@@ -2334,45 +2349,74 @@ def _get_slate_impl():
             return gh_cached
 
     # ── Layer 3: First run of the day — generate fresh, then persist ──
-    all_proj = []
-    game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futs = {pool.submit(_run_game, g): g for g in draftable_games}
-        for fut in as_completed(futs):
+    # Concurrent cold-start guard: if another thread is already generating, wait for it
+    # and then serve from the cache it populated. Prevents N×(ESPN + LightGBM + MILP) on
+    # simultaneous cold-start requests (common when the app is opened in multiple tabs).
+    global _SLATE_GEN_IN_FLIGHT
+    with _SLATE_GEN_LOCK:
+        if _SLATE_GEN_IN_FLIGHT:
+            # Another thread is already running the pipeline — release lock and wait.
+            already_running = True
+        else:
+            _SLATE_GEN_IN_FLIGHT = True
+            already_running = False
+
+    if already_running:
+        # Poll /tmp cache until the other thread finishes (max ~90s).
+        for _ in range(45):
+            time.sleep(2)
+            _warm = _cg("slate_v5")
+            if _warm:
+                _warm["locked"] = locked
+                _warm.setdefault("draftable_count", len(draftable_games))
+                return _warm
+        # Fallback: if it never appeared, fall through to run our own pipeline
+        # (the other thread may have crashed).
+
+    try:
+        all_proj = []
+        game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futs = {pool.submit(_run_game, g): g for g in draftable_games}
+            for fut in as_completed(futs):
+                try:
+                    game = futs[fut]
+                    projs = fut.result()
+                    all_proj.extend(projs)
+                    game_proj_map[game["gameId"]] = projs
+                except Exception as e:
+                    print(f"slate err: {e}")
+        chalk, upside = _build_lineups(all_proj)
+        lineups = {"chalk": chalk, "upside": upside}
+        result = {"date": _et_date().isoformat(), "games": games,
+                  "lineups": lineups, "locked": locked,
+                  "all_complete": False, "draftable_count": len(draftable_games),
+                  "lock_time": lock_time,
+                  "score_bounds": _score_bounds_for_lineups(lineups)}
+        if chalk or upside:  # Don't cache empty results — allow retry on next request
+            _cs("slate_v5", result)
+            # Persist to GitHub so all Vercel instances serve the same picks
+            _slate_cache_to_github(result)
+            # Clear bust sentinel so future cold starts can use this slate from GitHub
             try:
-                game = futs[fut]
-                projs = fut.result()
-                all_proj.extend(projs)
-                game_proj_map[game["gameId"]] = projs
+                today = _et_date().isoformat()
+                _github_write_file(f"data/slate/{today}_bust.json", "{}", f"clear bust {today}")
             except Exception as e:
-                print(f"slate err: {e}")
-    chalk, upside = _build_lineups(all_proj)
-    lineups = {"chalk": chalk, "upside": upside}
-    result = {"date": _et_date().isoformat(), "games": games,
-              "lineups": lineups, "locked": locked,
-              "all_complete": False, "draftable_count": len(draftable_games),
-              "lock_time": lock_time,
-              "score_bounds": _score_bounds_for_lineups(lineups)}
-    if chalk or upside:  # Don't cache empty results — allow retry on next request
-        _cs("slate_v5", result)
-        # Persist to GitHub so all Vercel instances serve the same picks
-        _slate_cache_to_github(result)
-        # Clear bust sentinel so future cold starts can use this slate from GitHub
-        try:
-            today = _et_date().isoformat()
-            _github_write_file(f"data/slate/{today}_bust.json", "{}", f"clear bust {today}")
-        except Exception as e:
-            print(f"[slate-cache] clear bust err: {e}")
-        if game_proj_map:
-            _games_cache_to_github(game_proj_map)
-        # Write lock backup for both pre-lock and post-lock regeneration.
-        # Pre-lock: normal first-run backup. Post-lock: admin forced regeneration
-        # (e.g. after bust busted the lock file to fix wrong lineups).
-        # _slate_backup_to_github overwrites tombstones but skips valid existing files.
-        _slate_backup_to_github(result)
-    if locked:
-        _ls("slate_v5_locked", result)
-    return result
+                print(f"[slate-cache] clear bust err: {e}")
+            if game_proj_map:
+                _games_cache_to_github(game_proj_map)
+            # Write lock backup for both pre-lock and post-lock regeneration.
+            # Pre-lock: normal first-run backup. Post-lock: admin forced regeneration
+            # (e.g. after bust busted the lock file to fix wrong lineups).
+            # _slate_backup_to_github overwrites tombstones but skips valid existing files.
+            _slate_backup_to_github(result)
+        if locked:
+            _ls("slate_v5_locked", result)
+        return result
+    finally:
+        if not already_running:
+            with _SLATE_GEN_LOCK:
+                _SLATE_GEN_IN_FLIGHT = False
 
 
 @app.get("/api/slate")
@@ -3453,10 +3497,11 @@ def _primary_pick(picks):
     return over or under
 
 
-def _find_next_slate_date(start_date, max_days=7):
+def _find_next_slate_date(start_date, max_days=30):
     """Find the next date with NBA games, starting from start_date (inclusive).
     Returns a datetime.date or None if no games found within max_days.
-    fetch_games has a 5-min cache per date, so scanning a few dates is cheap."""
+    max_days=30 covers All-Star breaks (~10 days) and playoff gaps.
+    fetch_games has a 5-min cache per date, so scanning is cheap."""
     for i in range(max_days):
         candidate = start_date + timedelta(days=i)
         games = fetch_games(candidate)
