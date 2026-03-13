@@ -242,6 +242,8 @@ git push -u origin your-branch
 # Or push main directly: git checkout main && git merge your-branch && git push origin main
 ```
 
+Vercel skips builds when the **latest** commit only touches `data/` or `.github/` (see `ignoreCommand` in `vercel.json`). If the app has been writing bust/config commits to `main`, the tip can be data-only and your merge won’t trigger a build. Push a small code or doc change to `main` to force a production deploy.
+
 ## Monitoring / Health check
 
 Use **GET `/api/health`** for uptime checks. It returns `200` with `{ "status": "ok", "config": "ok"|"error", "github": "ok"|"unreachable"|"skipped" }`. Configure an external monitor (e.g. [UptimeRobot](https://uptimerobot.com), [Cronitor](https://cronitor.io), or a simple cron that `curl`s the URL and alerts on non-200) so you notice outages quickly. Vercel does not provide built-in health-check alerting.
