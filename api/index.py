@@ -2011,9 +2011,10 @@ def _get_slate_impl():
     # pre-tip-off (e.g. 2 PM ET) and incorrectly serves yesterday's stale slate.
     try:
         from zoneinfo import ZoneInfo as _ZI
+        _et_hour = datetime.now(_ZI("America/New_York")).hour
     except ImportError:
-        from backports.zoneinfo import ZoneInfo as _ZI
-    _et_hour = datetime.now(_ZI("America/New_York")).hour
+        now_utc = datetime.now(timezone.utc)
+        _et_hour = (now_utc + timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)).hour
     any_today_started = any(_is_completed(g.get("startTime", "")) for g in games)
     if not any_today_started and _et_hour < 6:
         _, remaining_yesterday, _, _ = _all_games_final(games)
@@ -2082,9 +2083,10 @@ def _get_slate_impl():
             gh_backup.setdefault("draftable_count", 0)
             _ls("slate_v5_locked", gh_backup)
             return gh_backup
-        return {"date": _et_date().isoformat(), "games": games,
-                "lineups": {"chalk": [], "upside": []},
-                "locked": True, "all_complete": all_complete, "draftable_count": 0}
+        # All caches empty — forced regeneration after config bust during a locked slate.
+        # (e.g. model config changed post-lock, user hit Refresh to get new picks)
+        # Fall through to the full pipeline using all today's games.
+        draftable_games = games
 
     # lock_time and locked status both use the FIRST game of the entire day (all games,
     # not just draftable ones). Once the 6 PM game locks at 5:55 PM, the slate stays
