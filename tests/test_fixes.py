@@ -710,7 +710,7 @@ class TestPicksServeFromCache:
                        "opp": "LAL", "gameId": "game1"}
 
         with patch("api.index.fetch_games", return_value=mock_games), \
-             patch("api.index._is_completed", return_value=False), \
+             patch("api.index._is_past_lock_window", return_value=False), \
              patch("api.index._cg", return_value=None), \
              patch("api.index._run_game", return_value=[mock_player]), \
              patch("api.index._games_cache_from_github") as mock_gh:

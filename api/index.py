@@ -577,11 +577,9 @@ def _is_locked(start_time_iso: Optional[str]) -> bool:
     except Exception:
         return False
 
-def _is_completed(start_time_iso):
-    """Returns True if the game has passed its lock window (i.e. is locked or in progress).
-    NOTE: Despite the name, this does NOT check if the game is finished on ESPN —
-    it only checks whether the lock window has been crossed (now >= start - lock_buf).
-    Use _all_games_final() to check ESPN completion status."""
+def _is_past_lock_window(start_time_iso):
+    """Returns True if the game has passed its lock window (now >= start - lock_buf).
+    Does NOT check ESPN completion status — use _all_games_final() for that."""
     try:
         lock_buf = _cfg("projection.lock_buffer_minutes", 5)
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
@@ -1974,7 +1972,7 @@ async def get_games() -> dict:
         for g in games:
             st = g.get("startTime", "")
             g["locked"] = _is_locked(st) if st else False
-            g["draftable"] = not _is_completed(st) if st else False
+            g["draftable"] = not _is_past_lock_window(st) if st else False
         return games
     except Exception as e:
         print(f"[games] error: {e}")
@@ -2013,7 +2011,7 @@ def _get_slate_impl():
     except ImportError:
         now_utc = datetime.now(timezone.utc)
         _et_hour = (now_utc + timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)).hour
-    any_today_started = any(_is_completed(g.get("startTime", "")) for g in games)
+    any_today_started = any(_is_past_lock_window(g.get("startTime", "")) for g in games)
     if not any_today_started and _et_hour < 6:
         _, remaining_yesterday, _, _ = _all_games_final(games)
         if remaining_yesterday > 0:
@@ -2040,7 +2038,7 @@ def _get_slate_impl():
                 "locked": False, "draftable_count": 0}
 
     # Only project games that are still draftable (not yet past lock window).
-    draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    draftable_games = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
 
     if not draftable_games:
         # All today's games have passed their lock window (draftable_games is empty).
@@ -2304,6 +2302,27 @@ async def get_picks(gameId: str = Query(...)):
         if reg_cached:
             reg_cached["locked"] = True
             _ls(lock_key, reg_cached)
+            # Inline per-game save at lock-promotion time — ensures per-game
+            # predictions are persisted to GitHub as soon as the game locks,
+            # not just when the slate-level save fires later.
+            try:
+                if reg_cached.get("lineups"):
+                    label = game.get("label", f"game_{gameId}")
+                    game_rows = _predictions_to_csv(reg_cached["lineups"], label)
+                    if game_rows:
+                        today = _et_date().isoformat()
+                        pred_path = f"data/predictions/{today}.csv"
+                        existing, _ = _github_get_file(pred_path)
+                        if existing:
+                            existing_scopes = {line.split(",")[0] for line in existing.strip().split("\n")[1:] if line.split(",")[0]}
+                            if label not in existing_scopes:
+                                csv_content = existing.rstrip("\n") + "\n" + "\n".join(game_rows) + "\n"
+                                _github_write_file(pred_path, csv_content, f"per-game lock {label} {today}")
+                        else:
+                            csv_content = CSV_HEADER + "\n" + "\n".join(game_rows) + "\n"
+                            _github_write_file(pred_path, csv_content, f"per-game lock {label} {today}")
+            except Exception as _e:
+                print(f"[picks lock] inline save err {gameId}: {_e}")
             return reg_cached
         # No cache on this instance after lock — auto-compute so user sees picks
         auto = _compute_game_picks(game)
@@ -3143,7 +3162,7 @@ def _get_projections_for_date(date_obj):
     """Return (all_proj, draftable_games) for the given date for line-engine enrichment.
     Checks /tmp cache, then GitHub persistent cache, then runs the full pipeline as a last resort."""
     games = fetch_games(date_obj)
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
     if not draftable:
         return [], []
     all_proj = []
@@ -3277,7 +3296,7 @@ def _run_line_engine_for_date(date):
     games = fetch_games(date)
     if not games:
         return None, "no_games"
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
     # Post-lock (slate locked, all games past their lock window): fall back to all games
     # so line picks can still be generated after tip-off. Projections come from cache
     # (_run_game cache is keyed by gameId, survives across lock).
@@ -4252,7 +4271,7 @@ async def lab_status():
     so the frontend shows a retryable message instead of a generic fetch failure."""
     try:
         games = fetch_games()
-        draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+        draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
 
         # If games are currently in progress (slate locked, games not yet final).
         # Check ALL game start times — not just earliest. On a 6-game Saturday slate,

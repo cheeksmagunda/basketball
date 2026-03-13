@@ -9,7 +9,7 @@
 | Item | Location | Purpose |
 |------|----------|---------|
 | `_is_locked(start_time_iso)` | api/index.py ~391 | True if within lock_buffer of start or &lt;6h past start. Catches exceptions → False. |
-| `_is_completed(start_time_iso)` | api/index.py ~406 | True if past lock window (lock or in progress). Used for draftable. |
+| `_is_past_lock_window(start_time_iso)` | api/index.py ~406 | True if past lock window (lock or in progress). Used for draftable. |
 | `_all_games_final(games)` | api/index.py ~3352 | ESPN scoreboard check; 60s TTL when locked, 180s pre-slate. Returns (all_final, remaining, finals, latest). |
 | `LOCK_DIR` / `_lg` / _ls | api/index.py ~221, 348, 388 | In-memory lock cache; `_lp(k)` file path, `_lg` read, `_ls` write. |
 | GitHub lock backup | api/index.py ~170–189 | `data/locks/{date}_slate.json` read/write for cold-start recovery. |
