@@ -121,9 +121,12 @@ def _data_ref(path: str):
 
 _DATA_BRANCH_ENSURED = False
 
+_DATA_BRANCH_VERCEL_FIXED = False
+
 def _ensure_data_branch():
-    """Create branch 'data' from main if it does not exist. Idempotent."""
-    global _DATA_BRANCH_ENSURED
+    """Create branch 'data' from main if it does not exist. Idempotent.
+    Also ensures vercel.json on data branch skips builds (one-time fix)."""
+    global _DATA_BRANCH_ENSURED, _DATA_BRANCH_VERCEL_FIXED
     if _DATA_BRANCH_ENSURED or not GITHUB_TOKEN or not GITHUB_REPO:
         return
     try:
@@ -134,6 +137,9 @@ def _ensure_data_branch():
         )
         if r.status_code == 200:
             _DATA_BRANCH_ENSURED = True
+            # One-time fix: ensure data branch vercel.json skips builds
+            if not _DATA_BRANCH_VERCEL_FIXED:
+                _fix_data_branch_vercel_json()
             return
         if r.status_code != 404:
             return
@@ -153,6 +159,42 @@ def _ensure_data_branch():
             _DATA_BRANCH_ENSURED = True
     except Exception:
         pass
+
+
+def _fix_data_branch_vercel_json():
+    """Ensure data branch vercel.json has ignoreCommand that skips all builds.
+    Runs once per instance; no-op if already correct."""
+    global _DATA_BRANCH_VERCEL_FIXED
+    try:
+        content, sha = _github_get_file("vercel.json", ref_override=DATA_BRANCH)
+        if not content:
+            _DATA_BRANCH_VERCEL_FIXED = True
+            return
+        data = json.loads(content)
+        expected_prefix = 'if [ "$VERCEL_GIT_COMMIT_REF" = "data" ]; then exit 0; fi'
+        current = data.get("ignoreCommand", "")
+        if expected_prefix in current:
+            _DATA_BRANCH_VERCEL_FIXED = True
+            return
+        # Update ignoreCommand to skip builds on data branch
+        data["ignoreCommand"] = f'{expected_prefix}; git diff --quiet HEAD~1 HEAD -- . \':!data\' \':!.github\''
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/vercel.json"
+        payload = {
+            "message": "fix: skip Vercel builds on data branch",
+            "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode(),
+            "branch": DATA_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+        requests.put(url, json=payload, headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+        }, timeout=15)
+        _DATA_BRANCH_VERCEL_FIXED = True
+        print(f"[data-branch] Updated vercel.json ignoreCommand to skip builds")
+    except Exception as e:
+        print(f"[data-branch] vercel.json fix failed (non-fatal): {e}")
+        _DATA_BRANCH_VERCEL_FIXED = True  # Don't retry on error
 
 def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None).
