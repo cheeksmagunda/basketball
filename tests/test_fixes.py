@@ -213,7 +213,7 @@ class TestGitHubWriteRetry:
         ok = self._make_response(201, {'content': {'sha': 'abc'}})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-             patch('api.index._ensure_data_branch'), \
+
              patch('api.index._github_get_file', return_value=('{}', 'oldsha')), \
              patch('requests.put', return_value=ok) as mock_put:
             result = _github_write_file('data/test.json', '{}', 'commit')
@@ -226,7 +226,7 @@ class TestGitHubWriteRetry:
         ok   = self._make_response(201, {'content': {'sha': 'newsha'}})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-             patch('api.index._ensure_data_branch'), \
+
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', side_effect=[fail, fail, ok]) as mock_put, \
              patch('time.sleep'):
@@ -239,7 +239,7 @@ class TestGitHubWriteRetry:
         fail = self._make_response(422, {'message': 'SHA mismatch'})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-             patch('api.index._ensure_data_branch'), \
+
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', return_value=fail), \
              patch('time.sleep'):
@@ -251,7 +251,7 @@ class TestGitHubWriteRetry:
         fail = self._make_response(422, {'message': 'SHA mismatch'})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-             patch('api.index._ensure_data_branch'), \
+
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', return_value=fail), \
              patch('time.sleep') as mock_sleep:
@@ -698,7 +698,6 @@ class TestPicksServeFromCache:
         """_bust_slate_cache writes all tombstones in a single batch commit."""
         from api.index import _bust_slate_cache
         with patch("api.index._github_write_batch") as mock_batch, \
-             patch("api.index._ensure_data_branch"), \
              patch("api.index._cp") as mock_cp:
             mock_cp.return_value.unlink = Mock()
             _bust_slate_cache()

@@ -109,96 +109,15 @@ _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
 if _missing_env:
     print(f"[WARN] Missing env vars: {_missing_env} — affected features will be degraded")
 
-# Data branch: app writes to branch "data" so main stays code-only and Vercel builds on every push.
-# data/model-config.json stays on main (sync workflow + Lab). All other data/* use branch "data".
-DATA_BRANCH = "data"
-
+# All data writes go to main (default branch). The ignoreCommand in vercel.json
+# skips builds when only data/ or .github/ files change, so data commits on main
+# do NOT trigger Vercel rebuilds.
 def _data_ref(path: str):
-    """Return branch name for path, or None for default (main)."""
-    if path.startswith("data/") and path != "data/model-config.json":
-        return DATA_BRANCH
+    """Return branch override for GitHub API calls, or None for default (main)."""
     return None
 
-_DATA_BRANCH_ENSURED = False
-
-_DATA_BRANCH_VERCEL_FIXED = False
-
-def _ensure_data_branch():
-    """Create branch 'data' from main if it does not exist. Idempotent.
-    Also ensures vercel.json on data branch skips builds (one-time fix)."""
-    global _DATA_BRANCH_ENSURED, _DATA_BRANCH_VERCEL_FIXED
-    if _DATA_BRANCH_ENSURED or not GITHUB_TOKEN or not GITHUB_REPO:
-        return
-    try:
-        h = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-        r = requests.get(
-            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{DATA_BRANCH}",
-            headers=h, timeout=10,
-        )
-        if r.status_code == 200:
-            _DATA_BRANCH_ENSURED = True
-            # One-time fix: ensure data branch vercel.json skips builds
-            if not _DATA_BRANCH_VERCEL_FIXED:
-                _fix_data_branch_vercel_json()
-            return
-        if r.status_code != 404:
-            return
-        r2 = requests.get(
-            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/main",
-            headers=h, timeout=10,
-        )
-        if r2.status_code != 200:
-            return
-        main_sha = r2.json()["object"]["sha"]
-        r3 = requests.post(
-            f"https://api.github.com/repos/{GITHUB_REPO}/git/refs",
-            json={"ref": f"refs/heads/{DATA_BRANCH}", "sha": main_sha},
-            headers=h, timeout=10,
-        )
-        if r3.status_code in (200, 201):
-            _DATA_BRANCH_ENSURED = True
-    except Exception:
-        pass
-
-
-def _fix_data_branch_vercel_json():
-    """Ensure data branch vercel.json has ignoreCommand that skips all builds.
-    Runs once per instance; no-op if already correct."""
-    global _DATA_BRANCH_VERCEL_FIXED
-    try:
-        content, sha = _github_get_file("vercel.json", ref_override=DATA_BRANCH)
-        if not content:
-            _DATA_BRANCH_VERCEL_FIXED = True
-            return
-        data = json.loads(content)
-        expected_prefix = 'if [ "$VERCEL_GIT_COMMIT_REF" = "data" ]; then exit 0; fi'
-        current = data.get("ignoreCommand", "")
-        if expected_prefix in current:
-            _DATA_BRANCH_VERCEL_FIXED = True
-            return
-        # Update ignoreCommand to skip builds on data branch
-        data["ignoreCommand"] = f'{expected_prefix}; git diff --quiet HEAD~1 HEAD -- . \':!data\' \':!.github\''
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/vercel.json"
-        payload = {
-            "message": "fix: skip Vercel builds on data branch",
-            "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode(),
-            "branch": DATA_BRANCH,
-        }
-        if sha:
-            payload["sha"] = sha
-        requests.put(url, json=payload, headers={
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json",
-        }, timeout=15)
-        _DATA_BRANCH_VERCEL_FIXED = True
-        print(f"[data-branch] Updated vercel.json ignoreCommand to skip builds")
-    except Exception as e:
-        print(f"[data-branch] vercel.json fix failed (non-fatal): {e}")
-        _DATA_BRANCH_VERCEL_FIXED = True  # Don't retry on error
-
 def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
-    """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None).
-    Uses branch 'data' for data/* except model-config so main stays code-only for Vercel."""
+    """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return None, None
     ref = ref_override if ref_override is not None else _data_ref(path)
@@ -216,7 +135,7 @@ def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Opt
     return None, None
 
 def _github_list_dir(path: str, ref_override: Optional[str] = None) -> list:
-    """List files in a GitHub repo directory. Uses branch 'data' for data/* except model-config."""
+    """List files in a GitHub repo directory."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return []
     ref = ref_override if ref_override is not None else _data_ref(path)
@@ -233,26 +152,20 @@ def _github_list_dir(path: str, ref_override: Optional[str] = None) -> list:
 
 def _github_write_file(path: str, content: str, message: str = "auto-update", max_retries: int = 3) -> dict:
     """Create or update a file in the GitHub repo via Contents API.
-    Writes to branch 'data' for data/* (except model-config) so main stays code-only for Vercel.
     Retries on 422 Conflict (SHA mismatch) with exponential backoff."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return {"error": "GITHUB_TOKEN or GITHUB_REPO not configured"}
-    branch = _data_ref(path)
-    if branch:
-        _ensure_data_branch()
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
 
     for attempt in range(max_retries):
-        _, sha = _github_get_file(path)  # uses data ref when path is data/*
+        _, sha = _github_get_file(path)
         payload = {
             "message": message,
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
         }
         if sha:
             payload["sha"] = sha
-        if branch:
-            payload["branch"] = branch
 
         try:
             r = requests.put(url, json=payload, headers={
@@ -288,14 +201,10 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
 def _github_write_batch(files: list, message: str = "auto-update") -> dict:
     """Write multiple files in a single commit using the Git Trees API.
     files: list of {"path": str, "content": str}.
-    Uses the data branch for data/* paths (except model-config).
     Falls back to sequential _github_write_file if tree API fails."""
     if not GITHUB_TOKEN or not GITHUB_REPO or not files:
         return {"error": "no files or credentials"}
-    # Determine branch — all files in a batch should target the same branch
-    branch = _data_ref(files[0]["path"]) or "main"
-    if branch != "main":
-        _ensure_data_branch()
+    branch = "main"
     h = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     try:
         # Get the current commit SHA for the target branch
