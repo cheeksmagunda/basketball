@@ -25,7 +25,7 @@ try:
 except ImportError:
     PULP_AVAILABLE = False
 
-# Position group map — same buckets as index.py POS_GROUPS
+# Position group map — mirrors index.py POS_GROUPS (same keys, same default)
 _POS_GROUPS = {
     "PG": "G", "SG": "G", "G": "G",
     "SF": "F", "PF": "F", "F": "F",
@@ -33,7 +33,7 @@ _POS_GROUPS = {
 }
 
 def _pos_group(pos):
-    return _POS_GROUPS.get(pos, "F")
+    return _POS_GROUPS.get(pos, "G")
 
 # Slot multipliers: Real Sports App draft slot values
 SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]

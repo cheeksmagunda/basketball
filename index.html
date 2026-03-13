@@ -1182,9 +1182,8 @@
   <!-- ══ TAB: LINE ══ -->
   <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
   <div id="tab-line" class="tab-page">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div style="margin-bottom:10px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Line of the Day</div>
-      <button onclick="(async()=>{const b=document.getElementById('lineRefreshBtn');b.textContent='...';b.disabled=true;try{await fetchWithTimeout('/api/refresh-line-odds', {}, 10000);}catch(e){}LINE_LOADED_DATE='';await initLinePage();b.textContent='Refresh';b.disabled=false;})()" style="font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;cursor:pointer" id="lineRefreshBtn">Refresh</button>
     </div>
     <!-- Over | Under direction filter — inline at top, matches Slate-Wide | Game tabs -->
     <div class="predict-sub-nav" id="lineSubNav" style="margin-top:14px">
@@ -1358,7 +1357,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
     .catch(error => {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        throw new Error(`Fetch timeout after ${timeoutMs}ms: ${url}`);
+        throw new Error(`Request timed out — tap Retry`);
       }
       throw error;
     });
@@ -1786,14 +1785,14 @@ async function loadSlate() {
     if (SLATE.all_complete && !_slateNextDayPoll) {
       _slateNextDayPoll = setInterval(() => {
         const prevDate = SLATE.date;
-        loadSlate().catch(() => {});
-        // Self-clear once a fresh slate loads (checked after loadSlate updates SLATE)
-        setTimeout(() => {
+        // Wait for loadSlate to actually complete before checking if date changed.
+        // Previous 3s setTimeout raced with the async fetch (can take 10-30s on cold start).
+        loadSlate().then(() => {
           if (SLATE.date !== prevDate || !SLATE.all_complete) {
             clearInterval(_slateNextDayPoll);
             _slateNextDayPoll = null;
           }
-        }, 3000);
+        }).catch(() => {});
       }, 5 * 60 * 1000);
     }
 
@@ -1899,7 +1898,6 @@ async function runAnalysis() {
 
   isFetching = true;
   PICKS_STATE = asyncStateLoading(PICKS_STATE);
-  const rb = document.getElementById('lineRefreshBtn'); if (rb) rb.disabled = true;
   banner.style.display = 'none';
   document.getElementById('gameAnalysisEmpty').style.display = 'none';
   btn.disabled = true;
@@ -1914,12 +1912,12 @@ async function runAnalysis() {
     if (document.getElementById('gameSel').value !== _requestedGameId) {
       isFetching = false;
       btn.disabled = false; btn.innerHTML = 'Analyze Draft';
-      const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = false;
       return;
     }
     if (!r.ok) {
-      const err = await r.json().catch(() => ({ error: 'Server error' }));
-      throw new Error(err.error || `HTTP ${r.status}`);
+      const err = await r.json().catch(() => ({}));
+      const errMsg = err.error || (r.status === 503 ? 'Server warming up — tap Retry' : r.status === 429 ? 'Too many requests — wait a moment' : `Couldn't load picks (${r.status})`);
+      throw new Error(errMsg);
     }
     const picksData = await r.json();
     PICKS_STATE = asyncStateSuccess(PICKS_STATE, picksData);
@@ -1971,7 +1969,6 @@ async function runAnalysis() {
     isFetching = false;
     btn.disabled = false;
     btn.innerHTML = 'Analyze Draft';
-    const _rb = document.getElementById('lineRefreshBtn'); if (_rb) _rb.disabled = false;
   }
 }
 
@@ -1981,9 +1978,16 @@ async function runAnalysis() {
 function renderCards(picks, containerId, mode, opts = {}) {
   const el = document.getElementById(containerId);
   if (!picks || !picks.length) {
-    const msg = SLATE?.no_games_yet
-      ? `Today's slate will be available around <b>${_escapeHtml(SLATE?.available_after)}</b>.`
-      : 'No players to display yet.';
+    let msg = 'No players to display yet.';
+    if (SLATE?.no_games) {
+      if (SLATE.next_slate_date) {
+        const d = new Date(SLATE.next_slate_date + 'T12:00:00');
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        msg = `No NBA games today. Next slate: <b>${_escapeHtml(dateStr)}</b>.`;
+      } else {
+        msg = 'No NBA games scheduled in the next 30 days.';
+      }
+    }
     el.innerHTML = `<div class="empty-state"><span class="icon">🏀</span><p>${msg}</p></div>`;
     return;
   }
@@ -2935,9 +2939,7 @@ function _renderLineLOTDFromState() {
   const linePickWrap = _el('linePickWrap');
   const linePickCard = _el('linePickCard');
   const lineSlateSummary = _el('lineSlateSummary');
-  const lineRefreshBtn = _el('lineRefreshBtn');
   if (!linePickWrap || !linePickCard) return;
-  if (lineRefreshBtn) lineRefreshBtn.disabled = loading;
 
   if (loading) {
     linePickWrap.style.display = 'block';

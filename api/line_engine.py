@@ -398,7 +398,7 @@ def run_model_fallback(projections, games, line_config=None):
         return {"pick": None, "over_pick": None, "under_pick": None, "error": "no_edges"}
     primary    = over_pick if (over_pick and (not under_pick or over_pick["confidence"] >= under_pick["confidence"])) else under_pick
     return {
-        "pick": primary, "over_pick": over_pick, "under_pick": under_pick, "runner_up": None,
+        "pick": primary, "over_pick": over_pick, "under_pick": under_pick,
         "slate_summary": {
             "games_evaluated": len(games), "props_scanned": len(candidates),
             "edges_found": len(candidates), "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -528,7 +528,6 @@ def run_line_engine(projections, games, line_config=None):
         "pick":       primary,
         "over_pick":  over_pick,
         "under_pick": under_pick,
-        "runner_up":  None,
         "slate_summary": {
             "games_evaluated": len(games),
             "props_scanned":   len(projections),

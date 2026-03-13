@@ -428,10 +428,11 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
+        "chalk_season_min_floor":22.0,  # season avg floor for Starting 5 eligibility
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":15, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":18, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.65,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -490,23 +491,45 @@ def _cfg(path, default=None):
 
 AI_MODEL = None
 AI_FEATURES = None  # Feature list saved alongside model to verify alignment
-for _p in [
+_LGBM_LOAD_ATTEMPTED = False
+_LGBM_LOAD_LOCK = threading.Lock()
+
+# ── Slate pipeline dedup: prevents duplicate full-pipeline runs on concurrent cold-start requests ──
+# If N requests arrive simultaneously and all miss the cache, the first acquires the lock and runs;
+# the rest wait (up to 120s) then serve from the warm cache populated by the first.
+_SLATE_GEN_LOCK = threading.Lock()
+_SLATE_GEN_IN_FLIGHT = False
+
+_LGBM_PATHS = [
     Path(__file__).parent.parent / "lgbm_model.pkl",
     Path(__file__).parent / "lgbm_model.pkl",
     Path("lgbm_model.pkl"),
-]:
-    if _p.exists():
-        try:
-            with open(_p, "rb") as f:
-                _bundle = pickle.load(f)
-            if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                AI_MODEL    = _bundle["model"]
-                AI_FEATURES = _bundle["features"]
-                break
-            # Legacy bare model format not supported — require bundled features for alignment
-        except (OSError, pickle.UnpicklingError, KeyError, ValueError): pass
-    if AI_MODEL is None:
-        print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
+]
+
+def _ensure_lgbm_loaded():
+    """Lazy-load the LightGBM model bundle on first use.
+    Safe to call from concurrent requests — load is attempted once via lock."""
+    global AI_MODEL, AI_FEATURES, _LGBM_LOAD_ATTEMPTED
+    if _LGBM_LOAD_ATTEMPTED:
+        return
+    with _LGBM_LOAD_LOCK:
+        if _LGBM_LOAD_ATTEMPTED:
+            return
+        for _p in _LGBM_PATHS:
+            if _p.exists():
+                try:
+                    with open(_p, "rb") as _f:
+                        _bundle = pickle.load(_f)
+                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
+                        AI_MODEL    = _bundle["model"]
+                        AI_FEATURES = _bundle["features"]
+                        break
+                    # Legacy bare model format not supported — require bundled features for alignment
+                except (OSError, pickle.UnpicklingError, KeyError, ValueError):
+                    pass
+        _LGBM_LOAD_ATTEMPTED = True
+        if AI_MODEL is None:
+            print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -576,11 +599,12 @@ def _is_locked(start_time_iso: Optional[str]) -> bool:
     except Exception:
         return False
 
-def _is_completed(start_time_iso):
-    """Returns True if the game has passed its lock window (i.e. is locked or in progress).
-    NOTE: Despite the name, this does NOT check if the game is finished on ESPN —
-    it only checks whether the lock window has been crossed (now >= start - lock_buf).
-    Use _all_games_final() to check ESPN completion status."""
+def _is_past_lock_window(start_time_iso):
+    """Returns True if the game has passed its lock window (now >= start - lock_buf).
+    Intentionally has no 6-hour ceiling: once a game is past the lock window it is
+    never draftable again, even after it ends. Contrast with _is_locked(), which
+    returns False after 6h so the UI stops showing the game as "locked".
+    Does NOT check ESPN completion status — use _all_games_final() for that."""
     try:
         lock_buf = _cfg("projection.lock_buffer_minutes", 5)
         game_start = datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
@@ -1400,6 +1424,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Usage trend clipping must match train_lgbm.py
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     base = heuristic
+    _ensure_lgbm_loaded()
     if AI_MODEL is not None:
         try:
             usage = min(max(pts / max(avg_min, 1) * 0.8, USAGE_TREND_MIN), USAGE_TREND_MAX)
@@ -1609,7 +1634,7 @@ def _run_game(game):
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal-only fields never sent to the frontend
-_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared"}
+_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_is_dev_team"}
 
 def _normalize_player(p: dict) -> dict:
     """Stable frontend contract for player projection objects.
@@ -1646,6 +1671,7 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
     "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
+    "recent_form_values",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1676,8 +1702,9 @@ def _normalize_line_pick(p: dict) -> dict:
         "season_avg":      p.get("season_avg"),
         "proj_min":        p.get("proj_min"),
         "avg_min":         p.get("avg_min"),
-        "game_time":       p.get("game_time", ""),
-        "recent_form_bars": p.get("recent_form_bars"),
+        "game_time":          p.get("game_time", ""),
+        "recent_form_bars":   p.get("recent_form_bars"),
+        "recent_form_values": p.get("recent_form_values"),
     }
     # Pass through any extra fields (e.g. _live tracker, future additions)
     extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}
@@ -1686,9 +1713,9 @@ def _normalize_line_pick(p: dict) -> dict:
 
 def _build_lineups(projections):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
-    chalk_floor = _cfg("lineup.chalk_rating_floor", 2.8)
+    chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
-    boost_cap = proj_cfg.get("chalk_boost_cap", 1.5)
+    boost_cap = proj_cfg.get("chalk_boost_cap", 2.5)
 
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
     use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
@@ -1702,21 +1729,19 @@ def _build_lineups(projections):
             print(f"RotoWire fetch failed, proceeding without: {e}")
 
     # STARTING 5: MILP-optimized for chalk_ev with card boost capped.
-    # chalk_boost_cap=1.5: rewards moderate-ownership role players without going full moonshot.
+    # chalk_boost_cap=2.5: rewards moderate-ownership role players without going full moonshot.
     # Mar 5 insight: Ace Bailey (RS 5.9 × boost 2.1) >>> Wemby (RS 7.1 × boost 0.3).
     # RotoWire filter applied here too — chalk can't include OUT/questionable players.
     chalk_eligible = []
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # SLATE-WIDE CHALK: Requires min 20 recent minutes.
-        # Season averages can be stale (e.g. Olynyk 22 season / 8.9 recent);
-        # only recent form reflects actual current rotation usage.
-        if p.get("recent_min", 0) < 20.0:
-            continue
-        # Also require projected minutes >= 20 so eligibility matches what we display.
-        # ESPN recent_min can be a longer/warmer split; predMin is what we project for tonight.
-        if float(p.get("predMin") or 0) < 20.0:
+        # SLATE-WIDE CHALK: Requires min 22 season avg minutes.
+        # Season average is the stable baseline for a player's role. Players with
+        # low season avg (e.g. Caruso 18.5 avg) belong in moonshot where their
+        # card boost upside is maximized, even if recent minutes are inflated.
+        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 22.0)
+        if p.get("season_min", 0) < chalk_min_floor:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1736,19 +1761,17 @@ def _build_lineups(projections):
     #
     # Formula: moonshot_ev = (predMin^min_weight) × (boost^cb_weight)
     #                        × team_bonus × rating × pos_efficiency
-    #   - Minutes floor (15) = player must be a real rotation piece
-    #     (lowered from 20 to catch emergency starters projected ~15-18 min)
+    #   - Minutes floor (18 season avg) = player must be a real rotation piece
     #   - Card boost^2.5 = dominant signal; low ownership = massive payout
-    #     (raised from 2.0 — ownership is the true edge, minutes just confirm court time)
     #   - big_pos_efficiency (0.65) = centers generate ~60% less RS per minute
     #     than guards/wings; screens and rim protection don't accumulate RS events
     #
     # Hard filters:
-    #   - 15+ projected minutes (the ticket exists — player will be on court)
+    #   - 18+ season avg minutes (stable rotation role baseline)
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor = moon_cfg.get("min_minutes_floor", 17)
+    min_floor = moon_cfg.get("min_minutes_floor", 18)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.5)
@@ -1763,10 +1786,11 @@ def _build_lineups(projections):
         if p["name"] in chalk_names:
             continue
 
-        # Hard minute floor — recent minutes, not projected.
-        # Season averages and cascade-inflated projections can overstate
-        # actual court time for players whose role has shrunk.
-        if p.get("recent_min", 0) < min_floor:
+        # Hard minute floor — season average minutes.
+        # Season avg is the stable baseline for actual rotation role.
+        # Recent splits and cascade-inflated projections can overstate
+        # actual court time for players whose role has shifted.
+        if p.get("season_min", 0) < min_floor:
             continue
 
         # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
@@ -1851,7 +1875,7 @@ def _build_game_lineups(projections, game):
     split — both users draft from the same 2-team pool, so card boost is irrelevant.
     Optimized purely by projected Real Score × slot multiplier.
     """
-    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 2.8)
+    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
     rescored = _apply_game_script(projections, game)
 
     # PER-GAME: Requires min 20 recent minutes — same philosophy as slate-wide.
@@ -1879,6 +1903,123 @@ def _build_game_lineups(projections, game):
             the_lineup.append(p)
 
     return {"the_lineup": [_normalize_player(p) for p in the_lineup]}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCORE BOUNDARY VALIDATION
+# grep: _lineup_ev_total, score_bounds, _get_mock_slate
+#
+# "Total projected draft score" for audit/monitoring purposes:
+#   - Slate-Wide (chalk/moonshot): sum of rating × (slot_numeric + est_mult) per player
+#   - Per-Game (the_lineup):       sum of rating only (no card boost in per-game)
+#
+# Expected ranges:
+#   - chalk:       70–100
+#   - upside:      70–100
+#   - the_lineup:  25–35
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SLOT_NUMS = {"2.0x": 2.0, "1.8x": 1.8, "1.6x": 1.6, "1.4x": 1.4, "1.2x": 1.2}
+_SCORE_BOUNDS = {
+    "chalk":      (70.0, 100.0),
+    "upside":     (70.0, 100.0),
+    "the_lineup": (25.0, 35.0),
+}
+
+def _lineup_ev_total(lineup: list, mode: str) -> float:
+    """Compute total projected draft score for a 5-player lineup.
+    Mode 'chalk'/'upside': sum(rating × (slot_numeric + est_mult)).
+    Mode 'the_lineup': sum(rating) — no card boost in per-game drafts."""
+    total = 0.0
+    for p in lineup:
+        r = float(p.get("rating") or 0)
+        if mode == "the_lineup":
+            total += r
+        else:
+            slot = _SLOT_NUMS.get(p.get("slot", ""), 1.6)
+            boost = float(p.get("est_mult") or 0)
+            total += r * (slot + boost)
+    return round(total, 1)
+
+
+def _score_bounds_for_lineups(lineups: dict) -> dict:
+    """Return total EV and in-range flag for each lineup type in a lineups dict."""
+    bounds = {}
+    for mode, players in lineups.items():
+        if not players:
+            continue
+        total = _lineup_ev_total(players, mode)
+        lo, hi = _SCORE_BOUNDS.get(mode, (0, 9999))
+        in_range = lo <= total <= hi
+        if not in_range:
+            print(f"[score-bounds] {mode} total {total} outside expected {lo}–{hi}")
+        bounds[mode] = {"total": total, "lo": lo, "hi": hi, "in_range": in_range}
+    return bounds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MOCK SLATE — deterministic test data for Phase 0 audit validation
+# Returned by GET /api/slate?mock=true. No ESPN, LightGBM, or cache I/O.
+# Scores are pre-computed to fall within expected bounds:
+#   chalk / upside totals ≈ 76.6 / 71.3 (both in 70–100)
+#   per-game total ≈ 28.0 (in 25–35)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_mock_slate() -> dict:
+    """Return a fully-formed mock slate for testing. No side effects."""
+    chalk = [
+        {"id":"mock1","name":"Mock Player 1","pos":"PG","team":"LAL","rating":7.0,"predMin":36.0,
+         "pts":22.0,"reb":4.0,"ast":7.0,"stl":1.2,"blk":0.3,"est_mult":0.8,"slot":"2.0x",
+         "chalk_ev":19.6,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock2","name":"Mock Player 2","pos":"SF","team":"BOS","rating":5.5,"predMin":34.0,
+         "pts":18.0,"reb":6.0,"ast":3.0,"stl":1.0,"blk":0.5,"est_mult":1.2,"slot":"1.8x",
+         "chalk_ev":16.5,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock3","name":"Mock Player 3","pos":"C","team":"LAL","rating":4.5,"predMin":30.0,
+         "pts":14.0,"reb":10.0,"ast":2.0,"stl":0.5,"blk":1.8,"est_mult":1.5,"slot":"1.6x",
+         "chalk_ev":13.95,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock4","name":"Mock Player 4","pos":"SG","team":"BOS","rating":4.0,"predMin":28.0,
+         "pts":13.0,"reb":3.0,"ast":4.0,"stl":1.0,"blk":0.2,"est_mult":2.0,"slot":"1.4x",
+         "chalk_ev":13.6,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock5","name":"Mock Player 5","pos":"PF","team":"LAL","rating":3.5,"predMin":24.0,
+         "pts":10.0,"reb":7.0,"ast":1.5,"stl":0.8,"blk":0.6,"est_mult":2.5,"slot":"1.2x",
+         "chalk_ev":12.95,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+    ]
+    upside = [
+        {"id":"mock6","name":"Mock Moonshot 1","pos":"G","team":"IND","rating":3.5,"predMin":22.0,
+         "pts":9.0,"reb":3.0,"ast":4.0,"stl":1.0,"blk":0.1,"est_mult":3.5,"slot":"2.0x",
+         "chalk_ev":9.45,"moonshot_ev":194.3,"injury_status":"","_decline":0.0},
+        {"id":"mock7","name":"Mock Moonshot 2","pos":"F","team":"UTA","rating":3.0,"predMin":20.0,
+         "pts":8.0,"reb":5.0,"ast":2.0,"stl":0.7,"blk":0.4,"est_mult":3.0,"slot":"1.8x",
+         "chalk_ev":7.2,"moonshot_ev":126.0,"injury_status":"","_decline":0.0},
+        {"id":"mock8","name":"Mock Moonshot 3","pos":"G","team":"BKN","rating":2.5,"predMin":20.0,
+         "pts":7.0,"reb":2.0,"ast":3.5,"stl":1.2,"blk":0.0,"est_mult":4.0,"slot":"1.6x",
+         "chalk_ev":6.0,"moonshot_ev":100.8,"injury_status":"","_decline":0.0},
+        {"id":"mock9","name":"Mock Moonshot 4","pos":"F","team":"SAC","rating":2.5,"predMin":19.0,
+         "pts":7.0,"reb":4.0,"ast":1.5,"stl":0.6,"blk":0.3,"est_mult":3.5,"slot":"1.4x",
+         "chalk_ev":5.5,"moonshot_ev":82.6,"injury_status":"","_decline":0.0},
+        {"id":"mock10","name":"Mock Moonshot 5","pos":"C","team":"MEM","rating":2.0,"predMin":18.0,
+         "pts":5.0,"reb":7.0,"ast":0.5,"stl":0.3,"blk":1.5,"est_mult":4.5,"slot":"1.2x",
+         "chalk_ev":4.2,"moonshot_ev":50.9,"injury_status":"","_decline":0.0},
+    ]
+    mock_games = [
+        {"gameId":"mock_game_1","label":"LAL vs BOS","home":{"abbr":"LAL"},"away":{"abbr":"BOS"},
+         "startTime":None,"locked":False,"draftable":True},
+        {"gameId":"mock_game_2","label":"IND vs UTA","home":{"abbr":"IND"},"away":{"abbr":"UTA"},
+         "startTime":None,"locked":False,"draftable":True},
+    ]
+    lineups = {"chalk": chalk, "upside": upside}
+    return {
+        "date": _et_date().isoformat(),
+        "mock": True,
+        "games": mock_games,
+        "lineups": lineups,
+        "locked": False,
+        "all_complete": False,
+        "draftable_count": 2,
+        "lock_time": None,
+        "score_bounds": _score_bounds_for_lineups(lineups),
+    }
+
 
 def _get_injuries(game):
     """Get list of OUT players for a game (from cached roster data)."""
@@ -1976,7 +2117,7 @@ async def get_games() -> dict:
         for g in games:
             st = g.get("startTime", "")
             g["locked"] = _is_locked(st) if st else False
-            g["draftable"] = not _is_completed(st) if st else False
+            g["draftable"] = not _is_past_lock_window(st) if st else False
         return games
     except Exception as e:
         print(f"[games] error: {e}")
@@ -2015,7 +2156,7 @@ def _get_slate_impl():
     except ImportError:
         now_utc = datetime.now(timezone.utc)
         _et_hour = (now_utc + timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)).hour
-    any_today_started = any(_is_completed(g.get("startTime", "")) for g in games)
+    any_today_started = any(_is_past_lock_window(g.get("startTime", "")) for g in games)
     if not any_today_started and _et_hour < 6:
         _, remaining_yesterday, _, _ = _all_games_final(games)
         if remaining_yesterday > 0:
@@ -2038,11 +2179,20 @@ def _get_slate_impl():
             # No yesterday cache available — fall through to today's generation
 
     if not games:
-        return {"date": _et_date().isoformat(), "games": [], "lineups": {"chalk": [], "upside": []},
-                "locked": False, "draftable_count": 0}
+        today = _et_date()
+        next_slate = _find_next_slate_date(today + timedelta(days=1))
+        return {
+            "date": today.isoformat(),
+            "games": [],
+            "lineups": {"chalk": [], "upside": []},
+            "locked": False,
+            "draftable_count": 0,
+            "no_games": True,
+            "next_slate_date": next_slate.isoformat() if next_slate else None,
+        }
 
     # Only project games that are still draftable (not yet past lock window).
-    draftable_games = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    draftable_games = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
 
     if not draftable_games:
         # All today's games have passed their lock window (draftable_games is empty).
@@ -2050,13 +2200,21 @@ def _get_slate_impl():
         # are final. Do NOT gate on finals>0: that causes an unlock bug during the first
         # ~30 min of play (before any game finishes) and on ESPN API failures.
 
-        # Check in-memory lock cache FIRST — avoids an ESPN call on warm instances.
-        # The cached all_complete value is at most 60s stale (lock cache TTL), which is
-        # acceptable since the frontend polls for the games-final transition.
+        # Check in-memory lock cache FIRST — avoids a full pipeline re-run.
+        # BUT: always re-check ESPN for all_complete so the frontend can detect
+        # game completion and transition to the next-day slate. _all_games_final
+        # has its own 60s internal cache, so this is cheap on warm instances.
         lock_cached = _lg("slate_v5_locked")
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", 0)
+            # Refresh all_complete from ESPN (cached 60s) so warm instances
+            # detect game completion instead of serving stale all_complete=False.
+            if not lock_cached.get("all_complete"):
+                all_final, _rem, _fin, _lrs = _all_games_final(games)
+                if all_final and _fin > 0:
+                    lock_cached["all_complete"] = True
+                    _ls("slate_v5_locked", lock_cached)
             return lock_cached
 
         # Cache miss (cold start) — check regular /tmp cache and GitHub backup BEFORE
@@ -2191,47 +2349,82 @@ def _get_slate_impl():
             return gh_cached
 
     # ── Layer 3: First run of the day — generate fresh, then persist ──
-    all_proj = []
-    game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futs = {pool.submit(_run_game, g): g for g in draftable_games}
-        for fut in as_completed(futs):
+    # Concurrent cold-start guard: if another thread is already generating, wait for it
+    # and then serve from the cache it populated. Prevents N×(ESPN + LightGBM + MILP) on
+    # simultaneous cold-start requests (common when the app is opened in multiple tabs).
+    global _SLATE_GEN_IN_FLIGHT
+    with _SLATE_GEN_LOCK:
+        if _SLATE_GEN_IN_FLIGHT:
+            # Another thread is already running the pipeline — release lock and wait.
+            already_running = True
+        else:
+            _SLATE_GEN_IN_FLIGHT = True
+            already_running = False
+
+    if already_running:
+        # Poll /tmp cache until the other thread finishes (max ~90s).
+        for _ in range(45):
+            time.sleep(2)
+            _warm = _cg("slate_v5")
+            if _warm:
+                _warm["locked"] = locked
+                _warm.setdefault("draftable_count", len(draftable_games))
+                return _warm
+        # Fallback: if it never appeared, fall through to run our own pipeline
+        # (the other thread may have crashed).
+
+    try:
+        all_proj = []
+        game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futs = {pool.submit(_run_game, g): g for g in draftable_games}
+            for fut in as_completed(futs):
+                try:
+                    game = futs[fut]
+                    projs = fut.result()
+                    all_proj.extend(projs)
+                    game_proj_map[game["gameId"]] = projs
+                except Exception as e:
+                    print(f"slate err: {e}")
+        chalk, upside = _build_lineups(all_proj)
+        lineups = {"chalk": chalk, "upside": upside}
+        result = {"date": _et_date().isoformat(), "games": games,
+                  "lineups": lineups, "locked": locked,
+                  "all_complete": False, "draftable_count": len(draftable_games),
+                  "lock_time": lock_time,
+                  "score_bounds": _score_bounds_for_lineups(lineups)}
+        if chalk or upside:  # Don't cache empty results — allow retry on next request
+            _cs("slate_v5", result)
+            # Persist to GitHub so all Vercel instances serve the same picks
+            _slate_cache_to_github(result)
+            # Clear bust sentinel so future cold starts can use this slate from GitHub
             try:
-                game = futs[fut]
-                projs = fut.result()
-                all_proj.extend(projs)
-                game_proj_map[game["gameId"]] = projs
+                today = _et_date().isoformat()
+                _github_write_file(f"data/slate/{today}_bust.json", "{}", f"clear bust {today}")
             except Exception as e:
-                print(f"slate err: {e}")
-    chalk, upside = _build_lineups(all_proj)
-    result = {"date": _et_date().isoformat(), "games": games,
-              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
-              "draftable_count": len(draftable_games), "lock_time": lock_time}
-    if chalk or upside:  # Don't cache empty results — allow retry on next request
-        _cs("slate_v5", result)
-        # Persist to GitHub so all Vercel instances serve the same picks
-        _slate_cache_to_github(result)
-        # Clear bust sentinel so future cold starts can use this slate from GitHub
-        try:
-            today = _et_date().isoformat()
-            _github_write_file(f"data/slate/{today}_bust.json", "{}", f"clear bust {today}")
-        except Exception as e:
-            print(f"[slate-cache] clear bust err: {e}")
-        if game_proj_map:
-            _games_cache_to_github(game_proj_map)
-        # Write lock backup for both pre-lock and post-lock regeneration.
-        # Pre-lock: normal first-run backup. Post-lock: admin forced regeneration
-        # (e.g. after bust busted the lock file to fix wrong lineups).
-        # _slate_backup_to_github overwrites tombstones but skips valid existing files.
-        _slate_backup_to_github(result)
-    if locked:
-        _ls("slate_v5_locked", result)
-    return result
+                print(f"[slate-cache] clear bust err: {e}")
+            if game_proj_map:
+                _games_cache_to_github(game_proj_map)
+            # Write lock backup for both pre-lock and post-lock regeneration.
+            # Pre-lock: normal first-run backup. Post-lock: admin forced regeneration
+            # (e.g. after bust busted the lock file to fix wrong lineups).
+            # _slate_backup_to_github overwrites tombstones but skips valid existing files.
+            _slate_backup_to_github(result)
+        if locked:
+            _ls("slate_v5_locked", result)
+        return result
+    finally:
+        if not already_running:
+            with _SLATE_GEN_LOCK:
+                _SLATE_GEN_IN_FLIGHT = False
 
 
 @app.get("/api/slate")
-async def get_slate() -> dict:
-    """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling."""
+async def get_slate(mock: bool = Query(False, description="Return deterministic mock data for testing (no ESPN/model calls)")) -> dict:
+    """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling.
+    Pass ?mock=true to get static test data suitable for UI/audit validation without hitting live systems."""
+    if mock:
+        return _get_mock_slate()
     try:
         return _get_slate_impl()
     except Exception as e:
@@ -2278,6 +2471,36 @@ def _compute_game_picks(game):
 
 @app.get("/api/picks")
 async def get_picks(gameId: str = Query(...)):
+    # Mock per-game response for audit/testing — gameId "mock_game_1" or "mock_game_2"
+    if gameId.startswith("mock_game_"):
+        mock_slate = _get_mock_slate()
+        game_meta = next((g for g in mock_slate["games"] if g["gameId"] == gameId), None)
+        if not game_meta:
+            return JSONResponse({"error": "Mock game not found"}, status_code=404)
+        # Return mock per-game lineup (subset of chalk players from different teams)
+        the_lineup = [
+            {"id":"mock_pg1","name":"Mock Game PG","pos":"PG","team":"CHI","rating":7.0,"predMin":36.0,
+             "pts":22.0,"reb":4.0,"ast":7.0,"stl":1.2,"blk":0.3,"est_mult":0.0,"slot":"2.0x",
+             "chalk_ev":14.0,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg2","name":"Mock Game SG","pos":"SG","team":"MIN","rating":6.0,"predMin":34.0,
+             "pts":18.0,"reb":3.0,"ast":4.0,"stl":1.0,"blk":0.2,"est_mult":0.0,"slot":"1.8x",
+             "chalk_ev":10.8,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg3","name":"Mock Game SF","pos":"SF","team":"CHI","rating":5.5,"predMin":32.0,
+             "pts":16.0,"reb":6.0,"ast":3.0,"stl":1.0,"blk":0.5,"est_mult":0.0,"slot":"1.6x",
+             "chalk_ev":8.8,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg4","name":"Mock Game PF","pos":"PF","team":"MIN","rating":5.0,"predMin":30.0,
+             "pts":14.0,"reb":8.0,"ast":2.0,"stl":0.5,"blk":1.0,"est_mult":0.0,"slot":"1.4x",
+             "chalk_ev":7.0,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg5","name":"Mock Game C","pos":"C","team":"CHI","rating":4.5,"predMin":28.0,
+             "pts":12.0,"reb":10.0,"ast":1.5,"stl":0.3,"blk":1.8,"est_mult":0.0,"slot":"1.2x",
+             "chalk_ev":5.4,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        ]
+        # Per-game total = sum of ratings (25-35 range): 7+6+5.5+5+4.5 = 28.0 ✓
+        lineups = {"the_lineup": the_lineup}
+        return {"date": _et_date().isoformat(), "game": game_meta, "mock": True,
+                "gameScript": "balanced", "lineups": lineups, "locked": False,
+                "injuries": [], "score_bounds": _score_bounds_for_lineups(lineups)}
+
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
         return JSONResponse({"error": "Game not found"}, status_code=404)
@@ -2297,6 +2520,27 @@ async def get_picks(gameId: str = Query(...)):
         if reg_cached:
             reg_cached["locked"] = True
             _ls(lock_key, reg_cached)
+            # Inline per-game save at lock-promotion time — ensures per-game
+            # predictions are persisted to GitHub as soon as the game locks,
+            # not just when the slate-level save fires later.
+            try:
+                if reg_cached.get("lineups"):
+                    label = game.get("label", f"game_{gameId}")
+                    game_rows = _predictions_to_csv(reg_cached["lineups"], label)
+                    if game_rows:
+                        today = _et_date().isoformat()
+                        pred_path = f"data/predictions/{today}.csv"
+                        existing, _ = _github_get_file(pred_path)
+                        if existing:
+                            existing_scopes = {line.split(",")[0] for line in existing.strip().split("\n")[1:] if line.split(",")[0]}
+                            if label not in existing_scopes:
+                                csv_content = existing.rstrip("\n") + "\n" + "\n".join(game_rows) + "\n"
+                                _github_write_file(pred_path, csv_content, f"per-game lock {label} {today}")
+                        else:
+                            csv_content = CSV_HEADER + "\n" + "\n".join(game_rows) + "\n"
+                            _github_write_file(pred_path, csv_content, f"per-game lock {label} {today}")
+            except Exception as _e:
+                print(f"[picks lock] inline save err {gameId}: {_e}")
             return reg_cached
         # No cache on this instance after lock — auto-compute so user sees picks
         auto = _compute_game_picks(game)
@@ -2329,7 +2573,8 @@ async def get_picks(gameId: str = Query(...)):
               "gameScript": script,
               "lineups": lineups_dict,
               "locked": locked,
-              "injuries": injuries}
+              "injuries": injuries,
+              "score_bounds": _score_bounds_for_lineups(lineups_dict)}
     # Cache picks so they survive as lock snapshot if slate locks later
     _cs(f"picks_{gameId}", result)
     return result
@@ -3136,7 +3381,7 @@ def _get_projections_for_date(date_obj):
     """Return (all_proj, draftable_games) for the given date for line-engine enrichment.
     Checks /tmp cache, then GitHub persistent cache, then runs the full pipeline as a last resort."""
     games = fetch_games(date_obj)
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
     if not draftable:
         return [], []
     all_proj = []
@@ -3252,10 +3497,11 @@ def _primary_pick(picks):
     return over or under
 
 
-def _find_next_slate_date(start_date, max_days=7):
+def _find_next_slate_date(start_date, max_days=30):
     """Find the next date with NBA games, starting from start_date (inclusive).
     Returns a datetime.date or None if no games found within max_days.
-    fetch_games has a 5-min cache per date, so scanning a few dates is cheap."""
+    max_days=30 covers All-Star breaks (~10 days) and playoff gaps.
+    fetch_games has a 5-min cache per date, so scanning is cheap."""
     for i in range(max_days):
         candidate = start_date + timedelta(days=i)
         games = fetch_games(candidate)
@@ -3270,7 +3516,7 @@ def _run_line_engine_for_date(date):
     games = fetch_games(date)
     if not games:
         return None, "no_games"
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+    draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
     # Post-lock (slate locked, all games past their lock window): fall back to all games
     # so line picks can still be generated after tip-off. Projections come from cache
     # (_run_game cache is keyed by gameId, survives across lock).
@@ -3313,10 +3559,62 @@ def _picks_response(picks, **extra):
     }
 
 
+def _get_mock_line_picks() -> dict:
+    """Return a fully-formed mock Line of the Day response for testing.
+    No Odds API, ESPN, LightGBM, or GitHub I/O. Safe to call anytime."""
+    today = _et_date().isoformat()
+    _mock_over = {
+        "player_name": "Mock Over Player", "player_id": "mock_over_001",
+        "team": "BOS", "opponent": "LAL", "direction": "over",
+        "stat_type": "points", "line": 24.5, "projection": 27.3,
+        "edge": 2.8, "confidence": 72, "date": today,
+        "narrative": "Mock over pick — trending above baseline in recent games.",
+        "signals": ["3 of last 5 over", "favorable matchup"],
+        "result": "pending", "actual_stat": None,
+        "season_avg": 23.1, "proj_min": 36.0, "avg_min": 34.5,
+        "game_time": "7:30 PM ET",
+        "recent_form_bars": [0.8, 1.1, 0.9, 1.2, 1.0],
+        "recent_form_values": [22, 28, 23, 31, 25],
+        "odds_over": -115, "odds_under": -105,
+        "books_consensus": 24.5, "line_updated_at": f"{today}T18:00:00Z",
+    }
+    _mock_under = {
+        "player_name": "Mock Under Player", "player_id": "mock_under_001",
+        "team": "LAL", "opponent": "BOS", "direction": "under",
+        "stat_type": "rebounds", "line": 8.5, "projection": 6.8,
+        "edge": -1.7, "confidence": 68, "date": today,
+        "narrative": "Mock under pick — recent opponents have slowed this player's rebounding.",
+        "signals": ["B2B tonight", "4 of last 5 under"],
+        "result": "pending", "actual_stat": None,
+        "season_avg": 8.2, "proj_min": 32.0, "avg_min": 33.0,
+        "game_time": "7:30 PM ET",
+        "recent_form_bars": [0.9, 0.7, 0.8, 0.75, 0.85],
+        "recent_form_values": [7, 6, 7, 6, 7],
+        "odds_over": -110, "odds_under": -110,
+        "books_consensus": 8.5, "line_updated_at": f"{today}T18:00:00Z",
+    }
+    over_norm  = _normalize_line_pick(_mock_over)
+    under_norm = _normalize_line_pick(_mock_under)
+    # Primary = higher confidence
+    primary = over_norm if over_norm["confidence"] >= under_norm["confidence"] else under_norm
+    return {
+        "mock": True,
+        "pick":       primary,
+        "over_pick":  over_norm,
+        "under_pick": under_norm,
+        "slate_summary": {
+            "games_evaluated": 2, "props_scanned": 12, "edges_found": 2,
+            "timestamp": f"{today}T00:00:00Z", "model_only": True,
+        },
+    }
+
+
 @app.get("/api/line-of-the-day")
-async def get_line_of_the_day(request: Request):
+async def get_line_of_the_day(request: Request, mock: bool = Query(False, description="Return deterministic mock picks for testing")):
     """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
     Once today's picks are resolved, rotates to the next slate with games (not just tomorrow). Never returns 500."""
+    if mock:
+        return _get_mock_line_picks()
     rl = _check_rate_limit(request, "line-of-the-day")
     if rl is not None:
         return rl
@@ -3510,8 +3808,13 @@ async def save_line(payload: dict = Body(...)):
     if existing_json:
         return {"status": "already_saved", "path": json_path}
 
-    # Write JSON with both picks (new dual-pick format)
-    saves = {"over_pick": over_pick or pick, "under_pick": under_pick}
+    # Write JSON with both picks (new dual-pick format).
+    # Direction-aware fallback: if directional picks are absent (legacy single-pick payload),
+    # slot the primary pick into the correct direction field based on its direction field
+    # rather than blindly assigning it to over_pick regardless of direction.
+    _over  = over_pick  or (pick if pick and pick.get("direction") == "over"  else None)
+    _under = under_pick or (pick if pick and pick.get("direction") == "under" else None)
+    saves = {"over_pick": _over, "under_pick": _under}
     _github_write_file(json_path, json.dumps(saves), f"line picks json for {today}")
 
     return {"status": "saved", "path": json_path}
@@ -3523,12 +3826,12 @@ async def refresh_line_odds():
     No-op if slate is locked — odds freeze at the same boundary as picks (5 min before tip)."""
     today_str = _et_date().isoformat()
 
-    # Respect slate lock — stop updating once the slate is live
+    # Respect slate lock — stop updating once ANY game on the slate is locked.
+    # Uses any() pattern (not min()) to match /api/slate and /api/save-predictions:
+    # on split-window days, once the first game locks, odds freeze for the whole slate.
     games = fetch_games()
-    draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
-    start_times = [g["startTime"] for g in draftable if g.get("startTime")]
-    earliest = min(start_times) if start_times else None
-    if earliest and _is_locked(earliest):
+    all_start_times = [g["startTime"] for g in games if g.get("startTime")]
+    if any(_is_locked(st) for st in all_start_times):
         return {"status": "locked", "message": "Slate locked — odds frozen"}
 
     picks = _load_line_pick_for_date(today_str)
@@ -3561,9 +3864,12 @@ async def refresh_line_odds():
         write_result = _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
         if write_result.get("error"):
             return JSONResponse({"status": "error", "message": write_result["error"]}, status_code=500)
-        cf = _cp("line_v1", today_str)
-        if cf.exists():
-            cf.unlink()
+        # Clear /tmp line cache so next /api/line-of-the-day reloads from GitHub (fresh odds).
+        # Also clear line_history cache — it embeds books_consensus and odds_* fields.
+        for _cache_key in ("line_v1", "line_history_v1"):
+            _cf = _cp(_cache_key, today_str)
+            if _cf.exists():
+                _cf.unlink()
 
     return {"status": "ok", "updated": updated, "timestamp": now_utc}
 
@@ -4162,7 +4468,7 @@ def _all_games_final(games):
     now_ts = datetime.now(timezone.utc).timestamp()
     today_str = _et_date().strftime("%Y%m%d")
 
-    # Determine if slate is locked. During locked slate, use 30s TTL for responsiveness.
+    # Determine if slate is locked. During locked slate, use 60s TTL for responsiveness.
     # This enables event-driven unlock detection without hammering ESPN API.
     slate_locked = any(_is_locked(g.get("startTime", "")) for g in games if g.get("startTime"))
     cache_ttl = 60 if slate_locked else 180
@@ -4245,7 +4551,7 @@ async def lab_status():
     so the frontend shows a retryable message instead of a generic fetch failure."""
     try:
         games = fetch_games()
-        draftable = [g for g in games if not _is_completed(g.get("startTime", ""))]
+        draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
 
         # If games are currently in progress (slate locked, games not yet final).
         # Check ALL game start times — not just earliest. On a 6-game Saturday slate,
