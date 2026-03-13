@@ -213,7 +213,6 @@ class TestGitHubWriteRetry:
         ok = self._make_response(201, {'content': {'sha': 'abc'}})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-
              patch('api.index._github_get_file', return_value=('{}', 'oldsha')), \
              patch('requests.put', return_value=ok) as mock_put:
             result = _github_write_file('data/test.json', '{}', 'commit')
@@ -226,7 +225,6 @@ class TestGitHubWriteRetry:
         ok   = self._make_response(201, {'content': {'sha': 'newsha'}})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', side_effect=[fail, fail, ok]) as mock_put, \
              patch('time.sleep'):
@@ -239,7 +237,6 @@ class TestGitHubWriteRetry:
         fail = self._make_response(422, {'message': 'SHA mismatch'})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', return_value=fail), \
              patch('time.sleep'):
@@ -251,7 +248,6 @@ class TestGitHubWriteRetry:
         fail = self._make_response(422, {'message': 'SHA mismatch'})
         with patch('api.index.GITHUB_TOKEN', 'fake'), \
              patch('api.index.GITHUB_REPO', 'owner/repo'), \
-
              patch('api.index._github_get_file', return_value=('{}', 'sha')), \
              patch('requests.put', return_value=fail), \
              patch('time.sleep') as mock_sleep:

@@ -505,11 +505,11 @@ _CONFIG_DEFAULTS = {
         "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
     },
-    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
+    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
-        "min_minutes_floor":25, "min_recent_minutes_floor":22, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
-        "big_pos_efficiency":0.65,
+        "big_pos_efficiency":0.40, "max_centers":2,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
     "lineup": {
@@ -1486,13 +1486,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         min_scale = min(proj_min / avg_min, 1.25)
         heuristic *= min_scale
 
-    # Declining usage penalty: if recent minutes dropped >10% vs season,
-    # scale output proportionally (e.g. Conley post-trade: 26→19 min = 0.73x)
+    # Declining usage penalty: only triggers on significant drops (>20%).
+    # Capped at 0.85 (max 15% reduction) — moderate declines (10-20%) are
+    # normal rotation variance, not role changes. The old 10% trigger with
+    # uncapped penalty was too aggressive (Thompson ↓17% = 0.83x penalty
+    # despite still playing 25+ min and producing).
     season_min = stats.get("season_min", avg_min)
     recent_min = stats.get("recent_min", avg_min)
     decline_factor = 1.0
-    if season_min > 0 and recent_min < season_min * 0.90:
-        decline_factor = recent_min / season_min
+    if season_min > 0 and recent_min < season_min * 0.80:
+        decline_factor = max(recent_min / season_min, 0.85)
         heuristic *= decline_factor
 
     # AI blend — 70% LightGBM, 30% heuristic
@@ -1850,16 +1853,14 @@ def _build_lineups(projections):
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     #
-    # Minutes filter uses OR logic: qualify via established season role (season_min)
-    # OR current role (recent_min). This is intentional — the best moonshot targets
-    # are often players who were recently promoted (injury fill-in) and have low
-    # ownership because the market hasn't caught up yet. Requiring only season_min
-    # would exclude them. Requiring only recent_min risks one-game flukes (OT game,
-    # teammate fouled out). The OR lets promoted players through while the season
-    # floor prevents true fringe guys with a single inflated game from qualifying.
+    # Minutes filter: hard recent_min >= 25 ensures the player is actively
+    # getting real rotation minutes RIGHT NOW. Season floor (20) is a sanity
+    # check — must be on a real roster, not a 10-day contract callup.
+    # The old OR logic (season >= 25 OR recent >= 22) let backup centers
+    # (Capela 12 season avg, Jordan 18) through on a few inflated recent games.
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor        = moon_cfg.get("min_minutes_floor", 25)
-    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 22)
+    min_floor        = moon_cfg.get("min_minutes_floor", 20)
+    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 25)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.5)
@@ -1874,10 +1875,11 @@ def _build_lineups(projections):
         if p["name"] in chalk_names:
             continue
 
-        # Minutes floor: qualify via season avg (established role) OR recent avg
-        # (current role). Promoted players with low season avg but high recent avg
-        # are prime moonshot targets — low ownership, real court time tonight.
-        if p.get("season_min", 0) < min_floor and p.get("recent_min", 0) < min_recent_floor:
+        # Hard recent minutes floor — must be actively playing 25+ min/game now.
+        # Season floor (20) is a sanity check: must be on a real NBA roster.
+        if p.get("recent_min", 0) < min_recent_floor:
+            continue
+        if p.get("season_min", 0) < min_floor:
             continue
 
         # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
@@ -1916,7 +1918,22 @@ def _build_lineups(projections):
             "_rw_cleared": True,
         })
 
-    upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
+    # Cap centers in moonshot — centers generate fewer RS events per minute
+    # (screens/rim protection don't accumulate RS). Winning moonshots are
+    # overwhelmingly guards/forwards from dev teams. Default max 2 centers.
+    max_centers = moon_cfg.get("max_centers", 2)
+    sorted_pool = sorted(moonshot_pool, key=lambda p: p.get("moonshot_ev", 0), reverse=True)
+    capped_pool = []
+    center_count = 0
+    for p in sorted_pool:
+        is_center = _pos_group(p.get("pos", "G")) == "C"
+        if is_center and center_count >= max_centers:
+            continue
+        capped_pool.append(p)
+        if is_center:
+            center_count += 1
+
+    upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
                              rating_key="rating", card_boost_key="est_mult",
                              max_per_team=0)
 
