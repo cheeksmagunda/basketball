@@ -362,11 +362,16 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
 
 
 def _github_delete_file(path, sha, message="auto-delete"):
-    """Delete a file from the GitHub repo via Contents API."""
+    """Delete a file from the GitHub repo via Contents API.
+    Routes data/* paths to data branch (same as write/read)."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return False
+    branch = _data_ref(path)
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    r = requests.delete(url, json={"message": message, "sha": sha}, headers={
+    payload = {"message": message, "sha": sha}
+    if branch:
+        payload["branch"] = branch
+    r = requests.delete(url, json=payload, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }, timeout=15)
