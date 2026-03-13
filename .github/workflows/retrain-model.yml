@@ -37,6 +37,17 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         run: python scripts/bump_retrain_config.py
 
+      - name: Bust today's slate cache on model change (Test 2.3B)
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          # Write today's (ET) bust sentinel so the GitHub cache layer returns a miss
+          # on the next slate request, forcing predictions to regenerate with the new model.
+          # ET = UTC-5 in winter, UTC-4 in spring/summer (DST starts Mar 8 2026).
+          TODAY_ET=$(TZ='America/New_York' date +%Y-%m-%d)
+          mkdir -p data/slate
+          echo '{"_busted":true}' > data/slate/${TODAY_ET}_bust.json
+          git add data/slate/${TODAY_ET}_bust.json
+
       - name: Commit and push updated model + config
         if: steps.check.outputs.changed == 'true'
         run: |

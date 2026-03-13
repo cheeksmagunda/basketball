@@ -1898,6 +1898,123 @@ def _build_game_lineups(projections, game):
 
     return {"the_lineup": [_normalize_player(p) for p in the_lineup]}
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCORE BOUNDARY VALIDATION
+# grep: _lineup_ev_total, score_bounds, _get_mock_slate
+#
+# "Total projected draft score" for audit/monitoring purposes:
+#   - Slate-Wide (chalk/moonshot): sum of rating × (slot_numeric + est_mult) per player
+#   - Per-Game (the_lineup):       sum of rating only (no card boost in per-game)
+#
+# Expected ranges:
+#   - chalk:       70–100
+#   - upside:      70–100
+#   - the_lineup:  25–35
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SLOT_NUMS = {"2.0x": 2.0, "1.8x": 1.8, "1.6x": 1.6, "1.4x": 1.4, "1.2x": 1.2}
+_SCORE_BOUNDS = {
+    "chalk":      (70.0, 100.0),
+    "upside":     (70.0, 100.0),
+    "the_lineup": (25.0, 35.0),
+}
+
+def _lineup_ev_total(lineup: list, mode: str) -> float:
+    """Compute total projected draft score for a 5-player lineup.
+    Mode 'chalk'/'upside': sum(rating × (slot_numeric + est_mult)).
+    Mode 'the_lineup': sum(rating) — no card boost in per-game drafts."""
+    total = 0.0
+    for p in lineup:
+        r = float(p.get("rating") or 0)
+        if mode == "the_lineup":
+            total += r
+        else:
+            slot = _SLOT_NUMS.get(p.get("slot", ""), 1.6)
+            boost = float(p.get("est_mult") or 0)
+            total += r * (slot + boost)
+    return round(total, 1)
+
+
+def _score_bounds_for_lineups(lineups: dict) -> dict:
+    """Return total EV and in-range flag for each lineup type in a lineups dict."""
+    bounds = {}
+    for mode, players in lineups.items():
+        if not players:
+            continue
+        total = _lineup_ev_total(players, mode)
+        lo, hi = _SCORE_BOUNDS.get(mode, (0, 9999))
+        in_range = lo <= total <= hi
+        if not in_range:
+            print(f"[score-bounds] {mode} total {total} outside expected {lo}–{hi}")
+        bounds[mode] = {"total": total, "lo": lo, "hi": hi, "in_range": in_range}
+    return bounds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MOCK SLATE — deterministic test data for Phase 0 audit validation
+# Returned by GET /api/slate?mock=true. No ESPN, LightGBM, or cache I/O.
+# Scores are pre-computed to fall within expected bounds:
+#   chalk / upside totals ≈ 76.6 / 71.3 (both in 70–100)
+#   per-game total ≈ 28.0 (in 25–35)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_mock_slate() -> dict:
+    """Return a fully-formed mock slate for testing. No side effects."""
+    chalk = [
+        {"id":"mock1","name":"Mock Player 1","pos":"PG","team":"LAL","rating":7.0,"predMin":36.0,
+         "pts":22.0,"reb":4.0,"ast":7.0,"stl":1.2,"blk":0.3,"est_mult":0.8,"slot":"2.0x",
+         "chalk_ev":19.6,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock2","name":"Mock Player 2","pos":"SF","team":"BOS","rating":5.5,"predMin":34.0,
+         "pts":18.0,"reb":6.0,"ast":3.0,"stl":1.0,"blk":0.5,"est_mult":1.2,"slot":"1.8x",
+         "chalk_ev":16.5,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock3","name":"Mock Player 3","pos":"C","team":"LAL","rating":4.5,"predMin":30.0,
+         "pts":14.0,"reb":10.0,"ast":2.0,"stl":0.5,"blk":1.8,"est_mult":1.5,"slot":"1.6x",
+         "chalk_ev":13.95,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock4","name":"Mock Player 4","pos":"SG","team":"BOS","rating":4.0,"predMin":28.0,
+         "pts":13.0,"reb":3.0,"ast":4.0,"stl":1.0,"blk":0.2,"est_mult":2.0,"slot":"1.4x",
+         "chalk_ev":13.6,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        {"id":"mock5","name":"Mock Player 5","pos":"PF","team":"LAL","rating":3.5,"predMin":24.0,
+         "pts":10.0,"reb":7.0,"ast":1.5,"stl":0.8,"blk":0.6,"est_mult":2.5,"slot":"1.2x",
+         "chalk_ev":12.95,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+    ]
+    upside = [
+        {"id":"mock6","name":"Mock Moonshot 1","pos":"G","team":"IND","rating":3.5,"predMin":22.0,
+         "pts":9.0,"reb":3.0,"ast":4.0,"stl":1.0,"blk":0.1,"est_mult":3.5,"slot":"2.0x",
+         "chalk_ev":9.45,"moonshot_ev":194.3,"injury_status":"","_decline":0.0},
+        {"id":"mock7","name":"Mock Moonshot 2","pos":"F","team":"UTA","rating":3.0,"predMin":20.0,
+         "pts":8.0,"reb":5.0,"ast":2.0,"stl":0.7,"blk":0.4,"est_mult":3.0,"slot":"1.8x",
+         "chalk_ev":7.2,"moonshot_ev":126.0,"injury_status":"","_decline":0.0},
+        {"id":"mock8","name":"Mock Moonshot 3","pos":"G","team":"BKN","rating":2.5,"predMin":20.0,
+         "pts":7.0,"reb":2.0,"ast":3.5,"stl":1.2,"blk":0.0,"est_mult":4.0,"slot":"1.6x",
+         "chalk_ev":6.0,"moonshot_ev":100.8,"injury_status":"","_decline":0.0},
+        {"id":"mock9","name":"Mock Moonshot 4","pos":"F","team":"SAC","rating":2.5,"predMin":19.0,
+         "pts":7.0,"reb":4.0,"ast":1.5,"stl":0.6,"blk":0.3,"est_mult":3.5,"slot":"1.4x",
+         "chalk_ev":5.5,"moonshot_ev":82.6,"injury_status":"","_decline":0.0},
+        {"id":"mock10","name":"Mock Moonshot 5","pos":"C","team":"MEM","rating":2.0,"predMin":18.0,
+         "pts":5.0,"reb":7.0,"ast":0.5,"stl":0.3,"blk":1.5,"est_mult":4.5,"slot":"1.2x",
+         "chalk_ev":4.2,"moonshot_ev":50.9,"injury_status":"","_decline":0.0},
+    ]
+    mock_games = [
+        {"gameId":"mock_game_1","label":"LAL vs BOS","home":{"abbr":"LAL"},"away":{"abbr":"BOS"},
+         "startTime":None,"locked":False,"draftable":True},
+        {"gameId":"mock_game_2","label":"IND vs UTA","home":{"abbr":"IND"},"away":{"abbr":"UTA"},
+         "startTime":None,"locked":False,"draftable":True},
+    ]
+    lineups = {"chalk": chalk, "upside": upside}
+    return {
+        "date": _et_date().isoformat(),
+        "mock": True,
+        "games": mock_games,
+        "lineups": lineups,
+        "locked": False,
+        "all_complete": False,
+        "draftable_count": 2,
+        "lock_time": None,
+        "score_bounds": _score_bounds_for_lineups(lineups),
+    }
+
+
 def _get_injuries(game):
     """Get list of OUT players for a game (from cached roster data)."""
     out_players = []
@@ -2230,10 +2347,12 @@ def _get_slate_impl():
             except Exception as e:
                 print(f"slate err: {e}")
     chalk, upside = _build_lineups(all_proj)
+    lineups = {"chalk": chalk, "upside": upside}
     result = {"date": _et_date().isoformat(), "games": games,
-              "lineups": {"chalk": chalk, "upside": upside}, "locked": locked,
+              "lineups": lineups, "locked": locked,
               "all_complete": False, "draftable_count": len(draftable_games),
-              "lock_time": lock_time}
+              "lock_time": lock_time,
+              "score_bounds": _score_bounds_for_lineups(lineups)}
     if chalk or upside:  # Don't cache empty results — allow retry on next request
         _cs("slate_v5", result)
         # Persist to GitHub so all Vercel instances serve the same picks
@@ -2257,8 +2376,11 @@ def _get_slate_impl():
 
 
 @app.get("/api/slate")
-async def get_slate() -> dict:
-    """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling."""
+async def get_slate(mock: bool = Query(False, description="Return deterministic mock data for testing (no ESPN/model calls)")) -> dict:
+    """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling.
+    Pass ?mock=true to get static test data suitable for UI/audit validation without hitting live systems."""
+    if mock:
+        return _get_mock_slate()
     try:
         return _get_slate_impl()
     except Exception as e:
@@ -2305,6 +2427,36 @@ def _compute_game_picks(game):
 
 @app.get("/api/picks")
 async def get_picks(gameId: str = Query(...)):
+    # Mock per-game response for audit/testing — gameId "mock_game_1" or "mock_game_2"
+    if gameId.startswith("mock_game_"):
+        mock_slate = _get_mock_slate()
+        game_meta = next((g for g in mock_slate["games"] if g["gameId"] == gameId), None)
+        if not game_meta:
+            return JSONResponse({"error": "Mock game not found"}, status_code=404)
+        # Return mock per-game lineup (subset of chalk players from different teams)
+        the_lineup = [
+            {"id":"mock_pg1","name":"Mock Game PG","pos":"PG","team":"CHI","rating":7.0,"predMin":36.0,
+             "pts":22.0,"reb":4.0,"ast":7.0,"stl":1.2,"blk":0.3,"est_mult":0.0,"slot":"2.0x",
+             "chalk_ev":14.0,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg2","name":"Mock Game SG","pos":"SG","team":"MIN","rating":6.0,"predMin":34.0,
+             "pts":18.0,"reb":3.0,"ast":4.0,"stl":1.0,"blk":0.2,"est_mult":0.0,"slot":"1.8x",
+             "chalk_ev":10.8,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg3","name":"Mock Game SF","pos":"SF","team":"CHI","rating":5.5,"predMin":32.0,
+             "pts":16.0,"reb":6.0,"ast":3.0,"stl":1.0,"blk":0.5,"est_mult":0.0,"slot":"1.6x",
+             "chalk_ev":8.8,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg4","name":"Mock Game PF","pos":"PF","team":"MIN","rating":5.0,"predMin":30.0,
+             "pts":14.0,"reb":8.0,"ast":2.0,"stl":0.5,"blk":1.0,"est_mult":0.0,"slot":"1.4x",
+             "chalk_ev":7.0,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+            {"id":"mock_pg5","name":"Mock Game C","pos":"C","team":"CHI","rating":4.5,"predMin":28.0,
+             "pts":12.0,"reb":10.0,"ast":1.5,"stl":0.3,"blk":1.8,"est_mult":0.0,"slot":"1.2x",
+             "chalk_ev":5.4,"moonshot_ev":0.0,"injury_status":"","_decline":0.0},
+        ]
+        # Per-game total = sum of ratings (25-35 range): 7+6+5.5+5+4.5 = 28.0 ✓
+        lineups = {"the_lineup": the_lineup}
+        return {"date": _et_date().isoformat(), "game": game_meta, "mock": True,
+                "gameScript": "balanced", "lineups": lineups, "locked": False,
+                "injuries": [], "score_bounds": _score_bounds_for_lineups(lineups)}
+
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
         return JSONResponse({"error": "Game not found"}, status_code=404)
@@ -2377,7 +2529,8 @@ async def get_picks(gameId: str = Query(...)):
               "gameScript": script,
               "lineups": lineups_dict,
               "locked": locked,
-              "injuries": injuries}
+              "injuries": injuries,
+              "score_bounds": _score_bounds_for_lineups(lineups_dict)}
     # Cache picks so they survive as lock snapshot if slate locks later
     _cs(f"picks_{gameId}", result)
     return result
