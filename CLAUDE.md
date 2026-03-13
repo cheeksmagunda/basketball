@@ -122,6 +122,8 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/lab/auto-improve` | GET | **Cron** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% (requires CRON_SECRET when set) |
 | `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt (keeps key server-side) |
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
+| `/api/lab/calibrate-boost` | GET | Fit card boost log formula params (log_a, log_b) from real ownership data in `data/ownership/`; requires ≥4 samples |
+| `/api/save-ownership` | POST | Save parsed Most Drafted data to `data/ownership/{date}.csv`; used as input for calibrate-boost |
 
 **Admin / optional (not used by main UI):** `POST /api/reset-uploads` — deletes actuals + audit for a date (admin/debug). `POST /api/hindsight` — optimal hindsight lineup from actual RS (Ben-driven or future). `GET /api/version` — build identifier for deploy/monitoring.
 
@@ -272,10 +274,10 @@ All slate-level lock checks use `any(_is_locked(st) for st in start_times)` — 
 - `any()` correctly stays locked until BOTH time window AND game completion
 
 This applies to:
-- `/api/slate` (line 1777): `any(_is_locked(st))` before computing predictions
-- `/api/save-predictions` (line 1920): `any(_is_locked(...))` guard prevents pre-lock saves
-- `/api/refresh` (line 2333): `any(_is_locked(...))` gate for auto-save
-- `/api/lab/status` (line 3331): `any(_is_locked(st))` determines locked state
+- `/api/slate`: `any(_is_locked(st))` before computing predictions
+- `/api/save-predictions`: `any(_is_locked(...))` guard prevents pre-lock saves
+- `/api/refresh`: `any(_is_locked(...))` gate for auto-save
+- `/api/lab/status`: `any(_is_locked(st))` determines locked state
 
 Per-game checks (e.g. `/api/picks`, `/api/line-live-stat`) correctly use single-game `_is_locked(game_start)`.
 
@@ -510,7 +512,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | Slate cache (`data/slate/`) | 1 day | GitHub-persisted predictions (full slate + per-game) | `_bust_slate_cache()` via refresh, config change, or injury check |
 
 ### Midnight Rollover Handling
-`auto_resolve_line()` (api/index.py lines 2917-3040) correctly handles games finishing after midnight ET:
+`auto_resolve_line()` correctly handles games finishing after midnight ET:
 - Tracks `pick_date` separately from `_et_date()` (which changes at midnight)
 - Uses `pick_date` for both GitHub file lookups and ESPN API queries
 - Falls back to yesterday's pick file if today's missing
@@ -518,7 +520,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 - Prevents loss of line pick data on multi-day slates
 
 ### ESPN API Fallback
-`_all_games_final()` (api/index.py lines 3188-3258) protects against ESPN outages:
+`_all_games_final()` protects against ESPN outages:
 - If game status not updated for 4+ hours, mark as final (assume game completed)
 - Safety guard: `if finals == 0 and remaining == 0: all_final = False` — prevents false unlock on ESPN API down
 - Requires `finals > 0` before returning true (at least one game must have reached Final status)
@@ -542,7 +544,7 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
   - Stores skipped dates in `localStorage` (browser persistence)
   - Calls `/api/lab/skip-uploads` to record server-side
   - Hides banner immediately for better UX
-- Backend `/api/lab/skip-uploads` POST endpoint (api/index.py lines 4027-4067):
+- Backend `/api/lab/skip-uploads` POST endpoint:
   - Appends skipped date to `data/skipped-uploads.json`
   - Exponential backoff retry for concurrent writes
   - Returns success status

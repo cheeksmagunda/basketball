@@ -405,7 +405,9 @@ class TestLgbmFeatureAlignment:
     """When LightGBM bundle is loaded, feature list must have 11 elements; 10th (index 9) is recent_vs_season (or legacy recent_3g_trend)."""
 
     def test_feature_list_length_and_trend_feature(self):
-        from api.index import AI_FEATURES
+        import api.index as idx
+        idx._ensure_lgbm_loaded()
+        AI_FEATURES = idx.AI_FEATURES
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
         assert len(AI_FEATURES) == 11, f"Expected 11 features, got {len(AI_FEATURES)}: {AI_FEATURES}"

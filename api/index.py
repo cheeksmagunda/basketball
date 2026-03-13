@@ -491,23 +491,39 @@ def _cfg(path, default=None):
 
 AI_MODEL = None
 AI_FEATURES = None  # Feature list saved alongside model to verify alignment
-for _p in [
+_LGBM_LOAD_ATTEMPTED = False
+_LGBM_LOAD_LOCK = threading.Lock()
+
+_LGBM_PATHS = [
     Path(__file__).parent.parent / "lgbm_model.pkl",
     Path(__file__).parent / "lgbm_model.pkl",
     Path("lgbm_model.pkl"),
-]:
-    if _p.exists():
-        try:
-            with open(_p, "rb") as f:
-                _bundle = pickle.load(f)
-            if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                AI_MODEL    = _bundle["model"]
-                AI_FEATURES = _bundle["features"]
-                break
-            # Legacy bare model format not supported — require bundled features for alignment
-        except (OSError, pickle.UnpicklingError, KeyError, ValueError): pass
-    if AI_MODEL is None:
-        print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
+]
+
+def _ensure_lgbm_loaded():
+    """Lazy-load the LightGBM model bundle on first use.
+    Safe to call from concurrent requests — load is attempted once via lock."""
+    global AI_MODEL, AI_FEATURES, _LGBM_LOAD_ATTEMPTED
+    if _LGBM_LOAD_ATTEMPTED:
+        return
+    with _LGBM_LOAD_LOCK:
+        if _LGBM_LOAD_ATTEMPTED:
+            return
+        for _p in _LGBM_PATHS:
+            if _p.exists():
+                try:
+                    with open(_p, "rb") as _f:
+                        _bundle = pickle.load(_f)
+                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
+                        AI_MODEL    = _bundle["model"]
+                        AI_FEATURES = _bundle["features"]
+                        break
+                    # Legacy bare model format not supported — require bundled features for alignment
+                except (OSError, pickle.UnpicklingError, KeyError, ValueError):
+                    pass
+        _LGBM_LOAD_ATTEMPTED = True
+        if AI_MODEL is None:
+            print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -1402,6 +1418,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Usage trend clipping must match train_lgbm.py
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     base = heuristic
+    _ensure_lgbm_loaded()
     if AI_MODEL is not None:
         try:
             usage = min(max(pts / max(avg_min, 1) * 0.8, USAGE_TREND_MIN), USAGE_TREND_MAX)
