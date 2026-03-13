@@ -545,11 +545,11 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":22.0,  # season avg floor for Starting 5 eligibility
+        "chalk_season_min_floor":30.0,  # season avg floor for Starting 5 eligibility
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL"],
     "moonshot": {
-        "min_minutes_floor":18, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.65,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -1853,11 +1853,10 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # SLATE-WIDE CHALK: Requires min 22 season avg minutes.
-        # Season average is the stable baseline for a player's role. Players with
-        # low season avg (e.g. Caruso 18.5 avg) belong in moonshot where their
-        # card boost upside is maximized, even if recent minutes are inflated.
-        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 22.0)
+        # SLATE-WIDE CHALK: Requires min 30 season avg minutes.
+        # Season average is the stable baseline for a player's role. Players under
+        # 30 min avg are role players whose RS output is too inconsistent for chalk.
+        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 30.0)
         if p.get("season_min", 0) < chalk_min_floor:
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
@@ -1878,17 +1877,17 @@ def _build_lineups(projections):
     #
     # Formula: moonshot_ev = (predMin^min_weight) × (boost^cb_weight)
     #                        × team_bonus × rating × pos_efficiency
-    #   - Minutes floor (18 season avg) = player must be a real rotation piece
+    #   - Minutes floor (25 season avg) = player must be a real rotation piece
     #   - Card boost^2.5 = dominant signal; low ownership = massive payout
     #   - big_pos_efficiency (0.65) = centers generate ~60% less RS per minute
     #     than guards/wings; screens and rim protection don't accumulate RS events
     #
     # Hard filters:
-    #   - 18+ season avg minutes (stable rotation role baseline)
+    #   - 25+ season avg minutes (stable rotation role baseline)
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor = moon_cfg.get("min_minutes_floor", 18)
+    min_floor = moon_cfg.get("min_minutes_floor", 25)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
     cb_weight = moon_cfg.get("card_boost_weight", 2.5)
