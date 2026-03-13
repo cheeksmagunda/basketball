@@ -45,18 +45,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
         run: |
-          # Write bust sentinel to 'data' branch via GitHub API (not git commit to main).
-          # This keeps main code-only so Vercel ignoreCommand works correctly.
+          # Write bust sentinel to main via GitHub API.
+          # The ignoreCommand in vercel.json skips builds for data-only commits.
           TODAY_ET=$(TZ='America/New_York' date +%Y-%m-%d)
           BUST_PATH="data/slate/${TODAY_ET}_bust.json"
           CONTENT=$(echo -n '{"_busted":true}' | base64)
 
-          # Check if file exists on data branch to get SHA for update
+          # Check if file already exists on main to get SHA for update
           EXISTING=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPO/contents/$BUST_PATH?ref=data")
+            "https://api.github.com/repos/$GITHUB_REPO/contents/$BUST_PATH")
           SHA=$(echo "$EXISTING" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sha',''))" 2>/dev/null || echo "")
 
-          PAYLOAD="{\"message\":\"bust sentinel $TODAY_ET\",\"content\":\"$CONTENT\",\"branch\":\"data\""
+          PAYLOAD="{\"message\":\"bust sentinel $TODAY_ET\",\"content\":\"$CONTENT\""
           if [ -n "$SHA" ]; then
             PAYLOAD="$PAYLOAD,\"sha\":\"$SHA\""
           fi
