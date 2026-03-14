@@ -1,3 +1,6 @@
+import os
+import re
+import glob
 import time
 import pandas as pd
 import numpy as np
@@ -29,13 +32,48 @@ df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'].astype(str).str[:10])
 df = df.sort_values(by=['PLAYER_ID', 'SEASON', 'GAME_DATE'])
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TARGET: Real Score-aligned formula (boosted defensive stats)
-# Must match _dfs_score() in api/index.py
+# TARGET: Observed Real Scores from data/actuals/ (true target)
+# Falls back to formula target if no actuals are available.
 # ─────────────────────────────────────────────────────────────────────────────
-df['actual_base_score'] = (
-    df['PTS'] + df['REB'] + (df['AST'] * 1.5) +
-    (df['STL'] * 4.5) + (df['BLK'] * 4.0) - (df['TOV'] * 1.2)
-)
+
+def _normalize_name(name):
+    n = str(name).lower().strip()
+    n = re.sub(r"['\.\-]", "", n)
+    n = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+    return re.sub(r"\s+", " ", n).strip()
+
+actuals_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "actuals")
+actuals_frames = []
+for fpath in glob.glob(os.path.join(actuals_dir, "*.csv")):
+    date_str = os.path.basename(fpath).replace(".csv", "")
+    try:
+        a = pd.read_csv(fpath)
+        if "player_name" not in a.columns or "actual_rs" not in a.columns:
+            continue
+        a = a[["player_name", "actual_rs"]].copy()
+        a["date_key"] = pd.to_datetime(date_str)
+        a["norm_name"] = a["player_name"].apply(_normalize_name)
+        actuals_frames.append(a)
+    except Exception as e:
+        print(f"   [WARN] Could not load {fpath}: {e}")
+
+if actuals_frames:
+    actuals_df = pd.concat(actuals_frames, ignore_index=True).dropna(subset=["actual_rs"])
+    print(f"   Loaded {len(actuals_df)} actuals rows from {len(actuals_frames)} files.")
+    df["norm_name"] = df["PLAYER_NAME"].apply(_normalize_name)
+    df["date_key"] = df["GAME_DATE"].dt.normalize()
+    actuals_df["date_key"] = actuals_df["date_key"].dt.normalize()
+    df = df.merge(actuals_df[["norm_name", "date_key", "actual_rs"]],
+                  on=["norm_name", "date_key"], how="inner")
+    print(f"   After merge with actuals: {len(df)} training samples.")
+    target = "actual_rs"
+else:
+    print("   [WARN] No actuals found — falling back to formula target.")
+    df["actual_base_score"] = (
+        df["PTS"] + df["REB"] + (df["AST"] * 1.5) +
+        (df["STL"] * 4.5) + (df["BLK"] * 4.0) - (df["TOV"] * 1.2)
+    )
+    target = "actual_base_score"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FEATURES — all computed as "what was known BEFORE this game" (shift(1))
@@ -101,10 +139,12 @@ features = [
     'home_away', 'ast_rate', 'def_rate', 'pts_per_min',
     'rest_days', 'recent_vs_season', 'games_played'
 ]
-target = 'actual_base_score'
-
 df = df.dropna(subset=features + [target])
 print(f"After feature engineering: {len(df)} samples with complete features.")
+
+if len(df) < 50:
+    print(f"[ERROR] Only {len(df)} samples after merge — aborting.")
+    import sys; sys.exit(1)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TRAIN
