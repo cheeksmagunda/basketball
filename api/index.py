@@ -1837,46 +1837,45 @@ def _build_lineups(projections):
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
         capped_boost = min(p["est_mult"], boost_cap)
+        p["capped_boost"] = capped_boost
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
     chalk_max_stars  = int(_cfg("projection.chalk_max_stars", 2))
     chalk_star_thresh = float(_cfg("projection.chalk_star_boost_threshold", 0.6))
+    leverage_top     = int(_cfg("projection.leverage_top_slots", 1))
+    leverage_thresh  = float(_cfg("projection.leverage_boost_threshold", 1.0))
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
-                            rating_key="rating", card_boost_key="est_mult",
+                            rating_key="rating", card_boost_key="capped_boost",
                             max_per_team=0,
                             max_low_boost=chalk_max_stars,
-                            low_boost_threshold=chalk_star_thresh)
+                            low_boost_threshold=chalk_star_thresh,
+                            leverage_top_slots=leverage_top,
+                            leverage_boost_threshold=leverage_thresh)
 
-    # ── MOONSHOT: March 5 overhaul (tuned March 11) ─────────────────────────
+    # ── MOONSHOT: Contrarian EV strategy (overhauled March 14) ───────────────
     # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
     # tickets — players with low ownership where a hot night pays off huge.
-    # We don't need to predict who will score; we need to be in the pool.
     #
-    # Formula: moonshot_ev = (predMin^min_weight) × (boost^cb_weight)
-    #                        × team_bonus × rating × pos_efficiency
-    #   - Minutes floor (season >= 25 OR recent >= 22) = real rotation piece;
-    #     OR logic allows recently-promoted players to qualify
-    #   - Card boost^2.5 = dominant signal; low ownership = massive payout
-    #   - big_pos_efficiency (0.65) = centers generate ~60% less RS per minute
-    #     than guards/wings; screens and rim protection don't accumulate RS events
+    # Approach: Filter for genuinely contrarian players (card boost >= 1.5),
+    # then let the MILP optimizer find the mathematically optimal lineup using
+    # standard EV math: rating × (slot_mult + card_boost). No distorted
+    # formulas — the MILP is designed to solve exactly this problem.
     #
     # Hard filters:
-    #   - season avg >= 25 OR recent avg >= 22 (see note below)
+    #   - Card boost >= 1.5 (contrarian — low ownership)
+    #   - season avg >= 25 AND recent avg >= 25 (real rotation piece)
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
+    #   - Minimum rating floor (still need some production)
     #
-    # Minutes filter: season_min >= 25 is the stable rotation role baseline;
-    # filters out low-minute role players whose RS output is too inconsistent.
-    # recent_min >= 25 ensures the player is actively getting real rotation
-    # minutes RIGHT NOW — not just a seasonal fluke.
+    # Dev team bonus and center penalty are applied as rating adjustments
+    # so the MILP sees them in its objective function.
     # ─────────────────────────────────────────────────────────────────────────
     min_floor        = moon_cfg.get("min_minutes_floor", 25)
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 25)
-    min_boost = moon_cfg.get("min_card_boost", 1.0)
+    min_boost = moon_cfg.get("min_card_boost", 1.5)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
-    cb_weight = moon_cfg.get("card_boost_weight", 2.5)
-    min_weight = moon_cfg.get("minutes_weight", 1.0)
     big_eff   = moon_cfg.get("big_pos_efficiency", 0.65)
     dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
 
@@ -1888,13 +1887,13 @@ def _build_lineups(projections):
             continue
 
         # Hard recent minutes floor — must be actively playing 25+ min/game now.
-        # Season floor (20) is a sanity check: must be on a real NBA roster.
+        # Season floor is a sanity check: must be on a real NBA roster.
         if p.get("recent_min", 0) < min_recent_floor:
             continue
         if p.get("season_min", 0) < min_floor:
             continue
 
-        # Minimum card boost — stars with tiny boosts are chalk picks, not moonshots
+        # Minimum card boost — the whole point of moonshot is contrarian plays
         if p.get("est_mult", 0) < min_boost:
             continue
 
@@ -1907,25 +1906,20 @@ def _build_lineups(projections):
         if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
-        # Development team bonus — tanking teams give predictable minutes
-        # to young players, AND those players have structurally lower ownership
+        # Development team bonus and center penalty — baked into an adjusted
+        # rating so the MILP sees them in its objective function.
         is_dev = p.get("team", "") in dev_teams
         team_bonus = dev_boost if is_dev else 1.0
-
-        # Moonshot EV: (minutes^w) × (boost^w) × team_bonus × rating × pos_efficiency
-        # pos_efficiency penalises centers — they get minutes but generate far fewer
-        # RS events (no steals, clutch shots, ball-handling plays) than guards/wings.
-        pred_min  = p.get("predMin", 0)
-        boost     = p.get("est_mult", 0.3)
         pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
-        moonshot_ev = round(
-            (pred_min ** min_weight) * (boost ** cb_weight) * team_bonus * p["rating"] * pos_eff,
-            2
-        )
+        adj_rating = round(p["rating"] * team_bonus * pos_eff, 3)
+
+        # Standard EV for fallback sorting (MILP uses adj_rating × (slot + est_mult))
+        moonshot_ev = round(adj_rating * (avg_slot + p.get("est_mult", 0.3)), 2)
 
         moonshot_pool.append({
             **p,
             "moonshot_ev": moonshot_ev,
+            "adj_rating": adj_rating,
             "_is_dev_team": is_dev,
             "_rw_cleared": True,
         })
@@ -1946,7 +1940,7 @@ def _build_lineups(projections):
             center_count += 1
 
     upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
-                             rating_key="rating", card_boost_key="est_mult",
+                             rating_key="adj_rating", card_boost_key="est_mult",
                              max_per_team=0)
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
