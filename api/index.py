@@ -1833,15 +1833,19 @@ def _build_lineups(projections):
     for p in projections:
         if p["rating"] < chalk_floor:
             continue
-        # SLATE-WIDE CHALK: Requires min 30 season avg minutes (proven starter role)
-        # AND min 15 recent avg minutes (still in rotation — not demoted or resting).
-        # Season avg is the stable baseline; recent floor catches demoted starters
-        # (e.g. Drummond 25-min season avg → 8-min recent after role collapse).
+        # SLATE-WIDE CHALK: Proven rotation regular OR definitive spot-starter.
+        # Condition A: Both historical floors met (established starter).
+        # Condition B: predMin >= 28 AND _cascade_bonus >= 10 (backup stepping into a
+        #   starter role due to injury — cascade engine gave them 10+ bonus minutes).
+        #   This prevents "DFS Ghosts": trickle-cascade bench warmers won't clear
+        #   both gates simultaneously, only true spot-starters will.
         chalk_min_floor = _cfg("projection.chalk_season_min_floor", 30.0)
         chalk_recent_floor = _cfg("projection.chalk_recent_min_floor", 15.0)
-        if p.get("season_min", 0) < chalk_min_floor:
-            continue
-        if p.get("recent_min", 0) < chalk_recent_floor:
+        is_regular     = (p.get("season_min", 0) >= chalk_min_floor and
+                          p.get("recent_min", 0) >= chalk_recent_floor)
+        is_spot_starter = (p.get("predMin", 0) >= 28.0 and
+                           p.get("_cascade_bonus", 0) >= 10.0)
+        if not (is_regular or is_spot_starter):
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -1857,7 +1861,7 @@ def _build_lineups(projections):
     leverage_thresh  = float(_cfg("projection.leverage_boost_threshold", 1.0))
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="capped_boost",
-                            max_per_team=0,
+                            max_per_team=2,
                             max_low_boost=chalk_max_stars,
                             low_boost_threshold=chalk_star_thresh,
                             leverage_top_slots=leverage_top,
@@ -1896,21 +1900,26 @@ def _build_lineups(projections):
         if p["name"] in chalk_names:
             continue
 
-        # Hard recent minutes floor — must be actively playing 25+ min/game now.
-        # Season floor is a sanity check: must be on a real NBA roster.
-        if p.get("recent_min", 0) < min_recent_floor:
-            continue
-        if p.get("season_min", 0) < min_floor:
+        # Proven rotation regular OR definitive spot-starter due to injury cascade.
+        # Condition A: Both historical floors met.
+        # Condition B: predMin >= 28 AND _cascade_bonus >= 10 — prevents DFS Ghosts
+        #   (trickle-cascade bench warmers) from clearing both gates simultaneously.
+        is_moonshot_regular     = (p.get("season_min", 0) >= min_floor and
+                                   p.get("recent_min", 0) >= min_recent_floor)
+        is_moonshot_spot_starter = (p.get("predMin", 0) >= 28.0 and
+                                    p.get("_cascade_bonus", 0) >= 10.0)
+        if not (is_moonshot_regular or is_moonshot_spot_starter):
             continue
 
         # Minimum card boost — the whole point of moonshot is contrarian plays
         if p.get("est_mult", 0) < min_boost:
             continue
 
-        # RotoWire clearance — skip players flagged OUT or questionable
-        if use_rotowire and rw_statuses:
-            if not is_safe_to_draft(p["name"]):
-                continue
+        # RotoWire: only exclude confirmed OUT players. GTD/questionable are allowed —
+        # they're already double-penalized (25% minute cut + 0.82x reliability),
+        # and their depressed ownership creates exactly the leverage moonshot seeks.
+        if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
+            continue
 
         # Minimum rating floor — still need some production floor
         if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
@@ -1955,7 +1964,7 @@ def _build_lineups(projections):
     upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
                              rating_key="adj_ceiling",  # ceiling-based, not median rating
                              card_boost_key="est_mult",
-                             max_per_team=0)
+                             max_per_team=2)
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
 
