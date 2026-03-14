@@ -46,7 +46,8 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
         run: |
           # Write bust sentinel to main via GitHub API.
-          # The ignoreCommand in vercel.json skips builds for data-only commits.
+          # Railway redeploys on push to main; the sentinel is data-only (no code change)
+          # so Railway will redeploy but it's harmless — the new process picks up the bust.
           TODAY_ET=$(TZ='America/New_York' date +%Y-%m-%d)
           BUST_PATH="data/slate/${TODAY_ET}_bust.json"
           CONTENT=$(echo -n '{"_busted":true}' | base64)
