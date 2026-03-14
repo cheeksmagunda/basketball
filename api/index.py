@@ -99,9 +99,9 @@ def _validate_date(date_str: str) -> Optional[JSONResponse]:
 
 
 # ── GitHub API helpers for persistent CSV storage ──
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-GITHUB_REPO = os.getenv("GITHUB_REPO", "")  # e.g. "cheeksmagunda/basketball"
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+GITHUB_REPO = os.getenv("GITHUB_REPO", "").strip()
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 
 # Startup env validation — warn on missing required vars (never crash; app degrades gracefully)
 _REQUIRED_ENV = ["GITHUB_TOKEN", "GITHUB_REPO", "ANTHROPIC_API_KEY"]
