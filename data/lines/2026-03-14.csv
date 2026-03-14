@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-14,Brook Lopez,3448,LAC,SAC,rebounds,3,over,4.5,1.5,80,Model projects 4.5 rebounds — a 1.5 edge vs the 3.0 season baseline.,pending,
