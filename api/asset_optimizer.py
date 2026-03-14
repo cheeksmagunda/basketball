@@ -43,7 +43,8 @@ SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     sort_key="chalk_ev", rating_key="rating",
                     card_boost_key="est_mult", time_limit=5,
-                    max_low_boost=0, low_boost_threshold=0.0):
+                    max_low_boost=0, low_boost_threshold=0.0,
+                    leverage_top_slots=0, leverage_boost_threshold=0.0):
     """Find the optimal player-to-slot assignment using MILP.
 
     Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
@@ -57,6 +58,10 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         rating_key: Key containing raw score (for slot assignment)
         card_boost_key: Key containing additive card boost
         time_limit: Solver time limit in seconds
+        max_low_boost: Max low-boost (star) players allowed (0 = no limit)
+        low_boost_threshold: Boost below this = "low boost" player
+        leverage_top_slots: Require this many contrarian players in top 2 slots (0 = off)
+        leverage_boost_threshold: Card boost above this qualifies as "contrarian"
 
     Returns:
         List of n player dicts with slot assignments applied
@@ -73,13 +78,15 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
     try:
         return _solve_milp(projections, n, min_per_team, max_per_team,
                            rating_key, card_boost_key, time_limit,
-                           max_low_boost, low_boost_threshold)
+                           max_low_boost, low_boost_threshold,
+                           leverage_top_slots, leverage_boost_threshold)
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
 def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
-                card_boost_key, time_limit, max_low_boost=0, low_boost_threshold=0.0):
+                card_boost_key, time_limit, max_low_boost=0, low_boost_threshold=0.0,
+                leverage_top_slots=0, leverage_boost_threshold=0.0):
     """Run the MILP solver to find optimal player-slot assignments."""
     players = list(range(len(projections)))
     slots = list(range(n))
@@ -146,6 +153,21 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in low_boost_players for j in slots
             ) <= max_low_boost
+
+    # Leverage constraint: force at least N contrarian players (high card boost)
+    # into the top 2 slots (2.0x, 1.8x). This differentiates the lineup from
+    # the field — pure EV always puts the same superstars in top slots as
+    # everyone else. Only active when both params are set.
+    if leverage_top_slots > 0 and leverage_boost_threshold > 0:
+        contrarian_players = [
+            i for i, p in enumerate(projections)
+            if p.get(card_boost_key, 0) > leverage_boost_threshold
+        ]
+        top_slots = [j for j in slots if j < 2]  # slots 0 and 1 (2.0x, 1.8x)
+        if contrarian_players and top_slots:
+            prob += lpSum(
+                x[i, j] for i in contrarian_players for j in top_slots
+            ) >= min(leverage_top_slots, len(top_slots))
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)
