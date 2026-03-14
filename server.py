@@ -1,17 +1,20 @@
+import sys, os
+print(f"[boot] Python {sys.version} | PID={os.getpid()} | PORT={os.environ.get('PORT','NOT_SET')}", flush=True)
+
 """
 Production + local dev server.
 
 Railway / any host: python server.py   (reads PORT env var automatically)
 Local dev:          uvicorn server:app --reload
 """
-
-import os
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, FileResponse
 
+print("[boot] importing api.index...", flush=True)
 from api.index import app  # noqa: F401 – re-export for uvicorn
+print("[boot] api.index imported OK", flush=True)
 
 ROOT = Path(__file__).parent
 
