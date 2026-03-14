@@ -1,0 +1,35 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[crons]
+# Daily cache clear + auto-save locked predictions (7pm UTC / 2pm ET)
+[[crons.jobs]]
+schedule = "0 19 * * *"
+command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh')\""
+
+# Auto-tune model if ≥3% MAE improvement (9am UTC)
+[[crons.jobs]]
+schedule = "0 9 * * *"
+command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/lab/auto-improve',headers=h)\""
+
+# Hourly bookmaker odds sync (every 3 hours)
+[[crons.jobs]]
+schedule = "0 */3 * * *"
+command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh-line-odds')\""
+
+# Resolve line picks as each game ends (hourly)
+[[crons.jobs]]
+schedule = "0 * * * *"
+command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/auto-resolve-line',headers=h)\""
+
+# Injury check during game windows
+[[crons.jobs]]
+schedule = "0 14,16,18,20,22,0 * * *"
+command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/injury-check',headers=h)\""
