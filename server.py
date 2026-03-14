@@ -37,6 +37,12 @@ async def serve_favicon():
     return HTMLResponse("", status_code=204)
 
 
+@app.get("/oracle-ball.svg")
+async def serve_oracle_ball():
+    return FileResponse(ROOT / "oracle-ball.svg", media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 # Catch-all: serve index.html for any non-API route (SPA pattern).
 # This MUST be last — FastAPI routes explicit /api/* handlers first; this
 # only fires when no other route matched (i.e. real SPA navigation paths).
