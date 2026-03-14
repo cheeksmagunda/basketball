@@ -507,7 +507,7 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
-        "min_minutes_floor":25, "min_recent_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.40, "max_centers":2,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -2362,7 +2362,6 @@ def _get_slate_impl():
     # game's 6h ceiling can expire while late games are still live. any() stays
     # locked as long as ANY game is within its lock window.
     locked = any(_is_locked(st) for st in all_start_times) if all_start_times else False
-    _locked_regen = False  # set True if locked+cache-miss forces full-slate regen
     lock_time = None
     if earliest_all:
         try:
@@ -2418,10 +2417,9 @@ def _get_slate_impl():
             _ls("slate_v5_locked", gh_backup)
             return gh_backup
         # Lock file missing or busted (tombstoned by _bust_slate_cache) — fall through
-        # to the full pipeline for forced regeneration. When deploying mid-slate, we want
-        # the full slate (all games, including locked ones) so the new model sees everything.
-        # Set flag so the pipeline below uses all games, not just draftable ones.
-        _locked_regen = True
+        # to the full pipeline for forced regeneration. This handles the case where an
+        # admin bust was requested to fix bad lineups in the lock file (e.g. predMin
+        # filter change). The pipeline runs with draftable games still in progress.
 
     # ── Layer 1: /tmp cache (warm Vercel instance) ──
     cached = _cg("slate_v5")
@@ -2482,11 +2480,8 @@ def _get_slate_impl():
     try:
         all_proj = []
         game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-        # Mid-slate deploy: if all caches were busted while locked, regenerate all games
-        # (including locked ones) so the new model sees the full slate, not just future games.
-        pipeline_games = games if _locked_regen else draftable_games
         with ThreadPoolExecutor(max_workers=8) as pool:
-            futs = {pool.submit(_run_game, g): g for g in pipeline_games}
+            futs = {pool.submit(_run_game, g): g for g in draftable_games}
             for fut in as_completed(futs):
                 try:
                     game = futs[fut]
