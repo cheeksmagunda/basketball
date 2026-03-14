@@ -488,8 +488,8 @@ _CONFIG_DEFAULTS = {
     },
     "real_score": {
         "dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2},
-        "compression_divisor": 7.0,     # was 5.0; higher = lower RS projections
-        "compression_power": 0.62,      # was 0.75; lower = more compression on stars
+        "compression_divisor": 5.5,     # was 7.0; eased to allow 70-80 EV range
+        "compression_power": 0.70,      # was 0.62; higher = less aggressive compression
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
     "projection": {
@@ -1626,14 +1626,24 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     chalk_ev  = round(raw_score * (avg_slot + card_boost) * reliability, 2)
 
+    # Ceiling score — player's upside (variance-adjusted median)
+    ceiling_score = raw_score * (1.0 + (player_variance * 0.5))
+    # Game stacking bonus: shootout environments boost ceiling via correlated outcomes
+    if (total or DEFAULT_TOTAL) >= 235 and abs(spread or 0) <= 5.0:
+        ceiling_score *= 1.08
+    ceiling_ev = round(ceiling_score * (avg_slot + card_boost) * reliability, 2)
+    ceiling_score = round(ceiling_score, 1)
+
     return {
         "id":           pinfo["id"],
         "name":         pinfo["name"],
         "player_variance": round(player_variance, 3),
         "pos":     pinfo["pos"],
         "team":    team_abbr,
-        "rating":  round(raw_score, 1),
-        "chalk_ev":chalk_ev,
+        "rating":        round(raw_score, 1),
+        "chalk_ev":      chalk_ev,
+        "ceiling_score": ceiling_score,
+        "ceiling_ev":    ceiling_ev,
         "predMin": round(proj_min, 1),
         "pts":     round(pts, 1),
         "reb":     round(reb, 1),
@@ -1906,22 +1916,25 @@ def _build_lineups(projections):
         if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
-        # Development team bonus and center penalty — baked into an adjusted
-        # rating so the MILP sees them in its objective function.
-        is_dev = p.get("team", "") in dev_teams
+        # Development team bonus and center penalty — baked into adj_ceiling
+        # so the MILP sees them in its objective function.
+        is_dev    = p.get("team", "") in dev_teams
         team_bonus = dev_boost if is_dev else 1.0
         pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
-        adj_rating = round(p["rating"] * team_bonus * pos_eff, 3)
+        est_mult  = p.get("est_mult", 0.3)
+        adj_ceiling = round(p.get("ceiling_score", p["rating"]) * team_bonus * pos_eff, 3)
 
-        # Standard EV for fallback sorting (MILP uses adj_rating × (slot + est_mult))
-        moonshot_ev = round(adj_rating * (avg_slot + p.get("est_mult", 0.3)), 2)
+        # Ceiling EV with multiplier leverage tiebreaker.
+        # (1 + boost×0.05) gives ~5% bonus per boost unit — players with boost=3.0
+        # beat boost=1.5 by ~7.5% when ceilings are tied, rewarding max leverage.
+        moonshot_ev = round(adj_ceiling * (avg_slot + est_mult) * (1.0 + est_mult * 0.05), 2)
 
         moonshot_pool.append({
             **p,
-            "moonshot_ev": moonshot_ev,
-            "adj_rating": adj_rating,
+            "moonshot_ev":  moonshot_ev,
+            "adj_ceiling":  adj_ceiling,
             "_is_dev_team": is_dev,
-            "_rw_cleared": True,
+            "_rw_cleared":  True,
         })
 
     # Cap centers in moonshot — centers generate fewer RS events per minute
@@ -1940,7 +1953,8 @@ def _build_lineups(projections):
             center_count += 1
 
     upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
-                             rating_key="adj_rating", card_boost_key="est_mult",
+                             rating_key="adj_ceiling",  # ceiling-based, not median rating
+                             card_boost_key="est_mult",
                              max_per_team=0)
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
