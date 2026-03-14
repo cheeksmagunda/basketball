@@ -1,10 +1,11 @@
 """
 Production + local dev server.
 
-Railway / any host: uvicorn server:app --host 0.0.0.0 --port $PORT
+Railway / any host: python server.py   (reads PORT env var automatically)
 Local dev:          uvicorn server:app --reload
 """
 
+import os
 from pathlib import Path
 
 from fastapi import Request
@@ -46,3 +47,9 @@ async def serve_frontend(request: Request, full_path: str = ""):
         status_code=200,
         headers={"Cache-Control": "max-age=0, must-revalidate"},
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")
