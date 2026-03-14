@@ -1500,11 +1500,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         decline_factor = max(recent_min / season_min, 0.85)
         heuristic *= decline_factor
 
-    # AI blend — 70% LightGBM, 30% heuristic
-    # Usage trend clipping must match train_lgbm.py
+    # ── LightGBM inference — collect ai_pred only, do NOT blend yet ──────────
+    # The model is trained on observed Real Scores (RS units). Blending happens
+    # AFTER the heuristic has been run through the RS pipeline so both values
+    # are in the same RS unit space (no double-compression of ai_pred).
+    # Usage trend clipping must match train_lgbm.py.
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
-    base = heuristic
     _ensure_lgbm_loaded()
+    ai_pred = None
     if AI_MODEL is not None:
         try:
             usage = min(max(pts / max(avg_min, 1) * 0.8, USAGE_TREND_MIN), USAGE_TREND_MAX)
@@ -1532,13 +1535,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
                 raise ValueError(f"Feature mismatch: model expects {len(AI_FEATURES)}, got {len(feat_vec)}")
 
-            ai_pred = AI_MODEL.predict(np.array([feat_vec]))[0]
-            # Blend: LightGBM 70%, heuristic 30% — direct blend, no normalization
-            base = (ai_pred * 0.7) + (heuristic * 0.3)
+            ai_pred = float(AI_MODEL.predict(np.array([feat_vec]))[0])
         except Exception as _lgbm_e:
             print(f"[WARN] LightGBM inference failed for player, using heuristic: {_lgbm_e}")
 
-    # Contextual multipliers — game closeness matters BUT differently by role.
+    # Contextual multipliers — applied to heuristic only (not blend).
+    # ai_pred is already in RS units; only the heuristic path needs these.
     pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
 
     # Spread adjustment — role-aware.
@@ -1567,12 +1569,11 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             spread_adj = max(0.70, 1.0 - (abs_spread - 6) * 0.07)  # steep decay past 6
     home_adj   = 1.02 if side == "home" else 1.0
 
-    s_base = base * pace_adj * spread_adj * home_adj
+    s_base = heuristic * pace_adj * spread_adj * home_adj
 
-    # ── Real Score Engine ─────────────────────────────────────────────
-    # Apply Monte Carlo-derived coefficients: Closeness, Clutch, Momentum
-    # This replaces the linear volume-based approach with context-aware
-    # Real Score projection aligned to the Real Sports App algorithm.
+    # ── Real Score Engine (heuristic path only) ───────────────────────────────
+    # Apply Monte Carlo-derived coefficients: Closeness, Clutch, Momentum.
+    # ai_pred bypasses this pipeline — it was trained directly on RS outputs.
     season_pts = stats.get("season_pts", pts)
     recent_pts = stats.get("recent_pts", pts)
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
@@ -1583,15 +1584,21 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         s_base, spread or 0, total or DEFAULT_TOTAL, usage_rate, player_variance, rng
     )
 
-    # Raw projected score — compressed via power function to match
-    # actual Real Score scale. March 6 audit: old params (div=5, pow=0.75)
-    # produced Jokic=11.7 vs actual 5.6 (2x over). New defaults (div=7, pow=0.62)
-    # compress more aggressively: stars ~5-8 RS, role players ~2-4 RS.
+    # Compress heuristic result to RS scale.
+    # March 6 audit: old params (div=5, pow=0.75) produced Jokic=11.7 vs actual 5.6 (2x over).
+    # New defaults (div=7, pow=0.62) compress more aggressively: stars ~5-8 RS, role players ~2-4 RS.
     rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
     comp_div = rs_cfg.get("compression_divisor", 7.0)
     comp_pow = rs_cfg.get("compression_power", 0.62)
     raw_linear = real_result / comp_div
-    raw_score = min(raw_linear ** comp_pow, 15.0)
+    heuristic_rs = min(raw_linear ** comp_pow, 15.0)
+
+    # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
+    # Both values are now in RS units — blend is unit-consistent.
+    if ai_pred is not None:
+        raw_score = min((ai_pred * 0.7) + (heuristic_rs * 0.3), 15.0)
+    else:
+        raw_score = heuristic_rs
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
