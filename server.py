@@ -37,13 +37,11 @@ async def serve_favicon():
     return HTMLResponse("", status_code=204)
 
 
-# Catch-all: serve index.html for any non-API route (SPA pattern)
-# This MUST be last so /api/* routes in api/index.py take priority.
+# Catch-all: serve index.html for any non-API route (SPA pattern).
+# This MUST be last — FastAPI routes explicit /api/* handlers first; this
+# only fires when no other route matched (i.e. real SPA navigation paths).
 @app.get("/{full_path:path}")
 async def serve_frontend(request: Request, full_path: str = ""):
-    # Don't intercept /api/* or /docs or /redoc or /openapi.json
-    if full_path.startswith("api/") or full_path in ("docs", "redoc", "openapi.json"):
-        return HTMLResponse("Not found", status_code=404)
     html_path = ROOT / "index.html"
     return HTMLResponse(
         content=html_path.read_text(),
