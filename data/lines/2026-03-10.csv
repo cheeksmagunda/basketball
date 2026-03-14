@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-10,Andre Drummond,6585,PHI,MEM,rebounds,8.5,over,10.2,1.7,80,Model projects 10.2 rebounds — a 1.7 edge vs the 8.5 season baseline at 80% confidence.,miss,0.0

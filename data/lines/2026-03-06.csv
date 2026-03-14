@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-06,Jaylen Brown,3917376,BOS,DAL,points,29,under,24.4,-4.6,80,Model projects 24.4 points — a 4.6 edge vs the 29.0 season baseline at 80% confidence.,hit,24.0

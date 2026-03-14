@@ -1,0 +1,79 @@
+name: Retrain NBA Model
+
+on:
+  schedule:
+    # Run at 6 AM UTC (1 AM EST) — after all NBA games finish
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pandas numpy lightgbm scikit-learn nba_api
+
+      - name: Retrain model on 3 seasons
+        run: python train_lgbm.py
+
+      - name: Check if model changed
+        id: check
+        run: |
+          if git diff --quiet lgbm_model.pkl 2>/dev/null; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stamp model retrain date in config
+        if: steps.check.outputs.changed == 'true'
+        run: python scripts/bump_retrain_config.py
+
+      - name: Bust today's slate cache on model change via API
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          # Write bust sentinel to main via GitHub API.
+          # Railway redeploys on push to main; the sentinel is data-only (no code change)
+          # so Railway will redeploy but it's harmless — the new process picks up the bust.
+          TODAY_ET=$(TZ='America/New_York' date +%Y-%m-%d)
+          BUST_PATH="data/slate/${TODAY_ET}_bust.json"
+          CONTENT=$(echo -n '{"_busted":true}' | base64)
+
+          # Check if file already exists on main to get SHA for update
+          EXISTING=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPO/contents/$BUST_PATH")
+          SHA=$(echo "$EXISTING" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sha',''))" 2>/dev/null || echo "")
+
+          PAYLOAD="{\"message\":\"bust sentinel $TODAY_ET\",\"content\":\"$CONTENT\""
+          if [ -n "$SHA" ]; then
+            PAYLOAD="$PAYLOAD,\"sha\":\"$SHA\""
+          fi
+          PAYLOAD="$PAYLOAD}"
+
+          curl -s -X PUT \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$GITHUB_REPO/contents/$BUST_PATH" \
+            -d "$PAYLOAD"
+
+      - name: Commit and push updated model + config
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lgbm_model.pkl data/model-config.json
+          git commit -m "chore: daily model retrain $(date -u +%Y-%m-%d)"
+          git push

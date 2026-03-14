@@ -1,0 +1,226 @@
+{
+  "version": 13,
+  "updated_at": "2026-03-14T00:00:00Z",
+  "updated_by": "mar13-moonshot-ev-overhaul",
+  "card_boost": {
+    "decay_base": 0.7,
+    "ceiling": 3.0,
+    "floor": 0.2,
+    "base_offset": 0.3,
+    "scalar": 3.4,
+    "big_market_multiplier": 1.3,
+    "big_market_teams": [
+      "LAL",
+      "GS",
+      "GSW",
+      "BOS",
+      "NY",
+      "NYK",
+      "PHI",
+      "MIL",
+      "DAL",
+      "PHX",
+      "MIA",
+      "DEN",
+      "LAC",
+      "CHI"
+    ],
+    "log_formula_active": true,
+    "log_a": 3.76,
+    "log_b": 0.88,
+    "log_ownership_scalar": 50.0,
+    "pool_size_estimate": 10000,
+    "fame_pts_base": 8.0,
+    "fame_exponent": 2.5
+  },
+  "game_script": {
+    "defensive_grind_ceiling": 220,
+    "balanced_ceiling": 235,
+    "fast_paced_ceiling": 245,
+    "defensive_grind": {
+      "pts": 0.85,
+      "reb": 0.9,
+      "ast": 0.85,
+      "stl": 1.4,
+      "blk": 1.35,
+      "tov": 1.15
+    },
+    "balanced": {
+      "pts": 1.0,
+      "reb": 1.0,
+      "ast": 1.0,
+      "stl": 1.05,
+      "blk": 1.05,
+      "tov": 1.0
+    },
+    "fast_paced": {
+      "pts": 1.15,
+      "reb": 1.1,
+      "ast": 1.15,
+      "stl": 0.95,
+      "blk": 0.95,
+      "tov": 0.9
+    },
+    "track_meet": {
+      "pts": 1.25,
+      "reb": 1.05,
+      "ast": 1.2,
+      "stl": 0.9,
+      "blk": 0.9,
+      "tov": 0.85
+    },
+    "blowout_spread_threshold": 8,
+    "blowout_pts_penalty": 0.9,
+    "blowout_ast_penalty": 0.9,
+    "blowout_reb_penalty": 0.94
+  },
+  "real_score": {
+    "dfs_weights": {
+      "pts": 1.0,
+      "reb": 1.0,
+      "ast": 1.5,
+      "stl": 4.5,
+      "blk": 4.0,
+      "tov": -1.2
+    },
+    "compression_divisor": 7.0,
+    "compression_power": 0.62
+  },
+  "cascade": {
+    "redistribution_rate": 0.7,
+    "per_player_cap_minutes": 2.0,
+    "center_forward_share": 0.3
+  },
+  "projection": {
+    "min_gate_minutes": 12,
+    "lock_buffer_minutes": 5,
+    "season_recent_blend": 0.5,
+    "major_role_change_threshold": 0.75,
+    "major_role_change_recent_weight": 0.8,
+    "moderate_decline_threshold": 0.9,
+    "moderate_decline_recent_weight": 0.65,
+    "gtd_minute_penalty": 0.75,
+    "dnp_risk_min_threshold": 8.0,
+    "reliability_floor": 0.7,
+    "chalk_boost_cap": 2.5,
+    "chalk_season_min_floor": 30.0,
+    "b2b_minute_penalty": 0.88,
+    "default_total": 222,
+    "chalk_recent_min_floor": 15.0
+  },
+  "development_teams": [
+    "UTA",
+    "IND",
+    "BKN",
+    "CHI",
+    "NO",
+    "NOP",
+    "SAC",
+    "MEM",
+    "WAS",
+    "DAL",
+    "POR",
+    "ORL"
+  ],
+  "lineup": {
+    "chalk_rating_floor": 2.0,
+    "game_chalk_rating_floor": 3.5,
+    "avg_slot_multiplier": 1.6,
+    "slot_multipliers": [
+      2.0,
+      1.8,
+      1.6,
+      1.4,
+      1.2
+    ]
+  },
+  "line": {
+    "min_confidence": 50,
+    "min_edge_pct": 3.0,
+    "recent_form_over_ratio": 1.08,
+    "recent_form_under_ratio": 0.92,
+    "min_edge_pts": 2.0,
+    "min_edge_other": 1.5,
+    "min_season_minutes": 20.0
+  },
+  "moonshot": {
+    "min_minutes_floor": 20,
+    "min_card_boost": 1.0,
+    "min_rating_floor": 2.0,
+    "dev_team_boost": 1.25,
+    "card_boost_weight": 2.5,
+    "minutes_weight": 1.0,
+    "require_rotowire_clearance": true,
+    "max_ownership_pct": 3.0,
+    "min_recent_minutes_floor": 25,
+    "big_pos_efficiency": 0.40,
+    "max_centers": 2
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-03-05",
+      "change": "Initial config externalization"
+    },
+    {
+      "version": 2,
+      "date": "2026-03-05",
+      "change": "March 4 audit: raise min_gate 12\u219215, add GTD penalty (0.75x), DNP risk filter (< 8 recent min = skip), reliability multiplier on chalk_ev (penalizes minute-inconsistent + GTD players)"
+    },
+    {
+      "version": 3,
+      "date": "2026-03-05",
+      "change": "Model improvements: min_gate 15\u219212 (boost-aware gate in code), SA removed from big_market_teams, star_players list added for per-player ownership override"
+    },
+    {
+      "version": 4,
+      "date": "2026-03-06",
+      "change": "March 5 audit: added development_teams list (UTA/IND/BKN/CHI/NOP/SAC/MEM/WAS/DAL), moonshot overhaul (20-min floor, minutes*boost ranking, RotoWire lineup clearance), RotoWire scraper integration for lineup confirmations"
+    },
+    {
+      "version": 5,
+      "date": "2026-03-06",
+      "change": "March 6 audit (Mar 5 results): chalk_boost_cap 1.0\u21921.5 (Bailey 187 drafts RS 5.9 +2.1x beat Wemby 1.4k drafts RS 7.1 +0.3x \u2014 cap was preventing high-boost role players from chalk); RotoWire check added to chalk lineup (fixes OUT/questionable players appearing in Starting 5)"
+    },
+    {
+      "version": 6,
+      "date": "2026-03-07",
+      "change": "Production hardening: added lineup.{chalk_rating_floor=2.8, game_chalk_rating_floor=3.5, avg_slot_multiplier=1.6, slot_multipliers}, line.{min_confidence=50, min_edge_pct=3.0}, moonshot.min_rating_floor=2.0. All lineup/line floors now tunable via Ben without code deploys. Added _normalize_player/_normalize_line_pick contract layer in api/index.py to decouple model internals from frontend."
+    },
+    {
+      "version": 7,
+      "date": "2026-03-07",
+      "change": "March 6 results audit \u2014 5 fixes: (1) RS compression recalibrated \u2014 divisor 5\u21927, power 0.75\u21920.62 (Jokic pred 11.7 vs actual 5.6, Wemby 10.4 vs 4.5); (2) Log card boost formula ACTIVATED \u2014 fitted to Real Sports actual data: boost=3.76-0.88*log10(drafts). New star_hype_multiplier=15x separates stars (9k drafts\u21920.2 boost) from role players (13 drafts\u21923.0 boost). scalar=50 with big_market 1.5x + star 15x stacking; (3) chalk_boost_cap 1.5\u21922.5 \u2014 all 3 winning lineups stacked +3.0x boost in Starting 5; (4) chalk_rating_floor 2.8\u21922.0 \u2014 Ighodaro RS 2.3 in ALL 3 winning drafts; (5) star_players expanded: +LaMelo, Kawhi, Jaylen Brown, Knueppel, Sheppard, Clingan (high-ownership players model should penalize)."
+    },
+    {
+      "version": 8,
+      "date": "2026-03-08",
+      "change": "Line of the Day: projections enriched with real last-5 game stats (nba_api) before engine run so over/under picks use actual recent form. Line section de-hardcoded: recent_form_over_ratio (1.08), recent_form_under_ratio (0.92), min_edge_pts (2.0), min_edge_other (1.5) now tunable via Ben."
+    },
+    {
+      "version": 9,
+      "date": "2026-03-10",
+      "change": "Mar 8 screenshot audit (10-game Sunday slate): (1) star_players expanded: +Austin Reaves (160 drafts \u2192 +0.5x actual; LAL brand drives outsized ownership vs RS output), +Jalen Brunson (3.2k drafts \u2192 +0.4x; NYK franchise player model was massively underestimating), +Scottie Barnes (2.2k drafts \u2192 +0.5x; TOR franchise star), +RJ Barrett (9 drafts \u2192 +1.0x; star-penalized by app despite low drafts). (2) cascade.per_player_cap_minutes 3.0 \u2192 2.0: Sunday moonshot cascade picks (Schroeder +3.0 min \u2192 RS 0.4, Robinson +3.0 \u2192 RS 1.0, Chapel +3.0 \u2192 RS 0.8) all missed badly \u2014 3 min bonus was too aggressive. (3) development_teams: added POR (Scoot Henderson \u2014 4 drafts, RS 5.3, +2.5x \u2014 top value Sunday but not in model's moonshot universe). (4) card_boost.pool_size_estimate=10000 added for future calibrate-boost endpoint."
+    },
+    {
+      "version": 10,
+      "date": "2026-03-12",
+      "change": "Minutes floor tuning (season avg): (1) chalk_season_min_floor 20\u219222 (season avg) \u2014 Caruso (18.5 avg) is a moonshot-profile player (high card boost, low season role) not a Starting 5 pick; using season avg as the stable baseline keeps inflated recent splits from promoting low-role players. Configurable via projection.chalk_season_min_floor. (2) moonshot.min_minutes_floor 20\u219218 (season avg) \u2014 catches borderline role players averaging 18-20 min who were excluded by the old 20-min floor. Both floors now use season_min instead of recent_min for stability."
+    },
+    {
+      "version": 11,
+      "date": "2026-03-13",
+      "change": "Sync stale/missing config values that code-default changes never propagated: projection.chalk_season_min_floor 22\u219230; projection.chalk_recent_min_floor added (15.0); moonshot.min_minutes_floor 18\u219225; moonshot.card_boost_weight 2.0\u21922.5; moonshot.min_recent_minutes_floor added (22); moonshot.big_pos_efficiency added (0.65); line.min_season_minutes added (20.0)"
+    },
+    {
+      "version": 12,
+      "date": "2026-03-13",
+      "change": "Moonshot minutes filter: raise min_recent_minutes_floor 22\u219225 to exclude recently-benched backups. Ensures all moonshot picks have \u226525 min/game average to filter out spot-use players like Capela (12.3), Robinson (19.3), DeAndre (18.3) who don't have consistent rotation roles."
+    },
+    {
+      "version": 13,
+      "date": "2026-03-13",
+      "change": "Moonshot EV overhaul (targeting 70+ total): (1) Filter changed from OR to AND \u2014 hard recent_min \u226525 + season_min \u226520 (no more backup centers via inflated recent splits). (2) Center cap: max 2 centers in moonshot \u2014 centers generate fewer RS events (screens/rim-protection). Winners use guards/forwards from dev teams. (3) big_pos_efficiency 0.65\u21920.40 \u2014 much stronger center penalty in ranking. (4) Added ORL to development_teams \u2014 da Silva, Clifford appear in winning leaderboards consistently. (5) Decline factor softened \u2014 trigger 0.90\u21920.80, capped at 0.85 (max 15% penalty). Thompson \u2193 17% was over-penalized."
+    }
+  ]
+}

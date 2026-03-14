@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-12,Jalen Green,4437244,PHX,IND,points,15.5,over,17.6,2.1,80,Model projects 17.6 points — a 2.1 edge vs the 15.5 season baseline.,hit,36.0

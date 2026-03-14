@@ -1,0 +1,104 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Russell Westbrook,3468,SAC,G,4.8,1.8,32.4,18.2,6.2,7.2,1.4,0.2
+slate,chalk,1.8x,Julius Randle,3064514,MIN,F,4.4,1.7,32.7,20.3,8.0,4.6,0.9,0.3
+slate,chalk,1.6x,Scottie Barnes,4433134,TOR,F,4.3,1.8,36.2,18.2,7.8,5.2,1.3,1.4
+slate,chalk,1.4x,Rudy Gobert,3032976,MIN,C,4.2,2.1,31.1,11.8,11.6,1.6,0.8,1.8
+slate,chalk,1.2x,Clint Capela,3102529,HOU,C,3.4,2.6,21.6,7.5,7.2,0.8,0.6,1.1
+slate,upside,2.0x,Austin Reaves,4066457,LAL,G,4.5,1.6,32.0,19.6,4.3,4.9,0.9,0.3
+slate,upside,1.8x,Deandre Ayton,4278129,LAL,C,4.2,1.8,30.1,14.2,9.2,1.1,0.7,0.9
+slate,upside,1.6x,Alperen Sengun,4871144,HOU,C,4.2,1.8,33.0,18.6,8.8,5.2,1.2,1.0
+slate,upside,1.4x,Jrue Holiday,3995,POR,G,4.0,1.9,33.0,16.2,4.3,6.2,1.3,0.3
+slate,upside,1.2x,Jaden McDaniels,4431671,MIN,F,3.8,2.1,30.6,12.9,4.3,2.2,1.0,0.9
+MEM @ PHI,chalk,2.0x,Andre Drummond,6585,PHI,C,3.7,2.1,21.9,9.3,10.2,1.1,0.9,1.0
+MEM @ PHI,chalk,1.8x,Paul George,4251,PHI,F,4.2,0.9,29.8,18.2,5.7,3.7,1.6,0.5
+MEM @ PHI,chalk,1.6x,VJ Edgecombe,5124612,PHI,G,3.6,1.2,32.6,15.3,5.5,3.9,1.5,0.5
+MEM @ PHI,chalk,1.4x,Ty Jerome,4065733,MEM,G,3.5,1.5,18.8,14.2,2.5,4.2,1.1,0.1
+MEM @ PHI,upside,2.0x,Cedric Coward,4903027,MEM,F,3.0,1.6,24.7,13.4,6.2,2.8,0.6,0.4
+MEM @ PHI,upside,1.8x,GG Jackson,5105550,MEM,F,2.7,1.9,20.1,11.2,4.1,1.3,0.7,0.7
+MEM @ PHI,upside,1.6x,Jaylen Wells,5112087,MEM,F,2.7,1.8,25.0,12.1,3.4,1.7,0.8,0.1
+MEM @ PHI,upside,1.4x,Cam Spencer,4433083,MEM,G,2.6,2.1,20.5,10.2,2.5,4.9,0.7,0.1
+MEM @ PHI,upside,1.2x,Quentin Grimes,4397014,PHI,G,2.7,1.7,25.5,11.8,3.4,2.9,0.8,0.3
+DET @ BKN,upside,2.0x,Kevin Huerter,4066372,DET,G,2.4,2.0,26.8,10.7,3.5,2.6,0.8,0.5
+DET @ BKN,upside,1.8x,Isaiah Stewart,4432810,DET,F,2.4,2.2,23.9,9.4,6.0,1.2,0.3,1.4
+DET @ BKN,upside,1.6x,Jalen Duren,4433621,DET,C,2.3,1.3,27.4,15.7,10.5,1.9,0.8,0.8
+DET @ BKN,upside,1.4x,Nic Claxton,4278067,BKN,C,2.1,1.8,25.5,11.4,7.4,3.0,0.7,1.4
+DET @ BKN,upside,1.2x,Noah Clowney,4712896,BKN,F,2.1,1.8,23.7,11.6,4.1,1.5,0.7,0.7
+WSH @ MIA,upside,2.0x,Kadary Richmond,4701845,WSH,G,3.1,2.4,24.3,8.3,3.3,2.7,2.7,0.3
+WSH @ MIA,upside,1.8x,Bam Adebayo,4066261,MIA,C,3.0,1.0,33.1,17.4,9.3,3.2,1.1,0.8
+WSH @ MIA,upside,1.6x,Alex Sarr,5160992,WSH,C,2.8,1.3,29.7,15.7,7.3,2.6,0.8,1.9
+WSH @ MIA,upside,1.4x,Davion Mitchell,4278053,MIA,G,2.6,2.3,26.9,8.3,2.2,5.3,0.9,0.2
+WSH @ MIA,upside,1.2x,Julian Reese,4683742,WSH,F,2.2,2.3,33.0,8.5,10.3,2.0,1.3,0.5
+DAL @ ATL,chalk,2.0x,Cooper Flagg,5041939,DAL,F,3.5,0.7,34.7,20.2,6.6,4.2,1.2,0.9
+DAL @ ATL,upside,2.0x,Daniel Gafford,4278049,DAL,F,3.1,2.2,22.1,8.9,6.2,1.0,0.7,1.4
+DAL @ ATL,upside,1.8x,Buddy Hield,2990984,ATL,G,3.4,1.9,22.4,11.2,3.2,1.9,0.8,0.2
+DAL @ ATL,upside,1.6x,Caleb Martin,3138160,DAL,F,2.7,2.7,20.4,5.8,3.1,1.5,0.8,0.3
+DAL @ ATL,upside,1.4x,Marvin Bagley III,4277848,DAL,F,3.2,1.8,22.4,11.2,6.3,1.1,0.5,0.7
+DAL @ ATL,upside,1.2x,Zaccharie Risacher,5211175,ATL,F,3.1,1.9,25.7,10.8,3.6,1.3,0.8,0.5
+PHX @ MIL,chalk,2.0x,Myles Turner,3133628,MIL,C,4.0,1.5,29.8,13.1,6.0,1.4,0.7,1.9
+PHX @ MIL,chalk,1.8x,Kyle Kuzma,3134907,MIL,F,3.5,1.3,30.3,14.8,5.5,2.6,0.6,0.5
+PHX @ MIL,chalk,1.6x,Giannis Antetokounmpo,3032977,MIL,F,5.1,0.3,32.4,25.8,9.9,5.2,1.1,0.9
+PHX @ MIL,chalk,1.4x,Jalen Green,4437244,PHX,G,3.5,1.0,27.5,17.3,3.7,2.8,1.0,0.2
+PHX @ MIL,chalk,1.2x,Devin Booker,3136193,PHX,G,3.9,0.4,33.9,24.7,4.0,5.7,0.9,0.3
+PHX @ MIL,upside,2.0x,Royce O'Neale,2583632,PHX,F,3.2,2.2,29.9,8.6,4.8,2.6,0.9,0.4
+PHX @ MIL,upside,1.8x,Oso Ighodaro,4601023,PHX,F,2.8,2.7,22.0,5.5,4.5,1.8,0.8,0.6
+PHX @ MIL,upside,1.6x,Taurean Prince,2990962,MIL,F,2.9,2.4,24.9,8.0,2.6,1.4,0.8,0.3
+PHX @ MIL,upside,1.4x,Ryan Dunn,4888725,PHX,F,2.6,2.6,21.5,6.1,4.0,1.2,0.8,0.5
+PHX @ MIL,upside,1.2x,Gary Harris,2999547,MIL,G,2.5,2.6,22.0,6.2,1.8,1.4,0.8,0.2
+BOS @ SA,chalk,2.0x,Victor Wembanyama,5104157,SA,F,5.5,0.6,30.9,23.4,11.0,3.2,1.1,3.2
+BOS @ SA,chalk,1.8x,Stephon Castle,4845367,SA,G,3.8,1.3,28.8,15.9,4.5,6.0,1.2,0.3
+BOS @ SA,chalk,1.6x,Jayson Tatum,4065648,BOS,F,4.6,0.7,32.8,20.5,7.4,4.2,0.8,0.3
+BOS @ SA,chalk,1.4x,De'Aaron Fox,4066259,SA,G,4.2,0.8,32.2,20.1,3.8,6.2,1.3,0.3
+BOS @ SA,chalk,1.2x,Jaylen Brown,3917376,BOS,G,4.6,0.4,33.1,24.2,6.3,4.0,1.0,0.4
+BOS @ SA,upside,2.0x,Derrick White,3078576,BOS,G,3.8,1.2,31.4,15.3,4.0,5.0,1.1,1.2
+BOS @ SA,upside,1.8x,Keldon Johnson,4395723,SA,F,3.3,1.5,26.9,14.1,5.5,1.6,0.7,0.1
+BOS @ SA,upside,1.6x,Dylan Harper,5037871,SA,G,2.9,1.9,22.1,11.2,3.2,3.7,0.9,0.3
+BOS @ SA,upside,1.4x,Neemias Queta,4397424,BOS,C,2.6,2.3,20.4,8.3,6.8,1.2,0.7,1.1
+BOS @ SA,upside,1.2x,Sam Hauser,4065804,BOS,F,2.2,2.3,23.3,8.6,3.5,1.2,0.5,0.3
+TOR @ HOU,chalk,2.0x,Clint Capela,3102529,HOU,C,3.5,2.6,20.6,7.5,7.2,0.8,0.6,1.1
+TOR @ HOU,chalk,1.8x,Scottie Barnes,4433134,TOR,F,4.5,1.0,36.4,18.2,7.8,5.2,1.3,1.4
+TOR @ HOU,chalk,1.6x,Jabari Smith Jr.,4432639,HOU,F,3.5,1.4,35.4,14.4,7.1,1.6,0.7,0.9
+TOR @ HOU,chalk,1.4x,Alperen Sengun,4871144,HOU,C,4.2,1.0,32.7,18.6,8.8,5.2,1.2,1.0
+TOR @ HOU,chalk,1.2x,Brandon Ingram,3913176,TOR,F,3.9,0.8,35.5,20.7,5.5,4.0,0.8,0.7
+TOR @ HOU,upside,2.0x,Jamal Shead,4432241,TOR,G,2.6,2.6,22.6,6.9,1.9,4.9,0.9,0.1
+TOR @ HOU,upside,1.8x,Dorian Finney-Smith,2578185,HOU,F,2.4,2.7,24.4,5.7,3.5,1.1,0.6,0.2
+TOR @ HOU,upside,1.6x,Josh Okogie,4065663,HOU,G,2.3,2.8,20.7,5.7,2.8,0.9,0.9,0.3
+TOR @ HOU,upside,1.4x,Ja'Kobe Walter,4684272,TOR,G,2.4,2.6,20.9,7.0,2.5,1.2,0.9,0.2
+TOR @ HOU,upside,1.2x,Tari Eason,4433192,HOU,F,3.1,2.0,26.5,10.8,6.3,1.5,1.4,0.7
+CHI @ GS,chalk,2.0x,Josh Giddey,4871145,CHI,G,4.0,0.0,32.4,16.1,8.0,7.5,0.9,0.5
+CHI @ GS,chalk,1.8x,Kristaps Porzingis,3102531,GS,C,3.6,0.0,25.7,17.9,6.3,2.3,0.6,1.6
+CHI @ GS,chalk,1.0x,Al Horford,3213,GS,C,3.4,1.9,25.1,10.6,6.4,2.9,0.8,1.1
+CHI @ GS,chalk,1.0x,Tre Jones,4395626,CHI,G,3.1,1.9,25.9,10.6,2.9,5.2,1.1,0.1
+CHI @ GS,chalk,1.0x,Draymond Green,6589,GS,F,2.9,2.2,26.3,8.6,6.2,5.5,1.1,0.8
+CHI @ GS,upside,2.0x,Matas Buzelis,4711294,CHI,F,2.9,1.5,27.0,13.5,5.0,1.8,0.6,1.4
+CHI @ GS,upside,1.8x,Brandin Podziemski,4709138,GS,G,2.9,1.7,26.0,11.9,5.3,3.6,1.1,0.2
+CHI @ GS,upside,1.6x,Jalen Smith,4397189,CHI,F,2.6,2.1,20.0,9.4,6.2,1.1,0.4,0.8
+CHA @ POR,chalk,2.0x,Jrue Holiday,3995,POR,G,4.1,0.0,32.8,16.4,4.3,6.2,1.3,0.3
+CHA @ POR,chalk,1.8x,LaMelo Ball,4432816,CHA,G,4.5,0.0,31.4,20.0,5.2,7.3,1.2,0.2
+CHA @ POR,chalk,1.6x,Miles Bridges,4066383,CHA,F,3.7,0.0,32.1,16.7,6.0,3.1,0.7,0.6
+CHA @ POR,chalk,1.4x,Jerami Grant,2991070,POR,F,3.6,0.0,28.9,16.2,3.7,1.9,0.7,0.8
+CHA @ POR,chalk,1.2x,Brandon Miller,4433287,CHA,F,4.0,0.0,31.8,19.8,4.8,3.1,1.1,0.8
+CHA @ POR,upside,2.0x,Donovan Clingan,5105565,POR,C,3.4,2.0,24.7,10.4,10.6,1.9,0.5,1.6
+CHA @ POR,upside,1.8x,Scoot Henderson,4683678,POR,G,3.3,1.6,27.1,13.1,2.9,4.8,0.7,0.2
+CHA @ POR,upside,1.6x,Toumani Camara,4431736,POR,F,3.3,1.8,32.0,11.7,5.4,2.2,1.1,0.5
+CHA @ POR,upside,1.4x,Ryan Kalkbrenner,4576060,CHA,C,2.9,2.5,23.4,7.9,5.9,0.8,0.5,1.5
+CHA @ POR,upside,1.2x,Moussa Diabate,4433249,CHA,F,2.6,2.6,21.1,7.2,7.5,1.4,0.7,0.8
+IND @ SAC,chalk,2.0x,Russell Westbrook,3468,SAC,G,5.6,0.0,32.4,18.2,6.2,7.2,1.4,0.2
+IND @ SAC,chalk,1.8x,DeMar DeRozan,3978,SAC,G,4.7,0.0,34.5,19.6,3.6,4.0,1.1,0.3
+IND @ SAC,chalk,1.6x,Malik Monk,4066262,SAC,G,3.5,0.0,24.4,12.6,2.3,2.9,0.6,0.3
+IND @ SAC,chalk,1.0x,Precious Achiuwa,4431679,SAC,PF,3.3,2.4,23.3,8.2,5.9,1.1,0.8,0.6
+IND @ SAC,chalk,1.0x,Killian Hayes,4683024,SAC,G,3.3,2.8,21.4,5.2,2.2,4.2,0.7,0.2
+IND @ SAC,upside,2.0x,Maxime Raynaud,4898371,SAC,C,3.3,1.9,26.8,10.9,7.2,1.2,0.5,0.5
+IND @ SAC,upside,1.8x,Nique Clifford,4702384,SAC,G,2.8,2.5,24.8,7.3,3.5,1.9,0.9,0.3
+IND @ SAC,upside,1.6x,Ben Sheppard,4433076,IND,G,2.3,2.7,21.7,6.2,2.8,1.6,0.6,0.1
+IND @ SAC,upside,1.4x,Daeqwon Plowden,4279318,SAC,G,2.2,2.5,22.8,7.4,2.8,1.1,0.3,0.2
+IND @ SAC,upside,1.2x,Jarace Walker,5106060,IND,F,2.8,2.2,21.5,9.3,4.2,2.0,0.8,0.3
+MIN @ LAL,chalk,2.0x,Luka Doncic,3945274,LAL,G,6.0,0.0,35.2,30.8,8.2,8.3,1.4,0.5
+MIN @ LAL,chalk,1.8x,Anthony Edwards,4594268,MIN,G,5.2,0.0,35.2,27.1,5.2,3.9,1.4,0.7
+MIN @ LAL,chalk,1.6x,Julius Randle,3064514,MIN,F,4.4,0.0,32.7,20.3,8.0,4.6,0.9,0.3
+MIN @ LAL,chalk,1.4x,Deandre Ayton,4278129,LAL,C,4.3,0.0,30.8,14.2,9.2,1.1,0.7,0.9
+MIN @ LAL,chalk,1.2x,Rudy Gobert,3032976,MIN,C,4.3,0.0,31.1,11.8,11.6,1.6,0.8,1.8
+MIN @ LAL,upside,2.0x,Jaden McDaniels,4431671,MIN,F,3.9,1.6,30.6,12.9,4.3,2.2,1.0,0.9
+MIN @ LAL,upside,1.8x,Marcus Smart,2990992,LAL,G,3.5,2.0,28.9,9.9,3.1,3.6,1.4,0.4
+MIN @ LAL,upside,1.6x,Naz Reid,4396971,MIN,C,3.3,1.7,23.2,12.8,5.8,1.9,0.8,0.9
+MIN @ LAL,upside,1.4x,Mike Conley,3195,MIN,G,3.2,2.3,24.4,8.9,2.3,4.2,0.9,0.2
+MIN @ LAL,upside,1.2x,Jarred Vanderbilt,4278077,LAL,F,2.7,2.7,20.9,5.2,5.3,1.3,0.9,0.3
