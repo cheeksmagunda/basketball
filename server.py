@@ -1,6 +1,3 @@
-import sys, os
-print(f"[server.py] Python {sys.version}, PID={os.getpid()}, PORT={os.environ.get('PORT','NOT SET')}", flush=True)
-
 """
 Production + local dev server.
 
@@ -8,14 +5,13 @@ Railway / any host: python server.py   (reads PORT env var automatically)
 Local dev:          uvicorn server:app --reload
 """
 
+import os
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, FileResponse
 
-print("[server.py] importing api.index...", flush=True)
 from api.index import app  # noqa: F401 – re-export for uvicorn
-print("[server.py] api.index imported OK", flush=True)
 
 ROOT = Path(__file__).parent
 
@@ -56,5 +52,4 @@ async def serve_frontend(request: Request, full_path: str = ""):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
-    print(f"[server.py] starting uvicorn on 0.0.0.0:{port}", flush=True)
     uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")
