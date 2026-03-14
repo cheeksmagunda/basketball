@@ -507,7 +507,7 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
-        "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":25, "min_recent_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.40, "max_centers":2,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -1853,13 +1853,12 @@ def _build_lineups(projections):
     #   - RotoWire lineup clearance (not flagged OUT or questionable)
     #   - Not already in chalk lineup
     #
-    # Minutes filter: hard recent_min >= 25 ensures the player is actively
-    # getting real rotation minutes RIGHT NOW. Season floor (20) is a sanity
-    # check — must be on a real roster, not a 10-day contract callup.
-    # The old OR logic (season >= 25 OR recent >= 22) let backup centers
-    # (Capela 12 season avg, Jordan 18) through on a few inflated recent games.
+    # Minutes filter: season_min >= 25 is the stable rotation role baseline;
+    # filters out low-minute role players whose RS output is too inconsistent.
+    # recent_min >= 25 ensures the player is actively getting real rotation
+    # minutes RIGHT NOW — not just a seasonal fluke.
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor        = moon_cfg.get("min_minutes_floor", 20)
+    min_floor        = moon_cfg.get("min_minutes_floor", 25)
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 25)
     min_boost = moon_cfg.get("min_card_boost", 1.0)
     dev_boost = moon_cfg.get("dev_team_boost", 1.25)
