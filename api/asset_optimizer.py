@@ -42,7 +42,8 @@ SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 
 def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     sort_key="chalk_ev", rating_key="rating",
-                    card_boost_key="est_mult", time_limit=5):
+                    card_boost_key="est_mult", time_limit=5,
+                    max_low_boost=0, low_boost_threshold=0.0):
     """Find the optimal player-to-slot assignment using MILP.
 
     Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
@@ -71,13 +72,14 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
 
     try:
         return _solve_milp(projections, n, min_per_team, max_per_team,
-                           rating_key, card_boost_key, time_limit)
+                           rating_key, card_boost_key, time_limit,
+                           max_low_boost, low_boost_threshold)
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
 def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
-                card_boost_key, time_limit):
+                card_boost_key, time_limit, max_low_boost=0, low_boost_threshold=0.0):
     """Run the MILP solver to find optimal player-slot assignments."""
     players = list(range(len(projections)))
     slots = list(range(n))
@@ -132,6 +134,18 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in player_indices for j in slots
             ) <= 1
+
+    # Low-boost star cap: prevents 3+ superstars (low card boost) crowding out
+    # higher-EV role players. Only active when both params are set (chalk mode).
+    if max_low_boost > 0 and low_boost_threshold > 0:
+        low_boost_players = [
+            i for i, p in enumerate(projections)
+            if p.get(card_boost_key, 0) < low_boost_threshold
+        ]
+        if len(low_boost_players) > max_low_boost:
+            prob += lpSum(
+                x[i, j] for i in low_boost_players for j in slots
+            ) <= max_low_boost
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)

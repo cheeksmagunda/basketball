@@ -504,6 +504,8 @@ _CONFIG_DEFAULTS = {
         "chalk_season_min_floor":30.0,  # season avg floor for Starting 5 eligibility
         "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
+        "chalk_max_stars":2,            # max players with boost < threshold allowed in chalk lineup
+        "chalk_star_boost_threshold":0.6, # boost below this = "star" (low ownership); counts toward cap
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
@@ -1831,9 +1833,13 @@ def _build_lineups(projections):
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
+    chalk_max_stars  = int(_cfg("projection.chalk_max_stars", 2))
+    chalk_star_thresh = float(_cfg("projection.chalk_star_boost_threshold", 0.6))
     chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                             rating_key="rating", card_boost_key="est_mult",
-                            max_per_team=0)
+                            max_per_team=0,
+                            max_low_boost=chalk_max_stars,
+                            low_boost_threshold=chalk_star_thresh)
 
     # ── MOONSHOT: March 5 overhaul (tuned March 11) ─────────────────────────
     # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
