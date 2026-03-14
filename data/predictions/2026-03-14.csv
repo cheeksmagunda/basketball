@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Nikola Jokic,3112335,DEN,C,6.0,0.3,33.3,25.4,11.8,8.9,1.4,0.8
+slate,chalk,1.8x,Dyson Daniels,4869342,ATL,G,3.2,2.0,29.4,10.3,5.8,5.0,1.9,0.5
+slate,chalk,1.6x,LeBron James,1966,LAL,F,5.4,0.4,35.9,24.1,6.6,7.2,1.3,0.7
+slate,chalk,1.4x,Bam Adebayo,4066261,MIA,C,4.5,0.9,32.8,18.1,9.3,3.2,1.1,0.8
+slate,chalk,1.2x,Austin Reaves,4066457,LAL,G,4.5,0.8,32.1,19.8,4.3,5.0,0.9,0.3
+slate,upside,2.0x,Jalen Suggs,4432165,ORL,G,3.9,1.6,28.6,13.3,3.5,4.5,1.6,0.7
+slate,upside,1.8x,Jaime Jaquez Jr.,4432848,MIA,F,3.7,1.5,29.1,13.4,4.8,4.0,0.8,0.3
+slate,upside,1.6x,Marcus Smart,2990992,LAL,G,3.3,2.0,28.9,9.9,3.1,3.6,1.4,0.4
+slate,upside,1.4x,Bogdan Bogdanovic,3037789,LAC,G,2.6,1.9,22.9,10.8,3.1,3.0,0.8,0.1
+slate,upside,1.2x,Gary Trent Jr.,4277843,MIL,G,2.6,1.9,24.2,10.2,1.6,1.4,0.8,0.1
