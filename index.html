@@ -3233,9 +3233,12 @@ function renderLinePickCard(pick, isPrimary) {
         });
         return `<div class="line-pick-odds-meta">Odds · ${t} CT</div>`;
       })()
-    : (pick.books_consensus != null
-      ? `<div class="line-pick-odds-meta line-pick-odds-num">${pick.direction === 'over' ? pick.odds_over : pick.odds_under}</div><div class="line-pick-odds-meta">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
-      : '');
+    : (() => {
+        const oddsVal = pick.direction === 'over' ? pick.odds_over : pick.odds_under;
+        return (pick.books_consensus != null && pick.books_consensus > 0 && oddsVal != null)
+          ? `<div class="line-pick-odds-meta line-pick-odds-num">${oddsVal}</div><div class="line-pick-odds-meta">${pick.books_consensus} book${pick.books_consensus !== 1 ? 's' : ''}</div>`
+          : '<div class="line-pick-odds-meta">MODEL</div>';
+      })();
 
   const subheader = pick.game_time ? `${_escapeHtml(pick.team)} vs ${_escapeHtml(pick.opponent)} · ${_escapeHtml(pick.game_time)}` : `${_escapeHtml(pick.team)} · vs ${_escapeHtml(pick.opponent)}`;
   const edgeClass = (pick.edge ?? 0) > 0 ? 'edge-plus' : (pick.edge ?? 0) < 0 ? 'edge-minus' : '';
