@@ -4,7 +4,7 @@ builder = "NIXPACKS"
 watchPatterns = ["api/**", "index.html", "server.py", "requirements.txt", "railway.toml", "Procfile", "train_lgbm.py", "lgbm_model.pkl", "scripts/**", ".github/workflows/**"]
 
 [deploy]
-startCommand = "python server.py"
+startCommand = "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
