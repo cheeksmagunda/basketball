@@ -1064,6 +1064,9 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
+    <div id="lateDraftHeaderWrap" style="display:none;flex:1;justify-content:center;align-items:center;">
+      <button id="lateDraftBtn" onclick="triggerLateDraft()" style="background:rgba(255,255,255,0.08);color:var(--color-text-muted);border:1px solid rgba(255,255,255,0.14);padding:6px 14px;border-radius:var(--radius-pill);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.78rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;white-space:nowrap;">Late Draft</button>
+    </div>
     <div id="headerMeta" class="header-meta"></div>
   </header>
 
@@ -1110,13 +1113,8 @@
       <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
     </div>
 
-    <!-- Late Draft banner: visible when slate is locked but remaining games exist -->
-    <div id="lateDraftBanner" style="display:none;margin:10px 0 14px;padding:16px 18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-card);text-align:center;">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--color-warning);margin-bottom:6px;">LATE DRAFT</div>
-      <div style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:12px;">Games still to play. Generate picks for remaining matchups.</div>
-      <button id="lateDraftBtn" onclick="triggerLateDraft()" style="background:var(--color-warning);color:#000;border:none;padding:8px 22px;border-radius:var(--radius-pill);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;">Generate Late Draft</button>
-      <div id="lateDraftMsg" style="display:none;font-size:0.75rem;color:var(--color-text-muted);margin-top:8px;"></div>
-    </div>
+    <!-- lateDraftMsg: inline status shown briefly after triggering (button moved to header) -->
+    <div id="lateDraftMsg" style="display:none;font-size:0.75rem;color:var(--color-text-muted);margin-bottom:10px;text-align:center;"></div>
 
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
@@ -2191,12 +2189,12 @@ let _lateDraftTriggered = (function() {
 })();
 
 function showLateDraftBanner() {
-  var banner = _el('lateDraftBanner');
-  if (!banner) return;
-  // Show banner only when: slate is locked, at least one game has not started,
+  var wrap = _el('lateDraftHeaderWrap');
+  if (!wrap) return;
+  // Show button only when: slate is locked, at least one game has not started,
   // all_complete is false, and user has not already triggered a late draft today.
   if (!SLATE || !SLATE.locked || SLATE.all_complete || _lateDraftTriggered) {
-    banner.style.display = 'none';
+    wrap.style.display = 'none';
     return;
   }
   var now = Date.now();
@@ -2204,17 +2202,18 @@ function showLateDraftBanner() {
     return g.startTime && (new Date(g.startTime).getTime() - now) > 5 * 60 * 1000;
   });
   if (remaining.length === 0) {
-    banner.style.display = 'none';
+    wrap.style.display = 'none';
     return;
   }
   var btn = _el('lateDraftBtn');
   var msg = _el('lateDraftMsg');
-  if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Late Draft'; }
   if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
-  banner.style.display = 'block';
+  wrap.style.display = 'flex';
 }
 
 async function triggerLateDraft() {
+  var wrap = _el('lateDraftHeaderWrap');
   var btn = _el('lateDraftBtn');
   var msg = _el('lateDraftMsg');
   if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
@@ -2227,7 +2226,7 @@ async function triggerLateDraft() {
     var data = await r.json();
     if (data.status === 'no_remaining_games') {
       if (msg) { msg.textContent = 'All games have already started.'; msg.style.display = 'block'; }
-      if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Late Draft'; }
       return;
     }
     if (data.status === 'regenerated') {
@@ -2246,26 +2245,23 @@ async function triggerLateDraft() {
       _predSavedDate = '';
       _predSavedLockedCount = 0;
       savePredictions();
-      // Show success and hide banner
+      // Hide header button; show brief success message below sub-nav
+      if (wrap) wrap.style.display = 'none';
       if (msg) {
         msg.textContent = 'Picks regenerated for ' + (data.games_regenerated || 0) + ' remaining game' + ((data.games_regenerated || 0) !== 1 ? 's' : '') + '.';
         msg.style.color = 'var(--color-success)';
         msg.style.display = 'block';
+        setTimeout(function() { if (msg) msg.style.display = 'none'; }, 3000);
       }
-      if (btn) btn.style.display = 'none';
-      setTimeout(function() {
-        var banner = _el('lateDraftBanner');
-        if (banner) banner.style.display = 'none';
-      }, 3000);
     } else {
       if (msg) { msg.textContent = data.message || 'Something went wrong. Try again.'; msg.style.display = 'block'; }
-      if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Late Draft'; }
     }
   } catch(e) {
     hideLoader();
     console.warn('Late draft error:', e);
     if (msg) { msg.textContent = 'Could not regenerate. Try again.'; msg.style.display = 'block'; }
-    if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Late Draft'; }
   }
 }
 
