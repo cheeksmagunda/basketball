@@ -501,11 +501,13 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":30.0,  # season avg floor for Starting 5 eligibility
+        "chalk_season_min_floor":25.0,  # season avg floor for Starting 5 (was 30; Mar 14: excluded Smart 28.9min, Achiuwa ~26min)
         "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
-        "chalk_max_stars":2,            # max players with boost < threshold allowed in chalk lineup
-        "chalk_star_boost_threshold":0.6, # boost below this = "star" (low ownership); counts toward cap
+        "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
+        "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
+        "leverage_top_slots": 2,        # force 2 contrarian players into top 2 slots (was 1; winners had 3-4 high-boost)
+        "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
