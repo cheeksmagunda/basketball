@@ -1110,7 +1110,7 @@
       <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
     </div>
 
-    <!-- lateDraftMsg: inline status shown briefly after triggering (button moved to header) -->
+    <!-- lateDraftMsg: inline status shown briefly after triggering -->
     <div id="lateDraftMsg" style="display:none;font-size:0.75rem;color:var(--color-text-muted);margin-bottom:10px;text-align:center;"></div>
 
     <!-- SUB-PAGE: Slate-Wide -->
@@ -2909,35 +2909,6 @@ function classifyFetchError(err, response) {
   return 'network';
 }
 
-async function _tryAutoResolveLine(pick) {
-  if (LINE_RESOLVE_POLL) { clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; }
-  try {
-    const ar = await fetchWithTimeout('/api/auto-resolve-line', {}, 15000);
-    if (!ar.ok) return;
-    const arData = await ar.json();
-    if (arData.status === 'resolved' || arData.status === 'already_resolved') {
-      const resolvedPick = { ...pick, result: arData.result, actual_stat: arData.actual_stat };
-      document.getElementById('linePickCard').innerHTML = renderLinePickCard(resolvedPick, true);
-      if (LINE_OVER_PICK && LINE_OVER_PICK.direction === pick.direction) {
-        LINE_OVER_PICK = { ...LINE_OVER_PICK, result: arData.result, actual_stat: arData.actual_stat };
-      }
-      if (LINE_UNDER_PICK && LINE_UNDER_PICK.direction === pick.direction) {
-        LINE_UNDER_PICK = { ...LINE_UNDER_PICK, result: arData.result, actual_stat: arData.actual_stat };
-      }
-      LINE_LOADED_DATE = '';
-      LINE_LOTD_STATE = asyncStateInitial();
-      setTimeout(() => initLinePage(), 1500);
-    } else if (arData.status === 'game_not_final') {
-      // Game still live — poll every 5 min until it finishes
-      LINE_RESOLVE_POLL = setInterval(async function() {
-        if (document.getElementById('linePickWrap').style.display === 'none') {
-          clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; return;
-        }
-        await _tryAutoResolveLine(pick);
-      }, 5 * 60 * 1000);
-    }
-  } catch(e) { /* non-fatal */ }
-}
 
 async function _startLineLivePoll(overPick, underPick) {
   if (LINE_LIVE_POLL) { clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null; }
