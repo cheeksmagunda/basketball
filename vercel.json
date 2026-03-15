@@ -12,6 +12,10 @@
     {
       "source": "/manifest.json",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }]
+    },
+    {
+      "source": "/oracle-ball.svg",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }]
     }
   ],
   "builds": [

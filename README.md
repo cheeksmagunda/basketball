@@ -106,6 +106,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set). Manual: `Authorization: Bearer <CRON_SECRET>` or `?key=<CRON_SECRET>` (keep URL private). |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
+| `/api/force-regenerate?scope=full\|remaining` | GET | Force-regenerate predictions mid-slate. `scope=full`: all games (dev deploy SHA mismatch — also fires automatically in background). `scope=remaining`: unlocked games only (Late Draft banner). CRON_SECRET-gated. |
 
 ### Line of the Day
 | Endpoint | Method | Description |
@@ -140,7 +141,7 @@ Crons are tuned to reduce Vercel invocations while preserving behavior. When `CR
 | `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model params if ≥3% MAE improvement |
 | `55 * * * *` | `/api/refresh-line-odds` | Hourly odds sync (at :55; hits 6:55 PM ET lock window) |
-| `0,30 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (requires CRON_SECRET when set) |
+| `0 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (hourly at :00; requires CRON_SECRET when set) |
 | `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
 
 ## Responsiveness & Reliability
