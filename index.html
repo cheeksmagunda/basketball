@@ -3566,7 +3566,7 @@ async function initLabPage() {
 
     if (status.locked && _isLabStatusErrorFallback(status)) {
       try {
-        const br = await fetchWithTimeout('/api/lab/briefing', {}, 10000);
+        const br = await fetchWithTimeout('/api/lab/briefing', {}, 30000);
         if (br.ok) {
           const briefing = await br.json();
           if (briefing && briefing.pending_upload_date) {
@@ -3587,7 +3587,7 @@ async function initLabPage() {
   } catch(e) {
     // Auto-retry once — first request may have warmed a cold Vercel function
     try {
-      const r2 = await fetchWithTimeout('/api/lab/status', {}, 15000);
+      const r2 = await fetchWithTimeout('/api/lab/status', {}, 10000);
       if (!r2.ok) throw new Error('Retry failed: HTTP ' + r2.status);
       const status = await r2.json();
       LAB.cachedStatus = status;
@@ -3717,7 +3717,7 @@ async function showLabUnlocked(status) {
   var _cachedSlate = SLATE
     ? Promise.resolve(SLATE) : fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
   Promise.allSettled([
-    fetchWithTimeout('/api/lab/briefing', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout('/api/lab/briefing', {}, 30000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     fetchWithTimeout('/api/lab/config-history', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     _cachedLine,
     _cachedSlate,

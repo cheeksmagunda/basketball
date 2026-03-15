@@ -469,11 +469,11 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
         "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.3,
-        "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"],
-        "log_formula_active": True,     # activated: calibrated against Mar 6 Real Sports actuals
-        "log_a": 3.76,                  # intercept — fit to: 13d→3.0x, 134d→1.9x, 1.1k→1.0x, 9k→0x
-        "log_b": 0.88,                  # slope — steeper = more separation stars vs role players
-        "log_ownership_scalar": 50.0,   # base scalar for hype factor
+        "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
+        "log_formula_active": True,     # activated: recalibrated from Mar 14 Saturday actuals
+        "log_a": 4.2,                   # intercept — steeper curve: sub-100 drafts→2.0+, 300+→<1.2
+        "log_b": 1.1,                   # slope — steeper = more separation stars vs role players
+        "log_ownership_scalar": 80.0,   # base scalar for hype factor (raised for 5-7 game slates)
         "fame_pts_base": 8.0,           # PPG divisor for continuous fame multiplier
         "fame_exponent": 2.5,           # exponent — higher = steeper separation (20ppg→11x, 10ppg→1x)
     },
@@ -488,10 +488,10 @@ _CONFIG_DEFAULTS = {
     },
     "real_score": {
         "dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2},
-        "compression_divisor": 5.5,     # was 7.0; eased to allow 70-80 EV range
-        "compression_power": 0.70,      # was 0.62; higher = less aggressive compression
+        "compression_divisor": 7.0,
+        "compression_power": 0.62,
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
         "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
@@ -501,17 +501,19 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":30.0,  # season avg floor for Starting 5 eligibility
+        "chalk_season_min_floor":25.0,  # season avg floor for Starting 5 (was 30; Mar 14: excluded Smart 28.9min, Achiuwa ~26min)
         "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
-        "chalk_max_stars":2,            # max players with boost < threshold allowed in chalk lineup
-        "chalk_star_boost_threshold":0.6, # boost below this = "star" (low ownership); counts toward cap
+        "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
+        "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
+        "leverage_top_slots": 2,        # force 2 contrarian players into top 2 slots (was 1; winners had 3-4 high-boost)
+        "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
-        "min_minutes_floor":25, "min_recent_minutes_floor":25, "min_card_boost":1.0, "min_rating_floor":2.0,
+        "min_minutes_floor":25, "min_recent_minutes_floor":25, "min_card_boost":1.5, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
-        "big_pos_efficiency":0.40, "max_centers":2,
+        "big_pos_efficiency":0.70, "max_centers":2, "boost_leverage_power":1.3,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
     "lineup": {
@@ -1302,7 +1304,7 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     base_offset    = cb.get("base_offset", 0.3)
     scalar         = cb.get("scalar", 3.4)
     bm_mult        = cb.get("big_market_multiplier", 1.3)
-    big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"]))
+    big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"]))
 
     # Continuous fame multiplier based on PPG — replaces binary star_players list.
     # High-PPG players drive disproportionate ownership regardless of team market.
@@ -1312,13 +1314,14 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)
 
     # Log-formula path: boost = log_a - log_b * log10(predicted_drafts)
-    # Calibrated against Real Sports actual data (March 6):
-    #   13 drafts → 3.0x, 134 → 1.9x, 1100 → 1.0x, 9000 → 0x
-    # Best fit: boost = 3.76 - 0.88 * log10(drafts)
+    # Recalibrated from March 14 Saturday actuals (7-game slate, larger pool):
+    #   275 drafts → 1.1x, 104 → 2.2x, 74 → 2.5x, 26 → 2.5x, <10 → 3.0x
+    # Steeper curve (log_b=1.1) separates truly obscure from mid-popularity.
+    # Higher scalar (80) accounts for typical 5-7 game slate pool sizes.
     if cb.get("log_formula_active", False):
-        log_a      = cb.get("log_a", 3.76)
-        log_b      = cb.get("log_b", 0.88)
-        own_scalar = cb.get("log_ownership_scalar", 50.0)
+        log_a      = cb.get("log_a", 4.2)
+        log_b      = cb.get("log_b", 1.1)
+        own_scalar = cb.get("log_ownership_scalar", 80.0)
         # Ownership proxy: PPG-squared * minutes-weight * big-market * continuous fame
         hype_factor = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5 * fame_mult
         if team_abbr in big_markets:
@@ -1925,18 +1928,41 @@ def _build_lineups(projections):
         if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
-        # Development team bonus and center penalty — baked into adj_ceiling
-        # so the MILP sees them in its objective function.
+        # Development team bonus, center penalty, defensive bonus, and boost
+        # leverage — all baked into adj_ceiling so the MILP sees them in its
+        # objective function.
         is_dev    = p.get("team", "") in dev_teams
         team_bonus = dev_boost if is_dev else 1.0
         pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
         est_mult  = p.get("est_mult", 0.3)
-        adj_ceiling = round(p.get("ceiling_score", p["rating"]) * team_bonus * pos_eff, 3)
 
-        # Ceiling EV with multiplier leverage tiebreaker.
-        # (1 + boost×0.05) gives ~5% bonus per boost unit — players with boost=3.0
-        # beat boost=1.5 by ~7.5% when ceilings are tied, rewarding max leverage.
-        moonshot_ev = round(adj_ceiling * (avg_slot + est_mult) * (1.0 + est_mult * 0.05), 2)
+        # Defensive rate bonus — STL (4.5x) and BLK (4.0x) drive disproportionate
+        # RS per minute vs points (1.0x). Defensive specialists are moonshot gold:
+        # low ownership, high RS density. Up to 20% bonus for elite defenders.
+        stl_val = p.get("stl", 0)
+        blk_val = p.get("blk", 0)
+        pred_min_val = max(p.get("predMin", 25), 1)
+        def_per_36 = (stl_val + blk_val) / pred_min_val * 36
+        def_bonus = min(max(def_per_36 - 1.5, 0) * 0.08, 0.20)
+
+        # Boost leverage power — bake ownership advantage into adj_ceiling so the
+        # MILP strongly favors high-boost players. A 3.0x boost player gets ~3.7x
+        # more adj_ceiling weight than a 1.0x player (at power=1.3), vs the old
+        # formula's ~10% advantage.  This is the single biggest moonshot fix.
+        boost_power = moon_cfg.get("boost_leverage_power", 1.3)
+        boost_leverage = max(est_mult, 0.2) ** boost_power
+
+        adj_ceiling = round(
+            p.get("ceiling_score", p["rating"])
+            * team_bonus * pos_eff
+            * (1.0 + def_bonus)
+            * boost_leverage,
+            3
+        )
+
+        # Moonshot EV: adj_ceiling already has boost leverage baked in,
+        # MILP multiplies by (slot + boost) on top. High-boost players dominate.
+        moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
 
         moonshot_pool.append({
             **p,
@@ -5327,8 +5353,8 @@ RULES:
         "improvement_pct": improvement_pct,
     }
 
-    # Step 4: Apply if improvement >= 3%
-    IMPROVEMENT_THRESHOLD = 3.0
+    # Step 4: Apply if improvement >= threshold (tunable via lab.auto_improve_threshold_pct)
+    IMPROVEMENT_THRESHOLD = _cfg("lab.auto_improve_threshold_pct", 3.0)
     if improvement_pct >= IMPROVEMENT_THRESHOLD:
         try:
             update_payload = {

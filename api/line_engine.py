@@ -69,9 +69,11 @@ _STAT_META = {
 }
 
 
-def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None):
+def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None):
     """Format ESPN projection data into a structured prompt for Claude for a given stat type."""
-    meta         = _STAT_META[stat_focus]
+    meta = dict(_STAT_META[stat_focus])  # copy so we can override min_season without mutating module-level dict
+    if stat_floors and stat_focus in stat_floors:
+        meta["min_season"] = stat_floors[stat_focus]
     game_ctx_map = _game_lookup_from_games(games)
 
     # Sort by biggest projected edge for this stat vs season baseline
@@ -201,9 +203,9 @@ def _call_claude(prompt, stat_focus="points"):
         return None
 
 
-def _call_claude_for_stat(projections, games, stat_focus, force_direction=None):
+def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None):
     """Build prompt and call Claude for a single stat type + direction. Returns (confidence, pick) or None."""
-    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction)
+    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors)
     pick   = _call_claude(prompt, stat_focus)
     if pick and pick.get("player_name") and pick.get("confidence", 0) > 0:
         # Enforce direction if forced (Claude occasionally ignores instruction)
@@ -213,7 +215,7 @@ def _call_claude_for_stat(projections, games, stat_focus, force_direction=None):
     return None
 
 
-def _run_parallel_claude(projections, games):
+def _run_parallel_claude(projections, games, stat_floors=None):
     """
     Run Claude in parallel for points/rebounds/assists × over/under (6 calls).
     Returns (best_over_pick, best_under_pick) independently.
@@ -225,7 +227,7 @@ def _run_parallel_claude(projections, games):
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(_call_claude_for_stat, projections, games, s, d): (s, d)
+            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors): (s, d)
             for s in stat_types for d in directions
         }
         for future in as_completed(futures):
@@ -268,10 +270,11 @@ def run_model_fallback(projections, games, line_config=None):
     min_edge_pts = cfg.get("min_edge_pts", 2.0)
     min_edge_other = cfg.get("min_edge_other", 1.5)
 
+    sf = cfg.get("stat_floors", {})
     stat_configs = [
-        ("points",   "pts",  "season_pts",  "recent_pts",  8.0, 18),
-        ("rebounds", "reb",  "season_reb",  "recent_reb",  2.5, 15),
-        ("assists",  "ast",  "season_ast",  "recent_ast",  2.0, 15),
+        ("points",   "pts",  "season_pts",  "recent_pts",  sf.get("points",   8.0), 18),
+        ("rebounds", "reb",  "season_reb",  "recent_reb",  sf.get("rebounds", 2.5), 15),
+        ("assists",  "ast",  "season_ast",  "recent_ast",  sf.get("assists",  2.0), 15),
     ]
 
     for p in projections:
@@ -462,11 +465,12 @@ def run_line_engine(projections, games, line_config=None):
         ]
 
     min_confidence = (line_config or {}).get("min_confidence", 50)
+    stat_floors = (line_config or {}).get("stat_floors", {})
 
     if not ANTHROPIC_API_KEY:
         return run_model_fallback(projections, games, line_config)
 
-    over_data, under_data = _run_parallel_claude(projections, games)
+    over_data, under_data = _run_parallel_claude(projections, games, stat_floors)
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")
