@@ -33,7 +33,7 @@
     },
     {
       "path": "/api/refresh-line-odds",
-      "schedule": "0 */3 * * *"
+      "schedule": "55 * * * *"
     },
     {
       "path": "/api/auto-resolve-line",

@@ -488,10 +488,10 @@ _CONFIG_DEFAULTS = {
     },
     "real_score": {
         "dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2},
-        "compression_divisor": 5.5,     # was 7.0; eased to allow 70-80 EV range
-        "compression_power": 0.70,      # was 0.62; higher = less aggressive compression
+        "compression_divisor": 7.0,
+        "compression_power": 0.62,
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":3.0,"center_forward_share":0.30},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
         "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
@@ -1304,7 +1304,7 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     base_offset    = cb.get("base_offset", 0.3)
     scalar         = cb.get("scalar", 3.4)
     bm_mult        = cb.get("big_market_multiplier", 1.3)
-    big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIL","DAL","PHX","MIA","DEN","LAC","CHI"]))
+    big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"]))
 
     # Continuous fame multiplier based on PPG — replaces binary star_players list.
     # High-PPG players drive disproportionate ownership regardless of team market.
@@ -5353,8 +5353,8 @@ RULES:
         "improvement_pct": improvement_pct,
     }
 
-    # Step 4: Apply if improvement >= 3%
-    IMPROVEMENT_THRESHOLD = 3.0
+    # Step 4: Apply if improvement >= threshold (tunable via lab.auto_improve_threshold_pct)
+    IMPROVEMENT_THRESHOLD = _cfg("lab.auto_improve_threshold_pct", 3.0)
     if improvement_pct >= IMPROVEMENT_THRESHOLD:
         try:
             update_payload = {
