@@ -4005,10 +4005,61 @@ def _get_mock_line_picks() -> dict:
     }
 
 
+def _is_pick_resolved(pick):
+    """Return True if pick is resolved (hit/miss) — not pending/null."""
+    if not pick or not isinstance(pick, dict):
+        return False
+    return pick.get("result") not in (None, "", "pending")
+
+
+async def _get_or_generate_next_slate_pick(today, direction: str):
+    """Get or generate the next-slate pick for a single direction.
+    Returns (pick_dict, next_slate_date_obj) or (None, None) on failure."""
+    next_slate = _find_next_slate_date(today + timedelta(days=1))
+    if not next_slate:
+        return None, None
+    next_str = next_slate.isoformat()
+    next_picks = _load_line_pick_for_date(next_str)
+
+    dir_key = f"{direction}_pick"
+    existing = (next_picks or {}).get(dir_key)
+
+    if existing and isinstance(existing, dict) and existing.get("player_name"):
+        # Enrich if missing display fields
+        if not _pick_has_display_fields(existing):
+            _tmp = {dir_key: existing}
+            _enrich_loaded_line_picks(_tmp, next_slate)
+            existing = _tmp[dir_key]
+        existing.setdefault("date", next_str)
+        return existing, next_slate
+
+    # Direction missing from next-day file — generate it
+    eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
+    if err or not eng_result:
+        return None, None
+    new_pick = eng_result.get(dir_key)
+    if not new_pick:
+        return None, None
+    new_pick["date"] = next_str
+
+    # Persist to GitHub (merge into existing file if it has the other direction)
+    try:
+        saves = {"over_pick": (next_picks or {}).get("over_pick"),
+                 "under_pick": (next_picks or {}).get("under_pick")}
+        saves[dir_key] = new_pick
+        _github_write_file(f"data/lines/{next_str}_pick.json",
+                           json.dumps(saves), f"line {direction} pick for {next_str}")
+    except Exception:
+        pass
+
+    return new_pick, next_slate
+
+
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day(request: Request, mock: bool = Query(False, description="Return deterministic mock picks for testing")):
-    """Best player prop picks (over + under). Serves today's saved picks if pending/unresolved.
-    Once today's picks are resolved, rotates to the next slate with games (not just tomorrow). Never returns 500."""
+    """Best player prop picks (over + under), with per-direction independent rotation.
+    Each direction rotates to the next slate independently when its game finishes.
+    Never returns 500."""
     if mock:
         return _get_mock_line_picks()
     rl = _check_rate_limit(request, "line-of-the-day")
@@ -4018,152 +4069,116 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         today = _et_date()
         today_str = today.isoformat()
 
+        # ── Cache check ──
+        # Serve cache only if BOTH directions are still unresolved (no rotation needed).
+        # Once any direction resolves, bust cache so rotation logic runs.
         cached = _cg("line_v1")
         if cached and cached.get("pick"):
-            cached_pick = cached["pick"]
-            pick_date = cached_pick.get("date", today_str)
-            already_resolved = cached_pick.get("result") not in (None, "", "pending")
-            # Serve cache if pick is unresolved and for today or any future slate
-            if not already_resolved and pick_date >= today_str:
-                # Bypass if cache older than 2 hours — pick may have changed due to injury/projection update
-                _cached_at = cached.get("_cached_at")
-                if _cached_at:
-                    try:
-                        _age_s = (datetime.utcnow() - datetime.fromisoformat(_cached_at)).total_seconds()
-                        if _age_s > 7200:
-                            cached = None
-                    except Exception:
-                        pass
-                if cached:
-                    return JSONResponse(cached)
-
-        today_picks = _load_line_pick_for_date(today_str)
-        today_primary = _primary_pick(today_picks)
-
-        # Rotate to next slate when all *existing* picks are resolved.
-        # A null/missing direction is vacuously resolved — only block on picks that actually exist.
-        _over_pick_data  = (today_picks or {}).get("over_pick") or {}
-        _under_pick_data = (today_picks or {}).get("under_pick") or {}
-        _over_resolved   = not _over_pick_data or _over_pick_data.get("result") not in (None, "", "pending")
-        _under_resolved  = not _under_pick_data or _under_pick_data.get("result") not in (None, "", "pending")
-        _both_resolved   = _over_resolved and _under_resolved
-        if today_primary and _both_resolved:
-            # Find the next date with games (not just tomorrow — handles off-days, All-Star break)
-            next_slate = _find_next_slate_date(today + timedelta(days=1))
-            if not next_slate:
-                return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                     "error": "no_games", "resolved_today": today_primary})
-            next_slate_str = next_slate.isoformat()
-            next_picks = _load_line_pick_for_date(next_slate_str)
-            next_primary = _primary_pick(next_picks)
-            if next_primary and next_primary.get("result") in (None, "", "pending"):
-                # Fill any missing direction before serving — same logic as today's path
-                _missing_over  = not (next_picks or {}).get("over_pick")
-                _missing_under = not (next_picks or {}).get("under_pick")
-                if _missing_over or _missing_under:
-                    _fill, _fill_err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
-                    if not _fill_err and _fill:
-                        if _missing_over and _fill.get("over_pick"):
-                            next_picks["over_pick"] = _fill["over_pick"]
-                        if _missing_under and _fill.get("under_pick"):
-                            next_picks["under_pick"] = _fill["under_pick"]
+            _c_over  = cached.get("over_pick") or {}
+            _c_under = cached.get("under_pick") or {}
+            _c_over_ok  = not _c_over  or not _is_pick_resolved(_c_over)
+            _c_under_ok = not _c_under or not _is_pick_resolved(_c_under)
+            if _c_over_ok and _c_under_ok:
+                _c_date = cached["pick"].get("date", today_str)
+                if _c_date >= today_str:
+                    _cached_at = cached.get("_cached_at")
+                    if _cached_at:
                         try:
-                            _github_write_file(
-                                f"data/lines/{next_slate_str}_pick.json",
-                                json.dumps({"over_pick": next_picks.get("over_pick"),
-                                            "under_pick": next_picks.get("under_pick")}),
-                                f"fill missing direction for {next_slate_str}"
-                            )
+                            _age_s = (datetime.utcnow() - datetime.fromisoformat(_cached_at)).total_seconds()
+                            if _age_s > 7200:
+                                cached = None
                         except Exception:
                             pass
-                if not (_pick_has_display_fields(next_picks.get("over_pick")) and
-                        _pick_has_display_fields(next_picks.get("under_pick"))):
-                    _enrich_loaded_line_picks(next_picks, next_slate)
-                result = _picks_response(next_picks, from_github=True, slate_summary=None,
-                                         resolved_today=today_primary)
-                result["_cached_at"] = datetime.utcnow().isoformat()
-                _cs("line_v1", result)
-                return JSONResponse(result)
-            # Generate next slate's picks fresh
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
-            if err or not eng_result or not eng_result.get("pick"):
-                return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                     "error": err or "no_edges", "resolved_today": today_primary})
-            # Tag all picks with next slate's date
-            for _key in ("pick", "over_pick", "under_pick"):
-                if eng_result.get(_key):
-                    eng_result[_key]["date"] = next_slate_str
-            eng_result["resolved_today"] = today_primary
-            eng_result["_cached_at"] = datetime.utcnow().isoformat()
-            _cs("line_v1", eng_result)
-            try:
-                next_json = f"data/lines/{next_slate_str}_pick.json"
-                existing, _ = _github_get_file(next_json)
-                _existing_blank = existing and not existing.get("over_pick") and not existing.get("under_pick")
-                if not existing or _existing_blank:
-                    saves = {
-                        "over_pick":  eng_result.get("over_pick"),
-                        "under_pick": eng_result.get("under_pick"),
-                    }
-                    _github_write_file(next_json, json.dumps(saves),
-                                       f"line picks for {next_slate_str}")
-            except Exception: pass
-            return JSONResponse(eng_result)
+                    if cached:
+                        return JSONResponse(cached)
 
-        # Today's picks exist — serve if both directions present, else fill missing direction
-        # If both directions are null, treat as no saved picks and regenerate from scratch
+        # ── Load today's picks ──
+        today_picks = _load_line_pick_for_date(today_str)
+
+        # If both directions are null, treat as no saved picks
         if today_picks and not today_picks.get("over_pick") and not today_picks.get("under_pick"):
             today_picks = None
-        if today_picks:
-            missing_over  = not today_picks.get("over_pick")
-            missing_under = not today_picks.get("under_pick")
-            if missing_over or missing_under:
-                # One direction missing (legacy single-pick) — run engine to fill the gap
-                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
-                if not err and eng_result:
-                    if missing_over and eng_result.get("over_pick"):
-                        today_picks["over_pick"] = eng_result["over_pick"]
-                    if missing_under and eng_result.get("under_pick"):
-                        today_picks["under_pick"] = eng_result["under_pick"]
-                    # Persist updated dual-pick JSON
-                    try:
-                        json_path = f"data/lines/{today_str}_pick.json"
-                        _github_write_file(json_path, json.dumps(today_picks),
-                                           f"backfill missing direction for {today_str}")
-                    except Exception: pass
-            # Sync projection enrichment — only runs when projection fields are missing
-            if not (_pick_has_display_fields(today_picks.get("over_pick")) and
-                    _pick_has_display_fields(today_picks.get("under_pick"))):
-                _enrich_loaded_line_picks(today_picks, today)
-            result = _picks_response(today_picks, from_github=True, slate_summary=None)
-            result["_cached_at"] = datetime.utcnow().isoformat()
-            _cs("line_v1", result)
-            return JSONResponse(result)
 
-        # No saved picks yet — generate today's picks.
-        eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
-        if err or not eng_result or not eng_result.get("pick"):
-            # Retry once — ESPN connections sometimes fail on first cold-start attempt
-            print(f"[line-of-the-day] first attempt failed ({err}), retrying...")
+        # ── No saved picks — generate fresh ──
+        if not today_picks:
             eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
-        if err or not eng_result or not eng_result.get("pick"):
-            return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                 "error": err or "no_projections"}, status_code=200)
-        # Auto-save to GitHub so picks persist across cold starts and future visits.
-        # Without this, picks only exist in memory/cache and are lost on cold start.
-        try:
-            json_path = f"data/lines/{today_str}_pick.json"
-            existing_json, _ = _github_get_file(json_path)
-            if not existing_json:
-                saves = {"over_pick": eng_result.get("over_pick"), "under_pick": eng_result.get("under_pick")}
-                _github_write_file(json_path, json.dumps(saves), f"line picks for {today_str}")
-        except Exception as _save_err:
-            print(f"[line-of-the-day] auto-save err: {_save_err}")
-        eng_result["_cached_at"] = datetime.utcnow().isoformat()
-        _cs("line_v1", eng_result)
-        return JSONResponse(eng_result)
+            if err or not eng_result or not eng_result.get("pick"):
+                print(f"[line-of-the-day] first attempt failed ({err}), retrying...")
+                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+            if err or not eng_result or not eng_result.get("pick"):
+                return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
+                                     "error": err or "no_projections"}, status_code=200)
+            try:
+                json_path = f"data/lines/{today_str}_pick.json"
+                existing_json, _ = _github_get_file(json_path)
+                if not existing_json:
+                    saves = {"over_pick": eng_result.get("over_pick"), "under_pick": eng_result.get("under_pick")}
+                    _github_write_file(json_path, json.dumps(saves), f"line picks for {today_str}")
+            except Exception as _save_err:
+                print(f"[line-of-the-day] auto-save err: {_save_err}")
+            eng_result["_cached_at"] = datetime.utcnow().isoformat()
+            _cs("line_v1", eng_result)
+            return JSONResponse(eng_result)
+
+        # ── Fill missing directions (legacy single-pick) ──
+        missing_over  = not today_picks.get("over_pick")
+        missing_under = not today_picks.get("under_pick")
+        if missing_over or missing_under:
+            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+            if not err and eng_result:
+                if missing_over and eng_result.get("over_pick"):
+                    today_picks["over_pick"] = eng_result["over_pick"]
+                if missing_under and eng_result.get("under_pick"):
+                    today_picks["under_pick"] = eng_result["under_pick"]
+                try:
+                    _github_write_file(f"data/lines/{today_str}_pick.json",
+                                       json.dumps(today_picks),
+                                       f"backfill missing direction for {today_str}")
+                except Exception: pass
+
+        # ── Per-direction independent rotation ──
+        # Check each direction: if resolved, swap in next-slate pick for that direction.
+        over_pick  = today_picks.get("over_pick")
+        under_pick = today_picks.get("under_pick")
+        over_resolved  = _is_pick_resolved(over_pick)
+        under_resolved = _is_pick_resolved(under_pick)
+
+        final_over  = over_pick
+        final_under = under_pick
+
+        if over_resolved:
+            next_over, _ = await _get_or_generate_next_slate_pick(today, "over")
+            if next_over:
+                final_over = next_over
+
+        if under_resolved:
+            next_under, _ = await _get_or_generate_next_slate_pick(today, "under")
+            if next_under:
+                final_under = next_under
+
+        # ── Enrich if needed ──
+        combo = {"over_pick": final_over, "under_pick": final_under}
+        if not (_pick_has_display_fields(final_over) and _pick_has_display_fields(final_under)):
+            # Determine correct date for enrichment — picks may be on different dates
+            for _dir_key in ("over_pick", "under_pick"):
+                _p = combo.get(_dir_key)
+                if _p and not _pick_has_display_fields(_p):
+                    _p_date_str = _p.get("date", today_str)
+                    try:
+                        _p_date = datetime.strptime(_p_date_str, "%Y-%m-%d").date()
+                    except Exception:
+                        _p_date = today
+                    _tmp = {_dir_key: _p}
+                    _enrich_loaded_line_picks(_tmp, _p_date)
+                    combo[_dir_key] = _tmp[_dir_key]
+
+        result = _picks_response(combo, from_github=True, slate_summary=None)
+        result["_cached_at"] = datetime.utcnow().isoformat()
+        _cs("line_v1", result)
+        return JSONResponse(result)
     except Exception as e:
         print(f"[line-of-the-day] error: {e}")
+        traceback.print_exc()
         return JSONResponse(
             {"pick": None, "over_pick": None, "under_pick": None, "error": "server_error"},
             status_code=200,
@@ -4596,12 +4611,14 @@ async def auto_resolve_line(request: Request):
                 _github_write_file(csv_path, LINE_CSV_HEADER + "\n" + new_row + "\n",
                                    f"auto-resolve line csv {pick_date}")
 
-    # Bust the line cache so /api/line-of-the-day sees the resolution and rotates
-    try:
-        line_cache = _cp("line_v1", pick_date)
-        if line_cache.exists():
-            line_cache.unlink()
-    except Exception: pass
+    # Bust the line cache so /api/line-of-the-day sees the resolution and rotates.
+    # Bust both pick_date and today (they differ on midnight rollover).
+    for _bust_date in set([pick_date, today]):
+        try:
+            line_cache = _cp("line_v1", _bust_date)
+            if line_cache.exists():
+                line_cache.unlink()
+        except Exception: pass
     # Bust history cache so resolved picks appear immediately in /api/line-history
     try:
         hist_cache = _cp("line_history_v1")
@@ -4609,24 +4626,30 @@ async def auto_resolve_line(request: Request):
             hist_cache.unlink()
     except Exception: pass
 
-    # Pre-generate next day's picks when today's slate is complete.
-    # Don't wait for BOTH picks to resolve individually (they finish async);
-    # instead, check if any game is final and at least one pick resolved.
-    # Use pick_date + 1 day (not _et_date() + 1 day) so a midnight-rollover
-    # case generates picks for Day+1 rather than Day+2.
+    # Pre-generate next day's picks when any pick resolves.
+    # Runs the engine if: (a) no next-day file exists, OR (b) file exists but is missing
+    # a direction (partial generation from an earlier resolve). This ensures both
+    # directions are always available for per-direction independent rotation.
     over_done  = pick_data.get("over_pick", {}).get("result") not in (None, "", "pending")
     under_done = pick_data.get("under_pick", {}).get("result") not in (None, "", "pending")
-    # Trigger generation if ANY pick resolved (at least one game finished),
-    # OR if called but no picks resolved yet (let it retry on next cron cycle).
     if over_done or under_done or resolved_any:
         try:
             _next_candidate = (datetime.strptime(pick_date, "%Y-%m-%d") + timedelta(days=1)).date()
             next_day = _find_next_slate_date(_next_candidate) or _next_candidate
             next_day_str = next_day.isoformat()
             tomorrow_json = f"data/lines/{next_day_str}_pick.json"
-            existing_tomorrow, _ = _github_get_file(tomorrow_json)
-            if not existing_tomorrow:
-                # Wrap generation in timeout to prevent hangs
+            existing_tomorrow_raw, _ = _github_get_file(tomorrow_json)
+            existing_tomorrow = None
+            if existing_tomorrow_raw:
+                try:
+                    existing_tomorrow = json.loads(existing_tomorrow_raw)
+                except Exception:
+                    pass
+            # Check if either direction is missing from the existing file
+            _need_gen = (not existing_tomorrow
+                         or not existing_tomorrow.get("over_pick")
+                         or not existing_tomorrow.get("under_pick"))
+            if _need_gen:
                 try:
                     eng_result, err = await asyncio.wait_for(
                         asyncio.to_thread(_run_line_engine_for_date, next_day),
@@ -4638,9 +4661,10 @@ async def auto_resolve_line(request: Request):
                     print(f"[auto-resolve] next-day generation TIMEOUT for {next_day_str}")
 
                 if not err and eng_result and eng_result.get("pick"):
+                    # Merge with existing file (preserve any direction already saved)
                     saves = {
-                        "over_pick":  eng_result.get("over_pick"),
-                        "under_pick": eng_result.get("under_pick"),
+                        "over_pick":  (existing_tomorrow or {}).get("over_pick") or eng_result.get("over_pick"),
+                        "under_pick": (existing_tomorrow or {}).get("under_pick") or eng_result.get("under_pick"),
                     }
                     _github_write_file(tomorrow_json, json.dumps(saves),
                                        f"line picks for {next_day_str}")
