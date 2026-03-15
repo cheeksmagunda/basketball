@@ -3045,12 +3045,10 @@ def _slate_backup_to_github_force(slate_data: dict):
 async def force_regenerate(request: Request, scope: str = Query("full")):
     """Force-regenerate predictions mid-slate.
 
-    scope=full: Re-run ALL games (dev shipped model update mid-slate).
-    scope=remaining: Only games not yet started (user woke up late).
-
-    Requires CRON_SECRET auth when set (same as other admin endpoints).
+    scope=full: Re-run ALL games (dev shipped model update mid-slate). CRON_SECRET-gated.
+    scope=remaining: Only games not yet started (user woke up late). User-facing, no auth.
     """
-    if not _require_cron_secret(request):
+    if scope == "full" and not _require_cron_secret(request):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     if scope not in ("full", "remaining"):
         return JSONResponse({"error": "scope must be 'full' or 'remaining'"}, status_code=400)
