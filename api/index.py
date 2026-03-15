@@ -330,10 +330,15 @@ def _slate_restore_from_github():
 
 def _slate_cache_to_github(slate_data: dict):
     """Persist today's generated slate to GitHub for cold-start recovery.
-    Deduped by date — overwrites same-day file on regeneration (injury/config change)."""
+    Deduped by date — overwrites same-day file on regeneration (injury/config change).
+    Embeds deploy_sha for Scenario 1 auto-detection (dev ships model update mid-slate)."""
     try:
         today = _et_date().isoformat()
         path = f"data/slate/{today}_slate.json"
+        # Stamp deploy SHA so /api/slate can detect when a new deploy invalidates cached picks
+        sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+        if sha:
+            slate_data["deploy_sha"] = sha[:7]
         content = json.dumps(slate_data, default=str)
         _github_write_file(path, content, f"slate cache {today}")
     except Exception as e:
@@ -2282,6 +2287,25 @@ async def get_games() -> dict:
         print(f"[games] error: {e}")
         return []
 
+def _force_regenerate_bg(*_args):
+    """Sentinel function used as attribute namespace for _in_flight flag."""
+    pass
+
+def _force_regenerate_bg_worker():
+    """Background thread: runs _force_regenerate_sync("full") after deploy SHA mismatch.
+    Sets _force_regenerate_bg._in_flight = False when done (so a subsequent deploy
+    can re-trigger if needed)."""
+    try:
+        print("[force-regen-bg] starting background regeneration (deploy SHA mismatch)")
+        result = _force_regenerate_sync("full")
+        print(f"[force-regen-bg] done: {result.get('status')}, games={result.get('games_regenerated', 0)}")
+    except Exception as e:
+        print(f"[force-regen-bg] error: {e}")
+        traceback.print_exc()
+    finally:
+        _force_regenerate_bg._in_flight = False
+
+
 def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
     # Fast path: if today's locked slate is already in memory, skip ALL external calls.
@@ -2433,6 +2457,18 @@ def _get_slate_impl():
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", len(draftable_games))
             if lock_time: lock_cached.setdefault("lock_time", lock_time)
+            # Scenario 1 auto-detect: if a new deploy landed mid-slate, the cached
+            # picks were built with the old model. Detect SHA mismatch and regenerate
+            # in the background — user gets the stale-but-functional slate immediately,
+            # and the next request will serve the freshly regenerated picks.
+            _current_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+            _cached_sha = lock_cached.get("deploy_sha", "")
+            if _current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7]:
+                if not getattr(_force_regenerate_bg, "_in_flight", False):
+                    _force_regenerate_bg._in_flight = True
+                    print(f"[slate] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — background regeneration triggered")
+                    import threading
+                    threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
             return lock_cached
         # Check regular cache and promote to lock cache
         cached = _cg("slate_v5")
@@ -2547,11 +2583,13 @@ def _get_slate_impl():
                     print(f"slate err: {e}")
         chalk, upside = _build_lineups(all_proj)
         lineups = {"chalk": chalk, "upside": upside}
+        _deploy_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
         result = {"date": _et_date().isoformat(), "games": games,
                   "lineups": lineups, "locked": locked,
                   "all_complete": False, "draftable_count": len(draftable_games),
                   "lock_time": lock_time,
-                  "score_bounds": _score_bounds_for_lineups(lineups)}
+                  "score_bounds": _score_bounds_for_lineups(lineups),
+                  "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
             _cs("slate_v5", result)
             # Persist to GitHub so all Vercel instances serve the same picks
@@ -2826,7 +2864,198 @@ async def save_predictions():
     return {"status": "saved", "path": path, "rows": len(rows)}
 
 
-@app.post("/api/reset-uploads")
+# grep: FORCE REGENERATE — mid-slate prediction update for dev deploys + late drafts
+def _force_write_predictions(rows, replace_all=False, replace_scopes=None):
+    """Write prediction CSV rows to GitHub, replacing specific scopes instead of deduplicating.
+
+    Unlike save_predictions() (which skips existing scopes), this helper:
+    - replace_all=True: discards ALL existing rows, writes fresh (Scenario 1: dev deploy)
+    - replace_scopes=[...]: removes rows matching those scopes, appends new (Scenario 2: late draft)
+
+    Returns dict with status + path + rows count.
+    """
+    today = _et_date().isoformat()
+    path = f"data/predictions/{today}.csv"
+    if not rows:
+        return {"error": "no_rows", "path": path}
+
+    if replace_all:
+        csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
+    else:
+        existing, _ = _github_get_file(path)
+        if existing and replace_scopes:
+            replace_set = set(replace_scopes)
+            kept = [existing.strip().split("\n")[0]]  # header
+            for line in existing.strip().split("\n")[1:]:
+                fields = line.split(",")
+                if fields and fields[0] not in replace_set:
+                    kept.append(line)
+            csv_content = "\n".join(kept) + "\n" + "\n".join(rows) + "\n"
+        elif existing:
+            # No replace_scopes — just append (same as save_predictions merge)
+            csv_content = existing.rstrip("\n") + "\n" + "\n".join(rows) + "\n"
+        else:
+            csv_content = CSV_HEADER + "\n" + "\n".join(rows) + "\n"
+
+    result = _github_write_file(path, csv_content, f"force-regenerate predictions {today}")
+    if result.get("error"):
+        return {"error": result["error"], "path": path}
+    return {"status": "saved", "path": path, "rows": len(rows)}
+
+
+def _force_regenerate_sync(scope: str):
+    """Run the full prediction pipeline for a given scope and update predictions CSV.
+
+    scope="full": ALL today's games (dev shipped mid-slate — as if 5 min before lock).
+    scope="remaining": only games NOT yet locked (user woke up late).
+
+    Returns summary dict.
+    """
+    today_str = _et_date().isoformat()
+    games = fetch_games()
+    if not games:
+        return {"status": "no_games", "scope": scope, "date": today_str}
+
+    # Determine game pool based on scope
+    if scope == "remaining":
+        game_pool = [g for g in games if not _is_locked(g.get("startTime", ""))]
+        if not game_pool:
+            return {"status": "no_remaining_games", "scope": scope, "date": today_str,
+                    "message": "All games have already started"}
+    else:
+        # "full" scope — use all today's games regardless of lock status
+        game_pool = games
+
+    # Step 1: Bust all caches so we regenerate fresh
+    _bust_slate_cache()
+
+    # Step 2: Run projection pipeline on the game pool (same as _get_slate_impl Layer 3)
+    all_proj = []
+    game_proj_map = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_run_game, g): g for g in game_pool}
+        for fut in as_completed(futs):
+            try:
+                game = futs[fut]
+                projs = fut.result()
+                all_proj.extend(projs)
+                game_proj_map[game["gameId"]] = projs
+            except Exception as e:
+                print(f"[force-regen] game err: {e}")
+
+    if not all_proj:
+        return {"status": "no_projections", "scope": scope, "date": today_str}
+
+    # Step 3: Build slate-wide lineups (Starting 5 + Moonshot)
+    chalk, upside = _build_lineups(all_proj)
+    lineups = {"chalk": chalk, "upside": upside}
+
+    # Step 4: Build per-game lineups
+    per_game_results = {}
+    for g in game_pool:
+        gid = g["gameId"]
+        game_projs = game_proj_map.get(gid, [])
+        if game_projs:
+            try:
+                game_lineups = _build_game_lineups(game_projs, g)
+                per_game_results[gid] = {
+                    "game": g,
+                    "lineups": game_lineups,
+                }
+            except Exception as e:
+                print(f"[force-regen] game lineups err {gid}: {e}")
+
+    # Step 5: Build the slate cache object and persist to all layers
+    deploy_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+    result = {
+        "date": today_str, "games": games,
+        "lineups": lineups, "locked": True,
+        "all_complete": False, "draftable_count": len(game_pool),
+        "score_bounds": _score_bounds_for_lineups(lineups),
+        "deploy_sha": deploy_sha[:7] if deploy_sha else "",
+    }
+    if chalk or upside:
+        _cs("slate_v5", result)
+        _ls("slate_v5_locked", result)
+        _slate_cache_to_github(result)
+        _slate_backup_to_github_force(result)
+        try:
+            _github_write_file(f"data/slate/{today_str}_bust.json", "{}",
+                               f"clear bust after force-regen {today_str}")
+        except Exception:
+            pass
+        if game_proj_map:
+            _games_cache_to_github(game_proj_map)
+
+    # Step 6: Cache per-game picks too
+    for gid, gdata in per_game_results.items():
+        _cs(f"picks_{gid}", gdata)
+        _ls(f"picks_locked_{gid}", gdata)
+
+    # Step 7: Write predictions CSV
+    rows = _predictions_to_csv(lineups, "slate")
+    for gid, gdata in per_game_results.items():
+        game = gdata["game"]
+        label = game.get("label", f"game_{gid}")
+        rows.extend(_predictions_to_csv(gdata["lineups"], label))
+
+    if scope == "full":
+        csv_result = _force_write_predictions(rows, replace_all=True)
+    else:
+        replace_scopes = ["slate"] + [
+            g.get("label", f"game_{g['gameId']}") for g in game_pool
+        ]
+        csv_result = _force_write_predictions(rows, replace_scopes=replace_scopes)
+
+    return {
+        "status": "regenerated",
+        "scope": scope,
+        "date": today_str,
+        "games_regenerated": len(game_pool),
+        "games_total": len(games),
+        "scopes_updated": ["slate"] + list(per_game_results.keys()),
+        "csv": csv_result,
+        "deploy_sha": deploy_sha[:7] if deploy_sha else "",
+        "lineups": lineups,
+    }
+
+
+def _slate_backup_to_github_force(slate_data: dict):
+    """Write slate lock backup to GitHub, OVERWRITING any existing file.
+    Used by force-regenerate (unlike _slate_backup_to_github which skips if existing)."""
+    try:
+        today = _et_date().isoformat()
+        path = f"data/locks/{today}_slate.json"
+        content = json.dumps(slate_data, default=str)
+        _github_write_file(path, content, f"force-regen lock backup {today}")
+    except Exception as e:
+        print(f"[force-regen] lock backup err: {e}")
+
+
+@app.get("/api/force-regenerate")
+async def force_regenerate(request: Request, scope: str = Query("full")):
+    """Force-regenerate predictions mid-slate.
+
+    scope=full: Re-run ALL games (dev shipped model update mid-slate).
+    scope=remaining: Only games not yet started (user woke up late).
+
+    Requires CRON_SECRET auth when set (same as other admin endpoints).
+    """
+    if not _require_cron_secret(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if scope not in ("full", "remaining"):
+        return JSONResponse({"error": "scope must be 'full' or 'remaining'"}, status_code=400)
+
+    try:
+        result = await asyncio.to_thread(_force_regenerate_sync, scope)
+        return result
+    except Exception as e:
+        print(f"[force-regenerate] error: {e}")
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+
 async def reset_uploads(body: dict):
     """Delete actuals + audit files for a given date from GitHub.
     Used to undo an incorrect/early upload so Ben can re-prompt for the right date."""
