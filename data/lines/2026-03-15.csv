@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-15,Paul George,4251,PHI,POR,points,16,over,18.2,2.2,80,Model projects 18.2 points — a 2.2 edge vs the 16.0 season baseline.,pending,
