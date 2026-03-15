@@ -108,7 +108,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 ### Line of the Day
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/line-of-the-day` | GET | **Both** Over + Under picks (6 parallel Haiku calls: 3 stats × 2 dirs); returns `{over_pick, under_pick, pick}` |
+| `/api/line-of-the-day` | GET | **Both** Over + Under picks with **per-direction independent rotation** — each direction rotates to the next slate when its game finishes, without waiting for the other; returns `{over_pick, under_pick, pick}` |
 | `/api/refresh-line-odds` | GET | **Hourly cron** — fetch current bookmaker line from Odds API and update `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
@@ -350,7 +350,8 @@ Key knobs in `moonshot` section of model-config.json:
 The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
 
 - `switchLineDir(dir)`: renders the appropriate pick (`LINE_OVER_PICK` or `LINE_UNDER_PICK`) via `renderLinePickCard()`
-- **No "yesterday's pick" banner** — resolved picks appear only in Recent Picks history. The main card always shows today's pick for the selected direction.
+- **Per-direction independent rotation** — over and under rotate independently. When one direction's game finishes, that direction immediately shows the next-slate pick; the other direction stays live. The main card always shows the currently active (unresolved) pick for each direction.
+- Resolved picks appear only in Recent Picks history.
 - Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
 - Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
 
@@ -704,6 +705,11 @@ If slate, line, and/or log all fail to load:
 | `LINE_HIST_DATA` declaration hoisted | `index.html` | Moved `let LINE_HIST_DATA = null` from inside the `renderLineHistory` section (line ~3410) to the Line globals block (line ~2901) alongside `LINE_RESOLVE_POLL` and `LINE_LIVE_POLL`. Eliminates forward-reference anti-pattern. |
 | `oracle-ball.svg` cache header | `vercel.json` | Added `Cache-Control: public, max-age=86400` entry for `/oracle-ball.svg` to match the existing `server.py` header and keep cache strategy consistent across Vercel edge and local dev. |
 | Grep tags for key helpers | `api/index.py` | Added `# grep:` tags for `LOCK HELPERS` (`_is_locked`, `_is_past_lock_window`, `_et_date`), `ALL GAMES FINAL`, `NEXT SLATE DATE` (`_find_next_slate_date`), and `FORCE REGENERATE SYNC`. Updated CLAUDE.md navigation table to match. |
+| Per-direction independent rotation | `api/index.py`, `index.html` | Over and Under picks now rotate independently — when one direction's game finishes, that direction shows the next-slate pick while the other stays live. Fixes: over picks gap in history (picks not generated for future days when only one direction existed), Shai-style stuck active pick (resolved game still showing as active pick card). |
+| Auto-resolve next-day fill | `api/index.py` | `auto_resolve_line` now fills missing directions in existing next-day pick files (was skip-if-file-exists). Merges new engine output with existing picks. |
+| Live poll per-direction rotation | `index.html` | `_startLineLivePoll` re-fetches `/api/line-of-the-day` when any game finishes (was waiting for both). `_lineRotationTriggered` gate prevents redundant re-fetches. |
+| Cache bust both dates | `api/index.py` | `auto_resolve_line` busts line cache for both `pick_date` AND `today` (differ on midnight rollover). |
+| `force-regenerate` scope=remaining unprotected | `api/index.py` | `/api/force-regenerate?scope=remaining` no longer requires CRON_SECRET — it's user-triggered from the Late Draft button. `scope=full` stays CRON_SECRET-gated. |
 
 ## Production audit
 

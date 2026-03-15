@@ -2895,6 +2895,7 @@ let LINE_OVER_PICK  = null; // today's over pick
 let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
+let _lineRotationTriggered = false; // gate: true once per-direction rotation re-fetch fired
 let LINE_HIST_DATA = null;   // cached history payload; cleared on date change
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
 let LINE_LOTD_STATE = asyncStateInitial();
@@ -2996,17 +2997,24 @@ async function _startLineLivePoll(overPick, underPick) {
       if (card && pick?._live) card.innerHTML = renderLinePickCard(pick, true);
     }
 
-    // Stop when both games final; hand off to auto-resolve cron
-    // Note: if data fetch failed (null), we can't detect completion, so won't stop here
-    // (handled above by failure counter)
+    // Per-direction game completion: when a direction's game finishes,
+    // re-fetch line-of-the-day to trigger per-direction rotation.
     const overDone = !overPick || (overData && ['final','no_game'].includes(overData.status));
     const underDone = !underPick || (underData && ['final','no_game'].includes(underData.status));
+    if (overDone || underDone) {
+      // At least one game finished — re-fetch to trigger rotation for that direction.
+      // Only re-fetch once (gate with _lineRotationTriggered to avoid repeated calls).
+      if (!_lineRotationTriggered) {
+        _lineRotationTriggered = true;
+        // Reset loaded state so initLinePage re-fetches fresh data
+        LINE_LOADED_DATE = '';
+        LINE_LOTD_STATE = asyncStateInitial();
+        setTimeout(() => initLinePage(), 1500);
+      }
+    }
     if (overDone && underDone) {
       clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
-      const activePick = LINE_DIR === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
-      if (activePick) _tryAutoResolveLine(activePick);
       // EVENT-BASED TRIGGER: Games finished — immediately check if slate is now unlocked
-      // Don't wait for next scheduled Lab poll (~30-60s). This enables fastest unlock detection.
       if (document.getElementById('tab-lab')?.classList.contains('active')) {
         console.log('[event] Games final detected — triggering immediate lab status check');
         setTimeout(() => {
@@ -3019,7 +3027,7 @@ async function _startLineLivePoll(overPick, underPick) {
               }
             })
             .catch(() => {});
-        }, 500);  // Small delay to allow auto-resolve to complete
+        }, 500);
       }
     }
   }
@@ -3103,6 +3111,7 @@ function _renderLineLOTDFromState() {
 
 async function fetchLineOfTheDay() {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
+  _lineRotationTriggered = false; // reset so live poll can trigger rotation for new picks
   _renderLineLOTDFromState();
 
   var r;
@@ -3121,8 +3130,8 @@ async function fetchLineOfTheDay() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
       }).catch(function() {});
-      // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll triggers
-      // _tryAutoResolveLine when the game finishes — no need to call it here.
+      // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
+      // when a game finishes and re-fetches line-of-the-day for per-direction rotation.
     }
   } catch(e) {
     console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
