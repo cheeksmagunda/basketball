@@ -1097,9 +1097,6 @@
       <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
     </div>
 
-    <!-- lateDraftMsg: inline status shown briefly after triggering -->
-    <div id="lateDraftMsg" style="display:none;font-size:0.75rem;color:var(--color-text-muted);margin-bottom:10px;text-align:center;"></div>
-
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
       <div class="mode-tabs" id="slateTabs" style="display:none">
@@ -1111,6 +1108,7 @@
       <div id="lateDraftBelowCards" style="display:none;padding:14px 0 4px;">
         <button id="lateDraftBtn" onclick="triggerLateDraft()" style="width:100%;background:rgba(255,255,255,0.06);color:var(--color-text-muted);border:1px solid rgba(255,255,255,0.12);padding:10px 0;border-radius:var(--radius-card);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;">Late Draft</button>
       </div>
+      <div id="lateDraftMsg" style="display:none;font-size:0.75rem;color:var(--color-text-muted);margin-top:6px;text-align:center;"></div>
     </div>
 
     <!-- SUB-PAGE: Game Analysis -->
