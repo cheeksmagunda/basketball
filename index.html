@@ -1064,9 +1064,6 @@
         <span class="logo-sub">Sees what others miss</span>
       </div>
     </div>
-    <div id="lateDraftHeaderWrap" style="display:none;flex:1;justify-content:flex-end;align-items:center;padding-right:12px;margin-right:12px;border-right:1px solid rgba(255,255,255,0.12);">
-      <button id="lateDraftBtn" onclick="triggerLateDraft()" style="background:rgba(255,255,255,0.08);color:var(--color-text-muted);border:1px solid rgba(255,255,255,0.14);padding:6px 14px;border-radius:var(--radius-pill);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.78rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;white-space:nowrap;">Late Draft</button>
-    </div>
     <div id="headerMeta" class="header-meta"></div>
   </header>
 
@@ -1124,6 +1121,9 @@
       </div>
 
       <div id="slateList"></div>
+      <div id="lateDraftBelowCards" style="display:none;padding:14px 0 4px;">
+        <button id="lateDraftBtn" onclick="triggerLateDraft()" style="width:100%;background:rgba(255,255,255,0.06);color:var(--color-text-muted);border:1px solid rgba(255,255,255,0.12);padding:10px 0;border-radius:var(--radius-card);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;">Late Draft</button>
+      </div>
     </div>
 
     <!-- SUB-PAGE: Game Analysis -->
@@ -1895,6 +1895,7 @@ async function loadSlate() {
 function switchSlate(tab) {
   document.querySelectorAll('#slateTabs .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
   if (SLATE) renderCards(SLATE.lineups[tab] || [], 'slateList', tab);
+  showLateDraftBanner();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2189,7 +2190,7 @@ let _lateDraftTriggered = (function() {
 })();
 
 function showLateDraftBanner() {
-  var wrap = _el('lateDraftHeaderWrap');
+  var wrap = _el('lateDraftBelowCards');
   if (!wrap) return;
   // Show button only when: slate is locked, at least one game has not started,
   // all_complete is false, and user has not already triggered a late draft today.
@@ -2209,11 +2210,11 @@ function showLateDraftBanner() {
   var msg = _el('lateDraftMsg');
   if (btn) { btn.disabled = false; btn.textContent = 'Late Draft'; }
   if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
-  wrap.style.display = 'flex';
+  wrap.style.display = 'block';
 }
 
 async function triggerLateDraft() {
-  var wrap = _el('lateDraftHeaderWrap');
+  var wrap = _el('lateDraftBelowCards');
   var btn = _el('lateDraftBtn');
   var msg = _el('lateDraftMsg');
   if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
