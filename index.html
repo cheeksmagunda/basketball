@@ -1110,6 +1110,14 @@
       <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
     </div>
 
+    <!-- Late Draft banner: visible when slate is locked but remaining games exist -->
+    <div id="lateDraftBanner" style="display:none;margin:10px 0 14px;padding:16px 18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-card);text-align:center;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--color-warning);margin-bottom:6px;">LATE DRAFT</div>
+      <div style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:12px;">Games still to play. Generate picks for remaining matchups.</div>
+      <button id="lateDraftBtn" onclick="triggerLateDraft()" style="background:var(--color-warning);color:#000;border:none;padding:8px 22px;border-radius:var(--radius-pill);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;">Generate Late Draft</button>
+      <div id="lateDraftMsg" style="display:none;font-size:0.75rem;color:var(--color-text-muted);margin-top:8px;"></div>
+    </div>
+
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
       <div class="mode-tabs" id="slateTabs" style="display:none">
@@ -1857,6 +1865,7 @@ async function loadSlate() {
 
     switchSlate('chalk');
     savePredictions();
+    showLateDraftBanner();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
     fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(function(s) {
       LAB.cachedStatus = s;
@@ -2171,6 +2180,85 @@ async function savePredictions() {
     _predSavedDate = ''; // allow retry on next call
     _predSavedLockedCount = 0;
     console.warn('Prediction save failed:', e);
+  }
+}
+
+// ──── Late Draft: regenerate picks for remaining games when user missed lock ────
+var _lateDraftTriggered = false;
+
+function showLateDraftBanner() {
+  var banner = _el('lateDraftBanner');
+  if (!banner) return;
+  // Show banner only when: slate is locked, at least one game has not started,
+  // all_complete is false, and user has not already triggered a late draft this session.
+  if (!SLATE || !SLATE.locked || SLATE.all_complete || _lateDraftTriggered) {
+    banner.style.display = 'none';
+    return;
+  }
+  var now = Date.now();
+  var remaining = (SLATE.games || []).filter(function(g) {
+    return g.startTime && (new Date(g.startTime).getTime() - now) > 5 * 60 * 1000;
+  });
+  if (remaining.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+  var btn = _el('lateDraftBtn');
+  var msg = _el('lateDraftMsg');
+  if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+  if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+  banner.style.display = 'block';
+}
+
+async function triggerLateDraft() {
+  var btn = _el('lateDraftBtn');
+  var msg = _el('lateDraftMsg');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  if (msg) { msg.style.display = 'none'; }
+  showLoader();
+  try {
+    var r = await fetchWithTimeout('/api/force-regenerate?scope=remaining', {}, 60000);
+    hideLoader();
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var data = await r.json();
+    if (data.status === 'no_remaining_games') {
+      if (msg) { msg.textContent = 'All games have already started.'; msg.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+      return;
+    }
+    if (data.status === 'regenerated') {
+      _lateDraftTriggered = true;
+      // Update SLATE with fresh lineups from the response
+      if (data.lineups) {
+        SLATE.lineups = data.lineups;
+        SLATE.draftable_count = data.games_regenerated || SLATE.draftable_count;
+      }
+      // Re-render the current slate view
+      switchSlate('chalk');
+      // Force re-save to confirm CSV update
+      _predSavedDate = '';
+      _predSavedLockedCount = 0;
+      savePredictions();
+      // Show success and hide banner
+      if (msg) {
+        msg.textContent = 'Picks regenerated for ' + (data.games_regenerated || 0) + ' remaining game' + ((data.games_regenerated || 0) !== 1 ? 's' : '') + '.';
+        msg.style.color = 'var(--color-success)';
+        msg.style.display = 'block';
+      }
+      if (btn) btn.style.display = 'none';
+      setTimeout(function() {
+        var banner = _el('lateDraftBanner');
+        if (banner) banner.style.display = 'none';
+      }, 3000);
+    } else {
+      if (msg) { msg.textContent = data.message || 'Something went wrong. Try again.'; msg.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
+    }
+  } catch(e) {
+    hideLoader();
+    console.warn('Late draft error:', e);
+    if (msg) { msg.textContent = 'Could not regenerate. Try again.'; msg.style.display = 'block'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate Late Draft'; }
   }
 }
 

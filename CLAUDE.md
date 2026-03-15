@@ -76,6 +76,7 @@ grep: INJURY CHECK             — /api/injury-check, RotoWire re-check, affecte
 grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/health, /api/version
 grep: LINE OF THE DAY ENGINE   — /api/line-of-the-day, run_line_engine
 grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
+grep: FORCE REGENERATE         — /api/force-regenerate, _force_write_predictions, deploy SHA mismatch, late draft
 ```
 
 ## Key Endpoints
@@ -98,6 +99,7 @@ grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear cache + config cache (cron at 7pm UTC; no auth required — non-destructive) |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only (requires CRON_SECRET when set) |
+| `/api/force-regenerate?scope=X` | GET | **Force-regenerate predictions mid-slate.** `scope=full`: all games (dev deploy). `scope=remaining`: only unlocked games (late draft). CRON_SECRET-gated. Updates `data/predictions/` CSV and all cache layers. |
 
 ### Line of the Day
 | Endpoint | Method | Purpose |
@@ -690,6 +692,9 @@ If slate, line, and/or log all fail to load:
 | `/api/injury-check` cron endpoint | `api/index.py`, `vercel.json` | Every 2h: bust RotoWire cache, check cached players, regenerate only affected games. Lock-guarded, CRON_SECRET-protected |
 | GitHub cache removed from line engine | `api/index.py` | `_games_cache_from_github()` removed from `_run_line_engine_for_date()` and `_get_projections_for_date()` — added latency without benefit for line paths |
 | "Generating picks..." message removed | `index.html` | 12s setTimeout that showed misleading "Generating picks..." during Line page load removed; skeleton card provides sufficient loading feedback |
+| Force-regenerate endpoint | `api/index.py`, `index.html` | `GET /api/force-regenerate?scope=full\|remaining` — two scenarios: (1) dev deploys mid-slate → auto-detects SHA mismatch, regenerates all games in background; (2) user wakes up late → "Late Draft" banner on Predict tab regenerates picks for remaining games only. Both update `data/predictions/` CSV and all cache layers. CRON_SECRET-gated. |
+| Deploy SHA tracking | `api/index.py` | `deploy_sha` stamped in slate cache at generation + GitHub write time. `/api/slate` locked path compares cached SHA vs current `VERCEL_GIT_COMMIT_SHA`; on mismatch fires background `_force_regenerate_sync("full")`. |
+| Late Draft UI | `index.html` | Banner with "Generate Late Draft" button shown on Predict tab when slate is locked but remaining games exist. Calls `/api/force-regenerate?scope=remaining`, updates SLATE, re-renders, and hides banner on success. |
 
 ## Production audit
 
