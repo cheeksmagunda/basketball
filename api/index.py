@@ -4138,40 +4138,42 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                 except Exception: pass
 
         # ── Inline resolve: game finished but result not yet set by cron ──
-        # Runs on every cache miss (and forced by nocache=True after frontend game-final
-        # detection). Bridges the gap between game completion and the hourly auto-resolve cron.
-        _inline_resolved = False
-        for _dir in ("over", "under"):
-            _dir_key = f"{_dir}_pick"
-            _p = today_picks.get(_dir_key)
-            if not _p or _is_pick_resolved(_p):
-                continue
-            _actual = _fetch_player_final_stat(
-                _p.get("player_name", ""), _p.get("stat_type", "points"),
-                date_str=today.strftime("%Y%m%d"), team=_p.get("team")
-            )
-            if _actual is not None:
-                _line_val = _safe_float(_p.get("line", 0))
-                _res = "hit" if (_actual > _line_val if _dir == "over" else _actual < _line_val) else "miss"
-                today_picks[_dir_key]["result"] = _res
-                today_picks[_dir_key]["actual_stat"] = _actual
-                _inline_resolved = True
-                print(f"[line-of-the-day] inline-resolved {_dir} ({_p.get('player_name')}) → {_res}")
-        if _inline_resolved:
-            try:
-                _github_write_file(f"data/lines/{today_str}_pick.json", json.dumps(today_picks),
-                                   f"inline-resolve line {today_str}")
-                for _bd in {today_str}:
+        # Only runs when nocache=True — meaning the frontend explicitly detected
+        # game-final via the live-stat poll (which already called ESPN to confirm
+        # completed=true). Skipped on normal cache misses to avoid redundant ESPN
+        # calls while games are still in progress.
+        if nocache:
+            _inline_resolved = False
+            for _dir in ("over", "under"):
+                _dir_key = f"{_dir}_pick"
+                _p = today_picks.get(_dir_key)
+                if not _p or _is_pick_resolved(_p):
+                    continue
+                _actual = _fetch_player_final_stat(
+                    _p.get("player_name", ""), _p.get("stat_type", "points"),
+                    date_str=today.strftime("%Y%m%d"), team=_p.get("team")
+                )
+                if _actual is not None:
+                    _line_val = _safe_float(_p.get("line", 0))
+                    _res = "hit" if (_actual > _line_val if _dir == "over" else _actual < _line_val) else "miss"
+                    today_picks[_dir_key]["result"] = _res
+                    today_picks[_dir_key]["actual_stat"] = _actual
+                    _inline_resolved = True
+                    print(f"[line-of-the-day] inline-resolved {_dir} ({_p.get('player_name')}) → {_res}")
+            if _inline_resolved:
+                try:
+                    _github_write_file(f"data/lines/{today_str}_pick.json", json.dumps(today_picks),
+                                       f"inline-resolve line {today_str}")
                     try:
-                        _lc = _cp("line_v1", _bd)
+                        _lc = _cp("line_v1", today_str)
                         if _lc.exists(): _lc.unlink()
                     except Exception: pass
-                try:
-                    _hc = _cp("line_history_v1")
-                    if _hc.exists(): _hc.unlink()
-                except Exception: pass
-            except Exception as _ie:
-                print(f"[line-of-the-day] inline-resolve persist error: {_ie}")
+                    try:
+                        _hc = _cp("line_history_v1")
+                        if _hc.exists(): _hc.unlink()
+                    except Exception: pass
+                except Exception as _ie:
+                    print(f"[line-of-the-day] inline-resolve persist error: {_ie}")
 
         # ── Per-direction independent rotation ──
         # Check each direction: if resolved, swap in next-slate pick for that direction.
