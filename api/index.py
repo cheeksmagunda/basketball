@@ -516,7 +516,8 @@ _CONFIG_DEFAULTS = {
     },
     "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
     "moonshot": {
-        "min_minutes_floor":25, "min_recent_minutes_floor":25, "min_card_boost":1.5, "min_rating_floor":2.0,
+        # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
+        "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.5, "min_rating_floor":2.0,
         "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.70, "max_centers":2, "boost_leverage_power":1.3,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -535,6 +536,11 @@ _CONFIG_DEFAULTS = {
         "min_edge_pts": 2.0,
         "min_edge_other": 1.5,
         "min_season_minutes": 20.0,
+        # stat_floors must match line_engine._STAT_META defaults — used when GitHub is unreachable
+        "stat_floors": {"points": 6.0, "rebounds": 2.0, "assists": 1.5},
+    },
+    "lab": {
+        "auto_improve_threshold_pct": 3.0,
     },
 }
 
@@ -668,6 +674,7 @@ def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
 
 
 
+# grep: LOCK HELPERS — _is_locked, _is_past_lock_window, _et_date
 def _is_locked(start_time_iso: Optional[str]) -> bool:
     """Returns True if current UTC time is within lock_buffer_minutes of game start.
     Returns False only for games >6h past start (well past any possible final buzzer)."""
@@ -2467,7 +2474,6 @@ def _get_slate_impl():
                 if not getattr(_force_regenerate_bg, "_in_flight", False):
                     _force_regenerate_bg._in_flight = True
                     print(f"[slate] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — background regeneration triggered")
-                    import threading
                     threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
             return lock_cached
         # Check regular cache and promote to lock cache
@@ -2903,6 +2909,7 @@ def _force_write_predictions(rows, replace_all=False, replace_scopes=None):
     return {"status": "saved", "path": path, "rows": len(rows)}
 
 
+# grep: FORCE REGENERATE SYNC — _force_regenerate_sync, scope=full|remaining, deploy SHA mismatch
 def _force_regenerate_sync(scope: str):
     """Run the full prediction pipeline for a given scope and update predictions CSV.
 
@@ -2926,10 +2933,9 @@ def _force_regenerate_sync(scope: str):
         # "full" scope — use all today's games regardless of lock status
         game_pool = games
 
-    # Step 1: Bust all caches so we regenerate fresh
-    _bust_slate_cache()
-
-    # Step 2: Run projection pipeline on the game pool (same as _get_slate_impl Layer 3)
+    # Step 1: Run projection pipeline on the game pool (same as _get_slate_impl Layer 3)
+    # NOTE: Cache bust intentionally deferred until we have valid results — if the pipeline
+    # fails we preserve the existing cache so cold-start recovery still works.
     all_proj = []
     game_proj_map = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -2946,11 +2952,11 @@ def _force_regenerate_sync(scope: str):
     if not all_proj:
         return {"status": "no_projections", "scope": scope, "date": today_str}
 
-    # Step 3: Build slate-wide lineups (Starting 5 + Moonshot)
+    # Step 2: Build slate-wide lineups (Starting 5 + Moonshot)
     chalk, upside = _build_lineups(all_proj)
     lineups = {"chalk": chalk, "upside": upside}
 
-    # Step 4: Build per-game lineups
+    # Step 3: Build per-game lineups
     per_game_results = {}
     for g in game_pool:
         gid = g["gameId"]
@@ -2964,6 +2970,9 @@ def _force_regenerate_sync(scope: str):
                 }
             except Exception as e:
                 print(f"[force-regen] game lineups err {gid}: {e}")
+
+    # Step 4: Pipeline succeeded — now bust old cache and write fresh data to all layers
+    _bust_slate_cache()
 
     # Step 5: Build the slate cache object and persist to all layers
     deploy_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
@@ -3885,6 +3894,7 @@ def _primary_pick(picks):
     return over or under
 
 
+# grep: NEXT SLATE DATE — _find_next_slate_date, multi-day gap, All-Star break
 def _find_next_slate_date(start_date, max_days=30):
     """Find the next date with NBA games, starting from start_date (inclusive).
     Returns a datetime.date or None if no games found within max_days.
@@ -4841,6 +4851,7 @@ async def line_history():
 
 _GAMES_FINAL_CACHE: dict = {"result": None, "ts": 0.0, "date": ""}
 
+# grep: ALL GAMES FINAL — _all_games_final, ESPN scoreboard poll, midnight rollover, 4.5h fallback
 def _all_games_final(games):
     """Check ESPN scoreboard to see if all today's games are completed.
     Cached with adaptive TTL: 60s when locked slate, 180s pre-slate.

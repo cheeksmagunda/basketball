@@ -1448,9 +1448,9 @@ let SLATE = null;
 let PICKS_DATA = null;
 let isFetching = false;
 let SLATE_LOADED_AT = 0;
-var _slateAutoRefreshCount = 0; // Cap for the delay<=0 retry loop (max 3)
-var _slateAutoRefreshTimer = null; // Prevent duplicate auto-refresh timers
-var _slateNextDayPoll = null;     // Poll for next-day slate after all_complete
+let _slateAutoRefreshCount = 0; // Cap for the delay<=0 retry loop (max 3)
+let _slateAutoRefreshTimer = null; // Prevent duplicate auto-refresh timers
+let _slateNextDayPoll = null;     // Poll for next-day slate after all_complete
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -2156,7 +2156,7 @@ function renderSkeletons(containerId, count) {
 // PREDICTION PERSISTENCE — grep: savePredictions, /api/save-predictions, GitHub CSV
 // ════════════════════════════════════════════════════════════════════
 let _predSavedDate = '';
-var _predSavedLockedCount = 0;
+let _predSavedLockedCount = 0;
 function _etToday() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
@@ -2184,13 +2184,17 @@ async function savePredictions() {
 }
 
 // ──── Late Draft: regenerate picks for remaining games when user missed lock ────
-var _lateDraftTriggered = false;
+// Persisted across page reload via localStorage (keyed by ET date) so the banner
+// does not reappear after the user already triggered a late draft today.
+let _lateDraftTriggered = (function() {
+  try { return localStorage.getItem('lateDraft_' + _etToday()) === '1'; } catch(e) { return false; }
+})();
 
 function showLateDraftBanner() {
   var banner = _el('lateDraftBanner');
   if (!banner) return;
   // Show banner only when: slate is locked, at least one game has not started,
-  // all_complete is false, and user has not already triggered a late draft this session.
+  // all_complete is false, and user has not already triggered a late draft today.
   if (!SLATE || !SLATE.locked || SLATE.all_complete || _lateDraftTriggered) {
     banner.style.display = 'none';
     return;
@@ -2228,12 +2232,15 @@ async function triggerLateDraft() {
     }
     if (data.status === 'regenerated') {
       _lateDraftTriggered = true;
+      try { localStorage.setItem('lateDraft_' + _etToday(), '1'); } catch(e) {}
       // Update SLATE with fresh lineups from the response
       if (data.lineups) {
         SLATE.lineups = data.lineups;
         SLATE.draftable_count = data.games_regenerated || SLATE.draftable_count;
       }
-      // Re-render the current slate view
+      // Switch to Slate-Wide view and re-render with fresh picks
+      switchPredictSub('slate');
+      var _st = _el('slateTabs'); if (_st) _st.style.display = 'flex';
       switchSlate('chalk');
       // Force re-save to confirm CSV update
       _predSavedDate = '';
@@ -2891,6 +2898,7 @@ let LINE_OVER_PICK  = null; // today's over pick
 let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
+let LINE_HIST_DATA = null;   // cached history payload; cleared on date change
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
 let LINE_LOTD_STATE = asyncStateInitial();
 let LINE_HISTORY_STATE = asyncStateInitial();
@@ -2906,7 +2914,7 @@ function classifyFetchError(err, response) {
 async function _tryAutoResolveLine(pick) {
   if (LINE_RESOLVE_POLL) { clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null; }
   try {
-    const ar = await fetchWithTimeout('/api/auto-resolve-line');
+    const ar = await fetchWithTimeout('/api/auto-resolve-line', {}, 15000);
     if (!ar.ok) return;
     const arData = await ar.json();
     if (arData.status === 'resolved' || arData.status === 'already_resolved') {
@@ -3116,7 +3124,7 @@ async function fetchLineOfTheDay() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
       }).catch(function() {});
-      // Auto-resolve is cron-driven (0,30 * * * *). _startLineLivePoll triggers
+      // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll triggers
       // _tryAutoResolveLine when the game finishes — no need to call it here.
     }
   } catch(e) {
@@ -3399,8 +3407,6 @@ function renderLineSummary(summary) {
       ${timeStr}
     </div>`;
 }
-
-let LINE_HIST_DATA = null;
 
 function renderLineHistory(hist) {
   LINE_HIST_DATA = hist;

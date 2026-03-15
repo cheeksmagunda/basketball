@@ -77,6 +77,10 @@ grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/heal
 grep: LINE OF THE DAY ENGINE   — /api/line-of-the-day, run_line_engine
 grep: BEN / LAB ENGINE         — /api/lab/*, _all_games_final, lab lock
 grep: FORCE REGENERATE         — /api/force-regenerate, _force_write_predictions, deploy SHA mismatch, late draft
+grep: LOCK HELPERS             — _is_locked, _is_past_lock_window, _et_date
+grep: ALL GAMES FINAL          — _all_games_final, ESPN scoreboard poll, midnight rollover, 4.5h fallback
+grep: NEXT SLATE DATE          — _find_next_slate_date, multi-day gap, All-Star break
+grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 ```
 
 ## Key Endpoints
@@ -296,10 +300,10 @@ Three independent gates prevent pre-lock saves:
 ## Three Lineup Modes
 
 ### Slate-Wide: Starting 5 (chalk)
-MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 30-minute season avg minutes floor** (`season_min >= 30`). Configurable via `projection.chalk_season_min_floor`.
+MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 25-minute season avg minutes floor** (`season_min >= 25`). Configurable via `projection.chalk_season_min_floor`.
 
 ### Slate-Wide: Moonshot
-Options strategy. Hard floor of **season avg minutes >= min_minutes_floor** (default 25) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.65`** — bigs generate far fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
+Options strategy. Hard floor of **season avg minutes >= min_minutes_floor** (default 20) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.70`** — bigs generate fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
 
 ### Per-Game: THE LINE UP
 Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant. Optimized purely by projected Real Score × slot multiplier (`est_mult` zeroed out for MILP). **Requires 20-minute recent minutes floor.** Min 2 players per team enforced. Game script adjustments applied.
@@ -328,9 +332,9 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`
 
 Key knobs in `moonshot` section of model-config.json:
-- `min_minutes_floor`: 25 (season avg) — stable rotation role baseline; filters out low-minute role players whose RS output is too inconsistent
+- `min_minutes_floor`: 20 (season avg) — minimum season avg floor; combined with `min_recent_minutes_floor: 25` for an AND gate
 - `card_boost_weight`: 2.5 (raised from 2.0) — ownership is the primary signal; boost^2.5 dominates
-- `big_pos_efficiency`: 0.65 — centers penalized; screens/rim-protection generate far fewer RS events per minute than guards/wings
+- `big_pos_efficiency`: 0.70 — centers penalized; screens/rim-protection generate fewer RS events per minute than guards/wings
 
 ### Spread Adjustment (continuous, no cliff edges)
 - Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
@@ -404,7 +408,7 @@ Crons and frontend poll intervals are tuned to reduce Vercel invocations while p
 | `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
 | `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement |
 | `55 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync (at :55) |
-| `0,30 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends |
+| `0 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (hourly at :00) |
 | `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
 
 ## Deployment Pipeline
@@ -490,7 +494,7 @@ Backend uses Python `ThreadPoolExecutor` for parallel processing:
   - Unlock detected within ~2 min; user can tap Retry for immediate check
 - **Line live stat polling**: 1 minute; max 5 consecutive failures (300s tolerance) before fallback to cron
   - Prevents indefinite polling on persistent network failures
-  - Falls back to `/api/auto-resolve-line` cron (0/30 min marks)
+  - Falls back to `/api/auto-resolve-line` cron (hourly at :00)
 
 ### GitHub API Retry Logic
 `_github_write_file()` (api/index.py lines 75-110) implements exponential backoff for concurrent write conflicts:
@@ -695,6 +699,11 @@ If slate, line, and/or log all fail to load:
 | Force-regenerate endpoint | `api/index.py`, `index.html` | `GET /api/force-regenerate?scope=full\|remaining` — two scenarios: (1) dev deploys mid-slate → auto-detects SHA mismatch, regenerates all games in background; (2) user wakes up late → "Late Draft" banner on Predict tab regenerates picks for remaining games only. Both update `data/predictions/` CSV and all cache layers. CRON_SECRET-gated. |
 | Deploy SHA tracking | `api/index.py` | `deploy_sha` stamped in slate cache at generation + GitHub write time. `/api/slate` locked path compares cached SHA vs current `VERCEL_GIT_COMMIT_SHA`; on mismatch fires background `_force_regenerate_sync("full")`. |
 | Late Draft UI | `index.html` | Banner with "Generate Late Draft" button shown on Predict tab when slate is locked but remaining games exist. Calls `/api/force-regenerate?scope=remaining`, updates SLATE, re-renders, and hides banner on success. |
+| `auto-resolve-line` explicit timeout | `index.html` | `fetchWithTimeout('/api/auto-resolve-line', {}, 15000)` — was using implicit 10s default; now explicitly documents the 15s intent for this endpoint. |
+| `var` → `let` modernisation | `index.html` | Converted `_slateAutoRefreshCount`, `_slateAutoRefreshTimer`, `_slateNextDayPoll`, `_predSavedLockedCount`, `_lateDraftTriggered` from `var` to `let` for block-scope consistency with the rest of the module. |
+| `LINE_HIST_DATA` declaration hoisted | `index.html` | Moved `let LINE_HIST_DATA = null` from inside the `renderLineHistory` section (line ~3410) to the Line globals block (line ~2901) alongside `LINE_RESOLVE_POLL` and `LINE_LIVE_POLL`. Eliminates forward-reference anti-pattern. |
+| `oracle-ball.svg` cache header | `vercel.json` | Added `Cache-Control: public, max-age=86400` entry for `/oracle-ball.svg` to match the existing `server.py` header and keep cache strategy consistent across Vercel edge and local dev. |
+| Grep tags for key helpers | `api/index.py` | Added `# grep:` tags for `LOCK HELPERS` (`_is_locked`, `_is_past_lock_window`, `_et_date`), `ALL GAMES FINAL`, `NEXT SLATE DATE` (`_find_next_slate_date`), and `FORCE REGENERATE SYNC`. Updated CLAUDE.md navigation table to match. |
 
 ## Production audit
 
