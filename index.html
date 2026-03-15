@@ -2962,10 +2962,16 @@ async function _startLineLivePoll(overPick, underPick) {
       // Only re-fetch once (gate with _lineRotationTriggered to avoid repeated calls).
       if (!_lineRotationTriggered) {
         _lineRotationTriggered = true;
-        // Reset loaded state so initLinePage re-fetches fresh data
-        LINE_LOADED_DATE = '';
+        // Re-fetch with nocache=true: bypasses stale /tmp cache and triggers inline
+        // resolve on the backend so the finished pick is resolved without waiting
+        // up to 1h for the auto-resolve cron.
+        LINE_LOADED_DATE = _etToday();
         LINE_LOTD_STATE = asyncStateInitial();
-        setTimeout(() => initLinePage(), 1500);
+        setTimeout(() => {
+          _renderLineLOTDFromState(); // show skeleton immediately
+          fetchLineOfTheDay(true);   // nocache — backend will inline-resolve and rotate
+          fetchLineHistory();        // reload history so resolved pick shows up there
+        }, 1500);
       }
     }
     if (overDone && underDone) {
@@ -3065,14 +3071,15 @@ function _renderLineLOTDFromState() {
   }
 }
 
-async function fetchLineOfTheDay() {
+async function fetchLineOfTheDay(nocache = false) {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
   _lineRotationTriggered = false; // reset so live poll can trigger rotation for new picks
   _renderLineLOTDFromState();
 
   let r;
   try {
-    r = await fetchWithTimeout('/api/line-of-the-day', {}, 90000);
+    const _lotdUrl = nocache ? '/api/line-of-the-day?nocache=1' : '/api/line-of-the-day';
+    r = await fetchWithTimeout(_lotdUrl, {}, 90000);
     if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
     let data = await r.json();
     LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
