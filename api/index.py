@@ -2134,7 +2134,9 @@ def _build_game_lineups(projections, game):
                 break
             the_lineup.append(p)
 
-    return {"the_lineup": [_normalize_player(p) for p in the_lineup]}
+    # Per-game: zero out est_mult in returned data too (not just MILP input)
+    # so the frontend never renders a misleading card boost pill.
+    return {"the_lineup": [_normalize_player({**p, "est_mult": 0}) for p in the_lineup]}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
