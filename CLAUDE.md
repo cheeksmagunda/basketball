@@ -190,7 +190,7 @@ The Line of the Day engine paths (`_run_line_engine_for_date()` and `_get_projec
 ### Prediction model boundaries (grep: LINE CONFIG, line_engine config)
 
 - **Draft model:** Config in `data/model-config.json` (card_boost, game_script, real_score, cascade, projection, lineup, moonshot, development_teams); code in `api/index.py`, `api/real_score.py`, `api/asset_optimizer.py`; `lgbm_model.pkl` is trained separately (GitHub Actions). Ben can change draft behavior via Lab (update-config, backtest).
-- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Before running the engine, `api/index.py` enriches projections with **real last-5 game stats** (nba_api) when available (`_enrich_projections_with_l5`), so Claude and the fallback see actual recent form. Line knobs in config: `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`. Ben can tune via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
+- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Before running the engine, `api/index.py` enriches projections with **real last-5 game stats** (nba_api) when available (`_enrich_projections_with_l5`), so Claude and the fallback see actual recent form. Line knobs in config: `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`, `min_edge_other_over` (over-specific non-points edge floor; defaults to `min_edge_other`), `stat_floors`. Ben can tune via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
 
 ## Ben (Lab) Interface
 
@@ -607,7 +607,7 @@ TestAutoResolveMidnight     — pick_date vs et_date divergence after midnight
 TestCacheTTLs               — 3 min games, 5 min config, 30 min RotoWire, 60s locked TTL
 TestPollingIntervals        — 120s lab lock, 60s line live, 300s failure cutoff
 TestRateLimitThreadSafe     — _check_rate_limit is thread-safe under concurrent calls
-TestLineConfig              — run_model_fallback and run_line_engine respect line_config min_confidence
+TestLineConfig              — run_model_fallback and run_line_engine respect line_config min_confidence; min_edge_other_over asymmetry (over blocked, under passes with same edge)
 TestLgbmFeatureAlignment    — when bundle loaded, 11 features and 11th is recent_vs_season or recent_3g_trend
 TestSlateExceptionHandling  — slate endpoint catches exceptions and returns 200 with error key (never 500)
 TestGameSelectorLockDisplay — frontend populateGameSelector must NOT override per-game lock with slateLocked
@@ -711,6 +711,10 @@ If slate, line, and/or log all fail to load:
 | Live poll per-direction rotation | `index.html` | `_startLineLivePoll` re-fetches `/api/line-of-the-day` when any game finishes (was waiting for both). `_lineRotationTriggered` gate prevents redundant re-fetches. |
 | Cache bust both dates | `api/index.py` | `auto_resolve_line` busts line cache for both `pick_date` AND `today` (differ on midnight rollover). |
 | `force-regenerate` scope=remaining unprotected | `api/index.py` | `/api/force-regenerate?scope=remaining` no longer requires CRON_SECRET — it's user-triggered from the Late Draft button. `scope=full` stays CRON_SECRET-gated. |
+| Vercel → Railway migration | `CLAUDE.md`, `api/index.py` | All Vercel references replaced with Railway equivalents (deployment model, env vars, cron schedule, URLs, watchPatterns). `VERCEL_GIT_COMMIT_SHA` → `RAILWAY_GIT_COMMIT_SHA` at all call sites. `vercel.json` noted as legacy/unused. |
+| Log tab ESPN stats auto-fetch | `index.html` | Removed `has_actuals` gate — ESPN box score stats now auto-fetch for any past date without requiring RS screenshot upload. "Waiting for results" pill only shows when ESPN stats also unavailable. New partial-graded card state: shows actual game stats (PTS/REB/AST/STL/BLK) without hit/miss coloring until RS is uploaded. |
+| Per-game card boost pill removed | `api/index.py` | `_build_game_lineups` now zeroes `est_mult` in returned player data (not just MILP input) so the `+X.Xx card` pill never renders on per-game (THE LINE UP) cards where card boost is irrelevant. |
+| Over model tightening | `api/line_engine.py`, `api/index.py`, `data/model-config.json` | Four over-specific changes (under model untouched): (1) `stat_floors.rebounds` 2.0→5.5 — only legit rotation bigs qualify for rebounds picks. (2) `min_edge_other_over: 2.5` (new config key) — over picks for rebounds/assists need a 2.5+ edge; under picks keep 1.5. (3) `recent_form_over_ratio` 1.08→1.15 — require 15% recent spike to unlock +12 confidence bonus. (4) Claude AVOID clause updated — rebounds/assists overs require a catalyst (cascade, opp-B2B, or 230+ total). Tests added for `min_edge_other_over` asymmetry. |
 
 ## Production audit
 
