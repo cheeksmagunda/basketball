@@ -578,10 +578,10 @@ class TestNormalizePlayer:
         assert result["recent_pts"] == 25.3
         assert result["_cascade_bonus"] == 3.0
 
-    def test_is_dev_team_is_stripped(self):
-        """_is_dev_team is an internal moonshot flag — must never reach the frontend."""
-        result = self._norm({"name": "X", "_is_dev_team": True})
-        assert "_is_dev_team" not in result
+    def test_team_dev_mult_is_stripped(self):
+        """_team_dev_mult is an internal moonshot field — must never reach the frontend."""
+        result = self._norm({"name": "X", "_team_dev_mult": 1.25})
+        assert "_team_dev_mult" not in result
 
     def test_string_fields_default_to_empty_string(self):
         """String fields missing from input must default to '' not None."""
@@ -1238,7 +1238,7 @@ class TestUpdateConfigValidation:
         assert self._valid("lineup.chalk_rating_floor")
         assert self._valid("moonshot.min_rating_floor")
         assert self._valid("projection.b2b_minute_penalty")
-        assert self._valid("development_teams")
+        assert self._valid("moonshot.big_pos_efficiency")
 
     def test_path_traversal_is_rejected(self):
         """Path segments with special chars must be rejected."""
