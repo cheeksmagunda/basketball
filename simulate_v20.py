@@ -362,42 +362,13 @@ def simulate_date(date_str):
 
 
 if __name__ == "__main__":
-    import sys, os, glob
-    from datetime import datetime, timedelta
-
-    def _date_range(start, end):
-        d = datetime.strptime(start, "%Y-%m-%d").date()
-        e = datetime.strptime(end, "%Y-%m-%d").date()
-        result = []
-        while d <= e:
-            result.append(d.strftime("%Y-%m-%d"))
-            d += timedelta(days=1)
-        return result
-
-    pred_dir = os.path.join(os.path.dirname(__file__), "data", "predictions")
-
-    if len(sys.argv) > 1:
-        # Specific dates passed as args
-        dates = [a for a in sys.argv[1:] if not a.startswith("--")]
-    else:
-        # All CSVs in data/predictions/, sorted by date
-        csvs = sorted(glob.glob(os.path.join(pred_dir, "*.csv")))
-        dates = [os.path.basename(f).replace(".csv", "") for f in csvs]
-
-    # Filter to dates that actually have CSV files
-    available = [d for d in dates if os.path.exists(os.path.join(pred_dir, f"{d}.csv"))]
-    missing   = [d for d in dates if d not in available]
-
+    dates = ["2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09",
+             "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14"]
     print("\n  NOTE: Re-simulating with current v21 model config applied to")
     print("  player stats recorded in prediction CSVs for those dates.")
     print("  v22 changes: wildcard gate C (boost>=2.0, min>=8), stacking max_per_team=3,")
     print("  leverage_top_slots=1, dev team pts floor=8.")
     print("  Pool = all unique players across all lineup types/scopes.")
-    print(f"\n  Dates to simulate: {len(available)}")
-    if missing:
-        print(f"  Missing CSVs (skipped): {missing}")
-        print(f"  → Run gen_historical_csvs.py to generate missing dates")
-
-    for d in available:
+    for d in dates:
         simulate_date(d)
     print("\n")
