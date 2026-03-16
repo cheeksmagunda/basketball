@@ -37,6 +37,24 @@ def _format_game_time_et(iso_date_str):
         return ""
 
 
+def _lookup_player_odds(player_odds_map, player_name, stat_type):
+    """Return bookmaker odds data for a player+stat from the pre-fetched map.
+
+    Uses exact match first, then substring match to handle minor name
+    format differences (e.g. apostrophes, Jr/Sr suffixes).
+    Returns {"line", "odds_over", "odds_under", "books_consensus"} or None.
+    """
+    if not player_odds_map:
+        return None
+    pname = player_name.lower()
+    if (pname, stat_type) in player_odds_map:
+        return player_odds_map[(pname, stat_type)]
+    for (odds_name, odds_stat), data in player_odds_map.items():
+        if odds_stat == stat_type and (pname in odds_name or odds_name in pname):
+            return data
+    return None
+
+
 def _game_lookup_from_games(games):
     """Build team abbr -> {opponent, opp_b2b, total, spread, game_time, game_start_iso} lookup."""
     lookup = {}
@@ -70,7 +88,7 @@ _STAT_META = {
 }
 
 
-def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None):
+def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None):
     """Format ESPN projection data into a structured prompt for Claude for a given stat type."""
     meta = dict(_STAT_META[stat_focus])  # copy so we can override min_season without mutating module-level dict
     if stat_floors and stat_focus in stat_floors:
@@ -117,12 +135,14 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
         inj = p.get("injury_status", "")
         if inj:                  flags.append(inj)
         flag_str = f" [{', '.join(flags)}]" if flags else ""
+        book_odds = _lookup_player_odds(player_odds_map, p["name"], stat_focus)
+        book_str = f" [book: {book_odds['line']:.1f}{lbl}]" if book_odds else ""
         player_lines.append(
             f"  {p['name']} ({p.get('team','')}) vs {opp}: "
             f"proj {p.get('pts',0):.1f}pts/{p.get('reb',0):.1f}reb/{p.get('ast',0):.1f}ast "
             f"in {p.get('predMin',0):.0f}min | "
             f"season {season_val:.1f}{lbl} / recent {recent_val:.1f}{lbl} | "
-            f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}"
+            f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}{book_str}"
         )
 
     direction_instruction = (
@@ -151,7 +171,7 @@ PICK CRITERIA (in priority order):
 AVOID: players on B2B themselves, blowout favorites (team spread >10), injury-doubtful
 OVER-SPECIFIC: rebounds and assists overs require a catalyst (cascade, opp-B2B, or high total 230+) — do NOT pick rebounds/assists OVER on season-average form alone; prefer points OVER when edge quality is similar
 
-Set "line" to season average rounded to nearest 0.5 (what books typically set).
+Set "line" to the [book: X.X] value when shown — that is the real bookmaker number and is more accurate than the season average. Only fall back to season average rounded to nearest 0.5 if no [book: X.X] is present. Recalculate "edge" as projection minus the line you use.
 Confidence range: 60-85.
 
 Respond with ONLY valid JSON, no markdown fences:
@@ -205,9 +225,9 @@ def _call_claude(prompt, stat_focus="points"):
         return None
 
 
-def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None):
+def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None):
     """Build prompt and call Claude for a single stat type + direction. Returns (confidence, pick) or None."""
-    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors)
+    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map)
     pick   = _call_claude(prompt, stat_focus)
     if pick and pick.get("player_name") and pick.get("confidence", 0) > 0:
         # Enforce direction if forced (Claude occasionally ignores instruction)
@@ -217,7 +237,7 @@ def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, 
     return None
 
 
-def _run_parallel_claude(projections, games, stat_floors=None):
+def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None):
     """
     Run Claude in parallel for points/rebounds/assists × over/under (6 calls).
     Returns (best_over_pick, best_under_pick) independently.
@@ -229,7 +249,7 @@ def _run_parallel_claude(projections, games, stat_floors=None):
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors): (s, d)
+            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map): (s, d)
             for s in stat_types for d in directions
         }
         for future in as_completed(futures):
@@ -253,11 +273,12 @@ def _run_parallel_claude(projections, games, stat_floors=None):
 # ALGORITHMIC FALLBACK — pure ESPN model, no external API calls
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_model_fallback(projections, games, line_config=None):
+def run_model_fallback(projections, games, line_config=None, player_odds_map=None):
     """
     Algorithmic pick when Claude API is unavailable.
     Scores edges across points, rebounds, and assists; picks the highest-confidence one.
     line_config: optional dict with min_confidence, min_edge_pct (from model-config line section).
+    player_odds_map: optional pre-fetched Odds API lines {(name_lower, stat_type): {...}}.
     """
     if not projections:
         return {"pick": None, "error": "no_projections"}
@@ -294,7 +315,8 @@ def run_model_fallback(projections, games, line_config=None):
             if season_val < min_season or pred_min < min_min or proj_val <= 0:
                 continue
 
-            line      = round(round(season_val * 2) / 2, 1)
+            book_odds = _lookup_player_odds(player_odds_map, p.get("name", ""), stat_type)
+            line      = book_odds["line"] if book_odds else round(round(season_val * 2) / 2, 1)
             edge      = round(proj_val - line, 1)
             direction = "over" if edge > 0 else "under"
             if stat_type == "points":
@@ -342,8 +364,10 @@ def run_model_fallback(projections, games, line_config=None):
                 "team": team_abbr, "opponent": opponent,
                 "stat_type": stat_type, "line": line, "direction": direction,
                 "projection": proj_val, "edge": edge, "confidence": confidence,
-                "odds_over": None, "odds_under": None, "books_consensus": 0,
-                "model_only": True, "signals": signals, "narrative": narrative,
+                "odds_over": book_odds["odds_over"] if book_odds else None,
+                "odds_under": book_odds["odds_under"] if book_odds else None,
+                "books_consensus": book_odds["books_consensus"] if book_odds else 0,
+                "model_only": not bool(book_odds), "signals": signals, "narrative": narrative,
                 "season_avg": round(season_val, 1),
                 "proj_min": round(pred_min, 1),
                 "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
@@ -373,7 +397,8 @@ def run_model_fallback(projections, games, line_config=None):
                 proj_val   = p.get(field, 0)
                 if season_val < min_season or pred_min < min_min or proj_val <= 0:
                     continue
-                line      = round(round(season_val * 2) / 2, 1)
+                lr_book   = _lookup_player_odds(player_odds_map, p.get("name", ""), stat_type)
+                line      = lr_book["line"] if lr_book else round(round(season_val * 2) / 2, 1)
                 edge      = round(proj_val - line, 1)
                 if edge == 0:
                     continue
@@ -388,8 +413,10 @@ def run_model_fallback(projections, games, line_config=None):
                     "team": team_abbr, "opponent": gctx.get("opponent", ""),
                     "stat_type": stat_type, "line": line, "direction": direction,
                     "projection": proj_val, "edge": edge, "confidence": 52,
-                    "odds_over": None, "odds_under": None, "books_consensus": 0,
-                    "model_only": True, "signals": [],
+                    "odds_over": lr_book["odds_over"] if lr_book else None,
+                    "odds_under": lr_book["odds_under"] if lr_book else None,
+                    "books_consensus": lr_book["books_consensus"] if lr_book else 0,
+                    "model_only": not bool(lr_book), "signals": [],
                     "narrative": f"Model projects {proj_val:.1f} {stat_type} vs the {line:.1f} baseline.",
                     "season_avg": round(season_val, 1),
                     "proj_min": round(pred_min, 1),
@@ -457,12 +484,13 @@ def _enrich_pick_from_projections(pick, projections, game_ctx_map):
 # MAIN ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_line_engine(projections, games, line_config=None):
+def run_line_engine(projections, games, line_config=None, player_odds_map=None):
     """
     Main entry point. Uses Claude Haiku to reason about ESPN projection data
     and pick today's best player prop edge. Falls back to algorithmic model
     if Claude API is unavailable.
     line_config: optional dict (e.g. from model-config "line" section) with min_confidence, min_edge_pct.
+    player_odds_map: optional pre-fetched Odds API lines {(name_lower, stat_type): {...}}.
     """
     if not games:
         return {"pick": None, "error": "no_games"}
@@ -482,13 +510,13 @@ def run_line_engine(projections, games, line_config=None):
     stat_floors = (line_config or {}).get("stat_floors", {})
 
     if not ANTHROPIC_API_KEY:
-        return run_model_fallback(projections, games, line_config)
+        return run_model_fallback(projections, games, line_config, player_odds_map)
 
-    over_data, under_data = _run_parallel_claude(projections, games, stat_floors)
+    over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map)
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")
-        return run_model_fallback(projections, games, line_config)
+        return run_model_fallback(projections, games, line_config, player_odds_map)
 
     def _build_pick(pd):
         if not pd:
@@ -497,7 +525,7 @@ def run_line_engine(projections, games, line_config=None):
             {"type": s.lower().split(":")[0].strip().replace(" ", "_"), "detail": s}
             for s in pd.get("signals", [])
         ]
-        return {
+        pick = {
             "player_name":     pd["player_name"],
             "player_id":       "",
             "team":            pd.get("team", ""),
@@ -515,6 +543,18 @@ def run_line_engine(projections, games, line_config=None):
             "signals":         signals,
             "narrative":       pd.get("narrative", ""),
         }
+        # Override line/edge with authoritative bookmaker data when available.
+        # Claude is already instructed to use the [book: X.X] annotation, but
+        # we enforce it here as a safety net in case Claude returns a different value.
+        book = _lookup_player_odds(player_odds_map, pd.get("player_name", ""), pd.get("stat_type", "points"))
+        if book:
+            pick["line"]            = book["line"]
+            pick["edge"]            = round(pd.get("projection", 0) - book["line"], 1)
+            pick["odds_over"]       = book["odds_over"]
+            pick["odds_under"]      = book["odds_under"]
+            pick["books_consensus"] = book["books_consensus"]
+            pick["model_only"]      = False
+        return pick
 
     over_pick  = _build_pick(over_data)
     under_pick = _build_pick(under_data)
@@ -527,7 +567,7 @@ def run_line_engine(projections, games, line_config=None):
 
     # Fill missing direction from algorithmic fallback
     if not over_pick or not under_pick:
-        fallback = run_model_fallback(projections, games, line_config)
+        fallback = run_model_fallback(projections, games, line_config, player_odds_map)
         if not over_pick:
             over_pick = fallback.get("over_pick")
         if not under_pick:

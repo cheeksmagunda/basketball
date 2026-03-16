@@ -533,7 +533,7 @@ _CONFIG_DEFAULTS = {
         "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
         # DNP / reliability guards (added after March 4th audit)
         "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
-        "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
+        "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
         "chalk_season_min_floor":25.0,  # season avg floor for Starting 5 (was 30; Mar 14: excluded Smart 28.9min, Achiuwa ~26min)
@@ -548,6 +548,9 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
+        "chalk_min_boost_floor": 1.2,   # minimum card boost required for chalk eligibility;
+                                        # excludes high-ownership stars (Westbrook 1.1x, Clingan 1.0x)
+                                        # Mar 15 fix: without this, top chalk slots go to near-zero-boost stars
     },
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
@@ -556,6 +559,12 @@ _CONFIG_DEFAULTS = {
         "big_pos_efficiency":0.85, "max_centers":2, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.3,       # penalizes high RS variance in moonshot; consistent role players rank above boom/bust
+        # Wildcard gate — Mar 15 fix: lower mins/boost/pts so deep-bench high-boost plays surface
+        "wildcard_min_boost": 2.5, "wildcard_min_minutes": 10.0, "wildcard_min_season_pts": 5.0,
+        # Dev team pts floor — Mar 15 fix: apply rebuild bonus to low-scorers (Williams 6ppg UTAH)
+        "dev_team_pts_floor": 6.0,
+        # Role spike path — Mar 15 fix: recent_min >> season_min = role change; bypass season floor
+        "role_spike_ratio": 1.4, "role_spike_recent_floor": 25.0, "role_spike_season_floor": 10.0,
     },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
@@ -1955,6 +1964,13 @@ def _build_lineups(projections):
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
+        # Minimum card boost floor for chalk: high-ownership stars (boost < 1.2x) should
+        # not anchor Starting 5 — the draft value formula requires meaningful boost to
+        # generate competitive total value. Mar 15 lesson: Westbrook (1.1x override) +
+        # Clingan (1.0x override) took 2.0x/1.8x slots, neutralizing chalk EV entirely.
+        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
+        if p.get("est_mult", 0) < chalk_min_boost:
+            continue
         capped_boost = min(p["est_mult"], boost_cap)
         p["capped_boost"] = capped_boost
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
@@ -1998,10 +2014,16 @@ def _build_lineups(projections):
     team_win_pcts    = _fetch_team_win_pcts()
 
     # Wildcard and dev-team thresholds — read once outside the loop
-    wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.9)
-    wildcard_min          = moon_cfg.get("wildcard_min_minutes", 24.0)
-    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 8.0)
-    dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 10.0)
+    # Wildcard gate: ultra-high-boost deep bench players bypass season/recent min floors.
+    # Mar 15 fix: GPII (predMin 16.5, boost 2.7x) failed old 24-min gate; lowered to 10.
+    # Boost threshold lowered to 2.5 (was 2.9) — our estimator runs 30-50% below actuals.
+    wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.5)
+    wildcard_min          = moon_cfg.get("wildcard_min_minutes", 10.0)
+    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 5.0)
+    # Dev team pts floor: lower threshold so low-scoring dev-team role players (Williams
+    # 6ppg UTAH, Cardwell 5.4ppg SAC) receive the rebuild win_pct bonus in moonshot ranking.
+    # Old floor of 10.0 suppressed the bonus for exactly the players we want.
+    dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 6.0)
     low_pts_floor         = moon_cfg.get("low_pts_floor", 8.0)
     low_pts_penalty       = moon_cfg.get("low_pts_penalty", 0.85)
     variance_penalty_coef = moon_cfg.get("variance_penalty", 0.45)
@@ -2034,7 +2056,22 @@ def _build_lineups(projections):
             and pred_min >= wildcard_min
             and season_pts >= wildcard_min_pts
         )
-        if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard):
+        # Role spike: player clearly getting more minutes recently than season avg suggests
+        # (role change due to teammate injury, coach decision, or development arc).
+        # Mar 15 lesson: Killian Hayes (season 16min, recent 26min, boost 2.7x) hit for
+        # RS 3.3 / value 16.5 but was blocked by season_min floor. Ratio gate prevents
+        # noise (normal variance) from triggering — needs ≥40% recent/season divergence.
+        role_spike_ratio  = moon_cfg.get("role_spike_ratio", 1.4)
+        role_spike_recent = moon_cfg.get("role_spike_recent_floor", 25.0)
+        role_spike_season = moon_cfg.get("role_spike_season_floor", 10.0)
+        is_role_spike = (
+            recent_min >= role_spike_recent
+            and season_min >= role_spike_season
+            and recent_min >= season_min * role_spike_ratio
+            and est_mult >= min_boost  # must still be contrarian
+        )
+        if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
+                or is_role_spike):
             continue
 
         # Minimum card boost — the whole point of moonshot is contrarian plays
@@ -3910,6 +3947,118 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
         return None
 
 
+def _build_player_odds_map(games):
+    """Bulk-fetch Odds API player props for all slate games.
+
+    Makes 1 + N calls (events list + one props call per game) instead of
+    2 calls per player — far more API-efficient.
+
+    Returns {(player_name_lower, stat_type): {"line", "odds_over", "odds_under",
+    "books_consensus"}} or {} on any failure.
+    """
+    api_key = os.environ.get("ODDS_API_KEY")
+    if not api_key:
+        return {}
+    markets_param = ",".join(_STAT_MARKET.values())  # player_points,player_rebounds,player_assists
+    _market_to_stat = {v: k for k, v in _STAT_MARKET.items()}
+    try:
+        # Step 1: fetch all NBA events today (1 call)
+        ev_r = requests.get(
+            f"{ODDS_API_BASE}/sports/basketball_nba/events",
+            params={"apiKey": api_key, "dateFormat": "iso"},
+            timeout=10,
+        )
+        if not ev_r.ok:
+            print(f"[odds_map] events fetch failed: {ev_r.status_code}")
+            return {}
+        all_events = ev_r.json()
+    except Exception as e:
+        print(f"[odds_map] events fetch error: {e}")
+        return {}
+
+    # Map gameId → Odds API event_id
+    game_event_ids = []
+    for g in games:
+        home_abbr = g.get("home", {}).get("abbr", "") or g.get("homeTeam", "")
+        away_abbr = g.get("away", {}).get("abbr", "") or g.get("awayTeam", "")
+        for ev in all_events:
+            ev_home = ev.get("home_team", "")
+            ev_away = ev.get("away_team", "")
+            if ((_abbr_matches(home_abbr, ev_home) or _abbr_matches(home_abbr, ev_away)) and
+                    (_abbr_matches(away_abbr, ev_home) or _abbr_matches(away_abbr, ev_away))):
+                game_event_ids.append(ev["id"])
+                break
+
+    if not game_event_ids:
+        print("[odds_map] no matching Odds API events for slate games")
+        return {}
+
+    # Step 2: fetch props for each game in parallel (1 call per game)
+    def _fetch_event_props(event_id):
+        try:
+            r = requests.get(
+                f"{ODDS_API_BASE}/sports/basketball_nba/events/{event_id}/odds",
+                params={
+                    "apiKey":     api_key,
+                    "regions":    "us",
+                    "markets":    markets_param,
+                    "oddsFormat": "american",
+                    "bookmakers": "draftkings,fanduel,betmgm,pointsbet",
+                },
+                timeout=10,
+            )
+            return r.json() if r.ok else {}
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        event_results = list(pool.map(_fetch_event_props, game_event_ids))
+
+    # Step 3: aggregate lines per (player_name_lower, stat_type)
+    raw = {}  # (player_key, stat_type) -> {over_lines, under_lines, over_prices, under_prices}
+    for data in event_results:
+        for book in data.get("bookmakers", []):
+            for mkt in book.get("markets", []):
+                stat_type = _market_to_stat.get(mkt["key"])
+                if not stat_type:
+                    continue
+                for outcome in mkt.get("outcomes", []):
+                    pt = outcome.get("point")
+                    if pt is None:
+                        continue
+                    player_key = outcome.get("name", "").lower()
+                    direction  = outcome.get("description", "").lower()
+                    price      = outcome.get("price", -110)
+                    key = (player_key, stat_type)
+                    if key not in raw:
+                        raw[key] = {"over_lines": [], "under_lines": [], "over_prices": [], "under_prices": []}
+                    if direction == "over":
+                        raw[key]["over_lines"].append(pt)
+                        raw[key]["over_prices"].append(price)
+                    else:
+                        raw[key]["under_lines"].append(pt)
+                        raw[key]["under_prices"].append(price)
+
+    # Step 4: compute consensus line per player+stat
+    result_map = {}
+    for (player_key, stat_type), d in raw.items():
+        if not d["over_lines"]:
+            continue
+        try:
+            consensus = mode(d["over_lines"])
+        except StatisticsError:
+            consensus = round(round(mean(d["over_lines"]) * 2) / 2, 1)
+        result_map[(player_key, stat_type)] = {
+            "line":            consensus,
+            "odds_over":       int(mean(d["over_prices"])) if d["over_prices"] else -110,
+            "odds_under":      int(mean(d["under_prices"])) if d["under_prices"] else -110,
+            "books_consensus": len(d["over_lines"]),
+        }
+
+    print(f"[odds_map] fetched {len(result_map)} player+stat lines from Odds API")
+    return result_map
+
+
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
 
@@ -4079,7 +4228,11 @@ def _run_line_engine_for_date(date):
     if not all_proj:
         return None, "no_projections"
     line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
-    result = run_line_engine(all_proj, target_games, line_config)
+    # Fetch bookmaker lines from Odds API for all slate games — used as the
+    # primary "line" value in picks instead of ESPN season averages.
+    # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
+    player_odds_map = _build_player_odds_map(target_games)
+    result = run_line_engine(all_proj, target_games, line_config, player_odds_map)
     return result, None
 
 
