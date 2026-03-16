@@ -290,10 +290,9 @@ Three independent gates prevent pre-lock saves:
 - **Backend guard**: `if not any(_is_locked(st) ...)` → HTTP 409 in `/api/save-predictions`
 - **Cron guard**: `/api/refresh` only calls `save_predictions()` if `any(_is_locked(...))`
 
-## Scoring Upside Standards (v5)
+## Scoring Upside Standards (v6 — leaderboard-informed)
 
-The model enforces scoring floors at two levels to prevent clean-statline
-role players and low-minute centers from dominating both lineup types.
+5-day leaderboard analysis (Mar 8-13) revealed the winning strategy is simpler than our model assumed. Winners are role players with 3-5x boost on dev teams (da Silva appeared 4/5 days, Ellis 3/5, Clifford 3/5, Santos 3/5). Stars almost never win — 4/5 days were pure role players. v6 simplifies gates accordingly.
 
 ### Projection-level gates (project_player)
 
@@ -305,13 +304,17 @@ role players and low-minute centers from dominating both lineup types.
 ### Chalk-specific gates
 
 - **Minimum 3.5 rating** before card boost is applied — boost cannot rescue a weak base
-- **Boost cap at 2.5** (configurable via `projection.chalk_boost_cap`) — allows Gobert/Sheppard-tier players
-  (solid RS + meaningful boost) to rank above pure high-rating/no-boost picks
+- **Boost cap at 2.5** (configurable via `projection.chalk_boost_cap`)
+- **Star anchor pathway** — players with season_pts >= 20 (`star_anchor_ppg`) bypass the boost floor. Safety valve for rare star nights (like Mar 12 when Luka had 9.3 RS). Limited by `chalk_max_stars=1`.
 
-### Moonshot-specific gates (in addition to projection-level)
+### Moonshot-specific gates (v6 — widened to match actual winners)
 
-- **Minimum 3.0 rating** (raised from 2.0; wildcards exempt)
-- **Minimum 10 projected pts** (non-wildcard only) — moonshot needs scoring upside, not just boost
+- **Minimum 2.0 rating** (lowered from 3.0; Ellis RS 2.2, Clifford RS 2.1 were winners)
+- **Minimum 1.5 card boost** — moonshot is contrarian; this is the core filter
+- **Season/recent min >= 15** (lowered from 25; Santos/Clifford play 15-20 min)
+- **Wildcard gate**: boost >= 2.0, min 8 min, min 3 PPG (all lowered to catch deep bench)
+- **No center penalty** — Poeltl, Queta, Achiuwa all appear in winning lineups
+- **Light variance damping** (0.15, down from 0.45) — moonshot wants upside
 
 ### Per-game lineup gates
 
@@ -342,16 +345,20 @@ The scoring floors enforce that the base must be real before boost matters.
 
 ### What gets displaced
 
-Low-scoring centers, sub-20-minute role players, and specialists
-whose RS score came primarily from rebounds/blocks/steals rather than scoring.
-These are fine in certain roster construction contexts but should not be
-auto-selected as Starting 5 or Moonshot anchors.
+Players with near-zero card boost (heavily-drafted stars) are displaced from moonshot
+entirely. Starting 5 allows max 1 star via the star anchor pathway. The model now
+correctly prioritizes the high-boost role players who actually win leaderboards.
 
 ### Tunable via Ben
 
-All floors live in `scoring_thresholds` in `data/model-config.json`:
-`min_pts_projection`, `min_pts_per_minute`, `min_chalk_rating`, `min_moonshot_rating`,
-`min_moonshot_pts`, `scoring_bias_base`, `scoring_bias_pts_weight`.
+Scoring gates in `scoring_thresholds`: `min_pts_projection`, `min_pts_per_minute`,
+`min_chalk_rating`, `min_moonshot_rating`, `min_moonshot_pts`, `star_anchor_ppg`,
+`scoring_bias_base`, `scoring_bias_pts_weight`.
+
+Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
+`min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
+`wildcard_min_boost`, `wildcard_min_minutes`, `wildcard_min_season_pts`,
+`max_centers`, `max_per_team`, `dev_team_pts_floor`.
 
 ---
 
@@ -360,16 +367,16 @@ All floors live in `scoring_thresholds` in `data/model-config.json`:
 Starting 5 and Moonshot represent two independent draft strategies — reliability vs ceiling — but **they can share players**. If a player is the best pick for both strategies, they appear in both lineups. Together they predict the two best possible drafts of the day. Target: **70+ total draft score** for both.
 
 ### Slate-Wide: Starting 5 (chalk)
-MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 25-minute season avg minutes floor** (`season_min >= 25`). Configurable via `projection.chalk_season_min_floor`.
+MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 25-minute season avg minutes floor** (`season_min >= 25`). Configurable via `projection.chalk_season_min_floor`. **Star anchor pathway**: players with season_pts >= 20 bypass the boost floor (`chalk_min_boost_floor`), letting one high-PPG star into the pool on nights they project well. Limited by `chalk_max_stars=1`.
 
-### Slate-Wide: Moonshot
-Options strategy. Hard floor of **season avg minutes >= min_minutes_floor** (default 20) + RotoWire lineup clearance + minimum 2.0 rating. Ranked by `moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`. Development/tanking team players get 1.25x boost. **Centers get `pos_efficiency=0.70`** — bigs generate fewer RS events per minute (screens/rim protection don't accumulate RS) compared to guards/wings. Philosophy: ownership (boost^2.5) is the dominant signal; minutes just confirm the player will be on the court.
+### Slate-Wide: Moonshot (v6 — leaderboard-informed)
+Contrarian EV strategy, simplified after 5-day leaderboard analysis. Winners are role players with 3-5x boost on dev teams — stars almost never win moonshot. Formula: `moonshot_ev = base_rating × team_bonus × boost_leverage × (avg_slot + est_mult)` where `boost_leverage = est_mult^1.6`. **Season/recent min >= 15** (lowered from 25 to catch Santos/Clifford/Ellis archetypes). **Minimum 2.0 rating** (lowered from 3.0). **No center penalty** — Poeltl, Queta, Achiuwa all appear in winning lineups. Light variance damping (0.15). Wildcard gate: boost >= 2.0, min 8 min, min 3 PPG. Dev team bonus from live ESPN standings (low win% → higher bonus). Philosophy: boost is the dominant signal; the MILP handles optimal slot assignment.
 
 ### Per-Game: THE LINE UP
 Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant. Optimized purely by projected Real Score × slot multiplier (`est_mult` zeroed out for MILP). **Requires 20-minute recent minutes floor.** Min 2 players per team enforced. Game script adjustments applied.
 
-### Development Teams (configurable in model-config.json)
-Current default: `UTA, IND, BKN, CHI, NOP, SAC, MEM, WAS, DAL` — teams effectively out of playoff contention whose role players get predictable developmental minutes and structurally lower ownership. **This list is a seasonal snapshot** — update via Ben or directly in `data/model-config.json` as the standings shift.
+### Development Teams (continuous from live standings)
+Dev team bonus is now derived from live ESPN standings: `team_bonus = max(1.0, 1.0 + max(0, 0.5 - win_pct))`. SAC .250 → 1.25x, MEM .348 → 1.15x, competitive teams (.500+) → 1.0x. No hardcoded list — auto-updates daily. `dev_team_pts_floor=4.0` prevents bonus on aging bench players.
 
 ### RotoWire Integration (`api/rotowire.py`)
 Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Returns player availability (confirmed/expected/questionable/OUT). Moonshot hard-filters on this: any player flagged OUT or questionable is excluded. Cache TTL: 30 minutes.
@@ -388,13 +395,19 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - Log-formula path (calibrated, off by default): `log_a - log_b × log10(predicted_drafts)`. Activate with `card_boost.log_formula_active: true` in config once 50+ actuals collected.
 - Continuous fame multiplier: `fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)` — replaces the old `star_players` hardcoded list. Tunable via `card_boost.fame_pts_base` (default 8.0) and `card_boost.fame_exponent` (default 2.5).
 
-### Moonshot Formula (tuned Mar 11)
-`moonshot_ev = (predMin^min_weight) × (card_boost^2.5) × dev_team_bonus × rating × pos_efficiency`
+### Moonshot Formula (v6 — simplified)
+`moonshot_ev = base_rating × team_bonus × boost_leverage × (avg_slot + est_mult)`
+
+Where `boost_leverage = est_mult^1.6` and `base_rating = rating × max(0.85, 1.0 - variance × 0.15)`.
 
 Key knobs in `moonshot` section of model-config.json:
-- `min_minutes_floor`: 20 (season avg) — minimum season avg floor; combined with `min_recent_minutes_floor: 25` for an AND gate
-- `card_boost_weight`: 2.5 (raised from 2.0) — ownership is the primary signal; boost^2.5 dominates
-- `big_pos_efficiency`: 0.70 — centers penalized; screens/rim-protection generate fewer RS events per minute than guards/wings
+- `min_minutes_floor`: 15 (season avg) — lowered from 25 to catch Santos/Clifford/Ellis
+- `min_recent_minutes_floor`: 15 — matches season floor
+- `min_rating_floor`: 2.0 — lowered from 3.0; leaderboard winners include RS 2.0-2.2 players
+- `boost_leverage_power`: 1.6 — bakes ownership advantage into MILP rating
+- `variance_penalty`: 0.15 — light damping; moonshot wants upside
+- `max_centers`: 3 — Poeltl, Queta, Achiuwa all appear in winning lineups
+- `max_per_team`: 3 — allows team stacks (Mar 14: 3-5 SAC players optimal)
 
 ### Spread Adjustment (continuous, no cliff edges)
 - Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
