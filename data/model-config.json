@@ -1,7 +1,7 @@
 {
-  "version": 21,
+  "version": 22,
   "updated_at": "2026-03-16T00:00:00Z",
-  "updated_by": "leaderboard-autopsy-mar11-14",
+  "updated_by": "leaderboard-autopsy-feb28-mar14",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -154,8 +154,8 @@
     "boost_leverage_power": 1.6,
     "variance_penalty": 0.3,
     "max_per_team": 3,
-    "wildcard_min_boost": 2.5,
-    "wildcard_min_minutes": 15.0,
+    "wildcard_min_boost": 2.0,
+    "wildcard_min_minutes": 8.0,
     "dev_team_pts_floor": 8.0
   },
   "lab": {
@@ -236,6 +236,11 @@
       "version": 20,
       "date": "2026-03-16",
       "change": "Over model tightening (17% hit rate → targeting 55%+): (1) stat_floors.rebounds 2.0→5.5 — eliminates fringe rebounders (Nance 2.5, Love borderline) from rebounds picks; only legit rotation bigs qualify. (2) min_edge_other_over: 2.5 (new) — over picks on rebounds/assists need a 2.5+ projection edge vs the 1.5 threshold kept for under picks; rebounds are too volatile for small-edge overs. (3) recent_form_over_ratio 1.08→1.15 — require 15% recent form spike to unlock the +12 confidence bonus for overs (was 8%); under model unchanged at 0.92. (4) Claude prompt AVOID clause updated — rebounds/assists overs now require a catalyst (cascade, opp-B2B, or 230+ total); prefer points over when edge quality is similar."
+    },
+    {
+      "version": 22,
+      "date": "2026-03-16",
+      "change": "14-date backtest (Feb 28 - Mar 14, 56 winning lineups): Gate C wildcard tier relaxed. (1) wildcard_min_minutes 15→8 — Santos/Clifford/Walker archetype (7-14 min avg) consistently appeared in winning lineups (Santos in 8/14 dates, Clifford in 5/14) but Gate C's 15-min floor excluded them even after v21 added the wildcard tier. 8-min floor matches the pipeline effective_gate floor so any player who passes projection also qualifies for wildcard evaluation. (2) wildcard_min_boost 2.5→2.0 — our boost estimation runs systematically 30-50% below actual leaderboard boosts (e.g. Clifford estimated ~2.3x, actual 4.2-4.8x; Raynaud estimated ~2.2x, actual 3.3-4.2x). Lowering the threshold ensures near-wildcard players qualify through Gate C when their estimated boost is in the 2.0-2.5 range."
     },
     {
       "version": 21,
