@@ -472,16 +472,34 @@ CONFIG_CACHE_DIR.mkdir(exist_ok=True)
 _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
-        "decay_base": 0.70, "ceiling": 3.0, "floor": 0.2,
-        "base_offset": 0.3, "scalar": 3.4, "big_market_multiplier": 1.3,
+        "ceiling": 3.0, "floor": 0.2,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
-        "log_formula_active": True,     # activated: recalibrated from Mar 14 Saturday actuals
-        "log_a": 4.2,                   # intercept — steeper curve: sub-100 drafts→2.0+, 300+→<1.2
-        "log_b": 1.1,                   # slope — steeper = more separation stars vs role players
-        "log_ownership_scalar": 80.0,   # base scalar for hype factor (raised for 5-7 game slates)
-        "fame_pts_base": 8.0,           # PPG divisor for continuous fame multiplier (reverted from 14; v16 over-corrected)
-        "fame_exponent": 2.5,           # exponent — higher = steeper separation (20ppg→11x, 10ppg→1x)
-        "fame_cap": 3.0,                # cap fame multiplier to prevent 14+ PPG starters from being over-penalized
+        # Sigmoid tier estimation: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
+        "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
+        "big_market_discount": 0.15,
+        # Player overrides from real ownership/actuals data (boost is stable per-player ±0.1x)
+        "player_overrides": {
+            "Aaron Nesmith": 1.9, "Ace Bailey": 2.1, "Al Horford": 2.0,
+            "Amen Thompson": 0.6, "Andre Drummond": 2.3, "Anthony Edwards": 0.2,
+            "Bam Adebayo": 0.6, "Brook Lopez": 3.0, "Bryce McGowens": 3.0,
+            "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Clint Capela": 3.0,
+            "Cody Williams": 3.0, "Collin Sexton": 2.0, "Cooper Flagg": 0.7,
+            "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.9, "Derik Queen": 1.4,
+            "Derrick White": 0.7, "Devin Carter": 3.0, "Donovan Clingan": 1.0,
+            "Grant Williams": 2.8, "Gui Santos": 2.6, "Isaiah Collier": 1.5,
+            "Jalen Johnson": 0.3, "Jarace Walker": 2.3, "Jaylen Brown": 0.3,
+            "Jordan Miller": 2.5, "Julian Reese": 3.0, "Julius Randle": 0.6,
+            "Kam Jones": 3.0, "Kel'el Ware": 1.4, "Kevin Durant": 0.5,
+            "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kyle Filipowski": 2.1,
+            "Kyle Kuzma": 1.7, "LaMelo Ball": 0.6, "Leonard Miller": 3.0,
+            "Luka Dončić": 0.0, "Luke Kennard": 3.0, "Matas Buzelis": 1.4,
+            "Maxime Raynaud": 2.1, "Myles Turner": 1.6, "Noah Clowney": 2.0,
+            "OG Anunoby": 1.1, "Ousmane Dieng": 3.0, "Pat Spencer": 3.0,
+            "Precious Achiuwa": 2.2, "Reed Sheppard": 1.5, "Robert Williams III": 2.3,
+            "Ron Harper Jr.": 3.0, "Royce O'Neale": 2.0, "Rudy Gobert": 1.1,
+            "Russell Westbrook": 1.1, "Scottie Barnes": 0.5, "Simone Fontecchio": 3.0,
+            "Tristan da Silva": 2.8, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3,
+        },
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1337,51 +1355,52 @@ def _cascade_minutes(roster, stats_map):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
-    """Estimate ADDITIVE card boost based on predicted draft popularity.
-    All parameters read from runtime config (data/model-config.json).
-    Falls back to calibrated defaults if config unavailable.
+    """Estimate ADDITIVE card boost for Real Sports.
+
+    Two-layer approach (v23):
+    1. LOOKUP — player_overrides from real ownership/actuals data. Boost is a
+       stable per-player attribute in Real Sports (same player gets ±0.1x across
+       dates regardless of daily draft count). Cross-date proof:
+         Wemby: +0.3x on 1400 AND 8500 drafts
+         Cade: +0.2x on 5300 AND 1200 drafts
+         Bam: +0.6x on 2200 AND 388 drafts
+       So the lookup is the ground truth — use it whenever we have data.
+
+    2. SIGMOID TIER FALLBACK — for players NOT in the lookup, estimate boost
+       from PPG using a sigmoid curve calibrated against 60+ real observations:
+         boost = ceiling - range × sigmoid((PPG - midpoint) / scale)
+       This captures the S-shaped relationship: superstars (25+ PPG) → ~0.2x,
+       quality starters (18 PPG) → ~0.6x, role players (12 PPG) → ~1.6x,
+       deep bench (<8 PPG) → ~2.5-3.0x. Big market discount of -0.15 applied.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
-    decay_base     = cb.get("decay_base", 0.70)
-    ceiling        = cb.get("ceiling", 3.0)
-    floor_val      = cb.get("floor", 0.2)
-    base_offset    = cb.get("base_offset", 0.3)
-    scalar         = cb.get("scalar", 3.4)
-    bm_mult        = cb.get("big_market_multiplier", 1.3)
-    big_markets    = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"]))
+    ceiling   = cb.get("ceiling", 3.0)
+    floor_val = cb.get("floor", 0.2)
 
-    # Continuous fame multiplier based on PPG — replaces binary star_players list.
-    # High-PPG players drive disproportionate ownership regardless of team market.
-    # At base=8: 8ppg→1.0x, 10ppg→2.0x, 13ppg→3.5x, 16ppg→capped at fame_cap
-    # Cap prevents 14+ PPG starters (Jabari, Ayton) from being over-penalized —
-    # they're popular but not as popular as 20+ PPG superstars.
-    fame_pts_base = cb.get("fame_pts_base", 8.0)
-    fame_exponent = cb.get("fame_exponent", 2.5)
-    fame_cap      = cb.get("fame_cap", 3.0)
-    fame_mult = min(fame_cap, max(1.0, (pts / fame_pts_base) ** fame_exponent))
+    # Layer 1: Player lookup from real ownership data
+    overrides = cb.get("player_overrides", {})
+    if player_name and player_name in overrides:
+        return float(overrides[player_name])
 
-    # Log-formula path: boost = log_a - log_b * log10(predicted_drafts)
-    # Recalibrated from March 14 Saturday actuals (7-game slate, larger pool):
-    #   275 drafts → 1.1x, 104 → 2.2x, 74 → 2.5x, 26 → 2.5x, <10 → 3.0x
-    # Steeper curve (log_b=1.1) separates truly obscure from mid-popularity.
-    # Higher scalar (80) accounts for typical 5-7 game slate pool sizes.
-    if cb.get("log_formula_active", False):
-        log_a      = cb.get("log_a", 4.2)
-        log_b      = cb.get("log_b", 1.1)
-        own_scalar = cb.get("log_ownership_scalar", 80.0)
-        # Ownership proxy: PPG-squared * minutes-weight * big-market * continuous fame
-        hype_factor = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5 * fame_mult
-        if team_abbr in big_markets:
-            hype_factor *= bm_mult
-        predicted_drafts = max(1, own_scalar * hype_factor)
-        boost = log_a - log_b * np.log10(predicted_drafts)
-        return round(min(max(boost, floor_val), ceiling), 1)
+    # Layer 2: Sigmoid tier estimation from PPG
+    # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
+    # Calibrated against 60+ observations from Mar 6/9/10 actuals:
+    #   PPG 27 → 0.26, PPG 20 → 0.53, PPG 15 → 1.10, PPG 12 → 1.60,
+    #   PPG 10 → 1.94, PPG 8 → 2.25, PPG 5 → 2.59
+    sig_ceiling  = cb.get("sig_ceiling", 3.0)
+    sig_range    = cb.get("sig_range", 2.8)
+    sig_midpoint = cb.get("sig_midpoint", 12.0)
+    sig_scale    = cb.get("sig_scale", 4.0)
+    bm_discount  = cb.get("big_market_discount", 0.15)
+    big_markets  = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"]))
 
-    # Exponential heuristic (fallback when log_formula_active is False)
-    hype = (pts / 10.0) ** 2 * (proj_min / 30.0) ** 0.5 * fame_mult
+    sigmoid_val = 1.0 / (1.0 + np.exp(-(pts - sig_midpoint) / sig_scale))
+    boost = sig_ceiling - sig_range * sigmoid_val
+
+    # Big market players are more recognizable → slightly lower boost
     if team_abbr in big_markets:
-        hype *= bm_mult
-    boost = scalar * (decay_base ** hype) + base_offset
+        boost -= bm_discount
+
     return round(min(max(boost, floor_val), ceiling), 1)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
@@ -5907,7 +5926,7 @@ async def save_ownership(payload: dict = Body(...)):
     """Save parsed Most Drafted / ownership data to GitHub as CSV.
 
     Stores actual draft counts and card boosts per player for a given date.
-    Used by the calibrate-boost endpoint to fit the log_a/log_b formula
+    Used by the calibrate-boost endpoint to build the player_overrides lookup
     against real ownership data.
 
     Body: { date: str, players: [{player_name|name, team, draft_count, actual_rs,
@@ -5959,34 +5978,30 @@ async def save_ownership(payload: dict = Body(...)):
 
 @app.get("/api/lab/calibrate-boost")
 async def lab_calibrate_boost():
-    """Fit card boost formula parameters (log_a, log_b) from real ownership data.
+    """Build player_overrides lookup from real ownership + actuals data.
 
-    Reads data/ownership/{date}.csv (actual draft counts + card boosts) and
-    uses numpy least-squares to fit: boost = log_a - log_b * log10(draft_count).
+    Reads data/ownership/ and data/actuals/ CSVs to collect per-player boost
+    values. Averages across dates (boost is stable per-player +-0.1x).
 
-    Returns proposed params — does NOT auto-apply.
-    To apply: POST /api/lab/update-config with {"card_boost.log_a": X, "card_boost.log_b": Y}
+    Returns proposed player_overrides dict. Does NOT auto-apply.
+    To apply: POST /api/lab/update-config with card_boost.player_overrides dict.
     """
     try:
+        from collections import defaultdict
+
+        ceiling = _cfg("card_boost.ceiling", 3.0)
+        floor_  = _cfg("card_boost.floor", 0.2)
+        current_overrides = _cfg("card_boost.player_overrides", {})
+
+        player_boosts = defaultdict(list)
+        dates_used = []
+
+        # Collect from ownership CSVs
         own_items = _github_list_dir("data/ownership") or []
         own_dates = sorted(
             [i["name"].replace(".csv", "") for i in own_items if i["name"].endswith(".csv")],
             reverse=True,
         )
-
-        if not own_dates:
-            return {"error": "No ownership data found. Upload a Most Drafted screenshot first.", "n_samples": 0}
-
-        cfg     = _load_config()
-        cb      = cfg.get("card_boost", {})
-        cur_a   = cb.get("log_a", 3.76)
-        cur_b   = cb.get("log_b", 0.88)
-        ceiling = cb.get("ceiling", 3.0)
-        floor_  = cb.get("floor", 0.2)
-        pool    = cb.get("pool_size_estimate", 10000)
-
-        # Collect (draft_count, actual_boost) pairs across all available dates
-        X_rows, y_vals, dates_used = [], [], []
         for date_str in own_dates:
             own_csv, _ = _github_get_file(f"data/ownership/{date_str}.csv")
             if not own_csv:
@@ -5995,60 +6010,68 @@ async def lab_calibrate_boost():
                                              "actual_card_boost", "avg_finish", "rank", "saved_at"])
             added = 0
             for row in own_rows:
-                drafts = _safe_float(row.get("draft_count"))
-                boost  = _safe_float(row.get("actual_card_boost"))
-                if drafts is None or boost is None or drafts < 1 or boost <= 0:
+                boost = _safe_float(row.get("actual_card_boost"))
+                name  = row.get("player", "").strip()
+                if not name or boost is None or boost < 0:
                     continue
-                # Clamp boost to [floor, ceiling] to ignore corrupted data
-                boost_clamped = min(ceiling, max(floor_, boost))
-                X_rows.append([1.0, -np.log10(drafts)])
-                y_vals.append(boost_clamped)
+                player_boosts[name].append(min(ceiling, max(floor_, boost)))
                 added += 1
             if added:
-                dates_used.append(date_str)
+                dates_used.append(f"ownership/{date_str}")
 
-        n = len(X_rows)
-        if n < 4:
+        # Collect from actuals CSVs
+        act_items = _github_list_dir("data/actuals") or []
+        act_dates = sorted(
+            [i["name"].replace(".csv", "") for i in act_items if i["name"].endswith(".csv")],
+            reverse=True,
+        )
+        for date_str in act_dates:
+            act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
+            if not act_csv:
+                continue
+            act_rows = _parse_csv(act_csv, ["player_name", "actual_rs", "actual_card_boost",
+                                             "drafts", "avg_finish", "total_value", "source"])
+            added = 0
+            for row in act_rows:
+                boost = _safe_float(row.get("actual_card_boost"))
+                name  = row.get("player_name", "").strip()
+                if not name or boost is None or boost < 0:
+                    continue
+                player_boosts[name].append(min(ceiling, max(floor_, boost)))
+                added += 1
+            if added:
+                dates_used.append(f"actuals/{date_str}")
+
+        n_players = len(player_boosts)
+        n_samples = sum(len(v) for v in player_boosts.values())
+
+        if n_players < 4:
             return {
-                "error": f"Not enough data points to fit (found {n}, need ≥4). "
-                         "Upload more Most Drafted screenshots.",
-                "n_samples": n,
+                "error": f"Not enough players (found {n_players}, need >= 4). "
+                         "Upload more Most Drafted or Real Scores screenshots.",
+                "n_players": n_players,
                 "dates_with_data": dates_used,
             }
 
-        X = np.array(X_rows)
-        y = np.array(y_vals)
-        coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-        prop_a = round(float(coeffs[0]), 3)
-        prop_b = round(float(coeffs[1]), 3)
+        # Average boost per player (stable +-0.1x across dates)
+        proposed = {}
+        for name, boosts in sorted(player_boosts.items()):
+            proposed[name] = round(sum(boosts) / len(boosts), 1)
 
-        # R² to assess quality of fit
-        y_hat  = X @ coeffs
-        ss_res = float(np.sum((y - y_hat) ** 2))
-        ss_tot = float(np.sum((y - float(np.mean(y))) ** 2))
-        r2     = round(1.0 - ss_res / ss_tot, 3) if ss_tot > 0 else None
-
-        # Sanity check — proposed params must be positive
-        if prop_a <= 0 or prop_b <= 0:
-            return {
-                "error": f"Fit produced invalid params (log_a={prop_a}, log_b={prop_b}). "
-                         "Data may be too noisy. Collect more dates.",
-                "current": {"log_a": cur_a, "log_b": cur_b},
-                "n_samples": n,
-                "r_squared": r2,
-            }
+        # Count new/changed players vs current overrides
+        new_players = [n for n in proposed if n not in current_overrides]
+        changed_players = [n for n in proposed if n in current_overrides
+                           and abs(proposed[n] - current_overrides[n]) >= 0.1]
 
         return {
-            "current":         {"log_a": cur_a, "log_b": cur_b},
-            "proposed":        {"log_a": prop_a, "log_b": prop_b},
-            "n_samples":       n,
+            "current_count":   len(current_overrides),
+            "proposed_count":  n_players,
+            "proposed":        proposed,
+            "n_samples":       n_samples,
             "dates_used":      dates_used,
-            "r_squared":       r2,
-            "pool_size_used":  pool,
-            "note": (
-                f"To apply: POST /api/lab/update-config with "
-                f'{{\"card_boost.log_a\": {prop_a}, \"card_boost.log_b\": {prop_b}}}'
-            ),
+            "new_players":     new_players,
+            "changed_players": changed_players,
+            "note": "To apply: POST /api/lab/update-config with card_boost.player_overrides dict",
         }
 
     except Exception as e:
