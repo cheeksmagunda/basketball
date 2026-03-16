@@ -38,22 +38,23 @@ def _format_game_time_et(iso_date_str):
 
 
 def _game_lookup_from_games(games):
-    """Build team abbr -> {opponent, opp_b2b, total, spread, game_time} lookup."""
+    """Build team abbr -> {opponent, opp_b2b, total, spread, game_time, game_start_iso} lookup."""
     lookup = {}
     for g in games:
         home_abbr = g["home"]["abbr"]
         away_abbr = g["away"]["abbr"]
         game_time = _format_game_time_et(g.get("startTime", ""))
+        start_iso = g.get("startTime", "")
         entry = {
             "opponent": away_abbr, "opp_b2b": g.get("away_b2b", False),
             "total": g.get("total", 222), "spread": g.get("spread", 0),
-            "game_time": game_time,
+            "game_time": game_time, "game_start_iso": start_iso,
         }
         lookup[home_abbr] = dict(entry)
         lookup[away_abbr] = {
             "opponent": home_abbr, "opp_b2b": g.get("home_b2b", False),
             "total": g.get("total", 222), "spread": g.get("spread", 0),
-            "game_time": game_time,
+            "game_time": game_time, "game_start_iso": start_iso,
         }
     return lookup
 
@@ -338,6 +339,7 @@ def run_model_fallback(projections, games, line_config=None):
                 "proj_min": round(pred_min, 1),
                 "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
                 "game_time": gctx.get("game_time", ""),
+                "game_start_iso": gctx.get("game_start_iso", ""),
                 "recent_form_bars": recent_form_bars,
             })
 
@@ -384,6 +386,7 @@ def run_model_fallback(projections, games, line_config=None):
                     "proj_min": round(pred_min, 1),
                     "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
                     "game_time": gctx.get("game_time", ""),
+                    "game_start_iso": gctx.get("game_start_iso", ""),
                     "recent_form_bars": [1.0] * 5,
                 })
         if last_resort:
@@ -431,6 +434,8 @@ def _enrich_pick_from_projections(pick, projections, game_ctx_map):
                 pick["avg_min"] = round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0
             if "game_time" not in pick or not pick.get("game_time"):
                 pick["game_time"] = game_ctx_map.get(team, {}).get("game_time", "")
+            if "game_start_iso" not in pick or not pick.get("game_start_iso"):
+                pick["game_start_iso"] = game_ctx_map.get(team, {}).get("game_start_iso", "")
             if "recent_form_bars" not in pick or not pick.get("recent_form_bars"):
                 season_val = p.get(season_field, p.get(meta["field"], 0)) or 0.01
                 recent_val = p.get(recent_field, pick.get("projection", 0))

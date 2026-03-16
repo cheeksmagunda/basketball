@@ -1494,6 +1494,9 @@ function switchTab(tab) {
   if (tab !== 'line' && LINE_RESOLVE_POLL) {
     clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null;
   }
+  if (tab !== 'line' && _lineLiveScheduleTimer) {
+    clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null;
+  }
 
   document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
@@ -2895,8 +2898,51 @@ function classifyFetchError(err, response) {
 }
 
 
+/** Return true if the given pick's game is currently in its live window.
+ *  Live window = game_start - 30min to game_start + 4.5h.
+ *  Returns true when game_start_iso is absent (fail-open: poll if unknown). */
+function _isPickGameLive(pick) {
+  if (!pick || !pick.game_start_iso) return true; // unknown — allow poll
+  try {
+    const startMs = new Date(pick.game_start_iso).getTime();
+    if (isNaN(startMs)) return true;
+    const now = Date.now();
+    return now >= startMs - 30 * 60 * 1000 && now <= startMs + 4.5 * 60 * 60 * 1000;
+  } catch(e) { return true; }
+}
+
+/** Return ms until 30 min before the pick's game starts, or 0 if already in window. */
+function _msUntilPickLive(pick) {
+  if (!pick || !pick.game_start_iso) return 0;
+  try {
+    const startMs = new Date(pick.game_start_iso).getTime();
+    if (isNaN(startMs)) return 0;
+    const windowOpen = startMs - 30 * 60 * 1000;
+    return Math.max(0, windowOpen - Date.now());
+  } catch(e) { return 0; }
+}
+
+let _lineLiveScheduleTimer = null; // setTimeout id for pre-game schedule
+
 async function _startLineLivePoll(overPick, underPick) {
   if (LINE_LIVE_POLL) { clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null; }
+  if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
+
+  // Don't poll if both games are outside their live window — schedule a wakeup instead.
+  const overLive  = _isPickGameLive(overPick);
+  const underLive = _isPickGameLive(underPick);
+  if (!overLive && !underLive) {
+    const msOver  = overPick  ? _msUntilPickLive(overPick)  : Infinity;
+    const msUnder = underPick ? _msUntilPickLive(underPick) : Infinity;
+    const msWait  = Math.min(msOver, msUnder);
+    if (msWait > 0 && isFinite(msWait)) {
+      _lineLiveScheduleTimer = setTimeout(() => {
+        _lineLiveScheduleTimer = null;
+        _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+      }, msWait);
+    }
+    return; // nothing to poll right now
+  }
 
   let failureCount = 0;  // Track consecutive API failures
   const MAX_FAILURES = 5;  // Stop polling after 5 consecutive failures (150s tolerance for ESPN slowness)
@@ -2955,8 +3001,8 @@ async function _startLineLivePoll(overPick, underPick) {
 
     // Per-direction game completion: when a direction's game finishes,
     // re-fetch line-of-the-day to trigger per-direction rotation.
-    const overDone = !overPick || (overData && ['final','no_game'].includes(overData.status));
-    const underDone = !underPick || (underData && ['final','no_game'].includes(underData.status));
+    const overDone = !overPick || (overData && overData.status === 'final');
+    const underDone = !underPick || (underData && underData.status === 'final');
     if (overDone || underDone) {
       // At least one game finished — re-fetch to trigger rotation for that direction.
       // Only re-fetch once (gate with _lineRotationTriggered to avoid repeated calls).
@@ -2976,6 +3022,7 @@ async function _startLineLivePoll(overPick, underPick) {
     }
     if (overDone && underDone) {
       clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
+      if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
       // EVENT-BASED TRIGGER: Games finished — immediately check if slate is now unlocked
       if (document.getElementById('tab-lab')?.classList.contains('active')) {
         console.warn('[event] Games final detected — triggering immediate lab status check');
@@ -3074,6 +3121,7 @@ function _renderLineLOTDFromState() {
 async function fetchLineOfTheDay(nocache = false) {
   LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
   _lineRotationTriggered = false; // reset so live poll can trigger rotation for new picks
+  if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
   _renderLineLOTDFromState();
 
   let r;

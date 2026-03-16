@@ -336,7 +336,7 @@ def _slate_cache_to_github(slate_data: dict):
         today = _et_date().isoformat()
         path = f"data/slate/{today}_slate.json"
         # Stamp deploy SHA so /api/slate can detect when a new deploy invalidates cached picks
-        sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+        sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
         if sha:
             slate_data["deploy_sha"] = sha[:7]
         content = json.dumps(slate_data, default=str)
@@ -1833,8 +1833,8 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "stat_type", "projection", "edge", "confidence", "narrative", "signals",
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
-    "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
-    "recent_form_values",
+    "season_avg", "proj_min", "avg_min", "game_time", "game_start_iso",
+    "recent_form_bars", "recent_form_values",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1866,6 +1866,7 @@ def _normalize_line_pick(p: dict) -> dict:
         "proj_min":        p.get("proj_min"),
         "avg_min":         p.get("avg_min"),
         "game_time":          p.get("game_time", ""),
+        "game_start_iso":     p.get("game_start_iso", ""),
         "recent_form_bars":   p.get("recent_form_bars"),
         "recent_form_values": p.get("recent_form_values"),
     }
@@ -2335,8 +2336,8 @@ async def health() -> dict:
 
 @app.get("/api/version")
 async def version() -> dict:
-    """Return build/deploy identifier for 'what is deployed' checks. Set VERCEL_GIT_COMMIT_SHA at build time."""
-    sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+    """Return build/deploy identifier for 'what is deployed' checks. Set RAILWAY_GIT_COMMIT_SHA at build time."""
+    sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
     return {"version": sha[:7] if sha else "unknown"}
 
 
@@ -2528,7 +2529,7 @@ def _get_slate_impl():
             # picks were built with the old model. Detect SHA mismatch and regenerate
             # in the background — user gets the stale-but-functional slate immediately,
             # and the next request will serve the freshly regenerated picks.
-            _current_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+            _current_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
             _cached_sha = lock_cached.get("deploy_sha", "")
             if _current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7]:
                 if not getattr(_force_regenerate_bg, "_in_flight", False):
@@ -2649,7 +2650,7 @@ def _get_slate_impl():
                     print(f"slate err: {e}")
         chalk, upside = _build_lineups(all_proj)
         lineups = {"chalk": chalk, "upside": upside}
-        _deploy_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+        _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
         result = {"date": _et_date().isoformat(), "games": games,
                   "lineups": lineups, "locked": locked,
                   "all_complete": False, "draftable_count": len(draftable_games),
@@ -3035,7 +3036,7 @@ def _force_regenerate_sync(scope: str):
     _bust_slate_cache()
 
     # Step 5: Build the slate cache object and persist to all layers
-    deploy_sha = os.getenv("VERCEL_GIT_COMMIT_SHA", "")
+    deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
     result = {
         "date": today_str, "games": games,
         "lineups": lineups, "locked": True,
@@ -3872,7 +3873,7 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
     entirely when the stored picks already have all display fields (avoids 30-60s cold-start hit)."""
     if not picks_dict:
         return
-    _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars")
+    _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "game_start_iso", "recent_form_bars")
     def _needs_proj(pick):
         return bool(pick) and any(pick.get(f) is None for f in _enrich_fields)
     needs_proj = any(_needs_proj(picks_dict.get(k)) for k in ("over_pick", "under_pick"))
