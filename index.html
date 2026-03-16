@@ -2955,8 +2955,8 @@ async function _startLineLivePoll(overPick, underPick) {
 
     // Per-direction game completion: when a direction's game finishes,
     // re-fetch line-of-the-day to trigger per-direction rotation.
-    const overDone = !overPick || (overData && ['final','no_game'].includes(overData.status));
-    const underDone = !underPick || (underData && ['final','no_game'].includes(underData.status));
+    const overDone = !overPick || (overData && overData.status === 'final');
+    const underDone = !underPick || (underData && underData.status === 'final');
     if (overDone || underDone) {
       // At least one game finished — re-fetch to trigger rotation for that direction.
       // Only re-fetch once (gate with _lineRotationTriggered to avoid repeated calls).
