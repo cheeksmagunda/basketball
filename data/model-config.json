@@ -1,7 +1,7 @@
 {
-  "version": 28,
-  "updated_at": "2026-03-16T21:00:00Z",
-  "updated_by": "leaderboard-simplification-v6",
+  "version": 29,
+  "updated_at": "2026-03-16T22:00:00Z",
+  "updated_by": "moonshot-star-anchor",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_per_minute": 0.35,
@@ -183,6 +183,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 29,
+      "date": "2026-03-16",
+      "change": "Moonshot star anchor — same logic as Starting 5. Stars (season_pts >= 20, star_anchor_ppg) now qualify as a 5th moonshot eligibility pathway alongside regular/spot-starter/wildcard/role-spike. Star anchors bypass min_card_boost gate (same pattern as chalk bypassing chalk_min_boost_floor). Requirements: season_min >= 25, rating >= 4.0, pred_min >= season_min (real starters projecting well tonight). MILP max_low_boost=1 + low_boost_threshold=0.8 limits moonshot to at most 1 star — other 4 slots stay high-boost role players. Both lineups now operate on the same star anchor logic: high-boost role players PLUS one big shoota who can pop off."
+    },
     {
       "version": 28,
       "date": "2026-03-16",

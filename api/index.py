@@ -2096,16 +2096,15 @@ def _build_lineups(projections):
         season_pts = p.get("season_pts", p.get("pts", 0))
         est_mult   = p.get("est_mult", 0.3)
 
-        # ── Moonshot eligibility (simplified v6 — leaderboard-informed) ─────────
-        # 5-day leaderboard analysis (Mar 8-13): winning lineups are dominated by
-        # role players with 3-5x boost on dev teams (da Silva, Ellis, Clifford,
-        # Santos, Sensabaugh). Stars almost never win moonshot — boost is king.
-        #
-        # Eligibility: any of 4 pathways (simplified from complex multi-gate):
+        # ── Moonshot eligibility (v6 — leaderboard-informed + star anchor) ─────
+        # 5 pathways into the moonshot pool:
         #   Regular: season AND recent min meet floor (default 15 each)
         #   Spot-starter: cascade injury gave them a starter role
         #   Wildcard: ultra-high boost, some minutes, some scoring
         #   Role spike: recent minutes >> season (role change/injury)
+        #   Star anchor: 20+ PPG starters — same logic as Starting 5. Both lineups
+        #     need a "big shoota" who can pop off. MILP max_low_boost=1 ensures
+        #     only 1 star gets in; other 4 slots stay high-boost role players.
         is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
         is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
         is_moonshot_wildcard     = (
@@ -2122,16 +2121,23 @@ def _build_lineups(projections):
             and recent_min >= season_min * role_spike_ratio
             and est_mult >= min_boost
         )
+        # Star anchor: same gate as chalk — 20+ PPG real starters with strong RS.
+        star_anchor_ppg = float(_cfg("scoring_thresholds.star_anchor_ppg", 20.0))
+        is_star_anchor = (
+            season_pts >= star_anchor_ppg
+            and season_min >= 25
+            and p["rating"] >= 4.0
+        )
         if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
-                or is_role_spike):
+                or is_role_spike or is_star_anchor):
             continue
 
         # Never draft a moonshot player projected below their season minute average.
         if pred_min < season_min:
             continue
 
-        # Minimum card boost — moonshot is a contrarian play
-        if est_mult < min_boost:
+        # Minimum card boost — star anchors bypass (same as chalk bypass pattern)
+        if not is_star_anchor and est_mult < min_boost:
             continue
 
         # RotoWire: only exclude confirmed OUT players.
@@ -2200,10 +2206,14 @@ def _build_lineups(projections):
             center_count += 1
 
     moonshot_max_team = int(moon_cfg.get("max_per_team", 2))
+    # max_low_boost=1: mirrors chalk — at most 1 star anchor (low boost) in moonshot.
+    # The other 4 slots stay as high-boost role players. Same logic as Starting 5.
     upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
-                             rating_key="adj_ceiling",  # ceiling-based, not median rating
+                             rating_key="adj_ceiling",
                              card_boost_key="est_mult",
-                             max_per_team=moonshot_max_team)
+                             max_per_team=moonshot_max_team,
+                             max_low_boost=1,
+                             low_boost_threshold=0.8)
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
 
