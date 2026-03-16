@@ -1,7 +1,7 @@
 {
-  "version": 20,
+  "version": 21,
   "updated_at": "2026-03-16T00:00:00Z",
-  "updated_by": "over-model-tightening",
+  "updated_by": "leaderboard-autopsy-mar11-14",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -106,7 +106,7 @@
     "chalk_recent_min_floor": 15.0,
     "chalk_max_stars": 1,
     "chalk_star_boost_threshold": 0.8,
-    "leverage_top_slots": 2,
+    "leverage_top_slots": 1,
     "leverage_boost_threshold": 1.5,
     "big_man_calibration": {
       "reb_baseline": 6.0,
@@ -152,7 +152,11 @@
     "big_pos_efficiency": 0.85,
     "max_centers": 2,
     "boost_leverage_power": 1.6,
-    "variance_penalty": 0.3
+    "variance_penalty": 0.3,
+    "max_per_team": 3,
+    "wildcard_min_boost": 2.5,
+    "wildcard_min_minutes": 15.0,
+    "dev_team_pts_floor": 8.0
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0
@@ -232,6 +236,11 @@
       "version": 20,
       "date": "2026-03-16",
       "change": "Over model tightening (17% hit rate → targeting 55%+): (1) stat_floors.rebounds 2.0→5.5 — eliminates fringe rebounders (Nance 2.5, Love borderline) from rebounds picks; only legit rotation bigs qualify. (2) min_edge_other_over: 2.5 (new) — over picks on rebounds/assists need a 2.5+ projection edge vs the 1.5 threshold kept for under picks; rebounds are too volatile for small-edge overs. (3) recent_form_over_ratio 1.08→1.15 — require 15% recent form spike to unlock the +12 confidence bonus for overs (was 8%); under model unchanged at 0.92. (4) Claude prompt AVOID clause updated — rebounds/assists overs now require a catalyst (cascade, opp-B2B, or 230+ total); prefer points over when edge quality is similar."
+    },
+    {
+      "version": 21,
+      "date": "2026-03-16",
+      "change": "Leaderboard autopsy Mar 11-14 (winners 69-82, our sim ~55-67): 4 fixes. (1) Moonshot wildcard gate C — ultra-high-boost bench players (boost>=2.5, pred_min>=15) now qualify regardless of season/recent min floor. Captures Santos/Plowden/Hendricks archetype (10-18 min avg, 3-6ppg, 4.0-4.5x total multiplier) that appeared in all 4 winning leaderboards but was outside our projection pool. Wildcards bypass the 2.0 rating floor (their upside is pure boost leverage). (2) Moonshot max_per_team 2→3 (configurable via moonshot.max_per_team) — March 14 optimal play was 3-5 SAC players (Achiuwa RS 5.1, Raynaud RS 3.8, Westbrook RS 4.1, Clifford RS 2.1, Plowden RS 3.3); hardcoded max_per_team=2 prevented this entire stack. (3) S5 leverage_top_slots 2→1 — winning lineups put the high-RS anchor (Bane 6.5, Doncic 9.3, Murray 6.7, Jokic 5.1-6.5) in the 2.0x TOP slot, but our leverage_top_slots=2 forced both top slots to contrarians, never allowing a star anchor. (4) Dev team pts floor (moonshot.dev_team_pts_floor=8.0) — dev team bonus now suppressed for players with pts<8 (aging bench fodder like Jordan 6pts on NO got 1.30x undeservedly; Sensabaugh 12pts/UTAH still gets full bonus)."
     },
     {
       "version": 19,

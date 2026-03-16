@@ -1,5 +1,5 @@
 """
-Simulate v20 model config predictions for past dates.
+Simulate v21 model config predictions for past dates.
 Uses player stats recorded in prediction CSVs and re-applies current model formulas.
 No PuLP needed — greedy optimizer with constraint enforcement.
 """
@@ -9,7 +9,7 @@ import sys
 from collections import defaultdict
 
 # ─────────────────────────────────────────────
-# V20 CONFIG
+# V21 CONFIG (updated from leaderboard autopsy Mar 11-14)
 # ─────────────────────────────────────────────
 LOG_A = 4.2
 LOG_B = 1.1
@@ -20,21 +20,25 @@ BIG_MARKET_TEAMS = {"LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","C
 BOOST_CEILING = 3.0
 BOOST_FLOOR = 0.2
 
-CHALK_SEASON_MIN_FLOOR = 25.0   # v15
+CHALK_SEASON_MIN_FLOOR = 25.0
 CHALK_RECENT_MIN_FLOOR = 15.0
 CHALK_BOOST_CAP = 2.5
-CHALK_MAX_STARS = 1             # v15
+CHALK_MAX_STARS = 1
 CHALK_STAR_BOOST_THRESHOLD = 0.8
-LEVERAGE_TOP_SLOTS = 2          # v15: force 2 contrarians in top 2 slots
+LEVERAGE_TOP_SLOTS = 1          # v21: 2→1, allows star anchor in top slot
 LEVERAGE_BOOST_THRESHOLD = 1.5
 
 MOONSHOT_MIN_SEASON = 20.0
-MOONSHOT_MIN_RECENT = 20.0      # v17 lowered from 25
-MOONSHOT_MIN_BOOST = 1.5        # v14
+MOONSHOT_MIN_RECENT = 20.0
+MOONSHOT_MIN_BOOST = 1.5
 MOONSHOT_MIN_RATING = 2.0
-BOOST_LEVERAGE_POWER = 1.6      # v17
-BIG_POS_EFFICIENCY = 0.85       # v18
-VARIANCE_PENALTY = 0.3          # v19
+MOONSHOT_MAX_PER_TEAM = 3       # v21: 2→3, enables game stacking
+MOONSHOT_WILDCARD_BOOST = 2.5   # v21: new gate C
+MOONSHOT_WILDCARD_MIN = 15.0    # v21: new gate C minutes floor
+MOONSHOT_DEV_PTS_FLOOR = 8.0    # v21: suppress dev bonus for aging bench fodder
+BOOST_LEVERAGE_POWER = 1.6
+BIG_POS_EFFICIENCY = 0.85
+VARIANCE_PENALTY = 0.3
 MAX_CENTERS = 2
 
 SLOT_MULTS = [2.0, 1.8, 1.6, 1.4, 1.2]
@@ -60,22 +64,26 @@ def card_boost(pts, pred_min, team):
     return max(BOOST_FLOOR, min(BOOST_CEILING, raw))
 
 
-def dev_team_bonus(team):
+def dev_team_bonus(team, pts=0):
+    """Dev bonus only applies when pts >= dev_team_pts_floor (v21)."""
+    if pts < MOONSHOT_DEV_PTS_FLOOR:
+        return 1.0
     wp = WIN_PCT.get(team, 0.5)
     return max(1.0, 1.0 + max(0, 0.5 - wp))
 
 
 def pos_group(pos):
+    """Match actual api/index.py POS_GROUPS: PF→F, not C."""
     p = pos.upper()
-    if p in ("C", "PF"):
+    if p == "C":
         return "C"
-    if p in ("SF", "F"):
+    if p in ("PF", "SF", "F"):
         return "F"
     return "G"
 
 
 def is_center(pos):
-    return pos.upper() in ("C", "PF")
+    return pos.upper() == "C"  # PF is F group per actual code
 
 
 def chalk_ev(rating, boost, reliability=1.0):
@@ -83,14 +91,14 @@ def chalk_ev(rating, boost, reliability=1.0):
     return rating * (AVG_SLOT + capped) * reliability
 
 
-def moonshot_ev(rating, boost, pos, team, pts_per_min=0, stl=0, blk=0, pred_min=28):
+def moonshot_ev(rating, boost, pos, team, pts=0, stl=0, blk=0, pred_min=28):
     if boost < MOONSHOT_MIN_BOOST:
         return 0.0
     # consistency base (variance proxy from pts variability — approximate)
     variance = min(0.5, max(0.0, (rating - 2.0) / 8.0))  # rough proxy
     consistency = rating * max(0.75, 1.0 - variance * VARIANCE_PENALTY)
 
-    team_bonus = dev_team_bonus(team)
+    team_bonus = dev_team_bonus(team, pts=pts)  # v21: pts-gated dev bonus
     pos_eff = BIG_POS_EFFICIENCY if is_center(pos) else 1.0
 
     # defensive bonus: estimate from stl+blk relative to minutes
@@ -221,9 +229,11 @@ def pick_starting5(pool):
 
 def pick_moonshot(pool):
     """
-    Pick slate Moonshot under v20 rules.
-    Constraints: ≤2 per team, ≤1 per (team, pos_group), ≤2 centers.
-    Filter: boost >= 1.5, pred_min >= 20.
+    Pick slate Moonshot under v21 rules.
+    Constraints: ≤3 per team (v21 stacking), ≤1 per (team, pos_group), ≤2 centers.
+    Gates: A (regular: season>=20 & recent>=20), B (cascade: pred>=28 & cascade>=10),
+           C (wildcard: boost>=2.5 & pred_min>=15) — v21 addition.
+    Dev team bonus suppressed for pts < 8 (v21).
     """
     candidates = []
     for p in pool:
@@ -232,18 +242,28 @@ def pick_moonshot(pool):
         rating = float(p["predicted_rs"])
         team = p["team"]
         pos = p["pos"]
-        stl = float(p["stl"])
-        blk = float(p["blk"])
+        stl = float(p.get("stl", 0))
+        blk = float(p.get("blk", 0))
 
-        if rating < MOONSHOT_MIN_RATING:
-            continue
-        if pred_min < MOONSHOT_MIN_SEASON:
-            continue
         boost = card_boost(pts, pred_min, team)
         if boost < MOONSHOT_MIN_BOOST:
             continue
 
-        ev = moonshot_ev(rating, boost, pos, team, stl=stl, blk=blk, pred_min=pred_min)
+        # Gate A: proven regular
+        gate_a = (pred_min >= MOONSHOT_MIN_SEASON)
+        # Gate B: spot-starter via cascade (approximate — no cascade data in CSV)
+        gate_b = False
+        # Gate C (v21): ultra-high boost wildcard — bypasses minutes floor
+        gate_c = (boost >= MOONSHOT_WILDCARD_BOOST and pred_min >= MOONSHOT_WILDCARD_MIN)
+
+        if not (gate_a or gate_b or gate_c):
+            continue
+
+        # Rating floor — wildcards bypass it (their upside is pure boost leverage)
+        if not gate_c and rating < MOONSHOT_MIN_RATING:
+            continue
+
+        ev = moonshot_ev(rating, boost, pos, team, pts=pts, stl=stl, blk=blk, pred_min=pred_min)
         candidates.append({
             "name": p["player_name"],
             "team": team,
@@ -255,6 +275,7 @@ def pick_moonshot(pool):
             "pts": pts,
             "reb": p.get("reb", "?"),
             "ast": p.get("ast", "?"),
+            "wildcard": gate_c and not gate_a,
         })
 
     candidates.sort(key=lambda x: x["ev"], reverse=True)
@@ -272,7 +293,7 @@ def pick_moonshot(pool):
         key = (team, pg)
         is_c = is_center(p["pos"])
 
-        if team_count[team] >= 2:
+        if team_count[team] >= MOONSHOT_MAX_PER_TEAM:  # v21: was 2, now 3
             continue
         if key in team_pos_used:
             continue
@@ -291,20 +312,21 @@ def pick_moonshot(pool):
 def print_lineup(label, lineup):
     slots = SLOT_MULTS[:len(lineup)]
     print(f"\n  {label}")
-    print(f"  {'Slot':<6} {'Player':<28} {'Team':<5} {'Pos':<4} {'RS':>5} {'Boost':>6} {'Mins':>5}  {'Pts/Reb/Ast'}")
-    print("  " + "─" * 80)
+    print(f"  {'Slot':<6} {'Player':<28} {'Team':<5} {'Pos':<4} {'RS':>5} {'Boost':>6} {'Mins':>5}  {'Pts/Reb/Ast':<14}")
+    print("  " + "─" * 85)
     for i, (p, slot) in enumerate(zip(lineup, slots)):
+        flag = " ★WC" if p.get("wildcard") else ""
         print(f"  {slot:.1f}x   {p['name']:<28} {p['team']:<5} {p['pos']:<4} "
               f"{p['rating']:>5.1f} +{p['boost']:>4.2f}x {p['pred_min']:>5.1f}  "
-              f"{p['pts']:.0f}/{p.get('reb','?')}/{p.get('ast','?')} "
-              f"  [ev={p['ev']:.1f}]")
+              f"{p['pts']:.0f}/{p.get('reb','?')}/{p.get('ast','?'):<6}"
+              f"  [ev={p['ev']:.1f}]{flag}")
 
 
 def simulate_date(date_str):
     path = f"/home/user/basketball/data/predictions/{date_str}.csv"
-    print(f"\n{'═'*82}")
-    print(f"  {date_str}  (v20 model simulation)")
-    print(f"{'═'*82}")
+    print(f"\n{'═'*87}")
+    print(f"  {date_str}  (v21 model simulation)")
+    print(f"{'═'*87}")
 
     # Load full player pool - include reb/ast in enrichment
     enriched = {}
@@ -320,28 +342,32 @@ def simulate_date(date_str):
     for p in pool:
         p.setdefault("reb", "?")
         p.setdefault("ast", "?")
+        p.setdefault("stl", "0")
+        p.setdefault("blk", "0")
 
     starting5 = pick_starting5(pool)
     moonshot = pick_moonshot(pool)
 
-    print_lineup("STARTING 5  (chalk · v20)", starting5)
-    print_lineup("MOONSHOT    (upside · v20)", moonshot)
+    print_lineup("STARTING 5  (chalk · v21)", starting5)
+    print_lineup("MOONSHOT    (upside · v21)  ★WC = wildcard gate", moonshot)
 
     # Quick summary
     s5_boost_total = sum(min(p["boost"], CHALK_BOOST_CAP) for p in starting5)
     ms_boost_total = sum(p["boost"] for p in moonshot)
+    wc_count = sum(1 for p in moonshot if p.get("wildcard"))
     print(f"\n  S5 avg boost: {s5_boost_total/len(starting5):.2f}x  |  "
-          f"Moonshot avg boost: {ms_boost_total/max(len(moonshot),1):.2f}x")
+          f"Moonshot avg boost: {ms_boost_total/max(len(moonshot),1):.2f}x  |  "
+          f"Wildcards in moonshot: {wc_count}")
     print(f"  Player pool size fed into optimizer: {len(pool)}")
 
 
 if __name__ == "__main__":
     dates = ["2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14"]
-    print("\n  NOTE: Re-simulating with current v20 model config applied to")
+    print("\n  NOTE: Re-simulating with current v21 model config applied to")
     print("  player stats recorded in prediction CSVs for those dates.")
-    print("  Player pool = all unique players across all lineup types/scopes.")
-    print("  Approximations: pred_min used as season_min proxy,")
-    print("  variance estimated from RS rating, win_pct from ~mid-March standings.")
+    print("  v21 changes: wildcard gate C, stacking max_per_team=3,")
+    print("  leverage_top_slots=1, dev team pts floor=8.")
+    print("  Pool = all unique players across all lineup types/scopes.")
     for d in dates:
         simulate_date(d)
     print("\n")

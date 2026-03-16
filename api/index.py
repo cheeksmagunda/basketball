@@ -1960,6 +1960,11 @@ def _build_lineups(projections):
     big_eff   = moon_cfg.get("big_pos_efficiency", 0.70)
     team_win_pcts = _fetch_team_win_pcts()
 
+    # Wildcard gate thresholds — read once outside the loop
+    wildcard_boost = moon_cfg.get("wildcard_min_boost", 2.5)
+    wildcard_min   = moon_cfg.get("wildcard_min_minutes", 15.0)
+    dev_pts_floor  = moon_cfg.get("dev_team_pts_floor", 8.0)
+
     chalk_names = {p["name"] for p in chalk}
 
     moonshot_pool = []
@@ -1971,11 +1976,17 @@ def _build_lineups(projections):
         # Condition A: Both historical floors met.
         # Condition B: predMin >= 28 AND _cascade_bonus >= 10 — prevents DFS Ghosts
         #   (trickle-cascade bench warmers) from clearing both gates simultaneously.
-        is_moonshot_regular     = (p.get("season_min", 0) >= min_floor and
-                                   p.get("recent_min", 0) >= min_recent_floor)
+        # Condition C: Wildcard — ultra-high boost (>=2.5) + minimal floor (>=15 min).
+        #   Captures the Santos/Plowden/Hendricks archetype: bench players who get
+        #   15-20 min with 3-6 PPG and generate 4.0-4.5x total multipliers because
+        #   almost nobody drafts them. Even RS 2.0-3.0 × 3.0+ boost = top-5 value.
+        is_moonshot_regular      = (p.get("season_min", 0) >= min_floor and
+                                    p.get("recent_min", 0) >= min_recent_floor)
         is_moonshot_spot_starter = (p.get("predMin", 0) >= 28.0 and
                                     p.get("_cascade_bonus", 0) >= 10.0)
-        if not (is_moonshot_regular or is_moonshot_spot_starter):
+        is_moonshot_wildcard     = (p.get("est_mult", 0) >= wildcard_boost and
+                                    p.get("predMin", 0) >= wildcard_min)
+        if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard):
             continue
 
         # Minimum card boost — the whole point of moonshot is contrarian plays
@@ -1988,16 +1999,20 @@ def _build_lineups(projections):
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
             continue
 
-        # Minimum rating floor — still need some production floor
-        if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
+        # Minimum rating floor — wildcards bypass this (their upside is purely
+        # boost-driven; even RS 1.5 × 3.0x boost beats RS 2.5 × 1.8x boost).
+        if not is_moonshot_wildcard and p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
         # Continuous rebuild bonus: teams with lower win% get a larger multiplier.
         # Formula: max(1.0, 1.0 + max(0, 0.5 - win_pct))
         # .250 team → 1.25x  |  .350 team → 1.15x  |  .500+ team → 1.0x
         # No hardcoded list — derived from live ESPN standings, cached daily.
+        # Dev pts floor: don't apply dev bonus to aging bench fodder (Jordan 6pts/21min
+        # on NO gets 1.30x undeservedly — they're not "developing," they're just bad).
         win_pct = team_win_pcts.get(p.get("team", ""), 0.5)
-        team_bonus = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
+        raw_bonus  = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
+        team_bonus = raw_bonus if p.get("pts", 0) >= dev_pts_floor else 1.0
         pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
         est_mult  = p.get("est_mult", 0.3)
 
@@ -2061,10 +2076,11 @@ def _build_lineups(projections):
         if is_center:
             center_count += 1
 
+    moonshot_max_team = int(moon_cfg.get("max_per_team", 2))
     upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
                              rating_key="adj_ceiling",  # ceiling-based, not median rating
                              card_boost_key="est_mult",
-                             max_per_team=2)
+                             max_per_team=moonshot_max_team)
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
 
