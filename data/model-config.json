@@ -1,7 +1,7 @@
 {
-  "version": 15,
-  "updated_at": "2026-03-15T00:00:00Z",
-  "updated_by": "mar14-starting5-audit",
+  "version": 19,
+  "updated_at": "2026-03-16T00:00:00Z",
+  "updated_by": "mar15-variance-penalty-bench-threshold",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -27,7 +27,7 @@
     "log_b": 1.1,
     "log_ownership_scalar": 80.0,
     "pool_size_estimate": 10000,
-    "fame_pts_base": 8.0,
+    "fame_pts_base": 14.0,
     "fame_exponent": 2.5
   },
   "game_script": {
@@ -107,21 +107,16 @@
     "chalk_max_stars": 1,
     "chalk_star_boost_threshold": 0.8,
     "leverage_top_slots": 2,
-    "leverage_boost_threshold": 1.5
+    "leverage_boost_threshold": 1.5,
+    "big_man_calibration": {
+      "reb_baseline": 6.0,
+      "reb_scale": 0.04,
+      "blk_scale": 0.10,
+      "pts_cap": 16.0
+    },
+    "bench_pts_threshold": 14.0,
+    "bench_min_threshold": 30.0
   },
-  "development_teams": [
-    "UTA",
-    "IND",
-    "BKN",
-    "CHI",
-    "NOP",
-    "SAC",
-    "MEM",
-    "WAS",
-    "DAL",
-    "POR",
-    "ORL"
-  ],
   "lineup": {
     "chalk_rating_floor": 2.0,
     "game_chalk_rating_floor": 3.5,
@@ -148,15 +143,15 @@
     "min_minutes_floor": 20,
     "min_card_boost": 1.5,
     "min_rating_floor": 2.0,
-    "dev_team_boost": 1.25,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
-    "min_recent_minutes_floor": 25,
-    "big_pos_efficiency": 0.70,
+    "min_recent_minutes_floor": 20,
+    "big_pos_efficiency": 0.85,
     "max_centers": 2,
-    "boost_leverage_power": 1.3
+    "boost_leverage_power": 1.6,
+    "variance_penalty": 0.3
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0
@@ -231,6 +226,26 @@
       "version": 14,
       "date": "2026-03-15",
       "change": "Mar 14 Saturday autopsy (draft scored <50 vs optimal 83): 6 fixes. (1) Card boost recalibrated \u2014 log_a 3.76\u21924.2, log_b 0.88\u21921.1, ownership_scalar 50\u219280; steeper curve separates truly obscure (<100 drafts \u2192 2.0+ boost) from mid-popularity (200+ drafts \u2192 <1.2x). Suggs 275 drafts was getting 1.6x predicted vs 1.1x actual. (2) Boost leverage power added to moonshot \u2014 boost_leverage_power=1.3 baked into adj_ceiling so MILP strongly favors high-boost players. 3.0x boost \u2192 3.7x adj_ceiling weight vs 1.0x. Old formula gave only 10% advantage. (3) min_card_boost 1.0\u21921.5 \u2014 excludes mid-popularity players (Suggs, Jaquez 815 drafts) from moonshot entirely. (4) big_pos_efficiency 0.40\u21920.70 \u2014 centers CAN win moonshot (Queta RS 4.9, Achiuwa RS 5.1 were top value). 0.40x was too punishing. (5) Defensive rate bonus \u2014 STL+BLK per-36 above average gives up to 20% moonshot adj_ceiling bonus. Smart (1.4 STL) gets ~6% bonus; elite defenders get 15-20%. (6) big_market_teams trimmed \u2014 removed MIL, DAL, PHX (role players on these teams are NOT heavily drafted; only stars are)."
+    },
+    {
+      "version": 19,
+      "date": "2026-03-16",
+      "change": "Moonshot variance penalty + dev-team bench threshold: (1) moonshot.variance_penalty=0.3 — ceiling_score was rewarding RS variance (Westbrook gets +30% adj_ceiling boost from volatility), making boom/bust high-usage players outrank reliable role players. Replaced ceiling_score with consistency_base = raw_score × max(0.75, 1.0 - variance × 0.3). Westbrook-type (variance=0.6) loses 37% of moonshot ranking; Nesmith-type (variance=0.1) loses only 7%. (2) bench_pts_threshold 12→14, bench_min_threshold 26→30 — dev-team rotation players like P.J. Washington (11pts, 28min) and Marshall (~14pts, 28min) were incorrectly classified as 'stars' and got the spread penalty instead of the bench blowout bonus. Raising the thresholds captures role players on rebuilding teams who play extended minutes."
+    },
+    {
+      "version": 18,
+      "date": "2026-03-16",
+      "change": "Big-man calibration: (1) Post-LightGBM multiplier for low-scoring interior bigs (projection.big_man_calibration) — LightGBM has no rebounding feature, causing systematic underestimation of C/PF players like Poeltl (9ppg, 9reb → was projected ~2.5 RS, actual 5.4) and Portis (14ppg, 9reb → actual 5.2). Multiplier applies to pos=C/F with season_pts < 16 only, capped at +40%. reb_bonus = (season_reb-6)×0.04, blk_bonus = season_blk×0.10. High-scoring stars (Giannis 28ppg, Randle 24ppg) untouched. (2) big_pos_efficiency 0.70→0.85 — empirical data shows ~15% efficiency gap vs guards, not 30%. 0.70 was over-penalizing exactly the bigs we want in moonshot."
+    },
+    {
+      "version": 17,
+      "date": "2026-03-16",
+      "change": "Mar 15 moonshot blind spots: (1) min_recent_minutes_floor 25→20 — Caruso (~20 min, +3.0x actual) and Walker (~20-22 min, +2.3x actual) were blocked by the minutes gate before boost was even evaluated. The boost filter (min_card_boost=1.5) is the real quality gate; the minutes floor was over-conservative. (2) boost_leverage_power 1.3→1.6 — at 1.3, a +3.0x player had only 1.6x adj_ceiling advantage over a +2.0x player, not enough to overcome RS projection differences. At 1.6 the ratio is 1.91x, making ultra-low-ownership plays rank decisively higher."
+    },
+    {
+      "version": 16,
+      "date": "2026-03-16",
+      "change": "Mar 15 ownership model audit: (1) fame_pts_base 8.0→14.0 — role players (10-14 ppg) were being treated as famous, inflating predicted ownership and suppressing boost estimates. Nesmith (12ppg) was getting ~1.46x estimated boost → filtered out by min_card_boost=1.5 despite +1.9x actual. Fix: only 18+ ppg scorers attract meaningful ownership inflation. (2) Replaced hardcoded development_teams list with continuous rebuild multiplier from live ESPN standings — team_bonus = max(1.0, 1.0 + max(0, 0.5 - win_pct)). SAC .250 → 1.25x, MEM .348 → 1.15x, competitive teams (.500+) → 1.0x. No maintenance required, auto-updates with standings daily. Removed development_teams and dev_team_boost from config entirely."
     },
     {
       "version": 15,
