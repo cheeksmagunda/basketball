@@ -1833,8 +1833,8 @@ _LINE_PICK_CONTRACT_FIELDS = {
     "stat_type", "projection", "edge", "confidence", "narrative", "signals",
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
-    "season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars",
-    "recent_form_values",
+    "season_avg", "proj_min", "avg_min", "game_time", "game_start_iso",
+    "recent_form_bars", "recent_form_values",
 }
 
 def _normalize_line_pick(p: dict) -> dict:
@@ -1866,6 +1866,7 @@ def _normalize_line_pick(p: dict) -> dict:
         "proj_min":        p.get("proj_min"),
         "avg_min":         p.get("avg_min"),
         "game_time":          p.get("game_time", ""),
+        "game_start_iso":     p.get("game_start_iso", ""),
         "recent_form_bars":   p.get("recent_form_bars"),
         "recent_form_values": p.get("recent_form_values"),
     }
@@ -3872,7 +3873,7 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
     entirely when the stored picks already have all display fields (avoids 30-60s cold-start hit)."""
     if not picks_dict:
         return
-    _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "recent_form_bars")
+    _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "game_start_iso", "recent_form_bars")
     def _needs_proj(pick):
         return bool(pick) and any(pick.get(f) is None for f in _enrich_fields)
     needs_proj = any(_needs_proj(picks_dict.get(k)) for k in ("over_pick", "under_pick"))
