@@ -2016,7 +2016,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
 
     // Find ESPN box score stats for this player (fuzzy match by last name)
     let playerStats = null;
-    if (isLog && hasActuals) {
+    if (isLog) {
       playerStats = statsActualsMap[p.name];
       if (!playerStats) {
         const nameLower = p.name.toLowerCase();
@@ -2052,20 +2052,22 @@ function renderCards(picks, containerId, mode, opts = {}) {
       p.est_mult && `<span class="stat-context-pill">+${p.est_mult}x card</span>`,
       minPillText && `<span class="stat-context-pill">${minPillText}</span>`,
       (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:var(--color-danger);border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
-      (isLog && !hasActuals) ? '<span class="pending-results">Waiting for results</span>' : '',
+      (isLog && !hasActuals && !playerStats) ? '<span class="pending-results">Waiting for results</span>' : '',
     ].filter(Boolean);
 
     let statsHtml;
-    if (isLog && hasActuals && playerStats) {
-      // Graded 3-row layout: Label / Actual / Projected
+    if (isLog && playerStats) {
+      // Graded layout: shows actual ESPN stats.
+      // Hit/miss coloring and projected comparison row only when RS upload is present (hasActuals).
       const gradedCols = statCols.map(s => {
         const actual = playerStats[s.k] != null ? parseFloat(playerStats[s.k]).toFixed(0) : null;
         const proj = parseFloat(s.v) || 0;
-        const colorCls = actual != null ? (parseFloat(actual) >= proj ? 'stat-hit' : 'stat-miss') : '';
+        const colorCls = (hasActuals && actual != null) ? (parseFloat(actual) >= proj ? 'stat-hit' : 'stat-miss') : '';
+        const projHtml = hasActuals ? `<div class="stat-col-proj">${s.v}</div>` : '';
         return `<div class="stat-col">
           <div class="stat-col-lbl">${s.l}</div>
           ${actual != null
-            ? `<div class="stat-col-actual ${colorCls}">${actual}</div><div class="stat-col-proj">${s.v}</div>`
+            ? `<div class="stat-col-actual ${colorCls}">${actual}</div>${projHtml}`
             : `<div class="stat-col-val">${s.v}</div>`}
         </div>`;
       }).join('');
@@ -2580,7 +2582,7 @@ async function renderLogDrillCards() {
   // Fetch ESPN box score stats (cached on LOG to avoid re-fetching on tab switch)
   let statsActualsMap = {};
   const dateStr = LOG.selectedDate;
-  if (dateStr && data.has_actuals) {
+  if (dateStr) {
     if (LOG._statsCache && LOG._statsCacheDate === dateStr) {
       statsActualsMap = LOG._statsCache;
     } else {

@@ -149,6 +149,7 @@ PICK CRITERIA (in priority order):
 
 {direction_instruction}
 AVOID: players on B2B themselves, blowout favorites (team spread >10), injury-doubtful
+OVER-SPECIFIC: rebounds and assists overs require a catalyst (cascade, opp-B2B, or high total 230+) — do NOT pick rebounds/assists OVER on season-average form alone; prefer points OVER when edge quality is similar
 
 Set "line" to season average rounded to nearest 0.5 (what books typically set).
 Confidence range: 60-85.
@@ -270,6 +271,9 @@ def run_model_fallback(projections, games, line_config=None):
     recent_form_under_ratio = cfg.get("recent_form_under_ratio", 0.92)
     min_edge_pts = cfg.get("min_edge_pts", 2.0)
     min_edge_other = cfg.get("min_edge_other", 1.5)
+    # Over picks require a higher edge on non-points stats — rebounds/assists are
+    # high-variance; a small edge isn't enough signal to bet on an over.
+    min_edge_other_over = cfg.get("min_edge_other_over", min_edge_other)
 
     sf = cfg.get("stat_floors", {})
     stat_configs = [
@@ -290,10 +294,15 @@ def run_model_fallback(projections, games, line_config=None):
             if season_val < min_season or pred_min < min_min or proj_val <= 0:
                 continue
 
-            min_edge = min_edge_pts if stat_type == "points" else min_edge_other
             line      = round(round(season_val * 2) / 2, 1)
             edge      = round(proj_val - line, 1)
             direction = "over" if edge > 0 else "under"
+            if stat_type == "points":
+                min_edge = min_edge_pts
+            elif direction == "over":
+                min_edge = min_edge_other_over
+            else:
+                min_edge = min_edge_other
             if abs(edge) < min_edge:
                 continue
 

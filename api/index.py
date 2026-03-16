@@ -536,13 +536,14 @@ _CONFIG_DEFAULTS = {
     "line": {
         "min_confidence": 50,
         "min_edge_pct": 3.0,
-        "recent_form_over_ratio": 1.08,
+        "recent_form_over_ratio": 1.15,
         "recent_form_under_ratio": 0.92,
         "min_edge_pts": 2.0,
         "min_edge_other": 1.5,
+        "min_edge_other_over": 2.5,
         "min_season_minutes": 20.0,
         # stat_floors must match line_engine._STAT_META defaults — used when GitHub is unreachable
-        "stat_floors": {"points": 6.0, "rebounds": 2.0, "assists": 1.5},
+        "stat_floors": {"points": 6.0, "rebounds": 5.5, "assists": 1.5},
     },
     "lab": {
         "auto_improve_threshold_pct": 3.0,
@@ -2134,7 +2135,9 @@ def _build_game_lineups(projections, game):
                 break
             the_lineup.append(p)
 
-    return {"the_lineup": [_normalize_player(p) for p in the_lineup]}
+    # Per-game: zero out est_mult in returned data too (not just MILP input)
+    # so the frontend never renders a misleading card boost pill.
+    return {"the_lineup": [_normalize_player({**p, "est_mult": 0}) for p in the_lineup]}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

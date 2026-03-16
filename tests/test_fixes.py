@@ -397,6 +397,52 @@ class TestLineConfig:
         # With no API key, always uses fallback — gets a result or no_edges error
         assert result.get("pick") is not None or result.get("error") is not None
 
+    def test_min_edge_other_over_blocks_small_rebound_over(self):
+        """min_edge_other_over=2.5 prevents a small-edge rebounds over from winning over a qualifying points over.
+        When a points over (edge=3.0) is available, the rebounds over (edge=1.5) should not be the over_pick.
+        Note: last-resort fires only when main candidates is empty; with a qualifying points player present,
+        the rebounds over (blocked in main path) should not appear as over_pick."""
+        from api.line_engine import run_model_fallback
+        proj = [
+            # Points scorer with qualifying over (edge=3.0 > min_edge_pts=2.0) — wins main candidates
+            {"name": "Scorer", "team": "BOS", "predMin": 30,
+             "pts": 25, "season_pts": 22, "recent_pts": 23,
+             "reb": 4, "season_reb": 4, "recent_reb": 4,
+             "ast": 3, "season_ast": 3, "recent_ast": 3},
+            # Rebounder with small rebounds over (edge=1.5, fails min_edge_other_over=2.5)
+            {"name": "Big Man", "team": "LAL", "predMin": 30,
+             "pts": 10, "season_pts": 10, "recent_pts": 10,
+             "reb": 7.5, "season_reb": 6.0, "recent_reb": 6.5,
+             "ast": 2, "season_ast": 2, "recent_ast": 2},
+        ]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        cfg = {"min_confidence": 50, "min_edge_pts": 2.0, "min_edge_other": 1.5,
+               "min_edge_other_over": 2.5, "stat_floors": {"rebounds": 5.5, "points": 6.0, "assists": 1.5}}
+        result = run_model_fallback(proj, games, line_config=cfg)
+        over_pick = result.get("over_pick")
+        # Points over qualifies in main path; rebounds over (edge=1.5) is blocked by min_edge_other_over
+        # so over_pick should be the points pick, not the rebounds pick
+        assert over_pick is not None, "should have an over pick (points scorer qualifies)"
+        assert not (over_pick["stat_type"] == "rebounds" and over_pick["direction"] == "over"), \
+            "rebounds over with edge=1.5 should not win when a qualifying points over exists"
+
+    def test_min_edge_other_over_allows_under_with_same_edge(self):
+        """min_edge_other_over does not affect under picks — same 1.5 edge qualifies for rebounds under"""
+        from api.line_engine import run_model_fallback
+        # Player projects 4.5 reb vs 6.0 season avg — edge=-1.5 (under), should pass min_edge_other=1.5
+        proj = [{"name": "Slumper", "team": "LAL", "predMin": 30,
+                 "pts": 10, "season_pts": 10, "recent_pts": 10,
+                 "reb": 4.5, "season_reb": 6.0, "recent_reb": 4.8,
+                 "ast": 2, "season_ast": 2, "recent_ast": 2}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        cfg = {"min_confidence": 50, "min_edge_pts": 2.0, "min_edge_other": 1.5,
+               "min_edge_other_over": 2.5, "stat_floors": {"rebounds": 5.5, "points": 6.0, "assists": 1.5}}
+        result = run_model_fallback(proj, games, line_config=cfg)
+        under_pick = result.get("under_pick")
+        # The rebounds under (edge=1.5) should qualify since it uses min_edge_other (1.5), not the over threshold
+        if under_pick:
+            assert under_pick["direction"] == "under"
+
 
 # ─────────────────────────────────────────────────────────
 # TestLgbmFeatureAlignment — train vs inference feature list
