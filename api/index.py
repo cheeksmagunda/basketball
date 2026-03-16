@@ -3947,6 +3947,118 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
         return None
 
 
+def _build_player_odds_map(games):
+    """Bulk-fetch Odds API player props for all slate games.
+
+    Makes 1 + N calls (events list + one props call per game) instead of
+    2 calls per player — far more API-efficient.
+
+    Returns {(player_name_lower, stat_type): {"line", "odds_over", "odds_under",
+    "books_consensus"}} or {} on any failure.
+    """
+    api_key = os.environ.get("ODDS_API_KEY")
+    if not api_key:
+        return {}
+    markets_param = ",".join(_STAT_MARKET.values())  # player_points,player_rebounds,player_assists
+    _market_to_stat = {v: k for k, v in _STAT_MARKET.items()}
+    try:
+        # Step 1: fetch all NBA events today (1 call)
+        ev_r = requests.get(
+            f"{ODDS_API_BASE}/sports/basketball_nba/events",
+            params={"apiKey": api_key, "dateFormat": "iso"},
+            timeout=10,
+        )
+        if not ev_r.ok:
+            print(f"[odds_map] events fetch failed: {ev_r.status_code}")
+            return {}
+        all_events = ev_r.json()
+    except Exception as e:
+        print(f"[odds_map] events fetch error: {e}")
+        return {}
+
+    # Map gameId → Odds API event_id
+    game_event_ids = []
+    for g in games:
+        home_abbr = g.get("home", {}).get("abbr", "") or g.get("homeTeam", "")
+        away_abbr = g.get("away", {}).get("abbr", "") or g.get("awayTeam", "")
+        for ev in all_events:
+            ev_home = ev.get("home_team", "")
+            ev_away = ev.get("away_team", "")
+            if ((_abbr_matches(home_abbr, ev_home) or _abbr_matches(home_abbr, ev_away)) and
+                    (_abbr_matches(away_abbr, ev_home) or _abbr_matches(away_abbr, ev_away))):
+                game_event_ids.append(ev["id"])
+                break
+
+    if not game_event_ids:
+        print("[odds_map] no matching Odds API events for slate games")
+        return {}
+
+    # Step 2: fetch props for each game in parallel (1 call per game)
+    def _fetch_event_props(event_id):
+        try:
+            r = requests.get(
+                f"{ODDS_API_BASE}/sports/basketball_nba/events/{event_id}/odds",
+                params={
+                    "apiKey":     api_key,
+                    "regions":    "us",
+                    "markets":    markets_param,
+                    "oddsFormat": "american",
+                    "bookmakers": "draftkings,fanduel,betmgm,pointsbet",
+                },
+                timeout=10,
+            )
+            return r.json() if r.ok else {}
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        event_results = list(pool.map(_fetch_event_props, game_event_ids))
+
+    # Step 3: aggregate lines per (player_name_lower, stat_type)
+    raw = {}  # (player_key, stat_type) -> {over_lines, under_lines, over_prices, under_prices}
+    for data in event_results:
+        for book in data.get("bookmakers", []):
+            for mkt in book.get("markets", []):
+                stat_type = _market_to_stat.get(mkt["key"])
+                if not stat_type:
+                    continue
+                for outcome in mkt.get("outcomes", []):
+                    pt = outcome.get("point")
+                    if pt is None:
+                        continue
+                    player_key = outcome.get("name", "").lower()
+                    direction  = outcome.get("description", "").lower()
+                    price      = outcome.get("price", -110)
+                    key = (player_key, stat_type)
+                    if key not in raw:
+                        raw[key] = {"over_lines": [], "under_lines": [], "over_prices": [], "under_prices": []}
+                    if direction == "over":
+                        raw[key]["over_lines"].append(pt)
+                        raw[key]["over_prices"].append(price)
+                    else:
+                        raw[key]["under_lines"].append(pt)
+                        raw[key]["under_prices"].append(price)
+
+    # Step 4: compute consensus line per player+stat
+    result_map = {}
+    for (player_key, stat_type), d in raw.items():
+        if not d["over_lines"]:
+            continue
+        try:
+            consensus = mode(d["over_lines"])
+        except StatisticsError:
+            consensus = round(round(mean(d["over_lines"]) * 2) / 2, 1)
+        result_map[(player_key, stat_type)] = {
+            "line":            consensus,
+            "odds_over":       int(mean(d["over_prices"])) if d["over_prices"] else -110,
+            "odds_under":      int(mean(d["under_prices"])) if d["under_prices"] else -110,
+            "books_consensus": len(d["over_lines"]),
+        }
+
+    print(f"[odds_map] fetched {len(result_map)} player+stat lines from Odds API")
+    return result_map
+
+
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
 
@@ -4116,7 +4228,11 @@ def _run_line_engine_for_date(date):
     if not all_proj:
         return None, "no_projections"
     line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
-    result = run_line_engine(all_proj, target_games, line_config)
+    # Fetch bookmaker lines from Odds API for all slate games — used as the
+    # primary "line" value in picks instead of ESPN season averages.
+    # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
+    player_odds_map = _build_player_odds_map(target_games)
+    result = run_line_engine(all_proj, target_games, line_config, player_odds_map)
     return result, None
 
 
