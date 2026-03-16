@@ -463,6 +463,15 @@ LOCK_DIR.mkdir(exist_ok=True)
 CONFIG_CACHE_DIR = Path("/tmp/nba_config_v1")
 CONFIG_CACHE_DIR.mkdir(exist_ok=True)
 
+# Hardcoded draft-lineup blacklist (Starting 5, Moonshot, THE LINE UP only).
+# This is an application-layer override and is intentionally NOT part of
+# data/model-config.json so model tuning remains config-driven.
+BLACKLISTED_PLAYERS = {
+    "Kevin Love",
+    "Clint Capela",
+    "Mike Conley",
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # RUNTIME CONFIG — Loaded from data/model-config.json on GitHub.
 # Falls back to hardcoded defaults if GitHub is unreachable or file missing.
@@ -1922,6 +1931,9 @@ def _build_lineups(projections):
     # RotoWire filter applied here too — chalk can't include OUT/questionable players.
     chalk_eligible = []
     for p in projections:
+        # Application-layer blacklist: never include certain players in draft lineups.
+        if p.get("name") in BLACKLISTED_PLAYERS:
+            continue
         if p["rating"] < chalk_floor:
             continue
         # SLATE-WIDE CHALK: Proven rotation regular OR definitive spot-starter.
@@ -1992,6 +2004,8 @@ def _build_lineups(projections):
 
     moonshot_pool = []
     for p in projections:
+        if p.get("name") in BLACKLISTED_PLAYERS:
+            continue
         if p["name"] in chalk_names:
             continue
 
@@ -2153,7 +2167,9 @@ def _build_game_lineups(projections, game):
     # PER-GAME: Requires min 20 recent minutes — same philosophy as slate-wide.
     eligible_pool = [
         p for p in rescored
-        if p.get("recent_min", 0) >= 20.0 and p["rating"] >= game_chalk_floor
+        if p.get("recent_min", 0) >= 20.0
+        and p["rating"] >= game_chalk_floor
+        and p.get("name") not in BLACKLISTED_PLAYERS
     ]
 
     # Per-game: card boost is irrelevant (everyone drafts from the same pool).
@@ -2166,7 +2182,12 @@ def _build_game_lineups(projections, game):
     if len(the_lineup) < 5:
         lineup_names = {p["name"] for p in the_lineup}
         fill_pool = sorted(
-            [p for p in rescored if p["name"] not in lineup_names and p.get("recent_min", 0) >= 20.0],
+            [
+                p for p in rescored
+                if p["name"] not in lineup_names
+                and p.get("recent_min", 0) >= 20.0
+                and p.get("name") not in BLACKLISTED_PLAYERS
+            ],
             key=lambda p: p.get("rating", 0), reverse=True
         )
         for p in fill_pool:
