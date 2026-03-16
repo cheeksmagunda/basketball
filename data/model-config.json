@@ -145,22 +145,25 @@
     "stat_floors": { "points": 6.0, "rebounds": 5.5, "assists": 1.5 }
   },
   "moonshot": {
-    "min_minutes_floor": 20,
+    "min_minutes_floor": 25,
+    "min_recent_minutes_floor": 25,
     "min_card_boost": 1.5,
-    "min_rating_floor": 2.0,
+    "min_rating_floor": 2.8,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
-    "min_recent_minutes_floor": 20,
     "big_pos_efficiency": 0.85,
     "max_centers": 2,
     "boost_leverage_power": 1.6,
-    "variance_penalty": 0.3,
+    "variance_penalty": 0.45,
     "max_per_team": 2,
-    "wildcard_min_boost": 2.0,
-    "wildcard_min_minutes": 8.0,
-    "dev_team_pts_floor": 8.0
+    "wildcard_min_boost": 2.9,
+    "wildcard_min_minutes": 24.0,
+    "wildcard_min_season_pts": 8.0,
+    "dev_team_pts_floor": 10.0,
+    "low_pts_floor": 8.0,
+    "low_pts_penalty": 0.85
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0

@@ -1993,14 +1993,18 @@ def _build_lineups(projections):
     # ─────────────────────────────────────────────────────────────────────────
     min_floor        = moon_cfg.get("min_minutes_floor", 25)
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 25)
-    min_boost = moon_cfg.get("min_card_boost", 1.5)
-    big_eff   = moon_cfg.get("big_pos_efficiency", 0.70)
-    team_win_pcts = _fetch_team_win_pcts()
+    min_boost        = moon_cfg.get("min_card_boost", 1.5)
+    big_eff          = moon_cfg.get("big_pos_efficiency", 0.70)
+    team_win_pcts    = _fetch_team_win_pcts()
 
-    # Wildcard gate thresholds — read once outside the loop
-    wildcard_boost = moon_cfg.get("wildcard_min_boost", 2.5)
-    wildcard_min   = moon_cfg.get("wildcard_min_minutes", 15.0)
-    dev_pts_floor  = moon_cfg.get("dev_team_pts_floor", 8.0)
+    # Wildcard and dev-team thresholds — read once outside the loop
+    wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.9)
+    wildcard_min          = moon_cfg.get("wildcard_min_minutes", 24.0)
+    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 8.0)
+    dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 10.0)
+    low_pts_floor         = moon_cfg.get("low_pts_floor", 8.0)
+    low_pts_penalty       = moon_cfg.get("low_pts_penalty", 0.85)
+    variance_penalty_coef = moon_cfg.get("variance_penalty", 0.45)
 
     chalk_names = {p["name"] for p in chalk}
 
@@ -2015,21 +2019,26 @@ def _build_lineups(projections):
         # Condition A: Both historical floors met.
         # Condition B: predMin >= 28 AND _cascade_bonus >= 10 — prevents DFS Ghosts
         #   (trickle-cascade bench warmers) from clearing both gates simultaneously.
-        # Condition C: Wildcard — ultra-high boost (>=2.5) + minimal floor (>=15 min).
-        #   Captures the Santos/Plowden/Hendricks archetype: bench players who get
-        #   15-20 min with 3-6 PPG and generate 4.0-4.5x total multipliers because
-        #   almost nobody drafts them. Even RS 2.0-3.0 × 3.0+ boost = top-5 value.
-        is_moonshot_regular      = (p.get("season_min", 0) >= min_floor and
-                                    p.get("recent_min", 0) >= min_recent_floor)
-        is_moonshot_spot_starter = (p.get("predMin", 0) >= 28.0 and
-                                    p.get("_cascade_bonus", 0) >= 10.0)
-        is_moonshot_wildcard     = (p.get("est_mult", 0) >= wildcard_boost and
-                                    p.get("predMin", 0) >= wildcard_min)
+        # Condition C: Wildcard — ultra-high boost with higher minutes and a minimum
+        #   season scoring floor so we don't chase pure cardio bench archetypes.
+        season_min = p.get("season_min", 0)
+        recent_min = p.get("recent_min", 0)
+        pred_min   = p.get("predMin", 0)
+        season_pts = p.get("season_pts", p.get("pts", 0))
+        est_mult   = p.get("est_mult", 0.3)
+
+        is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
+        is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
+        is_moonshot_wildcard     = (
+            est_mult >= wildcard_boost
+            and pred_min >= wildcard_min
+            and season_pts >= wildcard_min_pts
+        )
         if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard):
             continue
 
         # Minimum card boost — the whole point of moonshot is contrarian plays
-        if p.get("est_mult", 0) < min_boost:
+        if est_mult < min_boost:
             continue
 
         # RotoWire: only exclude confirmed OUT players. GTD/questionable are allowed —
@@ -2038,9 +2047,12 @@ def _build_lineups(projections):
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
             continue
 
-        # Minimum rating floor — wildcards bypass this (their upside is purely
-        # boost-driven; even RS 1.5 × 3.0x boost beats RS 2.5 × 1.8x boost).
-        if not is_moonshot_wildcard and p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
+        # Minimum rating floor: push out low-RS profiles. Wildcards get a softer floor
+        # but still need some RS so we don't include zero-usage cardio plays.
+        min_rating_floor = moon_cfg.get("min_rating_floor", 2.8)
+        if not is_moonshot_wildcard and p["rating"] < min_rating_floor:
+            continue
+        if is_moonshot_wildcard and p["rating"] < 2.0:
             continue
 
         # Continuous rebuild bonus: teams with lower win% get a larger multiplier.
@@ -2049,11 +2061,10 @@ def _build_lineups(projections):
         # No hardcoded list — derived from live ESPN standings, cached daily.
         # Dev pts floor: don't apply dev bonus to aging bench fodder (Jordan 6pts/21min
         # on NO gets 1.30x undeservedly — they're not "developing," they're just bad).
-        win_pct = team_win_pcts.get(p.get("team", ""), 0.5)
-        raw_bonus  = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
-        team_bonus = raw_bonus if p.get("pts", 0) >= dev_pts_floor else 1.0
-        pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
-        est_mult  = p.get("est_mult", 0.3)
+        win_pct   = team_win_pcts.get(p.get("team", ""), 0.5)
+        raw_bonus = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
+        team_bonus = raw_bonus if season_pts >= dev_pts_floor else 1.0
+        pos_eff    = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
 
         # Defensive rate bonus — STL (4.5x) and BLK (4.0x) drive disproportionate
         # RS per minute vs points (1.0x). Defensive specialists are moonshot gold:
@@ -2077,8 +2088,12 @@ def _build_lineups(projections):
         # moonshot wants. Penalize scoring variance so consistent role players rank above
         # boom/bust high-usage options with similar RS projections.
         p_var = min(p.get("player_variance", 0.0), 0.6)
-        var_penalty = moon_cfg.get("variance_penalty", 0.3)
+        var_penalty = variance_penalty_coef
         consistency_base = p["rating"] * max(0.75, 1.0 - p_var * var_penalty)
+
+        # Extra penalty for very low scorers even if boost is huge
+        if season_pts < low_pts_floor:
+            consistency_base *= low_pts_penalty
 
         adj_ceiling = round(
             consistency_base
