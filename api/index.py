@@ -1968,6 +1968,11 @@ def _build_lineups(projections):
         # not anchor Starting 5 — the draft value formula requires meaningful boost to
         # generate competitive total value. Mar 15 lesson: Westbrook (1.1x override) +
         # Clingan (1.0x override) took 2.0x/1.8x slots, neutralizing chalk EV entirely.
+        # Never draft a chalk player projected to play fewer minutes than their season average.
+        # Fewer projected minutes = reduced role tonight (blowout, rotation shift, returning
+        # teammate). There is no upside case for chalk — we need floor, not ceiling.
+        if p.get("predMin", 0) < p.get("season_min", 0):
+            continue
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
         if p.get("est_mult", 0) < chalk_min_boost:
             continue
@@ -2072,6 +2077,12 @@ def _build_lineups(projections):
         )
         if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
                 or is_role_spike):
+            continue
+
+        # Never draft a moonshot player projected below their season minute average.
+        # Spot-starters (cascade) and role-spikes already guarantee predMin > season_min
+        # by construction. This catches regular rotation players in a reduced role tonight.
+        if pred_min < season_min:
             continue
 
         # Minimum card boost — the whole point of moonshot is contrarian plays
