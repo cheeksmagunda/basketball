@@ -1,7 +1,7 @@
 {
-  "version": 19,
+  "version": 20,
   "updated_at": "2026-03-16T00:00:00Z",
-  "updated_by": "mar15-variance-penalty-bench-threshold",
+  "updated_by": "over-model-tightening",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -132,12 +132,13 @@
   "line": {
     "min_confidence": 50,
     "min_edge_pct": 3.0,
-    "recent_form_over_ratio": 1.08,
+    "recent_form_over_ratio": 1.15,
     "recent_form_under_ratio": 0.92,
     "min_edge_pts": 2.0,
     "min_edge_other": 1.5,
+    "min_edge_other_over": 2.5,
     "min_season_minutes": 20.0,
-    "stat_floors": { "points": 6.0, "rebounds": 2.0, "assists": 1.5 }
+    "stat_floors": { "points": 6.0, "rebounds": 5.5, "assists": 1.5 }
   },
   "moonshot": {
     "min_minutes_floor": 20,
@@ -226,6 +227,11 @@
       "version": 14,
       "date": "2026-03-15",
       "change": "Mar 14 Saturday autopsy (draft scored <50 vs optimal 83): 6 fixes. (1) Card boost recalibrated \u2014 log_a 3.76\u21924.2, log_b 0.88\u21921.1, ownership_scalar 50\u219280; steeper curve separates truly obscure (<100 drafts \u2192 2.0+ boost) from mid-popularity (200+ drafts \u2192 <1.2x). Suggs 275 drafts was getting 1.6x predicted vs 1.1x actual. (2) Boost leverage power added to moonshot \u2014 boost_leverage_power=1.3 baked into adj_ceiling so MILP strongly favors high-boost players. 3.0x boost \u2192 3.7x adj_ceiling weight vs 1.0x. Old formula gave only 10% advantage. (3) min_card_boost 1.0\u21921.5 \u2014 excludes mid-popularity players (Suggs, Jaquez 815 drafts) from moonshot entirely. (4) big_pos_efficiency 0.40\u21920.70 \u2014 centers CAN win moonshot (Queta RS 4.9, Achiuwa RS 5.1 were top value). 0.40x was too punishing. (5) Defensive rate bonus \u2014 STL+BLK per-36 above average gives up to 20% moonshot adj_ceiling bonus. Smart (1.4 STL) gets ~6% bonus; elite defenders get 15-20%. (6) big_market_teams trimmed \u2014 removed MIL, DAL, PHX (role players on these teams are NOT heavily drafted; only stars are)."
+    },
+    {
+      "version": 20,
+      "date": "2026-03-16",
+      "change": "Over model tightening (17% hit rate → targeting 55%+): (1) stat_floors.rebounds 2.0→5.5 — eliminates fringe rebounders (Nance 2.5, Love borderline) from rebounds picks; only legit rotation bigs qualify. (2) min_edge_other_over: 2.5 (new) — over picks on rebounds/assists need a 2.5+ projection edge vs the 1.5 threshold kept for under picks; rebounds are too volatile for small-edge overs. (3) recent_form_over_ratio 1.08→1.15 — require 15% recent form spike to unlock the +12 confidence bonus for overs (was 8%); under model unchanged at 0.92. (4) Claude prompt AVOID clause updated — rebounds/assists overs now require a catalyst (cascade, opp-B2B, or 230+ total); prefer points over when edge quality is similar."
     },
     {
       "version": 19,
