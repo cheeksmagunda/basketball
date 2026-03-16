@@ -470,6 +470,8 @@ BLACKLISTED_PLAYERS = {
     "Kevin Love",
     "Clint Capela",
     "Mike Conley",
+    "Kadary Richmond",
+    "Chaney Johnson",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
