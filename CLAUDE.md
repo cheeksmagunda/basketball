@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A daily NBA draft optimizer for the **Real Sports** app. It projects player Real Scores, estimates card boosts, and builds optimized 5-player lineups using MILP (mixed-integer linear programming). Deployed on **Vercel** as a serverless Python (FastAPI) backend + single-page HTML frontend.
+A daily NBA draft optimizer for the **Real Sports** app. It projects player Real Scores, estimates card boosts, and builds optimized 5-player lineups using MILP (mixed-integer linear programming). Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## How Real Sports Works
 
@@ -32,7 +32,8 @@ data/locks/            — Cold-start recovery: {date}_slate.json written at loc
 data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
 lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
 train_lgbm.py          — Training script (11 features, run locally or via GitHub Actions)
-vercel.json            — Vercel config (routes, crons, 300s timeout on Pro plan)
+railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
+vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
 ```
 
@@ -89,7 +90,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/health` | GET | Health check for monitoring (config + GitHub reachability) |
-| `/api/version` | GET | Build identifier (VERCEL_GIT_COMMIT_SHA) for deploy checks |
+| `/api/version` | GET | Build identifier (RAILWAY_GIT_COMMIT_SHA) for deploy checks |
 | `/api/slate` | GET | Full-slate predictions (all games). Never returns 5xx; on backend exception returns 200 with `error: "slate_failed"` and empty lineups so the frontend shows "Slate temporarily unavailable" and Retry. |
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
@@ -141,13 +142,13 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
   - **Log:** `initLogPage()` → `GET /api/log/dates`, then `buildLogDateStrip()` (60-day strip); selecting a date calls `GET /api/log/get?date=X`; drill-down may call `GET /api/log/actuals-stats?date=X` (cached in `LOG._statsCache`).
   - **Lab:** `initLabPage()` → pre-warm `GET /api/health`, then `GET /api/lab/status`; on unlock, loads briefing + config-history + line-of-the-day + slate + log for context; lock poll every 120s when locked.
 
-## Environment Variables (Vercel)
+## Environment Variables (Railway)
 
 - `GITHUB_TOKEN` — GitHub PAT with repo scope (for CSV + config read/write via Contents API)
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
 - `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
 - `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day)
-- `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Vercel injects this when invoking crons. `/api/refresh` is intentionally unprotected (non-destructive, user-facing).
+- `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Railway injects this via the cron commands in railway.toml. `/api/refresh` is intentionally unprotected (non-destructive, user-facing).
 - `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
 
 **OpenAPI docs:** FastAPI serves `/docs` (Swagger UI) and `/redoc` in production. Use them to browse and try endpoints. When `DOCS_SECRET` is set, append `?docs_key=<DOCS_SECRET>` to the URL or send the header to access.
@@ -167,7 +168,7 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 Predictions are generated **once per day** and cached. Subsequent requests serve from cache instead of re-running the full pipeline (ESPN + LightGBM + Monte Carlo + MILP). This reduces API calls from N per user visit to ~6-8 per day max.
 
 ### Cache Layers
-1. **Layer 1 — `/tmp` (warm Vercel instance)**: In-memory file cache. Fastest, but ephemeral on cold start.
+1. **Layer 1 — `/tmp` (Railway container)**: In-memory file cache. Fastest, but cleared on container restart (deploy or crash restart).
 2. **Layer 2 — GitHub persistent cache (`data/slate/`)**: `{date}_slate.json` (full slate with lineups) and `{date}_games.json` (per-game projections keyed by gameId). Survives cold starts. Used by `/api/slate` and `/api/picks`.
 3. **Layer 3 — Full pipeline**: ESPN → injury cascade → LightGBM → Monte Carlo RS → card boost → MILP optimizer. Only runs when both Layer 1 and Layer 2 are empty (true first run of the day).
 
@@ -246,7 +247,7 @@ A **Magic 8-ball** animation plays on app load and during API calls (slate fetch
 
 `savePredictions()` fires at most **once per session** (frontend flag) and the backend compares
 the new CSV content against what's already stored — skipping the GitHub commit if unchanged.
-This prevents the commit → Vercel redeploy cascade that was triggering 6+ redeploys per visit.
+This prevents the commit → Railway redeploy cascade that was triggering 6+ redeploys per visit.
 
 The `/api/save-predictions` endpoint also enforces a server-side lock guard — it returns HTTP 409
 if called before the slate is locked, making it impossible to persist pre-lock projections regardless
@@ -262,8 +263,8 @@ Predictions lock 5 minutes before the earliest game starts (lock window). Once l
 3. **6-Hour Ceiling**: If game_start + 6h has passed, stop polling (safety net)
 
 ### Lock Cache Behavior
-- Lock cache (`/tmp/nba_locks_v1/`) survives within a warm Vercel instance
-- Cache TTL during locked slate: **60 seconds** (balanced for event-driven detection and Vercel cost)
+- Lock cache (`/tmp/nba_locks_v1/`) survives within a running Railway container
+- Cache TTL during locked slate: **60 seconds** (balanced for event-driven detection and Railway resource use)
 - Cache TTL pre-slate: **180 seconds** (normal polling)
 - On cache expiration, immediately checks ESPN to see if games are done
 - On cold start with no cache, `data/locks/{date}_slate.json` on GitHub is the recovery source
@@ -364,7 +365,7 @@ The main pick card (`renderLinePickCard`) uses a **zoned layout** and design tok
 - **Conclusion (Oracle Insight):** Model reasoning is consolidated into a single narrative paragraph at the bottom of the card, not standalone pills. `_buildLineConclusion(pick)` merges `pick.narrative` with `pick.signals` (e.g. injury upgrade, B2B) into one natural-language sentence; key reasons are highlighted with `--color-text-primary`. The paragraph sits in `.line-pick-conclusion-wrap` (subtle background, 8px radius, padding). **This "Narrative Conclusion" pattern is the standard for model explanations app-wide** — use one prose block, not reasoning bubbles.
 - **Pick payload fields** (from backend): Core fields plus `season_avg`, `proj_min`, `avg_min`, `game_time`, `recent_form_bars`, `recent_form_values`. `recent_form_bars` is set in `api/line_engine.py`; `recent_form_values` is filled in `api/index.py` via `_get_last5_game_stats()` (nba_api PlayerGameLog, 30-min cache). All passed through `_normalize_line_pick`.
 - **Design tokens:** Line card uses `--radius-card`, `--radius-pill`, `--font-size-micro`, `--color-success`, `--color-danger`, `--color-text-primary`, `--color-text-muted`, `--line`, `--lab`; no hardcoded hex for semantic colors in the card block.
-- **Cache:** `index.html` is served with `Cache-Control: max-age=0, must-revalidate` (vercel.json) so browsers and edge revalidate and users get the latest card (5-column + conclusion) after deploy. If an user still sees an old card, they should hard refresh (e.g. pull-to-refresh on mobile) or close and reopen the tab.
+- **Cache:** `index.html` is served with `Cache-Control: max-age=0, must-revalidate` (railway.toml static headers) so browsers and edge revalidate and users get the latest card (5-column + conclusion) after deploy. If an user still sees an old card, they should hard refresh (e.g. pull-to-refresh on mobile) or close and reopen the tab.
 
 ### Odds Refresh Pipeline
 - **Cron**: `55 * * * *` (once per hour at :55; hits common 6:55 PM ET lock)
@@ -400,9 +401,9 @@ Single source of truth for UI consistency and future theming:
 
 Use these tokens instead of hardcoded hex or pixel radii across Predict, Line, Ben, and Log.
 
-## Cron Schedule (vercel.json)
+## Cron Schedule (railway.toml)
 
-Crons and frontend poll intervals are tuned to reduce Vercel invocations while preserving lock/unlock, odds refresh, and line-resolve behavior.
+Crons and frontend poll intervals are tuned to minimize Railway compute and ESPN API usage while preserving lock/unlock, odds refresh, and line-resolve behavior.
 
 | Schedule (UTC) | Endpoint | Purpose |
 |----------------|----------|---------|
@@ -414,11 +415,11 @@ Crons and frontend poll intervals are tuned to reduce Vercel invocations while p
 
 ## Deployment Pipeline
 
-Vercel `ignoreCommand` in `vercel.json` prevents builds on data-only commits:
+Railway `watchPatterns` in `railway.toml` prevents rebuilds on data-only commits:
 ```
-git diff --quiet HEAD~1 HEAD -- . ':!data' ':!.github'
+railway.toml watchPatterns already excludes `data/` and `.github/` — only code changes trigger a Docker rebuild.
 ```
-This ensures GitHub API writes to `data/` (predictions, actuals, line picks, config) and `.github/` workflow changes don't trigger unnecessary redeploys. Only code changes trigger builds.
+This ensures GitHub API writes to `data/` and `.github/` workflow changes don't trigger unnecessary Docker rebuilds. Only code changes trigger deployments.
 
 ## Production Robustness Notes
 
@@ -436,7 +437,7 @@ Key patterns used throughout:
 
 EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hidden context-loading messages don't suppress the upload prompt.
 
-**Health in deployment:** Use `GET /api/health` for uptime monitoring. Configure an external checker (e.g. UptimeRobot, Cronitor) to hit the URL and alert on non-200; Vercel does not provide built-in health-check alerting.
+**Health in deployment:** Use `GET /api/health` for uptime monitoring. Railway uses `healthcheckPath = "/api/health"` from railway.toml and shows health in the dashboard. Configure an external checker (e.g. UptimeRobot, Cronitor) for alerting on non-200.
 
 ## Event-Based Slate Transition
 
@@ -447,7 +448,7 @@ The system now uses **game completion events** instead of clock-based timeouts f
 3. **Enables next slate** — New games become draftable within seconds of previous slate completion
 
 ### Cache TTL Optimization (Adaptive)
-- **Locked slate**: Cache TTL **60 seconds** (from 180s; balances responsiveness and Vercel cost)
+- **Locked slate**: Cache TTL **60 seconds** (from 180s; balances responsiveness and Railway resource use)
 - **Pre-slate**: Cache TTL remains 180 seconds
 - During locked periods, the backend refreshes game status every 60s instead of waiting 3 minutes
 - Unlock still detected within the next frontend poll (2 min Lab, 1 min Line when relevant)
@@ -491,7 +492,7 @@ Backend uses Python `ThreadPoolExecutor` for parallel processing:
 - Handles 14-game Saturdays efficiently without bottlenecking
 
 ### Polling Interval Tuning
-- **Lab lock polling**: 2 minutes (reduces Vercel invocations; see `initLabPage` in index.html, ~3135)
+- **Lab lock polling**: 2 minutes (reduces API call frequency; see `initLabPage` in index.html, ~3135)
   - Unlock detected within ~2 min; user can tap Retry for immediate check
 - **Line live stat polling**: 1 minute; max 5 consecutive failures (300s tolerance) before fallback to cron
   - Prevents indefinite polling on persistent network failures
@@ -576,7 +577,7 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
 | **api/real_score.py** | Monte Carlo Real Score | RS projection (closeness, clutch, momentum). Used by projection pipeline in index. |
 | **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Used by game runner in index. |
-| **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production uses Vercel static + serverless. |
+| **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production runs as a persistent Docker container on Railway. |
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
 | **scripts/sync_model_config.py** | Config sync | Syncs model-config from GitHub (used by workflows). |
 | **scripts/bump_retrain_config.py** | Retrain config | Bumps retrain config for GitHub Actions. |
@@ -646,8 +647,8 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 
 ## Known Limitations
 
-- Rate limiting uses an in-memory store with a lock (thread-safe); it does not persist across Vercel instances, so limits are per-instance.
-- `/tmp` is ephemeral on Vercel — caches don't survive cold starts. GitHub-persisted caches (`data/slate/`, `data/locks/`) provide cold-start recovery for both predictions and lock state.
+- Rate limiting uses an in-memory store with a lock (thread-safe); it does not persist across container restarts, so limits reset on redeploy.
+- `/tmp` is cleared on container restart (redeploy or crash) — caches don't survive restarts. GitHub-persisted caches (`data/slate/`, `data/locks/`) provide cold-start recovery for both predictions and lock state.
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
 - `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
@@ -658,9 +659,9 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 ## Troubleshooting
 
 If slate, line, and/or log all fail to load:
-1. **Deployed URL** — Use the production URL (e.g. `https://basketball-chi-cyan.vercel.app`); avoid file:// or wrong origin.
+1. **Deployed URL** — Use the production URL (`https://the-oracle.up.railway.app`); avoid file:// or wrong origin.
 2. **Health and version** — Call `GET /api/health` and `GET /api/version`; if they fail, the backend is unreachable or cold-starting.
-3. **Vercel function logs** — Look for `[slate] error:`, `[line-of-the-day] error:`, `[games] error:`, `[log/dates] error:` or "Task timed out" to identify the failing path.
+3. **Railway logs** — Look for `[slate] error:`, `[line-of-the-day] error:`, `[games] error:`, `[log/dates] error:` or "Task timed out" to identify the failing path.
 
 ## Robustness Fixes (this session)
 
@@ -691,19 +692,19 @@ If slate, line, and/or log all fail to load:
 | `_CONFIG_DEFAULTS` sync | `api/index.py` | Fallback defaults match `data/model-config.json` v15: `compression_divisor` 5.5→7.0, `per_player_cap_minutes` 3.0→2.0, `big_market_teams` inline fallback removes MIL/DAL/PHX. Prevents silent model behavior change on GitHub outage. |
 | `auto_improve_threshold_pct` externalized | `api/index.py`, `data/model-config.json` | `IMPROVEMENT_THRESHOLD` reads from `_cfg("lab.auto_improve_threshold_pct", 3.0)`. Tunable via Ben without code deploy. |
 | Line engine stat floors externalized | `api/line_engine.py`, `data/model-config.json` | `_STAT_META` and `stat_configs` min_season floors now read from `line_config.get("stat_floors", {})`. Tunable via `line.stat_floors` in model-config. No behavior change — defaults match prior hardcoded values. |
-| Cron schedule restored | `vercel.json` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). Matches documentation and intended behavior. |
+| Cron schedule restored | `railway.toml` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). Matches documentation and intended behavior. |
 | `line_history` parallel fetch + 3-min cache | `api/index.py` | CSV + JSON files fetched in parallel via `ThreadPoolExecutor(8)`; 3-min result cache (`line_history_v1`) avoids repeated cold-start GitHub round-trips; cache cleared by `/api/refresh` |
 | 3-layer slate cache (generate once per day) | `api/index.py` | `/tmp` → GitHub `data/slate/` → full pipeline. First request generates and persists; all subsequent requests serve from cache. Reduces API calls from N per visit to ~6-8 per day |
-| `/api/injury-check` cron endpoint | `api/index.py`, `vercel.json` | Every 2h: bust RotoWire cache, check cached players, regenerate only affected games. Lock-guarded, CRON_SECRET-protected |
+| `/api/injury-check` cron endpoint | `api/index.py`, `railway.toml` | Every 2h: bust RotoWire cache, check cached players, regenerate only affected games. Lock-guarded, CRON_SECRET-protected |
 | GitHub cache removed from line engine | `api/index.py` | `_games_cache_from_github()` removed from `_run_line_engine_for_date()` and `_get_projections_for_date()` — added latency without benefit for line paths |
 | "Generating picks..." message removed | `index.html` | 12s setTimeout that showed misleading "Generating picks..." during Line page load removed; skeleton card provides sufficient loading feedback |
 | Force-regenerate endpoint | `api/index.py`, `index.html` | `GET /api/force-regenerate?scope=full\|remaining` — two scenarios: (1) dev deploys mid-slate → auto-detects SHA mismatch, regenerates all games in background; (2) user wakes up late → "Late Draft" banner on Predict tab regenerates picks for remaining games only. Both update `data/predictions/` CSV and all cache layers. CRON_SECRET-gated. |
-| Deploy SHA tracking | `api/index.py` | `deploy_sha` stamped in slate cache at generation + GitHub write time. `/api/slate` locked path compares cached SHA vs current `VERCEL_GIT_COMMIT_SHA`; on mismatch fires background `_force_regenerate_sync("full")`. |
+| Deploy SHA tracking | `api/index.py` | `deploy_sha` stamped in slate cache at generation + GitHub write time. `/api/slate` locked path compares cached SHA vs current `RAILWAY_GIT_COMMIT_SHA`; on mismatch fires background `_force_regenerate_sync("full")`. |
 | Late Draft UI | `index.html` | Banner with "Generate Late Draft" button shown on Predict tab when slate is locked but remaining games exist. Calls `/api/force-regenerate?scope=remaining`, updates SLATE, re-renders, and hides banner on success. |
 | `auto-resolve-line` explicit timeout | `index.html` | `fetchWithTimeout('/api/auto-resolve-line', {}, 15000)` — was using implicit 10s default; now explicitly documents the 15s intent for this endpoint. |
 | `var` → `let` modernisation | `index.html` | Converted `_slateAutoRefreshCount`, `_slateAutoRefreshTimer`, `_slateNextDayPoll`, `_predSavedLockedCount`, `_lateDraftTriggered` from `var` to `let` for block-scope consistency with the rest of the module. |
 | `LINE_HIST_DATA` declaration hoisted | `index.html` | Moved `let LINE_HIST_DATA = null` from inside the `renderLineHistory` section (line ~3410) to the Line globals block (line ~2901) alongside `LINE_RESOLVE_POLL` and `LINE_LIVE_POLL`. Eliminates forward-reference anti-pattern. |
-| `oracle-ball.svg` cache header | `vercel.json` | Added `Cache-Control: public, max-age=86400` entry for `/oracle-ball.svg` to match the existing `server.py` header and keep cache strategy consistent across Vercel edge and local dev. |
+| `oracle-ball.svg` cache header | `railway.toml` | Added `Cache-Control: public, max-age=86400` entry for `/oracle-ball.svg` to match the existing `server.py` header and keep cache strategy consistent across Railway and local dev. |
 | Grep tags for key helpers | `api/index.py` | Added `# grep:` tags for `LOCK HELPERS` (`_is_locked`, `_is_past_lock_window`, `_et_date`), `ALL GAMES FINAL`, `NEXT SLATE DATE` (`_find_next_slate_date`), and `FORCE REGENERATE SYNC`. Updated CLAUDE.md navigation table to match. |
 | Per-direction independent rotation | `api/index.py`, `index.html` | Over and Under picks now rotate independently — when one direction's game finishes, that direction shows the next-slate pick while the other stays live. Fixes: over picks gap in history (picks not generated for future days when only one direction existed), Shai-style stuck active pick (resolved game still showing as active pick card). |
 | Auto-resolve next-day fill | `api/index.py` | `auto_resolve_line` now fills missing directions in existing next-day pick files (was skip-if-file-exists). Merges new engine output with existing picks. |
@@ -715,11 +716,11 @@ If slate, line, and/or log all fail to load:
 
 Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: GitHub error sanitization (no leak to client), `GET /api/health`, `GET /api/version`, cron secret on `/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, and `fetchWithTimeout` for lab/backtest and lab/update-config.
 
-**Lock & routing audit:** [docs/LOCK_AND_ROUTING_AUDIT.md](docs/LOCK_AND_ROUTING_AUDIT.md). Covers all lock usage (slate, picks, save-predictions, lab status, line odds) and Vercel/FastAPI routing. Fixes applied: `/api/lab/status` wrapped in try/except — on any exception returns 200 with `locked: true` and reason "Server temporarily unavailable — try again" so the frontend shows a retry instead of a generic fetch failure; ESPN-down GitHub lock check now uses `lock_content, _ = _github_get_file(...)` and `if lock_content:` (was incorrectly checking the tuple).
+**Lock & routing audit:** [docs/LOCK_AND_ROUTING_AUDIT.md](docs/LOCK_AND_ROUTING_AUDIT.md). Covers all lock usage (slate, picks, save-predictions, lab status, line odds) and Railway/FastAPI routing. Fixes applied: `/api/lab/status` wrapped in try/except — on any exception returns 200 with `locked: true` and reason "Server temporarily unavailable — try again" so the frontend shows a retry instead of a generic fetch failure; ESPN-down GitHub lock check now uses `lock_content, _ = _github_get_file(...)` and `if lock_content:` (was incorrectly checking the tuple).
 
 ## Pre-deploy checklist (production finalization)
 
-- **Env**: Required vars set in Vercel (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY; optional ODDS_API_KEY, CRON_SECRET, DOCS_SECRET).
+- **Env**: Required vars set in Railway (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY; optional ODDS_API_KEY, CRON_SECRET, DOCS_SECRET).
 - **Tests**: Run `pytest tests/ -v` locally when changing backend or frontend contract; test_core.py catches JS apostrophe crashes.
 - **Docs**: CLAUDE.md and README.md reflect current endpoints, crons, and lock/cache behavior.
 - **Health**: Use GET `/api/health` for uptime monitoring; alert on non-200.
@@ -732,12 +733,12 @@ pip install -r requirements.txt
 python scripts/check-env.py   # verify required env vars (fail-fast)
 uvicorn server:app --reload
 
-# Deploy — merge to main (PR or local merge + push) → Vercel deploys from main
+# Deploy — push to main → Railway detects watchPatterns change → rebuilds Docker container
 git push -u origin <your-branch>
 # Then open PR main ← your-branch and merge, or: git checkout main && git merge <your-branch> && git push origin main
 
 # Verify on production
-# https://basketball-chi-cyan.vercel.app
+# https://the-oracle.up.railway.app
 ```
 
 ## Starting a New Claude Code Session
@@ -745,9 +746,9 @@ git push -u origin <your-branch>
 When starting fresh in a new chat, Claude Code automatically reads this file for context.
 Provide the following to the new session to orient it quickly:
 
-1. **Branch**: Work on a feature branch; merge to `main` via PR or local merge + push. Vercel deploys from `main`.
+1. **Branch**: Work on a feature branch; merge to `main` via PR or local merge + push. Railway auto-deploys from `main` when watchPatterns match.
 2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
-3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push; verify on `basketball-chi-cyan.vercel.app`.
+3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push to main; verify on `the-oracle.up.railway.app`.
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
 5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LOG`, `LAB`, `LINE_DIR`, `LINE_OVER_PICK`, `LINE_UNDER_PICK`, `LINE_LOADED_DATE`
 6. **Cache**: 3-layer: `/tmp` (ephemeral) → GitHub `data/slate/` (persistent) → full pipeline. Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/refresh` clears all caches + config. `_bust_slate_cache()` invalidates both layers.
