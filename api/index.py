@@ -533,7 +533,7 @@ _CONFIG_DEFAULTS = {
         "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
         # DNP / reliability guards (added after March 4th audit)
         "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
-        "dnp_risk_min_threshold":8.0,   # recent avg min below this = dnp_risk flag
+        "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
         "chalk_season_min_floor":25.0,  # season avg floor for Starting 5 (was 30; Mar 14: excluded Smart 28.9min, Achiuwa ~26min)
@@ -548,6 +548,9 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
+        "chalk_min_boost_floor": 1.2,   # minimum card boost required for chalk eligibility;
+                                        # excludes high-ownership stars (Westbrook 1.1x, Clingan 1.0x)
+                                        # Mar 15 fix: without this, top chalk slots go to near-zero-boost stars
     },
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
@@ -556,6 +559,12 @@ _CONFIG_DEFAULTS = {
         "big_pos_efficiency":0.85, "max_centers":2, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.3,       # penalizes high RS variance in moonshot; consistent role players rank above boom/bust
+        # Wildcard gate — Mar 15 fix: lower mins/boost/pts so deep-bench high-boost plays surface
+        "wildcard_min_boost": 2.5, "wildcard_min_minutes": 10.0, "wildcard_min_season_pts": 5.0,
+        # Dev team pts floor — Mar 15 fix: apply rebuild bonus to low-scorers (Williams 6ppg UTAH)
+        "dev_team_pts_floor": 6.0,
+        # Role spike path — Mar 15 fix: recent_min >> season_min = role change; bypass season floor
+        "role_spike_ratio": 1.4, "role_spike_recent_floor": 25.0, "role_spike_season_floor": 10.0,
     },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
@@ -1955,6 +1964,13 @@ def _build_lineups(projections):
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
+        # Minimum card boost floor for chalk: high-ownership stars (boost < 1.2x) should
+        # not anchor Starting 5 — the draft value formula requires meaningful boost to
+        # generate competitive total value. Mar 15 lesson: Westbrook (1.1x override) +
+        # Clingan (1.0x override) took 2.0x/1.8x slots, neutralizing chalk EV entirely.
+        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
+        if p.get("est_mult", 0) < chalk_min_boost:
+            continue
         capped_boost = min(p["est_mult"], boost_cap)
         p["capped_boost"] = capped_boost
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
@@ -1998,10 +2014,16 @@ def _build_lineups(projections):
     team_win_pcts    = _fetch_team_win_pcts()
 
     # Wildcard and dev-team thresholds — read once outside the loop
-    wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.9)
-    wildcard_min          = moon_cfg.get("wildcard_min_minutes", 24.0)
-    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 8.0)
-    dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 10.0)
+    # Wildcard gate: ultra-high-boost deep bench players bypass season/recent min floors.
+    # Mar 15 fix: GPII (predMin 16.5, boost 2.7x) failed old 24-min gate; lowered to 10.
+    # Boost threshold lowered to 2.5 (was 2.9) — our estimator runs 30-50% below actuals.
+    wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.5)
+    wildcard_min          = moon_cfg.get("wildcard_min_minutes", 10.0)
+    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 5.0)
+    # Dev team pts floor: lower threshold so low-scoring dev-team role players (Williams
+    # 6ppg UTAH, Cardwell 5.4ppg SAC) receive the rebuild win_pct bonus in moonshot ranking.
+    # Old floor of 10.0 suppressed the bonus for exactly the players we want.
+    dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 6.0)
     low_pts_floor         = moon_cfg.get("low_pts_floor", 8.0)
     low_pts_penalty       = moon_cfg.get("low_pts_penalty", 0.85)
     variance_penalty_coef = moon_cfg.get("variance_penalty", 0.45)
@@ -2034,7 +2056,22 @@ def _build_lineups(projections):
             and pred_min >= wildcard_min
             and season_pts >= wildcard_min_pts
         )
-        if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard):
+        # Role spike: player clearly getting more minutes recently than season avg suggests
+        # (role change due to teammate injury, coach decision, or development arc).
+        # Mar 15 lesson: Killian Hayes (season 16min, recent 26min, boost 2.7x) hit for
+        # RS 3.3 / value 16.5 but was blocked by season_min floor. Ratio gate prevents
+        # noise (normal variance) from triggering — needs ≥40% recent/season divergence.
+        role_spike_ratio  = moon_cfg.get("role_spike_ratio", 1.4)
+        role_spike_recent = moon_cfg.get("role_spike_recent_floor", 25.0)
+        role_spike_season = moon_cfg.get("role_spike_season_floor", 10.0)
+        is_role_spike = (
+            recent_min >= role_spike_recent
+            and season_min >= role_spike_season
+            and recent_min >= season_min * role_spike_ratio
+            and est_mult >= min_boost  # must still be contrarian
+        )
+        if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
+                or is_role_spike):
             continue
 
         # Minimum card boost — the whole point of moonshot is contrarian plays

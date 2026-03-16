@@ -1,7 +1,7 @@
 {
-  "version": 23,
-  "updated_at": "2026-03-16T12:00:00Z",
-  "updated_by": "boost-model-v23-lookup-plus-sigmoid",
+  "version": 24,
+  "updated_at": "2026-03-16T18:00:00Z",
+  "updated_by": "mar15-autopsy-4fixes",
   "card_boost": {
     "ceiling": 3.0,
     "floor": 0.2,
@@ -101,7 +101,7 @@
     "moderate_decline_threshold": 0.9,
     "moderate_decline_recent_weight": 0.65,
     "gtd_minute_penalty": 0.75,
-    "dnp_risk_min_threshold": 8.0,
+    "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
     "chalk_season_min_floor": 25.0,
@@ -119,7 +119,8 @@
       "pts_cap": 16.0
     },
     "bench_pts_threshold": 14.0,
-    "bench_min_threshold": 30.0
+    "bench_min_threshold": 30.0,
+    "chalk_min_boost_floor": 1.2
   },
   "lineup": {
     "chalk_rating_floor": 2.0,
@@ -158,10 +159,13 @@
     "boost_leverage_power": 1.6,
     "variance_penalty": 0.45,
     "max_per_team": 2,
-    "wildcard_min_boost": 2.9,
-    "wildcard_min_minutes": 24.0,
-    "wildcard_min_season_pts": 8.0,
-    "dev_team_pts_floor": 10.0,
+    "wildcard_min_boost": 2.5,
+    "wildcard_min_minutes": 10.0,
+    "wildcard_min_season_pts": 5.0,
+    "dev_team_pts_floor": 6.0,
+    "role_spike_ratio": 1.4,
+    "role_spike_recent_floor": 25.0,
+    "role_spike_season_floor": 10.0,
     "low_pts_floor": 8.0,
     "low_pts_penalty": 0.85
   },
@@ -169,6 +173,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 24,
+      "date": "2026-03-16",
+      "change": "Mar 15 autopsy — 4 structural fixes: (1) chalk_min_boost_floor=1.2 (new) — minimum card boost for Starting 5 eligibility. Westbrook (1.1x override) and Clingan (1.0x override) won 2.0x/1.8x chalk slots despite near-zero boost, killing Starting 5 EV. Stars below 1.2x boost are now excluded from chalk pool entirely. (2) Wildcard gate relaxed: wildcard_min_minutes 24→10, wildcard_min_boost 2.9→2.5, wildcard_min_season_pts 8→5. GPII (predMin 16.5, boost 2.7x) and similar deep-bench high-boost plays were blocked by 24-min gate; now surfaced as moonshot wildcards. (3) dev_team_pts_floor 10→6 — dev team win_pct rebuild bonus was suppressed for players scoring <10ppg. Williams (6ppg UTAH) and Cardwell (5.4ppg SAC) now receive the bonus, improving moonshot slot ranking for low-scoring dev-team role players. (4) is_role_spike path added to moonshot eligibility — players with recent_min ≥ 25 AND recent/season ratio ≥ 1.4 now qualify regardless of season_min floor. Catches Hayes (season 16min, recent 26min, 2.7x boost, actual RS 3.3 / value 16.5) and similar role-change pickups. dnp_risk_min_threshold 8→5: stopped flagging 5-8min players as inactive, giving deep bench contrarians a chance to pass projection."
+    },
     {
       "version": 1,
       "date": "2026-03-05",
