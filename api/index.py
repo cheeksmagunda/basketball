@@ -567,6 +567,8 @@ _CONFIG_DEFAULTS = {
         "dev_team_pts_floor": 6.0,
         # Role spike path — Mar 15 fix: recent_min >> season_min = role change; bypass season floor
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 25.0, "role_spike_season_floor": 10.0,
+        # Scoring anchor — elite scorers (25+ PPG) can enter moonshot on RS ceiling alone
+        "scoring_anchor_ppg": 25.0, "scoring_anchor_scale": 2.0,
     },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
@@ -2005,17 +2007,19 @@ def _build_lineups(projections):
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
-        # Minimum card boost floor for chalk: high-ownership stars (boost < 1.2x) should
-        # not anchor Starting 5 — the draft value formula requires meaningful boost to
-        # generate competitive total value. Mar 15 lesson: Westbrook (1.1x override) +
-        # Clingan (1.0x override) took 2.0x/1.8x slots, neutralizing chalk EV entirely.
         # Never draft a chalk player projected to play fewer minutes than their season average.
         # Fewer projected minutes = reduced role tonight (blowout, rotation shift, returning
         # teammate). There is no upside case for chalk — we need floor, not ceiling.
         if p.get("predMin", 0) < p.get("season_min", 0):
             continue
+        # Star anchor pathway: high-PPG players (20+ season avg) bypass the boost floor.
+        # These are the guys who pop off for 30-40 pts — their RS ceiling compensates for
+        # low card boost. The chalk_max_stars constraint (below) limits how many get in.
+        # Without this, ZERO stars enter the chalk pool because all have boost < 1.2x.
+        star_anchor_ppg = float(_cfg("scoring_thresholds.star_anchor_ppg", 20.0))
+        is_star_anchor = p.get("season_pts", 0) >= star_anchor_ppg
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
-        if p.get("est_mult", 0) < chalk_min_boost:
+        if not is_star_anchor and p.get("est_mult", 0) < chalk_min_boost:
             continue
         # Minimum rating gate: boost cannot rescue a weak base.
         # A player with rating < 3.5 doesn't generate enough RS to be a viable chalk pick
@@ -2109,6 +2113,16 @@ def _build_lineups(projections):
             and pred_min >= wildcard_min
             and season_pts >= wildcard_min_pts
         )
+        # Scoring anchor: elite scorers (25+ PPG) can enter moonshot on RS ceiling alone.
+        # These players pop off for 35-50 pts — when they do, their RS 7-10 × slot multiplier
+        # generates massive value even with low boost. One scoring anchor per moonshot
+        # gives exposure to the ceiling that pure contrarian picks can't reach.
+        scoring_anchor_ppg = float(moon_cfg.get("scoring_anchor_ppg", 25.0))
+        is_scoring_anchor = (
+            season_pts >= scoring_anchor_ppg
+            and season_min >= 25  # must be a real starter
+            and p["rating"] >= 4.0  # must project strong RS
+        )
         # Role spike: player clearly getting more minutes recently than season avg suggests
         # (role change due to teammate injury, coach decision, or development arc).
         # Mar 15 lesson: Killian Hayes (season 16min, recent 26min, boost 2.7x) hit for
@@ -2124,7 +2138,7 @@ def _build_lineups(projections):
             and est_mult >= min_boost  # must still be contrarian
         )
         if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
-                or is_role_spike):
+                or is_role_spike or is_scoring_anchor):
             continue
 
         # Never draft a moonshot player projected below their season minute average.
@@ -2133,8 +2147,9 @@ def _build_lineups(projections):
         if pred_min < season_min:
             continue
 
-        # Minimum card boost — the whole point of moonshot is contrarian plays
-        if est_mult < min_boost:
+        # Minimum card boost — the whole point of moonshot is contrarian plays.
+        # Scoring anchors bypass this: they compete on RS ceiling, not ownership.
+        if not is_scoring_anchor and est_mult < min_boost:
             continue
 
         # RotoWire: only exclude confirmed OUT players. GTD/questionable are allowed —
@@ -2148,7 +2163,7 @@ def _build_lineups(projections):
         # Default raised from 2.0 → 3.0: 3.0 rating ≈ projecting ~15 RS before boost,
         # minimum to meaningfully contribute to a winning moonshot lineup.
         min_rating_floor = moon_cfg.get("min_rating_floor", _cfg("scoring_thresholds.min_moonshot_rating", 3.0))
-        if not is_moonshot_wildcard and p["rating"] < min_rating_floor:
+        if not (is_moonshot_wildcard or is_scoring_anchor) and p["rating"] < min_rating_floor:
             continue
         if is_moonshot_wildcard and p["rating"] < 2.0:
             continue
@@ -2198,13 +2213,28 @@ def _build_lineups(projections):
         if season_pts < low_pts_floor:
             consistency_base *= low_pts_penalty
 
-        adj_ceiling = round(
-            consistency_base
-            * team_bonus * pos_eff
-            * (1.0 + def_bonus)
-            * boost_leverage,
-            3
-        )
+        if is_scoring_anchor:
+            # Scoring anchors compete on RS ceiling × slot, not boost leverage.
+            # Their value comes from pop-off potential (RS 7-10 nights) × top slot,
+            # not ownership. Use ceiling_score (variance-adjusted upside) as the
+            # ranking signal, with a configurable scaling factor so they compete
+            # fairly against high-boost contrarian picks.
+            anchor_scale = float(moon_cfg.get("scoring_anchor_scale", 2.0))
+            adj_ceiling = round(
+                p.get("ceiling_score", p["rating"])
+                * team_bonus * pos_eff
+                * (1.0 + def_bonus)
+                * anchor_scale,
+                3
+            )
+        else:
+            adj_ceiling = round(
+                consistency_base
+                * team_bonus * pos_eff
+                * (1.0 + def_bonus)
+                * boost_leverage,
+                3
+            )
 
         # Moonshot EV: adj_ceiling already has boost leverage baked in,
         # MILP multiplies by (slot + boost) on top. High-boost players dominate.

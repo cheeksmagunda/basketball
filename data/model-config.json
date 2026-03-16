@@ -1,7 +1,7 @@
 {
-  "version": 26,
-  "updated_at": "2026-03-16T19:00:00Z",
-  "updated_by": "rs-compression-unlock-shared-lineups",
+  "version": 27,
+  "updated_at": "2026-03-16T20:30:00Z",
+  "updated_by": "star-anchor-pathways",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_per_minute": 0.35,
@@ -10,7 +10,8 @@
     "min_moonshot_pts": 10.0,
     "chalk_boost_cap": 1.5,
     "scoring_bias_base": 0.85,
-    "scoring_bias_pts_weight": 0.35
+    "scoring_bias_pts_weight": 0.35,
+    "star_anchor_ppg": 20.0
   },
   "card_boost": {
     "ceiling": 3.0,
@@ -120,7 +121,7 @@
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
     "chalk_recent_min_floor": 15.0,
-    "chalk_max_stars": 1,
+    "chalk_max_stars": 2,
     "chalk_star_boost_threshold": 0.8,
     "leverage_top_slots": 1,
     "leverage_boost_threshold": 1.5,
@@ -179,12 +180,19 @@
     "role_spike_recent_floor": 25.0,
     "role_spike_season_floor": 10.0,
     "low_pts_floor": 8.0,
-    "low_pts_penalty": 0.85
+    "low_pts_penalty": 0.85,
+    "scoring_anchor_ppg": 25.0,
+    "scoring_anchor_scale": 2.0
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 27,
+      "date": "2026-03-16",
+      "change": "Star anchor pathways — lineups were 100% role players because chalk_min_boost_floor=1.2 and moonshot min_card_boost=1.5 blocked every star (KD 0.5x, Luka 0.0x, Tatum, Curry all under threshold). Today's 8-game slate has 10+ stars averaging 20-28 PPG and the model picked zero. Fixes: (1) Chalk star anchor — players with season_pts >= 20 (star_anchor_ppg) bypass the boost floor. These are the guys who pop off for 30-40 pts; their RS ceiling compensates for low card boost. chalk_max_stars constraint still limits to 1-2 stars max, so role players fill the other slots. (2) Moonshot scoring anchor — elite scorers (season_pts >= 25, season_min >= 25, rating >= 4.0) can enter moonshot pool even with low boost, competing on RS ceiling × scoring_anchor_scale instead of boost_leverage. One elite scorer can anchor the moonshot for upside exposure that pure contrarian picks can't reach. New config: scoring_thresholds.star_anchor_ppg=20.0, moonshot.scoring_anchor_ppg=25.0, moonshot.scoring_anchor_scale=2.0."
+    },
     {
       "version": 26,
       "date": "2026-03-16",
