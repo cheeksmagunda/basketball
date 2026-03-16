@@ -2079,6 +2079,12 @@ def _build_lineups(projections):
                 or is_role_spike):
             continue
 
+        # Never draft a moonshot player projected below their season minute average.
+        # Spot-starters (cascade) and role-spikes already guarantee predMin > season_min
+        # by construction. This catches regular rotation players in a reduced role tonight.
+        if pred_min < season_min:
+            continue
+
         # Minimum card boost — the whole point of moonshot is contrarian plays
         if est_mult < min_boost:
             continue
