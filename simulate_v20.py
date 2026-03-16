@@ -33,8 +33,8 @@ MOONSHOT_MIN_RECENT = 20.0
 MOONSHOT_MIN_BOOST = 1.5
 MOONSHOT_MIN_RATING = 2.0
 MOONSHOT_MAX_PER_TEAM = 3       # v21: 2→3, enables game stacking
-MOONSHOT_WILDCARD_BOOST = 2.5   # v21: new gate C
-MOONSHOT_WILDCARD_MIN = 15.0    # v21: new gate C minutes floor
+MOONSHOT_WILDCARD_BOOST = 2.0   # v22: 2.5→2.0, boost estimation runs 30-50% below actuals
+MOONSHOT_WILDCARD_MIN = 8.0     # v22: 15→8, matches effective_gate floor
 MOONSHOT_DEV_PTS_FLOOR = 8.0    # v21: suppress dev bonus for aging bench fodder
 BOOST_LEVERAGE_POWER = 1.6
 BIG_POS_EFFICIENCY = 0.85
@@ -362,10 +362,11 @@ def simulate_date(date_str):
 
 
 if __name__ == "__main__":
-    dates = ["2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14"]
+    dates = ["2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09",
+             "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14"]
     print("\n  NOTE: Re-simulating with current v21 model config applied to")
     print("  player stats recorded in prediction CSVs for those dates.")
-    print("  v21 changes: wildcard gate C, stacking max_per_team=3,")
+    print("  v22 changes: wildcard gate C (boost>=2.0, min>=8), stacking max_per_team=3,")
     print("  leverage_top_slots=1, dev team pts floor=8.")
     print("  Pool = all unique players across all lineup types/scopes.")
     for d in dates:
