@@ -555,18 +555,17 @@ _CONFIG_DEFAULTS = {
                                         # Mar 15 fix: without this, top chalk slots go to near-zero-boost stars
     },
     "moonshot": {
-        # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
-        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.5, "min_rating_floor":2.0,
+        # v6 (leaderboard-informed): gates widened to match actual winner profiles.
+        # Winners are 15-25 min role players with 3x+ boost on dev teams (da Silva,
+        # Ellis, Clifford, Santos, Sensabaugh). Old 25-min/3.0 rating gates blocked them.
+        "min_minutes_floor":15, "min_recent_minutes_floor":15, "min_card_boost":1.5, "min_rating_floor":2.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "big_pos_efficiency":0.85, "max_centers":2, "boost_leverage_power":1.6,
+        "max_centers":3, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
-        "variance_penalty": 0.3,       # penalizes high RS variance in moonshot; consistent role players rank above boom/bust
-        # Wildcard gate — Mar 15 fix: lower mins/boost/pts so deep-bench high-boost plays surface
-        "wildcard_min_boost": 2.5, "wildcard_min_minutes": 10.0, "wildcard_min_season_pts": 5.0,
-        # Dev team pts floor — Mar 15 fix: apply rebuild bonus to low-scorers (Williams 6ppg UTAH)
-        "dev_team_pts_floor": 6.0,
-        # Role spike path — Mar 15 fix: recent_min >> season_min = role change; bypass season floor
-        "role_spike_ratio": 1.4, "role_spike_recent_floor": 25.0, "role_spike_season_floor": 10.0,
+        "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
+        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 8.0, "wildcard_min_season_pts": 3.0,
+        "dev_team_pts_floor": 4.0,
+        "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
     },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
@@ -2005,17 +2004,19 @@ def _build_lineups(projections):
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
-        # Minimum card boost floor for chalk: high-ownership stars (boost < 1.2x) should
-        # not anchor Starting 5 — the draft value formula requires meaningful boost to
-        # generate competitive total value. Mar 15 lesson: Westbrook (1.1x override) +
-        # Clingan (1.0x override) took 2.0x/1.8x slots, neutralizing chalk EV entirely.
         # Never draft a chalk player projected to play fewer minutes than their season average.
         # Fewer projected minutes = reduced role tonight (blowout, rotation shift, returning
         # teammate). There is no upside case for chalk — we need floor, not ceiling.
         if p.get("predMin", 0) < p.get("season_min", 0):
             continue
+        # Star anchor pathway: high-PPG players (20+ season avg) bypass the boost floor.
+        # These are the guys who pop off for 30-40 pts — their RS ceiling compensates for
+        # low card boost. The chalk_max_stars constraint (below) limits how many get in.
+        # Without this, ZERO stars enter the chalk pool because all have boost < 1.2x.
+        star_anchor_ppg = float(_cfg("scoring_thresholds.star_anchor_ppg", 20.0))
+        is_star_anchor = p.get("season_pts", 0) >= star_anchor_ppg
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
-        if p.get("est_mult", 0) < chalk_min_boost:
+        if not is_star_anchor and p.get("est_mult", 0) < chalk_min_boost:
             continue
         # Minimum rating gate: boost cannot rescue a weak base.
         # A player with rating < 3.5 doesn't generate enough RS to be a viable chalk pick
@@ -2041,29 +2042,24 @@ def _build_lineups(projections):
                             leverage_top_slots=leverage_top,
                             leverage_boost_threshold=leverage_thresh)
 
-    # ── MOONSHOT: Contrarian EV strategy (overhauled March 14) ───────────────
-    # Philosophy: moonshot is an OPTIONS STRATEGY. We're buying cheap lottery
-    # tickets — players with low ownership where a hot night pays off huge.
+    # ── MOONSHOT: Contrarian EV strategy (v6 — leaderboard-informed) ─────────
+    # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
+    # on dev teams with 3-5x card boost. Stars almost NEVER win moonshot (4/5 days
+    # pure role players). The formula is simple: maximize RS × (slot + boost).
     #
-    # Approach: Filter for genuinely contrarian players (card boost >= 1.5),
-    # then let the MILP optimizer find the mathematically optimal lineup using
-    # standard EV math: rating × (slot_mult + card_boost). No distorted
-    # formulas — the MILP is designed to solve exactly this problem.
-    #
-    # Hard filters:
+    # Simplified approach (v6):
     #   - Card boost >= 1.5 (contrarian — low ownership)
-    #   - season avg >= 25 AND recent avg >= 25 (real rotation piece)
-    #   - RotoWire lineup clearance (not flagged OUT or questionable)
-    #   - Not already in chalk lineup
-    #   - Minimum rating floor (still need some production)
-    #
-    # Dev team bonus and center penalty are applied as rating adjustments
-    # so the MILP sees them in its objective function.
+    #   - Season/recent avg >= 15 min (was 25; Santos/Clifford/Ellis play 15-20)
+    #   - Rating >= 2.0 (was 3.0; Ellis RS 2.2, Clifford RS 2.1 were winners)
+    #   - RotoWire: only exclude confirmed OUT
+    #   - Dev team bonus from live standings
+    #   - Boost leverage baked into adj_ceiling for MILP
+    #   - No center penalty (Poeltl, Queta, Achiuwa all win)
+    #   - Light variance damping (moonshot wants upside)
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor        = moon_cfg.get("min_minutes_floor", 25)
-    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 25)
+    min_floor        = moon_cfg.get("min_minutes_floor", 15)
+    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 15)
     min_boost        = moon_cfg.get("min_card_boost", 1.5)
-    big_eff          = moon_cfg.get("big_pos_efficiency", 0.70)
     team_win_pcts    = _fetch_team_win_pcts()
 
     # Wildcard and dev-team thresholds — read once outside the loop
@@ -2077,9 +2073,7 @@ def _build_lineups(projections):
     # 6ppg UTAH, Cardwell 5.4ppg SAC) receive the rebuild win_pct bonus in moonshot ranking.
     # Old floor of 10.0 suppressed the bonus for exactly the players we want.
     dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 6.0)
-    low_pts_floor         = moon_cfg.get("low_pts_floor", 8.0)
-    low_pts_penalty       = moon_cfg.get("low_pts_penalty", 0.85)
-    variance_penalty_coef = moon_cfg.get("variance_penalty", 0.45)
+    variance_penalty_coef = moon_cfg.get("variance_penalty", 0.15)
 
     # v5: Starting 5 and Moonshot can share players. They represent two independent
     # draft strategies (reliability vs ceiling) — if a player is the best pick for
@@ -2102,6 +2096,16 @@ def _build_lineups(projections):
         season_pts = p.get("season_pts", p.get("pts", 0))
         est_mult   = p.get("est_mult", 0.3)
 
+        # ── Moonshot eligibility (simplified v6 — leaderboard-informed) ─────────
+        # 5-day leaderboard analysis (Mar 8-13): winning lineups are dominated by
+        # role players with 3-5x boost on dev teams (da Silva, Ellis, Clifford,
+        # Santos, Sensabaugh). Stars almost never win moonshot — boost is king.
+        #
+        # Eligibility: any of 4 pathways (simplified from complex multi-gate):
+        #   Regular: season AND recent min meet floor (default 15 each)
+        #   Spot-starter: cascade injury gave them a starter role
+        #   Wildcard: ultra-high boost, some minutes, some scoring
+        #   Role spike: recent minutes >> season (role change/injury)
         is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
         is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
         is_moonshot_wildcard     = (
@@ -2109,105 +2113,67 @@ def _build_lineups(projections):
             and pred_min >= wildcard_min
             and season_pts >= wildcard_min_pts
         )
-        # Role spike: player clearly getting more minutes recently than season avg suggests
-        # (role change due to teammate injury, coach decision, or development arc).
-        # Mar 15 lesson: Killian Hayes (season 16min, recent 26min, boost 2.7x) hit for
-        # RS 3.3 / value 16.5 but was blocked by season_min floor. Ratio gate prevents
-        # noise (normal variance) from triggering — needs ≥40% recent/season divergence.
         role_spike_ratio  = moon_cfg.get("role_spike_ratio", 1.4)
-        role_spike_recent = moon_cfg.get("role_spike_recent_floor", 25.0)
+        role_spike_recent = moon_cfg.get("role_spike_recent_floor", 20.0)
         role_spike_season = moon_cfg.get("role_spike_season_floor", 10.0)
         is_role_spike = (
             recent_min >= role_spike_recent
             and season_min >= role_spike_season
             and recent_min >= season_min * role_spike_ratio
-            and est_mult >= min_boost  # must still be contrarian
+            and est_mult >= min_boost
         )
         if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
                 or is_role_spike):
             continue
 
         # Never draft a moonshot player projected below their season minute average.
-        # Spot-starters (cascade) and role-spikes already guarantee predMin > season_min
-        # by construction. This catches regular rotation players in a reduced role tonight.
         if pred_min < season_min:
             continue
 
-        # Minimum card boost — the whole point of moonshot is contrarian plays
+        # Minimum card boost — moonshot is a contrarian play
         if est_mult < min_boost:
             continue
 
-        # RotoWire: only exclude confirmed OUT players. GTD/questionable are allowed —
-        # they're already double-penalized (25% minute cut + 0.82x reliability),
-        # and their depressed ownership creates exactly the leverage moonshot seeks.
+        # RotoWire: only exclude confirmed OUT players.
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
             continue
 
-        # Minimum rating floor: push out low-RS profiles. Wildcards get a softer floor
-        # but still need some RS so we don't include zero-usage cardio plays.
-        # Default raised from 2.0 → 3.0: 3.0 rating ≈ projecting ~15 RS before boost,
-        # minimum to meaningfully contribute to a winning moonshot lineup.
-        min_rating_floor = moon_cfg.get("min_rating_floor", _cfg("scoring_thresholds.min_moonshot_rating", 3.0))
+        # Minimum rating floor — lowered to 2.0 (leaderboard winners include Ellis
+        # RS 2.2, Clifford RS 2.1, Santos RS 1.8). Wildcards use softer 1.5 floor.
+        min_rating_floor = moon_cfg.get("min_rating_floor", 2.0)
         if not is_moonshot_wildcard and p["rating"] < min_rating_floor:
             continue
-        if is_moonshot_wildcard and p["rating"] < 2.0:
-            continue
-        # Moonshot pts floor (non-wildcard): moonshot needs scoring upside, not just boost.
-        # A player projecting 8 pts with a big boost is still an 8-pt ceiling pick.
-        min_moon_pts = _cfg("scoring_thresholds.min_moonshot_pts", 10.0)
-        if not is_moonshot_wildcard and p.get("pts", 0) < min_moon_pts:
+        if is_moonshot_wildcard and p["rating"] < 1.5:
             continue
 
-        # Continuous rebuild bonus: teams with lower win% get a larger multiplier.
-        # Formula: max(1.0, 1.0 + max(0, 0.5 - win_pct))
-        # .250 team → 1.25x  |  .350 team → 1.15x  |  .500+ team → 1.0x
-        # No hardcoded list — derived from live ESPN standings, cached daily.
-        # Dev pts floor: don't apply dev bonus to aging bench fodder (Jordan 6pts/21min
-        # on NO gets 1.30x undeservedly — they're not "developing," they're just bad).
+        # ── Moonshot EV (simplified v6) ────────────────────────────────────────
+        # Leaderboard analysis: winning moonshots are high-boost role players on
+        # dev teams. The formula should maximize RS × (slot + boost) — same as
+        # the MILP objective. We only add two lightweight adjustments:
+        #   1. Dev team bonus (low win% teams have lower ownership → higher boost)
+        #   2. Boost leverage (bake ownership advantage into MILP rating)
+        # Removed: center penalty (Poeltl, Queta, Achiuwa all win), heavy variance
+        # penalty (moonshot WANTS upside), defensive rate bonus (marginal signal),
+        # scoring anchor (stars almost never win moonshot — 4/5 days pure role players).
+
+        # Dev team bonus from live standings
         win_pct   = team_win_pcts.get(p.get("team", ""), 0.5)
         raw_bonus = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
         team_bonus = raw_bonus if season_pts >= dev_pts_floor else 1.0
-        pos_eff    = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
 
-        # Defensive rate bonus — STL (4.5x) and BLK (4.0x) drive disproportionate
-        # RS per minute vs points (1.0x). Defensive specialists are moonshot gold:
-        # low ownership, high RS density. Up to 20% bonus for elite defenders.
-        stl_val = p.get("stl", 0)
-        blk_val = p.get("blk", 0)
-        pred_min_val = max(p.get("predMin", 25), 1)
-        def_per_36 = (stl_val + blk_val) / pred_min_val * 36
-        def_bonus = min(max(def_per_36 - 1.5, 0) * 0.08, 0.20)
-
-        # Boost leverage power — bake ownership advantage into adj_ceiling so the
-        # MILP strongly favors high-boost players. A 3.0x boost player gets ~3.7x
-        # more adj_ceiling weight than a 1.0x player (at power=1.3), vs the old
-        # formula's ~10% advantage.  This is the single biggest moonshot fix.
+        # Boost leverage — the core moonshot signal. High-boost players get
+        # exponentially more weight so the MILP strongly favors them.
         boost_power = moon_cfg.get("boost_leverage_power", 1.6)
         boost_leverage = max(est_mult, 0.2) ** boost_power
 
-        # Consistency base: moonshot alpha comes from BOOST certainty + RS reliability,
-        # NOT from RS variance. ceiling_score rewards volatile players (Westbrook-type)
-        # because it computes raw_score × (1 + variance × 0.5) — the opposite of what
-        # moonshot wants. Penalize scoring variance so consistent role players rank above
-        # boom/bust high-usage options with similar RS projections.
+        # Light variance damping (not heavy penalty — moonshot wants upside)
         p_var = min(p.get("player_variance", 0.0), 0.6)
         var_penalty = variance_penalty_coef
-        consistency_base = p["rating"] * max(0.75, 1.0 - p_var * var_penalty)
+        base_rating = p["rating"] * max(0.85, 1.0 - p_var * var_penalty)
 
-        # Extra penalty for very low scorers even if boost is huge
-        if season_pts < low_pts_floor:
-            consistency_base *= low_pts_penalty
+        adj_ceiling = round(base_rating * team_bonus * boost_leverage, 3)
 
-        adj_ceiling = round(
-            consistency_base
-            * team_bonus * pos_eff
-            * (1.0 + def_bonus)
-            * boost_leverage,
-            3
-        )
-
-        # Moonshot EV: adj_ceiling already has boost leverage baked in,
-        # MILP multiplies by (slot + boost) on top. High-boost players dominate.
+        # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
 
         moonshot_pool.append({

@@ -1238,7 +1238,7 @@ class TestUpdateConfigValidation:
         assert self._valid("lineup.chalk_rating_floor")
         assert self._valid("moonshot.min_rating_floor")
         assert self._valid("projection.b2b_minute_penalty")
-        assert self._valid("moonshot.big_pos_efficiency")
+        assert self._valid("moonshot.boost_leverage_power")
 
     def test_path_traversal_is_rejected(self):
         """Path segments with special chars must be rejected."""
