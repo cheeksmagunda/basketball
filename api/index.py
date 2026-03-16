@@ -514,11 +514,10 @@ _CONFIG_DEFAULTS = {
         "leverage_top_slots": 2,        # force 2 contrarian players into top 2 slots (was 1; winners had 3-4 high-boost)
         "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
     },
-    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","MIL"],
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
         "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.5, "min_rating_floor":2.0,
-        "dev_team_boost":1.25, "card_boost_weight":2.5, "minutes_weight":1.0,
+        "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.70, "max_centers":2, "boost_leverage_power":1.3,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
@@ -717,7 +716,7 @@ def _et_date() -> str:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ESPN DATA FETCHERS
-# grep: _espn_get, fetch_games, fetch_roster, _fetch_athlete, _fetch_b2b_teams
+# grep: _espn_get, fetch_games, fetch_roster, _fetch_athlete, _fetch_b2b_teams, _fetch_team_win_pcts
 # _fetch_athlete: returns blended season+recent stats dict for a player
 # fetch_games: returns today's game list with lock/complete status
 # ─────────────────────────────────────────────────────────────────────────────
@@ -753,6 +752,31 @@ def _fetch_b2b_teams():
             if abbr: b2b.add(abbr)
     _cs(cache_key, list(b2b))
     return b2b
+
+def _fetch_team_win_pcts() -> dict:
+    """Fetch current NBA team win percentages from ESPN standings.
+    Returns {abbr: win_pct} e.g. {"OKC": 0.776, "SAC": 0.250}.
+    Cached for the calendar day (ET). On any failure returns {} —
+    caller defaults unknown teams to 0.5 (no bonus), so moonshot still works.
+    """
+    cache_key = f"standings_{_et_date().strftime('%Y%m%d')}"
+    cached = _cg(cache_key)
+    if cached is not None:
+        return cached
+    data = _espn_get("https://site.api.espn.com/apis/v2/sports/basketball/nba/standings")
+    win_pcts = {}
+    try:
+        for entry in data.get("standings", {}).get("entries", []):
+            abbr = entry.get("team", {}).get("abbreviation", "")
+            for stat in entry.get("stats", []):
+                if stat.get("name") == "winPercent":
+                    win_pcts[abbr] = float(stat["value"])
+                    break
+    except Exception:
+        pass
+    if win_pcts:
+        _cs(cache_key, win_pcts)
+    return win_pcts
 
 _GAMES_CACHE_TS: dict = {}  # cache_key → timestamp for TTL enforcement
 
@@ -1746,7 +1770,7 @@ def _run_game(game):
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal-only fields never sent to the frontend
-_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_is_dev_team"}
+_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_team_dev_mult"}
 
 def _normalize_player(p: dict) -> dict:
     """Stable frontend contract for player projection objects.
@@ -1904,9 +1928,8 @@ def _build_lineups(projections):
     min_floor        = moon_cfg.get("min_minutes_floor", 25)
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 25)
     min_boost = moon_cfg.get("min_card_boost", 1.5)
-    dev_boost = moon_cfg.get("dev_team_boost", 1.25)
-    big_eff   = moon_cfg.get("big_pos_efficiency", 0.65)
-    dev_teams = set(_cfg("development_teams", _CONFIG_DEFAULTS.get("development_teams", [])))
+    big_eff   = moon_cfg.get("big_pos_efficiency", 0.70)
+    team_win_pcts = _fetch_team_win_pcts()
 
     chalk_names = {p["name"] for p in chalk}
 
@@ -1940,11 +1963,12 @@ def _build_lineups(projections):
         if p["rating"] < moon_cfg.get("min_rating_floor", 2.0):
             continue
 
-        # Development team bonus, center penalty, defensive bonus, and boost
-        # leverage — all baked into adj_ceiling so the MILP sees them in its
-        # objective function.
-        is_dev    = p.get("team", "") in dev_teams
-        team_bonus = dev_boost if is_dev else 1.0
+        # Continuous rebuild bonus: teams with lower win% get a larger multiplier.
+        # Formula: max(1.0, 1.0 + max(0, 0.5 - win_pct))
+        # .250 team → 1.25x  |  .350 team → 1.15x  |  .500+ team → 1.0x
+        # No hardcoded list — derived from live ESPN standings, cached daily.
+        win_pct = team_win_pcts.get(p.get("team", ""), 0.5)
+        team_bonus = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
         pos_eff   = big_eff if _pos_group(p.get("pos", "G")) == "C" else 1.0
         est_mult  = p.get("est_mult", 0.3)
 
@@ -1980,7 +2004,7 @@ def _build_lineups(projections):
             **p,
             "moonshot_ev":  moonshot_ev,
             "adj_ceiling":  adj_ceiling,
-            "_is_dev_team": is_dev,
+            "_team_dev_mult": round(team_bonus, 3),
             "_rw_cleared":  True,
         })
 

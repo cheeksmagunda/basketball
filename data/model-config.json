@@ -109,18 +109,6 @@
     "leverage_top_slots": 2,
     "leverage_boost_threshold": 1.5
   },
-  "development_teams": [
-    "UTA",
-    "IND",
-    "BKN",
-    "CHI",
-    "NOP",
-    "SAC",
-    "MEM",
-    "WAS",
-    "DAL",
-    "MIL"
-  ],
   "lineup": {
     "chalk_rating_floor": 2.0,
     "game_chalk_rating_floor": 3.5,
@@ -147,7 +135,6 @@
     "min_minutes_floor": 20,
     "min_card_boost": 1.5,
     "min_rating_floor": 2.0,
-    "dev_team_boost": 1.25,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
@@ -234,7 +221,7 @@
     {
       "version": 16,
       "date": "2026-03-16",
-      "change": "Mar 15 ownership model audit: (1) fame_pts_base 8.0→14.0 — role players (10-14 ppg) were incorrectly treated as 'famous', inflating predicted ownership and suppressing their boost estimate. Nesmith (12ppg, +1.9x actual) was getting ~307 predicted drafts → 1.46x estimated boost → filtered out by min_card_boost=1.5. At 14.0 base, only true scorers (18+ ppg) get ownership inflation; Nesmith now estimates ~1.95x and enters the moonshot pool. (2) dev_teams updated to match actual 2025-26 standings: removed ORL (38-28, playoff team), POR (32-35, borderline); added MIL (27-39, .409); kept IND (15-52, collapsed season), DAL (22-45). Dynamic dev_team derivation from ESPN standings planned for next version."
+      "change": "Mar 15 ownership model audit: (1) fame_pts_base 8.0→14.0 — role players (10-14 ppg) were being treated as famous, inflating predicted ownership and suppressing boost estimates. Nesmith (12ppg) was getting ~1.46x estimated boost → filtered out by min_card_boost=1.5 despite +1.9x actual. Fix: only 18+ ppg scorers attract meaningful ownership inflation. (2) Replaced hardcoded development_teams list with continuous rebuild multiplier from live ESPN standings — team_bonus = max(1.0, 1.0 + max(0, 0.5 - win_pct)). SAC .250 → 1.25x, MEM .348 → 1.15x, competitive teams (.500+) → 1.0x. No maintenance required, auto-updates with standings daily. Removed development_teams and dev_team_boost from config entirely."
     },
     {
       "version": 15,
