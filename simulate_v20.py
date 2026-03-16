@@ -1,5 +1,5 @@
 """
-Simulate v21 model config predictions for past dates.
+Simulate v23 model config predictions for past dates.
 Uses player stats recorded in prediction CSVs and re-applies current model formulas.
 No PuLP needed — greedy optimizer with constraint enforcement.
 """
@@ -9,14 +9,38 @@ import sys
 from collections import defaultdict
 
 # ─────────────────────────────────────────────
-# V21 CONFIG (updated from leaderboard autopsy Mar 11-14)
+# V23 CONFIG — Lookup + Sigmoid Tier Boost Model
 # ─────────────────────────────────────────────
-LOG_A = 4.2
-LOG_B = 1.1
-OWNERSHIP_SCALAR = 80.0
-FAME_PTS_BASE = 8.0
-FAME_EXPONENT = 2.5
-FAME_CAP = 3.0
+# Player overrides from real ownership/actuals data (boost is stable per-player ±0.1x)
+PLAYER_OVERRIDES = {
+    "Aaron Nesmith": 1.9, "Ace Bailey": 2.1, "Al Horford": 2.0,
+    "Amen Thompson": 0.6, "Andre Drummond": 2.3, "Anthony Edwards": 0.2,
+    "Bam Adebayo": 0.6, "Brook Lopez": 3.0, "Bryce McGowens": 3.0,
+    "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Clint Capela": 3.0,
+    "Cody Williams": 3.0, "Collin Sexton": 2.0, "Cooper Flagg": 0.7,
+    "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.9, "Derik Queen": 1.4,
+    "Derrick White": 0.7, "Devin Carter": 3.0, "Donovan Clingan": 1.0,
+    "Grant Williams": 2.8, "Gui Santos": 2.6, "Isaiah Collier": 1.5,
+    "Jalen Johnson": 0.3, "Jarace Walker": 2.3, "Jaylen Brown": 0.3,
+    "Jordan Miller": 2.5, "Julian Reese": 3.0, "Julius Randle": 0.6,
+    "Kam Jones": 3.0, "Kel'el Ware": 1.4, "Kevin Durant": 0.5,
+    "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kyle Filipowski": 2.1,
+    "Kyle Kuzma": 1.7, "LaMelo Ball": 0.6, "Leonard Miller": 3.0,
+    "Luka Dončić": 0.0, "Luke Kennard": 3.0, "Matas Buzelis": 1.4,
+    "Maxime Raynaud": 2.1, "Myles Turner": 1.6, "Noah Clowney": 2.0,
+    "OG Anunoby": 1.1, "Ousmane Dieng": 3.0, "Pat Spencer": 3.0,
+    "Precious Achiuwa": 2.2, "Reed Sheppard": 1.5, "Robert Williams III": 2.3,
+    "Ron Harper Jr.": 3.0, "Royce O'Neale": 2.0, "Rudy Gobert": 1.1,
+    "Russell Westbrook": 1.1, "Scottie Barnes": 0.5, "Simone Fontecchio": 3.0,
+    "Tristan da Silva": 2.8, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3,
+}
+
+# Sigmoid tier estimation params
+SIG_CEILING = 3.0
+SIG_RANGE = 2.8
+SIG_MIDPOINT = 12.0
+SIG_SCALE = 4.0
+BIG_MARKET_DISCOUNT = 0.15
 BIG_MARKET_TEAMS = {"LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"}
 BOOST_CEILING = 3.0
 BOOST_FLOOR = 0.2
@@ -56,13 +80,17 @@ WIN_PCT = {
 }
 
 
-def card_boost(pts, pred_min, team):
-    fame_mult = min(FAME_CAP, max(1.0, (pts / FAME_PTS_BASE) ** FAME_EXPONENT))
-    big_market = 1.3 if team in BIG_MARKET_TEAMS else 1.0
-    drafts = OWNERSHIP_SCALAR * (pts / 10) ** 2 * (pred_min / 30) ** 0.5 * fame_mult * big_market
-    drafts = max(drafts, 1.0)
-    raw = LOG_A - LOG_B * math.log10(drafts)
-    return max(BOOST_FLOOR, min(BOOST_CEILING, raw))
+def card_boost(pts, pred_min, team, player_name=None):
+    """v23: Lookup + sigmoid tier boost model."""
+    # Layer 1: Player lookup
+    if player_name and player_name in PLAYER_OVERRIDES:
+        return PLAYER_OVERRIDES[player_name]
+    # Layer 2: Sigmoid tier estimation from PPG
+    sigmoid_val = 1.0 / (1.0 + math.exp(-(pts - SIG_MIDPOINT) / SIG_SCALE))
+    boost = SIG_CEILING - SIG_RANGE * sigmoid_val
+    if team in BIG_MARKET_TEAMS:
+        boost -= BIG_MARKET_DISCOUNT
+    return round(max(BOOST_FLOOR, min(BOOST_CEILING, boost)), 1)
 
 
 def dev_team_bonus(team, pts=0):
@@ -146,7 +174,7 @@ def pick_starting5(pool):
         # Minutes gate: use pred_min as proxy for season_min (conservative)
         if pred_min < CHALK_SEASON_MIN_FLOOR:
             continue
-        boost = card_boost(pts, pred_min, team)
+        boost = card_boost(pts, pred_min, team, player_name=p.get("player_name"))
         ev = chalk_ev(rating, boost)
         candidates.append({
             "name": p["player_name"],
@@ -246,7 +274,7 @@ def pick_moonshot(pool):
         stl = float(p.get("stl", 0))
         blk = float(p.get("blk", 0))
 
-        boost = card_boost(pts, pred_min, team)
+        boost = card_boost(pts, pred_min, team, player_name=p.get("player_name"))
         if boost < MOONSHOT_MIN_BOOST:
             continue
 
@@ -326,7 +354,7 @@ def print_lineup(label, lineup):
 def simulate_date(date_str):
     path = f"/home/user/basketball/data/predictions/{date_str}.csv"
     print(f"\n{'═'*87}")
-    print(f"  {date_str}  (v21 model simulation)")
+    print(f"  {date_str}  (v23 model simulation)")
     print(f"{'═'*87}")
 
     # Load full player pool - include reb/ast in enrichment
@@ -349,8 +377,8 @@ def simulate_date(date_str):
     starting5 = pick_starting5(pool)
     moonshot = pick_moonshot(pool)
 
-    print_lineup("STARTING 5  (chalk · v21)", starting5)
-    print_lineup("MOONSHOT    (upside · v21)  ★WC = wildcard gate", moonshot)
+    print_lineup("STARTING 5  (chalk · v23)", starting5)
+    print_lineup("MOONSHOT    (upside · v23)  ★WC = wildcard gate", moonshot)
 
     # Quick summary
     s5_boost_total = sum(min(p["boost"], CHALK_BOOST_CAP) for p in starting5)
@@ -365,10 +393,9 @@ def simulate_date(date_str):
 if __name__ == "__main__":
     dates = ["2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09",
              "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14"]
-    print("\n  NOTE: Re-simulating with current v21 model config applied to")
-    print("  player stats recorded in prediction CSVs for those dates.")
-    print("  v22 changes: wildcard gate C (boost>=2.0, min>=8), stacking max_per_team=3,")
-    print("  leverage_top_slots=1, dev team pts floor=8.")
+    print("\n  NOTE: Re-simulating with v23 model config (lookup + sigmoid tier boost)")
+    print("  applied to player stats recorded in prediction CSVs for those dates.")
+    print("  v23: player_overrides lookup from real ownership data + sigmoid PPG fallback.")
     print("  Pool = all unique players across all lineup types/scopes.")
     for d in dates:
         simulate_date(d)
