@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,LeBron James,1966,LAL,F,8.9,0.2,36.0,24.1,6.6,7.2,1.3,0.7
+slate,chalk,1.8x,Nic Claxton,4278067,BKN,C,5.8,1.7,29.5,11.3,7.3,3.0,0.7,1.4
+slate,chalk,1.6x,Jabari Smith Jr.,4432639,HOU,F,6.8,1.2,35.4,14.4,7.0,1.6,0.7,0.9
+slate,chalk,1.4x,Jalen Suggs,4432165,ORL,G,5.9,1.4,28.6,13.3,3.6,4.5,1.6,0.7
+slate,chalk,1.2x,Wendell Carter Jr.,4277847,ORL,C,5.6,1.6,30.6,11.8,8.0,2.0,0.8,0.7
+slate,upside,2.0x,Brook Lopez,3448,LAC,C,6.1,3.0,27.1,11.6,4.5,1.2,0.6,1.4
+slate,upside,1.8x,Tristan da Silva,4702382,ORL,F,4.2,2.8,25.6,8.9,3.6,1.5,0.8,0.3
+slate,upside,1.6x,Luke Kennard,3913174,LAL,G,3.7,3.0,22.1,8.9,2.5,2.1,0.7,0.1
+slate,upside,1.4x,Justin Champagnie,4432907,WSH,F,4.4,2.3,19.9,7.5,5.0,1.0,0.8,0.6
+slate,upside,1.2x,Tari Eason,4433192,HOU,F,5.3,1.9,26.4,10.6,6.3,1.4,1.4,0.6
