@@ -201,33 +201,25 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - The chat prompt includes full system context (briefing data, config state, backtest capability)
 
 ### End-of-Day Upload Flow (in Ben)
-After all games are final and Ben unlocks:
+After a slate has a pending upload date (regardless of current slate lock state):
 - Upload banner with 5 buttons: **📸 Real Scores**, **🏆 Top Drafts**, **⚡ Starting 5**, **🚀 Moonshot**, **📊 Most Popular**
-- Banner **hidden during lock** — only shows when Ben is unlocked
+- Banner shows whenever there is a `pending_upload_date`; it is no longer gated on Lab lock state
 - Banner title shows pending date + live progress counter (e.g. "Log Results — Fri, Mar 6  2/5")
 - `pending_upload_date` = most recent prediction date (excluding today) without actuals uploaded
 - **Skip All** button in top-right of banner header (meta-action on the date, not a data action)
-- `_handleBenUpload()` pipeline: `parse-screenshot → save-actuals → /api/audit/get → lab/briefing → labCallClaude()`
+- `_handleBenUpload()` pipeline (per-button): `parse-screenshot → save-actuals/save-ownership → localStorage flags → (optional) audit/briefing + Ben analysis`
 - On successful upload: button flashes green for 1.5s, then **hides** (user only sees remaining uploads)
 - `_checkBannerDone()` uses **localStorage** as source of truth (not DOM disabled state, since buttons hide); fires on all 5 upload types including `most_drafted`
 - On reload: already-done buttons hidden immediately (no stale green buttons cluttering the banner)
 - Audit gate: `save-actuals` only generates `data/audit/{date}.json` when `real_scores` data is present
 - Real Scores, Top Drafts, Starting 5, Moonshot merge into actuals CSV (dedup by player name); Most Popular saves to `data/ownership/{date}.csv`
+- Heavy Ben analysis (audit summary + refreshed briefing + `labCallClaude`) only runs once **all 5** uploads are complete for a date; partial uploads are persisted but do not trigger full analysis.
 - Log page is **read-only** — no upload UI there
 
-### Lock System
-- **Locked** 5 minutes before first game tip-off (slate is in progress)
-- **Unlocked** when ALL games on today's slate reach "Final" status on ESPN (60s TTL when locked, 180s pre-slate)
-- During lock: shows locked state with **total games remaining** (in-progress + scheduled) and estimated unlock based on **last game of the day** + 2.5h
-- During unlock: full chat capabilities + upload banner (if pending date exists)
-- **Break between game windows**: if early games finish but more are scheduled, Ben briefly unlocks with "Break — N games later today". Polling detects re-lock when next game window starts.
-- **4 failure paths hardened**: (1) ESPN outage — `_all_games_final` requires `finals > 0`, (2) split-window — `any(_is_locked(st))` checks ALL games, (3) ESPN down — GitHub lock file fallback before unlocking, (4) frontend fetch failure — shows **connection error** ("Couldn't check status"), never "BEN IS LOCKED". (5) Backend exception path: when `/api/lab/status` catches an exception it returns 200 with `locked: true` and reason "Server temporarily unavailable — try again"; the frontend treats that as **status unknown** (`_isLabStatusErrorFallback`) and shows "Server couldn't determine status. Tap Retry." instead of "BEN IS LOCKED", so the locked banner only appears when the server actually knows the slate is in progress.
-
-### Lab status, banner, and degraded mode
-- **What "COULDN'T CHECK STATUS" indicates:** The request to `/api/lab/status` failed (timeout or network) before any response. Common on cold start when that endpoint is the first to hit the server (fetch_games + _all_games_final can exceed 30s).
-- **What the upload banner depends on:** The banner (LOG RESULTS with 5 upload buttons) is shown only inside `showLabUnlocked()`, which runs after a successful `locked: false` from `/api/lab/status`. So if status never succeeds, we never call `showLabUnlocked()` and never run `_initUploadBanner()` — hence the banner doesn't load.
-- **What else lab status gates:** Locked vs unlocked view, lock polling (2 min when locked), briefing/config/line/slate/log fetch (only when unlocked), chat input availability. The single status call is the gate for the whole Lab tab.
-- **Fixes:** (1) **Backend pre-slate fast path:** When no game has started yet (now &lt; earliest tip − lock buffer), `lab_status` returns "Pre-slate window" without calling `_all_games_final()` (saves ESPN scoreboard calls and reduces timeouts). (2) **Frontend degraded mode:** When status fails (fetch throw or server error fallback), the frontend tries `/api/lab/briefing`; if it succeeds and has `pending_upload_date`, we call `showLabUnlocked()` so the banner and chat appear even when status didn't complete.
+### Lab / Ben availability
+- Ben (Lab) chat is always available from the frontend’s perspective — the Lab tab no longer shows a locked vs unlocked state.
+- The upload banner depends only on data (`pending_upload_date` + localStorage flags), not on `/api/lab/status` or slate lock state.
+- Backend lock helpers (`_is_locked`, `_all_games_final`, `/api/lab/status`) still exist for internal decisions (e.g. slate generation, cron behavior), but they no longer gate Ben’s UI.
 
 ### Keyboard / Nav Behavior (Ben tab)
 - On **mobile**: focusing `#labInput` hides the bottom nav and expands `#tab-lab` to fill freed keyboard space via `lab-kb-open` CSS class. Blur restores everything.
