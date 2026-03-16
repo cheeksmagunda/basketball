@@ -523,8 +523,10 @@ _CONFIG_DEFAULTS = {
     },
     "real_score": {
         "dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2},
-        "compression_divisor": 7.0,
-        "compression_power": 0.62,
+        "compression_divisor": 5.5,
+        "compression_power": 0.72,
+        "rs_cap": 20.0,
+        "ai_blend_weight": 0.5,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -1700,18 +1702,28 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     )
 
     # Compress heuristic result to RS scale.
-    # March 6 audit: old params (div=5, pow=0.75) produced Jokic=11.7 vs actual 5.6 (2x over).
-    # New defaults (div=7, pow=0.62) compress more aggressively: stars ~5-8 RS, role players ~2-4 RS.
+    # v5: Asymmetric compression — preserve floor accuracy, widen ceiling.
+    # Old symmetric (div=7, pow=0.62) compressed everyone into 3-4 RS.
+    # New approach: use softer power (0.72) to let high-upside players separate,
+    # then apply a floor clamp so low-end accuracy is preserved.
     rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
-    comp_div = rs_cfg.get("compression_divisor", 7.0)
-    comp_pow = rs_cfg.get("compression_power", 0.62)
+    comp_div = rs_cfg.get("compression_divisor", 5.5)
+    comp_pow = rs_cfg.get("compression_power", 0.72)
     raw_linear = real_result / comp_div
-    heuristic_rs = min(raw_linear ** comp_pow, 15.0)
+    heuristic_rs = raw_linear ** comp_pow
+    # Asymmetric cap: high ceiling (20.0) to allow RS 6-8 projections for upside players,
+    # but floor stays accurate because compression_power still dampens low values.
+    rs_cap = rs_cfg.get("rs_cap", 20.0)
+    heuristic_rs = min(heuristic_rs, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
-    # Both values are now in RS units — blend is unit-consistent.
+    # v5: Rebalanced to 50/50. Old 70/30 AI-heavy blend crushed heuristic upside —
+    # LightGBM clusters outputs in 2.5-4.5 range, forcing everyone into 3-4 RS.
+    # 50/50 lets the heuristic's wider distribution (closeness × clutch × momentum)
+    # pull high-upside players to RS 5-7 where they belong.
+    ai_weight = rs_cfg.get("ai_blend_weight", 0.5)
     if ai_pred is not None:
-        raw_score = min((ai_pred * 0.7) + (heuristic_rs * 0.3), 15.0)
+        raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
     else:
         raw_score = heuristic_rs
 
@@ -1727,7 +1739,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         if _bm_s_pts < _bm_cfg.get("pts_cap", 16.0):
             _bm_reb_bonus = max(0.0, (stats.get("season_reb", 0) - _bm_cfg.get("reb_baseline", 6.0)) * _bm_cfg.get("reb_scale", 0.04))
             _bm_blk_bonus = stats.get("season_blk", 0) * _bm_cfg.get("blk_scale", 0.10)
-            raw_score = min(raw_score * (1.0 + min(_bm_reb_bonus + _bm_blk_bonus, 0.40)), 15.0)
+            raw_score = min(raw_score * (1.0 + min(_bm_reb_bonus + _bm_blk_bonus, 0.40)), rs_cap)
 
     # Scoring upside multiplier — rewards players whose pts drive their base,
     # not just balanced stat-line accumulators.
@@ -1737,7 +1749,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     _bias_base = _cfg("scoring_thresholds.scoring_bias_base", 0.85)
     _bias_wt   = _cfg("scoring_thresholds.scoring_bias_pts_weight", 0.35)
     scoring_bias = _bias_base + (pts_share * _bias_wt)
-    raw_score = min(raw_score * scoring_bias, 15.0)
+    raw_score = min(raw_score * scoring_bias, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -2069,13 +2081,13 @@ def _build_lineups(projections):
     low_pts_penalty       = moon_cfg.get("low_pts_penalty", 0.85)
     variance_penalty_coef = moon_cfg.get("variance_penalty", 0.45)
 
-    chalk_names = {p["name"] for p in chalk}
-
+    # v5: Starting 5 and Moonshot can share players. They represent two independent
+    # draft strategies (reliability vs ceiling) — if a player is the best pick for
+    # both, they should appear in both. The two lineups together predict the two
+    # best possible drafts of the day.
     moonshot_pool = []
     for p in projections:
         if p.get("name") in BLACKLISTED_PLAYERS:
-            continue
-        if p["name"] in chalk_names:
             continue
 
         # Proven rotation regular OR definitive spot-starter due to injury cascade.

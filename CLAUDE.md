@@ -318,6 +318,20 @@ role players and low-minute centers from dominating both lineup types.
 - **Minimum 10 projected pts** — single-game format has no card boost, so a low-scoring
   player projecting 8 pts is a ceiling liability, not a value play
 
+### RS Distribution (asymmetric compression, v5)
+
+The projection pipeline uses asymmetric compression to preserve floor accuracy
+while widening the ceiling for high-upside players:
+
+- **compression_divisor**: 5.5 (was 7.0) — less pre-compression dampening
+- **compression_power**: 0.72 (was 0.62) — softer power law, lets stars separate from role players
+- **rs_cap**: 20.0 (was 15.0, applied 4× in pipeline) — removes artificial ceiling that bunched everyone
+- **AI blend**: 50/50 (was 70/30 AI-heavy) — LightGBM clusters outputs in 2.5-4.5; at 70% weight it
+  killed the heuristic's wider distribution. 50/50 lets Monte Carlo upside shine through.
+
+**Result**: RS distribution widens from ~3-4.5 to ~2-8. Stars can project RS 6-8,
+role players stay at RS 2-4, and the gap between them drives better lineup selection.
+
 ### Design rationale
 
 A player like Goga Bitadze (5.7 pts, +2.5x card) has a theoretical EV of
@@ -341,7 +355,9 @@ All floors live in `scoring_thresholds` in `data/model-config.json`:
 
 ---
 
-## Three Lineup Modes
+## Two Draft Strategies (Shared Player Pool)
+
+Starting 5 and Moonshot represent two independent draft strategies — reliability vs ceiling — but **they can share players**. If a player is the best pick for both strategies, they appear in both lineups. Together they predict the two best possible drafts of the day. Target: **70+ total draft score** for both.
 
 ### Slate-Wide: Starting 5 (chalk)
 MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 25-minute season avg minutes floor** (`season_min >= 25`). Configurable via `projection.chalk_season_min_floor`.
@@ -732,7 +748,7 @@ If slate, line, and/or log all fail to load:
 | Line-of-the-day load path: no L5 re-fetch | `api/index.py` | `recent_form_values` (L5) is fetched once at fresh-generation time and stored in the GitHub JSON. Load paths (fast-path today + next-slate) never re-fetch L5 — use whatever is in the file; card falls back to `recent_form_bars`. Eliminates 10-30s cold-start nba_api call on every load. |
 | Line tab + Ben timeout bumps | `index.html` | Line tab `/api/line-of-the-day` timeout 60s→90s; Ben context load 10s→30s. Fixes "Couldn't reach the server" on first load and "Line data unavailable" in Ben. |
 | Ben briefing timeout precision | `index.html` | `initLabPage` error-fallback briefing and `showLabUnlocked` context load raised to 30s; auto-retry `/api/lab/status` standardized to 10s (was 15s). Context-load paths get 30s; user-triggered refresh actions stay at 10s for responsiveness. |
-| `_CONFIG_DEFAULTS` sync | `api/index.py` | Fallback defaults match `data/model-config.json` v15: `compression_divisor` 5.5→7.0, `per_player_cap_minutes` 3.0→2.0, `big_market_teams` inline fallback removes MIL/DAL/PHX. Prevents silent model behavior change on GitHub outage. |
+| `_CONFIG_DEFAULTS` sync | `api/index.py` | Fallback defaults match `data/model-config.json`: `compression_divisor` 5.5, `compression_power` 0.72, `rs_cap` 20.0, `ai_blend_weight` 0.5, `per_player_cap_minutes` 2.0, `big_market_teams` inline fallback removes MIL/DAL/PHX. Prevents silent model behavior change on GitHub outage. |
 | `auto_improve_threshold_pct` externalized | `api/index.py`, `data/model-config.json` | `IMPROVEMENT_THRESHOLD` reads from `_cfg("lab.auto_improve_threshold_pct", 3.0)`. Tunable via Ben without code deploy. |
 | Line engine stat floors externalized | `api/line_engine.py`, `data/model-config.json` | `_STAT_META` and `stat_configs` min_season floors now read from `line_config.get("stat_floors", {})`. Tunable via `line.stat_floors` in model-config. No behavior change — defaults match prior hardcoded values. |
 | Cron schedule restored | `railway.toml` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). Matches documentation and intended behavior. |
