@@ -513,12 +513,15 @@ _CONFIG_DEFAULTS = {
         "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
         "leverage_top_slots": 2,        # force 2 contrarian players into top 2 slots (was 1; winners had 3-4 high-boost)
         "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
+        "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
+            "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 16.0,
+        },
     },
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
         "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.5, "min_rating_floor":2.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "big_pos_efficiency":0.70, "max_centers":2, "boost_leverage_power":1.6,
+        "big_pos_efficiency":0.85, "max_centers":2, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
     "lineup": {
@@ -1566,9 +1569,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             recent_vs_season_ = float(np.clip(recent_vs_season_, 0.5, 2.0))
             games_played_ = 40.0  # mid-season default; not in ESPN splits
 
+            reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
             feat_vec = [avg_min, season_pts_, usage, opp_def_rating,
                         home_away_, ast_rate_, def_rate_, pts_per_min_,
-                        rest_days_, recent_vs_season_, games_played_]
+                        rest_days_, recent_vs_season_, games_played_, reb_per_min_]
 
             # If the saved model has a known feature list, verify length matches
             if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
@@ -1638,6 +1642,20 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         raw_score = min((ai_pred * 0.7) + (heuristic_rs * 0.3), 15.0)
     else:
         raw_score = heuristic_rs
+
+    # Big-man calibration: LightGBM has no rebounding feature, causing systematic
+    # underestimation of C/PF players who contribute through boards and rim presence
+    # rather than scoring volume (e.g. Poeltl 9ppg/9reb → was projected ~2.5, actual 5.4).
+    # Only applied to non-scorers (season_pts < pts_cap) so stars like Giannis/Randle
+    # are untouched. Cascades into ceiling_score and chalk_ev automatically.
+    _bm_pos = _pos_group(pinfo.get("pos", "G"))
+    if _bm_pos in ("C", "F"):
+        _bm_cfg = _cfg("projection.big_man_calibration", {})
+        _bm_s_pts = stats.get("season_pts", pts)
+        if _bm_s_pts < _bm_cfg.get("pts_cap", 16.0):
+            _bm_reb_bonus = max(0.0, (stats.get("season_reb", 0) - _bm_cfg.get("reb_baseline", 6.0)) * _bm_cfg.get("reb_scale", 0.04))
+            _bm_blk_bonus = stats.get("season_blk", 0) * _bm_cfg.get("blk_scale", 0.10)
+            raw_score = min(raw_score * (1.0 + min(_bm_reb_bonus + _bm_blk_bonus, 0.40)), 15.0)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)

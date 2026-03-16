@@ -133,11 +133,21 @@ df['recent_vs_season'] = np.where(
 # Feature 12: Games played this season (sample size / reliability proxy)
 df['games_played'] = g.cumcount()  # 0-indexed, represents games BEFORE this one
 
+# Feature 13: Rebounds per minute — critical for C/PF accuracy.
+# LightGBM was blind to rebounding volume, causing systematic underestimation
+# of interior bigs like Poeltl (9reb, ~2.5 projected, 5.4 actual).
+# Must also be updated in project_player() inference vector (api/index.py).
+df['reb_per_min'] = np.where(
+    df['avg_min'] > 0,
+    df['REB'] / df['avg_min'],
+    0.0
+).clip(0.0, 1.5)  # guard vs. center range: ~0.1 to ~0.4 typical
+
 # Drop rows with NaN in any feature
 features = [
     'avg_min', 'avg_pts', 'usage_trend', 'opp_def_rating',
     'home_away', 'ast_rate', 'def_rate', 'pts_per_min',
-    'rest_days', 'recent_vs_season', 'games_played'
+    'rest_days', 'recent_vs_season', 'games_played', 'reb_per_min'
 ]
 df = df.dropna(subset=features + [target])
 print(f"After feature engineering: {len(df)} samples with complete features.")

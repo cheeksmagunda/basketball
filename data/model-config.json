@@ -1,7 +1,7 @@
 {
-  "version": 17,
+  "version": 18,
   "updated_at": "2026-03-16T00:00:00Z",
-  "updated_by": "mar15-moonshot-blind-spots",
+  "updated_by": "mar15-big-man-calibration",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -107,7 +107,13 @@
     "chalk_max_stars": 1,
     "chalk_star_boost_threshold": 0.8,
     "leverage_top_slots": 2,
-    "leverage_boost_threshold": 1.5
+    "leverage_boost_threshold": 1.5,
+    "big_man_calibration": {
+      "reb_baseline": 6.0,
+      "reb_scale": 0.04,
+      "blk_scale": 0.10,
+      "pts_cap": 16.0
+    }
   },
   "lineup": {
     "chalk_rating_floor": 2.0,
@@ -140,7 +146,7 @@
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "min_recent_minutes_floor": 20,
-    "big_pos_efficiency": 0.70,
+    "big_pos_efficiency": 0.85,
     "max_centers": 2,
     "boost_leverage_power": 1.6
   },
@@ -217,6 +223,11 @@
       "version": 14,
       "date": "2026-03-15",
       "change": "Mar 14 Saturday autopsy (draft scored <50 vs optimal 83): 6 fixes. (1) Card boost recalibrated \u2014 log_a 3.76\u21924.2, log_b 0.88\u21921.1, ownership_scalar 50\u219280; steeper curve separates truly obscure (<100 drafts \u2192 2.0+ boost) from mid-popularity (200+ drafts \u2192 <1.2x). Suggs 275 drafts was getting 1.6x predicted vs 1.1x actual. (2) Boost leverage power added to moonshot \u2014 boost_leverage_power=1.3 baked into adj_ceiling so MILP strongly favors high-boost players. 3.0x boost \u2192 3.7x adj_ceiling weight vs 1.0x. Old formula gave only 10% advantage. (3) min_card_boost 1.0\u21921.5 \u2014 excludes mid-popularity players (Suggs, Jaquez 815 drafts) from moonshot entirely. (4) big_pos_efficiency 0.40\u21920.70 \u2014 centers CAN win moonshot (Queta RS 4.9, Achiuwa RS 5.1 were top value). 0.40x was too punishing. (5) Defensive rate bonus \u2014 STL+BLK per-36 above average gives up to 20% moonshot adj_ceiling bonus. Smart (1.4 STL) gets ~6% bonus; elite defenders get 15-20%. (6) big_market_teams trimmed \u2014 removed MIL, DAL, PHX (role players on these teams are NOT heavily drafted; only stars are)."
+    },
+    {
+      "version": 18,
+      "date": "2026-03-16",
+      "change": "Big-man calibration: (1) Post-LightGBM multiplier for low-scoring interior bigs (projection.big_man_calibration) — LightGBM has no rebounding feature, causing systematic underestimation of C/PF players like Poeltl (9ppg, 9reb → was projected ~2.5 RS, actual 5.4) and Portis (14ppg, 9reb → actual 5.2). Multiplier applies to pos=C/F with season_pts < 16 only, capped at +40%. reb_bonus = (season_reb-6)×0.04, blk_bonus = season_blk×0.10. High-scoring stars (Giannis 28ppg, Randle 24ppg) untouched. (2) big_pos_efficiency 0.70→0.85 — empirical data shows ~15% efficiency gap vs guards, not 30%. 0.70 was over-penalizing exactly the bigs we want in moonshot."
     },
     {
       "version": 17,
