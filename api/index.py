@@ -1551,7 +1551,26 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     stl = stats.get("stl", 0)
     blk = stats.get("blk", 0)
     tov = stats.get("tov", 0)
-    if pts + reb + ast <= 0: return None
+    minutes = stats.get("min", 0)
+
+    # SCORING UPSIDE GATE 1: minimum projected points floor.
+    # A player projecting under 7 pts cannot anchor a winning lineup.
+    # Eliminates Goga Bitadze (5.7), Jahmai Mashack (5.0) types.
+    min_pts = _cfg("scoring_thresholds.min_pts_projection", 7.0)
+    if pts < min_pts:
+        return None
+
+    # SCORING UPSIDE GATE 2: minimum pts-per-minute efficiency.
+    # Prevents low-minute players from sneaking through on raw pts alone.
+    # 0.35 pts/min ≈ 7 pts in 20 minutes — a real, meaningful contribution floor.
+    min_ppm = _cfg("scoring_thresholds.min_pts_per_minute", 0.35)
+    if minutes > 0 and (pts / minutes) < min_ppm:
+        return None
+
+    # Base formula: PTS + REB + AST (correct for Real Sports scoring)
+    base = pts + reb + ast
+    if base <= 0:
+        return None
 
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
@@ -1709,6 +1728,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             _bm_reb_bonus = max(0.0, (stats.get("season_reb", 0) - _bm_cfg.get("reb_baseline", 6.0)) * _bm_cfg.get("reb_scale", 0.04))
             _bm_blk_bonus = stats.get("season_blk", 0) * _bm_cfg.get("blk_scale", 0.10)
             raw_score = min(raw_score * (1.0 + min(_bm_reb_bonus + _bm_blk_bonus, 0.40)), 15.0)
+
+    # Scoring upside multiplier — rewards players whose pts drive their base,
+    # not just balanced stat-line accumulators.
+    # pts_share ranges from ~0.5 (pure rebounder) to ~0.85 (scorer).
+    # scoring_bias scales into a ~0.95–1.15 multiplier.
+    pts_share = pts / max(base, 1)
+    _bias_base = _cfg("scoring_thresholds.scoring_bias_base", 0.85)
+    _bias_wt   = _cfg("scoring_thresholds.scoring_bias_pts_weight", 0.35)
+    scoring_bias = _bias_base + (pts_share * _bias_wt)
+    raw_score = min(raw_score * scoring_bias, 15.0)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -1976,6 +2005,13 @@ def _build_lineups(projections):
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
         if p.get("est_mult", 0) < chalk_min_boost:
             continue
+        # Minimum rating gate: boost cannot rescue a weak base.
+        # A player with rating < 3.5 doesn't generate enough RS to be a viable chalk pick
+        # regardless of card boost. Kills Lopez (+3x, 11.6 pts) and Kennard (+3x, 8.9 pts)
+        # archetypes where boost was masking a weak RS foundation.
+        min_chalk_rating = _cfg("scoring_thresholds.min_chalk_rating", 3.5)
+        if p["rating"] < min_chalk_rating:
+            continue
         capped_boost = min(p["est_mult"], boost_cap)
         p["capped_boost"] = capped_boost
         p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
@@ -2097,10 +2133,17 @@ def _build_lineups(projections):
 
         # Minimum rating floor: push out low-RS profiles. Wildcards get a softer floor
         # but still need some RS so we don't include zero-usage cardio plays.
-        min_rating_floor = moon_cfg.get("min_rating_floor", 2.8)
+        # Default raised from 2.0 → 3.0: 3.0 rating ≈ projecting ~15 RS before boost,
+        # minimum to meaningfully contribute to a winning moonshot lineup.
+        min_rating_floor = moon_cfg.get("min_rating_floor", _cfg("scoring_thresholds.min_moonshot_rating", 3.0))
         if not is_moonshot_wildcard and p["rating"] < min_rating_floor:
             continue
         if is_moonshot_wildcard and p["rating"] < 2.0:
+            continue
+        # Moonshot pts floor (non-wildcard): moonshot needs scoring upside, not just boost.
+        # A player projecting 8 pts with a big boost is still an 8-pt ceiling pick.
+        min_moon_pts = _cfg("scoring_thresholds.min_moonshot_pts", 10.0)
+        if not is_moonshot_wildcard and p.get("pts", 0) < min_moon_pts:
             continue
 
         # Continuous rebuild bonus: teams with lower win% get a larger multiplier.
@@ -2230,10 +2273,14 @@ def _build_game_lineups(projections, game):
     rescored = _apply_game_script(projections, game)
 
     # PER-GAME: Requires min 20 recent minutes — same philosophy as slate-wide.
+    # Also enforces pts floor: a player projecting < 10 pts is a ceiling liability
+    # in single-game format where card boost is irrelevant.
+    min_game_pts = _cfg("scoring_thresholds.min_moonshot_pts", 10.0)
     eligible_pool = [
         p for p in rescored
         if p.get("recent_min", 0) >= 20.0
         and p["rating"] >= game_chalk_floor
+        and p.get("pts", 0) >= min_game_pts
         and p.get("name") not in BLACKLISTED_PLAYERS
     ]
 

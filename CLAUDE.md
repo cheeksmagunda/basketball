@@ -290,6 +290,57 @@ Three independent gates prevent pre-lock saves:
 - **Backend guard**: `if not any(_is_locked(st) ...)` → HTTP 409 in `/api/save-predictions`
 - **Cron guard**: `/api/refresh` only calls `save_predictions()` if `any(_is_locked(...))`
 
+## Scoring Upside Standards (v5)
+
+The model enforces scoring floors at two levels to prevent clean-statline
+role players and low-minute centers from dominating both lineup types.
+
+### Projection-level gates (project_player)
+
+- **Minimum 7 projected pts** — any player under this is excluded from all pools
+- **Minimum 0.35 pts/min** — prevents low-minute players from passing on raw stats alone
+- **Scoring bias multiplier** — players whose pts drive their base score (scorers)
+  receive a mild upside boost (up to 1.15×) over balanced accumulators
+
+### Chalk-specific gates
+
+- **Minimum 3.5 rating** before card boost is applied — boost cannot rescue a weak base
+- **Boost cap at 2.5** (configurable via `projection.chalk_boost_cap`) — allows Gobert/Sheppard-tier players
+  (solid RS + meaningful boost) to rank above pure high-rating/no-boost picks
+
+### Moonshot-specific gates (in addition to projection-level)
+
+- **Minimum 3.0 rating** (raised from 2.0; wildcards exempt)
+- **Minimum 10 projected pts** (non-wildcard only) — moonshot needs scoring upside, not just boost
+
+### Per-game lineup gates
+
+- **Minimum 10 projected pts** — single-game format has no card boost, so a low-scoring
+  player projecting 8 pts is a ceiling liability, not a value play
+
+### Design rationale
+
+A player like Goga Bitadze (5.7 pts, +2.5x card) has a theoretical EV of
+`5.7 × (slot + 2.5)` but in practice cannot win a lineup. The boost amplifies
+a weak base — a 50% shooting night on 5 attempts still yields 7-8 pts.
+Contrast with a player projecting 15 pts with +1.5x — a hot night goes to 20+.
+The scoring floors enforce that the base must be real before boost matters.
+
+### What gets displaced
+
+Low-scoring centers, sub-20-minute role players, and specialists
+whose RS score came primarily from rebounds/blocks/steals rather than scoring.
+These are fine in certain roster construction contexts but should not be
+auto-selected as Starting 5 or Moonshot anchors.
+
+### Tunable via Ben
+
+All floors live in `scoring_thresholds` in `data/model-config.json`:
+`min_pts_projection`, `min_pts_per_minute`, `min_chalk_rating`, `min_moonshot_rating`,
+`min_moonshot_pts`, `scoring_bias_base`, `scoring_bias_pts_weight`.
+
+---
+
 ## Three Lineup Modes
 
 ### Slate-Wide: Starting 5 (chalk)

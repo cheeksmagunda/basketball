@@ -1,7 +1,17 @@
 {
-  "version": 24,
+  "version": 25,
   "updated_at": "2026-03-16T18:00:00Z",
-  "updated_by": "mar15-autopsy-4fixes",
+  "updated_by": "scoring-upside-gates-v5",
+  "scoring_thresholds": {
+    "min_pts_projection": 7.0,
+    "min_pts_per_minute": 0.35,
+    "min_chalk_rating": 3.5,
+    "min_moonshot_rating": 3.0,
+    "min_moonshot_pts": 10.0,
+    "chalk_boost_cap": 1.5,
+    "scoring_bias_base": 0.85,
+    "scoring_bias_pts_weight": 0.35
+  },
   "card_boost": {
     "ceiling": 3.0,
     "floor": 0.2,
@@ -173,6 +183,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 25,
+      "date": "2026-03-16",
+      "change": "Scoring upside gates v5: (1) project_player() 7pt minimum projection floor + 0.35 pts/min efficiency floor — eliminates Bitadze (5.7pt), Mashack (5.0pt), ultra-low-minute centers from all pools entirely. (2) Scoring bias multiplier on raw_score — pts_share (pts/base) scales rating by 0.85-1.20x; pure scorers rewarded over balanced accumulators. (3) Chalk pool: rating < 3.5 hard gate before boost applied — boost cannot rescue a weak RS base; kills Lopez/Kennard archetype. (4) Moonshot: rating floor 2.8→3.0 (non-wildcard), pts floor 10.0 added (non-wildcard). (5) Per-game lineup: pts floor 10.0 added. New scoring_thresholds config block for all tunable floors."
+    },
     {
       "version": 24,
       "date": "2026-03-16",
