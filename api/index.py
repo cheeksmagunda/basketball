@@ -1968,6 +1968,11 @@ def _build_lineups(projections):
         # not anchor Starting 5 — the draft value formula requires meaningful boost to
         # generate competitive total value. Mar 15 lesson: Westbrook (1.1x override) +
         # Clingan (1.0x override) took 2.0x/1.8x slots, neutralizing chalk EV entirely.
+        # Never draft a chalk player projected to play fewer minutes than their season average.
+        # Fewer projected minutes = reduced role tonight (blowout, rotation shift, returning
+        # teammate). There is no upside case for chalk — we need floor, not ceiling.
+        if p.get("predMin", 0) < p.get("season_min", 0):
+            continue
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
         if p.get("est_mult", 0) < chalk_min_boost:
             continue
