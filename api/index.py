@@ -516,9 +516,9 @@ _CONFIG_DEFAULTS = {
     },
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
-        "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.5, "min_rating_floor":2.0,
+        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.5, "min_rating_floor":2.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "big_pos_efficiency":0.70, "max_centers":2, "boost_leverage_power":1.3,
+        "big_pos_efficiency":0.70, "max_centers":2, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
     },
     "lineup": {

@@ -1,7 +1,7 @@
 {
-  "version": 16,
+  "version": 17,
   "updated_at": "2026-03-16T00:00:00Z",
-  "updated_by": "mar15-ownership-model-audit",
+  "updated_by": "mar15-moonshot-blind-spots",
   "card_boost": {
     "decay_base": 0.7,
     "ceiling": 3.0,
@@ -139,10 +139,10 @@
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
-    "min_recent_minutes_floor": 25,
+    "min_recent_minutes_floor": 20,
     "big_pos_efficiency": 0.70,
     "max_centers": 2,
-    "boost_leverage_power": 1.3
+    "boost_leverage_power": 1.6
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0
@@ -217,6 +217,11 @@
       "version": 14,
       "date": "2026-03-15",
       "change": "Mar 14 Saturday autopsy (draft scored <50 vs optimal 83): 6 fixes. (1) Card boost recalibrated \u2014 log_a 3.76\u21924.2, log_b 0.88\u21921.1, ownership_scalar 50\u219280; steeper curve separates truly obscure (<100 drafts \u2192 2.0+ boost) from mid-popularity (200+ drafts \u2192 <1.2x). Suggs 275 drafts was getting 1.6x predicted vs 1.1x actual. (2) Boost leverage power added to moonshot \u2014 boost_leverage_power=1.3 baked into adj_ceiling so MILP strongly favors high-boost players. 3.0x boost \u2192 3.7x adj_ceiling weight vs 1.0x. Old formula gave only 10% advantage. (3) min_card_boost 1.0\u21921.5 \u2014 excludes mid-popularity players (Suggs, Jaquez 815 drafts) from moonshot entirely. (4) big_pos_efficiency 0.40\u21920.70 \u2014 centers CAN win moonshot (Queta RS 4.9, Achiuwa RS 5.1 were top value). 0.40x was too punishing. (5) Defensive rate bonus \u2014 STL+BLK per-36 above average gives up to 20% moonshot adj_ceiling bonus. Smart (1.4 STL) gets ~6% bonus; elite defenders get 15-20%. (6) big_market_teams trimmed \u2014 removed MIL, DAL, PHX (role players on these teams are NOT heavily drafted; only stars are)."
+    },
+    {
+      "version": 17,
+      "date": "2026-03-16",
+      "change": "Mar 15 moonshot blind spots: (1) min_recent_minutes_floor 25→20 — Caruso (~20 min, +3.0x actual) and Walker (~20-22 min, +2.3x actual) were blocked by the minutes gate before boost was even evaluated. The boost filter (min_card_boost=1.5) is the real quality gate; the minutes floor was over-conservative. (2) boost_leverage_power 1.3→1.6 — at 1.3, a +3.0x player had only 1.6x adj_ceiling advantage over a +2.0x player, not enough to overcome RS projection differences. At 1.6 the ratio is 1.91x, making ultra-low-ownership plays rank decisively higher."
     },
     {
       "version": 16,
