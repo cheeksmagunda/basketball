@@ -27,8 +27,9 @@
     "log_b": 1.1,
     "log_ownership_scalar": 80.0,
     "pool_size_estimate": 10000,
-    "fame_pts_base": 14.0,
-    "fame_exponent": 2.5
+    "fame_pts_base": 8.0,
+    "fame_exponent": 2.5,
+    "fame_cap": 3.0
   },
   "game_script": {
     "defensive_grind_ceiling": 220,

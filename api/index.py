@@ -479,8 +479,9 @@ _CONFIG_DEFAULTS = {
         "log_a": 4.2,                   # intercept — steeper curve: sub-100 drafts→2.0+, 300+→<1.2
         "log_b": 1.1,                   # slope — steeper = more separation stars vs role players
         "log_ownership_scalar": 80.0,   # base scalar for hype factor (raised for 5-7 game slates)
-        "fame_pts_base": 14.0,          # PPG divisor for continuous fame multiplier
+        "fame_pts_base": 8.0,           # PPG divisor for continuous fame multiplier (reverted from 14; v16 over-corrected)
         "fame_exponent": 2.5,           # exponent — higher = steeper separation (20ppg→11x, 10ppg→1x)
+        "fame_cap": 3.0,                # cap fame multiplier to prevent 14+ PPG starters from being over-penalized
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -511,7 +512,7 @@ _CONFIG_DEFAULTS = {
                                         # despite high season avg (e.g. demoted starter, rest-management)
         "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
         "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
-        "leverage_top_slots": 2,        # force 2 contrarian players into top 2 slots (was 1; winners had 3-4 high-boost)
+        "leverage_top_slots": 1,        # force 1 contrarian into top slot; star anchor goes in 2.0x (v21: was 2→1)
         "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
         "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
             "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 16.0,
@@ -1351,10 +1352,13 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
 
     # Continuous fame multiplier based on PPG — replaces binary star_players list.
     # High-PPG players drive disproportionate ownership regardless of team market.
-    # fame_mult: 8ppg→1.0x, 16ppg→4.8x, 21ppg→11x, 25ppg→17x
+    # At base=8: 8ppg→1.0x, 10ppg→2.0x, 13ppg→3.5x, 16ppg→capped at fame_cap
+    # Cap prevents 14+ PPG starters (Jabari, Ayton) from being over-penalized —
+    # they're popular but not as popular as 20+ PPG superstars.
     fame_pts_base = cb.get("fame_pts_base", 8.0)
     fame_exponent = cb.get("fame_exponent", 2.5)
-    fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)
+    fame_cap      = cb.get("fame_cap", 3.0)
+    fame_mult = min(fame_cap, max(1.0, (pts / fame_pts_base) ** fame_exponent))
 
     # Log-formula path: boost = log_a - log_b * log10(predicted_drafts)
     # Recalibrated from March 14 Saturday actuals (7-game slate, larger pool):
