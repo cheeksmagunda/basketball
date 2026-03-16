@@ -516,6 +516,8 @@ _CONFIG_DEFAULTS = {
         "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
             "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 16.0,
         },
+        "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
+        "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
     },
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
@@ -523,6 +525,7 @@ _CONFIG_DEFAULTS = {
         "card_boost_weight":2.5, "minutes_weight":1.0,
         "big_pos_efficiency":0.85, "max_centers":2, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
+        "variance_penalty": 0.3,       # penalizes high RS variance in moonshot; consistent role players rank above boom/bust
     },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
@@ -1595,7 +1598,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # blowouts because they inherit extended garbage-time run. Stars still
     # get penalized because they sit Q4 in blowouts.
     abs_spread = abs(spread or 0)
-    is_bench = pts <= 12 and avg_min <= 26  # role player / bench threshold
+    # Bench threshold: role players get blowout bonus; stars get blowout penalty.
+    # Original cutoffs (12pts, 26min) missed dev-team rotation players like
+    # P.J. Washington (11pts, 28min) and Naji Marshall (~14pts, 28min) who
+    # play extended minutes on rebuilding teams but have star-level minute counts.
+    bench_pts = float(_cfg("projection.bench_pts_threshold", 14.0))
+    bench_min = float(_cfg("projection.bench_min_threshold", 30.0))
+    is_bench = pts <= bench_pts and avg_min <= bench_min
     if is_bench:
         # Bench players: continuous rise as blowout probability increases.
         # Neutral in close-to-moderate games; bonus grows past spread 4.
@@ -2003,11 +2012,20 @@ def _build_lineups(projections):
         # MILP strongly favors high-boost players. A 3.0x boost player gets ~3.7x
         # more adj_ceiling weight than a 1.0x player (at power=1.3), vs the old
         # formula's ~10% advantage.  This is the single biggest moonshot fix.
-        boost_power = moon_cfg.get("boost_leverage_power", 1.3)
+        boost_power = moon_cfg.get("boost_leverage_power", 1.6)
         boost_leverage = max(est_mult, 0.2) ** boost_power
 
+        # Consistency base: moonshot alpha comes from BOOST certainty + RS reliability,
+        # NOT from RS variance. ceiling_score rewards volatile players (Westbrook-type)
+        # because it computes raw_score × (1 + variance × 0.5) — the opposite of what
+        # moonshot wants. Penalize scoring variance so consistent role players rank above
+        # boom/bust high-usage options with similar RS projections.
+        p_var = min(p.get("player_variance", 0.0), 0.6)
+        var_penalty = moon_cfg.get("variance_penalty", 0.3)
+        consistency_base = p["rating"] * max(0.75, 1.0 - p_var * var_penalty)
+
         adj_ceiling = round(
-            p.get("ceiling_score", p["rating"])
+            consistency_base
             * team_bonus * pos_eff
             * (1.0 + def_bonus)
             * boost_leverage,
