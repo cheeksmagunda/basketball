@@ -14,8 +14,9 @@ from collections import defaultdict
 LOG_A = 4.2
 LOG_B = 1.1
 OWNERSHIP_SCALAR = 80.0
-FAME_PTS_BASE = 14.0
+FAME_PTS_BASE = 8.0
 FAME_EXPONENT = 2.5
+FAME_CAP = 3.0
 BIG_MARKET_TEAMS = {"LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"}
 BOOST_CEILING = 3.0
 BOOST_FLOOR = 0.2
@@ -56,7 +57,7 @@ WIN_PCT = {
 
 
 def card_boost(pts, pred_min, team):
-    fame_mult = max(1.0, (pts / FAME_PTS_BASE) ** FAME_EXPONENT)
+    fame_mult = min(FAME_CAP, max(1.0, (pts / FAME_PTS_BASE) ** FAME_EXPONENT))
     big_market = 1.3 if team in BIG_MARKET_TEAMS else 1.0
     drafts = OWNERSHIP_SCALAR * (pts / 10) ** 2 * (pred_min / 30) ** 0.5 * fame_mult * big_market
     drafts = max(drafts, 1.0)
