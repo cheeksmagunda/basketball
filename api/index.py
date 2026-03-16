@@ -479,7 +479,7 @@ _CONFIG_DEFAULTS = {
         "log_a": 4.2,                   # intercept — steeper curve: sub-100 drafts→2.0+, 300+→<1.2
         "log_b": 1.1,                   # slope — steeper = more separation stars vs role players
         "log_ownership_scalar": 80.0,   # base scalar for hype factor (raised for 5-7 game slates)
-        "fame_pts_base": 8.0,           # PPG divisor for continuous fame multiplier
+        "fame_pts_base": 14.0,          # PPG divisor for continuous fame multiplier
         "fame_exponent": 2.5,           # exponent — higher = steeper separation (20ppg→11x, 10ppg→1x)
     },
     "game_script": {
@@ -514,7 +514,7 @@ _CONFIG_DEFAULTS = {
         "leverage_top_slots": 2,        # force 2 contrarian players into top 2 slots (was 1; winners had 3-4 high-boost)
         "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
     },
-    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","ORL","POR"],
+    "development_teams": ["UTA","IND","BKN","CHI","NOP","SAC","MEM","WAS","DAL","MIL"],
     "moonshot": {
         # min_minutes_floor=20 (season avg): per v13 changelog — filter moved to AND(season≥20, recent≥25)
         "min_minutes_floor":20, "min_recent_minutes_floor":25, "min_card_boost":1.5, "min_rating_floor":2.0,
