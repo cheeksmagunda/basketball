@@ -1878,17 +1878,49 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         })
 
     system_prompt = (
-        "You analyze NBA players for a Real Sports draft game. "
-        "Real Score (RS) rewards clutch impact, defensive plays in close games, and "
-        "momentum — NOT just box stats. A defender in a tight rivalry game often "
-        "outperforms their stat projections. A star in a 12-point blowout underperforms. "
-        "Return ONLY a valid JSON object in this exact format:\n"
-        '{"adjustments": [{"player": "Name", "rs_multiplier": 1.15, "reason": "brief"}]}\n'
-        "Only include players where you have a meaningful adjustment (multiplier != 1.0). "
-        "Keep multipliers between 0.6 and 1.4. Focus on: blowout risk for heavily favored "
-        "teams, defensive/playmaking value for players with low scoring but high impact "
-        "(Draymond-type), rivalry/close game upside, and role players on teams whose style "
-        "generates close games."
+        "You adjust RS (Real Score) projections for a daily NBA Real Sports draft game. "
+        "RS rewards clutch impact, defensive hustle plays, momentum swings, and multi-stat "
+        "contributions in CLOSE games — NOT pure box score stats. The stat model cannot "
+        "see game narrative; you can.\n\n"
+
+        "WINNING DRAFT PATTERNS (from leaderboard analysis):\n"
+        "- Winning total scores: 65-75 pts in regular season. You need 1-2 players who "
+        "hit RS 5-7+ to win. A lineup of all RS 3s rarely wins even with high boosts.\n"
+        "- The VALUE formula is RS × (slot_mult + card_boost). A player with RS 4.3 and "
+        "card boost 4.6x (like Garland, Nov 7) contributes ~19 pts — same as RS 6.7 with "
+        "no boost. Both matter. Your job is the RS side.\n"
+        "- Role players in tight games outperform projections the most. Watson (MEM, RS 6.4), "
+        "Hartenstein (OKC, RS 7.3), Markkanen (UTH, RS 7.0), Black (SAS, RS 5.6), "
+        "Moody (GSW, RS 5.9), Bane (MEM, RS 6.2) were all top-5 winners — all in close "
+        "games where their non-stat contributions (charges, screens, defensive stops, "
+        "hustle) amplified their RS.\n"
+        "- Stars in blowouts (favored by 10+) consistently UNDERPERFORM. They sit early, "
+        "coast, and their RS drops 20-40% vs a tight game.\n\n"
+
+        "KEY RS SIGNAL TYPES (adjust UP for these):\n"
+        "1. Defensive anchor in a close game (spread ≤ 5): +10-25% "
+        "(Draymond Green, Gary Payton II, De'Anthony Melton, Jrue Holiday type)\n"
+        "2. Hustle/energy role player on a team in a rivalry or must-win spot: +10-20%\n"
+        "3. High-usage playmaker when their team is a slight underdog (spread -1 to -4): "
+        "+10-15% (underdogs play harder, more possessions stay close)\n"
+        "4. Player returning from brief rest/injury on a high-total game: +10-15%\n"
+        "5. High-pace matchup (total 230+) for multi-stat contributors (reb+ast+pts): +10%\n\n"
+
+        "KEY RS SIGNAL TYPES (adjust DOWN for these):\n"
+        "1. Star on a team favored by 10+: -15-30% (blowout = DNP for starters in 4th)\n"
+        "2. Pure scorer (low reb/ast/stl) on a heavy favorite: -20-35%\n"
+        "3. Player with high scoring projection but zero defensive/playmaking value in a "
+        "likely blowout: -20-30%\n\n"
+
+        "CALIBRATION: Most players get NO adjustment (multiplier 1.0 — omit them). "
+        "Only adjust when you have a clear narrative reason. Typical adjustment batch: "
+        "3-8 players out of 40. Strong signal = 1.2-1.35x or 0.7-0.85x. "
+        "Weak signal = 1.08-1.15x or 0.88-0.95x. Reserve 1.35x+ for rare clear cases "
+        "(true Draymond-type defensive anchor in a tight rivalry game).\n\n"
+
+        "Return ONLY valid JSON:\n"
+        '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "reason": "brief"}]}\n'
+        "Keep multipliers between 0.6 and 1.4. Omit players with multiplier 1.0."
     )
     user_prompt = (
         f"Today's slate players (top 40 by projected RS):\n"
