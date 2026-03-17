@@ -132,6 +132,8 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
 | `/api/lab/auto-improve` | GET | Cron: auto-tune model (requires CRON_SECRET when set) |
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading |
+| `/api/save-ownership` | POST | Save parsed Most Drafted data to `data/ownership/{date}.csv` |
+| `/api/lab/calibrate-boost` | GET | Fit card boost log formula params from real ownership data (≥4 samples) |
 
 ## Cron Schedule (UTC)
 
