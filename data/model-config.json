@@ -1,11 +1,11 @@
 {
-  "version": 31,
-  "updated_at": "2026-03-17T01:00:00Z",
-  "updated_by": "enable-claude-context-layer",
+  "version": 32,
+  "updated_at": "2026-03-17T09:30:00Z",
+  "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_per_minute": 0.28,
-    "min_chalk_rating": 3.5,
+    "min_chalk_rating": 4.0,
     "min_moonshot_rating": 2.0,
     "min_moonshot_pts": 5.0,
     "chalk_boost_cap": 1.5,
@@ -37,13 +37,13 @@
       "Kam Jones": 3.0, "Kel'el Ware": 1.4, "Kevin Durant": 0.5,
       "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kyle Filipowski": 2.1,
       "Kyle Kuzma": 1.7, "LaMelo Ball": 0.6, "Leonard Miller": 3.0,
-      "Luka Dončić": 0.0, "Luke Kennard": 3.0, "Matas Buzelis": 1.4,
+      "Luka Dončić": 0.0, "Matas Buzelis": 1.4,
       "Maxime Raynaud": 2.1, "Myles Turner": 1.6, "Noah Clowney": 2.0,
       "OG Anunoby": 1.1, "Ousmane Dieng": 3.0, "Pat Spencer": 3.0,
       "Precious Achiuwa": 2.2, "Reed Sheppard": 1.5, "Robert Williams III": 2.3,
       "Ron Harper Jr.": 3.0, "Royce O'Neale": 2.0, "Rudy Gobert": 1.1,
       "Russell Westbrook": 1.1, "Scottie Barnes": 0.5, "Simone Fontecchio": 3.0,
-      "Tristan da Silva": 2.8, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3,
+      "Tristan da Silva": 1.5, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3,
       "Will Riley": 2.8
     }
   },
@@ -122,7 +122,7 @@
     "chalk_season_min_floor": 25.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
-    "chalk_recent_min_floor": 15.0,
+    "chalk_recent_min_floor": 20.0,
     "chalk_max_stars": 1,
     "chalk_star_boost_threshold": 0.8,
     "leverage_top_slots": 1,
@@ -192,6 +192,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 32,
+      "date": "2026-03-17",
+      "change": "Post-game autopsy — 4 fixes: (1) Removed Luke Kennard from player_overrides (was 3.0x). Kennard has RS 0 performance, the 3.0x override was inflating his chalk_ev above NAW/Buzelis types. Sigmoid ~2.1x at his ~10 PPG is more honest. (2) Lowered Tristan da Silva override 2.8→1.5. He now draws 1.8k+ drafts (popular); actual boost was +2.4x on a night where RS was 0.9. 2.8x override was pulling him into lineups despite a fundamentally weak RS floor. 1.5x reflects his current popularity tier. (3) Raised min_chalk_rating 3.5→4.0 — every chalk winner had RS 4.6+ (NAW 6.8, Buzelis 5.0, Marshall 4.6, Melton 4.1). The 3.5 floor was allowing marginal RS projections to qualify as chalk when boosted. Boost cannot rescue a weak base. (4) Raised chalk_recent_min_floor 15→20 — players losing minutes recently should not be in the chalk pool. 15 min recent floor was too loose and allowed benched/limited players to qualify."
+    },
     {
       "version": 31,
       "date": "2026-03-17",
