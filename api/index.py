@@ -2986,7 +2986,10 @@ def _get_slate_impl():
                     print(f"slate err: {e}")
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
-        _claude_context_pass(all_proj, draftable_games)
+        try:
+            _claude_context_pass(all_proj, draftable_games)
+        except Exception as _ctx_err:
+            print(f"[context_pass] call-site error: {_ctx_err}")
         chalk, upside = _build_lineups(all_proj)
         lineups = {"chalk": chalk, "upside": upside}
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
