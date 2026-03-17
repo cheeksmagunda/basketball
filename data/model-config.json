@@ -1,10 +1,10 @@
 {
-  "version": 29,
-  "updated_at": "2026-03-16T22:00:00Z",
-  "updated_by": "moonshot-star-anchor",
+  "version": 30,
+  "updated_at": "2026-03-17T00:00:00Z",
+  "updated_by": "mar17-gsw-autopsy",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
-    "min_pts_per_minute": 0.35,
+    "min_pts_per_minute": 0.28,
     "min_chalk_rating": 3.5,
     "min_moonshot_rating": 2.0,
     "min_moonshot_pts": 5.0,
@@ -30,6 +30,7 @@
       "Cody Williams": 3.0, "Collin Sexton": 2.0, "Cooper Flagg": 0.7,
       "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.9, "Derik Queen": 1.4,
       "Derrick White": 0.7, "Devin Carter": 3.0, "Donovan Clingan": 1.0,
+      "Draymond Green": 2.0, "Gary Payton II": 2.8,
       "Grant Williams": 2.8, "Gui Santos": 2.6, "Isaiah Collier": 1.5,
       "Jalen Johnson": 0.3, "Jarace Walker": 2.3, "Jaylen Brown": 0.3,
       "Jordan Miller": 2.5, "Julian Reese": 3.0, "Julius Randle": 0.6,
@@ -42,7 +43,8 @@
       "Precious Achiuwa": 2.2, "Reed Sheppard": 1.5, "Robert Williams III": 2.3,
       "Ron Harper Jr.": 3.0, "Royce O'Neale": 2.0, "Rudy Gobert": 1.1,
       "Russell Westbrook": 1.1, "Scottie Barnes": 0.5, "Simone Fontecchio": 3.0,
-      "Tristan da Silva": 2.8, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3
+      "Tristan da Silva": 2.8, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3,
+      "Will Riley": 2.8
     }
   },
   "game_script": {
@@ -133,7 +135,14 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.2
+    "chalk_min_boost_floor": 1.2,
+    "chalk_star_anchor_min_boost": 0.6
+  },
+  "context_layer": {
+    "enabled": false,
+    "model": "claude-haiku-4-5-20251001",
+    "max_adjustment": 0.4,
+    "timeout_seconds": 15
   },
   "lineup": {
     "chalk_rating_floor": 2.0,
@@ -183,6 +192,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 30,
+      "date": "2026-03-17",
+      "change": "Mar 17 autopsy — 4 fixes: (1) min_pts_per_minute 0.35→0.28 — defense-first players (Draymond Green ~0.31 pts/min, Gary Payton II ~0.29 pts/min) were failing this gate before RS was even computed. They were 4 of top 9 actual performers. Lowered floor allows elite defenders/playmakers to enter projection pool while still excluding true non-contributors. (2) chalk_star_anchor_min_boost=0.6 (new config key) — star anchor pathway was allowing LeBron (+0.2x boost) into Starting 5 because RS 8.9 × (2.0+0.2) = 19.6 EV beats most alternatives. Stars below 0.6x boost (LeBron 0.2, Luka 0.0, Wemby 0.3, Tatum) now excluded from chalk even via star anchor. Bam (0.6x) remains borderline. (3) Player overrides: added Draymond Green (2.0x — defense-first, consistently ~5 drafts), Gary Payton II (2.8x — ultra-low ownership fringe player), Will Riley (2.8x — rookie with very low drafts). Gui Santos (2.6x) was already in overrides. (4) context_layer config block added (enabled=false) — gating the new Claude Haiku context pass feature that adjusts RS projections based on game narrative."
+    },
     {
       "version": 29,
       "date": "2026-03-16",
