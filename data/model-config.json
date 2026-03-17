@@ -1,6 +1,6 @@
 {
-  "version": 35,
-  "updated_at": "2026-03-18T06:15:00Z",
+  "version": 36,
+  "updated_at": "2026-03-18T06:30:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -25,14 +25,15 @@
     "player_overrides": {
       "Aaron Nesmith": 1.9, "Ace Bailey": 2.1, "Al Horford": 2.0,
       "Alex Caruso": 3.0, "Amen Thompson": 0.6, "Andre Drummond": 2.3,
-      "Anthony Edwards": 0.2, "Austin Reaves": 0.5,
+      "Anthony Edwards": 0.3, "Austin Reaves": 0.5,
       "Bam Adebayo": 0.6, "Bilal Coulibaly": 1.9, "Bobby Portis": 1.6,
-      "Brandin Podziemski": 1.3, "Brice Sensabaugh": 2.1,
+      "Brandon Ingram": 0.7, "Brandin Podziemski": 1.8, "Brice Sensabaugh": 2.1,
       "Brook Lopez": 3.0, "Bryce McGowens": 3.0,
       "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Clint Capela": 3.0, "Daeqwon Plowden": 3.0,
       "Cody Williams": 3.0, "Collin Gillespie": 1.2, "Collin Sexton": 2.0,
       "Cooper Flagg": 0.7,
       "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.7, "DeMar DeRozan": 0.9,
+      "Daniel Gafford": 2.2, "Dejounte Murray": 1.1,
       "Deni Avdija": 0.4, "Derik Queen": 1.4, "Derrick White": 0.7,
       "Desmond Bane": 0.7, "Devin Booker": 0.5, "Devin Carter": 3.0,
       "Donovan Clingan": 0.9, "Donovan Mitchell": 0.2, "Draymond Green": 2.0,
@@ -40,28 +41,30 @@
       "Isaiah Collier": 1.4,
       "Jakob Poeltl": 1.6, "Jalen Brunson": 0.4, "Jalen Duren": 0.7,
       "Jalen Johnson": 0.3, "James Harden": 0.3, "Jamir Watkins": 3.0, "Jarace Walker": 2.3,
-      "Jaylen Brown": 0.3, "Jordan Miller": 2.5, "Julian Reese": 3.0,
+      "Javon Small": 2.0, "Jaylen Brown": 0.3, "Jordan Miller": 2.5,
+      "Josh Minott": 3.0, "Jrue Holiday": 0.9, "Julian Reese": 3.0,
       "Julius Randle": 0.6,
-      "Justin Edwards": 3.0, "Kam Jones": 3.0, "Karl-Anthony Towns": 0.6, "Karlo Matković": 3.0,
-      "Kel'el Ware": 1.4, "Kevin Durant": 0.5, "Killian Hayes": 3.0,
+      "Justin Edwards": 3.0, "Kam Jones": 3.0, "Kasparas Jakucionis": 3.0, "Karl-Anthony Towns": 0.6, "Karlo Matković": 3.0,
+      "Kawhi Leonard": 0.2, "Kel'el Ware": 1.4, "Kevin Durant": 0.5, "Killian Hayes": 3.0,
       "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kristaps Porzingis": 1.0,
-      "Kyle Filipowski": 2.1, "Kyle Kuzma": 1.7,
+      "Kyle Filipowski": 1.9, "Kyle Kuzma": 1.7,
       "LaMelo Ball": 0.6, "Leonard Miller": 3.0, "Luka Dončić": 0.0,
-      "Matas Buzelis": 1.3, "Maxime Raynaud": 2.1, "Myles Turner": 1.6,
+      "Marcus Sasser": 3.0, "Matas Buzelis": 1.3, "Maxime Raynaud": 2.1,
+      "Mitchell Robinson": 2.1, "Myles Turner": 1.6,
       "Naji Marshall": 1.4, "Neemias Queta": 1.5, "Nickeil Alexander-Walker": 0.9, "Noah Clowney": 2.0,
       "OG Anunoby": 1.1, "Olivier-Maxence Prosper": 3.0, "Oso Ighodaro": 2.9,
       "Ousmane Dieng": 3.0,
       "P.J. Washington": 1.5, "Paolo Banchero": 0.6, "Pat Spencer": 3.0,
-      "Precious Achiuwa": 2.1,
+      "Pelle Larsson": 2.0, "Precious Achiuwa": 2.1,
       "Quentin Grimes": 1.7, "Quinten Post": 3.0,
       "Reed Sheppard": 1.5, "Robert Williams III": 2.3, "Ron Harper Jr.": 3.0,
       "Royce O'Neale": 2.0, "Rudy Gobert": 1.1, "Russell Westbrook": 1.1,
       "Scottie Barnes": 0.5, "Shai Gilgeous-Alexander": 0.0,
-      "Simone Fontecchio": 3.0, "Stephon Castle": 0.8,
-      "Tari Eason": 1.9, "Trey Murphy III": 0.6, "Tristan Vukcevic": 3.0,
-      "Tristan da Silva": 2.4, "Tyler Herro": 0.8,
+      "Simone Fontecchio": 3.0, "Spencer Jones": 3.0, "Stephon Castle": 0.8,
+      "Tari Eason": 1.9, "Taylor Hendricks": 3.0, "Trey Murphy III": 0.6,
+      "Tristan Vukcevic": 3.0, "Tristan da Silva": 2.4, "Tyler Herro": 0.8,
       "Victor Wembanyama": 0.2, "Will Riley": 3.0,
-      "Yves Missi": 3.0
+      "Yves Missi": 3.0, "Zaccharie Risacher": 2.4
     }
   },
   "game_script": {
@@ -209,6 +212,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 36,
+      "date": "2026-03-18",
+      "change": "14 new + 3 corrections from additional Highest Value + Most Popular screenshots. Corrections: Anthony Edwards 0.2→0.3 (confirmed +0.3x across 3 screenshots), Kyle Filipowski 2.1→1.9, Brandin Podziemski 1.3→1.8. New: Dejounte Murray 1.1, Mitchell Robinson 2.1, Javon Small 2.0, Brandon Ingram 0.7, Jrue Holiday 0.9, Marcus Sasser 3.0, Kawhi Leonard 0.2, Pelle Larsson 2.0, Zaccharie Risacher 2.4, Spencer Jones 3.0, Josh Minott 3.0, Kasparas Jakucionis 3.0, Taylor Hendricks 3.0, Daniel Gafford 2.2. Total overrides: 114."
+    },
     {
       "version": 35,
       "date": "2026-03-18",
