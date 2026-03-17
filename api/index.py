@@ -5757,6 +5757,14 @@ async def lab_update_config(payload: dict = Body(...)):
     description = payload.get("change_description", "Lab update")
     if not changes:
         return JSONResponse({"error": "No changes provided"}, status_code=400)
+    # Block config changes during active slate — picks are frozen until all games finish
+    try:
+        _uc_games = fetch_games()
+        _uc_starts = [g["startTime"] for g in _uc_games if g.get("startTime")]
+        if _uc_starts and any(_is_locked(st) for st in _uc_starts):
+            return JSONResponse({"error": "Slate is active — config changes are locked until all games finish"}, status_code=423)
+    except Exception:
+        pass  # if games check fails, allow the write
     # Security: reject keys with non-alphanumeric path segments (prevents path traversal)
     import re as _re
     for key in changes:
@@ -5835,6 +5843,14 @@ async def lab_rollback(payload: dict = Body(...)):
     target = payload.get("target_version")
     if target is None:
         return JSONResponse({"error": "target_version required"}, status_code=400)
+    # Block rollbacks during active slate — same lock guard as update-config
+    try:
+        _rb_games = fetch_games()
+        _rb_starts = [g["startTime"] for g in _rb_games if g.get("startTime")]
+        if _rb_starts and any(_is_locked(st) for st in _rb_starts):
+            return JSONResponse({"error": "Slate is active — config changes are locked until all games finish"}, status_code=423)
+    except Exception:
+        pass
 
     cfg = _load_config()
     changelog = cfg.get("changelog", [])
@@ -5880,6 +5896,9 @@ async def lab_rollback(payload: dict = Body(...)):
 
     try:
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
+    except Exception: pass
+    try:
+        _bust_slate_cache()
     except Exception: pass
 
     return {"status": "rolled_back", "new_version": new_version,
