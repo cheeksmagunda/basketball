@@ -1,14 +1,4 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,LeBron James,1966,LAL,F,8.9,0.2,36.0,24.1,6.6,7.2,1.3,0.7
-slate,chalk,1.8x,Nic Claxton,4278067,BKN,C,5.8,1.7,29.5,11.3,7.3,3.0,0.7,1.4
-slate,chalk,1.6x,Jabari Smith Jr.,4432639,HOU,F,6.8,1.2,35.4,14.4,7.0,1.6,0.7,0.9
-slate,chalk,1.4x,Jalen Suggs,4432165,ORL,G,5.9,1.4,28.6,13.3,3.6,4.5,1.6,0.7
-slate,chalk,1.2x,Wendell Carter Jr.,4277847,ORL,C,5.6,1.6,30.6,11.8,8.0,2.0,0.8,0.7
-slate,upside,2.0x,Brook Lopez,3448,LAC,C,6.1,3.0,27.1,11.6,4.5,1.2,0.6,1.4
-slate,upside,1.8x,Tristan da Silva,4702382,ORL,F,4.2,2.8,25.6,8.9,3.6,1.5,0.8,0.3
-slate,upside,1.6x,Luke Kennard,3913174,LAL,G,3.7,3.0,22.1,8.9,2.5,2.1,0.7,0.1
-slate,upside,1.4x,Justin Champagnie,4432907,WSH,F,4.4,2.3,19.9,7.5,5.0,1.0,0.8,0.6
-slate,upside,1.2x,Tari Eason,4433192,HOU,F,5.3,1.9,26.4,10.6,6.3,1.4,1.4,0.6
 GS @ WSH,the_lineup,2.0x,De'Anthony Melton,4066436,GS,G,4.9,0.0,21.8,11.2,3.3,2.5,1.5,0.5
 GS @ WSH,the_lineup,1.8x,Bilal Coulibaly,5104155,WSH,G,4.8,0.0,29.0,10.7,4.4,2.6,1.3,0.8
 GS @ WSH,the_lineup,1.6x,Brandin Podziemski,4709138,GS,G,4.5,0.0,26.1,12.1,5.3,3.7,1.1,0.2
@@ -44,3 +34,15 @@ DAL @ NO,the_lineup,1.8x,Marvin Bagley III,4277848,DAL,F,4.4,0.0,19.7,10.9,6.3,1
 DAL @ NO,the_lineup,1.6x,Khris Middleton,6609,DAL,F,5.0,0.0,25.0,13.7,4.3,3.5,0.9,0.2
 DAL @ NO,the_lineup,1.4x,Jeremiah Fears,5144091,NO,G,4.8,0.0,26.3,13.1,3.7,3.2,1.1,0.4
 DAL @ NO,the_lineup,1.2x,P.J. Washington,4278078,DAL,F,4.5,0.0,27.9,13.6,6.5,2.0,1.0,1.1
+slate,chalk,2.0x,Harrison Barnes,6578,SA,F,4.5,1.6,29.6,11.9,3.8,1.9,0.7,0.2
+slate,chalk,1.8x,Devin Vassell,4395630,SA,G,3.9,1.2,31.4,14.2,3.9,2.5,0.9,0.4
+slate,upside,2.0x,Brook Lopez,3448,LAC,C,6.1,3.0,27.1,11.6,4.5,1.2,0.6,1.4
+slate,upside,1.8x,Bogdan Bogdanovic,3037789,LAC,G,4.7,1.6,26.0,10.8,3.1,3.0,0.8,0.1
+slate,upside,1.6x,Harrison Barnes,6578,SA,F,4.5,1.6,29.6,11.9,3.8,1.9,0.7,0.2
+slate,upside,1.4x,Victor Wembanyama,5104157,SA,F,6.6,0.3,30.6,23.7,11.1,3.2,1.1,3.2
+slate,upside,1.2x,Kobe Sanders,4702352,LAC,G,2.9,2.2,22.0,7.0,2.5,1.6,0.6,0.1
+SA @ LAC,the_lineup,2.0x,Victor Wembanyama,5104157,SA,F,6.7,0.0,30.6,23.7,11.1,3.2,1.1,3.2
+SA @ LAC,the_lineup,1.8x,Brook Lopez,3448,LAC,C,6.2,0.0,27.1,11.6,4.5,1.2,0.6,1.4
+SA @ LAC,the_lineup,1.6x,De'Aaron Fox,4066259,SA,G,5.4,0.0,34.4,20.1,3.8,6.2,1.3,0.3
+SA @ LAC,the_lineup,1.4x,John Collins,3908845,LAC,F,4.8,0.0,30.3,14.8,6.5,1.1,0.8,0.9
+SA @ LAC,the_lineup,1.2x,Bogdan Bogdanovic,3037789,LAC,G,4.7,0.0,26.0,10.8,3.1,3.0,0.8,0.1
