@@ -1,7 +1,7 @@
 {
-  "version": 30,
-  "updated_at": "2026-03-17T00:00:00Z",
-  "updated_by": "mar17-gsw-autopsy",
+  "version": 31,
+  "updated_at": "2026-03-17T01:00:00Z",
+  "updated_by": "enable-claude-context-layer",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_per_minute": 0.28,
@@ -139,7 +139,7 @@
     "chalk_star_anchor_min_boost": 0.6
   },
   "context_layer": {
-    "enabled": false,
+    "enabled": true,
     "model": "claude-haiku-4-5-20251001",
     "max_adjustment": 0.4,
     "timeout_seconds": 15
@@ -192,6 +192,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 31,
+      "date": "2026-03-17",
+      "change": "Enable Claude context layer by default (context_layer.enabled: true). Haiku makes one RS adjustment call per fresh slate generation — blowout risk, defensive value, rivalry closeness. ±40% max multiplier cap. Graceful fallback: any error silently skips. Mar 17 results confirm GSW defensive role players (Draymond, GPII, Melton) were top performers — exactly the narrative context Claude can flag."
+    },
     {
       "version": 30,
       "date": "2026-03-17",
