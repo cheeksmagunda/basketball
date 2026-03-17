@@ -1822,6 +1822,173 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CLAUDE CONTEXT PASS
+# grep: _claude_context_pass
+# Optional post-projection RS adjustment using Claude Haiku game narrative.
+# Called once per fresh slate generation; disabled by default (config gate).
+# Applies ±40% max multiplier to rating/chalk_ev/ceiling_score based on
+# context the pure stat model can't capture (blowout risk, defensive value,
+# rivalry game closeness, etc).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _claude_context_pass(all_proj: list, games: list) -> None:
+    """Adjust player RS projections in-place using a Claude Haiku context call.
+
+    Reads `context_layer.enabled` from model config. No-op if disabled or if
+    the Claude call fails — slate generation must never depend on this call.
+
+    Mutates: player["rating"], player["chalk_ev"], player["ceiling_score"]
+    """
+    if not _cfg("context_layer.enabled", False):
+        return
+
+    model_id = _cfg("context_layer.model", "claude-haiku-4-5-20251001")
+    max_adj = float(_cfg("context_layer.max_adjustment", 0.4))
+    timeout_s = float(_cfg("context_layer.timeout_seconds", 15))
+
+    # Build compact game context map: {team_abbr: {opponent, spread, total}}
+    game_ctx = {}
+    for g in games:
+        spread = g.get("spread", 0)
+        total  = g.get("total", 222)
+        home   = g["home"]["abbr"]
+        away   = g["away"]["abbr"]
+        game_ctx[home] = {"opp": away, "spread": spread, "total": total, "side": "home"}
+        game_ctx[away] = {"opp": home, "spread": -spread, "total": total, "side": "away"}
+
+    # Build compact player list for prompt (top 40 by rating to keep prompt small)
+    sorted_proj = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:40]
+    players_payload = []
+    for p in sorted_proj:
+        team = p.get("team", "")
+        ctx  = game_ctx.get(team, {})
+        players_payload.append({
+            "name":        p["name"],
+            "team":        team,
+            "opp":         ctx.get("opp", ""),
+            "spread":      ctx.get("spread", 0),
+            "total":       ctx.get("total", 222),
+            "season_pts":  round(p.get("season_pts", 0), 1),
+            "season_reb":  round(p.get("season_reb", 0), 1),
+            "season_ast":  round(p.get("season_ast", 0), 1),
+            "season_stl":  round(p.get("season_stl", 0), 1),
+            "season_blk":  round(p.get("season_blk", 0), 1),
+            "projected_rs": p.get("rating", 0),
+            "card_boost":   round(p.get("est_mult", 0), 1),
+        })
+
+    system_prompt = (
+        "You adjust RS (Real Score) projections for a daily NBA Real Sports draft game. "
+        "RS rewards clutch impact, defensive hustle plays, momentum swings, and multi-stat "
+        "contributions in CLOSE games — NOT pure box score stats. The stat model cannot "
+        "see game narrative; you can.\n\n"
+
+        "WINNING DRAFT PATTERNS (from leaderboard analysis across 8 sample dates):\n"
+        "- Winning total scores range 60-76 pts depending on slate quality. Small slates "
+        "(2-3 games): 60-64. Normal slates: 65-72. High-total/pace slates: 73-76+.\n"
+        "- You need at least 1 RS 5.5+ anchor to win. Multiple RS 5+ players = high-score "
+        "day. A lineup of all RS 3s rarely wins even with high boosts.\n"
+        "- RS TIERS: 5.5+ = anchor (almost always in a winning lineup); 3.5-5.4 = solid "
+        "contributor (needs 3x+ boost to drive wins); 2.5-3.4 = boost-only play (needs 4x+ "
+        "boost, cannot carry a lineup alone).\n"
+        "- The VALUE formula is RS × (slot_mult + card_boost). RS 4.3 × (slot + 4.6x boost) "
+        "contributes ~19 pts — same as RS 6.7 with no boost. Your job is the RS side.\n"
+        "- Some days, 5-6 out of 6 top drafts share the same 1-2 players ('consensus anchors'). "
+        "These players are correctly popular AND high-RS — e.g., Trae Young RS 5.8 (Dec 21, "
+        "in all 6 winning lineups), Aldama RS 6.0 (Dec 20, 5/6), Garland RS 4.8 (Dec 19, 6/6). "
+        "These are NOT wrong to pick — when a player's RS is genuinely that high, everyone "
+        "should have them.\n"
+        "- Stars in blowouts (favored by 10+) consistently UNDERPERFORM. They sit early, "
+        "coast, and RS drops 20-40%.\n\n"
+
+        "TEAM/STYLE SIGNALS (adjust UP):\n"
+        "- ATL Hawks: Fast pace, Trae Young drives RS through assists+clutch. Players like "
+        "Ware (RS 5.1 Dec 19, RS 5.7 Dec 21), Young (RS 5.8 Dec 21) consistently beat "
+        "projections. ATL in a competitive game: +10-20% on multi-stat contributors.\n"
+        "- MEM Grizzlies: Development team, tight games, hustle culture. Watson (RS 6.4), "
+        "Bane (RS 6.2), Aldama (RS 6.0) all big winners. MEM role players: +10-20%.\n"
+        "- CHI Bulls: Development era, high-RS outputs from Buzelis (RS 5.6), Carrington "
+        "(RS 3.4 with 4.1x boost), Drummond (physical presence). CHI in close game: +10-15%.\n"
+        "- OKC Thunder: System-generated RS from hustle/defense. Hartenstein (RS 7.3), "
+        "Ware (RS 5.1) overperform. Slight underdog situations amplify this.\n"
+        "- NYK Knicks: Defensive/hustle identity. Robinson (RS 2.7 but in winning lineup Dec 21 "
+        "via rebounds+defense), Brunson in close games (RS 7.3 Dec 21).\n\n"
+
+        "KEY RS SIGNAL TYPES (adjust UP for these):\n"
+        "1. Defensive anchor in a close game (spread ≤ 5): +10-25% "
+        "(Draymond, GPII, Melton, Jrue Holiday, Mitchell Robinson type)\n"
+        "2. ATL/MEM/CHI/OKC pace-and-hustle role player in a competitive game: +10-20%\n"
+        "3. High-usage playmaker when team is slight underdog (spread -1 to -6): +10-15%\n"
+        "4. Multi-stat contributor (reb+ast+stl, not just scorer) in high-total game (230+): +10-15%\n"
+        "5. Player with known defensive/playmaking impact understated by pts/reb/ast alone: +10-20%\n\n"
+
+        "KEY RS SIGNAL TYPES (adjust DOWN for these):\n"
+        "1. Star on team favored by 10+: -15-30% (blowout = sits in 4th quarter)\n"
+        "2. Pure one-dimensional scorer (low reb/ast/stl/blk) on heavy favorite: -20-35%\n"
+        "3. Low-minute role player on favorite likely to see garbage time early: -15-25%\n\n"
+
+        "CALIBRATION: Most players get NO adjustment (omit them). Only adjust when you have "
+        "a clear narrative reason. Typical batch: 4-8 players out of 40. "
+        "Strong signal = 1.2-1.35x up or 0.7-0.85x down. "
+        "Weak signal = 1.08-1.15x up or 0.88-0.95x down. "
+        "Reserve 1.35x+ for rare cases: true defensive anchor in a tight rivalry game, or "
+        "a pace/hustle team player in a game projected to stay close all night.\n\n"
+
+        "Return ONLY valid JSON:\n"
+        '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "reason": "brief"}]}\n'
+        "Keep multipliers between 0.6 and 1.4. Omit players with multiplier 1.0."
+    )
+    user_prompt = (
+        f"Today's slate players (top 40 by projected RS):\n"
+        f"{json.dumps(players_payload, separators=(',', ':'))}\n\n"
+        "Return JSON adjustments only."
+    )
+
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        msg = client.messages.create(
+            model=model_id,
+            max_tokens=1024,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            timeout=timeout_s,
+        )
+        raw_text = msg.content[0].text.strip()
+        # Strip markdown code fences if present
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("```")[1]
+            if raw_text.startswith("json"):
+                raw_text = raw_text[4:]
+            raw_text = raw_text.strip()
+        data = json.loads(raw_text)
+        adjustments = {a["player"]: a["rs_multiplier"] for a in data.get("adjustments", [])}
+    except Exception as e:
+        print(f"[context_pass] skipped (error: {e})")
+        return
+
+    if not adjustments:
+        return
+
+    # Apply multipliers to all matching players, capped at ±max_adj
+    adj_count = 0
+    name_map = {p["name"]: p for p in all_proj}
+    for player_name, multiplier in adjustments.items():
+        p = name_map.get(player_name)
+        if not p:
+            continue
+        # Clamp to [1-max_adj, 1+max_adj]
+        clamped = max(1.0 - max_adj, min(1.0 + max_adj, float(multiplier)))
+        p["rating"]        = round(p.get("rating", 0) * clamped, 1)
+        p["chalk_ev"]      = round(p.get("chalk_ev", 0) * clamped, 2)
+        p["ceiling_score"] = round(p.get("ceiling_score", 0) * clamped, 1)
+        p["_context_adj"]  = round(clamped, 3)
+        adj_count += 1
+
+    print(f"[context_pass] applied {adj_count} adjustments via {model_id}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GAME RUNNER & LINEUP BUILDER
 # grep: _run_game, _build_lineups, _build_game_lineups, chalk_ev, Moonshot
 # _run_game: fetches rosters, runs cascade, projects all players for one game
@@ -2016,6 +2183,12 @@ def _build_lineups(projections):
         star_anchor_ppg = float(_cfg("scoring_thresholds.star_anchor_ppg", 20.0))
         is_star_anchor = p.get("season_pts", 0) >= star_anchor_ppg
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
+        # Star anchors also have a minimum boost floor — prevents LeBron (+0.2x) from
+        # dominating the 2.0x slot via star anchor when blowout risk tanks RS.
+        # Bam (0.6x) is borderline; Luka (0.0x), LeBron (0.2x), Wemby (0.3x) are excluded.
+        chalk_star_anchor_min_boost = float(_cfg("projection.chalk_star_anchor_min_boost", 0.6))
+        if is_star_anchor and p.get("est_mult", 0) < chalk_star_anchor_min_boost:
+            continue
         if not is_star_anchor and p.get("est_mult", 0) < chalk_min_boost:
             continue
         # Minimum rating gate: boost cannot rescue a weak base.
@@ -2811,6 +2984,9 @@ def _get_slate_impl():
                     game_proj_map[game["gameId"]] = projs
                 except Exception as e:
                     print(f"slate err: {e}")
+        # Optional Claude context pass: adjust RS projections for game narrative
+        # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
+        _claude_context_pass(all_proj, draftable_games)
         chalk, upside = _build_lineups(all_proj)
         lineups = {"chalk": chalk, "upside": upside}
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")

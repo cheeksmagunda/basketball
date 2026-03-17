@@ -775,5 +775,181 @@ class TestPicksServeFromCache:
             assert len(projs) == 1
 
 
+# ─────────────────────────────────────────────────────────
+# TestClaudeContextLayer
+# ─────────────────────────────────────────────────────────
+class TestClaudeContextLayer:
+    """_claude_context_pass adjusts player ratings using Claude Haiku output."""
+
+    def _make_player(self, name, team, rating=4.0, chalk_ev=16.0, ceiling_score=5.0, est_mult=1.5):
+        return {
+            "name": name, "team": team, "rating": rating, "chalk_ev": chalk_ev,
+            "ceiling_score": ceiling_score, "est_mult": est_mult,
+            "season_pts": 10.0, "season_reb": 4.0, "season_ast": 3.0,
+            "season_stl": 0.8, "season_blk": 0.4,
+        }
+
+    def _make_game(self, home_abbr, away_abbr, spread=0, total=222):
+        return {
+            "gameId": "g1", "spread": spread, "total": total,
+            "home": {"abbr": home_abbr, "id": "1"},
+            "away": {"abbr": away_abbr, "id": "2"},
+        }
+
+    def test_no_op_when_disabled(self):
+        """Context pass does nothing when context_layer.enabled is false."""
+        from api.index import _claude_context_pass
+        players = [self._make_player("LeBron James", "LAL")]
+        games = [self._make_game("LAL", "GSW")]
+        with patch("api.index._cfg", side_effect=lambda k, d=None: False if k == "context_layer.enabled" else d):
+            _claude_context_pass(players, games)
+        assert players[0]["rating"] == 4.0
+        assert "_context_adj" not in players[0]
+
+    def test_applies_multiplier_within_cap(self):
+        """Multipliers from Claude are applied to rating/chalk_ev/ceiling_score."""
+        from api.index import _claude_context_pass
+        players = [self._make_player("Draymond Green", "GSW", rating=2.5, chalk_ev=10.0, ceiling_score=3.0)]
+        games = [self._make_game("GSW", "LAL")]
+
+        claude_response = json.dumps({
+            "adjustments": [{"player": "Draymond Green", "rs_multiplier": 1.30, "reason": "defensive value"}]
+        })
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-haiku-4-5-20251001"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        assert players[0]["rating"] == pytest.approx(2.5 * 1.30, abs=0.1)
+        assert players[0]["chalk_ev"] == pytest.approx(10.0 * 1.30, abs=0.1)
+        assert players[0]["ceiling_score"] == pytest.approx(3.0 * 1.30, abs=0.1)
+        assert players[0]["_context_adj"] == pytest.approx(1.30, abs=0.01)
+
+    def test_multiplier_clamped_at_max_adjustment(self):
+        """Claude returning 2.0x is clamped to 1+max_adjustment (1.4x at default 0.4)."""
+        from api.index import _claude_context_pass
+        players = [self._make_player("Player X", "BOS", rating=3.0)]
+        games = [self._make_game("BOS", "LAL")]
+
+        claude_response = json.dumps({
+            "adjustments": [{"player": "Player X", "rs_multiplier": 2.0, "reason": "extreme"}]
+        })
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-haiku-4-5-20251001"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        # 2.0 should be clamped to 1.4 (max)
+        assert players[0]["rating"] == pytest.approx(3.0 * 1.4, abs=0.1)
+        assert players[0]["_context_adj"] == pytest.approx(1.4, abs=0.01)
+
+    def test_multiplier_clamped_at_min_adjustment(self):
+        """Claude returning 0.3x is clamped to 1-max_adjustment (0.6x at default 0.4)."""
+        from api.index import _claude_context_pass
+        players = [self._make_player("Player Y", "LAL", rating=5.0)]
+        games = [self._make_game("LAL", "BOS")]
+
+        claude_response = json.dumps({
+            "adjustments": [{"player": "Player Y", "rs_multiplier": 0.3, "reason": "blowout"}]
+        })
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-haiku-4-5-20251001"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        # 0.3 should be clamped to 0.6 (min)
+        assert players[0]["rating"] == pytest.approx(5.0 * 0.6, abs=0.1)
+        assert players[0]["_context_adj"] == pytest.approx(0.6, abs=0.01)
+
+    def test_graceful_fallback_on_claude_error(self):
+        """If Claude call raises, players are unchanged (no-op fallback)."""
+        from api.index import _claude_context_pass
+        players = [self._make_player("Player Z", "GSW", rating=3.0)]
+        games = [self._make_game("GSW", "LAL")]
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-haiku-4-5-20251001"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        mock_client = Mock()
+        mock_client.messages.create.side_effect = Exception("API timeout")
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        # Player rating must be unchanged
+        assert players[0]["rating"] == 3.0
+        assert "_context_adj" not in players[0]
+
+    def test_unknown_player_name_skipped(self):
+        """Claude adjustments for players not in the pool are silently skipped."""
+        from api.index import _claude_context_pass
+        players = [self._make_player("Real Player", "GSW", rating=3.0)]
+        games = [self._make_game("GSW", "LAL")]
+
+        claude_response = json.dumps({
+            "adjustments": [{"player": "Made Up Player", "rs_multiplier": 1.3, "reason": "test"}]
+        })
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-haiku-4-5-20251001"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        assert players[0]["rating"] == 3.0
+        assert "_context_adj" not in players[0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
