@@ -787,12 +787,39 @@ If slate, line, and/or log all fail to load:
 | Log tab ESPN stats auto-fetch | `index.html` | Removed `has_actuals` gate — ESPN box score stats now auto-fetch for any past date without requiring RS screenshot upload. "Waiting for results" pill only shows when ESPN stats also unavailable. New partial-graded card state: shows actual game stats (PTS/REB/AST/STL/BLK) without hit/miss coloring until RS is uploaded. |
 | Per-game card boost pill removed | `api/index.py` | `_build_game_lineups` now zeroes `est_mult` in returned player data (not just MILP input) so the `+X.Xx card` pill never renders on per-game (THE LINE UP) cards where card boost is irrelevant. |
 | Over model tightening | `api/line_engine.py`, `api/index.py`, `data/model-config.json` | Four over-specific changes (under model untouched): (1) `stat_floors.rebounds` 2.0→5.5 — only legit rotation bigs qualify for rebounds picks. (2) `min_edge_other_over: 2.5` (new config key) — over picks for rebounds/assists need a 2.5+ edge; under picks keep 1.5. (3) `recent_form_over_ratio` 1.08→1.15 — require 15% recent spike to unlock +12 confidence bonus. (4) Claude AVOID clause updated — rebounds/assists overs require a catalyst (cascade, opp-B2B, or 230+ total). Tests added for `min_edge_other_over` asymmetry. |
+| Odds cron schedule fix | `railway.toml` | `/api/refresh-line-odds` cron corrected from `0 */3 * * *` (every 3h — regression from prior edit) to `55 * * * *` (hourly at :55). Matches CLAUDE.md and README documentation. Ensures odds refresh hits the 6:55 PM ET pre-lock window. |
 
 ## Production audit
 
 Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: GitHub error sanitization (no leak to client), `GET /api/health`, `GET /api/version`, cron secret on `/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, and `fetchWithTimeout` for lab/backtest and lab/update-config.
 
 **Lock & routing audit:** [docs/LOCK_AND_ROUTING_AUDIT.md](docs/LOCK_AND_ROUTING_AUDIT.md). Covers all lock usage (slate, picks, save-predictions, lab status, line odds) and Railway/FastAPI routing. Fixes applied: `/api/lab/status` wrapped in try/except — on any exception returns 200 with `locked: true` and reason "Server temporarily unavailable — try again" so the frontend shows a retry instead of a generic fetch failure; ESPN-down GitHub lock check now uses `lock_content, _ = _github_get_file(...)` and `if lock_content:` (was incorrectly checking the tuple).
+
+### Mar 17 Production & Model Audit
+
+**Pipeline audit (179/179 tests pass):**
+- Global exception handler active — no stack traces leak to clients
+- Structured request logging (JSON with request_id, path, status, duration_ms)
+- 38 `fetchWithTimeout` calls in frontend; 2 intentional raw `fetch()` (health pre-warm + lab/chat SSE)
+- Thread pools: 8 workers for game/slate/picks/audit/line processing
+- Rate limiting: thread-safe with `_RATE_LIMIT_LOCK` (parse-screenshot 5/min, lab/chat 20/min, line-of-the-day 10/min)
+- 35 endpoints total, all correctly routed with proper CRON_SECRET gating
+
+**Caching audit (all TTLs verified):**
+- 3-layer slate cache: `/tmp/nba_cache_v19/` → GitHub `data/slate/` → full pipeline
+- Game final: 60s locked / 180s pre-slate; Model config: 5 min; ESPN games: 5 min; RotoWire: 30 min; Line history: 10 min; L5 stats: 30 min
+- Cache bust tombstone pattern working correctly
+
+**Cron fix applied:** `railway.toml` `/api/refresh-line-odds` schedule corrected from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55) to match documented behavior.
+
+**Model audit (Mar 17 leaderboard — "Highest Value" screenshot):**
+- Role players dominate (13/14 top values RS 2.7-5.0) — validates v6 strategy
+- Boost is dominant signal (+3.0x at RS 2.7 → Value 13.3+) — validates moonshot formula
+- Stars don't win (Booker RS 5.5, +0.5x, 552 drafts = 13.7 value, ranked 11th)
+- Player overrides systematically low by 0.1-0.2x vs actual (GP2: 2.8 override vs 3.0 actual; Riley: 2.8 vs 3.0; Santos: 2.6 vs 2.5 — this one is accurate)
+- `min_chalk_rating` 4.0 correctly filters — all chalk winners RS ≥ 4.1
+- `min_pts_per_minute` 0.28 well-calibrated — GP2 (~0.29) passes as intended
+- Claude context layer correctly identified defensive role players (Draymond, GP2, Melton) as top performers
 
 ## Pre-deploy checklist (production finalization)
 

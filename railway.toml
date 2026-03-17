@@ -20,9 +20,9 @@ command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.e
 schedule = "0 9 * * *"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/lab/auto-improve',headers=h)\""
 
-# Hourly bookmaker odds sync (every 3 hours)
+# Hourly bookmaker odds sync (at :55, hits 6:55 PM ET lock window)
 [[crons.jobs]]
-schedule = "0 */3 * * *"
+schedule = "55 * * * *"
 command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh-line-odds')\""
 
 # Resolve line picks as each game ends (hourly)
