@@ -1714,7 +1714,6 @@ async function loadSlate() {
   try {
     const r = await fetchWithTimeout('/api/slate', {}, 30000);
     hideLoader();
-    _slateRetryCount = 0; // reset on success
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = await r.json();
     SLATE_STATE = asyncStateSuccess(SLATE_STATE, slateData);
@@ -1857,6 +1856,7 @@ async function loadSlate() {
       LAB.cachedStatus = s;
       LAB.statusFetchedAt = Date.now();
     }).catch(function() {});
+    _slateRetryCount = 0; // reset AFTER all processing succeeds (not before)
   } catch(e) {
     // Auto-retry up to 2 times — cold start warms the function so retries succeed fast
     if (_slateRetryCount < 2) {
@@ -1882,7 +1882,7 @@ async function loadSlate() {
 
 function switchSlate(tab) {
   document.querySelectorAll('#slateTabs .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
-  if (SLATE) renderCards(SLATE.lineups[tab] || [], 'slateList', tab);
+  if (SLATE) renderCards((SLATE.lineups && SLATE.lineups[tab]) || [], 'slateList', tab);
   showLateDraftBanner();
 }
 
@@ -1988,6 +1988,10 @@ function renderCards(picks, containerId, mode, opts = {}) {
       } else {
         msg = 'No NBA games scheduled in the next 30 days.';
       }
+    } else if (SLATE?.locked && SLATE?.all_complete) {
+      msg = 'All games final. Check back tomorrow for the next slate.';
+    } else if (SLATE?.locked) {
+      msg = 'Slate is locked. Picks will appear shortly.';
     }
     el.innerHTML = `<div class="empty-state"><span class="icon">🏀</span><p>${msg}</p></div>`;
     return;
