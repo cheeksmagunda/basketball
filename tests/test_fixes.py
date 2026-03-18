@@ -1102,7 +1102,7 @@ class TestWebSearch:
         assert result == ""
 
     def test_skips_when_no_api_key(self):
-        """Returns empty string when BRAVE_SEARCH_API_KEY is missing."""
+        """Returns empty string when ANTHROPIC_API_KEY is missing."""
         from api.index import _fetch_nba_news_context
 
         def cfg_side_effect(key, default=None):
@@ -1111,13 +1111,13 @@ class TestWebSearch:
             return default
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch.dict("os.environ", {"BRAVE_SEARCH_API_KEY": ""}):
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": ""}, clear=False):
             result = _fetch_nba_news_context([])
 
         assert result == ""
 
     def test_fetches_and_caches(self):
-        """Should call Brave API and cache results."""
+        """Should call Claude web_search tool and cache results."""
         from api.index import _fetch_nba_news_context
         from datetime import date
 
@@ -1125,35 +1125,39 @@ class TestWebSearch:
             {"home": {"abbr": "MIN"}, "away": {"abbr": "PHX"}},
         ]
 
-        mock_response = Mock()
-        mock_response.ok = True
-        mock_response.json.return_value = {
-            "web": {
-                "results": [
-                    {"title": "Finch says Bones will play more", "description": "Coach Finch announced Bones Hyland will see expanded minutes with ANT out 2 weeks."},
-                    {"title": "Suns injury report", "description": "Kevin Durant questionable for tomorrow's game."},
-                ]
-            }
-        }
+        # Mock the Anthropic client response
+        mock_text_block = Mock()
+        mock_text_block.text = "- Finch says Bones Hyland will see expanded minutes with ANT out 2 weeks\n- KD questionable for Suns"
+        mock_msg = Mock()
+        mock_msg.content = [mock_text_block]
+
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        mock_anthropic_module = Mock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
 
         def cfg_side_effect(key, default=None):
             cfg_map = {
                 "context_layer.web_search_enabled": True,
-                "context_layer.search_queries_per_game": 2,
-                "context_layer.search_recency_hours": 48,
+                "context_layer.timeout_seconds": 20,
             }
             return cfg_map.get(key, default)
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch.dict("os.environ", {"BRAVE_SEARCH_API_KEY": "test_key"}), \
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
              patch("api.index._cg", return_value=None), \
              patch("api.index._cs") as mock_cs, \
-             patch("api.index.requests.get", return_value=mock_response), \
+             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}), \
              patch("api.index._et_date", return_value=date(2026, 3, 18)):
             result = _fetch_nba_news_context(games)
 
         assert "Finch" in result or "Bones" in result
         assert mock_cs.called  # Cached the result
+        # Verify web_search tool was passed
+        call_kwargs = mock_client.messages.create.call_args
+        tools = call_kwargs.kwargs.get("tools", []) if call_kwargs.kwargs else []
+        assert any(t.get("type") == "web_search_20250305" for t in tools)
 
     def test_uses_cache_when_available(self):
         """Should return cached text without making API calls."""
@@ -1168,7 +1172,7 @@ class TestWebSearch:
             return default
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch.dict("os.environ", {"BRAVE_SEARCH_API_KEY": "test_key"}), \
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
              patch("api.index._cg", return_value={"text": "Cached news about Wolves"}), \
              patch("api.index._et_date", return_value=date(2026, 3, 18)):
             result = _fetch_nba_news_context(games)

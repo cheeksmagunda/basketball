@@ -1894,9 +1894,10 @@ def _enrich_projections_with_odds(all_proj: list, games: list) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BRAVE SEARCH WEB INTELLIGENCE
-# grep: _fetch_nba_news_context
-# Searches recent NBA news for each team on the slate using Brave Search API.
+# WEB INTELLIGENCE (Claude + web_search tool)
+# grep: WEB INTELLIGENCE, _fetch_nba_news_context
+# Uses Anthropic API with built-in web_search tool to find recent NBA news.
+# No separate API key needed — uses the existing ANTHROPIC_API_KEY.
 # Returns a compact text summary for injection into the Claude context pass.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1912,26 +1913,24 @@ _ABBR_TO_TEAM_NAME = {
     "SAS": "Spurs", "TOR": "Raptors", "UTA": "Jazz", "WAS": "Wizards",
 }
 
-BRAVE_SEARCH_BASE = "https://api.search.brave.com/res/v1/web/search"
-
 
 def _fetch_nba_news_context(games: list, date=None) -> str:
-    """Fetch recent NBA news for teams on today's slate via Brave Search API.
+    """Fetch recent NBA news for teams on today's slate via Claude web_search tool.
 
-    Returns a compact text summary (max ~2000 chars) of relevant news from
-    the last 24-48 hours. Includes coach quotes, rotation changes, injury
-    impacts on teammates, and other signals that stat models cannot capture.
+    Makes a single Anthropic API call with the web_search tool enabled. Claude
+    searches for recent NBA news (injuries, rotation changes, coach press
+    conferences) and returns a compact summary.
 
+    Uses the existing ANTHROPIC_API_KEY — no separate search API key needed.
     Reads `context_layer.web_search_enabled` from model config. Returns empty
-    string if disabled, if BRAVE_SEARCH_API_KEY is missing, or on any failure.
-    Results cached per slate date in /tmp.
+    string if disabled or on any failure. Results cached per slate date in /tmp.
     """
     if not _cfg("context_layer.web_search_enabled", False):
         return ""
 
-    api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "")
-    if not api_key:
-        print("[web_search] BRAVE_SEARCH_API_KEY not set — skipping")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        print("[web_search] ANTHROPIC_API_KEY not set — skipping")
         return ""
 
     today = (date or _et_date()).isoformat()
@@ -1953,65 +1952,57 @@ def _fetch_nba_news_context(games: list, date=None) -> str:
     if not teams:
         return ""
 
-    queries_per_game = int(_cfg("context_layer.search_queries_per_game", 2))
-    recency = _cfg("context_layer.search_recency_hours", 48)
-    freshness = "pd" if recency <= 24 else "pw"  # past day or past week
+    # Build team list for the prompt
+    team_names = []
+    for abbr in sorted(teams):
+        full = _ABBR_TO_TEAM_NAME.get(abbr, abbr)
+        team_names.append(f"{abbr} ({full})")
 
-    # Build search queries (2 per team by default)
-    search_queries = []
-    for abbr in teams:
-        team_name = _ABBR_TO_TEAM_NAME.get(abbr, abbr)
-        search_queries.append(f"NBA {team_name} rotation injury update")
-        if queries_per_game >= 2:
-            search_queries.append(f"NBA {team_name} news today press conference")
+    team_list = ", ".join(team_names)
+    timeout_s = float(_cfg("context_layer.timeout_seconds", 20))
 
-    # Execute searches in parallel
-    snippets = []
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=anthropic_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1500,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Today is {today}. I need a concise NBA intelligence briefing for these teams "
+                    f"playing tonight: {team_list}.\n\n"
+                    "Search for the latest news (last 48 hours) on:\n"
+                    "1. Injury updates and their impact on teammates (e.g. star out = role player minutes up)\n"
+                    "2. Coach press conference quotes about rotation changes or minute increases\n"
+                    "3. Notable rest days, back-to-backs, or load management\n"
+                    "4. Any breaking roster news (trades, call-ups, returns from injury)\n\n"
+                    "Return ONLY a bullet-point summary of actionable findings. Each bullet should name "
+                    "the specific player(s) affected and why. Skip teams with no relevant news. "
+                    "Keep it under 2000 characters total. No preamble — start with the first bullet."
+                ),
+            }],
+            timeout=timeout_s,
+        )
+        # Extract text from the response (skip tool_use blocks)
+        text_parts = []
+        for block in msg.content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text.strip())
+        text = "\n".join(text_parts)
 
-    def _brave_search(query):
-        try:
-            r = requests.get(
-                BRAVE_SEARCH_BASE,
-                params={"q": query, "count": 3, "freshness": freshness},
-                headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
-                timeout=8,
-            )
-            if not r.ok:
-                return []
-            data = r.json()
-            results = []
-            for item in data.get("web", {}).get("results", [])[:3]:
-                title = item.get("title", "")
-                snippet = item.get("description", "")
-                if title and snippet:
-                    results.append(f"- {title}: {snippet}")
-            return results
-        except Exception:
-            return []
+        if len(text) > 2000:
+            text = text[:2000] + "..."
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        all_results = list(pool.map(_brave_search, search_queries))
+        # Cache for the slate date
+        _cs(cache_key, {"text": text, "ts": datetime.now(timezone.utc).isoformat()})
+        print(f"[web_search] fetched news for {len(teams)} teams via Claude web_search ({len(text)} chars)")
+        return text
 
-    for result_list in all_results:
-        snippets.extend(result_list)
-
-    # Deduplicate and truncate to ~2000 chars
-    seen = set()
-    unique_snippets = []
-    for s in snippets:
-        key = s[:80].lower()
-        if key not in seen:
-            seen.add(key)
-            unique_snippets.append(s)
-
-    text = "\n".join(unique_snippets)
-    if len(text) > 2000:
-        text = text[:2000] + "..."
-
-    # Cache for the slate date
-    _cs(cache_key, {"text": text, "ts": datetime.now(timezone.utc).isoformat()})
-    print(f"[web_search] fetched news for {len(teams)} teams ({len(unique_snippets)} snippets)")
-    return text
+    except Exception as e:
+        print(f"[web_search] Claude web_search error (non-fatal): {e}")
+        return ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2039,7 +2030,7 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     max_adj = float(_cfg("context_layer.max_adjustment", 0.4))
     timeout_s = float(_cfg("context_layer.timeout_seconds", 15))
 
-    # Fetch recent NBA news for teams on the slate (Brave Search API)
+    # Fetch recent NBA news for teams on the slate (Claude web_search tool)
     news_text = ""
     try:
         news_text = _fetch_nba_news_context(games)

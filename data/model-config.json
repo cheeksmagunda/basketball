@@ -166,9 +166,7 @@
     "model": "claude-haiku-4-5-20251001",
     "max_adjustment": 0.4,
     "timeout_seconds": 20,
-    "web_search_enabled": true,
-    "search_queries_per_game": 2,
-    "search_recency_hours": 48
+    "web_search_enabled": true
   },
   "odds_enrichment": {
     "enabled": true,
