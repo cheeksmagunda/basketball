@@ -1,0 +1,51 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Tyler Herro,4395725,MIA,G,6.1,0.8,32.0,20.5,4.8,3.9,0.8,0.3
+slate,chalk,1.8x,Cason Wallace,4683692,OKC,G,4.2,2.2,27.7,8.2,3.0,2.5,1.8,0.3
+slate,chalk,1.6x,Jaime Jaquez Jr.,4432848,MIA,F,5.6,1.2,29.1,13.4,4.8,4.0,0.8,0.3
+slate,chalk,1.4x,Ayo Dosunmu,4397002,MIN,G,5.1,1.5,29.0,12.6,2.9,3.4,0.8,0.3
+slate,chalk,1.2x,Maxime Raynaud,4898371,SAC,C,4.2,2.1,27.1,11.1,7.3,1.2,0.5,0.5
+slate,upside,2.0x,Simone Fontecchio,3899664,MIA,F,3.6,3.0,19.6,8.1,3.0,1.4,0.5,0.2
+slate,upside,1.8x,Grant Williams,4066218,CHA,F,3.7,2.8,22.4,7.3,3.9,1.6,0.5,0.5
+slate,upside,1.6x,Cameron Payne,3064230,PHI,PG,3.3,3.0,19.4,7.8,1.9,3.0,0.9,0.2
+slate,upside,1.4x,Daeqwon Plowden,4279318,SAC,G,3.1,3.0,24.5,8.2,3.1,1.1,0.6,0.2
+slate,upside,1.2x,Tristan Vukcevic,4997537,WSH,F,3.1,3.0,13.7,8.6,3.1,1.2,0.4,0.7
+IND @ NY,the_lineup,2.0x,Karl-Anthony Towns,3136195,NY,C,8.1,0.0,32.5,21.4,11.5,3.0,0.8,0.8
+IND @ NY,the_lineup,1.8x,OG Anunoby,3934719,NY,F,6.7,0.0,31.8,15.0,4.8,1.9,1.5,0.7
+IND @ NY,the_lineup,1.6x,Ivica Zubac,4017837,IND,C,6.5,0.0,27.9,12.3,9.5,1.8,0.4,0.9
+IND @ NY,the_lineup,1.4x,Mikal Bridges,3147657,NY,G,6.4,0.0,34.3,14.8,4.0,3.4,1.3,0.7
+IND @ NY,the_lineup,1.2x,T.J. McConnell,2530530,IND,G,5.0,0.0,21.0,8.6,2.5,5.0,1.1,0.2
+SA @ SAC,the_lineup,2.0x,Victor Wembanyama,5104157,SA,F,8.9,0.0,26.5,23.7,11.1,3.2,1.1,3.2
+SA @ SAC,the_lineup,1.8x,Russell Westbrook,3468,SAC,G,8.7,0.0,33.0,18.1,6.2,7.3,1.4,0.2
+SA @ SAC,the_lineup,1.6x,De'Aaron Fox,4066259,SA,G,7.2,0.0,30.2,20.1,3.8,6.2,1.3,0.3
+SA @ SAC,the_lineup,1.4x,Dylan Cardwell,4433174,SAC,C,5.3,0.0,22.8,5.1,7.6,1.2,0.7,1.5
+SA @ SAC,the_lineup,1.2x,Precious Achiuwa,4431679,SAC,PF,5.1,0.0,23.2,8.5,6.0,1.1,0.8,0.7
+OKC @ ORL,the_lineup,2.0x,Shai Gilgeous-Alexander,4278073,OKC,G,10.4,0.0,34.7,28.4,4.7,6.0,1.4,0.8
+OKC @ ORL,the_lineup,1.8x,Chet Holmgren,4433255,OKC,C,7.4,0.0,30.5,16.9,8.7,1.9,0.6,2.0
+OKC @ ORL,the_lineup,1.6x,Paolo Banchero,4432573,ORL,F,7.0,0.0,32.2,22.2,8.0,4.8,0.7,0.6
+OKC @ ORL,the_lineup,1.4x,Desmond Bane,4066320,ORL,G,6.7,0.0,29.6,19.4,4.3,4.0,1.0,0.4
+OKC @ ORL,the_lineup,1.2x,Wendell Carter Jr.,4277847,ORL,C,5.4,0.0,26.9,11.8,7.9,2.0,0.8,0.7
+PHX @ MIN,the_lineup,2.0x,Rudy Gobert,3032976,MIN,C,9.1,0.0,31.1,11.7,11.4,1.6,0.8,1.8
+PHX @ MIN,the_lineup,1.8x,Devin Booker,3136193,PHX,G,7.9,0.0,29.8,25.1,4.0,5.7,0.9,0.3
+PHX @ MIN,the_lineup,1.6x,Julius Randle,3064514,MIN,F,7.2,0.0,32.6,20.1,7.9,4.5,0.8,0.3
+PHX @ MIN,the_lineup,1.4x,Donte DiVincenzo,3934673,MIN,G,5.6,0.0,29.9,11.8,4.4,3.5,1.3,0.3
+PHX @ MIN,the_lineup,1.2x,Royce O'Neale,2583632,PHX,F,4.6,0.0,26.2,8.7,4.8,2.6,0.9,0.4
+PHI @ DEN,the_lineup,2.0x,Nikola Jokic,3112335,DEN,C,10.6,0.0,33.4,25.4,11.8,8.9,1.4,0.8
+PHI @ DEN,the_lineup,1.8x,Jamal Murray,3936299,DEN,G,8.5,0.0,34.2,22.1,4.0,6.0,1.0,0.4
+PHI @ DEN,the_lineup,1.6x,Paul George,4251,PHI,F,8.1,0.0,34.0,18.2,5.7,3.7,1.6,0.5
+PHI @ DEN,the_lineup,1.4x,Andre Drummond,6585,PHI,C,7.2,0.0,25.1,9.3,10.3,1.1,0.9,1.0
+PHI @ DEN,the_lineup,1.2x,VJ Edgecombe,5124612,PHI,G,6.7,0.0,37.0,15.4,5.6,3.9,1.5,0.6
+CLE @ MIL,the_lineup,2.0x,Donovan Mitchell,3908809,CLE,G,9.2,0.0,35.5,26.6,4.3,5.3,1.5,0.3
+CLE @ MIL,the_lineup,1.8x,Evan Mobley,4432158,CLE,C,7.6,0.0,33.4,17.3,8.8,3.3,0.8,1.8
+CLE @ MIL,the_lineup,1.6x,Kevin Porter Jr.,4397140,MIL,G,7.4,0.0,29.8,15.8,4.8,6.1,1.7,0.4
+CLE @ MIL,the_lineup,1.4x,Kyle Kuzma,3134907,MIL,F,6.6,0.0,29.8,14.9,5.3,2.6,0.7,0.5
+CLE @ MIL,the_lineup,1.2x,Larry Nance Jr.,2580365,CLE,F,4.2,0.0,19.2,5.4,4.2,1.4,0.8,0.3
+DET @ WSH,the_lineup,2.0x,Jalen Duren,4433621,DET,C,7.4,0.0,28.1,15.9,10.4,1.9,0.8,0.9
+DET @ WSH,the_lineup,1.8x,Tobias Harris,6440,DET,F,6.4,0.0,30.6,14.6,5.6,2.3,0.8,0.4
+DET @ WSH,the_lineup,1.6x,Caris LeVert,2991043,DET,G,5.3,0.0,23.2,10.2,2.7,3.2,0.9,0.5
+DET @ WSH,the_lineup,1.4x,Julian Reese,4683742,WSH,F,5.0,0.0,27.8,9.2,9.4,1.8,1.0,0.4
+DET @ WSH,the_lineup,1.2x,Tre Johnson,5238230,WSH,G,4.0,0.0,22.5,12.4,2.8,2.0,0.6,0.3
+MIA @ CHA,the_lineup,2.0x,LaMelo Ball,4432816,CHA,G,7.8,0.0,29.4,20.0,5.2,7.2,1.3,0.2
+MIA @ CHA,the_lineup,1.8x,Norman Powell,2595516,MIA,G,7.2,0.0,27.1,18.2,3.1,2.1,1.1,0.2
+MIA @ CHA,the_lineup,1.6x,Brandon Miller,4433287,CHA,F,7.2,0.0,31.9,19.7,4.8,3.1,1.1,0.8
+MIA @ CHA,the_lineup,1.4x,Kel'el Ware,5105623,MIA,C,6.6,0.0,23.9,10.8,8.9,0.7,0.8,1.1
+MIA @ CHA,the_lineup,1.2x,Jaime Jaquez Jr.,4432848,MIA,F,5.8,0.0,28.3,13.4,4.8,4.0,0.8,0.3
