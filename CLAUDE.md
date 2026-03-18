@@ -74,6 +74,8 @@ grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
 grep: ODDS ENRICHMENT          — _enrich_projections_with_odds, odds_map, blend_weight
 grep: WEB INTELLIGENCE         — _fetch_nba_news_context, Claude web_search, news_text
+grep: LINEUP REVIEW            — _lineup_review_opus, post-lineup Opus, lineup_review
+grep: CORE POOL                — core_pool, eligible_union, _build_lineups 3-tuple
 grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
 grep: INJURY CHECK             — /api/injury-check, RotoWire re-check, affected game regeneration
 grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/health, /api/version
@@ -372,9 +374,9 @@ Context layer in `context_layer`: `enabled`, `web_search_enabled`, `model`, `max
 
 ---
 
-## Two Draft Strategies (Shared Player Pool)
+## Two Draft Strategies (Core Pool Architecture)
 
-Starting 5 and Moonshot represent two independent draft strategies — reliability vs ceiling — but **they can share players**. If a player is the best pick for both strategies, they appear in both lineups. Together they predict the two best possible drafts of the day. Target: **70+ total draft score** for both.
+When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single **core pool** of 7–10 players projected to "pop off" that day. The core is the union of chalk-eligible and moonshot-eligible players, ranked by a core score (`max_ev` = max(chalk_ev, moonshot_ev) or `blend`), with top N (e.g. 8) selected. **Starting 5** = best 5-of-core for reliability (chalk_ev); **Moonshot** = best 5-of-core for ceiling (moonshot_ev). High exposure and repeats across the two lineups are intended — they are different configurations of the same high-confidence pool. Config: `core_pool.enabled`, `core_pool.size`, `core_pool.metric`, `core_pool.blend_weight`. When `core_pool.enabled` is false, legacy behavior: separate chalk and moonshot pools, each MILP from its own pool (overlap still allowed). Target: **70+ total draft score** for both.
 
 ### Slate-Wide: Starting 5 (chalk)
 MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 25-minute season avg minutes floor** (`season_min >= 25`). Configurable via `projection.chalk_season_min_floor`. **Star anchor pathway**: players with season_pts >= 20 bypass the boost floor (`chalk_min_boost_floor`), letting one high-PPG star into the pool on nights they project well. Limited by `chalk_max_stars=1`.
@@ -808,7 +810,9 @@ If slate, line, and/or log all fail to load:
 | Separate moonshot pts floor | `api/index.py`, `data/model-config.json` | Universal floor in `project_player()` lowered to 4.0 (`min_pts_projection_moonshot`); chalk enforces 7.0 separately. Oso Ighodaro (4 PPG, +2.9x, Value 16.4) now enters moonshot pool. `min_pts_per_minute_moonshot` = 0.20 (chalk keeps 0.28). |
 | `min_chalk_rating` synced | `data/model-config.json` | Config value 4.0 → 3.5 to match code fallback and CLAUDE.md documentation. Mar 17 showed 7/9 missed players filtered by this gate. |
 | Odds API draft enrichment | `api/index.py`, `data/model-config.json` | `_enrich_projections_with_odds()` blends sportsbook player props into projections. Upward-only 20% blend when books diverge 15%+ from model (`odds_enrichment.*` config). Also nudges `predMin` proportionally. Odds data passed to Claude context layer. |
-| Web intelligence via Claude web_search | `api/index.py`, `data/model-config.json` | `_fetch_nba_news_context()` uses Anthropic API with `web_search_20250305` tool (Haiku) to find recent NBA news. Single API call with max 5 searches — no separate search API key needed. Results injected into Claude context pass prompt as "RECENT NBA NEWS" section. Catches coach press conferences, rotation changes, injury impacts on teammates. Config: `context_layer.web_search_enabled`, `timeout_seconds`. |
+| Web intelligence (Layer 1) | `api/index.py`, `data/model-config.json` | `_fetch_nba_news_context()` — once-per-slate Opus call (`context_layer.web_search_model`) with `web_search_20250305`. Player/RS-aware: when `all_proj` is passed, top 20–25 by rating are included so intel prioritizes likely draft picks. Results injected into context pass as "RECENT NBA NEWS". Config: `context_layer.web_search_enabled`, `context_layer.web_search_model`, `timeout_seconds`. |
+| Context pass (Layer 2) | `api/index.py`, `data/model-config.json` | RS adjustment uses Opus (`context_layer.model`). Directive: map each RECENT NBA NEWS bullet to specific players and up/down adjustments. |
+| Lineup review (Layer 3) | `api/index.py`, `data/model-config.json` | `_lineup_review_opus()` — after MILP, Opus + web_search reviews assembled Starting 5 and Moonshot; can suggest swaps for late-breaking news; auto-applies valid swaps. Config: `lineup_review.enabled` (default off), `lineup_review.model`, `lineup_review.timeout_seconds`. Non-fatal: on error returns original lineups. |
 | Health check timeout + Vercel cleanup | `index.html` | Health pre-warm converted from raw `fetch()` to `fetchWithTimeout(..., 5000)`. Stale Vercel references in comments updated to Railway. All frontend fetches now use `fetchWithTimeout` (except lab/chat SSE which uses manual AbortController). |
 
 ## Production audit

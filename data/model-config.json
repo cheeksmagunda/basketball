@@ -1,5 +1,5 @@
 {
-  "version": 37,
+  "version": 39,
   "updated_at": "2026-03-18T08:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
@@ -163,10 +163,22 @@
   },
   "context_layer": {
     "enabled": true,
-    "model": "claude-haiku-4-5-20251001",
+    "model": "claude-opus-4-20250514",
+    "web_search_model": "claude-opus-4-20250514",
     "max_adjustment": 0.4,
     "timeout_seconds": 20,
     "web_search_enabled": true
+  },
+  "lineup_review": {
+    "enabled": true,
+    "model": "claude-opus-4-20250514",
+    "timeout_seconds": 30
+  },
+  "core_pool": {
+    "enabled": true,
+    "size": 8,
+    "metric": "max_ev",
+    "blend_weight": 0.5
   },
   "odds_enrichment": {
     "enabled": true,
@@ -223,6 +235,16 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 39,
+      "date": "2026-03-18",
+      "change": "Core pool architecture: single 7–10 player core (core_pool.enabled, size, metric). Both Starting 5 and Moonshot are built from the same core pool — two configurations (reliability vs ceiling), high exposure/repeats intended. Eligible union = chalk OR moonshot eligibility; core score = max_ev or blend; top N by score = core_pool; chalk MILP and moonshot MILP run on core_pool only. Claude prompts updated so both lineups are described as same core. Config: core_pool.enabled, core_pool.size (default 8), core_pool.metric (max_ev|blend), core_pool.blend_weight."
+    },
+    {
+      "version": 38,
+      "date": "2026-03-18",
+      "change": "3-layer Opus pipeline: (1) Layer 1 — web search upgraded to Opus (context_layer.web_search_model), player/RS-aware prompt (top 25 by rating passed so intel prioritizes likely draft picks). (2) Layer 2 — context pass uses Opus (context_layer.model), improved RECENT NBA NEWS directive (map each news bullet to specific players and adjustments). (3) Layer 3 — post-lineup review (lineup_review.enabled, default off): Opus + web_search reviews assembled Starting 5 and Moonshot, suggests swaps for late-breaking news, auto-applies valid swaps. Config: lineup_review.model, lineup_review.timeout_seconds. Non-fatal: on error original lineups returned."
+    },
     {
       "version": 37,
       "date": "2026-03-18",

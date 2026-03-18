@@ -1141,6 +1141,7 @@ class TestWebSearch:
             cfg_map = {
                 "context_layer.web_search_enabled": True,
                 "context_layer.timeout_seconds": 20,
+                "context_layer.web_search_model": "claude-opus-4-20250514",
             }
             return cfg_map.get(key, default)
 
@@ -1150,7 +1151,7 @@ class TestWebSearch:
              patch("api.index._cs") as mock_cs, \
              patch.dict("sys.modules", {"anthropic": mock_anthropic_module}), \
              patch("api.index._et_date", return_value=date(2026, 3, 18)):
-            result = _fetch_nba_news_context(games)
+            result = _fetch_nba_news_context(games, date=None, all_proj=None)
 
         assert "Finch" in result or "Bones" in result
         assert mock_cs.called  # Cached the result
@@ -1175,9 +1176,51 @@ class TestWebSearch:
              patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
              patch("api.index._cg", return_value={"text": "Cached news about Wolves"}), \
              patch("api.index._et_date", return_value=date(2026, 3, 18)):
-            result = _fetch_nba_news_context(games)
+            result = _fetch_nba_news_context(games, date=None, all_proj=None)
 
         assert result == "Cached news about Wolves"
+
+    def test_prompt_includes_key_players_when_all_proj_provided(self):
+        """When all_proj is passed, the API prompt should include KEY PLAYERS section."""
+        from api.index import _fetch_nba_news_context
+        from datetime import date
+
+        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "LAL"}}]
+        all_proj = [
+            {"name": "Jayson Tatum", "team": "BOS", "rating": 6.2},
+            {"name": "LeBron James", "team": "LAL", "rating": 5.8},
+        ]
+
+        mock_text_block = Mock()
+        mock_text_block.text = "No breaking news."
+        mock_msg = Mock()
+        mock_msg.content = [mock_text_block]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+        mock_anthropic_module = Mock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "context_layer.web_search_enabled": True,
+                "context_layer.timeout_seconds": 20,
+                "context_layer.web_search_model": "claude-opus-4-20250514",
+            }
+            return cfg_map.get(key, default)
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
+             patch("api.index._cg", return_value=None), \
+             patch("api.index._cs"), \
+             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}), \
+             patch("api.index._et_date", return_value=date(2026, 3, 18)):
+            _fetch_nba_news_context(games, date=None, all_proj=all_proj)
+
+        call_kwargs = mock_client.messages.create.call_args
+        content = call_kwargs.kwargs.get("messages", [{}])[0].get("content", "")
+        assert "KEY PLAYERS" in content
+        assert "Jayson Tatum" in content
+        assert "LeBron James" in content
 
 
 # ─────────────────────────────────────────────────────────
@@ -1187,17 +1230,190 @@ class TestContextPassWithNews:
     """Verify _claude_context_pass includes news text when available."""
 
     def test_context_pass_calls_web_search(self):
-        """When web search is enabled, context pass should call _fetch_nba_news_context."""
+        """When web search is enabled, context pass should call _fetch_nba_news_context with games and all_proj."""
         with open("api/index.py") as f:
             src = f.read()
-        assert '_fetch_nba_news_context(games)' in src
+        assert "_fetch_nba_news_context(games, date=None, all_proj=all_proj)" in src
 
     def test_context_pass_includes_news_in_prompt(self):
         """News text should appear in the user prompt under RECENT NBA NEWS."""
         with open("api/index.py") as f:
             src = f.read()
-        assert 'RECENT NBA NEWS' in src
-        assert 'rotation changes, injury impacts' in src
+        assert "RECENT NBA NEWS" in src
+        assert "injury" in src.lower() and "rotation" in src.lower()
+
+
+# ─────────────────────────────────────────────────────────
+# TestLineupReview — Layer 3 post-lineup Opus review
+# ─────────────────────────────────────────────────────────
+class TestLineupReview:
+    """Verify _lineup_review_opus: disabled returns unchanged; no swaps unchanged; valid swap applied; exception returns original."""
+
+    def test_returns_unchanged_when_disabled(self):
+        """When lineup_review.enabled is False, chalk and upside are returned unchanged."""
+        from api.index import _lineup_review_opus
+
+        chalk = [{"name": "Player A", "team": "BOS", "slot": "2.0x", "rating": 5.0}]
+        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x", "rating": 4.0}]
+        all_proj = [{"name": "Player A", "team": "BOS"}, {"name": "Player B", "team": "LAL"}]
+        games = []
+
+        with patch("api.index._cfg", return_value=False):
+            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
+
+        assert out_chalk == chalk
+        assert out_upside == upside
+
+    def test_returns_unchanged_when_no_swaps(self):
+        """When Opus returns empty swaps, lineups unchanged."""
+        from api.index import _lineup_review_opus
+
+        chalk = [{"name": "Player A", "team": "BOS", "slot": "2.0x", "rating": 5.0}]
+        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x", "rating": 4.0}]
+        all_proj = [{"name": "Player A", "team": "BOS"}, {"name": "Player B", "team": "LAL"}]
+        games = []
+
+        mock_text_block = Mock()
+        mock_text_block.text = '{"swaps": []}'
+        mock_msg = Mock()
+        mock_msg.content = [mock_text_block]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+        mock_anthropic_module = Mock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "lineup_review.enabled": True,
+                "lineup_review.model": "claude-opus-4-20250514",
+                "lineup_review.timeout_seconds": 30,
+            }
+            return cfg_map.get(key, default)
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
+             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}):
+            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
+
+        assert out_chalk[0]["name"] == "Player A"
+        assert out_upside[0]["name"] == "Player B"
+
+    def test_applies_valid_swap(self):
+        """When Opus suggests a valid swap (in in all_proj), the lineup is updated."""
+        from api.index import _lineup_review_opus
+
+        chalk = [
+            {"name": "Player A", "team": "BOS", "slot": "2.0x", "rating": 5.0, "est_mult": 1.2},
+            {"name": "Player C", "team": "BOS", "slot": "1.8x", "rating": 4.5, "est_mult": 1.1},
+        ]
+        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x", "rating": 4.0}]
+        replacement = {"name": "Player D", "team": "BOS", "rating": 5.5, "est_mult": 1.3}
+        all_proj = [
+            {"name": "Player A", "team": "BOS"},
+            {"name": "Player B", "team": "LAL"},
+            {"name": "Player C", "team": "BOS"},
+            replacement,
+        ]
+        games = []
+
+        mock_text_block = Mock()
+        mock_text_block.text = '{"swaps": [{"lineup": "chalk", "out": "Player A", "in": "Player D"}]}'
+        mock_msg = Mock()
+        mock_msg.content = [mock_text_block]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+        mock_anthropic_module = Mock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "lineup_review.enabled": True,
+                "lineup_review.model": "claude-opus-4-20250514",
+                "lineup_review.timeout_seconds": 30,
+            }
+            return cfg_map.get(key, default)
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
+             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}):
+            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
+
+        assert out_chalk[0]["name"] == "Player D"
+        assert out_chalk[0]["slot"] == "2.0x"
+        assert out_chalk[1]["name"] == "Player C"
+
+    def test_returns_original_on_exception(self):
+        """On API or parse error, original chalk and upside are returned."""
+        from api.index import _lineup_review_opus
+
+        chalk = [{"name": "Player A", "team": "BOS", "slot": "2.0x"}]
+        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x"}]
+        all_proj = [{"name": "Player A", "team": "BOS"}, {"name": "Player B", "team": "LAL"}]
+        games = []
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "lineup_review.enabled": True,
+                "lineup_review.model": "claude-opus-4-20250514",
+                "lineup_review.timeout_seconds": 30,
+            }
+            return cfg_map.get(key, default)
+
+        mock_client = Mock()
+        mock_client.messages.create.side_effect = Exception("API error")
+        mock_anthropic_module = Mock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
+             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}):
+            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
+
+        assert out_chalk == chalk
+        assert out_upside == upside
+
+
+# ─────────────────────────────────────────────────────────
+# TestCorePool — core pool architecture
+# ─────────────────────────────────────────────────────────
+class TestCorePool:
+    """When core_pool.enabled is False, third return is None; when True, third is list; lineups from core when enabled."""
+
+    def test_build_lineups_returns_three_values(self):
+        """_build_lineups returns (chalk, upside, core_pool). When core pool disabled, core_pool is None."""
+        from api.index import _build_lineups
+
+        def cfg_core_off(key, default=None):
+            if key == "core_pool":
+                return {"enabled": False, "size": 8, "metric": "max_ev"}
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_core_off), \
+             patch("api.index.get_all_statuses", return_value={}), \
+             patch("api.index._fetch_team_win_pcts", return_value={}):
+            chalk, upside, core_pool = _build_lineups([])
+
+        assert chalk == []
+        assert upside == []
+        assert core_pool is None
+
+    def test_build_lineups_core_pool_list_when_enabled(self):
+        """When core_pool.enabled is True, third return is a list (possibly empty)."""
+        from api.index import _build_lineups
+
+        def cfg_core_on(key, default=None):
+            if key == "core_pool":
+                return {"enabled": True, "size": 8, "metric": "max_ev", "blend_weight": 0.5}
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_core_on), \
+             patch("api.index.get_all_statuses", return_value={}), \
+             patch("api.index._fetch_team_win_pcts", return_value={}):
+            chalk, upside, core_pool = _build_lineups([])
+
+        assert isinstance(core_pool, list)
+        assert chalk == []
+        assert upside == []
 
 
 if __name__ == "__main__":

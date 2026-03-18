@@ -573,6 +573,12 @@ _CONFIG_DEFAULTS = {
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
     },
+    "core_pool": {
+        "enabled": True,
+        "size": 8,
+        "metric": "max_ev",
+        "blend_weight": 0.5,
+    },
     "line": {
         "min_confidence": 50,
         "min_edge_pct": 3.0,
@@ -1914,12 +1920,13 @@ _ABBR_TO_TEAM_NAME = {
 }
 
 
-def _fetch_nba_news_context(games: list, date=None) -> str:
+def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> str:
     """Fetch recent NBA news for teams on today's slate via Claude web_search tool.
 
-    Makes a single Anthropic API call with the web_search tool enabled. Claude
-    searches for recent NBA news (injuries, rotation changes, coach press
-    conferences) and returns a compact summary.
+    Layer 1 of the 3-layer Opus pipeline: once-per-slate intelligence gathering.
+    Uses Opus (config: context_layer.web_search_model) with web_search so quality
+    matters most. When all_proj is provided, the prompt includes key players (top
+    by projected RS) so the model can prioritize news affecting likely draft picks.
 
     Uses the existing ANTHROPIC_API_KEY — no separate search API key needed.
     Reads `context_layer.web_search_enabled` from model config. Returns empty
@@ -1959,20 +1966,34 @@ def _fetch_nba_news_context(games: list, date=None) -> str:
         team_names.append(f"{abbr} ({full})")
 
     team_list = ", ".join(team_names)
+
+    # Player/RS-aware: when all_proj provided, add key players (top 20–25 by rating)
+    # so Opus can prioritize news that affects likely draft picks.
+    key_players_blurb = ""
+    if all_proj:
+        top = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:25]
+        lines = [f"- {p.get('name', '')} ({p.get('team', '')}): proj RS {p.get('rating', 0):.1f}" for p in top]
+        key_players_blurb = (
+            "\n\nKEY PLAYERS ON TONIGHT'S SLATE (prioritize news affecting these):\n"
+            + "\n".join(lines)
+            + "\n"
+        )
+
     timeout_s = float(_cfg("context_layer.timeout_seconds", 20))
+    web_search_model = _cfg("context_layer.web_search_model", "claude-opus-4-20250514")
 
     try:
         import anthropic as _anthropic
         client = _anthropic.Anthropic(api_key=anthropic_key)
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=web_search_model,
             max_tokens=1500,
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
             messages=[{
                 "role": "user",
                 "content": (
                     f"Today is {today}. I need a concise NBA intelligence briefing for these teams "
-                    f"playing tonight: {team_list}.\n\n"
+                    f"playing tonight: {team_list}.{key_players_blurb}\n\n"
                     "Search for the latest news (last 48 hours) on:\n"
                     "1. Injury updates and their impact on teammates (e.g. star out = role player minutes up)\n"
                     "2. Coach press conference quotes about rotation changes or minute increases\n"
@@ -2006,9 +2027,9 @@ def _fetch_nba_news_context(games: list, date=None) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CLAUDE CONTEXT PASS
+# CLAUDE CONTEXT PASS (Layer 2 of 3-layer Opus pipeline)
 # grep: _claude_context_pass
-# Optional post-projection RS adjustment using Claude Haiku game narrative.
+# Optional post-projection RS adjustment using Claude (Opus) game narrative.
 # Called once per fresh slate generation; config-gated.
 # Applies ±40% max multiplier to rating/chalk_ev/ceiling_score based on
 # context the pure stat model can't capture (blowout risk, defensive value,
@@ -2016,7 +2037,7 @@ def _fetch_nba_news_context(games: list, date=None) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _claude_context_pass(all_proj: list, games: list) -> None:
-    """Adjust player RS projections in-place using a Claude Haiku context call.
+    """Adjust player RS projections in-place using a Claude (Opus) context call.
 
     Reads `context_layer.enabled` from model config. No-op if disabled or if
     the Claude call fails — slate generation must never depend on this call.
@@ -2026,14 +2047,14 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     if not _cfg("context_layer.enabled", False):
         return
 
-    model_id = _cfg("context_layer.model", "claude-haiku-4-5-20251001")
+    model_id = _cfg("context_layer.model", "claude-opus-4-20250514")
     max_adj = float(_cfg("context_layer.max_adjustment", 0.4))
     timeout_s = float(_cfg("context_layer.timeout_seconds", 15))
 
-    # Fetch recent NBA news for teams on the slate (Claude web_search tool)
+    # Fetch recent NBA news for teams on the slate (Layer 1: Opus + web_search)
     news_text = ""
     try:
-        news_text = _fetch_nba_news_context(games)
+        news_text = _fetch_nba_news_context(games, date=None, all_proj=all_proj)
     except Exception as _news_err:
         print(f"[context_pass] web search error (non-fatal): {_news_err}")
 
@@ -2080,7 +2101,9 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "You adjust RS (Real Score) projections for a daily NBA Real Sports draft game. "
         "RS rewards clutch impact, defensive hustle plays, momentum swings, and multi-stat "
         "contributions in CLOSE games — NOT pure box score stats. The stat model cannot "
-        "see game narrative; you can.\n\n"
+        "see game narrative; you can. Your adjustments are used for both Starting 5 and "
+        "Moonshot; both lineups are built from the same high-confidence core pool of 7–10 "
+        "players projected to pop off today.\n\n"
 
         "WINNING DRAFT PATTERNS (from leaderboard analysis across 8 sample dates):\n"
         "- Winning total scores range 60-76 pts depending on slate quality. Small slates "
@@ -2144,14 +2167,16 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "reason": "brief"}]}\n'
         "Keep multipliers between 0.6 and 1.4. Omit players with multiplier 1.0."
     )
-    # Include web search results in the user prompt if available
+    # Include web search results in the user prompt if available (Layer 1 output)
     news_section = ""
     if news_text:
         news_section = (
             f"\n\nRECENT NBA NEWS (last 24-48 hours):\n{news_text}\n\n"
-            "Use this news context to identify rotation changes, injury impacts on "
-            "teammates, coaching decisions, and other signals the stat model cannot "
-            "capture. Weight press conference quotes and official injury reports heavily."
+            "Map each relevant news bullet to specific players in the list above. For each "
+            "adjustment you make, the reason must cite the specific news item (e.g. 'Star X "
+            "out → teammate Y minutes up'). Rotation changes, injury impacts on teammates, "
+            "and coach quotes should drive explicit up/down adjustments with clear magnitude. "
+            "Weight press conference quotes and official injury reports heavily."
         )
     user_prompt = (
         f"Today's slate players (top 40 by projected RS):\n"
@@ -2202,6 +2227,126 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         adj_count += 1
 
     print(f"[context_pass] applied {adj_count} adjustments via {model_id}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LINEUP REVIEW (Layer 3 of 3-layer Opus pipeline)
+# grep: _lineup_review_opus
+# Post-lineup Opus + web_search: review assembled chalk/upside, suggest swaps
+# (e.g. late injury, rotation news); auto-apply valid swaps. Non-fatal: on error
+# returns original lineups unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, core_pool: list = None) -> tuple:
+    """Review assembled lineups with Opus + web search; suggest and auto-apply swaps.
+
+    Reads lineup_review.enabled, lineup_review.model, lineup_review.timeout_seconds.
+    When core_pool is provided (list of player dicts), swap-ins are restricted to that
+    core so both lineups stay configurations of the same high-confidence pool.
+    Returns (chalk, upside). On any failure returns original chalk/upside unchanged.
+    """
+    if not _cfg("lineup_review.enabled", False):
+        return chalk, upside
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        return chalk, upside
+
+    model_id = _cfg("lineup_review.model", "claude-opus-4-20250514")
+    timeout_s = float(_cfg("lineup_review.timeout_seconds", 30))
+
+    def _describe_lineup(players: list, label: str) -> str:
+        lines = []
+        for p in (players or []):
+            name = p.get("name", "")
+            team = p.get("team", "")
+            slot = p.get("slot", "")
+            rs = p.get("rating", 0)
+            boost = p.get("est_mult", 0)
+            lines.append(f"  {slot}: {name} ({team}) — RS {rs:.1f}, boost +{boost:.1f}x")
+        return f"{label}:\n" + "\n".join(lines) if lines else f"{label}: (none)"
+
+    chalk_desc = _describe_lineup(chalk, "Starting 5 (chalk)")
+    upside_desc = _describe_lineup(upside, "Moonshot (upside)")
+    core_names = [p.get("name", "") for p in (core_pool or []) if p.get("name")]
+    core_blurb = ""
+    if core_names:
+        core_blurb = (
+            "\n\nThese two lineups are two configurations of the same high-confidence core pool "
+            "(reliability vs ceiling); high overlap is intended. When suggesting a swap-in, prefer "
+            f"players from this core when possible: {', '.join(core_names)}."
+        )
+
+    user_content = (
+        "You have two daily NBA draft lineups (Starting 5 = chalk, Moonshot = upside). "
+        "Search the web for the latest news (last 2–4 hours): injuries, late scratches, "
+        "rotation changes, or anything that would make a current pick wrong or a different "
+        "player clearly better.\n\n"
+        f"{chalk_desc}\n\n{upside_desc}\n{core_blurb}\n\n"
+        "If you find a reason to swap a player out (e.g. just ruled OUT, or a teammate "
+        "now getting the run), return a JSON object with a 'swaps' array. Each swap: "
+        '{"lineup": "chalk" or "upside", "out": "Exact Player Name", "in": "Exact Player Name"}. '
+        "Only suggest swaps when the news is clear and actionable. If nothing to change, "
+        'return {"swaps": []}. Return ONLY the JSON, no markdown or preamble.'
+    )
+
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=anthropic_key)
+        msg = client.messages.create(
+            model=model_id,
+            max_tokens=1024,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
+            messages=[{"role": "user", "content": user_content}],
+            timeout=timeout_s,
+        )
+        text = ""
+        for block in msg.content:
+            if hasattr(block, "text"):
+                text += block.text
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        data = json.loads(text)
+        swaps = data.get("swaps", [])
+        if not swaps:
+            return chalk, upside
+    except Exception as e:
+        print(f"[lineup_review] skipped (error: {e})")
+        return chalk, upside
+
+    name_to_proj = {p["name"]: p for p in all_proj}
+    core_names_set = {p.get("name") for p in (core_pool or []) if p.get("name")}
+    chalk_out = list(chalk)
+    upside_out = list(upside)
+    applied = 0
+
+    for s in swaps:
+        lineup_name = (s.get("lineup") or "").lower()
+        out_name = (s.get("out") or "").strip()
+        in_name = (s.get("in") or "").strip()
+        if not out_name or not in_name or lineup_name not in ("chalk", "upside"):
+            continue
+        replacement = name_to_proj.get(in_name)
+        if not replacement:
+            continue
+        if core_names_set and in_name not in core_names_set:
+            continue
+        target = chalk_out if lineup_name == "chalk" else upside_out
+        idx = next((i for i, p in enumerate(target) if (p.get("name") or "").strip() == out_name), None)
+        if idx is None:
+            continue
+        slot = target[idx].get("slot", "1.0x")
+        new_entry = {**replacement, "slot": slot}
+        target[idx] = new_entry
+        applied += 1
+
+    if applied:
+        print(f"[lineup_review] applied {applied} swap(s) via {model_id}")
+    return chalk_out, upside_out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2433,13 +2578,19 @@ def _build_lineups(projections):
     chalk_star_thresh = float(_cfg("projection.chalk_star_boost_threshold", 0.6))
     leverage_top     = int(_cfg("projection.leverage_top_slots", 1))
     leverage_thresh  = float(_cfg("projection.leverage_boost_threshold", 1.0))
-    chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
-                            rating_key="rating", card_boost_key="capped_boost",
-                            max_per_team=2,
-                            max_low_boost=chalk_max_stars,
-                            low_boost_threshold=chalk_star_thresh,
-                            leverage_top_slots=leverage_top,
-                            leverage_boost_threshold=leverage_thresh)
+
+    # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
+    core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
+    core_pool_enabled = core_pool_cfg.get("enabled", False) if isinstance(core_pool_cfg, dict) else False
+
+    if not core_pool_enabled:
+        chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
+                                rating_key="rating", card_boost_key="capped_boost",
+                                max_per_team=2,
+                                max_low_boost=chalk_max_stars,
+                                low_boost_threshold=chalk_star_thresh,
+                                leverage_top_slots=leverage_top,
+                                leverage_boost_threshold=leverage_thresh)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — leaderboard-informed) ─────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -2609,14 +2760,84 @@ def _build_lineups(projections):
     moonshot_max_team = int(moon_cfg.get("max_per_team", 2))
     # max_low_boost=1: mirrors chalk — at most 1 star anchor (low boost) in moonshot.
     # The other 4 slots stay as high-boost role players. Same logic as Starting 5.
-    upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
-                             rating_key="adj_ceiling",
-                             card_boost_key="est_mult",
-                             max_per_team=moonshot_max_team,
-                             max_low_boost=1,
-                             low_boost_threshold=0.8)
 
-    return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside]
+    if core_pool_enabled:
+        # ── Core pool path: one 7–10 player core; both lineups are configurations of it ──
+        def _moonshot_ev_for_player(p, _avg_slot, _moon_cfg, _team_win_pcts):
+            _dev_pts_floor = _moon_cfg.get("dev_team_pts_floor", 6.0)
+            _win_pct = _team_win_pcts.get(p.get("team", ""), 0.5)
+            _raw_bonus = max(1.0, 1.0 + max(0.0, 0.5 - _win_pct))
+            _team_bonus = _raw_bonus if (p.get("season_pts", p.get("pts", 0)) >= _dev_pts_floor) else 1.0
+            _est = p.get("est_mult", 0.3)
+            _boost_power = _moon_cfg.get("boost_leverage_power", 1.6)
+            _boost_leverage = max(_est, 0.2) ** _boost_power
+            _p_var = min(p.get("player_variance", 0.0), 0.6)
+            _var_penalty = _moon_cfg.get("variance_penalty", 0.15)
+            _base = p["rating"] * max(0.85, 1.0 - _p_var * _var_penalty)
+            _adj = round(_base * _team_bonus * _boost_leverage, 3)
+            return round(_adj * (_avg_slot + _est), 2), _adj
+
+        moonshot_by_name = {p["name"]: p for p in moonshot_pool}
+        eligible_union = []
+        for p in chalk_eligible:
+            rec = {**p, "chalk_ev_capped": p["chalk_ev_capped"], "capped_boost": p["capped_boost"]}
+            if p["name"] in moonshot_by_name:
+                rec["moonshot_ev"] = moonshot_by_name[p["name"]]["moonshot_ev"]
+                rec["adj_ceiling"] = moonshot_by_name[p["name"]]["adj_ceiling"]
+            else:
+                _mev, _adj = _moonshot_ev_for_player(p, avg_slot, moon_cfg, team_win_pcts)
+                rec["moonshot_ev"] = _mev
+                rec["adj_ceiling"] = _adj
+            eligible_union.append(rec)
+        for p in moonshot_pool:
+            if p["name"] in {r["name"] for r in eligible_union}:
+                continue
+            cap_boost = min(p["est_mult"], boost_cap)
+            rec = {**p, "chalk_ev_capped": round(p["rating"] * (avg_slot + cap_boost), 2), "capped_boost": cap_boost}
+            eligible_union.append(rec)
+
+        core_size = min(int(core_pool_cfg.get("size", 8)), max(5, len(eligible_union)))
+        core_metric = (core_pool_cfg.get("metric") or "max_ev").lower()
+        blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
+        for r in eligible_union:
+            ce, me = r.get("chalk_ev_capped", 0), r.get("moonshot_ev", 0)
+            r["_core_score"] = max(ce, me) if core_metric == "max_ev" else (blend_w * ce + (1 - blend_w) * me)
+        eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
+        core_pool = eligible_union[:core_size]
+
+        chalk = optimize_lineup(core_pool, n=5, sort_key="chalk_ev_capped",
+                                rating_key="rating", card_boost_key="capped_boost",
+                                max_per_team=2,
+                                max_low_boost=chalk_max_stars,
+                                low_boost_threshold=chalk_star_thresh,
+                                leverage_top_slots=leverage_top,
+                                leverage_boost_threshold=leverage_thresh)
+        sorted_core = sorted(core_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
+        capped_core = []
+        center_count = 0
+        for q in sorted_core:
+            is_center = _pos_group(q.get("pos", "G")) == "C"
+            if is_center and center_count >= max_centers:
+                continue
+            capped_core.append(q)
+            if is_center:
+                center_count += 1
+        upside = optimize_lineup(capped_core if capped_core else core_pool, n=5, sort_key="moonshot_ev",
+                                 rating_key="adj_ceiling",
+                                 card_boost_key="est_mult",
+                                 max_per_team=moonshot_max_team,
+                                 max_low_boost=1,
+                                 low_boost_threshold=0.8)
+    else:
+        upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
+                                 rating_key="adj_ceiling",
+                                 card_boost_key="est_mult",
+                                 max_per_team=moonshot_max_team,
+                                 max_low_boost=1,
+                                 low_boost_threshold=0.8)
+        core_pool = None
+
+    return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PER-GAME LINEUP BUILDER
@@ -3224,7 +3445,11 @@ def _get_slate_impl():
             _claude_context_pass(all_proj, draftable_games)
         except Exception as _ctx_err:
             print(f"[context_pass] call-site error: {_ctx_err}")
-        chalk, upside = _build_lineups(all_proj)
+        chalk, upside, core_pool = _build_lineups(all_proj)
+        try:
+            chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool)
+        except Exception as _rev_err:
+            print(f"[lineup_review] call-site error: {_rev_err}")
         lineups = {"chalk": chalk, "upside": upside}
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
         result = {"date": _et_date().isoformat(), "games": games,
@@ -3590,7 +3815,11 @@ def _force_regenerate_sync(scope: str):
         return {"status": "no_projections", "scope": scope, "date": today_str}
 
     # Step 2: Build slate-wide lineups (Starting 5 + Moonshot)
-    chalk, upside = _build_lineups(all_proj)
+    chalk, upside, core_pool = _build_lineups(all_proj)
+    try:
+        chalk, upside = _lineup_review_opus(chalk, upside, all_proj, game_pool, core_pool=core_pool)
+    except Exception as _rev_err:
+        print(f"[lineup_review] call-site error: {_rev_err}")
     lineups = {"chalk": chalk, "upside": upside}
 
     # Step 3: Build per-game lineups
@@ -4312,7 +4541,12 @@ async def injury_check(request: Request):
     if not all_proj:
         return {"status": "regen_failed", "injuries_found": len(injured_games)}
 
-    chalk, upside = _build_lineups(all_proj)
+    chalk, upside, core_pool = _build_lineups(all_proj)
+    draftable_for_review = cached_slate.get("games", [])
+    try:
+        chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_for_review, core_pool=core_pool)
+    except Exception as _rev_err:
+        print(f"[lineup_review] call-site error: {_rev_err}")
     result = {**cached_slate, "lineups": {"chalk": chalk, "upside": upside}}
 
     # Persist updated slate to /tmp + GitHub
