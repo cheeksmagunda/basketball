@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-18,Bogdan Bogdanovic,3037789,LAC,NO,points,7.5,over,10.8,3.3,80,Model projects 10.8 points — a 3.3 edge vs the 7.5 season baseline.,pending,
