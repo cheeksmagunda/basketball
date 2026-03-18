@@ -1,0 +1,47 @@
+{
+  "date": "2026-03-14",
+  "players_compared": 4,
+  "mae": 1.175,
+  "directional_accuracy": 0.5,
+  "over_projected": 0,
+  "under_projected": 4,
+  "biggest_misses": [
+    {
+      "player": "Jayson Tatum",
+      "team": "BOS",
+      "predicted_rs": 2.6,
+      "actual_rs": 4.6,
+      "error": 2.0,
+      "drafts": "275",
+      "actual_card_boost": "0.9"
+    },
+    {
+      "player": "Justin Edwards",
+      "team": "PHI",
+      "predicted_rs": 2.4,
+      "actual_rs": 3.4,
+      "error": 1.0,
+      "drafts": "24",
+      "actual_card_boost": "3.0"
+    },
+    {
+      "player": "Marcus Smart",
+      "team": "LAL",
+      "predicted_rs": 3.3,
+      "actual_rs": 4.2,
+      "error": 0.9,
+      "drafts": "3",
+      "actual_card_boost": "2.5"
+    },
+    {
+      "player": "Austin Reaves",
+      "team": "LAL",
+      "predicted_rs": 4.5,
+      "actual_rs": 5.3,
+      "error": 0.8,
+      "drafts": "177",
+      "actual_card_boost": "0.5"
+    }
+  ],
+  "generated_at": "2026-03-18T04:38:34.918656+00:00"
+}

@@ -1,0 +1,29 @@
+{
+  "date": "2026-03-05",
+  "players_compared": 2,
+  "mae": 0.7,
+  "directional_accuracy": 1.0,
+  "over_projected": 0,
+  "under_projected": 2,
+  "biggest_misses": [
+    {
+      "player": "Precious Achiuwa",
+      "team": "SAC",
+      "predicted_rs": 4.7,
+      "actual_rs": 5.4,
+      "error": 0.7,
+      "drafts": "231",
+      "actual_card_boost": "2.3"
+    },
+    {
+      "player": "Precious Achiuwa",
+      "team": "SAC",
+      "predicted_rs": 4.7,
+      "actual_rs": 5.4,
+      "error": 0.7,
+      "drafts": "231",
+      "actual_card_boost": "2.3"
+    }
+  ],
+  "generated_at": "2026-03-18T04:38:34.909052+00:00"
+}
