@@ -567,7 +567,7 @@ All frontend API calls use a `fetchWithTimeout()` wrapper function that enforces
 - Prevents indefinite hangs if backend becomes slow or unresponsive
 - Returns HTTP error status if timeout occurs, triggering normal error handling
 
-Affected endpoints: slate load, picks, games, save-predictions, screenshot parse, save-actuals, audit, log-dates, log-get, line-of-the-day, refresh-line-odds, lab-status, lab-briefing, lab-chat, lab-config-history, line-history, hindsight.
+Affected endpoints: slate load, picks, games, save-predictions, screenshot parse, save-actuals, audit, log-dates, log-get, line-of-the-day, refresh-line-odds, lab-status, lab-briefing, lab-chat, lab-config-history, line-history, hindsight. Full timeout table and loading UX: **docs/LOADING_AUDIT.md**.
 
 ### Worker Pool Optimization
 Backend uses Python `ThreadPoolExecutor` for parallel processing:
@@ -673,6 +673,7 @@ No orphan entrypoints; all API surface is in api/index.py. Scripts are for local
 
 - **docs/AUDIT-LIGHTWEIGHT.md** — Production, object/variable/reference, pipeline/caching, LightGBM (includes fix for recent_vs_season train/inference alignment).
 - **docs/AUDIT-HEAVY.md** — Security, error handling, API consistency, contracts, timeouts, deployment, observability, tests/docs.
+- **docs/LOADING_AUDIT.md** — Frontend loading: fetch timeouts, skeletons, async state, Line flash and first-load-after-hit fixes.
 
 ## Unit Testing Framework
 
@@ -814,6 +815,13 @@ If slate, line, and/or log all fail to load:
 | Context pass (Layer 2) | `api/index.py`, `data/model-config.json` | RS adjustment uses Opus (`context_layer.model`). Directive: map each RECENT NBA NEWS bullet to specific players and up/down adjustments. |
 | Lineup review (Layer 3) | `api/index.py`, `data/model-config.json` | `_lineup_review_opus()` — after MILP, Opus + web_search reviews assembled Starting 5 and Moonshot; can suggest swaps for late-breaking news; auto-applies valid swaps. Config: `lineup_review.enabled` (default off), `lineup_review.model`, `lineup_review.timeout_seconds`. Non-fatal: on error returns original lineups. |
 | Health check timeout + Vercel cleanup | `index.html` | Health pre-warm converted from raw `fetch()` to `fetchWithTimeout(..., 5000)`. Stale Vercel references in comments updated to Railway. All frontend fetches now use `fetchWithTimeout` (except lab/chat SSE which uses manual AbortController). |
+| Line card flash (live poll) | `index.html` | Live poll only updates card DOM when live snapshot key (`stat_current`, `clock`, `period`, `pace`) changes (`_lineLastLiveKey`); avoids full re-paint every 60s. |
+| Line first load after hit | `index.html` | Same-day Line tab open runs background `fetchLineOfTheDay(true, true)` so rotated pick (post–resolution) appears without showing skeleton; failures leave cached card as-is. |
+| Core pool architecture | `api/index.py`, `data/model-config.json`, CLAUDE.md | Single 7–10 player core pool; Starting 5 and Moonshot are two 5-of-core configurations (reliability vs ceiling). Config: `core_pool.enabled`, `core_pool.size`, `core_pool.metric`. Layer 2/3 prompts and Layer 3 swap-in respect core pool. |
+
+## Loading audit
+
+**docs/LOADING_AUDIT.md** — Catalogs frontend loading states, fetch timeouts, skeletons, async state pattern, and Line tab fixes (card flash, first-load-after-hit). All blocking API calls use `fetchWithTimeout`; no critical gaps for production.
 
 ## Production audit
 
@@ -851,8 +859,9 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 
 - **Env**: Required vars set in Railway (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY; optional ODDS_API_KEY, CRON_SECRET, DOCS_SECRET).
 - **Tests**: Run `pytest tests/ -v` locally when changing backend or frontend contract; test_core.py catches JS apostrophe crashes.
-- **Docs**: CLAUDE.md and README.md reflect current endpoints, crons, and lock/cache behavior.
+- **Docs**: CLAUDE.md and README.md reflect current endpoints, crons, lock/cache behavior, and core-pool architecture; docs/LOADING_AUDIT.md for loading and timeouts.
 - **Health**: Use GET `/api/health` for uptime monitoring; alert on non-200.
+- **Loading**: All blocking fetches use `fetchWithTimeout`; Line tab uses background re-fetch on same-day and live-card update only when data changes (see docs/LOADING_AUDIT.md).
 
 ## Development
 

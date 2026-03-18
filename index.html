@@ -2903,6 +2903,7 @@ let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
 let _lineRotationTriggered = false; // gate: true once per-direction rotation re-fetch fired
+let _lineLastLiveKey = '';   // last-rendered live snapshot key; avoid re-painting card when unchanged (stops flash)
 let LINE_HIST_DATA = null;   // cached history payload; cleared on date change
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
 let LINE_LOTD_STATE = asyncStateInitial();
@@ -3015,7 +3016,14 @@ async function _startLineLivePoll(overPick, underPick) {
     if (anyLive) {
       const pick = LINE_DIR === 'over' ? LINE_OVER_PICK : LINE_UNDER_PICK;
       const card = document.getElementById('linePickCard');
-      if (card && pick?._live) card.innerHTML = renderLinePickCard(pick, true);
+      if (card && pick?._live) {
+        const lv = pick._live;
+        const newKey = JSON.stringify({ stat_current: lv.stat_current, clock: lv.clock, period: lv.period, pace: lv.pace });
+        if (newKey !== _lineLastLiveKey) {
+          _lineLastLiveKey = newKey;
+          card.innerHTML = renderLinePickCard(pick, true);
+        }
+      }
     }
 
     // Per-direction game completion: when a direction's game finishes,
@@ -3099,6 +3107,7 @@ function _renderLineLOTDFromState() {
     // Extract directional picks first — they may exist even when primary pick is null
     LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
     LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
+    _lineLastLiveKey = ''; // so next live poll can update card (avoids stale "no update" after rotation)
     // If pick exists but no directional picks, populate from primary
     if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick) {
       if (data.pick.direction === 'over') LINE_OVER_PICK = data.pick;
@@ -3137,11 +3146,13 @@ function _renderLineLOTDFromState() {
   }
 }
 
-async function fetchLineOfTheDay(nocache = false) {
-  LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
-  _lineRotationTriggered = false; // reset so live poll can trigger rotation for new picks
-  if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
-  _renderLineLOTDFromState();
+async function fetchLineOfTheDay(nocache = false, background = false) {
+  if (!background) {
+    LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
+    _lineRotationTriggered = false; // reset so live poll can trigger rotation for new picks
+    if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
+    _renderLineLOTDFromState();
+  }
 
   let r;
   try {
@@ -3153,20 +3164,23 @@ async function fetchLineOfTheDay(nocache = false) {
     _renderLineLOTDFromState();
     if (data.pick) {
       _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-      // Save picks to GitHub as a safety net (backend auto-saves, but this catches failures).
-      // Fire-and-forget — don't block rendering on this.
-      fetchWithTimeout('/api/save-line', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-      }).catch(function() {});
+      if (!background) {
+        // Save picks to GitHub as a safety net (backend auto-saves, but this catches failures).
+        fetchWithTimeout('/api/save-line', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
+        }).catch(function() {});
+      }
       // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
       // when a game finishes and re-fetches line-of-the-day for per-direction rotation.
     }
   } catch(e) {
-    console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
-    LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
-    _renderLineLOTDFromState();
+    if (!background) {
+      console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
+      LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
+      _renderLineLOTDFromState();
+    }
   }
 }
 
@@ -3230,11 +3244,13 @@ async function initLinePage() {
   const todayET = _etToday();
   const dateChanged = LINE_LOADED_DATE !== todayET;
   if (!dateChanged) {
-    // Same day — re-render current state without hiding history or re-fetching
+    // Same day — show cached state immediately, then background re-fetch so we get
+    // rotated pick after a hit (first load after bet resolves).
     _renderLineLOTDFromState();
     switchLineDir(LINE_DIR);
     if (!LINE_HIST_DATA) fetchLineHistory();
     else _renderLineHistoryFromState();
+    fetchLineOfTheDay(true, true); // nocache + background: no skeleton, update when ready
     return;
   }
   // Date changed — full reload
