@@ -34,3 +34,8 @@ command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.envir
 [[crons.jobs]]
 schedule = "0 14,16,18,20,22,0 * * *"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/injury-check',headers=h)\""
+
+# Weekly MAE drift check (backend-only flag + logs)
+[[crons.jobs]]
+schedule = "0 6 * * 1"
+command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/mae-drift-check',headers=h)\""
