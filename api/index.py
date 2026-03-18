@@ -1555,17 +1555,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     minutes = stats.get("min", 0)
 
     # SCORING UPSIDE GATE 1: minimum projected points floor.
-    # A player projecting under 7 pts cannot anchor a winning lineup.
-    # Eliminates Goga Bitadze (5.7), Jahmai Mashack (5.0) types.
-    min_pts = _cfg("scoring_thresholds.min_pts_projection", 7.0)
-    if pts < min_pts:
+    # Universal floor uses the moonshot minimum (4.0) so low-PPG high-boost players
+    # like Oso Ighodaro (4 PPG, +2.9x boost, Value 16.4) can enter the moonshot pool.
+    # Chalk pool enforces the stricter 7.0 floor separately.
+    min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 4.0)
+    if pts < min_pts_moonshot:
         return None
 
     # SCORING UPSIDE GATE 2: minimum pts-per-minute efficiency.
-    # Prevents low-minute players from sneaking through on raw pts alone.
-    # 0.35 pts/min ≈ 7 pts in 20 minutes — a real, meaningful contribution floor.
-    min_ppm = _cfg("scoring_thresholds.min_pts_per_minute", 0.35)
-    if minutes > 0 and (pts / minutes) < min_ppm:
+    # Uses moonshot floor (0.20) at the universal level; chalk enforces stricter 0.28.
+    min_ppm_moonshot = _cfg("scoring_thresholds.min_pts_per_minute_moonshot", 0.20)
+    if minutes > 0 and (pts / minutes) < min_ppm_moonshot:
         return None
 
     # Base formula: PTS + REB + AST (correct for Real Sports scoring)
@@ -1822,10 +1822,203 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ODDS API ENRICHMENT
+# grep: _enrich_projections_with_odds
+# Blends sportsbook player prop lines into projections as a market signal.
+# Books see information our stat model can't (teammate injuries, rotation
+# changes, matchup exploitation). Called once per fresh slate generation.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _enrich_projections_with_odds(all_proj: list, games: list) -> None:
+    """Enrich player projections in-place with Odds API player props.
+
+    Reads `odds_enrichment.enabled` from model config. No-op if disabled,
+    if ODDS_API_KEY is missing, or if the Odds API call fails.
+
+    When books have a player's points line notably higher than our model's
+    projection (divergence > min_divergence_pct), blends the book signal
+    into our projection. Upward-only by default — books being lower than
+    our model is not a reliable downgrade signal.
+
+    Also nudges predMin upward proportionally when books expect higher scoring
+    (higher points implies more minutes/usage).
+
+    Mutates: player["pts"], player["predMin"], player["odds_pts_line"],
+    player["odds_reb_line"], player["odds_ast_line"]
+    """
+    if not _cfg("odds_enrichment.enabled", False):
+        return
+
+    blend_weight = float(_cfg("odds_enrichment.blend_weight", 0.2))
+    min_div_pct = float(_cfg("odds_enrichment.min_divergence_pct", 0.15))
+    upward_only = _cfg("odds_enrichment.upward_only", True)
+
+    # Reuse existing bulk odds fetcher (1 + N API calls, already parallelized)
+    odds_map = _build_player_odds_map(games)
+    if not odds_map:
+        print("[odds_enrich] no odds data available — skipping")
+        return
+
+    enriched = 0
+    for p in all_proj:
+        name_lower = p.get("name", "").lower()
+        # Attach raw odds lines for context pass / debugging
+        pts_odds = odds_map.get((name_lower, "points"), {})
+        reb_odds = odds_map.get((name_lower, "rebounds"), {})
+        ast_odds = odds_map.get((name_lower, "assists"), {})
+        if pts_odds:
+            p["odds_pts_line"] = pts_odds.get("line", 0)
+        if reb_odds:
+            p["odds_reb_line"] = reb_odds.get("line", 0)
+        if ast_odds:
+            p["odds_ast_line"] = ast_odds.get("line", 0)
+
+        # Scoring signal: blend if books diverge upward from our projection
+        odds_pts = pts_odds.get("line", 0)
+        model_pts = p.get("pts", 0)
+        if odds_pts > 0 and model_pts > 0:
+            divergence = (odds_pts - model_pts) / model_pts
+            if divergence > min_div_pct:
+                if not upward_only or odds_pts > model_pts:
+                    new_pts = model_pts * (1 - blend_weight) + odds_pts * blend_weight
+                    # Nudge predMin proportionally (higher pts → more usage/minutes)
+                    pts_ratio = new_pts / max(model_pts, 0.1)
+                    pred_min = p.get("predMin", 0)
+                    if pred_min > 0:
+                        p["predMin"] = round(pred_min * min(pts_ratio, 1.15), 1)  # cap 15% nudge
+                    p["pts"] = round(new_pts, 1)
+                    p["_odds_adjusted"] = True
+                    enriched += 1
+
+    print(f"[odds_enrich] enriched {enriched} players with Odds API data ({len(odds_map)} lines fetched)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BRAVE SEARCH WEB INTELLIGENCE
+# grep: _fetch_nba_news_context
+# Searches recent NBA news for each team on the slate using Brave Search API.
+# Returns a compact text summary for injection into the Claude context pass.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Map ESPN abbreviations to full team names for better search queries
+_ABBR_TO_TEAM_NAME = {
+    "ATL": "Hawks", "BOS": "Celtics", "BKN": "Nets", "CHA": "Hornets",
+    "CHI": "Bulls", "CLE": "Cavaliers", "DAL": "Mavericks", "DEN": "Nuggets",
+    "DET": "Pistons", "GSW": "Warriors", "GS": "Warriors", "HOU": "Rockets",
+    "IND": "Pacers", "LAC": "Clippers", "LAL": "Lakers", "MEM": "Grizzlies",
+    "MIA": "Heat", "MIL": "Bucks", "MIN": "Timberwolves", "NOP": "Pelicans",
+    "NY": "Knicks", "NYK": "Knicks", "OKC": "Thunder", "ORL": "Magic",
+    "PHI": "76ers", "PHX": "Suns", "POR": "Trail Blazers", "SAC": "Kings",
+    "SAS": "Spurs", "TOR": "Raptors", "UTA": "Jazz", "WAS": "Wizards",
+}
+
+BRAVE_SEARCH_BASE = "https://api.search.brave.com/res/v1/web/search"
+
+
+def _fetch_nba_news_context(games: list, date=None) -> str:
+    """Fetch recent NBA news for teams on today's slate via Brave Search API.
+
+    Returns a compact text summary (max ~2000 chars) of relevant news from
+    the last 24-48 hours. Includes coach quotes, rotation changes, injury
+    impacts on teammates, and other signals that stat models cannot capture.
+
+    Reads `context_layer.web_search_enabled` from model config. Returns empty
+    string if disabled, if BRAVE_SEARCH_API_KEY is missing, or on any failure.
+    Results cached per slate date in /tmp.
+    """
+    if not _cfg("context_layer.web_search_enabled", False):
+        return ""
+
+    api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "")
+    if not api_key:
+        print("[web_search] BRAVE_SEARCH_API_KEY not set — skipping")
+        return ""
+
+    today = (date or _et_date()).isoformat()
+    cache_key = f"nba_news_{today}"
+    cached = _cg(cache_key)
+    if cached:
+        return cached.get("text", "")
+
+    # Collect unique teams from the slate
+    teams = set()
+    for g in games:
+        home = g.get("home", {}).get("abbr", "")
+        away = g.get("away", {}).get("abbr", "")
+        if home:
+            teams.add(home)
+        if away:
+            teams.add(away)
+
+    if not teams:
+        return ""
+
+    queries_per_game = int(_cfg("context_layer.search_queries_per_game", 2))
+    recency = _cfg("context_layer.search_recency_hours", 48)
+    freshness = "pd" if recency <= 24 else "pw"  # past day or past week
+
+    # Build search queries (2 per team by default)
+    search_queries = []
+    for abbr in teams:
+        team_name = _ABBR_TO_TEAM_NAME.get(abbr, abbr)
+        search_queries.append(f"NBA {team_name} rotation injury update")
+        if queries_per_game >= 2:
+            search_queries.append(f"NBA {team_name} news today press conference")
+
+    # Execute searches in parallel
+    snippets = []
+
+    def _brave_search(query):
+        try:
+            r = requests.get(
+                BRAVE_SEARCH_BASE,
+                params={"q": query, "count": 3, "freshness": freshness},
+                headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+                timeout=8,
+            )
+            if not r.ok:
+                return []
+            data = r.json()
+            results = []
+            for item in data.get("web", {}).get("results", [])[:3]:
+                title = item.get("title", "")
+                snippet = item.get("description", "")
+                if title and snippet:
+                    results.append(f"- {title}: {snippet}")
+            return results
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        all_results = list(pool.map(_brave_search, search_queries))
+
+    for result_list in all_results:
+        snippets.extend(result_list)
+
+    # Deduplicate and truncate to ~2000 chars
+    seen = set()
+    unique_snippets = []
+    for s in snippets:
+        key = s[:80].lower()
+        if key not in seen:
+            seen.add(key)
+            unique_snippets.append(s)
+
+    text = "\n".join(unique_snippets)
+    if len(text) > 2000:
+        text = text[:2000] + "..."
+
+    # Cache for the slate date
+    _cs(cache_key, {"text": text, "ts": datetime.now(timezone.utc).isoformat()})
+    print(f"[web_search] fetched news for {len(teams)} teams ({len(unique_snippets)} snippets)")
+    return text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLAUDE CONTEXT PASS
 # grep: _claude_context_pass
 # Optional post-projection RS adjustment using Claude Haiku game narrative.
-# Called once per fresh slate generation; disabled by default (config gate).
+# Called once per fresh slate generation; config-gated.
 # Applies ±40% max multiplier to rating/chalk_ev/ceiling_score based on
 # context the pure stat model can't capture (blowout risk, defensive value,
 # rivalry game closeness, etc).
@@ -1846,6 +2039,13 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     max_adj = float(_cfg("context_layer.max_adjustment", 0.4))
     timeout_s = float(_cfg("context_layer.timeout_seconds", 15))
 
+    # Fetch recent NBA news for teams on the slate (Brave Search API)
+    news_text = ""
+    try:
+        news_text = _fetch_nba_news_context(games)
+    except Exception as _news_err:
+        print(f"[context_pass] web search error (non-fatal): {_news_err}")
+
     # Build compact game context map: {team_abbr: {opponent, spread, total}}
     game_ctx = {}
     for g in games:
@@ -1862,7 +2062,7 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     for p in sorted_proj:
         team = p.get("team", "")
         ctx  = game_ctx.get(team, {})
-        players_payload.append({
+        entry = {
             "name":        p["name"],
             "team":        team,
             "opp":         ctx.get("opp", ""),
@@ -1875,7 +2075,15 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
             "season_blk":  round(p.get("season_blk", 0), 1),
             "projected_rs": p.get("rating", 0),
             "card_boost":   round(p.get("est_mult", 0), 1),
-        })
+        }
+        # Include Odds API lines if available (from _enrich_projections_with_odds)
+        if p.get("odds_pts_line"):
+            entry["odds_pts_line"] = p["odds_pts_line"]
+        if p.get("odds_reb_line"):
+            entry["odds_reb_line"] = p["odds_reb_line"]
+        if p.get("odds_ast_line"):
+            entry["odds_ast_line"] = p["odds_ast_line"]
+        players_payload.append(entry)
 
     system_prompt = (
         "You adjust RS (Real Score) projections for a daily NBA Real Sports draft game. "
@@ -1927,6 +2135,13 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "2. Pure one-dimensional scorer (low reb/ast/stl/blk) on heavy favorite: -20-35%\n"
         "3. Low-minute role player on favorite likely to see garbage time early: -15-25%\n\n"
 
+        "SPORTSBOOK MARKET SIGNALS:\n"
+        "Some players include odds_pts_line (sportsbook points O/U). When the books "
+        "have a player notably higher than our projected_rs or season_pts, it often "
+        "signals expanded role (teammate injury, matchup, coaching decision). "
+        "Use this as a CONFIRMING signal — if odds + narrative both point up, that's "
+        "a strong adjustment. Don't adjust purely on odds divergence alone.\n\n"
+
         "CALIBRATION: Most players get NO adjustment (omit them). Only adjust when you have "
         "a clear narrative reason. Typical batch: 4-8 players out of 40. "
         "Strong signal = 1.2-1.35x up or 0.7-0.85x down. "
@@ -1938,9 +2153,19 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "reason": "brief"}]}\n'
         "Keep multipliers between 0.6 and 1.4. Omit players with multiplier 1.0."
     )
+    # Include web search results in the user prompt if available
+    news_section = ""
+    if news_text:
+        news_section = (
+            f"\n\nRECENT NBA NEWS (last 24-48 hours):\n{news_text}\n\n"
+            "Use this news context to identify rotation changes, injury impacts on "
+            "teammates, coaching decisions, and other signals the stat model cannot "
+            "capture. Weight press conference quotes and official injury reports heavily."
+        )
     user_prompt = (
         f"Today's slate players (top 40 by projected RS):\n"
-        f"{json.dumps(players_payload, separators=(',', ':'))}\n\n"
+        f"{json.dumps(players_payload, separators=(',', ':'))}"
+        f"{news_section}\n\n"
         "Return JSON adjustments only."
     )
 
@@ -2148,9 +2373,18 @@ def _build_lineups(projections):
     # Mar 5 insight: Ace Bailey (RS 5.9 × boost 2.1) >>> Wemby (RS 7.1 × boost 0.3).
     # RotoWire filter applied here too — chalk can't include OUT/questionable players.
     chalk_eligible = []
+    chalk_min_pts = float(_cfg("scoring_thresholds.min_pts_projection", 7.0))
+    chalk_min_ppm = float(_cfg("scoring_thresholds.min_pts_per_minute", 0.28))
     for p in projections:
         # Application-layer blacklist: never include certain players in draft lineups.
         if p.get("name") in BLACKLISTED_PLAYERS:
+            continue
+        # Chalk-specific scoring floors (stricter than the universal moonshot floor).
+        # A chalk player must project 7+ pts and 0.28 pts/min to be viable.
+        if p.get("pts", 0) < chalk_min_pts:
+            continue
+        p_min = p.get("season_min", 0)
+        if p_min > 0 and (p.get("pts", 0) / p_min) < chalk_min_ppm:
             continue
         if p["rating"] < chalk_floor:
             continue
@@ -2171,10 +2405,11 @@ def _build_lineups(projections):
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
             continue
-        # Never draft a chalk player projected to play fewer minutes than their season average.
-        # Fewer projected minutes = reduced role tonight (blowout, rotation shift, returning
-        # teammate). There is no upside case for chalk — we need floor, not ceiling.
-        if p.get("predMin", 0) < p.get("season_min", 0):
+        # Never draft a chalk player projected well below their season minute average.
+        # A small tolerance band (default 2.0 min) prevents tiny projection misses from
+        # excluding viable chalk players — Bub Carrington (25.8 vs 27.3 = 1.5 gap) etc.
+        chalk_min_tol = float(_cfg("projection.pred_min_tolerance", 2.0))
+        if p.get("predMin", 0) < (p.get("season_min", 0) - chalk_min_tol):
             continue
         # Star anchor pathway: high-PPG players (20+ season avg) bypass the boost floor.
         # These are the guys who pop off for 30-40 pts — their RS ceiling compensates for
@@ -2305,8 +2540,10 @@ def _build_lineups(projections):
                 or is_role_spike or is_star_anchor):
             continue
 
-        # Never draft a moonshot player projected below their season minute average.
-        if pred_min < season_min:
+        # Never draft a moonshot player projected well below their season minute average.
+        # Wider tolerance than chalk (default 3.0 min) — moonshot is contrarian.
+        moon_min_tol = float(moon_cfg.get("pred_min_tolerance", 3.0))
+        if pred_min < (season_min - moon_min_tol):
             continue
 
         # Minimum card boost — star anchors bypass (same as chalk bypass pattern)
@@ -2984,6 +3221,12 @@ def _get_slate_impl():
                     game_proj_map[game["gameId"]] = projs
                 except Exception as e:
                     print(f"slate err: {e}")
+        # Optional Odds API enrichment: blend sportsbook player props into projections.
+        # Books see information our model can't (rotation changes, matchup exploitation).
+        try:
+            _enrich_projections_with_odds(all_proj, draftable_games)
+        except Exception as _odds_err:
+            print(f"[odds_enrich] call-site error: {_odds_err}")
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
         try:

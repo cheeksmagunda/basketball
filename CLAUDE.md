@@ -72,6 +72,8 @@ grep: INJURY CASCADE           — _cascade_minutes, _pos_group
 grep: CARD BOOST               — _est_card_boost, _dfs_score
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
+grep: ODDS ENRICHMENT          — _enrich_projections_with_odds, odds_map, blend_weight
+grep: WEB INTELLIGENCE         — _fetch_nba_news_context, Brave Search, news_text
 grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
 grep: INJURY CHECK             — /api/injury-check, RotoWire re-check, affected game regeneration
 grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/health, /api/version
@@ -147,7 +149,8 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 - `GITHUB_TOKEN` — GitHub PAT with repo scope (for CSV + config read/write via Contents API)
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
 - `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
-- `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day)
+- `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day + draft pipeline enrichment)
+- `BRAVE_SEARCH_API_KEY` — (optional) Brave Search API for NBA news context in Claude context pass
 - `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Railway injects this via the cron commands in railway.toml. `/api/refresh` is intentionally unprotected (non-destructive, user-facing).
 - `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
 
@@ -296,13 +299,14 @@ Three independent gates prevent pre-lock saves:
 
 ### Projection-level gates (project_player)
 
-- **Minimum 7 projected pts** — any player under this is excluded from all pools
-- **Minimum 0.35 pts/min** — prevents low-minute players from passing on raw stats alone
+- **Minimum 4 projected pts** (moonshot floor) — universal floor in `project_player()` uses `min_pts_projection_moonshot` (default 4.0) so low-PPG high-boost players (Oso Ighodaro: 4 PPG, +2.9x, Value 16.4) can enter the moonshot pool
+- **Minimum 0.20 pts/min** (moonshot floor) — `min_pts_per_minute_moonshot` (default 0.20); chalk enforces stricter 0.28 separately
 - **Scoring bias multiplier** — players whose pts drive their base score (scorers)
   receive a mild upside boost (up to 1.15×) over balanced accumulators
 
 ### Chalk-specific gates
 
+- **Minimum 7 projected pts** — chalk pool enforces `min_pts_projection` (7.0) and `min_pts_per_minute` (0.28) separately from the universal moonshot floor
 - **Minimum 3.5 rating** before card boost is applied — boost cannot rescue a weak base
 - **Boost cap at 2.5** (configurable via `projection.chalk_boost_cap`)
 - **Star anchor pathway** — players with season_pts >= 20 (`star_anchor_ppg`) bypass the boost floor. Safety valve for rare star nights (like Mar 12 when Luka had 9.3 RS). Limited by `chalk_max_stars=1`.
@@ -351,14 +355,21 @@ correctly prioritizes the high-boost role players who actually win leaderboards.
 
 ### Tunable via Ben
 
-Scoring gates in `scoring_thresholds`: `min_pts_projection`, `min_pts_per_minute`,
-`min_chalk_rating`, `min_moonshot_rating`, `min_moonshot_pts`, `star_anchor_ppg`,
-`scoring_bias_base`, `scoring_bias_pts_weight`.
+Scoring gates in `scoring_thresholds`: `min_pts_projection`, `min_pts_projection_moonshot`,
+`min_pts_per_minute`, `min_pts_per_minute_moonshot`, `min_chalk_rating`, `min_moonshot_rating`,
+`min_moonshot_pts`, `star_anchor_ppg`, `scoring_bias_base`, `scoring_bias_pts_weight`.
+
+Projection gates: `pred_min_tolerance` (chalk, default 2.0 min tolerance band).
 
 Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
 `min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
 `wildcard_min_boost`, `wildcard_min_minutes`, `wildcard_min_season_pts`,
-`max_centers`, `max_per_team`, `dev_team_pts_floor`.
+`max_centers`, `max_per_team`, `dev_team_pts_floor`, `pred_min_tolerance` (default 3.0).
+
+Odds enrichment in `odds_enrichment`: `enabled`, `blend_weight`, `min_divergence_pct`, `upward_only`.
+
+Context layer in `context_layer`: `enabled`, `web_search_enabled`, `search_queries_per_game`,
+`search_recency_hours`, `model`, `max_adjustment`, `timeout_seconds`.
 
 ---
 
@@ -691,6 +702,12 @@ TestSwitchTabNoDuplicateInit — switchTab does not call initLinePage twice
 TestSlateCacheGitHub        — GitHub slate cache read/write, tombstone/busted handling, games cache roundtrip
 TestInjuryCheck             — injury-check lock guards, cache misses, RotoWire OUT/confirmed/unknown detection
 TestPicksServeFromCache     — per-game cache loading, GitHub fallback for picks, bust tombstone writes
+TestClaudeContextLayer      — context pass enable/disable, multiplier clamping, graceful fallback
+TestPredMinTolerance        — chalk (2.0) and moonshot (3.0) tolerance band config and code presence
+TestMoonshotPtsFloor        — separate moonshot pts floor (4.0) config and chalk enforcement (7.0)
+TestOddsEnrichment          — odds enrichment skip when disabled, upward blend at divergence, no-blend below threshold
+TestWebSearch               — Brave Search skip when disabled/no key, fetch+cache, cache reuse
+TestContextPassWithNews     — web search called from context pass, news text in prompt
 ```
 
 **tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions, and contract guards:
@@ -788,6 +805,11 @@ If slate, line, and/or log all fail to load:
 | Per-game card boost pill removed | `api/index.py` | `_build_game_lineups` now zeroes `est_mult` in returned player data (not just MILP input) so the `+X.Xx card` pill never renders on per-game (THE LINE UP) cards where card boost is irrelevant. |
 | Over model tightening | `api/line_engine.py`, `api/index.py`, `data/model-config.json` | Four over-specific changes (under model untouched): (1) `stat_floors.rebounds` 2.0→5.5 — only legit rotation bigs qualify for rebounds picks. (2) `min_edge_other_over: 2.5` (new config key) — over picks for rebounds/assists need a 2.5+ edge; under picks keep 1.5. (3) `recent_form_over_ratio` 1.08→1.15 — require 15% recent spike to unlock +12 confidence bonus. (4) Claude AVOID clause updated — rebounds/assists overs require a catalyst (cascade, opp-B2B, or 230+ total). Tests added for `min_edge_other_over` asymmetry. |
 | Odds cron schedule fix | `railway.toml` | `/api/refresh-line-odds` cron corrected from `0 */3 * * *` (every 3h — regression from prior edit) to `55 * * * *` (hourly at :55). Matches CLAUDE.md and README documentation. Ensures odds refresh hits the 6:55 PM ET pre-lock window. |
+| `predMin` tolerance band | `api/index.py`, `data/model-config.json` | Chalk pool allows `predMin` up to 2.0 min below `season_min` (`projection.pred_min_tolerance`); moonshot allows 3.0 min (`moonshot.pred_min_tolerance`). Saved 4 missed players from Mar 17 (Carrington 1.5 gap, Jenkins 0.7, Riley 0.8, Champagnie 1.8). |
+| Separate moonshot pts floor | `api/index.py`, `data/model-config.json` | Universal floor in `project_player()` lowered to 4.0 (`min_pts_projection_moonshot`); chalk enforces 7.0 separately. Oso Ighodaro (4 PPG, +2.9x, Value 16.4) now enters moonshot pool. `min_pts_per_minute_moonshot` = 0.20 (chalk keeps 0.28). |
+| `min_chalk_rating` synced | `data/model-config.json` | Config value 4.0 → 3.5 to match code fallback and CLAUDE.md documentation. Mar 17 showed 7/9 missed players filtered by this gate. |
+| Odds API draft enrichment | `api/index.py`, `data/model-config.json` | `_enrich_projections_with_odds()` blends sportsbook player props into projections. Upward-only 20% blend when books diverge 15%+ from model (`odds_enrichment.*` config). Also nudges `predMin` proportionally. Odds data passed to Claude context layer. |
+| Brave Search web intelligence | `api/index.py`, `data/model-config.json` | `_fetch_nba_news_context()` searches recent NBA news per team via Brave Search API. Results injected into Claude context pass prompt as "RECENT NBA NEWS" section. Catches coach press conferences, rotation changes, injury impacts on teammates. `BRAVE_SEARCH_API_KEY` env var. Config: `context_layer.web_search_enabled`, `search_queries_per_game`, `search_recency_hours`. |
 
 ## Production audit
 

@@ -951,5 +951,250 @@ class TestClaudeContextLayer:
         assert "_context_adj" not in players[0]
 
 
+# ─────────────────────────────────────────────────────────
+# TestPredMinTolerance — tolerance band on predMin < season_min gate
+# ─────────────────────────────────────────────────────────
+class TestPredMinTolerance:
+    """Verify that the predMin tolerance band allows small dips below season_min."""
+
+    def test_chalk_tolerance_config_exists(self):
+        """projection.pred_min_tolerance should be in model-config.json."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        assert cfg["projection"]["pred_min_tolerance"] == 2.0
+
+    def test_moonshot_tolerance_config_exists(self):
+        """moonshot.pred_min_tolerance should be in model-config.json."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        assert cfg["moonshot"]["pred_min_tolerance"] == 3.0
+
+    def test_chalk_tolerance_code_reads_config(self):
+        """Chalk pool builder should use _cfg for tolerance, not hardcoded 0."""
+        with open("api/index.py") as f:
+            src = f.read()
+        assert 'projection.pred_min_tolerance' in src
+        assert 'pred_min_tolerance' in src  # moonshot reads from moon_cfg dict
+
+
+# ─────────────────────────────────────────────────────────
+# TestMoonshotPtsFloor — separate min_pts for moonshot
+# ─────────────────────────────────────────────────────────
+class TestMoonshotPtsFloor:
+    """Verify that moonshot uses a lower pts projection floor than chalk."""
+
+    def test_config_has_separate_moonshot_floor(self):
+        """scoring_thresholds should have both min_pts_projection and min_pts_projection_moonshot."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        assert cfg["scoring_thresholds"]["min_pts_projection"] == 7.0
+        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] == 4.0
+
+    def test_project_player_uses_moonshot_floor(self):
+        """project_player should use the lower moonshot floor (4.0) not 7.0."""
+        with open("api/index.py") as f:
+            src = f.read()
+        assert 'min_pts_projection_moonshot' in src
+        assert 'min_pts_per_minute_moonshot' in src
+
+    def test_chalk_pool_enforces_stricter_pts_floor(self):
+        """Chalk pool builder should enforce min_pts_projection (7.0) separately."""
+        with open("api/index.py") as f:
+            src = f.read()
+        # Chalk pool should have its own pts check
+        assert 'chalk_min_pts' in src
+
+
+# ─────────────────────────────────────────────────────────
+# TestOddsEnrichment — Odds API enrichment in draft pipeline
+# ─────────────────────────────────────────────────────────
+class TestOddsEnrichment:
+    """Verify _enrich_projections_with_odds blends correctly."""
+
+    def test_enrichment_skips_when_disabled(self):
+        """No-op when odds_enrichment.enabled is False."""
+        from api.index import _enrich_projections_with_odds
+
+        players = [{"name": "Test Player", "pts": 15.0, "predMin": 28.0}]
+        games = []
+
+        with patch("api.index._cfg", return_value=False):
+            _enrich_projections_with_odds(players, games)
+
+        # Player unchanged
+        assert players[0]["pts"] == 15.0
+        assert "odds_pts_line" not in players[0]
+
+    def test_enrichment_blends_upward(self):
+        """When books are 20%+ higher, blends pts upward."""
+        from api.index import _enrich_projections_with_odds
+
+        players = [{"name": "Test Player", "pts": 12.0, "predMin": 25.0}]
+        games = [{"home": {"abbr": "MIN"}, "away": {"abbr": "PHX"}}]
+
+        # Mock odds map: books have player at 18.5 pts (54% higher than model's 12.0)
+        mock_odds = {("test player", "points"): {"line": 18.5, "odds_over": -110, "odds_under": -110, "books_consensus": 3}}
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "odds_enrichment.enabled": True,
+                "odds_enrichment.blend_weight": 0.2,
+                "odds_enrichment.min_divergence_pct": 0.15,
+                "odds_enrichment.upward_only": True,
+            }
+            return cfg_map.get(key, default)
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("api.index._build_player_odds_map", return_value=mock_odds):
+            _enrich_projections_with_odds(players, games)
+
+        # pts should be blended: 12.0 * 0.8 + 18.5 * 0.2 = 13.3
+        assert players[0]["pts"] == 13.3
+        assert players[0]["odds_pts_line"] == 18.5
+        assert players[0]["_odds_adjusted"] is True
+        # predMin should be nudged up proportionally
+        assert players[0]["predMin"] > 25.0
+
+    def test_enrichment_no_blend_below_divergence(self):
+        """When books are close to model, no blending occurs."""
+        from api.index import _enrich_projections_with_odds
+
+        players = [{"name": "Test Player", "pts": 15.0, "predMin": 28.0}]
+        games = [{"home": {"abbr": "MIN"}, "away": {"abbr": "PHX"}}]
+
+        # Books at 16.0 = 6.7% divergence, below 15% threshold
+        mock_odds = {("test player", "points"): {"line": 16.0, "odds_over": -110, "odds_under": -110, "books_consensus": 3}}
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "odds_enrichment.enabled": True,
+                "odds_enrichment.blend_weight": 0.2,
+                "odds_enrichment.min_divergence_pct": 0.15,
+                "odds_enrichment.upward_only": True,
+            }
+            return cfg_map.get(key, default)
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("api.index._build_player_odds_map", return_value=mock_odds):
+            _enrich_projections_with_odds(players, games)
+
+        # pts unchanged
+        assert players[0]["pts"] == 15.0
+        assert "_odds_adjusted" not in players[0]
+
+
+# ─────────────────────────────────────────────────────────
+# TestWebSearch — Brave Search integration
+# ─────────────────────────────────────────────────────────
+class TestWebSearch:
+    """Verify _fetch_nba_news_context fetches and caches correctly."""
+
+    def test_skips_when_disabled(self):
+        """Returns empty string when web_search_enabled is False."""
+        from api.index import _fetch_nba_news_context
+
+        with patch("api.index._cfg", return_value=False):
+            result = _fetch_nba_news_context([])
+
+        assert result == ""
+
+    def test_skips_when_no_api_key(self):
+        """Returns empty string when BRAVE_SEARCH_API_KEY is missing."""
+        from api.index import _fetch_nba_news_context
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.web_search_enabled":
+                return True
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"BRAVE_SEARCH_API_KEY": ""}):
+            result = _fetch_nba_news_context([])
+
+        assert result == ""
+
+    def test_fetches_and_caches(self):
+        """Should call Brave API and cache results."""
+        from api.index import _fetch_nba_news_context
+        from datetime import date
+
+        games = [
+            {"home": {"abbr": "MIN"}, "away": {"abbr": "PHX"}},
+        ]
+
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "web": {
+                "results": [
+                    {"title": "Finch says Bones will play more", "description": "Coach Finch announced Bones Hyland will see expanded minutes with ANT out 2 weeks."},
+                    {"title": "Suns injury report", "description": "Kevin Durant questionable for tomorrow's game."},
+                ]
+            }
+        }
+
+        def cfg_side_effect(key, default=None):
+            cfg_map = {
+                "context_layer.web_search_enabled": True,
+                "context_layer.search_queries_per_game": 2,
+                "context_layer.search_recency_hours": 48,
+            }
+            return cfg_map.get(key, default)
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"BRAVE_SEARCH_API_KEY": "test_key"}), \
+             patch("api.index._cg", return_value=None), \
+             patch("api.index._cs") as mock_cs, \
+             patch("api.index.requests.get", return_value=mock_response), \
+             patch("api.index._et_date", return_value=date(2026, 3, 18)):
+            result = _fetch_nba_news_context(games)
+
+        assert "Finch" in result or "Bones" in result
+        assert mock_cs.called  # Cached the result
+
+    def test_uses_cache_when_available(self):
+        """Should return cached text without making API calls."""
+        from api.index import _fetch_nba_news_context
+        from datetime import date
+
+        games = [{"home": {"abbr": "MIN"}, "away": {"abbr": "PHX"}}]
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.web_search_enabled":
+                return True
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch.dict("os.environ", {"BRAVE_SEARCH_API_KEY": "test_key"}), \
+             patch("api.index._cg", return_value={"text": "Cached news about Wolves"}), \
+             patch("api.index._et_date", return_value=date(2026, 3, 18)):
+            result = _fetch_nba_news_context(games)
+
+        assert result == "Cached news about Wolves"
+
+
+# ─────────────────────────────────────────────────────────
+# TestContextPassWithNews — web search integrated into context pass
+# ─────────────────────────────────────────────────────────
+class TestContextPassWithNews:
+    """Verify _claude_context_pass includes news text when available."""
+
+    def test_context_pass_calls_web_search(self):
+        """When web search is enabled, context pass should call _fetch_nba_news_context."""
+        with open("api/index.py") as f:
+            src = f.read()
+        assert '_fetch_nba_news_context(games)' in src
+
+    def test_context_pass_includes_news_in_prompt(self):
+        """News text should appear in the user prompt under RECENT NBA NEWS."""
+        with open("api/index.py") as f:
+            src = f.read()
+        assert 'RECENT NBA NEWS' in src
+        assert 'rotation changes, injury impacts' in src
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

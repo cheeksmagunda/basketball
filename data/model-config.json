@@ -1,11 +1,13 @@
 {
-  "version": 36,
-  "updated_at": "2026-03-18T06:30:00Z",
+  "version": 37,
+  "updated_at": "2026-03-18T08:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
+    "min_pts_projection_moonshot": 4.0,
     "min_pts_per_minute": 0.28,
-    "min_chalk_rating": 4.0,
+    "min_pts_per_minute_moonshot": 0.20,
+    "min_chalk_rating": 3.5,
     "min_moonshot_rating": 2.0,
     "min_moonshot_pts": 5.0,
     "chalk_boost_cap": 1.5,
@@ -156,13 +158,23 @@
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
     "chalk_min_boost_floor": 1.2,
-    "chalk_star_anchor_min_boost": 0.6
+    "chalk_star_anchor_min_boost": 0.6,
+    "pred_min_tolerance": 2.0
   },
   "context_layer": {
     "enabled": true,
     "model": "claude-haiku-4-5-20251001",
     "max_adjustment": 0.4,
-    "timeout_seconds": 15
+    "timeout_seconds": 20,
+    "web_search_enabled": true,
+    "search_queries_per_game": 2,
+    "search_recency_hours": 48
+  },
+  "odds_enrichment": {
+    "enabled": true,
+    "blend_weight": 0.2,
+    "min_divergence_pct": 0.15,
+    "upward_only": true
   },
   "lineup": {
     "chalk_rating_floor": 2.0,
@@ -206,12 +218,18 @@
     "dev_team_pts_floor": 4.0,
     "role_spike_ratio": 1.4,
     "role_spike_recent_floor": 20.0,
-    "role_spike_season_floor": 8.0
+    "role_spike_season_floor": 8.0,
+    "pred_min_tolerance": 3.0
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 37,
+      "date": "2026-03-18",
+      "change": "Draft model gate relaxation + market & news intelligence (5 changes): (1) min_chalk_rating 4.0→3.5 — sync with code fallback, Mar 17 showed 7/9 missed players filtered by this gate. (2) predMin tolerance band — chalk allows 2.0 min below season avg (projection.pred_min_tolerance), moonshot allows 3.0 (moonshot.pred_min_tolerance); saved Bub Carrington (1.5 gap), Jenkins (0.7), Riley (0.8), Champagnie (1.8). (3) Separate moonshot pts floor — min_pts_projection_moonshot=4.0 and min_pts_per_minute_moonshot=0.20; chalk keeps 7.0/0.28. Oso Ighodaro (4 PPG, +2.9x, Value 16.4) now enters moonshot pool. (4) Odds API enrichment — _enrich_projections_with_odds() blends sportsbook player props into projections; upward-only 20% blend when books diverge 15%+ from model. (5) Brave Search web intelligence — _fetch_nba_news_context() searches recent NBA news per team; feeds into Claude context pass so it can reason about coach quotes, rotation changes, injury impacts."
+    },
     {
       "version": 36,
       "date": "2026-03-18",
