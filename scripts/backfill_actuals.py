@@ -17,6 +17,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACTUALS_DIR = os.path.join(REPO_ROOT, "data", "actuals")
 AUDIT_DIR = os.path.join(REPO_ROOT, "data", "audit")
 PREDICTIONS_DIR = os.path.join(REPO_ROOT, "data", "predictions")
+OWNERSHIP_DIR = os.path.join(REPO_ROOT, "data", "ownership")
 SKIPPED_PATH = os.path.join(REPO_ROOT, "data", "skipped-uploads.json")
 
 ACT_HEADER = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source"
@@ -399,6 +400,36 @@ def write_audit(date_str: str):
     print(f"  ✓ {path} (MAE={audit['mae']}, {audit['players_compared']} players)")
 
 
+# ---------- write ownership ----------
+
+OWNERSHIP_HEADER = "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at"
+
+
+def write_ownership(date_str: str, players: list):
+    """Write ownership CSV for card boost calibration."""
+    os.makedirs(OWNERSHIP_DIR, exist_ok=True)
+    path = os.path.join(OWNERSHIP_DIR, f"{date_str}.csv")
+    now = datetime.now(timezone.utc).isoformat()
+
+    lines = [OWNERSHIP_HEADER]
+    for i, p in enumerate(players, 1):
+        row = [
+            _csv_escape(p["player_name"]),       # player
+            "",                                   # team (not in user data)
+            p["drafts"],                          # draft_count
+            p["actual_rs"],                       # actual_rs
+            p["actual_card_boost"],               # actual_card_boost
+            "",                                   # avg_finish
+            str(i),                               # rank (position in list)
+            now,                                  # saved_at
+        ]
+        lines.append(",".join(row))
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"  ✓ {path} ({len(players)} players)")
+
+
 # ---------- update skipped uploads ----------
 
 def update_skipped_uploads(dates: list):
@@ -434,6 +465,10 @@ def main():
     for date_str in dates:
         write_actuals(date_str, data[date_str])
 
+    print("\n--- Writing ownership CSVs ---")
+    for date_str in dates:
+        write_ownership(date_str, data[date_str])
+
     print("\n--- Generating audit JSONs ---")
     for date_str in dates:
         write_audit(date_str)
@@ -442,7 +477,7 @@ def main():
     update_skipped_uploads(dates)
 
     print(f"\n=== Done! {len(dates)} dates backfilled. ===")
-    print("Next: git add data/actuals/ data/audit/ data/skipped-uploads.json && git commit")
+    print("Next: git add data/ && git commit")
 
 
 if __name__ == "__main__":
