@@ -539,7 +539,7 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":25.0,  # season avg floor for Starting 5 (was 30; Mar 14: excluded Smart 28.9min, Achiuwa ~26min)
+        "chalk_season_min_floor":20.0,  # season avg floor for Starting 5 (was 25; leaderboard winners avg 15-20 min)
         "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
         "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
@@ -2612,10 +2612,11 @@ def _build_lineups(projections):
         #   starter role due to injury — cascade engine gave them 10+ bonus minutes).
         #   This prevents "DFS Ghosts": trickle-cascade bench warmers won't clear
         #   both gates simultaneously, only true spot-starters will.
-        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 30.0)
+        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 20.0)
         chalk_recent_floor = _cfg("projection.chalk_recent_min_floor", 15.0)
+        _recent_min_chalk = p.get("recent_min", 0) or p.get("season_min", 0)
         is_regular     = (p.get("season_min", 0) >= chalk_min_floor and
-                          p.get("recent_min", 0) >= chalk_recent_floor)
+                          _recent_min_chalk >= chalk_recent_floor)
         is_spot_starter = (p.get("predMin", 0) >= 28.0 and
                            p.get("_cascade_bonus", 0) >= 10.0)
         if not (is_regular or is_spot_starter):
@@ -2723,7 +2724,7 @@ def _build_lineups(projections):
         # Condition C: Wildcard — ultra-high boost with higher minutes and a minimum
         #   season scoring floor so we don't chase pure cardio bench archetypes.
         season_min = p.get("season_min", 0)
-        recent_min = p.get("recent_min", 0)
+        recent_min = p.get("recent_min", 0) or season_min  # fallback to season_min if missing/zero
         pred_min   = p.get("predMin", 0)
         season_pts = p.get("season_pts", p.get("pts", 0))
         est_mult   = p.get("est_mult", 0.3)
