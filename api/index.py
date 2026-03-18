@@ -526,7 +526,8 @@ _CONFIG_DEFAULTS = {
         "compression_divisor": 5.5,
         "compression_power": 0.72,
         "rs_cap": 20.0,
-        "ai_blend_weight": 0.5,
+        "ai_blend_weight": 0.35,
+        "calibration_scale": 1.15,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -558,12 +559,12 @@ _CONFIG_DEFAULTS = {
         # v6 (leaderboard-informed): gates widened to match actual winner profiles.
         # Winners are 15-25 min role players with 3x+ boost on dev teams (da Silva,
         # Ellis, Clifford, Santos, Sensabaugh). Old 25-min/3.0 rating gates blocked them.
-        "min_minutes_floor":15, "min_recent_minutes_floor":15, "min_card_boost":1.5, "min_rating_floor":2.0,
+        "min_minutes_floor":12, "min_recent_minutes_floor":12, "min_card_boost":1.5, "min_rating_floor":2.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
         "max_centers":3, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
-        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 8.0, "wildcard_min_season_pts": 3.0,
+        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 6.0, "wildcard_min_season_pts": 3.0,
         "dev_team_pts_floor": 4.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
     },
@@ -1381,33 +1382,96 @@ def _cascade_minutes(roster, stats_map):
 #           same methodology. Avoids DNP risks from extreme low-ownership picks.
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _normalize_boost_name(name):
+    """Normalize player name for card boost lookup — strips diacritics, lowercases,
+    removes punctuation variants (apostrophes, periods, Jr./III suffixes)."""
+    import unicodedata as _ud
+    n = _ud.normalize("NFKD", name).encode("ASCII", "ignore").decode("ASCII")
+    return n.strip().lower()
+
+
+# ── Auto-populated boost overrides from ownership/actuals data ──────────────
+# Reads data/ownership/ and data/actuals/ CSVs to build a dynamic override map
+# using the most recent observation per player. Refreshes every 10 minutes.
+_OWNERSHIP_BOOST_CACHE = {}
+_OWNERSHIP_BOOST_TS = 0
+
+def _load_ownership_boosts():
+    """Build {normalized_name: boost} from all ownership + actuals CSVs.
+    Uses most recent observation per player. Cached 10 min."""
+    global _OWNERSHIP_BOOST_CACHE, _OWNERSHIP_BOOST_TS
+    import time
+    now = time.time()
+    if _OWNERSHIP_BOOST_CACHE and (now - _OWNERSHIP_BOOST_TS) < 600:
+        return _OWNERSHIP_BOOST_CACHE
+
+    boosts = {}  # {normalized_name: (date, boost_value, original_name)}
+    for subdir in ["ownership", "actuals"]:
+        dirpath = os.path.join(os.path.dirname(__file__), "..", "data", subdir)
+        if not os.path.isdir(dirpath):
+            continue
+        for fname in sorted(os.listdir(dirpath)):
+            if not fname.endswith(".csv"):
+                continue
+            date_str = fname.replace(".csv", "")
+            fpath = os.path.join(dirpath, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    import csv as _csv
+                    reader = _csv.DictReader(f)
+                    for row in reader:
+                        # ownership CSVs use 'player', actuals use 'player_name'
+                        name = row.get("player") or row.get("player_name", "")
+                        if not name:
+                            continue
+                        boost_str = row.get("actual_card_boost", "")
+                        if not boost_str or boost_str == "None":
+                            continue
+                        try:
+                            bval = float(boost_str)
+                        except (ValueError, TypeError):
+                            continue
+                        if bval <= 0:
+                            continue
+                        nkey = _normalize_boost_name(name)
+                        # Keep most recent date's value
+                        if nkey not in boosts or date_str > boosts[nkey][0]:
+                            boosts[nkey] = (date_str, bval, name)
+            except Exception:
+                continue
+
+    _OWNERSHIP_BOOST_CACHE = {k: v[1] for k, v in boosts.items()}
+    _OWNERSHIP_BOOST_TS = now
+    return _OWNERSHIP_BOOST_CACHE
+
+
 def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     """Estimate ADDITIVE card boost for Real Sports.
 
-    Two-layer approach (v23):
-    1. LOOKUP — player_overrides from real ownership/actuals data. Boost is a
-       stable per-player attribute in Real Sports (same player gets ±0.1x across
-       dates regardless of daily draft count). Cross-date proof:
-         Wemby: +0.3x on 1400 AND 8500 drafts
-         Cade: +0.2x on 5300 AND 1200 drafts
-         Bam: +0.6x on 2200 AND 388 drafts
-       So the lookup is the ground truth — use it whenever we have data.
-
-    2. SIGMOID TIER FALLBACK — for players NOT in the lookup, estimate boost
-       from PPG using a sigmoid curve calibrated against 60+ real observations:
-         boost = ceiling - range × sigmoid((PPG - midpoint) / scale)
-       This captures the S-shaped relationship: superstars (25+ PPG) → ~0.2x,
-       quality starters (18 PPG) → ~0.6x, role players (12 PPG) → ~1.6x,
-       deep bench (<8 PPG) → ~2.5-3.0x. Big market discount of -0.15 applied.
+    Three-layer approach (v24):
+    1. LOOKUP — player_overrides from config (manually curated ground truth).
+    2. OWNERSHIP DATA — auto-populated from data/ownership/ + data/actuals/ CSVs.
+       Uses most recent observation per player. Refreshed every 10 min.
+    3. SIGMOID TIER FALLBACK — for unknown players, estimate from PPG.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
     floor_val = cb.get("floor", 0.2)
 
-    # Layer 1: Player lookup from real ownership data
+    norm_name = _normalize_boost_name(player_name) if player_name else None
+
+    # Layer 1: Player lookup from config overrides (name-normalized)
     overrides = cb.get("player_overrides", {})
-    if player_name and player_name in overrides:
-        return float(overrides[player_name])
+    if norm_name:
+        for k, v in overrides.items():
+            if _normalize_boost_name(k) == norm_name:
+                return float(v)
+
+    # Layer 2: Auto-populated from ownership/actuals data
+    if norm_name:
+        ownership_boosts = _load_ownership_boosts()
+        if norm_name in ownership_boosts:
+            return round(min(max(ownership_boosts[norm_name], floor_val), ceiling), 1)
 
     # Layer 2: Sigmoid tier estimation from PPG
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
@@ -1561,16 +1625,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     minutes = stats.get("min", 0)
 
     # SCORING UPSIDE GATE 1: minimum projected points floor.
-    # Universal floor uses the moonshot minimum (4.0) so low-PPG high-boost players
-    # like Oso Ighodaro (4 PPG, +2.9x boost, Value 16.4) can enter the moonshot pool.
-    # Chalk pool enforces the stricter 7.0 floor separately.
-    min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 4.0)
+    # Universal floor uses the moonshot minimum (3.0) so low-PPG high-boost players
+    # can enter the moonshot pool. Chalk pool enforces the stricter 7.0 floor separately.
+    min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 3.0)
     if pts < min_pts_moonshot:
         return None
 
     # SCORING UPSIDE GATE 2: minimum pts-per-minute efficiency.
-    # Uses moonshot floor (0.20) at the universal level; chalk enforces stricter 0.28.
-    min_ppm_moonshot = _cfg("scoring_thresholds.min_pts_per_minute_moonshot", 0.20)
+    # Uses moonshot floor (0.15) at the universal level; chalk enforces stricter 0.28.
+    min_ppm_moonshot = _cfg("scoring_thresholds.min_pts_per_minute_moonshot", 0.15)
     if minutes > 0 and (pts / minutes) < min_ppm_moonshot:
         return None
 
@@ -1722,11 +1785,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     heuristic_rs = min(heuristic_rs, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
-    # v5: Rebalanced to 50/50. Old 70/30 AI-heavy blend crushed heuristic upside —
-    # LightGBM clusters outputs in 2.5-4.5 range, forcing everyone into 3-4 RS.
-    # 50/50 lets the heuristic's wider distribution (closeness × clutch × momentum)
-    # pull high-upside players to RS 5-7 where they belong.
-    ai_weight = rs_cfg.get("ai_blend_weight", 0.5)
+    # v40: Reduced to 35/65 AI/heuristic. LightGBM clusters outputs in 2.5-4.5 range,
+    # compressing distribution. 13-date audit showed 34% under-projection bias.
+    # Lower AI weight lets Monte Carlo heuristic spread RS wider.
+    ai_weight = rs_cfg.get("ai_blend_weight", 0.35)
     if ai_pred is not None:
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
     else:
@@ -1755,6 +1817,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     _bias_wt   = _cfg("scoring_thresholds.scoring_bias_pts_weight", 0.35)
     scoring_bias = _bias_base + (pts_share * _bias_wt)
     raw_score = min(raw_score * scoring_bias, rs_cap)
+
+    # RS calibration scale — corrects systematic under-projection bias.
+    # 13-date backtest (Mar 5–17) showed model under-projects RS by ~34% on average
+    # (avg predicted 4.3 vs avg actual 5.2 for matched leaderboard players).
+    # Conservative 1.15 scale (not full 1.34 which is biased toward leaderboard tail).
+    cal_scale = rs_cfg.get("calibration_scale", 1.15)
+    raw_score = min(raw_score * cal_scale, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
