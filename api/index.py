@@ -109,9 +109,9 @@ _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
 if _missing_env:
     print(f"[WARN] Missing env vars: {_missing_env} — affected features will be degraded")
 
-# All data writes go to main (default branch). The ignoreCommand in vercel.json
-# skips builds when only data/ or .github/ files change, so data commits on main
-# do NOT trigger Vercel rebuilds.
+# All data writes go to main (default branch). The watchPatterns in railway.toml
+# skip builds when only data/ or .github/ files change, so data commits on main
+# do NOT trigger Railway rebuilds.
 def _data_ref(path: str):
     """Return branch override for GitHub API calls, or None for default (main)."""
     return None
@@ -325,7 +325,7 @@ def _slate_restore_from_github():
 # ── GitHub-Persisted Slate & Game Projection Cache ──
 # grep: SLATE CACHE
 # Pre-computed predictions are persisted to data/slate/ so that cold-start
-# Vercel instances serve the same picks without re-running the prediction engine.
+# Railway instances serve the same picks without re-running the prediction engine.
 # Pattern mirrors data/locks/ and data/lines/ — date-keyed JSON files on GitHub.
 
 def _slate_cache_to_github(slate_data: dict):
@@ -2306,12 +2306,15 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
 # returns original lineups unchanged.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, core_pool: list = None) -> tuple:
+def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, core_pool: list = None, news_context: str = "") -> tuple:
     """Review assembled lineups with Opus + web search; suggest and auto-apply swaps.
 
     Reads lineup_review.enabled, lineup_review.model, lineup_review.timeout_seconds.
     When core_pool is provided (list of player dicts), swap-ins are restricted to that
     core so both lineups stay configurations of the same high-confidence pool.
+    When news_context is provided (from Layer 1), it's included in the prompt so Layer 3
+    doesn't need to perform redundant web searches — only searches for truly late-breaking
+    news (last 2-4 hours) that Layer 1 may have missed.
     Returns (chalk, upside). On any failure returns original chalk/upside unchanged.
     """
     if not _cfg("lineup_review.enabled", False):
@@ -2346,12 +2349,22 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
             f"players from this core when possible: {', '.join(core_names)}."
         )
 
+    # Include cached news from Layer 1 so Layer 3 has context without redundant searches
+    news_blurb = ""
+    if news_context:
+        news_blurb = (
+            f"\n\nKNOWN NEWS FROM EARLIER TODAY:\n{news_context}\n\n"
+            "The above was gathered earlier. Focus your web search on ONLY the last 2-4 hours "
+            "for truly late-breaking updates (last-minute scratches, game-time decisions). "
+            "If the known news already covers everything, return {\"swaps\": []}.\n"
+        )
+
     user_content = (
         "You have two daily NBA draft lineups (Starting 5 = chalk, Moonshot = upside). "
         "Search the web for the latest news (last 2–4 hours): injuries, late scratches, "
         "rotation changes, or anything that would make a current pick wrong or a different "
         "player clearly better.\n\n"
-        f"{chalk_desc}\n\n{upside_desc}\n{core_blurb}\n\n"
+        f"{chalk_desc}\n\n{upside_desc}\n{core_blurb}{news_blurb}\n\n"
         "If you find a reason to swap a player out (e.g. just ruled OUT, or a teammate "
         "now getting the run), return a JSON object with a 'swaps' array. Each swap: "
         '{"lineup": "chalk" or "upside", "out": "Exact Player Name", "in": "Exact Player Name"}. '
@@ -3433,7 +3446,7 @@ def _get_slate_impl():
         # admin bust was requested to fix bad lineups in the lock file (e.g. predMin
         # filter change). The pipeline runs with draftable games still in progress.
 
-    # ── Layer 1: /tmp cache (warm Vercel instance) ──
+    # ── Layer 1: /tmp cache (warm Railway instance) ──
     cached = _cg("slate_v5")
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
@@ -3510,13 +3523,19 @@ def _get_slate_impl():
             print(f"[odds_enrich] call-site error: {_odds_err}")
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
+        # Capture news_text so Layer 3 can reuse it (avoids redundant web search).
+        _slate_news_text = ""
+        try:
+            _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
+        except Exception:
+            pass
         try:
             _claude_context_pass(all_proj, draftable_games)
         except Exception as _ctx_err:
             print(f"[context_pass] call-site error: {_ctx_err}")
         chalk, upside, core_pool = _build_lineups(all_proj)
         try:
-            chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool)
+            chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool, news_context=_slate_news_text)
         except Exception as _rev_err:
             print(f"[lineup_review] call-site error: {_rev_err}")
         lineups = {"chalk": chalk, "upside": upside}
@@ -3529,7 +3548,7 @@ def _get_slate_impl():
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
             _cs("slate_v5", result)
-            # Persist to GitHub so all Vercel instances serve the same picks
+            # Persist to GitHub so all Railway instances serve the same picks
             _slate_cache_to_github(result)
             # Clear bust sentinel so future cold starts can use this slate from GitHub
             try:
@@ -3793,7 +3812,7 @@ async def save_predictions():
         return JSONResponse({"error": result["error"]}, status_code=500)
 
     # Also write the slate backup now so cold-start instances can recover after lock,
-    # even if this Vercel instance dies before the lock window promotes the reg cache.
+    # even if this Railway instance dies before the lock window promotes the reg cache.
     cached_slate_for_backup = _cg("slate_v5")
     if cached_slate_for_backup:
         _slate_backup_to_github(cached_slate_for_backup)
@@ -4994,7 +5013,14 @@ def _run_line_engine_for_date(date):
     # primary "line" value in picks instead of ESPN season averages.
     # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
     player_odds_map = _build_player_odds_map(target_games)
-    result = run_line_engine(all_proj, target_games, line_config, player_odds_map)
+    # Fetch web search news context for the line engine (reuses Layer 1 cache).
+    # This gives Claude injury/rotation/rest intel that can improve pick quality.
+    news_context = ""
+    try:
+        news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
+    except Exception as _news_err:
+        print(f"[line] web search for news context failed (non-fatal): {_news_err}")
+    result = run_line_engine(all_proj, target_games, line_config, player_odds_map, news_context=news_context)
     return result, None
 
 
@@ -6450,7 +6476,7 @@ async def lab_backtest(payload: dict = Body(...)):
     """Replay historical slates with proposed parameter changes and compare MAE.
 
     Safety: Backtest is limited to last 10 historical slates and will timeout
-    after 240 seconds to stay well under Vercel's 300s limit."""
+    after 240 seconds to stay within Railway's timeout limit."""
     proposed_changes = payload.get("proposed_changes", {})
     description      = payload.get("description", "Backtest")
     if not proposed_changes:
@@ -6602,7 +6628,7 @@ async def lab_auto_improve(request: Request):
     5. Returns a log of actions taken (safe to run even if no data yet)
 
     Safety: Runs at 9 AM UTC daily. Backtest internally limited to 10 slates
-    and will timeout after 240s to prevent exceeding Vercel's 300s limit.
+    and will timeout after 240s to prevent exceeding Railway's timeout limit.
     If timeout occurs, returns error log without auto-applying.
     """
     if not _require_cron_secret(request):
