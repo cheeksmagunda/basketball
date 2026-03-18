@@ -88,7 +88,7 @@ _STAT_META = {
 }
 
 
-def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None):
+def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None, news_context=""):
     """Format ESPN projection data into a structured prompt for Claude for a given stat type."""
     meta = dict(_STAT_META[stat_focus])  # copy so we can override min_season without mutating module-level dict
     if stat_floors and stat_focus in stat_floors:
@@ -106,16 +106,25 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
     scored.sort(reverse=True)
     top = [p for _, p in scored[:25]]
 
-    # Game slate
+    # Game slate with defensive context
     game_lines = []
     for g in games:
         b2b = []
         if g.get("home_b2b"): b2b.append(f"{g['home']['abbr']} on B2B")
         if g.get("away_b2b"): b2b.append(f"{g['away']['abbr']} on B2B")
         b2b_note = f" [{', '.join(b2b)}]" if b2b else ""
+        # Include opponent defensive rating when available for matchup context
+        home_def = g.get("home", {}).get("opp_def_rating", "")
+        away_def = g.get("away", {}).get("opp_def_rating", "")
+        def_note = ""
+        if home_def or away_def:
+            parts = []
+            if away_def: parts.append(f"{g['away']['abbr']} defRtg {away_def}")
+            if home_def: parts.append(f"{g['home']['abbr']} defRtg {home_def}")
+            def_note = f" ({', '.join(parts)})"
         game_lines.append(
             f"  {g['away']['abbr']} @ {g['home']['abbr']}: "
-            f"spread {g.get('spread', 0):+.1f}, O/U {g.get('total', 222)}{b2b_note}"
+            f"spread {g.get('spread', 0):+.1f}, O/U {g.get('total', 222)}{b2b_note}{def_note}"
         )
 
     # Player projection rows
@@ -137,11 +146,19 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
         flag_str = f" [{', '.join(flags)}]" if flags else ""
         book_odds = _lookup_player_odds(player_odds_map, p["name"], stat_focus)
         book_str = f" [book: {book_odds['line']:.1f}{lbl}]" if book_odds else ""
+        # Recent form trend indicator
+        trend = ""
+        if season_val > 0:
+            ratio = recent_val / season_val
+            if ratio >= 1.15:   trend = " ↑HOT"
+            elif ratio >= 1.05: trend = " ↑warm"
+            elif ratio <= 0.85: trend = " ↓COLD"
+            elif ratio <= 0.95: trend = " ↓cool"
         player_lines.append(
             f"  {p['name']} ({p.get('team','')}) vs {opp}: "
             f"proj {p.get('pts',0):.1f}pts/{p.get('reb',0):.1f}reb/{p.get('ast',0):.1f}ast "
             f"in {p.get('predMin',0):.0f}min | "
-            f"season {season_val:.1f}{lbl} / recent {recent_val:.1f}{lbl} | "
+            f"season {season_val:.1f}{lbl} / recent {recent_val:.1f}{lbl}{trend} | "
             f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}{book_str}"
         )
 
@@ -151,6 +168,16 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
         "You may pick OVER or UNDER based on which direction has the strongest edge."
     )
     direction_value = force_direction or "over"
+
+    # Web search news section — late-breaking injuries, rotation changes, rest decisions
+    news_section = ""
+    if news_context:
+        news_section = (
+            f"\n\nRECENT NBA NEWS (last 24-48 hours):\n{news_context}\n\n"
+            "USE THIS NEWS to inform your pick. Injury upgrades (star OUT = role player minutes up) "
+            "are HIGH-VALUE signals for overs. Load management or unexpected rest = unders. "
+            "Coach rotation quotes are actionable — weight them heavily."
+        )
 
     return f"""You are The Oracle's line engine. Analyze today's NBA slate and identify the single best player prop bet for {stat_focus.upper()}.
 
@@ -169,8 +196,14 @@ PICK CRITERIA (in priority order):
 
 {direction_instruction}
 AVOID: players on B2B themselves, blowout favorites (team spread >10), injury-doubtful
-OVER-SPECIFIC: rebounds and assists overs require a catalyst (cascade, opp-B2B, or high total 230+) — do NOT pick rebounds/assists OVER on season-average form alone; prefer points OVER when edge quality is similar
-
+OVER-SPECIFIC RULES (overs have a 17% hit rate — be VERY selective):
+- Points overs: ONLY pick when edge ≥ 3.0 AND at least one catalyst (cascade, opp-B2B, high total, or hot recent streak)
+- Rebounds/assists overs: REQUIRE a strong catalyst (cascade, opp-B2B, or high total 230+) — do NOT pick on season-average form alone
+- Prefer points OVER when edge quality is similar across stat types
+- Weak opponent defense (high defRtg) is a CONFIRMING signal for overs, not standalone
+- If news shows a teammate OUT, the cascade bonus is the strongest over signal available
+UNDER-SPECIFIC: Unders are more reliable. Stars on heavy favorites (spread >8) sitting early = strong under signal. Player in a slump (recent < 0.85× season) = confirmed under.
+{news_section}
 Set "line" to the [book: X.X] value when shown — that is the real bookmaker number and is more accurate than the season average. Only fall back to season average rounded to nearest 0.5 if no [book: X.X] is present. Recalculate "edge" as projection minus the line you use.
 Confidence range: 60-85.
 
@@ -225,9 +258,9 @@ def _call_claude(prompt, stat_focus="points"):
         return None
 
 
-def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None):
+def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None, news_context=""):
     """Build prompt and call Claude for a single stat type + direction. Returns (confidence, pick) or None."""
-    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map)
+    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map, news_context)
     pick   = _call_claude(prompt, stat_focus)
     if pick and pick.get("player_name") and pick.get("confidence", 0) > 0:
         # Enforce direction if forced (Claude occasionally ignores instruction)
@@ -237,7 +270,7 @@ def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, 
     return None
 
 
-def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None):
+def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None, news_context=""):
     """
     Run Claude in parallel for points/rebounds/assists × over/under (6 calls).
     Returns (best_over_pick, best_under_pick) independently.
@@ -249,7 +282,7 @@ def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=N
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map): (s, d)
+            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map, news_context): (s, d)
             for s in stat_types for d in directions
         }
         for future in as_completed(futures):
@@ -347,7 +380,12 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                 signal_bonus += 10
 
             edge_score = min(abs(edge) / 5.0 * 40, 40)
-            confidence = round(min(52 + edge_score + signal_bonus, 80))
+            # Penalty for overs without strong catalysts — overs hit only 17% historically.
+            # Require at least one signal (cascade, recent form, opp-B2B) for full confidence.
+            over_penalty = 0
+            if direction == "over" and signal_bonus == 0:
+                over_penalty = 12  # 12-point confidence penalty for unsupported overs
+            confidence = round(min(52 + edge_score + signal_bonus - over_penalty, 80))
             narrative  = (
                 f"Model projects {proj_val:.1f} {stat_type} — a {abs(edge):.1f} edge "
                 f"vs the {line:.1f} season baseline."
@@ -484,13 +522,14 @@ def _enrich_pick_from_projections(pick, projections, game_ctx_map):
 # MAIN ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_line_engine(projections, games, line_config=None, player_odds_map=None):
+def run_line_engine(projections, games, line_config=None, player_odds_map=None, news_context=""):
     """
     Main entry point. Uses Claude Haiku to reason about ESPN projection data
     and pick today's best player prop edge. Falls back to algorithmic model
     if Claude API is unavailable.
     line_config: optional dict (e.g. from model-config "line" section) with min_confidence, min_edge_pct.
     player_odds_map: optional pre-fetched Odds API lines {(name_lower, stat_type): {...}}.
+    news_context: optional string of recent NBA news from web search (Layer 1).
     """
     if not games:
         return {"pick": None, "error": "no_games"}
@@ -512,7 +551,7 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None):
     if not ANTHROPIC_API_KEY:
         return run_model_fallback(projections, games, line_config, player_odds_map)
 
-    over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map)
+    over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map, news_context)
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")

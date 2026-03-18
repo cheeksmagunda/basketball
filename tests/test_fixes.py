@@ -991,7 +991,7 @@ class TestMoonshotPtsFloor:
         with open("data/model-config.json") as f:
             cfg = json.load(f)
         assert cfg["scoring_thresholds"]["min_pts_projection"] == 7.0
-        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] == 4.0
+        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] == 3.0
 
     def test_project_player_uses_moonshot_floor(self):
         """project_player should use the lower moonshot floor (4.0) not 7.0."""

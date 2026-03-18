@@ -109,9 +109,9 @@ _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
 if _missing_env:
     print(f"[WARN] Missing env vars: {_missing_env} — affected features will be degraded")
 
-# All data writes go to main (default branch). The ignoreCommand in vercel.json
-# skips builds when only data/ or .github/ files change, so data commits on main
-# do NOT trigger Vercel rebuilds.
+# All data writes go to main (default branch). The watchPatterns in railway.toml
+# skip builds when only data/ or .github/ files change, so data commits on main
+# do NOT trigger Railway rebuilds.
 def _data_ref(path: str):
     """Return branch override for GitHub API calls, or None for default (main)."""
     return None
@@ -325,7 +325,7 @@ def _slate_restore_from_github():
 # ── GitHub-Persisted Slate & Game Projection Cache ──
 # grep: SLATE CACHE
 # Pre-computed predictions are persisted to data/slate/ so that cold-start
-# Vercel instances serve the same picks without re-running the prediction engine.
+# Railway instances serve the same picks without re-running the prediction engine.
 # Pattern mirrors data/locks/ and data/lines/ — date-keyed JSON files on GitHub.
 
 def _slate_cache_to_github(slate_data: dict):
@@ -526,7 +526,8 @@ _CONFIG_DEFAULTS = {
         "compression_divisor": 5.5,
         "compression_power": 0.72,
         "rs_cap": 20.0,
-        "ai_blend_weight": 0.5,
+        "ai_blend_weight": 0.35,
+        "calibration_scale": 1.15,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -538,7 +539,7 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":25.0,  # season avg floor for Starting 5 (was 30; Mar 14: excluded Smart 28.9min, Achiuwa ~26min)
+        "chalk_season_min_floor":20.0,  # season avg floor for Starting 5 (was 25; leaderboard winners avg 15-20 min)
         "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
         "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
@@ -558,12 +559,12 @@ _CONFIG_DEFAULTS = {
         # v6 (leaderboard-informed): gates widened to match actual winner profiles.
         # Winners are 15-25 min role players with 3x+ boost on dev teams (da Silva,
         # Ellis, Clifford, Santos, Sensabaugh). Old 25-min/3.0 rating gates blocked them.
-        "min_minutes_floor":15, "min_recent_minutes_floor":15, "min_card_boost":1.5, "min_rating_floor":2.0,
+        "min_minutes_floor":12, "min_recent_minutes_floor":12, "min_card_boost":1.5, "min_rating_floor":2.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
         "max_centers":3, "boost_leverage_power":1.6,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
-        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 8.0, "wildcard_min_season_pts": 3.0,
+        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 6.0, "wildcard_min_season_pts": 3.0,
         "dev_team_pts_floor": 4.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
     },
@@ -1381,33 +1382,96 @@ def _cascade_minutes(roster, stats_map):
 #           same methodology. Avoids DNP risks from extreme low-ownership picks.
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _normalize_boost_name(name):
+    """Normalize player name for card boost lookup — strips diacritics, lowercases,
+    removes punctuation variants (apostrophes, periods, Jr./III suffixes)."""
+    import unicodedata as _ud
+    n = _ud.normalize("NFKD", name).encode("ASCII", "ignore").decode("ASCII")
+    return n.strip().lower()
+
+
+# ── Auto-populated boost overrides from ownership/actuals data ──────────────
+# Reads data/ownership/ and data/actuals/ CSVs to build a dynamic override map
+# using the most recent observation per player. Refreshes every 10 minutes.
+_OWNERSHIP_BOOST_CACHE = {}
+_OWNERSHIP_BOOST_TS = 0
+
+def _load_ownership_boosts():
+    """Build {normalized_name: boost} from all ownership + actuals CSVs.
+    Uses most recent observation per player. Cached 10 min."""
+    global _OWNERSHIP_BOOST_CACHE, _OWNERSHIP_BOOST_TS
+    import time
+    now = time.time()
+    if _OWNERSHIP_BOOST_CACHE and (now - _OWNERSHIP_BOOST_TS) < 600:
+        return _OWNERSHIP_BOOST_CACHE
+
+    boosts = {}  # {normalized_name: (date, boost_value, original_name)}
+    for subdir in ["ownership", "actuals"]:
+        dirpath = os.path.join(os.path.dirname(__file__), "..", "data", subdir)
+        if not os.path.isdir(dirpath):
+            continue
+        for fname in sorted(os.listdir(dirpath)):
+            if not fname.endswith(".csv"):
+                continue
+            date_str = fname.replace(".csv", "")
+            fpath = os.path.join(dirpath, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    import csv as _csv
+                    reader = _csv.DictReader(f)
+                    for row in reader:
+                        # ownership CSVs use 'player', actuals use 'player_name'
+                        name = row.get("player") or row.get("player_name", "")
+                        if not name:
+                            continue
+                        boost_str = row.get("actual_card_boost", "")
+                        if not boost_str or boost_str == "None":
+                            continue
+                        try:
+                            bval = float(boost_str)
+                        except (ValueError, TypeError):
+                            continue
+                        if bval <= 0:
+                            continue
+                        nkey = _normalize_boost_name(name)
+                        # Keep most recent date's value
+                        if nkey not in boosts or date_str > boosts[nkey][0]:
+                            boosts[nkey] = (date_str, bval, name)
+            except Exception:
+                continue
+
+    _OWNERSHIP_BOOST_CACHE = {k: v[1] for k, v in boosts.items()}
+    _OWNERSHIP_BOOST_TS = now
+    return _OWNERSHIP_BOOST_CACHE
+
+
 def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     """Estimate ADDITIVE card boost for Real Sports.
 
-    Two-layer approach (v23):
-    1. LOOKUP — player_overrides from real ownership/actuals data. Boost is a
-       stable per-player attribute in Real Sports (same player gets ±0.1x across
-       dates regardless of daily draft count). Cross-date proof:
-         Wemby: +0.3x on 1400 AND 8500 drafts
-         Cade: +0.2x on 5300 AND 1200 drafts
-         Bam: +0.6x on 2200 AND 388 drafts
-       So the lookup is the ground truth — use it whenever we have data.
-
-    2. SIGMOID TIER FALLBACK — for players NOT in the lookup, estimate boost
-       from PPG using a sigmoid curve calibrated against 60+ real observations:
-         boost = ceiling - range × sigmoid((PPG - midpoint) / scale)
-       This captures the S-shaped relationship: superstars (25+ PPG) → ~0.2x,
-       quality starters (18 PPG) → ~0.6x, role players (12 PPG) → ~1.6x,
-       deep bench (<8 PPG) → ~2.5-3.0x. Big market discount of -0.15 applied.
+    Three-layer approach (v24):
+    1. LOOKUP — player_overrides from config (manually curated ground truth).
+    2. OWNERSHIP DATA — auto-populated from data/ownership/ + data/actuals/ CSVs.
+       Uses most recent observation per player. Refreshed every 10 min.
+    3. SIGMOID TIER FALLBACK — for unknown players, estimate from PPG.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
     floor_val = cb.get("floor", 0.2)
 
-    # Layer 1: Player lookup from real ownership data
+    norm_name = _normalize_boost_name(player_name) if player_name else None
+
+    # Layer 1: Player lookup from config overrides (name-normalized)
     overrides = cb.get("player_overrides", {})
-    if player_name and player_name in overrides:
-        return float(overrides[player_name])
+    if norm_name:
+        for k, v in overrides.items():
+            if _normalize_boost_name(k) == norm_name:
+                return float(v)
+
+    # Layer 2: Auto-populated from ownership/actuals data
+    if norm_name:
+        ownership_boosts = _load_ownership_boosts()
+        if norm_name in ownership_boosts:
+            return round(min(max(ownership_boosts[norm_name], floor_val), ceiling), 1)
 
     # Layer 2: Sigmoid tier estimation from PPG
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
@@ -1561,16 +1625,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     minutes = stats.get("min", 0)
 
     # SCORING UPSIDE GATE 1: minimum projected points floor.
-    # Universal floor uses the moonshot minimum (4.0) so low-PPG high-boost players
-    # like Oso Ighodaro (4 PPG, +2.9x boost, Value 16.4) can enter the moonshot pool.
-    # Chalk pool enforces the stricter 7.0 floor separately.
-    min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 4.0)
+    # Universal floor uses the moonshot minimum (3.0) so low-PPG high-boost players
+    # can enter the moonshot pool. Chalk pool enforces the stricter 7.0 floor separately.
+    min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 3.0)
     if pts < min_pts_moonshot:
         return None
 
     # SCORING UPSIDE GATE 2: minimum pts-per-minute efficiency.
-    # Uses moonshot floor (0.20) at the universal level; chalk enforces stricter 0.28.
-    min_ppm_moonshot = _cfg("scoring_thresholds.min_pts_per_minute_moonshot", 0.20)
+    # Uses moonshot floor (0.15) at the universal level; chalk enforces stricter 0.28.
+    min_ppm_moonshot = _cfg("scoring_thresholds.min_pts_per_minute_moonshot", 0.15)
     if minutes > 0 and (pts / minutes) < min_ppm_moonshot:
         return None
 
@@ -1722,11 +1785,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     heuristic_rs = min(heuristic_rs, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
-    # v5: Rebalanced to 50/50. Old 70/30 AI-heavy blend crushed heuristic upside —
-    # LightGBM clusters outputs in 2.5-4.5 range, forcing everyone into 3-4 RS.
-    # 50/50 lets the heuristic's wider distribution (closeness × clutch × momentum)
-    # pull high-upside players to RS 5-7 where they belong.
-    ai_weight = rs_cfg.get("ai_blend_weight", 0.5)
+    # v40: Reduced to 35/65 AI/heuristic. LightGBM clusters outputs in 2.5-4.5 range,
+    # compressing distribution. 13-date audit showed 34% under-projection bias.
+    # Lower AI weight lets Monte Carlo heuristic spread RS wider.
+    ai_weight = rs_cfg.get("ai_blend_weight", 0.35)
     if ai_pred is not None:
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
     else:
@@ -1755,6 +1817,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     _bias_wt   = _cfg("scoring_thresholds.scoring_bias_pts_weight", 0.35)
     scoring_bias = _bias_base + (pts_share * _bias_wt)
     raw_score = min(raw_score * scoring_bias, rs_cap)
+
+    # RS calibration scale — corrects systematic under-projection bias.
+    # 13-date backtest (Mar 5–17) showed model under-projects RS by ~34% on average
+    # (avg predicted 4.3 vs avg actual 5.2 for matched leaderboard players).
+    # Conservative 1.15 scale (not full 1.34 which is biased toward leaderboard tail).
+    cal_scale = rs_cfg.get("calibration_scale", 1.15)
+    raw_score = min(raw_score * cal_scale, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -2237,12 +2306,15 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
 # returns original lineups unchanged.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, core_pool: list = None) -> tuple:
+def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, core_pool: list = None, news_context: str = "") -> tuple:
     """Review assembled lineups with Opus + web search; suggest and auto-apply swaps.
 
     Reads lineup_review.enabled, lineup_review.model, lineup_review.timeout_seconds.
     When core_pool is provided (list of player dicts), swap-ins are restricted to that
     core so both lineups stay configurations of the same high-confidence pool.
+    When news_context is provided (from Layer 1), it's included in the prompt so Layer 3
+    doesn't need to perform redundant web searches — only searches for truly late-breaking
+    news (last 2-4 hours) that Layer 1 may have missed.
     Returns (chalk, upside). On any failure returns original chalk/upside unchanged.
     """
     if not _cfg("lineup_review.enabled", False):
@@ -2277,12 +2349,22 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
             f"players from this core when possible: {', '.join(core_names)}."
         )
 
+    # Include cached news from Layer 1 so Layer 3 has context without redundant searches
+    news_blurb = ""
+    if news_context:
+        news_blurb = (
+            f"\n\nKNOWN NEWS FROM EARLIER TODAY:\n{news_context}\n\n"
+            "The above was gathered earlier. Focus your web search on ONLY the last 2-4 hours "
+            "for truly late-breaking updates (last-minute scratches, game-time decisions). "
+            "If the known news already covers everything, return {\"swaps\": []}.\n"
+        )
+
     user_content = (
         "You have two daily NBA draft lineups (Starting 5 = chalk, Moonshot = upside). "
         "Search the web for the latest news (last 2–4 hours): injuries, late scratches, "
         "rotation changes, or anything that would make a current pick wrong or a different "
         "player clearly better.\n\n"
-        f"{chalk_desc}\n\n{upside_desc}\n{core_blurb}\n\n"
+        f"{chalk_desc}\n\n{upside_desc}\n{core_blurb}{news_blurb}\n\n"
         "If you find a reason to swap a player out (e.g. just ruled OUT, or a teammate "
         "now getting the run), return a JSON object with a 'swaps' array. Each swap: "
         '{"lineup": "chalk" or "upside", "out": "Exact Player Name", "in": "Exact Player Name"}. '
@@ -2530,10 +2612,11 @@ def _build_lineups(projections):
         #   starter role due to injury — cascade engine gave them 10+ bonus minutes).
         #   This prevents "DFS Ghosts": trickle-cascade bench warmers won't clear
         #   both gates simultaneously, only true spot-starters will.
-        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 30.0)
+        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 20.0)
         chalk_recent_floor = _cfg("projection.chalk_recent_min_floor", 15.0)
+        _recent_min_chalk = p.get("recent_min", 0) or p.get("season_min", 0)
         is_regular     = (p.get("season_min", 0) >= chalk_min_floor and
-                          p.get("recent_min", 0) >= chalk_recent_floor)
+                          _recent_min_chalk >= chalk_recent_floor)
         is_spot_starter = (p.get("predMin", 0) >= 28.0 and
                            p.get("_cascade_bonus", 0) >= 10.0)
         if not (is_regular or is_spot_starter):
@@ -2641,7 +2724,7 @@ def _build_lineups(projections):
         # Condition C: Wildcard — ultra-high boost with higher minutes and a minimum
         #   season scoring floor so we don't chase pure cardio bench archetypes.
         season_min = p.get("season_min", 0)
-        recent_min = p.get("recent_min", 0)
+        recent_min = p.get("recent_min", 0) or season_min  # fallback to season_min if missing/zero
         pred_min   = p.get("predMin", 0)
         season_pts = p.get("season_pts", p.get("pts", 0))
         est_mult   = p.get("est_mult", 0.3)
@@ -3364,7 +3447,7 @@ def _get_slate_impl():
         # admin bust was requested to fix bad lineups in the lock file (e.g. predMin
         # filter change). The pipeline runs with draftable games still in progress.
 
-    # ── Layer 1: /tmp cache (warm Vercel instance) ──
+    # ── Layer 1: /tmp cache (warm Railway instance) ──
     cached = _cg("slate_v5")
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
@@ -3441,13 +3524,19 @@ def _get_slate_impl():
             print(f"[odds_enrich] call-site error: {_odds_err}")
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
+        # Capture news_text so Layer 3 can reuse it (avoids redundant web search).
+        _slate_news_text = ""
+        try:
+            _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
+        except Exception:
+            pass
         try:
             _claude_context_pass(all_proj, draftable_games)
         except Exception as _ctx_err:
             print(f"[context_pass] call-site error: {_ctx_err}")
         chalk, upside, core_pool = _build_lineups(all_proj)
         try:
-            chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool)
+            chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool, news_context=_slate_news_text)
         except Exception as _rev_err:
             print(f"[lineup_review] call-site error: {_rev_err}")
         lineups = {"chalk": chalk, "upside": upside}
@@ -3460,7 +3549,7 @@ def _get_slate_impl():
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
             _cs("slate_v5", result)
-            # Persist to GitHub so all Vercel instances serve the same picks
+            # Persist to GitHub so all Railway instances serve the same picks
             _slate_cache_to_github(result)
             # Clear bust sentinel so future cold starts can use this slate from GitHub
             try:
@@ -3724,7 +3813,7 @@ async def save_predictions():
         return JSONResponse({"error": result["error"]}, status_code=500)
 
     # Also write the slate backup now so cold-start instances can recover after lock,
-    # even if this Vercel instance dies before the lock window promotes the reg cache.
+    # even if this Railway instance dies before the lock window promotes the reg cache.
     cached_slate_for_backup = _cg("slate_v5")
     if cached_slate_for_backup:
         _slate_backup_to_github(cached_slate_for_backup)
@@ -4925,7 +5014,14 @@ def _run_line_engine_for_date(date):
     # primary "line" value in picks instead of ESPN season averages.
     # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
     player_odds_map = _build_player_odds_map(target_games)
-    result = run_line_engine(all_proj, target_games, line_config, player_odds_map)
+    # Fetch web search news context for the line engine (reuses Layer 1 cache).
+    # This gives Claude injury/rotation/rest intel that can improve pick quality.
+    news_context = ""
+    try:
+        news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
+    except Exception as _news_err:
+        print(f"[line] web search for news context failed (non-fatal): {_news_err}")
+    result = run_line_engine(all_proj, target_games, line_config, player_odds_map, news_context=news_context)
     return result, None
 
 
@@ -6381,7 +6477,7 @@ async def lab_backtest(payload: dict = Body(...)):
     """Replay historical slates with proposed parameter changes and compare MAE.
 
     Safety: Backtest is limited to last 10 historical slates and will timeout
-    after 240 seconds to stay well under Vercel's 300s limit."""
+    after 240 seconds to stay within Railway's timeout limit."""
     proposed_changes = payload.get("proposed_changes", {})
     description      = payload.get("description", "Backtest")
     if not proposed_changes:
@@ -6533,7 +6629,7 @@ async def lab_auto_improve(request: Request):
     5. Returns a log of actions taken (safe to run even if no data yet)
 
     Safety: Runs at 9 AM UTC daily. Backtest internally limited to 10 slates
-    and will timeout after 240s to prevent exceeding Vercel's 300s limit.
+    and will timeout after 240s to prevent exceeding Railway's timeout limit.
     If timeout occurs, returns error log without auto-applying.
     """
     if not _require_cron_secret(request):

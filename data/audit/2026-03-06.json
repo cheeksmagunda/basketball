@@ -1,64 +1,37 @@
 {
   "date": "2026-03-06",
-  "players_compared": 13,
-  "mae": 2.377,
-  "directional_accuracy": 0.308,
-  "over_projected": 9,
-  "under_projected": 3,
+  "players_compared": 9,
+  "mae": 1.689,
+  "directional_accuracy": 0.222,
+  "over_projected": 7,
+  "under_projected": 2,
   "biggest_misses": [
     {
-      "player": "Derik Queen",
-      "team": "NO",
-      "predicted_rs": 6.0,
-      "actual_rs": 0.2,
-      "error": -5.8,
-      "drafts": "692",
-      "actual_card_boost": "1.4"
+      "player": "Luka Doncic",
+      "team": "LAL",
+      "predicted_rs": 11.5,
+      "actual_rs": 8.3,
+      "error": -3.2,
+      "drafts": "3300",
+      "actual_card_boost": ""
     },
     {
-      "player": "Derik Queen",
-      "team": "NO",
-      "predicted_rs": 5.6,
-      "actual_rs": 0.2,
-      "error": -5.4,
-      "drafts": "692",
-      "actual_card_boost": "1.4"
-    },
-    {
-      "player": "Derrick White",
-      "team": "BOS",
-      "predicted_rs": 7.2,
-      "actual_rs": 3.7,
-      "error": -3.5,
-      "drafts": "1500",
-      "actual_card_boost": "0.7"
-    },
-    {
-      "player": "Victor Wembanyama",
-      "team": "SA",
-      "predicted_rs": 10.4,
-      "actual_rs": 7.1,
-      "error": -3.3,
-      "drafts": "1400",
-      "actual_card_boost": "0.3"
-    },
-    {
-      "player": "Donovan Clingan",
+      "player": "Toumani Camara",
       "team": "POR",
-      "predicted_rs": 6.3,
-      "actual_rs": 3.2,
-      "error": -3.1,
-      "drafts": "1100",
-      "actual_card_boost": "1"
+      "predicted_rs": 6.5,
+      "actual_rs": 3.7,
+      "error": -2.8,
+      "drafts": "37",
+      "actual_card_boost": "1.6"
     },
     {
-      "player": "Klay Thompson",
-      "team": "DAL",
-      "predicted_rs": 6.4,
-      "actual_rs": 3.5,
-      "error": -2.9,
-      "drafts": "2",
-      "actual_card_boost": "2.6"
+      "player": "Brandon Miller",
+      "team": "CHA",
+      "predicted_rs": 7.5,
+      "actual_rs": 4.7,
+      "error": -2.8,
+      "drafts": "134",
+      "actual_card_boost": "0.8"
     },
     {
       "player": "Brook Lopez",
@@ -67,7 +40,7 @@
       "actual_rs": 4.3,
       "error": -2.2,
       "drafts": "11",
-      "actual_card_boost": "3"
+      "actual_card_boost": "3.0"
     },
     {
       "player": "Kon Knueppel",
@@ -77,7 +50,34 @@
       "error": -1.9,
       "drafts": "905",
       "actual_card_boost": "0.8"
+    },
+    {
+      "player": "Jay Huff",
+      "team": "IND",
+      "predicted_rs": 4.1,
+      "actual_rs": 3.2,
+      "error": -0.9,
+      "drafts": "66",
+      "actual_card_boost": "2.0"
+    },
+    {
+      "player": "Amen Thompson",
+      "team": "HOU",
+      "predicted_rs": 6.7,
+      "actual_rs": 5.9,
+      "error": -0.8,
+      "drafts": "170",
+      "actual_card_boost": "0.6"
+    },
+    {
+      "player": "OG Anunoby",
+      "team": "NY",
+      "predicted_rs": 6.7,
+      "actual_rs": 7.1,
+      "error": 0.4,
+      "drafts": "88",
+      "actual_card_boost": "1.1"
     }
   ],
-  "generated_at": "2026-03-07T23:04:08.925930+00:00"
+  "generated_at": "2026-03-18T05:03:38.823125+00:00"
 }

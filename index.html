@@ -4081,11 +4081,12 @@ async function applyLabConfig(changes, description, msgEl) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ changes, change_description: description }),
     }, 15000);
-    const result = await r.json().catch(() => ({}));
     if (!r.ok) {
-      if (statusDiv) statusDiv.textContent = result.error || ('HTTP ' + r.status);
+      const errData = await r.json().catch(() => ({}));
+      if (statusDiv) statusDiv.textContent = errData.error || ('HTTP ' + r.status);
       return;
     }
+    const result = await r.json().catch(() => ({}));
     if (result.error) {
       if (statusDiv) statusDiv.textContent = `Error: ${result.error}`;
       return;

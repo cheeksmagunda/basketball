@@ -1,0 +1,65 @@
+{
+  "date": "2026-03-09",
+  "players_compared": 6,
+  "mae": 1.617,
+  "directional_accuracy": 0.5,
+  "over_projected": 2,
+  "under_projected": 4,
+  "biggest_misses": [
+    {
+      "player": "Shai Gilgeous-Alexander",
+      "team": "OKC",
+      "predicted_rs": 6.1,
+      "actual_rs": 9.5,
+      "error": 3.4,
+      "drafts": "2900",
+      "actual_card_boost": ""
+    },
+    {
+      "player": "Jaylin Williams",
+      "team": "OKC",
+      "predicted_rs": 2.7,
+      "actual_rs": 5.2,
+      "error": 2.5,
+      "drafts": "37",
+      "actual_card_boost": "2.6"
+    },
+    {
+      "player": "Tim Hardaway Jr.",
+      "team": "DEN",
+      "predicted_rs": 3.0,
+      "actual_rs": 4.2,
+      "error": 1.2,
+      "drafts": "46",
+      "actual_card_boost": "1.9"
+    },
+    {
+      "player": "Brook Lopez",
+      "team": "LAC",
+      "predicted_rs": 3.9,
+      "actual_rs": 2.9,
+      "error": -1.0,
+      "drafts": "35",
+      "actual_card_boost": "3.0"
+    },
+    {
+      "player": "Brook Lopez",
+      "team": "LAC",
+      "predicted_rs": 3.8,
+      "actual_rs": 2.9,
+      "error": -0.9,
+      "drafts": "35",
+      "actual_card_boost": "3.0"
+    },
+    {
+      "player": "Kyle Filipowski",
+      "team": "UTAH",
+      "predicted_rs": 3.2,
+      "actual_rs": 3.9,
+      "error": 0.7,
+      "drafts": "642",
+      "actual_card_boost": "2.0"
+    }
+  ],
+  "generated_at": "2026-03-18T05:03:38.824675+00:00"
+}
