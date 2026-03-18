@@ -2894,7 +2894,10 @@ def _build_lineups(projections):
                                 max_low_boost=chalk_max_stars,
                                 low_boost_threshold=chalk_star_thresh,
                                 leverage_top_slots=leverage_top,
-                                leverage_boost_threshold=leverage_thresh)
+                                leverage_boost_threshold=leverage_thresh,
+                                objective_mode="chalk",
+                                variance_penalty=0.5)
+        chalk_ids = [p.get("id") for p in chalk if p.get("id")]
         sorted_core = sorted(core_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
         capped_core = []
         center_count = 0
@@ -2910,7 +2913,12 @@ def _build_lineups(projections):
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
                                  max_low_boost=1,
-                                 low_boost_threshold=0.8)
+                                 low_boost_threshold=0.8,
+                                 objective_mode="moonshot",
+                                 variance_uplift=0.35,
+                                 boost_leverage_extra_power=0.2,
+                                 overlap_player_ids=chalk_ids,
+                                 overlap_cap=3)
     else:
         upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
@@ -4509,6 +4517,16 @@ async def refresh(request: Request):
         if start_times and any(_is_locked(st) for st in start_times):
             await save_predictions()
             auto_saved = True
+            # End-of-slate: wipe daily Ben chat history so next cycle starts fresh.
+            try:
+                with _BEN_CHAT_HISTORY_LOCK:
+                    _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    _BEN_CHAT_HISTORY_PATH.write_text("[]")
+                    _BEN_CHAT_HISTORY_DATE_PATH.write_text(
+                        json.dumps({"et_date": _et_date().isoformat()}, indent=2)
+                    )
+            except Exception as e:
+                print(f"[ben-chat] reset on refresh failed: {e}")
     except Exception as e:
         print(f"[refresh] auto-save skipped: {e}")
 
@@ -4538,6 +4556,71 @@ async def refresh(request: Request):
         _bust_slate_cache()
     except Exception: pass
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Weekly MAE drift check (backend-only)
+# Writes a flag for ops/diagnostics; does NOT affect auto-improve behavior.
+# ═════════════════════════════════════════════════════════════════════════════
+_MAE_DRIFT_FLAG_PATH = Path("data/mae_drift_flag.json")
+
+
+@app.get("/api/mae-drift-check")
+async def mae_drift_check(request: Request):
+    """Weekly cron: compute last 7 calendar days MAE and write a backend-only flag."""
+    if not _require_cron_secret(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    THRESHOLD = 2.5
+    today = _et_date()
+    start = today - timedelta(days=6)
+    window_dates = [(start + timedelta(days=i)).isoformat() for i in range(7)]
+
+    total_weighted_abs_error = 0.0
+    total_players_compared = 0
+    per_date = []
+
+    try:
+        for d in window_dates:
+            audit = _compute_audit(d)
+            if not audit:
+                continue
+            pc = int(audit.get("players_compared") or 0)
+            mae = _safe_float(audit.get("mae"), 0.0)
+            if pc > 0 and mae >= 0:
+                total_weighted_abs_error += mae * pc
+                total_players_compared += pc
+                per_date.append({"date": d, "mae": mae, "players_compared": pc})
+    except Exception as e:
+        print(f"[mae-drift-check] compute failed: {e}")
+        return {"status": "error", "reason": str(e)}
+
+    if total_players_compared > 0:
+        computed_mae = total_weighted_abs_error / total_players_compared
+    else:
+        computed_mae = None
+
+    triggered = (computed_mae is not None) and (computed_mae > THRESHOLD)
+    payload = {
+        "status": "ok",
+        "threshold": THRESHOLD,
+        "computed_mae": computed_mae,
+        "triggered": triggered,
+        "window_start": window_dates[0],
+        "window_end": window_dates[-1],
+        "players_compared": total_players_compared,
+        "per_date": per_date,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        _MAE_DRIFT_FLAG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _MAE_DRIFT_FLAG_PATH.write_text(json.dumps(payload, indent=2))
+    except Exception as e:
+        print(f"[mae-drift-check] write failed: {e}")
+
+    print(f"[mae-drift-check] MAE={computed_mae} threshold={THRESHOLD} triggered={triggered} n={total_players_compared}")
+    return payload
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -4741,6 +4824,22 @@ def _build_player_odds_map(games):
     api_key = os.environ.get("ODDS_API_KEY")
     if not api_key:
         return {}
+
+    # Degraded mode: if the Odds API is rate-limiting / failing, fall back to the
+    # last successfully built map (previous hour). This keeps lineup generation alive.
+    cache_key = "odds_last_success_map_v1"
+    cached_odds_map = {}
+    try:
+        cp = _cp(cache_key)
+        if cp.exists():
+            age = time.time() - cp.stat().st_mtime
+            if age < 3600:  # 1h
+                obj = json.loads(cp.read_text()) if cp.read_text() else {}
+                if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
+                    cached_odds_map = obj.get("data") or {}
+    except Exception:
+        cached_odds_map = {}
+
     markets_param = ",".join(_STAT_MARKET.values())  # player_points,player_rebounds,player_assists
     _market_to_stat = {v: k for k, v in _STAT_MARKET.items()}
     try:
@@ -4752,11 +4851,11 @@ def _build_player_odds_map(games):
         )
         if not ev_r.ok:
             print(f"[odds_map] events fetch failed: {ev_r.status_code}")
-            return {}
+            return cached_odds_map or {}
         all_events = ev_r.json()
     except Exception as e:
         print(f"[odds_map] events fetch error: {e}")
-        return {}
+        return cached_odds_map or {}
 
     # Map gameId → Odds API event_id
     game_event_ids = []
@@ -4773,7 +4872,7 @@ def _build_player_odds_map(games):
 
     if not game_event_ids:
         print("[odds_map] no matching Odds API events for slate games")
-        return {}
+        return cached_odds_map or {}
 
     # Step 2: fetch props for each game in parallel (1 call per game)
     def _fetch_event_props(event_id):
@@ -4838,6 +4937,14 @@ def _build_player_odds_map(games):
         }
 
     print(f"[odds_map] fetched {len(result_map)} player+stat lines from Odds API")
+    if not result_map and cached_odds_map:
+        return cached_odds_map
+
+    try:
+        _cs(cache_key, {"ts": time.time(), "data": result_map})
+    except Exception:
+        pass
+
     return result_map
 
 
@@ -6802,6 +6909,109 @@ def _tool_status_label(name: str, inputs: dict) -> str:
     return "Fetching data..."
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# BEN (Lab) chat history persistence
+# ═════════════════════════════════════════════════════════════════════════════
+_BEN_CHAT_HISTORY_PATH = Path("data/ben_chat_history.json")
+_BEN_CHAT_HISTORY_DATE_PATH = Path("data/ben_chat_history_last_et_date.json")
+_BEN_CHAT_HISTORY_LOCK = threading.Lock()
+
+
+def _ben_chat_extract_last_user_text(msgs: list) -> str:
+    """Extract the latest user message text (ignoring any attached image blocks)."""
+    if not msgs or not isinstance(msgs, list):
+        return ""
+    for m in reversed(msgs):
+        if not isinstance(m, dict) or m.get("role") != "user":
+            continue
+        c = m.get("content")
+        if isinstance(c, str):
+            return c.strip()
+        if isinstance(c, list):
+            parts = []
+            for block in c:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    t = block.get("text", "")
+                    if t:
+                        parts.append(str(t).strip())
+            return "\n".join([p for p in parts if p]).strip()
+        if c is None:
+            return ""
+        return str(c).strip()
+    return ""
+
+
+def _ben_chat_sanitize_assistant_text(text: str) -> str:
+    """Store only user-visible assistant text (strip <action> tags)."""
+    if not text:
+        return ""
+    return re.sub(r"<action>[\s\S]*?</action>", "", str(text)).strip()
+
+
+def _ben_chat_maybe_reset_for_today_locked() -> None:
+    """Reset chat history when ET day changes."""
+    today = _et_date().isoformat()
+
+    last_et = ""
+    try:
+        if _BEN_CHAT_HISTORY_DATE_PATH.exists():
+            raw = _BEN_CHAT_HISTORY_DATE_PATH.read_text()
+            obj = json.loads(raw) if raw else {}
+            last_et = (obj or {}).get("et_date", "") or ""
+    except Exception:
+        last_et = ""
+
+    if last_et == today:
+        return
+
+    try:
+        _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _BEN_CHAT_HISTORY_PATH.write_text("[]")
+        _BEN_CHAT_HISTORY_DATE_PATH.write_text(json.dumps({"et_date": today}, indent=2))
+    except Exception as e:
+        print(f"[ben-chat] reset failed: {e}")
+
+
+def _ben_chat_read_history_locked() -> list:
+    _ben_chat_maybe_reset_for_today_locked()
+    try:
+        if not _BEN_CHAT_HISTORY_PATH.exists():
+            return []
+        raw = _BEN_CHAT_HISTORY_PATH.read_text()
+        data = json.loads(raw) if raw else []
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _ben_chat_write_history_locked(messages: list) -> None:
+    try:
+        _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _BEN_CHAT_HISTORY_PATH.write_text(json.dumps(messages, indent=2))
+    except Exception as e:
+        print(f"[ben-chat] write failed: {e}")
+
+
+def _ben_chat_append_message(role: str, content: str) -> None:
+    if role not in ("user", "assistant"):
+        return
+    content = str(content or "").strip()
+    if not content:
+        return
+    with _BEN_CHAT_HISTORY_LOCK:
+        history = _ben_chat_read_history_locked()
+        history.append({"role": role, "content": content})
+        _ben_chat_write_history_locked(history)
+
+
+@app.get("/api/lab/chat-history")
+async def lab_chat_history():
+    """Return the persisted daily Ben chat history as an array [{role,content}, ...]."""
+    with _BEN_CHAT_HISTORY_LOCK:
+        history = _ben_chat_read_history_locked()
+    return history
+
+
 @app.post("/api/lab/chat")
 async def lab_chat(request: Request, payload: dict = Body(...)):
     """Proxy to Anthropic Messages API — streams SSE events so the UI can show live status."""
@@ -6816,6 +7026,15 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
 
     if not messages:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
+
+    # Persist the latest user message before sending the Claude payload.
+    try:
+        last_user_text = _ben_chat_extract_last_user_text(messages)
+        if last_user_text:
+            _ben_chat_append_message("user", last_user_text)
+    except Exception as e:
+        # Non-fatal: the chat should still work even if persistence fails.
+        print(f"[ben-chat] append user failed: {e}")
 
     headers = {
         "x-api-key": ANTHROPIC_API_KEY,
@@ -6873,6 +7092,14 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
                 resp = r_next.json()
 
             text = next((b["text"] for b in resp.get("content", []) if b.get("type") == "text"), "")
+            # Persist the assistant response (strip any <action> tags) before yielding to the client.
+            try:
+                safe_text = _ben_chat_sanitize_assistant_text(text)
+                if safe_text:
+                    _ben_chat_append_message("assistant", safe_text)
+            except Exception as e:
+                print(f"[ben-chat] append assistant failed: {e}")
+
             yield _sse({"type": "content", "text": text})
 
         except Exception as e:

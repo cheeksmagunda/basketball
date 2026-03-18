@@ -44,7 +44,12 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     sort_key="chalk_ev", rating_key="rating",
                     card_boost_key="est_mult", time_limit=5,
                     max_low_boost=0, low_boost_threshold=0.0,
-                    leverage_top_slots=0, leverage_boost_threshold=0.0):
+                    leverage_top_slots=0, leverage_boost_threshold=0.0,
+                    objective_mode=None,
+                    variance_penalty=0.0, variance_uplift=0.0,
+                    boost_leverage_extra_power=0.0,
+                    overlap_player_ids=None, overlap_cap=0,
+                    overlap_id_key="id"):
     """Find the optimal player-to-slot assignment using MILP.
 
     Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
@@ -62,6 +67,20 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         low_boost_threshold: Boost below this = "low boost" player
         leverage_top_slots: Require this many contrarian players in top 2 slots (0 = off)
         leverage_boost_threshold: Card boost above this qualifies as "contrarian"
+        objective_mode: Optional shaping ("chalk"|"moonshot") applied to the
+            MILP objective coefficients using player_variance.
+        variance_penalty: Used when objective_mode="chalk" to downweight
+            high-variance players.
+        variance_uplift: Used when objective_mode="moonshot" to upweight
+            high-variance players.
+        boost_leverage_extra_power: When objective_mode="moonshot", further
+            scales rating by est_mult^(extra_power) to emphasize boost.
+        overlap_player_ids: Optional list of player ids to overlap-limit
+            against. Only applied when overlap_player_ids is non-empty and
+            overlap_cap > 0.
+        overlap_cap: Maximum allowed overlapped players in the returned lineup.
+            Interpreted as a count of players (not slots).
+        overlap_id_key: Projection dict key containing the player id.
 
     Returns:
         List of n player dicts with slot assignments applied
@@ -79,14 +98,22 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         return _solve_milp(projections, n, min_per_team, max_per_team,
                            rating_key, card_boost_key, time_limit,
                            max_low_boost, low_boost_threshold,
-                           leverage_top_slots, leverage_boost_threshold)
+                           leverage_top_slots, leverage_boost_threshold,
+                           objective_mode,
+                           variance_penalty, variance_uplift,
+                           boost_leverage_extra_power,
+                           overlap_player_ids, overlap_cap, overlap_id_key)
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
 def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 card_boost_key, time_limit, max_low_boost=0, low_boost_threshold=0.0,
-                leverage_top_slots=0, leverage_boost_threshold=0.0):
+                leverage_top_slots=0, leverage_boost_threshold=0.0,
+                objective_mode=None,
+                variance_penalty=0.0, variance_uplift=0.0,
+                boost_leverage_extra_power=0.0,
+                overlap_player_ids=None, overlap_cap=0, overlap_id_key="id"):
     """Run the MILP solver to find optimal player-slot assignments."""
     players = list(range(len(projections)))
     slots = list(range(n))
@@ -99,9 +126,28 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
         for i in players for j in slots
     }
 
+    # Precompute objective coefficients per player to keep the MILP linear:
+    # objective = Σ (effective_rating_i) × (slot_mult_j + card_boost_i) × x[i,j]
+    eff_rating = {}
+    for i in players:
+        base_rating = projections[i].get(rating_key, 0) or 0
+        v = projections[i].get("player_variance", 0.0) or 0.0
+        card_boost = projections[i].get(card_boost_key, 0) or 0.0
+
+        if objective_mode == "chalk":
+            # Median-ish: downweight high variance.
+            base_rating = base_rating * max(0.0, 1.0 - float(variance_penalty) * float(v))
+        elif objective_mode == "moonshot":
+            # High-end-ish: upweight high variance.
+            base_rating = base_rating * (1.0 + float(variance_uplift) * float(v))
+            if boost_leverage_extra_power and boost_leverage_extra_power > 0:
+                # Extra emphasis on boost signal.
+                base_rating = base_rating * (max(float(card_boost), 0.0) ** float(boost_leverage_extra_power))
+
+        eff_rating[i] = base_rating
+
     prob += lpSum(
-        projections[i].get(rating_key, 0) *
-        (slot_mults[j] + projections[i].get(card_boost_key, 0)) * x[i, j]
+        eff_rating[i] * (slot_mults[j] + projections[i].get(card_boost_key, 0)) * x[i, j]
         for i in players for j in slots
     )
 
@@ -168,6 +214,20 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in contrarian_players for j in top_slots
             ) >= min(leverage_top_slots, len(top_slots))
+
+    # Overlap constraint: allow at most overlap_cap players from overlap_player_ids.
+    # This is applied only when feasible based on candidate pool size.
+    if overlap_player_ids and overlap_cap and overlap_cap > 0:
+        overlap_set = set(overlap_player_ids)
+        overlap_indices = [i for i, p in enumerate(projections) if p.get(overlap_id_key) in overlap_set]
+        non_overlap_indices = [i for i in players if i not in overlap_indices]
+
+        # Only enforce when we can still fill the lineup with enough non-overlap players.
+        required_non_overlap = max(0, n - int(overlap_cap))
+        if len(non_overlap_indices) >= required_non_overlap and overlap_indices:
+            prob += lpSum(
+                x[i, j] for i in overlap_indices for j in slots
+            ) <= min(int(overlap_cap), n)
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)

@@ -129,7 +129,17 @@ def fetch_rotowire_lineups():
                 pass
         return {}
 
-    players = _parse_lineups_html(html)
+    try:
+        players = _parse_lineups_html(html)
+    except Exception as e:
+        print(f"RotoWire parse error: {e}")
+        # Degraded mode: return cached data if available, otherwise empty.
+        if cp.exists():
+            try:
+                return json.loads(cp.read_text())
+            except Exception:
+                pass
+        return {}
 
     # Cache result
     try:

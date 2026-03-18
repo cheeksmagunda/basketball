@@ -3679,7 +3679,16 @@ async function initLabPage() {
   if (LAB.initDate && LAB.initDate !== today) {
     LAB.messages = [];
     const labMsg = _el('labMessages');
-    if (labMsg) labMsg.innerHTML = '<div id="labEmptyState"><div class="les-icon">🔮</div><div class="les-title">Ask Ben anything</div><div class="les-sub">Today\'s slate is loaded. Ask about players, projections, card boosts, or trends.</div></div>';
+    if (labMsg) {
+      // Remove only rendered chat bubbles (keep empty state + anchor).
+      labMsg.querySelectorAll('.lab-msg').forEach(el => el.remove());
+      // If an older code path removed the anchor/empty-state markup, restore it.
+      if (!document.getElementById('labEmptyState') || !document.getElementById('labScrollAnchor')) {
+        labMsg.innerHTML =
+          '<div id="labEmptyState"><div class="les-icon">🔮</div><div class="les-title">Ask Ben anything</div><div class="les-sub">Today\'s slate is loaded. Ask about players, projections, card boosts, or trends.</div></div>' +
+          '<div id="labScrollAnchor" aria-hidden="true" style="height:0;flex-shrink:0;overflow:hidden"></div>';
+      }
+    }
   }
   LAB.initDate = today;
 
@@ -3691,6 +3700,24 @@ async function initLabPage() {
   let _ub0 = _el('benUploadBanner');
   if (_ub0) _ub0.style.display = 'none';
   await showLabUnlocked({ locked: false, games_final: 0 });
+
+  // Load persisted daily Ben chat history.
+  try {
+    const r = await fetchWithTimeout('/api/lab/chat-history', {}, 10000);
+    if (r.ok) {
+      const history = await r.json();
+      if (Array.isArray(history)) {
+        const labMsg = _el('labMessages');
+        if (labMsg) labMsg.querySelectorAll('.lab-msg').forEach(el => el.remove());
+        LAB.messages = [];
+        history.forEach(m => {
+          if (m && m.role && m.content != null) appendLabMessage(m.role, m.content, false);
+        });
+      }
+    }
+  } catch(e) {
+    console.warn('[lab] chat-history load failed:', e && e.message ? e.message : e);
+  }
 }
 
 function _updateLabLockedStatus(status) {
