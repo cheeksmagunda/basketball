@@ -2903,6 +2903,7 @@ let LINE_UNDER_PICK = null; // today's under pick
 let LINE_RESOLVE_POLL = null; // setInterval id for pending pick polling
 let LINE_LIVE_POLL = null;   // setInterval id for live in-game stat tracking
 let _lineRotationTriggered = false; // gate: true once per-direction rotation re-fetch fired
+let _lineRotationDoneFor = new Set(); // keys "over-Team-Opp" / "under-Team-Opp" we already ran rotation for (stops cycling)
 let _lineLastLiveKey = '';   // last-rendered live snapshot key; avoid re-painting card when unchanged (stops flash)
 let LINE_HIST_DATA = null;   // cached history payload; cleared on date change
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
@@ -3030,22 +3031,22 @@ async function _startLineLivePoll(overPick, underPick) {
     // re-fetch line-of-the-day to trigger per-direction rotation.
     const overDone = !overPick || (overData && overData.status === 'final');
     const underDone = !underPick || (underData && underData.status === 'final');
-    if (overDone || underDone) {
-      // At least one game finished — re-fetch to trigger rotation for that direction.
-      // Only re-fetch once (gate with _lineRotationTriggered to avoid repeated calls).
-      if (!_lineRotationTriggered) {
-        _lineRotationTriggered = true;
-        // Re-fetch with nocache=true: bypasses stale /tmp cache and triggers inline
-        // resolve on the backend so the finished pick is resolved without waiting
-        // up to 1h for the auto-resolve cron.
-        LINE_LOADED_DATE = _etToday();
-        LINE_LOTD_STATE = asyncStateInitial();
-        setTimeout(() => {
-          _renderLineLOTDFromState(); // show skeleton immediately
-          fetchLineOfTheDay(true);   // nocache — backend will inline-resolve and rotate
-          fetchLineHistory();        // reload history so resolved pick shows up there
-        }, 1500);
-      }
+    const overKey = overPick ? `over-${(overPick.team || '').trim()}-${(overPick.opponent || '').trim()}` : null;
+    const underKey = underPick ? `under-${(underPick.team || '').trim()}-${(underPick.opponent || '').trim()}` : null;
+    const alreadyDoneOver = overKey != null && _lineRotationDoneFor.has(overKey);
+    const alreadyDoneUnder = underKey != null && _lineRotationDoneFor.has(underKey);
+    const needRotation = (overDone && !alreadyDoneOver) || (underDone && !alreadyDoneUnder);
+    if (needRotation) {
+      if (overDone && overKey) _lineRotationDoneFor.add(overKey);
+      if (underDone && underKey) _lineRotationDoneFor.add(underKey);
+      _lineRotationTriggered = true;
+      LINE_LOADED_DATE = _etToday();
+      LINE_LOTD_STATE = asyncStateInitial();
+      setTimeout(() => {
+        _renderLineLOTDFromState(); // show skeleton immediately
+        fetchLineOfTheDay(true);   // nocache — backend will inline-resolve and rotate
+        fetchLineHistory();        // reload history so resolved pick shows up there
+      }, 1500);
     }
     if (overDone && underDone) {
       clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
@@ -3149,7 +3150,6 @@ function _renderLineLOTDFromState() {
 async function fetchLineOfTheDay(nocache = false, background = false) {
   if (!background) {
     LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
-    _lineRotationTriggered = false; // reset so live poll can trigger rotation for new picks
     if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
     _renderLineLOTDFromState();
   }
@@ -3162,6 +3162,7 @@ async function fetchLineOfTheDay(nocache = false, background = false) {
     let data = await r.json();
     LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
     _renderLineLOTDFromState();
+    _lineRotationTriggered = false; // allow next game completion to trigger rotation
     if (data.pick) {
       _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
       if (!background) {
@@ -3181,6 +3182,7 @@ async function fetchLineOfTheDay(nocache = false, background = false) {
       LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
       _renderLineLOTDFromState();
     }
+    _lineRotationTriggered = false; // allow next poll to retry rotation on error
   }
 }
 
@@ -3255,6 +3257,7 @@ async function initLinePage() {
   }
   // Date changed — full reload
   LINE_LOADED_DATE = todayET;
+  _lineRotationDoneFor.clear(); // new day: allow rotation for new games
   document.getElementById('lineHistoryWrap').style.display = 'none';
   fetchLineOfTheDay();
   fetchLineHistory();
