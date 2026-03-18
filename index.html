@@ -1637,10 +1637,10 @@ function hideLoader() {
 (function init() {
   // Show predict sub-nav on initial load (Predict is the default tab)
   document.getElementById('predictSubNav').style.display = 'flex';
-  // Fire a lightweight health ping to wake the Vercel function (cold start takes 5-15s).
-  // This runs in parallel with loadSlate so the function is warm by the time
+  // Fire a lightweight health ping to wake the Railway container (cold start).
+  // This runs in parallel with loadSlate so the backend is warm by the time
   // the slate request arrives (or at worst, by a retry).
-  fetch('/api/health').catch(function() {});
+  fetchWithTimeout('/api/health', {}, 5000).catch(function() {});
   loadSlate(); // non-blocking: slate and game dropdown populate when /api/slate returns (loadSlate calls populateGameSelector on success)
   initGameSelector(); // parallel fallback: fills game dropdown from /api/games independently
 })();
@@ -3730,7 +3730,7 @@ async function showLabLocked(status) {
     }).catch(function(e) {
       console.warn('[lab] Lock poll status check failed:', e && e.message ? e.message : e);
     });
-  }, 120000);  // 2 minutes: reduce Vercel invocations while keeping unlock detection
+  }, 120000);  // 2 minutes: reduce Railway API calls while keeping unlock detection
 }
 
 async function showLabUnlocked(status) {

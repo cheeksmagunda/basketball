@@ -810,6 +810,7 @@ If slate, line, and/or log all fail to load:
 | `min_chalk_rating` synced | `data/model-config.json` | Config value 4.0 → 3.5 to match code fallback and CLAUDE.md documentation. Mar 17 showed 7/9 missed players filtered by this gate. |
 | Odds API draft enrichment | `api/index.py`, `data/model-config.json` | `_enrich_projections_with_odds()` blends sportsbook player props into projections. Upward-only 20% blend when books diverge 15%+ from model (`odds_enrichment.*` config). Also nudges `predMin` proportionally. Odds data passed to Claude context layer. |
 | Brave Search web intelligence | `api/index.py`, `data/model-config.json` | `_fetch_nba_news_context()` searches recent NBA news per team via Brave Search API. Results injected into Claude context pass prompt as "RECENT NBA NEWS" section. Catches coach press conferences, rotation changes, injury impacts on teammates. `BRAVE_SEARCH_API_KEY` env var. Config: `context_layer.web_search_enabled`, `search_queries_per_game`, `search_recency_hours`. |
+| Health check timeout + Vercel cleanup | `index.html` | Health pre-warm converted from raw `fetch()` to `fetchWithTimeout(..., 5000)`. Stale Vercel references in comments updated to Railway. All frontend fetches now use `fetchWithTimeout` (except lab/chat SSE which uses manual AbortController). |
 
 ## Production audit
 
@@ -822,7 +823,7 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 **Pipeline audit (179/179 tests pass):**
 - Global exception handler active — no stack traces leak to clients
 - Structured request logging (JSON with request_id, path, status, duration_ms)
-- 38 `fetchWithTimeout` calls in frontend; 2 intentional raw `fetch()` (health pre-warm + lab/chat SSE)
+- 39 `fetchWithTimeout` calls in frontend; 1 intentional raw `fetch()` (lab/chat SSE with manual AbortController)
 - Thread pools: 8 workers for game/slate/picks/audit/line processing
 - Rate limiting: thread-safe with `_RATE_LIMIT_LOCK` (parse-screenshot 5/min, lab/chat 20/min, line-of-the-day 10/min)
 - 35 endpoints total, all correctly routed with proper CRON_SECRET gating
