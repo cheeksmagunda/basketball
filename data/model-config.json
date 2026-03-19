@@ -1,5 +1,5 @@
 {
-  "version": 42,
+  "version": 43,
   "updated_at": "2026-03-19T01:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
@@ -13,12 +13,13 @@
     "chalk_boost_cap": 1.5,
     "scoring_bias_base": 0.85,
     "scoring_bias_pts_weight": 0.35,
-    "star_anchor_ppg": 20.0
+    "star_anchor_ppg": 20.0,
+    "min_game_pts": 8.0
   },
   "card_boost": {
     "ceiling": 3.0,
     "floor": 0.2,
-    "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
+    "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","LAC","CHI"],
     "sig_ceiling": 3.0,
     "sig_range": 2.8,
     "sig_midpoint": 12.0,
@@ -31,7 +32,7 @@
       "Bam Adebayo": 0.6, "Bilal Coulibaly": 1.9, "Bobby Portis": 1.6,
       "Brandon Ingram": 0.7, "Brandin Podziemski": 1.3, "Brice Sensabaugh": 2.1,
       "Brook Lopez": 3.0, "Bryce McGowens": 3.0,
-      "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Clint Capela": 3.0, "Daeqwon Plowden": 3.0,
+      "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Christian Braun": 3.0, "Clint Capela": 3.0, "Daeqwon Plowden": 3.0,
       "Cody Williams": 3.0, "Collin Gillespie": 1.2, "Collin Sexton": 2.0,
       "Cooper Flagg": 0.7,
       "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.7, "DeMar DeRozan": 0.9,
@@ -42,7 +43,7 @@
       "Gary Payton II": 3.0, "Grant Williams": 2.8, "Gui Santos": 2.6,
       "Isaiah Collier": 1.4,
       "Jakob Poeltl": 1.6, "Jalen Brunson": 0.4, "Jalen Duren": 0.7,
-      "Jalen Johnson": 0.3, "James Harden": 0.3, "Jamir Watkins": 3.0, "Jarace Walker": 2.3,
+      "Jalen Johnson": 0.3, "Jalen Slawson": 2.8, "James Harden": 0.3, "Jamir Watkins": 3.0, "Jarace Walker": 2.3, "Jared McCain": 2.9,
       "Javon Small": 2.0, "Jaylen Brown": 0.3, "Jordan Miller": 2.5,
       "Josh Minott": 3.0, "Jrue Holiday": 0.9, "Julian Reese": 3.0,
       "Julius Randle": 0.6,
@@ -144,7 +145,7 @@
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
-    "chalk_season_min_floor": 20.0,
+    "chalk_season_min_floor": 15.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
     "chalk_recent_min_floor": 15.0,
@@ -191,6 +192,7 @@
   },
   "lineup": {
     "chalk_rating_floor": 2.0,
+    "game_recent_min_floor": 15.0,
     "game_chalk_rating_floor": 3.5,
     "avg_slot_multiplier": 1.6,
     "slot_multipliers": [

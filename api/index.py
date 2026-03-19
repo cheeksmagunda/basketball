@@ -1636,10 +1636,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Minutes gate — boost-aware: low-PPG contrarians get a lower threshold
     # because high card boost EV compensates for DNP risk.
     # Formula: effective_gate = max(8, min_gate - (rough_boost - 1.5) * 3)
-    # rough_boost proxy: low-PPG players are low-ownership = higher card boost
+    # Check player_overrides FIRST so override boosts (e.g. GPII 3.0, Sensabaugh 2.1,
+    # Christian Braun 3.0) are reflected in the gate — otherwise those overrides are
+    # unreachable for low-minute players who fail the PPG proxy threshold.
     min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
     _pts_for_gate = stats.get("pts", 0)
-    _rough_boost = max(0.2, 3.0 - _pts_for_gate * 0.12)
+    _override_boost_gate = None
+    _norm_for_gate = _normalize_boost_name(pinfo.get("name", ""))
+    if _norm_for_gate:
+        for _k, _v in _cfg("card_boost.player_overrides", {}).items():
+            if _normalize_boost_name(_k) == _norm_for_gate:
+                _override_boost_gate = float(_v)
+                break
+    _rough_boost = _override_boost_gate if _override_boost_gate is not None else max(0.2, 3.0 - _pts_for_gate * 0.12)
     effective_gate = max(8, min_gate - max(0, (_rough_boost - 1.5) * 3))
     if proj_min < effective_gate: return None
 
@@ -3209,13 +3218,15 @@ def _build_game_lineups(projections, game):
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
     rescored = _apply_game_script(projections, game)
 
-    # PER-GAME: Requires min 20 recent minutes — same philosophy as slate-wide.
-    # Also enforces pts floor: a player projecting < 10 pts is a ceiling liability
+    # PER-GAME: Requires min recent minutes — configurable via lineup.game_recent_min_floor
+    # (default 15; was 20 which excluded role players like Braun/GPII who pop in single-game).
+    # Also enforces pts floor: a player projecting < 8 pts is a ceiling liability
     # in single-game format where card boost is irrelevant.
-    min_game_pts = _cfg("scoring_thresholds.min_moonshot_pts", 10.0)
+    game_min_floor = _cfg("lineup.game_recent_min_floor", 15.0)
+    min_game_pts = _cfg("scoring_thresholds.min_game_pts", 8.0)
     eligible_pool = [
         p for p in rescored
-        if p.get("recent_min", 0) >= 20.0
+        if p.get("recent_min", 0) >= game_min_floor
         and p["rating"] >= game_chalk_floor
         and p.get("pts", 0) >= min_game_pts
         and p.get("name") not in BLACKLISTED_PLAYERS

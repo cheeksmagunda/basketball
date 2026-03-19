@@ -1653,5 +1653,137 @@ class TestBriefingSimulatedDraftScore:
         assert latest.get("simulated_draft_score") is None
 
 
+class TestMinGateOverrideAware:
+    """min_gate_minutes gate uses player boost overrides, not just PPG proxy.
+
+    This ensures players with high override boosts (GPII +3.0, Braun +3.0, Sensabaugh +2.1)
+    receive a lower min_gate so they can enter the projection pipeline and be evaluated
+    for the core pool — previously these overrides were unreachable for low-minute players.
+    """
+
+    def _effective_gate(self, pts, override_boost=None, min_gate=12):
+        """Replicate the gate formula from project_player()."""
+        rough_boost = override_boost if override_boost is not None else max(0.2, 3.0 - pts * 0.12)
+        return max(8, min_gate - max(0, (rough_boost - 1.5) * 3))
+
+    def test_gpii_override_3_0_lowers_gate_to_8(self):
+        """GPII has override 3.0 → effective_gate = max(8, 12-(3.0-1.5)*3) = 8."""
+        gate = self._effective_gate(pts=8.0, override_boost=3.0)
+        assert gate == 8, f"GPII with 3.0 override should get gate=8, got {gate}"
+
+    def test_gpii_without_override_gate_higher(self):
+        """Without override, 8 PPG → rough_boost≈2.04 → gate≈10.7 (blocks ~13-min players)."""
+        gate = self._effective_gate(pts=8.0, override_boost=None)
+        assert gate > 10, f"8 PPG without override should give gate>10, got {gate}"
+
+    def test_override_enables_10_min_player_that_ppg_proxy_blocks(self):
+        """A player projecting 10 min with 8 PPG: PPG proxy gives gate≈10.7 (fails), 3.0 override gives gate=8 (passes).
+
+        This is the GPII scenario: on a short-minute night (~10 predMin) with 8 PPG,
+        the PPG proxy underestimates his real boost and incorrectly blocks him.
+        The 3.0 override makes him eligible for the projection pipeline.
+        """
+        proj_min = 10
+        gate_with_override = self._effective_gate(pts=8.0, override_boost=3.0)
+        gate_without_override = self._effective_gate(pts=8.0, override_boost=None)
+        # With 3.0 override: gate = 8, 10 >= 8 → passes
+        assert proj_min >= gate_with_override, \
+            f"10-min player must pass gate with 3.0 override (gate={gate_with_override})"
+        # Without override at 8 PPG: gate ≈ 10.7, 10 < 10.7 → fails
+        assert proj_min < gate_without_override, \
+            f"10-min player must fail gate without override at 8 PPG (gate={gate_without_override})"
+
+    def test_sensabaugh_override_2_1_lowers_gate(self):
+        """Sensabaugh override 2.1 → gate = max(8, 12-(2.1-1.5)*3) = 10.2."""
+        gate = self._effective_gate(pts=10.0, override_boost=2.1)
+        assert gate == pytest.approx(10.2, abs=0.1)
+
+    def test_override_gate_in_project_player_source(self):
+        """project_player() must check player overrides before computing rough_boost."""
+        import inspect
+        from api import index
+        src = inspect.getsource(index.project_player)
+        assert "_override_boost_gate" in src, \
+            "project_player must use _override_boost_gate variable (override-aware gate)"
+        assert "card_boost.player_overrides" in src, \
+            "project_player gate must look up card_boost.player_overrides"
+
+    def test_christian_braun_in_config_overrides(self):
+        """Christian Braun must be in player_overrides with boost 3.0."""
+        import json, pathlib
+        from api.index import _normalize_boost_name
+        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
+        overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
+        norm_braun = _normalize_boost_name("Christian Braun")
+        match = next(
+            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm_braun),
+            None
+        )
+        assert match is not None, "Christian Braun must be in card_boost.player_overrides"
+        assert match == pytest.approx(3.0), f"Braun override should be 3.0, got {match}"
+
+    def test_jared_mccain_in_config_overrides(self):
+        """Jared McCain must be in player_overrides with boost 2.9."""
+        import json, pathlib
+        from api.index import _normalize_boost_name
+        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
+        overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
+        norm = _normalize_boost_name("Jared McCain")
+        match = next(
+            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm),
+            None
+        )
+        assert match is not None, "Jared McCain must be in card_boost.player_overrides"
+        assert match == pytest.approx(2.9), f"McCain override should be 2.9, got {match}"
+
+
+class TestPerGameFloor:
+    """Per-game pool uses configurable recent_min floor (15) and pts floor (8)."""
+
+    def _local_cfg(self):
+        """Read data/model-config.json directly (bypasses GitHub/_cfg fallback to defaults)."""
+        import json, pathlib
+        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
+        return json.loads(cfg_path.read_text())
+
+    def test_game_min_floor_config_key_is_15(self):
+        """lineup.game_recent_min_floor must be 15.0 in config (was hardcoded 20)."""
+        cfg = self._local_cfg()
+        floor = cfg.get("lineup", {}).get("game_recent_min_floor")
+        assert floor is not None, "lineup.game_recent_min_floor must be in model-config.json"
+        assert floor == pytest.approx(15.0), f"game_recent_min_floor should be 15.0, got {floor}"
+
+    def test_game_pts_floor_config_key_is_8(self):
+        """scoring_thresholds.min_game_pts must be 8.0 (was min_moonshot_pts=10)."""
+        cfg = self._local_cfg()
+        floor = cfg.get("scoring_thresholds", {}).get("min_game_pts")
+        assert floor is not None, "scoring_thresholds.min_game_pts must be in model-config.json"
+        assert floor == pytest.approx(8.0), f"min_game_pts should be 8.0, got {floor}"
+
+    def test_per_game_code_uses_config_key(self):
+        """Per-game pool source must use game_recent_min_floor config key, not literal 20.0."""
+        import inspect
+        from api import index
+        src = inspect.getsource(index)
+        assert "game_recent_min_floor" in src, \
+            "Per-game pool must reference game_recent_min_floor config key"
+        assert "scoring_thresholds.min_game_pts" in src, \
+            "Per-game pool must use scoring_thresholds.min_game_pts config key"
+
+    def test_chalk_season_min_floor_is_15(self):
+        """chalk_season_min_floor must be 15 (lowered from 20) to admit Braun/McCain-type players."""
+        cfg = self._local_cfg()
+        floor = cfg.get("projection", {}).get("chalk_season_min_floor")
+        assert floor == pytest.approx(15.0), \
+            f"chalk_season_min_floor should be 15.0, got {floor}"
+
+    def test_den_not_in_big_market_teams(self):
+        """DEN must be removed from big_market_teams — DEN role players are low-ownership."""
+        cfg = self._local_cfg()
+        big_markets = cfg.get("card_boost", {}).get("big_market_teams", [])
+        assert "DEN" not in big_markets, \
+            "DEN must not be in big_market_teams — Braun/Porter etc. are not heavily drafted"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
