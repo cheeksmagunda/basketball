@@ -1,7 +1,7 @@
 {
-  "version": 45,
-  "updated_at": "2026-03-19T15:00:00Z",
-  "updated_by": "lab",
+  "version": 46,
+  "updated_at": "2026-03-19T18:00:00Z",
+  "updated_by": "audit",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 6.0,
@@ -10,8 +10,7 @@
     "min_chalk_rating": 3.5,
     "min_moonshot_rating": 3.0,
     "min_moonshot_pts": 6.0,
-    "chalk_boost_cap": 1.5,
-    "star_anchor_ppg": 20.0,
+    "chalk_boost_cap": 3.0,
     "min_game_pts": 8.0
   },
   "card_boost": {
@@ -131,11 +130,11 @@
   "projection": {
     "min_gate_minutes": 15,
     "lock_buffer_minutes": 5,
-    "season_recent_blend": 0.5,
+    "season_recent_blend": 0.2,
     "major_role_change_threshold": 0.75,
     "major_role_change_recent_weight": 0.8,
     "moderate_decline_threshold": 0.9,
-    "moderate_decline_recent_weight": 0.65,
+    "moderate_decline_recent_weight": 0.80,
     "gtd_minute_penalty": 0.75,
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
@@ -144,8 +143,6 @@
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
     "chalk_recent_min_floor": 20.0,
-    "chalk_max_stars": 1,
-    "chalk_star_boost_threshold": 0.8,
     "leverage_top_slots": 1,
     "leverage_boost_threshold": 1.5,
     "big_man_calibration": {
@@ -156,12 +153,11 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.2,
-    "chalk_star_anchor_min_boost": 0.6,
+    "chalk_min_boost_floor": 1.0,
     "pred_min_tolerance": 2.0
   },
   "context_layer": {
-    "enabled": true,
+    "enabled": false,
     "model": "claude-opus-4-20250514",
     "web_search_model": "claude-opus-4-20250514",
     "max_adjustment": 0.4,
@@ -169,7 +165,7 @@
     "web_search_enabled": true
   },
   "lineup_review": {
-    "enabled": true,
+    "enabled": false,
     "model": "claude-opus-4-20250514",
     "timeout_seconds": 30
   },
@@ -212,15 +208,15 @@
   "moonshot": {
     "min_minutes_floor": 20,
     "min_recent_minutes_floor": 20,
-    "min_card_boost": 1.5,
+    "min_card_boost": 1.0,
     "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
-    "max_centers": 3,
+    "max_centers": 99,
     "boost_leverage_power": 1.2,
-    "variance_penalty": 0.15,
+    "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
     "wildcard_min_minutes": 15.0,
@@ -232,19 +228,19 @@
   },
   "matchup": {
     "enabled": true,
-    "claude_enabled": true,
+    "claude_enabled": false,
     "def_scale": 0.35,
     "pos_scale_g": 1.05,
     "pos_scale_f": 1.00,
     "pos_scale_c": 0.90,
     "chalk_adj_min": 0.92,
     "chalk_adj_max": 1.10,
-    "moonshot_adj_min": 0.75,
-    "moonshot_adj_max": 1.30,
+    "moonshot_adj_min": 0.90,
+    "moonshot_adj_max": 1.15,
     "claude_timeout_seconds": 25
   },
   "team_motivation": {
-    "enabled": true,
+    "enabled": false,
     "start_date": "2026-03-01",
     "seeding_gap_games": 2.0,
     "playin_gap_games": 2.0,
@@ -263,6 +259,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 46,
+      "date": "2026-03-19",
+      "change": "BOOST DOMINANCE AUDIT — strip to mathematically proven winning formula. Leaderboard evidence is unambiguous: boost leverage dominates everything. Removed 8 overthinking modules: (1) Star anchor pathway — let 20+ PPG players bypass boost floor; Jokic/Luka/Wemby should NEVER enter pool with 0.0-0.3x boost. (2) Reliability multiplier — was dampening chalk_ev by 0.70-1.0x based on minute consistency; removed from formula (RS projection already accounts for this). (3) Claude context pass (Layer 2) — was overriding RS by ±40% based on subjective reasoning; disabled. (4) Claude lineup review (Layer 3) — was swapping MILP-optimal players post-optimization; disabled. (5) Claude matchup intelligence — was injecting DvP analysis noise; disabled. (6) Team motivation multiplier — was ±12% based on standings; disabled. (7) Variance penalty on moonshot — was penalizing volatile players who ARE the winning profile; set to 0. (8) Center cap — was limiting centers to 3 in moonshot; removed (Poeltl/Queta/Achiuwa all win). Config: boost floors lowered to 1.0x (from 1.2x chalk, 1.5x moonshot), chalk_boost_cap raised to 3.0 (uncapped), season_recent_blend 0.5→0.2 (80% recent form), moonshot matchup range tightened [0.90, 1.15]. Simplified formulas: chalk_ev = rating × (slot + boost), moonshot_ev = rating × boost_leverage × (slot + boost)."
+    },
     {
       "version": 45,
       "date": "2026-03-19",

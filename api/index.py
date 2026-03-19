@@ -2044,28 +2044,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Use average slot (1.6) for ranking; MILP uses exact slots
     avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
 
-    # Reliability multiplier — prevents high-boost/low-reliability players from
-    # dominating the lineup. March 4th lesson: picking players for their card boost
-    # only works if they ACTUALLY PLAY. Penalize minute-inconsistent and GTD players.
-    season_min_for_rel = stats.get("season_min", avg_min)
-    recent_min_for_rel = stats.get("recent_min", avg_min)
-    reliability = 1.0
-    if season_min_for_rel > 0:
-        min_ratio = recent_min_for_rel / season_min_for_rel
-        if min_ratio < 0.90:
-            rel_floor = proj_cfg.get("reliability_floor", 0.70)
-            reliability = max(min_ratio, rel_floor)
-    if pinfo.get("injury_status") == "GTD":
-        reliability *= 0.82  # GTD compounds minute inconsistency risk
-
-    chalk_ev  = round(raw_score * (avg_slot + card_boost) * reliability, 2)
+    # Core value formula: RS × (slot + boost). No post-hoc reliability adjustments.
+    # Minute consistency is already baked into RS projection via season/recent blending.
+    # Boost dominance audit (Mar 19): removed reliability multiplier that was dampening
+    # high-boost players with minute variance — exactly the players that win leaderboards.
+    chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
 
     # Ceiling score — player's upside (variance-adjusted median)
     ceiling_score = raw_score * (1.0 + (player_variance * 0.5))
-    # Game stacking bonus: shootout environments boost ceiling via correlated outcomes
-    if (total or DEFAULT_TOTAL) >= 235 and abs(spread or 0) <= 5.0:
-        ceiling_score *= 1.08
-    ceiling_ev = round(ceiling_score * (avg_slot + card_boost) * reliability, 2)
+    ceiling_ev = round(ceiling_score * (avg_slot + card_boost), 2)
     ceiling_score = round(ceiling_score, 1)
 
     return {
@@ -3029,20 +3016,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         chalk_min_tol = float(_cfg("projection.pred_min_tolerance", 2.0))
         if p.get("predMin", 0) < (p.get("season_min", 0) - chalk_min_tol):
             continue
-        # Star anchor pathway: high-PPG players (20+ season avg) bypass the boost floor.
-        # These are the guys who pop off for 30-40 pts — their RS ceiling compensates for
-        # low card boost. The chalk_max_stars constraint (below) limits how many get in.
-        # Without this, ZERO stars enter the chalk pool because all have boost < 1.2x.
-        star_anchor_ppg = float(_cfg("scoring_thresholds.star_anchor_ppg", 20.0))
-        is_star_anchor = p.get("season_pts", 0) >= star_anchor_ppg
-        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.2))
-        # Star anchors also have a minimum boost floor — prevents LeBron (+0.2x) from
-        # dominating the 2.0x slot via star anchor when blowout risk tanks RS.
-        # Bam (0.6x) is borderline; Luka (0.0x), LeBron (0.2x), Wemby (0.3x) are excluded.
-        chalk_star_anchor_min_boost = float(_cfg("projection.chalk_star_anchor_min_boost", 0.6))
-        if is_star_anchor and p.get("est_mult", 0) < chalk_star_anchor_min_boost:
-            continue
-        if not is_star_anchor and p.get("est_mult", 0) < chalk_min_boost:
+        # Hard boost floor — ALL players must meet this threshold, no exceptions.
+        # Boost dominance audit (Mar 19): removed star anchor pathway that let 20+ PPG
+        # players bypass the boost floor. Jokic (+0.2x), Luka (+0.0x), Wemby (+0.3x)
+        # should NEVER enter the chalk pool — their low boost kills lineup EV.
+        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.0))
+        if p.get("est_mult", 0) < chalk_min_boost:
             continue
         # Minimum rating gate: boost cannot rescue a weak base.
         # A player with rating < 3.5 doesn't generate enough RS to be a viable chalk pick
@@ -3060,13 +3039,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             float(_cfg("matchup.chalk_adj_min", 0.92)),
             min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
         )
-        _mot_mult = _team_motivation_multiplier(p.get("team", ""), "chalk", team_motivation)
-        p["team_motivation_mult"] = round(_mot_mult, 3)
-        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * _mot_mult * (avg_slot + capped_boost), 2)
+        # Core value: RS × matchup × (slot + boost). No team motivation — disabled by audit.
+        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
-    chalk_max_stars  = int(_cfg("projection.chalk_max_stars", 2))
-    chalk_star_thresh = float(_cfg("projection.chalk_star_boost_threshold", 0.6))
+    # Star anchor constraints removed — boost dominance audit (Mar 19).
+    # All players must meet boost floor; no special star treatment.
 
     # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
     core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
@@ -3075,9 +3053,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
     if not core_pool_enabled:
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
-                                max_per_team=2,
-                                max_low_boost=chalk_max_stars,
-                                low_boost_threshold=chalk_star_thresh)
+                                max_per_team=2)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -3129,12 +3105,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         est_mult   = p.get("est_mult", 0.3)
 
         # ── Moonshot eligibility ─────────────────────────────────────────────
-        # 4 pathways (wildcard removed — was bypassing all quality gates,
-        # letting deep bench trash with high boost into lineups):
-        #   Regular:      season AND recent min meet floor (both >= 20)
+        # 3 pathways (star anchor removed — boost dominance audit Mar 19):
+        #   Regular:      season AND recent min meet floor
         #   Spot-starter: cascade injury gave them a starter role
         #   Role spike:   recent minutes >> season (role change/injury)
-        #   Star anchor:  20+ PPG starters with strong RS
         is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
         is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
         role_spike_ratio  = moon_cfg.get("role_spike_ratio", 1.4)
@@ -3146,15 +3120,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             and recent_min >= season_min * role_spike_ratio
             and est_mult >= min_boost
         )
-        # Star anchor: same gate as chalk — 20+ PPG real starters with strong RS.
-        star_anchor_ppg = float(_cfg("scoring_thresholds.star_anchor_ppg", 20.0))
-        is_star_anchor = (
-            season_pts >= star_anchor_ppg
-            and season_min >= 25
-            and p["rating"] >= 4.0
-        )
         if not (is_moonshot_regular or is_moonshot_spot_starter
-                or is_role_spike or is_star_anchor):
+                or is_role_spike):
             continue
 
         # Never draft a moonshot player projected well below their season minute average.
@@ -3163,8 +3130,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if pred_min < (season_min - moon_min_tol):
             continue
 
-        # Minimum card boost — star anchors bypass (same as chalk bypass pattern)
-        if not is_star_anchor and est_mult < min_boost:
+        # Hard boost floor — ALL players must meet this, no exceptions.
+        if est_mult < min_boost:
             continue
 
         # RotoWire: only exclude confirmed OUT players.
@@ -3176,27 +3143,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if p["rating"] < min_rating_floor:
             continue
 
-        # ── Moonshot EV (matchup-aware) ─────────────────────────────────────────
-        # The formula maximizes RS × (slot + boost) with matchup intelligence:
-        #   1. Math matchup factor: opponent defensive quality vs player position
-        #   2. Claude matchup factor: DvP web intelligence (Layer 1.5)
-        #   3. Boost leverage: bake ownership advantage into MILP rating
-        # Replaces: dev-team win% bonus (double-counted card boost signal)
-
-        # Math-based matchup factor: opponent defensive quality vs player position
+        # ── Moonshot EV (boost-dominance formula) ──────────────────────────────
+        # Core formula: RS × boost_leverage × (slot + boost)
+        # Boost dominance audit (Mar 19): removed variance penalty (moonshot IS variance),
+        # removed Claude matchup factor (noise). Light math matchup kept.
         opp_abbr = p.get("opp", "")
         matchup_factor = _compute_matchup_factor(p, opp_abbr, def_stats or {})
-
-        # Claude matchup intelligence (Layer 1.5): DvP-aware adjustment
-        claude_entry = _matchup_intel.get(p.get("name", ""), {})
-        claude_factor = float(claude_entry.get("factor", 1.0))
-        claude_factor = max(0.80, min(1.20, claude_factor))
-
-        # Combined matchup factor (clamped to safe range)
-        combined_factor = max(
-            float(_cfg("matchup.moonshot_adj_min", 0.75)),
-            min(float(_cfg("matchup.moonshot_adj_max", 1.30)),
-                matchup_factor * claude_factor)
+        matchup_factor = max(
+            float(_cfg("matchup.moonshot_adj_min", 0.90)),
+            min(float(_cfg("matchup.moonshot_adj_max", 1.15)), matchup_factor)
         )
 
         # Boost leverage — the core moonshot signal. High-boost players get
@@ -3204,12 +3159,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         boost_power = moon_cfg.get("boost_leverage_power", 1.6)
         boost_leverage = max(est_mult, 0.2) ** boost_power
 
-        # Light variance damping (not heavy penalty — moonshot wants upside)
-        p_var = min(p.get("player_variance", 0.0), 0.6)
-        var_penalty = variance_penalty_coef
-        base_rating = p["rating"] * max(0.85, 1.0 - p_var * var_penalty)
-
-        adj_ceiling = round(base_rating * combined_factor * boost_leverage, 3)
+        adj_ceiling = round(p["rating"] * matchup_factor * boost_leverage, 3)
 
         # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
@@ -3222,24 +3172,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             "_rw_cleared":    True,
         })
 
-    # Cap centers in moonshot — centers generate fewer RS events per minute
-    # (screens/rim protection don't accumulate RS). Winning moonshots are
-    # overwhelmingly guards/forwards from dev teams. Default max 2 centers.
-    max_centers = moon_cfg.get("max_centers", 2)
-    sorted_pool = sorted(moonshot_pool, key=lambda p: p.get("moonshot_ev", 0), reverse=True)
-    capped_pool = []
-    center_count = 0
-    for p in sorted_pool:
-        is_center = _pos_group(p.get("pos", "G")) == "C"
-        if is_center and center_count >= max_centers:
-            continue
-        capped_pool.append(p)
-        if is_center:
-            center_count += 1
-
+    # No center cap — position balancing removed (boost dominance audit Mar 19).
+    # Poeltl, Queta, Achiuwa all appear in winning lineups.
     moonshot_max_team = int(moon_cfg.get("max_per_team", 2))
-    # max_low_boost=1: mirrors chalk — at most 1 star anchor (low boost) in moonshot.
-    # The other 4 slots stay as high-boost role players. Same logic as Starting 5.
 
     if core_pool_enabled:
         # ── Core pool path: one 7–10 player core; both lineups are configurations of it ──
@@ -3247,19 +3182,14 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             _est = p.get("est_mult", 0.3)
             _boost_power = _moon_cfg.get("boost_leverage_power", 1.6)
             _boost_leverage = max(_est, 0.2) ** _boost_power
-            _p_var = min(p.get("player_variance", 0.0), 0.6)
-            _var_penalty = _moon_cfg.get("variance_penalty", 0.15)
-            _base = p["rating"] * max(0.85, 1.0 - _p_var * _var_penalty)
-            # Matchup factor replaces dev-team bonus
+            # Simplified: rating × matchup × boost_leverage (no variance, no Claude)
             _opp = p.get("opp", "")
             _matchup = _compute_matchup_factor(p, _opp, _def_stats or {})
-            _claude_f = float((_matchup_intel_map.get(p.get("name", "")) or {}).get("factor", 1.0))
-            _claude_f = max(0.80, min(1.20, _claude_f))
-            _combined = max(
-                float(_cfg("matchup.moonshot_adj_min", 0.75)),
-                min(float(_cfg("matchup.moonshot_adj_max", 1.30)), _matchup * _claude_f)
+            _matchup = max(
+                float(_cfg("matchup.moonshot_adj_min", 0.90)),
+                min(float(_cfg("matchup.moonshot_adj_max", 1.15)), _matchup)
             )
-            _adj = round(_base * _combined * _boost_leverage, 3)
+            _adj = round(p["rating"] * _matchup * _boost_leverage, 3)
             return round(_adj * (_avg_slot + _est), 2), _adj
 
         moonshot_by_name = {p["name"]: p for p in moonshot_pool}
@@ -3301,27 +3231,14 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         chalk = optimize_lineup(chalk_core, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
                                 max_per_team=2,
-                                max_low_boost=chalk_max_stars,
-                                low_boost_threshold=chalk_star_thresh,
                                 objective_mode="chalk",
                                 variance_penalty=0.5)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
-        sorted_core = sorted(core_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
-        capped_core = []
-        center_count = 0
-        for q in sorted_core:
-            is_center = _pos_group(q.get("pos", "G")) == "C"
-            if is_center and center_count >= max_centers:
-                continue
-            capped_core.append(q)
-            if is_center:
-                center_count += 1
-        upside = optimize_lineup(capped_core if capped_core else core_pool, n=5, sort_key="moonshot_ev",
+        # No center cap — position balancing removed (boost dominance audit Mar 19)
+        upside = optimize_lineup(core_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
-                                 max_low_boost=1,
-                                 low_boost_threshold=0.8,
                                  objective_mode="moonshot",
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.2,
@@ -3330,12 +3247,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  two_phase=True,
                                  raw_rating_key="rating")
     else:
-        upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
+        upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
-                                 max_low_boost=1,
-                                 low_boost_threshold=0.8,
                                  objective_mode="moonshot",
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.2,
