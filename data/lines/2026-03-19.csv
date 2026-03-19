@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-19,LeBron James,1966,LAL,MIA,points,21,over,24,3,80,Model projects 24.0 points — a 3.0 edge vs the 21.0 season baseline.,pending,
