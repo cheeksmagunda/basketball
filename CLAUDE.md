@@ -663,7 +663,7 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 | **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
 | **api/real_score.py** | Monte Carlo Real Score | RS projection (closeness, clutch, momentum). Used by projection pipeline in index. |
-| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Used by game runner in index. |
+| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Two-phase optimization for moonshot (Phase 1: player selection with shaped ratings; Phase 2: slot assignment with raw RS). No position-per-team constraint (Real Sports has no position requirements). Used by game runner in index. |
 | **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production runs as a persistent Docker container on Railway. |
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
 | **scripts/sync_model_config.py** | Config sync | Syncs model-config from GitHub (used by workflows). |
@@ -726,7 +726,7 @@ TestContextPassWithNews     — web search called from context pass, news text i
 - **TestNormalizePlayer** — _normalize_player() contract: all required fields present with correct types
 - **TestNormalizeLinePick** — _normalize_line_pick() contract: all required fields, result defaults to "pending"
 - **TestRealScoreEngine** — Monte Carlo closeness/clutch/momentum coefficients (pure numpy, no I/O)
-- **TestAssetOptimizer** — optimize_lineup() MILP slot assignment: chalk vs moonshot modes, edge cases
+- **TestAssetOptimizer** — optimize_lineup() MILP slot assignment: chalk vs moonshot modes, edge cases, RS-ordered slotting, two-phase moonshot, same-position-same-team allowed
 - **TestConfigCoverage** — all major model floors read from model-config.json via _cfg()
 - **TestProjectPlayerContract** — project_player() returns all required fields after _normalize_player()
 - **TestLineEngineHelpers** — line_engine.py helpers with no external deps (_abbr_matches, stat meta)
@@ -827,6 +827,7 @@ If slate, line, and/or log all fail to load:
 | Line over model tightening | `api/line_engine.py` | Over picks penalized -12 confidence when no catalyst signals (cascade/form/B2B). Prompt expanded with explicit over-specific rules citing 17% historical hit rate. Recent form trend indicators (↑HOT/↓COLD) added to player context. |
 | `.ok` check before `.json()` | `index.html` | `/api/lab/update-config` response: check `.ok` before parsing JSON to prevent misleading error handling. |
 | Vercel→Railway comment cleanup | `api/index.py` | Replaced 7 stale Vercel references with Railway equivalents (watchPatterns, container instances, timeout limits). |
+| MILP solver audit — 3 fixes | `api/asset_optimizer.py`, `api/index.py` | (1) Removed `leverage_top_slots` constraint — mathematically wrong for additive formula `RS × (Slot + Boost)` since boost is player-constant; solver naturally places highest RS in highest slot. (2) Two-phase moonshot optimization — Phase 1 selects players using shaped ratings (boost leverage, variance uplift); Phase 2 re-assigns slots using raw RS for optimal placement. Decouples selection from slotting. (3) Removed position-per-team constraint — Real Sports has no position requirements; artificial constraint blocked legitimate same-position stacks. |
 
 ## Loading audit
 

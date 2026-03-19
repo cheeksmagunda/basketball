@@ -861,6 +861,95 @@ class TestAssetOptimizer:
         result = optimize_lineup([], n=5)
         assert result == []
 
+    def test_slot_assignment_is_rs_ordered(self):
+        """Highest raw RS must be in 2.0x slot — boost is irrelevant to slotting.
+
+        In the additive formula Score = RS × (Slot + Boost), the boost is a
+        player-level constant. The variable term RS × Slot is maximized by
+        placing highest RS in highest slot, always.
+        """
+        from api.asset_optimizer import optimize_lineup
+        # Player A: low RS (2.0) but huge boost (3.0)
+        # Player B: high RS (5.0) but low boost (0.5)
+        players = [
+            {"name": "LowRS_HighBoost", "team": "LAL", "pos": "PG",
+             "rating": 2.0, "est_mult": 3.0, "chalk_ev": 10, "moonshot_ev": 0},
+            {"name": "HighRS_LowBoost", "team": "BOS", "pos": "SG",
+             "rating": 5.0, "est_mult": 0.5, "chalk_ev": 10, "moonshot_ev": 0},
+            {"name": "MidRS", "team": "MIL", "pos": "SF",
+             "rating": 3.5, "est_mult": 1.5, "chalk_ev": 8, "moonshot_ev": 0},
+            {"name": "MidRS2", "team": "PHX", "pos": "PF",
+             "rating": 3.0, "est_mult": 2.0, "chalk_ev": 7, "moonshot_ev": 0},
+            {"name": "LowRS2", "team": "DEN", "pos": "C",
+             "rating": 2.5, "est_mult": 2.5, "chalk_ev": 6, "moonshot_ev": 0},
+        ]
+        result = optimize_lineup(players, n=5, rating_key="rating")
+        # The 2.0x slot must go to highest RS player (5.0), not highest boost
+        top_slot = [p for p in result if p["slot"] == "2.0x"][0]
+        assert top_slot["name"] == "HighRS_LowBoost", \
+            f"Expected highest RS in 2.0x slot, got {top_slot['name']} (RS {top_slot['rating']})"
+
+    def test_two_phase_moonshot_slots_by_raw_rs(self):
+        """Two-phase moonshot: Phase 1 selects players, Phase 2 slots by raw RS.
+
+        Without two_phase, moonshot shaping (boost_leverage_extra_power) inflates
+        ratings and can put a low-RS high-boost player in the 2.0x slot.
+        With two_phase, slot assignment always uses raw RS.
+        """
+        from api.asset_optimizer import optimize_lineup
+        players = [
+            {"name": "Star", "team": "LAL", "pos": "PG",
+             "rating": 5.5, "adj_ceiling": 3.0, "est_mult": 0.3,
+             "player_variance": 0.1, "chalk_ev": 10, "moonshot_ev": 5},
+            {"name": "Contrarian", "team": "BOS", "pos": "SG",
+             "rating": 3.0, "adj_ceiling": 8.0, "est_mult": 2.8,
+             "player_variance": 0.3, "chalk_ev": 7, "moonshot_ev": 20},
+            {"name": "MidA", "team": "MIL", "pos": "SF",
+             "rating": 4.0, "adj_ceiling": 5.0, "est_mult": 1.5,
+             "player_variance": 0.2, "chalk_ev": 8, "moonshot_ev": 10},
+            {"name": "MidB", "team": "PHX", "pos": "PF",
+             "rating": 3.5, "adj_ceiling": 4.5, "est_mult": 1.8,
+             "player_variance": 0.2, "chalk_ev": 7, "moonshot_ev": 9},
+            {"name": "MidC", "team": "DEN", "pos": "C",
+             "rating": 3.2, "adj_ceiling": 4.0, "est_mult": 2.0,
+             "player_variance": 0.15, "chalk_ev": 6, "moonshot_ev": 8},
+        ]
+        result = optimize_lineup(players, n=5, sort_key="moonshot_ev",
+                                 rating_key="adj_ceiling", card_boost_key="est_mult",
+                                 objective_mode="moonshot", variance_uplift=0.35,
+                                 boost_leverage_extra_power=0.2,
+                                 two_phase=True, raw_rating_key="rating")
+        # After Phase 2 re-slotting, highest raw RS (Star=5.5) must get 2.0x
+        top_slot = [p for p in result if p["slot"] == "2.0x"][0]
+        assert top_slot["name"] == "Star", \
+            f"Two-phase should slot by raw RS: expected Star in 2.0x, got {top_slot['name']}"
+
+    def test_same_position_same_team_allowed(self):
+        """No position-per-team constraint — Real Sports has no position requirements.
+
+        Two guards from the same team should coexist in the lineup when they're
+        the best picks (e.g., injury cascade creates usage for multiple backcourt).
+        """
+        from api.asset_optimizer import optimize_lineup
+        # 3 LAL guards + 2 filler from other teams
+        players = [
+            {"name": "LAL_PG", "team": "LAL", "pos": "PG",
+             "rating": 5.0, "est_mult": 2.0, "chalk_ev": 15, "moonshot_ev": 0},
+            {"name": "LAL_SG", "team": "LAL", "pos": "SG",
+             "rating": 4.8, "est_mult": 2.0, "chalk_ev": 14, "moonshot_ev": 0},
+            {"name": "BOS_SF", "team": "BOS", "pos": "SF",
+             "rating": 4.5, "est_mult": 1.5, "chalk_ev": 12, "moonshot_ev": 0},
+            {"name": "MIL_PF", "team": "MIL", "pos": "PF",
+             "rating": 4.2, "est_mult": 1.0, "chalk_ev": 10, "moonshot_ev": 0},
+            {"name": "PHX_C", "team": "PHX", "pos": "C",
+             "rating": 4.0, "est_mult": 1.0, "chalk_ev": 9, "moonshot_ev": 0},
+        ]
+        result = optimize_lineup(players, n=5, rating_key="rating")
+        names = {p["name"] for p in result}
+        # Both LAL guards should be in the lineup (previously blocked by pos-per-team)
+        assert "LAL_PG" in names, "LAL_PG should be in lineup"
+        assert "LAL_SG" in names, "LAL_SG should be in lineup"
+
 
 # ---------------------------------------------------------------------------
 # 11. Config coverage — new lineup/line keys are readable via _cfg()

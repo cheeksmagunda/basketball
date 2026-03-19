@@ -546,8 +546,6 @@ _CONFIG_DEFAULTS = {
                                         # despite high season avg (e.g. demoted starter, rest-management)
         "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
         "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
-        "leverage_top_slots": 1,        # force 1 contrarian into top slot; star anchor goes in 2.0x (v21: was 2→1)
-        "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
         "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
             "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 20.0,
         },
@@ -2896,8 +2894,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
 
     chalk_max_stars  = int(_cfg("projection.chalk_max_stars", 2))
     chalk_star_thresh = float(_cfg("projection.chalk_star_boost_threshold", 0.6))
-    leverage_top     = int(_cfg("projection.leverage_top_slots", 1))
-    leverage_thresh  = float(_cfg("projection.leverage_boost_threshold", 1.0))
 
     # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
     core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
@@ -2908,9 +2904,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                 rating_key="rating", card_boost_key="capped_boost",
                                 max_per_team=2,
                                 max_low_boost=chalk_max_stars,
-                                low_boost_threshold=chalk_star_thresh,
-                                leverage_top_slots=leverage_top,
-                                leverage_boost_threshold=leverage_thresh)
+                                low_boost_threshold=chalk_star_thresh)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -3138,8 +3132,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                 max_per_team=2,
                                 max_low_boost=chalk_max_stars,
                                 low_boost_threshold=chalk_star_thresh,
-                                leverage_top_slots=leverage_top,
-                                leverage_boost_threshold=leverage_thresh,
                                 objective_mode="chalk",
                                 variance_penalty=0.5)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
@@ -3163,14 +3155,21 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.2,
                                  overlap_player_ids=chalk_ids,
-                                 overlap_cap=3)
+                                 overlap_cap=3,
+                                 two_phase=True,
+                                 raw_rating_key="rating")
     else:
         upside = optimize_lineup(capped_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
                                  max_low_boost=1,
-                                 low_boost_threshold=0.8)
+                                 low_boost_threshold=0.8,
+                                 objective_mode="moonshot",
+                                 variance_uplift=0.35,
+                                 boost_leverage_extra_power=0.2,
+                                 two_phase=True,
+                                 raw_rating_key="rating")
         core_pool = None
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
