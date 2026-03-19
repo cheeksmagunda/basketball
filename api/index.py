@@ -528,6 +528,8 @@ _CONFIG_DEFAULTS = {
         "rs_cap": 20.0,
         "ai_blend_weight": 0.35,
         "calibration_scale": 1.15,
+        "calibration_scale_role": 1.22,
+        "calibration_scale_star": 1.10,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -547,7 +549,7 @@ _CONFIG_DEFAULTS = {
         "leverage_top_slots": 1,        # force 1 contrarian into top slot; star anchor goes in 2.0x (v21: was 2→1)
         "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
         "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
-            "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 16.0,
+            "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 20.0,
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
@@ -1844,10 +1846,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     raw_score = min(raw_score * scoring_bias, rs_cap)
 
     # RS calibration scale — corrects systematic under-projection bias.
-    # 13-date backtest (Mar 5–17) showed model under-projects RS by ~34% on average
-    # (avg predicted 4.3 vs avg actual 5.2 for matched leaderboard players).
-    # Conservative 1.15 scale (not full 1.34 which is biased toward leaderboard tail).
-    cal_scale = rs_cfg.get("calibration_scale", 1.15)
+    # 13-date backtest (Mar 5–17): 65% under-projection rate, avg MAE 1.48 RS.
+    # Per-tier: role players get calibration_scale_role (1.22) — they are more
+    # consistently under-projected. Stars get calibration_scale_star (1.10) —
+    # lower to avoid over-projecting on flat nights; extreme nights are captured
+    # by Claude context layer instead. Falls back to global calibration_scale.
+    _star_ppg = _cfg("scoring_thresholds.star_anchor_ppg", 20.0)
+    if season_pts >= _star_ppg:
+        cal_scale = rs_cfg.get("calibration_scale_star", rs_cfg.get("calibration_scale", 1.15))
+    else:
+        cal_scale = rs_cfg.get("calibration_scale_role", rs_cfg.get("calibration_scale", 1.15))
     raw_score = min(raw_score * cal_scale, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
@@ -4441,6 +4449,22 @@ def _compute_audit(date_str):
     over  = [e for e in misses if e["error"] < 0]
     under = [e for e in misses if e["error"] > 0]
 
+    # Simulated draft score — measures progress toward 60+ goal.
+    # Optimal hindsight: sort actuals by RS, assign slots 2.0x→1.2x to top 5,
+    # compute RS × (slot + actual_card_boost) for each. Shows what was achievable.
+    slot_mults = [2.0, 1.8, 1.6, 1.4, 1.2]
+    top5_actuals = sorted(
+        [a for a in actuals if _safe_float(a.get("actual_rs")) > 0],
+        key=lambda a: _safe_float(a.get("actual_rs")),
+        reverse=True
+    )[:5]
+    simulated_draft_score = None
+    if len(top5_actuals) >= 3:
+        simulated_draft_score = round(sum(
+            _safe_float(p.get("actual_rs")) * (slot_mults[i] + _safe_float(p.get("actual_card_boost", 0)))
+            for i, p in enumerate(top5_actuals)
+        ), 1)
+
     return {
         "date":               date_str,
         "players_compared":   len(errors),
@@ -4449,6 +4473,7 @@ def _compute_audit(date_str):
         "over_projected":     len(over),
         "under_projected":    len(under),
         "biggest_misses":     misses[:8],
+        "simulated_draft_score": simulated_draft_score,
         "generated_at":       datetime.now(timezone.utc).isoformat(),
     }
 
