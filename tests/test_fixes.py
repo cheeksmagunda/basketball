@@ -278,22 +278,20 @@ class TestPerTierCalibration:
         # Just verify it ran without error — exact RS comparison is fragile due to LightGBM
         assert star_result is not None
 
-    def test_config_defaults_have_per_tier_scale_keys(self):
-        """_CONFIG_DEFAULTS must include calibration_scale_role and calibration_scale_star."""
+    def test_calibration_scale_removed_from_pipeline(self):
+        """calibration_scale layers removed in v45 simplification — not in _CONFIG_DEFAULTS or code."""
         from api.index import _CONFIG_DEFAULTS
         rs_defaults = _CONFIG_DEFAULTS.get("real_score", {})
-        assert "calibration_scale_role" in rs_defaults, "calibration_scale_role missing from _CONFIG_DEFAULTS"
-        assert "calibration_scale_star" in rs_defaults, "calibration_scale_star missing from _CONFIG_DEFAULTS"
-        assert rs_defaults["calibration_scale_role"] > rs_defaults["calibration_scale_star"], \
-            "role scale should be higher than star scale"
-
-    def test_fallback_to_global_calibration_scale(self):
-        """When per-tier keys are absent, falls back to calibration_scale."""
-        from api.index import _CONFIG_DEFAULTS
-        # Simulate a config without the new keys
-        rs = _CONFIG_DEFAULTS["real_score"]
-        fallback = rs.get("calibration_scale_role", rs.get("calibration_scale", 1.15))
-        assert fallback == rs["calibration_scale_role"]  # new key present → uses it
+        assert "calibration_scale_role" not in rs_defaults, \
+            "calibration_scale_role should be removed (pipeline simplified in v45)"
+        assert "calibration_scale_star" not in rs_defaults, \
+            "calibration_scale_star should be removed (pipeline simplified in v45)"
+        # Verify code no longer calls calibration scale
+        import inspect
+        import api.index as idx
+        src = inspect.getsource(idx.project_player)
+        assert "calibration_scale" not in src, \
+            "project_player should not use calibration_scale (removed in v45)"
 
 
 # ─────────────────────────────────────────────────────────
@@ -1095,7 +1093,9 @@ class TestMoonshotPtsFloor:
         with open("data/model-config.json") as f:
             cfg = json.load(f)
         assert cfg["scoring_thresholds"]["min_pts_projection"] == 7.0
-        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] == 3.0
+        # moonshot floor raised to 6.0 in v44 (was 3.0) — bench players need real production
+        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 5.0, \
+            f"moonshot pts floor should be >= 5.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
 
     def test_project_player_uses_moonshot_floor(self):
         """project_player should use the lower moonshot floor (4.0) not 7.0."""
@@ -1827,12 +1827,12 @@ class TestPerGameFloor:
         assert "scoring_thresholds.min_game_pts" in src, \
             "Per-game pool must use scoring_thresholds.min_game_pts config key"
 
-    def test_chalk_season_min_floor_is_15(self):
-        """chalk_season_min_floor must be 15 (lowered from 20) to admit Braun/McCain-type players."""
+    def test_chalk_season_min_floor_is_22(self):
+        """chalk_season_min_floor must be 22 — proven rotation players only in Starting 5."""
         cfg = self._local_cfg()
         floor = cfg.get("projection", {}).get("chalk_season_min_floor")
-        assert floor == pytest.approx(15.0), \
-            f"chalk_season_min_floor should be 15.0, got {floor}"
+        assert floor == pytest.approx(22.0), \
+            f"chalk_season_min_floor should be 22.0, got {floor}"
 
     def test_den_not_in_big_market_teams(self):
         """DEN must be removed from big_market_teams — DEN role players are low-ownership."""

@@ -1,6 +1,6 @@
 {
-  "version": 44,
-  "updated_at": "2026-03-19T09:00:00Z",
+  "version": 45,
+  "updated_at": "2026-03-19T15:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -11,8 +11,6 @@
     "min_moonshot_rating": 3.0,
     "min_moonshot_pts": 6.0,
     "chalk_boost_cap": 1.5,
-    "scoring_bias_base": 0.85,
-    "scoring_bias_pts_weight": 0.35,
     "star_anchor_ppg": 20.0,
     "min_game_pts": 8.0
   },
@@ -123,10 +121,7 @@
     "compression_divisor": 5.5,
     "compression_power": 0.72,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.35,
-    "calibration_scale": 1.15,
-    "calibration_scale_role": 1.10,
-    "calibration_scale_star": 1.10
+    "ai_blend_weight": 0.35
   },
   "cascade": {
     "redistribution_rate": 0.7,
@@ -268,6 +263,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 45,
+      "date": "2026-03-19",
+      "change": "RS pipeline simplified — removed 5 stacked multipliers that inflated bench players from RS 2→4 (actual RS 1.5). Removed: (1) clutch potential ×1.05-1.40 applied to all players, (2) Monte Carlo closeness×clutch×momentum ×1.3-1.7 applied to all players, (3) big man calibration ×1.0-1.40, (4) scoring bias ×0.85-1.20, (5) calibration scale ×1.10-1.15. Pipeline now: DFS → spread adj → compress((s_base/5.5)^0.72) → blend 35% LightGBM + 65% heuristic. With same compression params, bench player DFS 16 → RS 2.3 (was 3.75 with MC). Removed wildcard moonshot pathway (boost>=2.0 + 15min backdoor that bypassed all quality gates). Core pool chalk MILP now filtered to chalk-eligible players only — prevents moonshot-only players with synthetic chalk_ev from appearing in Starting 5. Config: removed calibration_scale, calibration_scale_role, calibration_scale_star from real_score (unused), removed scoring_bias_base/pts_weight from scoring_thresholds (unused)."
+    },
     {
       "version": 44,
       "date": "2026-03-19",
