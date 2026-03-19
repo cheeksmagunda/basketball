@@ -528,12 +528,12 @@ _CONFIG_DEFAULTS = {
         "rs_cap": 20.0,
         "ai_blend_weight": 0.35,
         "calibration_scale": 1.15,
-        "calibration_scale_role": 1.22,
+        "calibration_scale_role": 1.10,
         "calibration_scale_star": 1.10,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
-        "min_gate_minutes":12,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
+        "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
         "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
         # DNP / reliability guards (added after March 4th audit)
@@ -541,8 +541,8 @@ _CONFIG_DEFAULTS = {
         "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
         "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
-        "chalk_season_min_floor":20.0,  # season avg floor for Starting 5 (was 25; leaderboard winners avg 15-20 min)
-        "chalk_recent_min_floor":15.0,  # recent avg floor — excludes players who've fallen out of rotation
+        "chalk_season_min_floor":22.0,  # season avg floor for Starting 5 — proven rotation players (22+ min)
+        "chalk_recent_min_floor":20.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
         "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
         "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
@@ -561,12 +561,12 @@ _CONFIG_DEFAULTS = {
         # v6 (leaderboard-informed): gates widened to match actual winner profiles.
         # Winners are 15-25 min role players with 3x+ boost on dev teams (da Silva,
         # Ellis, Clifford, Santos, Sensabaugh). Old 25-min/3.0 rating gates blocked them.
-        "min_minutes_floor":12, "min_recent_minutes_floor":12, "min_card_boost":1.5, "min_rating_floor":2.0,
+        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.5, "min_rating_floor":3.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":3, "boost_leverage_power":1.6,
+        "max_centers":3, "boost_leverage_power":1.2,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
-        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 6.0, "wildcard_min_season_pts": 3.0,
+        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
     },
     "matchup": {
