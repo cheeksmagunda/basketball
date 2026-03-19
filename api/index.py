@@ -6029,6 +6029,14 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         # Skip entirely when nocache=True (frontend post-game-final re-fetch).
         cached = None if nocache else _cg("line_v1")
         if cached and cached.get("pick"):
+            # Strong date guard: never serve line cache across ET-day boundaries.
+            # Legacy caches may omit pick.date; treat those as stale.
+            _cache_date = cached.get("_cache_date")
+            if _cache_date and _cache_date != today_str:
+                cached = None
+            elif _cache_date is None and not cached["pick"].get("date"):
+                cached = None
+        if cached and cached.get("pick"):
             _c_over  = cached.get("over_pick") or {}
             _c_under = cached.get("under_pick") or {}
             _c_over_ok  = not _c_over  or not _is_pick_resolved(_c_over)
@@ -6053,6 +6061,18 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         # If both directions are null, treat as no saved picks
         if today_picks and not today_picks.get("over_pick") and not today_picks.get("under_pick"):
             today_picks = None
+        # If both saved direction dates are clearly old, regenerate for today.
+        if today_picks:
+            _saved_dates = []
+            for _k in ("over_pick", "under_pick"):
+                _p = today_picks.get(_k)
+                if _p and isinstance(_p, dict):
+                    _d = _p.get("date")
+                    if _d:
+                        _saved_dates.append(_d)
+            if _saved_dates and all(_d < today_str for _d in _saved_dates):
+                print(f"[line-of-the-day] stale saved picks detected ({_saved_dates}) — regenerating")
+                today_picks = None
 
         # ── No saved picks — generate fresh ──
         if not today_picks:
@@ -6072,6 +6092,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             except Exception as _save_err:
                 print(f"[line-of-the-day] auto-save err: {_save_err}")
             eng_result["_cached_at"] = datetime.utcnow().isoformat()
+            eng_result["_cache_date"] = today_str
             _cs("line_v1", eng_result)
             return JSONResponse(eng_result)
 
@@ -6169,6 +6190,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
 
         result = _picks_response(combo, from_github=True, slate_summary=None)
         result["_cached_at"] = datetime.utcnow().isoformat()
+        result["_cache_date"] = today_str
         _cs("line_v1", result)
         return JSONResponse(result)
     except Exception as e:
@@ -6178,6 +6200,49 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             {"pick": None, "over_pick": None, "under_pick": None, "error": "server_error"},
             status_code=200,
         )
+
+
+@app.get("/api/line-force-regenerate")
+async def line_force_regenerate():
+    """Force-generate today's line picks and overwrite stale line artifacts."""
+    today = _et_date()
+    today_str = today.isoformat()
+
+    eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+    if err or not eng_result or not eng_result.get("pick"):
+        return JSONResponse({"error": err or "no_projections"}, status_code=503)
+
+    saves = {"over_pick": eng_result.get("over_pick"), "under_pick": eng_result.get("under_pick")}
+    _github_write_file(
+        f"data/lines/{today_str}_pick.json",
+        json.dumps(saves),
+        f"force regenerate line picks {today_str}",
+    )
+
+    # Ensure a CSV row exists for history/resolve compatibility.
+    primary = _primary_pick(saves)
+    if primary:
+        row = ",".join(_csv_escape(str(primary.get(k, ""))) for k in [
+            "player_name", "player_id", "team", "opponent", "stat_type",
+            "line", "direction", "projection", "edge", "confidence", "narrative",
+        ])
+        csv_content = LINE_CSV_HEADER + "\n" + f"{today_str}," + row + ",pending,\n"
+        _github_write_file(f"data/lines/{today_str}.csv", csv_content, f"force regenerate line csv {today_str}")
+
+    out = _picks_response(saves, from_github=False, slate_summary=eng_result.get("slate_summary"))
+    out["_cached_at"] = datetime.utcnow().isoformat()
+    out["_cache_date"] = today_str
+    _cs("line_v1", out)
+
+    # Bust history cache so the fresh pick card is immediately reflected.
+    try:
+        _hc = _cp("line_history_v1")
+        if _hc.exists():
+            _hc.unlink()
+    except Exception:
+        pass
+
+    return {"status": "ok", "forced": True, "date": today_str, "pick": out.get("pick")}
 
 
 LINE_FIELDS = LINE_CSV_HEADER.split(",")

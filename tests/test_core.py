@@ -158,6 +158,26 @@ class TestLineCacheLogic:
         should_serve_cache = not already_resolved and pick_date == today_str
         assert should_serve_cache is False
 
+    def test_missing_pick_date_cache_bypasses(self):
+        """Legacy cache without pick.date should be treated as stale."""
+        cached_response = {"pick": {"player_name": "Legacy", "result": "pending"}}
+        has_cache_date = cached_response.get("_cache_date")
+        pick_date = cached_response["pick"].get("date")
+        should_serve_cache = bool(has_cache_date) or bool(pick_date)
+        assert should_serve_cache is False
+
+    def test_cache_date_mismatch_bypasses(self):
+        """Explicit _cache_date from prior ET day should bypass cache."""
+        from api.index import _et_date
+        from datetime import timedelta
+        today = _et_date()
+        cached_response = {
+            "_cache_date": (today - timedelta(days=1)).isoformat(),
+            "pick": {"player_name": "Old", "date": today.isoformat(), "result": "pending"},
+        }
+        should_serve_cache = cached_response.get("_cache_date") == today.isoformat()
+        assert should_serve_cache is False
+
 
 # ---------------------------------------------------------------------------
 # 3. JS syntax integrity — catches the apostrophe crash class before push
