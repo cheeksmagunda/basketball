@@ -1,15 +1,15 @@
 {
-  "version": 43,
-  "updated_at": "2026-03-19T01:00:00Z",
+  "version": 44,
+  "updated_at": "2026-03-19T09:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
-    "min_pts_projection_moonshot": 3.0,
+    "min_pts_projection_moonshot": 6.0,
     "min_pts_per_minute": 0.28,
-    "min_pts_per_minute_moonshot": 0.15,
+    "min_pts_per_minute_moonshot": 0.22,
     "min_chalk_rating": 3.5,
-    "min_moonshot_rating": 2.0,
-    "min_moonshot_pts": 5.0,
+    "min_moonshot_rating": 3.0,
+    "min_moonshot_pts": 6.0,
     "chalk_boost_cap": 1.5,
     "scoring_bias_base": 0.85,
     "scoring_bias_pts_weight": 0.35,
@@ -125,7 +125,7 @@
     "rs_cap": 20.0,
     "ai_blend_weight": 0.35,
     "calibration_scale": 1.15,
-    "calibration_scale_role": 1.22,
+    "calibration_scale_role": 1.10,
     "calibration_scale_star": 1.10
   },
   "cascade": {
@@ -134,7 +134,7 @@
     "center_forward_share": 0.3
   },
   "projection": {
-    "min_gate_minutes": 12,
+    "min_gate_minutes": 15,
     "lock_buffer_minutes": 5,
     "season_recent_blend": 0.5,
     "major_role_change_threshold": 0.75,
@@ -145,10 +145,10 @@
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
-    "chalk_season_min_floor": 15.0,
+    "chalk_season_min_floor": 22.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
-    "chalk_recent_min_floor": 15.0,
+    "chalk_recent_min_floor": 20.0,
     "chalk_max_stars": 1,
     "chalk_star_boost_threshold": 0.8,
     "leverage_top_slots": 1,
@@ -215,21 +215,21 @@
     "stat_floors": { "points": 6.0, "rebounds": 5.5, "assists": 1.5 }
   },
   "moonshot": {
-    "min_minutes_floor": 12,
-    "min_recent_minutes_floor": 12,
+    "min_minutes_floor": 20,
+    "min_recent_minutes_floor": 20,
     "min_card_boost": 1.5,
-    "min_rating_floor": 2.0,
+    "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 3,
-    "boost_leverage_power": 1.6,
+    "boost_leverage_power": 1.2,
     "variance_penalty": 0.15,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
-    "wildcard_min_minutes": 6.0,
-    "wildcard_min_season_pts": 3.0,
+    "wildcard_min_minutes": 15.0,
+    "wildcard_min_season_pts": 7.0,
     "role_spike_ratio": 1.4,
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
@@ -252,6 +252,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 44,
+      "date": "2026-03-19",
+      "change": "Fix deep bench trash dominating lineups. Mar 18 our picks (Missi RS 1.5, Jackson RS 1.4, Matkovic RS 1.5, Ziaire RS 0.7) vs winners (McCain RS 4.1 +3x, Sensabaugh RS 4.5 +2.1x, Clingan RS 5.2 +2.7x, GP2 RS 3.5 +3x). Root cause: v40 lowered gates to 12 min/3 PPG letting in deep bench garbage-time players whose +3x boost dominated via boost_leverage_power 1.6 (=5.8x). Fixes: (1) moonshot min_minutes 12→20, min_recent_minutes 12→20 — filters Matkovic 14min, Jackson 16min, Payne 17min. (2) boost_leverage_power 1.6→1.2 — reduces +3x advantage from 5.8x to 3.7x so RS quality matters more. (3) wildcard gates: min_minutes 6→15, min_season_pts 3→7 — no more garbage-time wildcards. (4) min_pts_projection_moonshot 3→6, min_ppm_moonshot 0.15→0.22, min_rating_floor 2.0→3.0 — require real production. (5) chalk_season_min_floor 15→22, chalk_recent_min_floor 15→20, min_gate 12→15 — chalk requires proven rotation players. (6) calibration_scale_role 1.22→1.10 — stop inflating deep bench RS projections by 22%. All Mar 18 winners (Sensabaugh 22min/14ppg, McCain 33min/18ppg, GP2 20min/8ppg, Clingan 23min/12ppg) still pass new gates."
+    },
     {
       "version": 42,
       "date": "2026-03-19",
