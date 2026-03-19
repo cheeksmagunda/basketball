@@ -1883,8 +1883,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     else:
         raw_score = heuristic_rs
 
-    # Big-man calibration: LightGBM has no rebounding feature, causing systematic
-    # underestimation of C/PF players who contribute through boards and rim presence
+    # Big-man calibration: keep a small positional correction for C/PF archetypes
+    # that remain under-projected even after adding reb_per_min to LightGBM.
     # rather than scoring volume (e.g. Poeltl 9ppg/9reb → was projected ~2.5, actual 5.4).
     # Only applied to non-scorers (season_pts < pts_cap) so stars like Giannis/Randle
     # are untouched. Cascades into ceiling_score and chalk_ev automatically.

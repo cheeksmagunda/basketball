@@ -32,7 +32,7 @@ data/locks/            — Cold-start recovery: {date}_slate.json written at loc
 data/boosts/           — Pre-game player boosts (fixed daily constants from Real, {date}.json)
 data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
 lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
-train_lgbm.py          — Training script (11 features, run locally or via GitHub Actions)
+train_lgbm.py          — Training script (12 features, run locally or via GitHub Actions)
 railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
@@ -386,8 +386,7 @@ while widening the ceiling for high-upside players:
 - **compression_divisor**: 5.5 (was 7.0) — less pre-compression dampening
 - **compression_power**: 0.72 (was 0.62) — softer power law, lets stars separate from role players
 - **rs_cap**: 20.0 (was 15.0, applied 4× in pipeline) — removes artificial ceiling that bunched everyone
-- **AI blend**: 50/50 (was 70/30 AI-heavy) — LightGBM clusters outputs in 2.5-4.5; at 70% weight it
-  killed the heuristic's wider distribution. 50/50 lets Monte Carlo upside shine through.
+- **AI blend**: 35/65 AI/heuristic (`ai_blend_weight: 0.35`) — LightGBM clusters outputs in 2.5-4.5; lower AI weight preserves a wider RS spread from the heuristic path.
 
 **Result**: RS distribution widens from ~3-4.5 to ~2-8. Stars can project RS 6-8,
 role players stay at RS 2-4, and the gap between them drives better lineup selection.
@@ -447,8 +446,8 @@ Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Re
 
 ## Model Improvements (deployed)
 
-### LightGBM (11 features, `lgbm_model.pkl`)
-Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_vs_season, games_played`
+### LightGBM (12 features, `lgbm_model.pkl`)
+Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_vs_season, games_played, reb_per_min`
 
 - Model bundle format: `{"model": lgb.LGBMRegressor, "features": [...]}` — inference verifies feature vector length; bundle required.
 - `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits). `recent_vs_season` = recent scoring vs season average (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts).
@@ -720,7 +719,7 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
 | **scripts/sync_model_config.py** | Config sync | Syncs model-config from GitHub (used by workflows). |
 | **scripts/bump_retrain_config.py** | Retrain config | Bumps retrain config for GitHub Actions. |
-| **train_lgbm.py** | Model training | 11-feature LightGBM training; outputs lgbm_model.pkl. Run locally or via retrain-model.yml. |
+| **train_lgbm.py** | Model training | 12-feature LightGBM training; outputs lgbm_model.pkl. Run locally or via retrain-model.yml. |
 
 No orphan entrypoints; all API surface is in api/index.py. Scripts are for local/CI use.
 
@@ -748,7 +747,7 @@ TestCacheTTLs               — 3 min games, 5 min config, 30 min RotoWire, 60s 
 TestPollingIntervals        — 120s lab lock, 60s line live, 300s failure cutoff
 TestRateLimitThreadSafe     — _check_rate_limit is thread-safe under concurrent calls
 TestLineConfig              — run_model_fallback and run_line_engine respect line_config min_confidence; min_edge_other_over asymmetry (over blocked, under passes with same edge)
-TestLgbmFeatureAlignment    — when bundle loaded, 11 features and 11th is recent_vs_season or recent_3g_trend
+TestLgbmFeatureAlignment    — when bundle loaded, 12 features with recent_vs_season at index 9 and reb_per_min at index 11
 TestSlateExceptionHandling  — slate endpoint catches exceptions and returns 200 with error key (never 500)
 TestGameSelectorLockDisplay — frontend populateGameSelector must NOT override per-game lock with slateLocked
 TestLinePrimaryPickFallback — LINE_OVER_PICK/UNDER_PICK populated from primary pick when directions null
@@ -838,7 +837,7 @@ If slate, line, and/or log all fail to load:
 | Line-of-the-day load path: no L5 re-fetch | `api/index.py` | `recent_form_values` (L5) is fetched once at fresh-generation time and stored in the GitHub JSON. Load paths (fast-path today + next-slate) never re-fetch L5 — use whatever is in the file; card falls back to `recent_form_bars`. Eliminates 10-30s cold-start nba_api call on every load. |
 | Line tab + Ben timeout bumps | `index.html` | Line tab `/api/line-of-the-day` timeout 60s→90s; Ben context load 10s→30s. Fixes "Couldn't reach the server" on first load and "Line data unavailable" in Ben. |
 | Ben briefing timeout precision | `index.html` | `initLabPage` error-fallback briefing and `showLabUnlocked` context load raised to 30s; auto-retry `/api/lab/status` standardized to 10s (was 15s). Context-load paths get 30s; user-triggered refresh actions stay at 10s for responsiveness. |
-| `_CONFIG_DEFAULTS` sync | `api/index.py` | Fallback defaults match `data/model-config.json`: `compression_divisor` 5.5, `compression_power` 0.72, `rs_cap` 20.0, `ai_blend_weight` 0.5, `per_player_cap_minutes` 2.0, `big_market_teams` inline fallback removes MIL/DAL/PHX. Prevents silent model behavior change on GitHub outage. |
+| `_CONFIG_DEFAULTS` sync | `api/index.py` | Fallback defaults match `data/model-config.json`: `compression_divisor` 5.5, `compression_power` 0.72, `rs_cap` 20.0, `ai_blend_weight` 0.35, `per_player_cap_minutes` 2.0, `big_market_teams` inline fallback removes MIL/DAL/PHX. Prevents silent model behavior change on GitHub outage. |
 | `auto_improve_threshold_pct` externalized | `api/index.py`, `data/model-config.json` | `IMPROVEMENT_THRESHOLD` reads from `_cfg("lab.auto_improve_threshold_pct", 3.0)`. Tunable via Ben without code deploy. |
 | Line engine stat floors externalized | `api/line_engine.py`, `data/model-config.json` | `_STAT_META` and `stat_configs` min_season floors now read from `line_config.get("stat_floors", {})`. Tunable via `line.stat_floors` in model-config. No behavior change — defaults match prior hardcoded values. |
 | Cron schedule restored | `railway.toml` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). Matches documentation and intended behavior. |

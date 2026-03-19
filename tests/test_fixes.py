@@ -549,7 +549,7 @@ class TestLineConfig:
 # TestLgbmFeatureAlignment — train vs inference feature list
 # ─────────────────────────────────────────────────────────
 class TestLgbmFeatureAlignment:
-    """When LightGBM bundle is loaded, feature list must have 11 elements; 10th (index 9) is recent_vs_season (or legacy recent_3g_trend)."""
+    """When LightGBM bundle is loaded, feature list must match current train/infer contract."""
 
     def test_feature_list_length_and_trend_feature(self):
         import api.index as idx
@@ -557,9 +557,12 @@ class TestLgbmFeatureAlignment:
         AI_FEATURES = idx.AI_FEATURES
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
-        assert len(AI_FEATURES) == 11, f"Expected 11 features, got {len(AI_FEATURES)}: {AI_FEATURES}"
+        assert len(AI_FEATURES) == 12, f"Expected 12 features, got {len(AI_FEATURES)}: {AI_FEATURES}"
         assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
             f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
+        )
+        assert AI_FEATURES[11] == "reb_per_min", (
+            f"12th feature (index 11) must be reb_per_min, got {AI_FEATURES[11]!r}"
         )
 
 

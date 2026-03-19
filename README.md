@@ -23,7 +23,7 @@ api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
 api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
 api/rotowire.py        — RotoWire lineup scraper (availability/injury flags)
 lgbm_model.pkl         — LightGBM model bundle {model, features}
-train_lgbm.py          — Training script (11 features)
+train_lgbm.py          — Training script (12 features)
 data/model-config.json — Runtime model config (Ben/Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs
 data/actuals/          — Git-tracked daily actual result CSVs
@@ -53,7 +53,7 @@ server.py              — Local dev server (uvicorn)
 ESPN API (games, rosters, injuries, spreads)
   → Injury Cascade (redistribute OUT minutes; per-player cap 2 min, configurable)
   → Configurable season/recent stat blend (default 50/50)
-  → LightGBM model (11 features, 50% weight in AI blend)
+  → LightGBM model (12 features, blended with heuristic via `real_score.ai_blend_weight`, default 0.35)
   → Contextual adjustments (pace, spread, home/away)
   → Monte Carlo Real Score (closeness Cc, clutch Ck, momentum Mm)
   → Card Boost resolution (Layer 0 ingested boosts → overrides/ownership/sigmoid fallback)
@@ -203,7 +203,7 @@ All secrets and config live in **environment variables only** — never hardcode
 
 ## LightGBM Model
 
-**11 features**: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_vs_season, games_played`
+**12 features**: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, def_rate, pts_per_min, rest_days, recent_vs_season, games_played, reb_per_min`
 
 Retrained nightly via GitHub Actions (`retrain-model.yml`). Manual retrain: `python train_lgbm.py`.
 

@@ -7,17 +7,34 @@ import numpy as np
 import lightgbm as lgb
 import pickle
 from nba_api.stats.endpoints import playergamelogs
+from requests.exceptions import RequestException
 from sklearn.model_selection import train_test_split
 
 # Pull 3 seasons of NBA game logs
 SEASONS = ['2023-24', '2024-25', '2025-26']
 
+def _fetch_season_logs_with_retry(season: str, max_attempts: int = 4) -> pd.DataFrame:
+    """Fetch one season of logs with retry/backoff for transient NBA API timeouts."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logs = playergamelogs.PlayerGameLogs(season_nullable=season, timeout=60)
+            df_s = logs.get_data_frames()[0]
+            if df_s is None or df_s.empty:
+                raise RuntimeError(f"empty response for season {season}")
+            return df_s
+        except (RequestException, TimeoutError, RuntimeError) as e:
+            if attempt == max_attempts:
+                raise
+            backoff = min(20, 2 ** attempt)
+            print(f"   [WARN] {season} fetch attempt {attempt}/{max_attempts} failed: {e}; retrying in {backoff}s...")
+            time.sleep(backoff)
+
+
 print(f"1. Fetching NBA game logs for {len(SEASONS)} seasons...")
 frames = []
 for season in SEASONS:
     print(f"   Fetching {season}...")
-    logs = playergamelogs.PlayerGameLogs(season_nullable=season)
-    df_s = logs.get_data_frames()[0]
+    df_s = _fetch_season_logs_with_retry(season)
     df_s['SEASON'] = season
     frames.append(df_s)
     print(f"   Got {len(df_s)} game logs for {season}")
