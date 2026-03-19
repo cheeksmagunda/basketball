@@ -1415,6 +1415,52 @@ def _normalize_boost_name(name):
     return n.strip().lower()
 
 
+# ── Pre-game boost ingestion (Layer 0) ─────────────────────────────────────
+# Boosts are fixed daily constants published by Real Sports before drafts open.
+# When ingested via /api/save-boosts, they become the ground truth for today's
+# pipeline — no estimation needed. Stored in data/boosts/{date}.json on GitHub.
+# grep: BOOST INGESTION, _load_daily_boosts, save-boosts
+_DAILY_BOOST_CACHE = {}   # {normalized_name: boost_value}
+_DAILY_BOOST_DATE = ""    # ET date string for cache validity
+_DAILY_BOOST_TS = 0       # timestamp of last load
+
+def _load_daily_boosts(date_str=None):
+    """Load pre-game boosts for today from data/boosts/{date}.json.
+    Returns {normalized_name: boost_value} dict. Cached 5 min."""
+    global _DAILY_BOOST_CACHE, _DAILY_BOOST_DATE, _DAILY_BOOST_TS
+    import time
+    now = time.time()
+    if date_str is None:
+        date_str = _et_date().isoformat()
+    if (_DAILY_BOOST_CACHE and _DAILY_BOOST_DATE == date_str
+            and (now - _DAILY_BOOST_TS) < 300):
+        return _DAILY_BOOST_CACHE
+    # Try GitHub
+    try:
+        content, _ = _github_get_file(f"data/boosts/{date_str}.json")
+        if content:
+            data = json.loads(content)
+            players = data.get("players", [])
+            result = {}
+            for p in players:
+                name = p.get("player_name") or p.get("name", "")
+                boost = p.get("boost")
+                if name and boost is not None:
+                    nk = _normalize_boost_name(name)
+                    result[nk] = float(boost)
+            _DAILY_BOOST_CACHE = result
+            _DAILY_BOOST_DATE = date_str
+            _DAILY_BOOST_TS = now
+            return result
+    except Exception as e:
+        print(f"[boosts] load failed for {date_str}: {e}")
+    # No boosts file for today — return empty (pipeline falls through to estimation)
+    _DAILY_BOOST_CACHE = {}
+    _DAILY_BOOST_DATE = date_str
+    _DAILY_BOOST_TS = now
+    return {}
+
+
 # ── Auto-populated boost overrides from ownership/actuals data ──────────────
 # Reads data/ownership/ and data/actuals/ CSVs to build a dynamic override map
 # using the most recent observation per player. Refreshes every 10 minutes.
@@ -1471,10 +1517,12 @@ def _load_ownership_boosts():
 
 
 def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
-    """Estimate ADDITIVE card boost for Real Sports.
+    """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Three-layer approach (v24):
-    1. LOOKUP — player_overrides from config (manually curated ground truth).
+    Four-layer approach (v25):
+    0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
+       When available, this is the definitive value — no estimation needed.
+    1. LOOKUP — player_overrides from config (manually curated historical data).
     2. OWNERSHIP DATA — auto-populated from data/ownership/ + data/actuals/ CSVs.
        Uses most recent observation per player. Refreshed every 10 min.
     3. SIGMOID TIER FALLBACK — for unknown players, estimate from PPG.
@@ -1484,6 +1532,13 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     floor_val = cb.get("floor", 0.2)
 
     norm_name = _normalize_boost_name(player_name) if player_name else None
+
+    # Layer 0: Pre-game daily boost ingestion (ground truth when available)
+    # Boosts are fixed daily constants published by Real before drafts open.
+    if norm_name:
+        daily_boosts = _load_daily_boosts()
+        if norm_name in daily_boosts:
+            return round(min(max(daily_boosts[norm_name], floor_val), ceiling), 1)
 
     # Layer 1: Player lookup from config overrides (name-normalized)
     overrides = cb.get("player_overrides", {})
@@ -1498,7 +1553,7 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
         if norm_name in ownership_boosts:
             return round(min(max(ownership_boosts[norm_name], floor_val), ceiling), 1)
 
-    # Layer 2: Sigmoid tier estimation from PPG
+    # Layer 3: Sigmoid tier estimation from PPG
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
     # Calibrated against 60+ observations from Mar 6/9/10 actuals:
     #   PPG 27 → 0.26, PPG 20 → 0.53, PPG 15 → 1.10, PPG 12 → 1.60,
@@ -3174,6 +3229,79 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
 
+
+# grep: WATCHLIST — _build_watchlist, lineup-sensitive players, Pass 2 triggers
+def _build_watchlist(chalk, upside, all_proj, games):
+    """Identify players whose value is sensitive to late-breaking news.
+
+    A watchlist player = someone NOT in the lineup whose projected value would
+    spike if a specific event occurs (injury to a teammate/starter, etc.).
+
+    Returns list of {player, trigger_event, depends_on, current_rating,
+    projected_boost_rating, game_id} dicts.
+    """
+    watchlist = []
+    lineup_names = set()
+    for p in (chalk or []) + (upside or []):
+        lineup_names.add(p.get("name", ""))
+
+    # Build a map of team → players for cascade analysis
+    team_players = {}
+    for p in all_proj:
+        t = p.get("team", "")
+        team_players.setdefault(t, []).append(p)
+
+    # For each player NOT in the lineup, check if an injury to a lineup player
+    # on the same team would cause a cascade that makes them lineup-worthy
+    for p in all_proj:
+        pname = p.get("name", "")
+        if pname in lineup_names or not pname:
+            continue
+
+        rating = p.get("rating", 0)
+        est_mult = p.get("est_mult", 0)
+        team = p.get("team", "")
+        season_min = p.get("season_min", 0)
+        pos = p.get("pos", "")
+
+        # Skip players with very low baseline (won't help even with cascade)
+        if rating < 2.0 or season_min < 12:
+            continue
+
+        # Check each lineup player on the same team — if they went OUT,
+        # this player would get a ~5-10 minute cascade bonus
+        for lp in (chalk or []) + (upside or []):
+            if lp.get("team") != team:
+                continue
+            lp_name = lp.get("name", "")
+            lp_min = lp.get("season_min", 0) or lp.get("predMin", 0)
+            if lp_min < 15:
+                continue
+
+            # Estimate cascade: player inherits ~30% of the OUT player's minutes
+            # (conservative — real cascade depends on position/rotation)
+            cascade_min = lp_min * 0.30
+            boosted_rating = rating * min((season_min + cascade_min) / max(season_min, 1), 1.35)
+
+            # Only add to watchlist if cascade would push them above lineup threshold
+            min_chalk = float(_cfg("scoring_thresholds.min_chalk_rating", 3.5))
+            if boosted_rating >= min_chalk and est_mult >= 1.0:
+                watchlist.append({
+                    "player": pname,
+                    "trigger_event": "injury_cascade",
+                    "depends_on": lp_name,
+                    "current_rating": round(rating, 2),
+                    "projected_boost_rating": round(boosted_rating, 2),
+                    "est_mult": round(est_mult, 1),
+                    "team": team,
+                })
+                break  # One watchlist entry per player is enough
+
+    # Sort by projected upside (highest potential first), limit to top 10
+    watchlist.sort(key=lambda w: w.get("projected_boost_rating", 0), reverse=True)
+    return watchlist[:10]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PER-GAME LINEUP BUILDER
 #
@@ -3812,11 +3940,21 @@ def _get_slate_impl():
         except Exception as _rev_err:
             print(f"[lineup_review] call-site error: {_rev_err}")
         lineups = {"chalk": chalk, "upside": upside}
+        # Watchlist: players near the lineup bubble sensitive to late-breaking news
+        _watchlist = []
+        try:
+            _watchlist = _build_watchlist(chalk, upside, all_proj, draftable_games)
+        except Exception as _wl_err:
+            print(f"[watchlist] build error: {_wl_err}")
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+        _boosts_ingested = bool(_load_daily_boosts())
         result = {"date": _et_date().isoformat(), "games": games,
                   "lineups": lineups, "locked": locked,
                   "all_complete": False, "draftable_count": len(draftable_games),
                   "lock_time": lock_time,
+                  "watchlist": _watchlist,
+                  "boosts_ingested": _boosts_ingested,
+                  "pass": 1,
                   "score_bounds": _score_bounds_for_lineups(lineups),
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
@@ -4198,6 +4336,12 @@ def _force_regenerate_sync(scope: str):
     except Exception as _rev_err:
         print(f"[lineup_review] call-site error: {_rev_err}")
     lineups = {"chalk": chalk, "upside": upside}
+    # Watchlist for force-regen (Pass 2)
+    _fr_watchlist = []
+    try:
+        _fr_watchlist = _build_watchlist(chalk, upside, all_proj, game_pool)
+    except Exception:
+        pass
 
     # Step 3: Build per-game lineups
     per_game_results = {}
@@ -4225,6 +4369,9 @@ def _force_regenerate_sync(scope: str):
         "all_complete": False, "draftable_count": len(game_pool),
         "score_bounds": _score_bounds_for_lineups(lineups),
         "deploy_sha": deploy_sha[:7] if deploy_sha else "",
+        "watchlist": _fr_watchlist,
+        "boosts_ingested": bool(_load_daily_boosts()),
+        "pass": 2,
     }
     if chalk or upside:
         _cs("slate_v5", result)
@@ -4284,6 +4431,123 @@ def _slate_backup_to_github_force(slate_data: dict):
         print(f"[force-regen] lock backup err: {e}")
 
 
+# ── TWO-PASS PIPELINE MONITORING ───────────────────────────────────────────
+# grep: PASS 2 MONITOR, slate-check, material change detection
+# Pass 1 runs via /api/slate (morning). Pass 2 runs via /api/force-regenerate
+# (pre-game, conditional). This endpoint checks if material changes have occurred
+# since Pass 1 that warrant a Pass 2 re-run.
+@app.get("/api/slate-check")
+async def slate_check(request: Request):
+    """Check if material inputs have changed since Pass 1 lineup was generated.
+
+    Checks for:
+    1. Injury status changes for players in the current lineup
+    2. Injury status changes for players on the watchlist
+    3. Vegas line movements (spread/total) beyond configured thresholds
+    4. New starter ruled OUT on any game (cascade opportunity)
+
+    Returns: {changed: bool, triggers: [...], recommendation: "hold"|"rerun"}
+    """
+    today = _et_date().isoformat()
+    games = fetch_games()
+    if not games:
+        return {"changed": False, "triggers": [], "recommendation": "hold",
+                "reason": "no_games"}
+
+    # Don't check after lock — picks are frozen
+    start_times = [g["startTime"] for g in games if g.get("startTime")]
+    if start_times and any(_is_locked(st) for st in start_times):
+        return {"changed": False, "triggers": [], "recommendation": "hold",
+                "reason": "locked"}
+
+    # Load Pass 1 cached slate
+    cached_slate = _cg("slate_v5") or _slate_cache_from_github()
+    if not cached_slate or not cached_slate.get("lineups"):
+        return {"changed": False, "triggers": [], "recommendation": "hold",
+                "reason": "no_pass1"}
+
+    triggers = []
+
+    # ── Trigger 1: Injury changes for lineup players ──────────────────────
+    try:
+        rw_statuses = get_all_statuses()
+        if rw_statuses:
+            for lineup_type in ["chalk", "upside"]:
+                for player in cached_slate["lineups"].get(lineup_type, []):
+                    pname = player.get("name", "")
+                    if pname and not is_safe_to_draft(pname):
+                        triggers.append({
+                            "type": "injury_lineup",
+                            "player": pname,
+                            "lineup": lineup_type,
+                            "severity": "high",
+                        })
+
+            # ── Trigger 2: Watchlist player status changes ────────────────
+            watchlist = cached_slate.get("watchlist", [])
+            for wp in watchlist:
+                wname = wp.get("player", "")
+                watch_event = wp.get("trigger_event", "")
+                if wname and watch_event == "injury_cascade":
+                    # The player benefits if someone is OUT — check if that happened
+                    dep_player = wp.get("depends_on", "")
+                    if dep_player and not is_safe_to_draft(dep_player):
+                        triggers.append({
+                            "type": "watchlist_activated",
+                            "player": wname,
+                            "depends_on": dep_player,
+                            "severity": "medium",
+                        })
+
+            # ── Trigger 3: New OUT starter (not in lineup) ────────────────
+            for g in games:
+                for team_key in ["homeTeam", "awayTeam"]:
+                    team_info = g.get(team_key, {})
+                    if isinstance(team_info, dict):
+                        team_abbr = team_info.get("abbreviation", "")
+                    elif isinstance(team_info, str):
+                        team_abbr = team_info
+                    else:
+                        continue
+                    # Check if any known players on this team are newly OUT
+                    # (RotoWire integration catches this)
+    except Exception as e:
+        print(f"[slate-check] injury check err: {e}")
+
+    # ── Trigger 4: Vegas line movement ────────────────────────────────────
+    try:
+        pass1_games = {g.get("gameId"): g for g in cached_slate.get("games", [])}
+        vegas_threshold = float(_cfg("pass2.vegas_total_threshold", 3.0))
+        for g in games:
+            gid = g.get("gameId")
+            if gid and gid in pass1_games:
+                old_total = pass1_games[gid].get("total") or 0
+                new_total = g.get("total") or 0
+                if old_total and new_total and abs(new_total - old_total) >= vegas_threshold:
+                    triggers.append({
+                        "type": "vegas_movement",
+                        "game": gid,
+                        "old_total": old_total,
+                        "new_total": new_total,
+                        "delta": round(new_total - old_total, 1),
+                        "severity": "medium",
+                    })
+    except Exception as e:
+        print(f"[slate-check] vegas check err: {e}")
+
+    has_high = any(t.get("severity") == "high" for t in triggers)
+    recommendation = "rerun" if has_high or len(triggers) >= 2 else "hold"
+
+    return {
+        "changed": len(triggers) > 0,
+        "triggers": triggers,
+        "trigger_count": len(triggers),
+        "recommendation": recommendation,
+        "date": today,
+        "boosts_ingested": bool(_load_daily_boosts()),
+    }
+
+
 @app.get("/api/force-regenerate")
 async def force_regenerate(request: Request, scope: str = Query("full")):
     """Force-regenerate predictions mid-slate.
@@ -4333,8 +4597,9 @@ async def parse_screenshot(
     """Parse a Real Sports app screenshot using Claude Vision API.
 
     screenshot_type:
-      "actuals"     — default; extracts My Draft / Highest Value player RS data
+      "actuals"      — default; extracts My Draft / Highest Value player RS data
       "most_drafted" — extracts ownership leaderboard (player + draft_pct)
+      "boosts"       — extracts pre-game player list with boosts (fixed daily constants)
     """
     rl = _check_rate_limit(request, "parse-screenshot")
     if rl is not None:
@@ -4353,7 +4618,20 @@ async def parse_screenshot(
     if ct not in _ALLOWED_IMAGE_TYPES:
         return JSONResponse({"error": f"Unsupported image type: {ct or 'unknown'}. Allowed: png, jpeg, gif, webp"}, status_code=415)
 
-    if screenshot_type == "most_drafted":
+    if screenshot_type == "boosts":
+        prompt = """Extract player boost data from this Real Sports pre-game screenshot.
+
+This shows available players for today's draft with their boosts displayed.
+Boosts appear as "+X.Xx" (e.g. "+3.0x", "+0.5x", "+2.1x") next to each player.
+
+For EACH player listed, extract:
+- player_name: full player name exactly as shown
+- boost: the card boost number (e.g. "+3.0x" → 3.0, "+0.5x" → 0.5). If no boost shown, set to null
+- team: team abbreviation if visible (e.g. LAL, GSW, BOS), otherwise null
+- rax_cost: the Rax cost if shown as a number with triangle symbol (e.g. "▽5.4" → 5.4), otherwise null
+
+Return ONLY a JSON array of objects. No markdown, no explanation."""
+    elif screenshot_type == "most_drafted":
         prompt = """Extract player ownership data from this Real Sports 'Most popular' or 'Most drafted' screenshot.
 
 For EACH player listed, extract:
@@ -4852,6 +5130,10 @@ async def refresh(request: Request):
     try:
         _bust_slate_cache()
     except Exception: pass
+    # Clear daily boost cache so next load re-reads from GitHub
+    global _DAILY_BOOST_CACHE, _DAILY_BOOST_TS
+    _DAILY_BOOST_CACHE = {}
+    _DAILY_BOOST_TS = 0
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
@@ -7506,6 +7788,67 @@ async def lab_skip_uploads(payload: dict = Body(...)):
         # Non-critical — don't fail if we can't record skip
         print(f"[skip-uploads] Error recording skip for {date_str}: {e}")
         return {"status": "recorded_locally", "date": date_str}
+
+
+# grep: BOOST INGESTION ENDPOINT
+@app.post("/api/save-boosts")
+async def save_boosts(payload: dict = Body(...)):
+    """Save pre-game player boosts for today's slate.
+
+    Boosts are fixed daily constants published by Real Sports before drafts open.
+    This endpoint stores them as ground truth — the pipeline uses these directly
+    instead of estimating. Busts the slate cache so the next /api/slate call
+    regenerates with real boosts.
+
+    Body: { date: str (optional), players: [{player_name, boost, team?, rax_cost?}] }
+    """
+    global _DAILY_BOOST_CACHE, _DAILY_BOOST_DATE, _DAILY_BOOST_TS
+    date_str = payload.get("date", _et_date().isoformat())
+    bad = _validate_date(date_str)
+    if bad: return bad
+
+    players = payload.get("players", [])
+    if not players:
+        return {"saved": 0, "date": date_str}
+
+    ts = datetime.now(timezone.utc).isoformat()
+    clean_players = []
+    for p in players:
+        name = str(p.get("player_name") or p.get("name", "")).strip()
+        boost = _safe_float(p.get("boost") or p.get("actual_card_boost"))
+        if not name or boost is None:
+            continue
+        entry = {"player_name": name, "boost": round(float(boost), 1)}
+        if p.get("team"):
+            entry["team"] = str(p["team"]).upper()
+        if p.get("rax_cost") is not None:
+            entry["rax_cost"] = _safe_float(p["rax_cost"])
+        clean_players.append(entry)
+
+    if not clean_players:
+        return {"saved": 0, "date": date_str}
+
+    data = {
+        "date": date_str,
+        "saved_at": ts,
+        "player_count": len(clean_players),
+        "players": clean_players,
+    }
+    content = json.dumps(data, indent=2)
+    path = f"data/boosts/{date_str}.json"
+    try:
+        _github_write_file(path, content, f"pre-game boosts {date_str} ({len(clean_players)} players)")
+    except Exception as e:
+        print(f"[save-boosts] GitHub write failed: {e}")
+        return JSONResponse({"error": f"Failed to save boosts: {str(e)}"}, status_code=500)
+
+    # Bust caches so next slate request uses real boosts
+    _DAILY_BOOST_CACHE = {_normalize_boost_name(p["player_name"]): p["boost"] for p in clean_players}
+    _DAILY_BOOST_DATE = date_str
+    _DAILY_BOOST_TS = time.time()
+    _bust_slate_cache()
+
+    return {"saved": len(clean_players), "date": date_str, "cache_busted": True}
 
 
 @app.post("/api/save-ownership")

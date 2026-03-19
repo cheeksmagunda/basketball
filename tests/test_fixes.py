@@ -1785,5 +1785,123 @@ class TestPerGameFloor:
             "DEN must not be in big_market_teams — Braun/Porter etc. are not heavily drafted"
 
 
+# ---------------------------------------------------------------------------
+# BOOST INGESTION — Layer 0 (pre-game daily boosts)
+# ---------------------------------------------------------------------------
+class TestDailyBoostIngestion:
+    """Verify that Layer 0 (daily boost ingestion) takes priority over all
+    other boost estimation layers when available."""
+
+    def test_load_daily_boosts_returns_empty_when_no_file(self):
+        """_load_daily_boosts returns {} when no boosts file exists for today."""
+        from api.index import _load_daily_boosts, _DAILY_BOOST_CACHE
+        import api.index as idx
+        # Reset cache
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_DATE = ""
+        idx._DAILY_BOOST_TS = 0
+        with patch.object(idx, "_github_get_file", return_value=(None, None)):
+            result = _load_daily_boosts("2099-01-01")
+        assert result == {}
+
+    def test_load_daily_boosts_parses_json(self):
+        """_load_daily_boosts parses a valid boosts JSON from GitHub."""
+        from api.index import _load_daily_boosts
+        import api.index as idx
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_DATE = ""
+        idx._DAILY_BOOST_TS = 0
+        mock_data = json.dumps({
+            "date": "2026-03-19",
+            "players": [
+                {"player_name": "Gary Payton II", "boost": 3.0},
+                {"player_name": "Jared McCain", "boost": 2.8},
+            ]
+        })
+        with patch.object(idx, "_github_get_file", return_value=(mock_data, "sha123")):
+            result = _load_daily_boosts("2026-03-19")
+        assert len(result) == 2
+        assert result.get("gary payton ii") == 3.0
+        assert result.get("jared mccain") == 2.8
+
+    def test_est_card_boost_uses_daily_boost_first(self):
+        """_est_card_boost Layer 0 (daily ingestion) overrides all other layers."""
+        from api.index import _est_card_boost
+        import api.index as idx
+        # Inject a daily boost for a player who also has a config override
+        idx._DAILY_BOOST_CACHE = {"shai gilgeous-alexander": 0.5}
+        idx._DAILY_BOOST_DATE = idx._et_date().isoformat()
+        import time
+        idx._DAILY_BOOST_TS = time.time()
+        # SGA has 0.0 in config overrides, but daily boost says 0.5
+        boost = _est_card_boost(30, 25.0, "OKC", "Shai Gilgeous-Alexander")
+        assert boost == 0.5, f"Layer 0 should override config override, got {boost}"
+        # Cleanup
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_TS = 0
+
+
+# ---------------------------------------------------------------------------
+# TWO-PASS PIPELINE — watchlist and pass metadata
+# ---------------------------------------------------------------------------
+class TestWatchlist:
+    """Verify watchlist generation identifies cascade-sensitive players."""
+
+    def test_build_watchlist_returns_list(self):
+        """_build_watchlist must return a list (empty is OK)."""
+        from api.index import _build_watchlist
+        chalk = [{"name": "Star1", "team": "LAL", "season_min": 30, "rating": 5.0, "est_mult": 0.5}]
+        upside = [{"name": "Contrarian1", "team": "BOS", "season_min": 22, "rating": 3.5, "est_mult": 2.5}]
+        all_proj = chalk + upside + [
+            {"name": "Bench1", "team": "LAL", "season_min": 18, "rating": 2.5, "est_mult": 2.0, "pos": "SG"},
+        ]
+        result = _build_watchlist(chalk, upside, all_proj, [])
+        assert isinstance(result, list)
+
+    def test_watchlist_identifies_cascade_candidate(self):
+        """A high-boost bench player should appear on watchlist when a lineup
+        teammate going OUT would boost their minutes significantly."""
+        from api.index import _build_watchlist
+        lineup_player = {"name": "Starter", "team": "LAL", "season_min": 32, "rating": 4.5, "est_mult": 0.3, "predMin": 32}
+        bench_player = {"name": "BenchGuy", "team": "LAL", "season_min": 18, "rating": 3.0, "est_mult": 2.5, "pos": "SG"}
+        chalk = [lineup_player]
+        upside = []
+        all_proj = [lineup_player, bench_player]
+        result = _build_watchlist(chalk, upside, all_proj, [])
+        watchlist_names = [w["player"] for w in result]
+        assert "BenchGuy" in watchlist_names, f"BenchGuy should be on watchlist, got {watchlist_names}"
+        entry = [w for w in result if w["player"] == "BenchGuy"][0]
+        assert entry["trigger_event"] == "injury_cascade"
+        assert entry["depends_on"] == "Starter"
+
+    def test_watchlist_max_10(self):
+        """Watchlist is capped at 10 entries."""
+        from api.index import _build_watchlist
+        lineup = [{"name": "Star", "team": "LAL", "season_min": 35, "rating": 5.0, "est_mult": 0.3, "predMin": 35}]
+        # 15 bench players on same team
+        bench = [
+            {"name": f"Bench{i}", "team": "LAL", "season_min": 18, "rating": 2.5 + i*0.1, "est_mult": 2.0, "pos": "SG"}
+            for i in range(15)
+        ]
+        result = _build_watchlist(lineup, [], lineup + bench, [])
+        assert len(result) <= 10
+
+
+# ---------------------------------------------------------------------------
+# PARSE-SCREENSHOT — "boosts" type
+# ---------------------------------------------------------------------------
+class TestBoostsScreenshotType:
+    """Verify parse-screenshot accepts 'boosts' screenshot_type."""
+
+    def test_boosts_type_in_parse_screenshot(self):
+        """The 'boosts' screenshot type should produce a valid prompt."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert 'screenshot_type == "boosts"' in src, \
+            "parse-screenshot must handle 'boosts' screenshot_type"
+        assert "pre-game" in src.lower() or "pre_game" in src.lower() or "boost data" in src.lower(), \
+            "boosts prompt should reference pre-game context"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
