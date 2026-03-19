@@ -248,6 +248,22 @@
     "moonshot_adj_max": 1.30,
     "claude_timeout_seconds": 25
   },
+  "team_motivation": {
+    "enabled": true,
+    "start_date": "2026-03-01",
+    "seeding_gap_games": 2.0,
+    "playin_gap_games": 2.0,
+    "elimination_buffer_games": 3.0,
+    "tier_a_mult_chalk": 1.08,
+    "tier_b_mult_chalk": 1.00,
+    "tier_c_mult_chalk": 0.90,
+    "tier_a_mult_moonshot": 1.00,
+    "tier_b_mult_moonshot": 1.00,
+    "tier_c_mult_moonshot": 1.00,
+    "min_mult": 0.88,
+    "max_mult": 1.12,
+    "team_overrides": {}
+  },
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },

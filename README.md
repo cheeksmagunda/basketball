@@ -77,6 +77,7 @@ Subsequent visits serve from cache. Injury-triggered regeneration (`/api/injury-
 When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single 7–10 player core (union of chalk/moonshot-eligible, ranked by core score). **Starting 5** = best 5-of-core for reliability; **Moonshot** = best 5-of-core for ceiling. High overlap is intended. When disabled, legacy behavior: separate pools, each MILP from its own pool.
 
 **Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Requires ≥25 season avg minutes. **Star anchor**: one star (season_pts ≥ 20) can bypass the boost floor — MILP `chalk_max_stars=1` limits exposure. Consistent, conservative.
+Late-season (`team_motivation.start_date` onward), Starting 5 applies a soft team-incentive reliability tilt so playoff/play-in teams are favored and low-incentive teams are discounted (configurable A/B/C multipliers; no hard bans).
 
 **Moonshot** — Contrarian EV strategy. 5 eligibility pathways: regular, spot-starter, wildcard, role-spike, **star anchor** (same as chalk — season_pts ≥ 20, season_min ≥ 25, rating ≥ 4.0 bypasses `min_card_boost` gate). Ranked by `moonshot_ev = base_rating × team_bonus × boost_leverage × (avg_slot + est_mult)` where `boost_leverage = est_mult^1.6`. MILP `max_low_boost=1` ensures at most 1 star — other 4 slots stay high-boost role players. Dev team bonus from live ESPN standings. Both lineups share the same star anchor logic: high-boost role players PLUS one big scorer who can pop off.
 

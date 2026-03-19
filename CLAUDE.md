@@ -413,6 +413,11 @@ Scoring gates in `scoring_thresholds`: `min_pts_projection`, `min_pts_projection
 
 Projection gates: `pred_min_tolerance` (chalk, default 2.0 min tolerance band).
 
+Team incentive gates in `team_motivation`: `enabled`, `start_date`, `seeding_gap_games`,
+`playin_gap_games`, `elimination_buffer_games`, `tier_a_mult_chalk`, `tier_b_mult_chalk`,
+`tier_c_mult_chalk`, `tier_a_mult_moonshot`, `tier_b_mult_moonshot`,
+`tier_c_mult_moonshot`, `min_mult`, `max_mult`, `team_overrides`.
+
 Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
 `min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
 `wildcard_min_boost`, `wildcard_min_minutes`, `wildcard_min_season_pts`,

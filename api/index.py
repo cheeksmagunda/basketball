@@ -580,6 +580,27 @@ _CONFIG_DEFAULTS = {
         "moonshot_adj_max": 1.30,
         "claude_timeout_seconds": 25,
     },
+    "team_motivation": {
+        # Late-season team intent signal (March/April):
+        # Starting 5 should favor stable, win-now rotations.
+        "enabled": True,
+        "start_date": "2026-03-01",
+        "seeding_gap_games": 2.0,
+        "playin_gap_games": 2.0,
+        "elimination_buffer_games": 3.0,
+        # Soft multipliers only (no hard bans).
+        "tier_a_mult_chalk": 1.08,
+        "tier_b_mult_chalk": 1.00,
+        "tier_c_mult_chalk": 0.90,
+        # Keep moonshot neutral by default; can tune later.
+        "tier_a_mult_moonshot": 1.00,
+        "tier_b_mult_moonshot": 1.00,
+        "tier_c_mult_moonshot": 1.00,
+        "min_mult": 0.88,
+        "max_mult": 1.12,
+        # Optional manual overrides: {"LAL":"A","WAS":"C"}
+        "team_overrides": {},
+    },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
         "game_chalk_rating_floor": 3.5,
@@ -856,6 +877,159 @@ def _fetch_team_def_stats() -> dict:
     if result:
         _cs(cache_key, result)
     return result
+
+
+def _to_float(val, default=None):
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(val, default=None):
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return default
+
+
+def _team_tier_from_standings(stats_dict: dict, mot_cfg: dict) -> str:
+    """Infer team motivation tier from standings stats.
+    A: meaningful seeding/play-in pressure
+    B: neutral
+    C: low-incentive / development profile
+    """
+    seed = _to_int(
+        stats_dict.get("playoffSeed")
+        or stats_dict.get("seed")
+        or stats_dict.get("rank"),
+        None,
+    )
+    games_back = _to_float(
+        stats_dict.get("gamesBack")
+        or stats_dict.get("gb"),
+        None,
+    )
+    win_pct = _to_float(
+        stats_dict.get("winPercent")
+        or stats_dict.get("winPct")
+        or stats_dict.get("winningPercentage"),
+        None,
+    )
+
+    seeding_gap = _to_float(mot_cfg.get("seeding_gap_games", 2.0), 2.0)
+    playin_gap = _to_float(mot_cfg.get("playin_gap_games", 2.0), 2.0)
+    elimination_buffer = _to_float(mot_cfg.get("elimination_buffer_games", 3.0), 3.0)
+
+    # Neutral default when stats are incomplete.
+    if seed is None:
+        return "B"
+
+    # Clear low-incentive bucket (bottom standings with large gap).
+    if seed >= 13:
+        if games_back is None or games_back > elimination_buffer:
+            return "C"
+
+    # Play-in pressure zone.
+    if 7 <= seed <= 10:
+        return "A"
+
+    # Bubble teams just outside play-in.
+    if 11 <= seed <= 12 and games_back is not None and games_back <= playin_gap:
+        return "A"
+
+    # Teams in top-6 that are still in a tight seeding race.
+    if 1 <= seed <= 6 and games_back is not None and games_back <= seeding_gap:
+        return "A"
+
+    # Fallback low-incentive heuristic when standings are weakly informative.
+    if seed >= 12 and win_pct is not None and win_pct < 0.40:
+        return "C"
+
+    return "B"
+
+
+def _fetch_team_motivation_map() -> dict:
+    """Build {TEAM_ABBR: {tier, chalk_mult, moonshot_mult}} for current ET date."""
+    mot_cfg = _cfg("team_motivation", _CONFIG_DEFAULTS.get("team_motivation", {})) or {}
+    if not mot_cfg.get("enabled", False):
+        return {}
+
+    start_date = str(mot_cfg.get("start_date", "") or "").strip()
+    if start_date:
+        try:
+            if _et_date() < datetime.fromisoformat(start_date).date():
+                return {}
+        except ValueError:
+            # Invalid config date should fail open (neutral behavior).
+            return {}
+
+    cache_key = f"team_motivation_{_et_date().strftime('%Y%m%d')}"
+    cached = _cg(cache_key)
+    if cached is not None:
+        return cached
+
+    data = _espn_get("https://site.api.espn.com/apis/v2/sports/basketball/nba/standings")
+    result = {}
+    try:
+        for entry in data.get("standings", {}).get("entries", []):
+            abbr = entry.get("team", {}).get("abbreviation", "")
+            if not abbr:
+                continue
+            stats_dict = {}
+            for s in entry.get("stats", []):
+                name = s.get("name")
+                if not name:
+                    continue
+                val = s.get("value", s.get("displayValue"))
+                stats_dict[name] = val
+
+            tier = _team_tier_from_standings(stats_dict, mot_cfg)
+            tier_key = tier.lower()
+            chalk_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_chalk", 1.0), 1.0)
+            moon_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_moonshot", 1.0), 1.0)
+            mn = _to_float(mot_cfg.get("min_mult", 0.88), 0.88)
+            mx = _to_float(mot_cfg.get("max_mult", 1.12), 1.12)
+            result[abbr] = {
+                "tier": tier,
+                "chalk_mult": max(mn, min(mx, chalk_mult)),
+                "moonshot_mult": max(mn, min(mx, moon_mult)),
+            }
+    except Exception:
+        return {}
+
+    # Manual tier overrides win over inferred tiers.
+    overrides = mot_cfg.get("team_overrides", {}) if isinstance(mot_cfg.get("team_overrides", {}), dict) else {}
+    for abbr, forced in overrides.items():
+        if not isinstance(abbr, str):
+            continue
+        tier = str(forced or "").strip().upper()
+        if tier not in ("A", "B", "C"):
+            continue
+        tier_key = tier.lower()
+        chalk_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_chalk", 1.0), 1.0)
+        moon_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_moonshot", 1.0), 1.0)
+        mn = _to_float(mot_cfg.get("min_mult", 0.88), 0.88)
+        mx = _to_float(mot_cfg.get("max_mult", 1.12), 1.12)
+        result[abbr.upper()] = {
+            "tier": tier,
+            "chalk_mult": max(mn, min(mx, chalk_mult)),
+            "moonshot_mult": max(mn, min(mx, moon_mult)),
+        }
+
+    if result:
+        _cs(cache_key, result)
+    return result
+
+
+def _team_motivation_multiplier(team_abbr: str, lineup_type: str, motivation_map: dict) -> float:
+    """Return motivation multiplier for team/lineup type (defaults to neutral 1.0)."""
+    if not team_abbr or not motivation_map:
+        return 1.0
+    rec = motivation_map.get(team_abbr, {})
+    if lineup_type == "chalk":
+        return float(rec.get("chalk_mult", 1.0))
+    return float(rec.get("moonshot_mult", 1.0))
 
 _GAMES_CACHE_TS: dict = {}  # cache_key → timestamp for TTL enforcement
 
@@ -2868,6 +3042,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             rw_statuses = get_all_statuses()
         except Exception as e:
             print(f"RotoWire fetch failed, proceeding without: {e}")
+    # Team motivation (late-season): soft reliability tilt for Starting 5.
+    team_motivation = _fetch_team_motivation_map()
 
     # STARTING 5: MILP-optimized for chalk_ev with card boost capped.
     # chalk_boost_cap=2.5: rewards moderate-ownership role players without going full moonshot.
@@ -2944,7 +3120,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             float(_cfg("matchup.chalk_adj_min", 0.92)),
             min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
         )
-        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
+        _mot_mult = _team_motivation_multiplier(p.get("team", ""), "chalk", team_motivation)
+        p["team_motivation_mult"] = round(_mot_mult, 3)
+        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * _mot_mult * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
     chalk_max_stars  = int(_cfg("projection.chalk_max_stars", 2))

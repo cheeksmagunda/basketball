@@ -1591,6 +1591,60 @@ class TestMatchupFactor:
         assert "dev_team_pts_floor" not in moonshot
 
 
+class TestTeamMotivation:
+    """Late-season team motivation tiering and multiplier wiring."""
+
+    def test_team_motivation_config_keys_present(self):
+        from api.index import _CONFIG_DEFAULTS
+        tm = _CONFIG_DEFAULTS.get("team_motivation", {})
+        assert "enabled" in tm
+        assert "start_date" in tm
+        assert "tier_a_mult_chalk" in tm
+        assert "tier_c_mult_chalk" in tm
+        assert "team_overrides" in tm
+
+    def test_team_tier_from_standings_rules(self):
+        from api.index import _team_tier_from_standings
+        cfg = {
+            "seeding_gap_games": 2.0,
+            "playin_gap_games": 2.0,
+            "elimination_buffer_games": 3.0,
+        }
+        # Play-in seeds are high-incentive
+        assert _team_tier_from_standings({"playoffSeed": 8, "gamesBack": 1.0}, cfg) == "A"
+        # Deep lottery with large gap is low-incentive
+        assert _team_tier_from_standings({"playoffSeed": 14, "gamesBack": 6.0}, cfg) == "C"
+        # Missing data should stay neutral
+        assert _team_tier_from_standings({}, cfg) == "B"
+
+    def test_team_motivation_multiplier_defaults_neutral(self):
+        from api.index import _team_motivation_multiplier
+        assert _team_motivation_multiplier("LAL", "chalk", {}) == 1.0
+        assert _team_motivation_multiplier("LAL", "moonshot", {}) == 1.0
+
+    def test_fetch_team_motivation_map_obeys_start_date_gate(self):
+        from api.index import _fetch_team_motivation_map
+
+        def cfg_side_effect(key, default=None):
+            if key == "team_motivation":
+                return {
+                    "enabled": True,
+                    "start_date": "2999-01-01",
+                    "tier_a_mult_chalk": 1.08,
+                    "tier_b_mult_chalk": 1.00,
+                    "tier_c_mult_chalk": 0.90,
+                    "tier_a_mult_moonshot": 1.00,
+                    "tier_b_mult_moonshot": 1.00,
+                    "tier_c_mult_moonshot": 1.00,
+                    "min_mult": 0.88,
+                    "max_mult": 1.12,
+                    "team_overrides": {},
+                }
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect):
+            assert _fetch_team_motivation_map() == {}
+
 # ─────────────────────────────────────────────────────────
 # TestBriefingSimulatedDraftScore — simulated_draft_score surfaces to Ben
 # ─────────────────────────────────────────────────────────
