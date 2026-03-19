@@ -578,10 +578,10 @@ class TestNormalizePlayer:
         assert result["recent_pts"] == 25.3
         assert result["_cascade_bonus"] == 3.0
 
-    def test_team_dev_mult_is_stripped(self):
-        """_team_dev_mult is an internal moonshot field — must never reach the frontend."""
-        result = self._norm({"name": "X", "_team_dev_mult": 1.25})
-        assert "_team_dev_mult" not in result
+    def test_matchup_factor_is_stripped(self):
+        """_matchup_factor is an internal moonshot field — must never reach the frontend."""
+        result = self._norm({"name": "X", "_matchup_factor": 1.12})
+        assert "_matchup_factor" not in result
 
     def test_string_fields_default_to_empty_string(self):
         """String fields missing from input must default to '' not None."""

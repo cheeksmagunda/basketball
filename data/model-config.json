@@ -1,6 +1,6 @@
 {
-  "version": 40,
-  "updated_at": "2026-03-18T12:00:00Z",
+  "version": 41,
+  "updated_at": "2026-03-19T00:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -226,16 +226,33 @@
     "wildcard_min_boost": 2.0,
     "wildcard_min_minutes": 6.0,
     "wildcard_min_season_pts": 3.0,
-    "dev_team_pts_floor": 4.0,
     "role_spike_ratio": 1.4,
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
     "pred_min_tolerance": 3.0
   },
+  "matchup": {
+    "enabled": true,
+    "claude_enabled": true,
+    "def_scale": 0.35,
+    "pos_scale_g": 1.05,
+    "pos_scale_f": 1.00,
+    "pos_scale_c": 0.90,
+    "chalk_adj_min": 0.92,
+    "chalk_adj_max": 1.10,
+    "moonshot_adj_min": 0.75,
+    "moonshot_adj_max": 1.30,
+    "claude_timeout_seconds": 25
+  },
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 41,
+      "date": "2026-03-19",
+      "change": "Remove dev-team bonus, add matchup-based analysis. (1) Replaced win_pct team_bonus in moonshot formula with combined matchup_factor: math-based opponent def quality (_compute_matchup_factor, using ESPN pts_allowed vs league avg 115, position-scaled G/F/C) × Claude DvP web_search intelligence (_fetch_matchup_intelligence, Layer 1.5 between news and context pass). (2) Added light matchup adjustment [0.92, 1.10] to chalk_ev so Starting 5 also considers opponent defensive quality. (3) Added opp field to all player projections in _run_game() for downstream matchup lookups. (4) Replaced _fetch_team_win_pcts() with _fetch_team_def_stats() using same ESPN standings endpoint. (5) Removed dev_team_pts_floor config key. Rationale: dev-team bonus was double-counting ownership signal already in card boost; matchup quality is a direct RS predictor."
+    },
     {
       "version": 40,
       "date": "2026-03-18",

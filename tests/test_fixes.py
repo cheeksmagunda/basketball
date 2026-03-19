@@ -1390,7 +1390,7 @@ class TestCorePool:
 
         with patch("api.index._cfg", side_effect=cfg_core_off), \
              patch("api.index.get_all_statuses", return_value={}), \
-             patch("api.index._fetch_team_win_pcts", return_value={}):
+             patch("api.index._fetch_team_def_stats", return_value={}):
             chalk, upside, core_pool = _build_lineups([])
 
         assert chalk == []
@@ -1408,12 +1408,83 @@ class TestCorePool:
 
         with patch("api.index._cfg", side_effect=cfg_core_on), \
              patch("api.index.get_all_statuses", return_value={}), \
-             patch("api.index._fetch_team_win_pcts", return_value={}):
+             patch("api.index._fetch_team_def_stats", return_value={}):
             chalk, upside, core_pool = _build_lineups([])
 
         assert isinstance(core_pool, list)
         assert chalk == []
         assert upside == []
+
+
+# ─────────────────────────────────────────────────────────
+# TestMatchupFactor — matchup analysis replacing dev-team bonus
+# ─────────────────────────────────────────────────────────
+class TestMatchupFactor:
+    """_compute_matchup_factor, _build_game_opp_map, and matchup config keys."""
+
+    def test_neutral_when_no_def_stats(self):
+        """Returns 1.0 when def_stats is empty (fallback to neutral)."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "G"}, "LAL", {})
+        assert factor == 1.0
+
+    def test_neutral_when_opponent_unknown(self):
+        """Returns 1.0 when opponent not in def_stats."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "G"}, "XYZ", {"LAL": {"pts_allowed": 110.0}})
+        assert factor == 1.0
+
+    def test_weak_defense_bonus_for_guard(self):
+        """Guard vs weak defense (118 pts allowed) gets >1.0 factor."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "G"}, "SAC", {"SAC": {"pts_allowed": 118.0}})
+        assert factor > 1.0, f"Expected > 1.0, got {factor}"
+        assert factor <= 1.25
+
+    def test_elite_defense_penalty(self):
+        """Player vs elite defense (108 pts allowed) gets <1.0 factor."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "F"}, "OKC", {"OKC": {"pts_allowed": 108.0}})
+        assert factor < 1.0, f"Expected < 1.0, got {factor}"
+        assert factor >= 0.80
+
+    def test_center_less_sensitive_than_guard(self):
+        """Center gets smaller adjustment magnitude than guard for same matchup."""
+        from api.index import _compute_matchup_factor
+        weak_def = {"LAL": {"pts_allowed": 120.0}}
+        guard_factor = _compute_matchup_factor({"pos": "G"}, "LAL", weak_def)
+        center_factor = _compute_matchup_factor({"pos": "C"}, "LAL", weak_def)
+        assert guard_factor > center_factor, "Guard should benefit more from weak defense than center"
+
+    def test_league_avg_defense_is_neutral(self):
+        """Opponent at exactly league avg (115 pts/g) yields factor 1.0."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "F"}, "MIL", {"MIL": {"pts_allowed": 115.0}})
+        assert factor == 1.0
+
+    def test_build_game_opp_map(self):
+        """_build_game_opp_map builds bidirectional team → opponent map."""
+        from api.index import _build_game_opp_map
+        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "MIA"}}]
+        opp_map = _build_game_opp_map(games)
+        assert opp_map["BOS"] == "MIA"
+        assert opp_map["MIA"] == "BOS"
+
+    def test_matchup_config_keys_present(self):
+        """matchup config keys exist in _CONFIG_DEFAULTS."""
+        from api.index import _CONFIG_DEFAULTS
+        matchup = _CONFIG_DEFAULTS.get("matchup", {})
+        assert "enabled" in matchup
+        assert "def_scale" in matchup
+        assert "chalk_adj_min" in matchup
+        assert "moonshot_adj_min" in matchup
+        assert "claude_enabled" in matchup
+
+    def test_no_dev_team_pts_floor_in_moonshot_defaults(self):
+        """dev_team_pts_floor is removed from moonshot defaults."""
+        from api.index import _CONFIG_DEFAULTS
+        moonshot = _CONFIG_DEFAULTS.get("moonshot", {})
+        assert "dev_team_pts_floor" not in moonshot
 
 
 if __name__ == "__main__":
