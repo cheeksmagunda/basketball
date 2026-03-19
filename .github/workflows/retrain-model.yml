@@ -1,5 +1,8 @@
 name: Retrain NBA Model
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   schedule:
     # Run at 6 AM UTC (1 AM EST) — after all NBA games finish
@@ -24,9 +27,22 @@ jobs:
         run: pip install pandas numpy lightgbm scikit-learn nba_api
 
       - name: Retrain model on 3 seasons
+        id: retrain_step
+        continue-on-error: true
         run: python train_lgbm.py
 
+      - name: Retrain status note
+        if: steps.retrain_step.outcome != 'success'
+        run: |
+          echo "::warning::Retrain skipped due to NBA API/network failure. Keeping current lgbm_model.pkl."
+
+      - name: Default changed=false when retrain fails
+        if: steps.retrain_step.outcome != 'success'
+        id: check_failed
+        run: echo "changed=false" >> $GITHUB_OUTPUT
+
       - name: Check if model changed
+        if: steps.retrain_step.outcome == 'success'
         id: check
         run: |
           if git diff --quiet lgbm_model.pkl 2>/dev/null; then
@@ -36,11 +52,11 @@ jobs:
           fi
 
       - name: Stamp model retrain date in config
-        if: steps.check.outputs.changed == 'true'
+        if: steps.retrain_step.outcome == 'success' && steps.check.outputs.changed == 'true'
         run: python scripts/bump_retrain_config.py
 
       - name: Bust today's slate cache on model change via API
-        if: steps.check.outputs.changed == 'true'
+        if: steps.retrain_step.outcome == 'success' && steps.check.outputs.changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
@@ -70,7 +86,7 @@ jobs:
             -d "$PAYLOAD"
 
       - name: Commit and push updated model + config
-        if: steps.check.outputs.changed == 'true'
+        if: steps.retrain_step.outcome == 'success' && steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
