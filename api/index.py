@@ -527,9 +527,6 @@ _CONFIG_DEFAULTS = {
         "compression_power": 0.72,
         "rs_cap": 20.0,
         "ai_blend_weight": 0.35,
-        "calibration_scale": 1.15,
-        "calibration_scale_role": 1.10,
-        "calibration_scale_star": 1.10,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -1908,21 +1905,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
-    # Clutch potential — playmakers, scorers, and defenders are more likely
-    # to produce clutch, momentum, and streak events in the Real Score algorithm.
-    # Pure rebounders (Drummond, Robinson, Jordan) inflate DFS base cheaply
-    # but rarely make game-changing plays. Ball handlers with high PTS/MIN,
-    # AST/MIN, and defenders with high STL+BLK/MIN generate Real Score events.
-    #
-    # Backtest: Marcus Smart 10/3/7/4stl/2blk = 3.4 Real Score despite only
-    # 10 pts — defensive plays in close games are high-impact Real Score events.
-    pts_per_min = pts / max(avg_min, 1)
-    ast_per_min = ast / max(avg_min, 1)
-    def_per_min = (stl + blk) / max(avg_min, 1)
-    clutch_potential = 1.0 + min(
-        pts_per_min * 0.10 + ast_per_min * 0.18 + def_per_min * 0.25, 0.40
-    )
-    heuristic *= clutch_potential
+    # (clutch potential multiplier removed — was stacking 5-40% on ALL players
+    # regardless of quality, compounding RS inflation for bench players)
 
     # Scale heuristic by minute boost from cascade (capped at 1.25x)
     if cascade_bonus > 0 and avg_min > 0:
@@ -2019,28 +2003,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     s_base = heuristic * pace_adj * spread_adj * home_adj
 
-    # ── Real Score Engine (heuristic path only) ───────────────────────────────
-    # Apply Monte Carlo-derived coefficients: Closeness, Clutch, Momentum.
-    # ai_pred bypasses this pipeline — it was trained directly on RS outputs.
+    # ── RS projection: compress DFS base directly to RS scale ────────────────
+    # Monte Carlo removed — closeness×clutch×momentum was multiplying ALL players
+    # by 1.3-1.7x regardless of quality, inflating bench players from RS 2→4.
+    # Compress the DFS base (s_base) directly. With the same div/pow params,
+    # bench players (DFS ~16) now project RS ~2.3 instead of ~3.8.
     season_pts = stats.get("season_pts", pts)
     recent_pts = stats.get("recent_pts", pts)
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
-    usage_rate = min(max(pts / max(avg_min, 1) * 0.8, 0.5), 2.0)
 
-    rng = _make_rng(spread or 0, total or DEFAULT_TOTAL)
-    real_result, real_meta = real_score_projection(
-        s_base, spread or 0, total or DEFAULT_TOTAL, usage_rate, player_variance, rng
-    )
-
-    # Compress heuristic result to RS scale.
-    # v5: Asymmetric compression — preserve floor accuracy, widen ceiling.
-    # Old symmetric (div=7, pow=0.62) compressed everyone into 3-4 RS.
-    # New approach: use softer power (0.72) to let high-upside players separate,
-    # then apply a floor clamp so low-end accuracy is preserved.
     rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
     comp_div = rs_cfg.get("compression_divisor", 5.5)
     comp_pow = rs_cfg.get("compression_power", 0.72)
-    raw_linear = real_result / comp_div
+    raw_linear = s_base / comp_div
     heuristic_rs = raw_linear ** comp_pow
     # Asymmetric cap: high ceiling (20.0) to allow RS 6-8 projections for upside players,
     # but floor stays accurate because compression_power still dampens low values.
@@ -2048,51 +2023,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     heuristic_rs = min(heuristic_rs, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
-    # v40: Reduced to 35/65 AI/heuristic. LightGBM clusters outputs in 2.5-4.5 range,
-    # compressing distribution. 13-date audit showed 34% under-projection bias.
-    # Lower AI weight lets Monte Carlo heuristic spread RS wider.
+    # LightGBM outputs native RS units. 35% AI / 65% heuristic.
     ai_weight = rs_cfg.get("ai_blend_weight", 0.35)
     if ai_pred is not None:
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
     else:
         raw_score = heuristic_rs
 
-    # Big-man calibration: keep a small positional correction for C/PF archetypes
-    # that remain under-projected even after adding reb_per_min to LightGBM.
-    # rather than scoring volume (e.g. Poeltl 9ppg/9reb → was projected ~2.5, actual 5.4).
-    # Only applied to non-scorers (season_pts < pts_cap) so stars like Giannis/Randle
-    # are untouched. Cascades into ceiling_score and chalk_ev automatically.
-    _bm_pos = _pos_group(pinfo.get("pos", "G"))
-    if _bm_pos in ("C", "F"):
-        _bm_cfg = _cfg("projection.big_man_calibration", {})
-        _bm_s_pts = stats.get("season_pts", pts)
-        if _bm_s_pts < _bm_cfg.get("pts_cap", 16.0):
-            _bm_reb_bonus = max(0.0, (stats.get("season_reb", 0) - _bm_cfg.get("reb_baseline", 6.0)) * _bm_cfg.get("reb_scale", 0.04))
-            _bm_blk_bonus = stats.get("season_blk", 0) * _bm_cfg.get("blk_scale", 0.10)
-            raw_score = min(raw_score * (1.0 + min(_bm_reb_bonus + _bm_blk_bonus, 0.40)), rs_cap)
-
-    # Scoring upside multiplier — rewards players whose pts drive their base,
-    # not just balanced stat-line accumulators.
-    # pts_share ranges from ~0.5 (pure rebounder) to ~0.85 (scorer).
-    # scoring_bias scales into a ~0.95–1.15 multiplier.
-    pts_share = pts / max(base, 1)
-    _bias_base = _cfg("scoring_thresholds.scoring_bias_base", 0.85)
-    _bias_wt   = _cfg("scoring_thresholds.scoring_bias_pts_weight", 0.35)
-    scoring_bias = _bias_base + (pts_share * _bias_wt)
-    raw_score = min(raw_score * scoring_bias, rs_cap)
-
-    # RS calibration scale — corrects systematic under-projection bias.
-    # 13-date backtest (Mar 5–17): 65% under-projection rate, avg MAE 1.48 RS.
-    # Per-tier: role players get calibration_scale_role (1.22) — they are more
-    # consistently under-projected. Stars get calibration_scale_star (1.10) —
-    # lower to avoid over-projecting on flat nights; extreme nights are captured
-    # by Claude context layer instead. Falls back to global calibration_scale.
-    _star_ppg = _cfg("scoring_thresholds.star_anchor_ppg", 20.0)
-    if season_pts >= _star_ppg:
-        cal_scale = rs_cfg.get("calibration_scale_star", rs_cfg.get("calibration_scale", 1.15))
-    else:
-        cal_scale = rs_cfg.get("calibration_scale_role", rs_cfg.get("calibration_scale", 1.15))
-    raw_score = min(raw_score * cal_scale, rs_cap)
+    # (big man calibration, scoring bias, calibration scale all removed —
+    # these were stacked multipliers that inflated bench players to RS 3.5-4.0
+    # when they actually deliver RS 1.5. Simpler = fewer compounding errors.)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -3188,22 +3128,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         season_pts = p.get("season_pts", p.get("pts", 0))
         est_mult   = p.get("est_mult", 0.3)
 
-        # ── Moonshot eligibility (v6 — leaderboard-informed + star anchor) ─────
-        # 5 pathways into the moonshot pool:
-        #   Regular: season AND recent min meet floor (default 15 each)
+        # ── Moonshot eligibility ─────────────────────────────────────────────
+        # 4 pathways (wildcard removed — was bypassing all quality gates,
+        # letting deep bench trash with high boost into lineups):
+        #   Regular:      season AND recent min meet floor (both >= 20)
         #   Spot-starter: cascade injury gave them a starter role
-        #   Wildcard: ultra-high boost, some minutes, some scoring
-        #   Role spike: recent minutes >> season (role change/injury)
-        #   Star anchor: 20+ PPG starters — same logic as Starting 5. Both lineups
-        #     need a "big shoota" who can pop off. MILP max_low_boost=1 ensures
-        #     only 1 star gets in; other 4 slots stay high-boost role players.
+        #   Role spike:   recent minutes >> season (role change/injury)
+        #   Star anchor:  20+ PPG starters with strong RS
         is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
         is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
-        is_moonshot_wildcard     = (
-            est_mult >= wildcard_boost
-            and pred_min >= wildcard_min
-            and season_pts >= wildcard_min_pts
-        )
         role_spike_ratio  = moon_cfg.get("role_spike_ratio", 1.4)
         role_spike_recent = moon_cfg.get("role_spike_recent_floor", 20.0)
         role_spike_season = moon_cfg.get("role_spike_season_floor", 10.0)
@@ -3220,7 +3153,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             and season_min >= 25
             and p["rating"] >= 4.0
         )
-        if not (is_moonshot_regular or is_moonshot_spot_starter or is_moonshot_wildcard
+        if not (is_moonshot_regular or is_moonshot_spot_starter
                 or is_role_spike or is_star_anchor):
             continue
 
@@ -3238,12 +3171,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
             continue
 
-        # Minimum rating floor — lowered to 2.0 (leaderboard winners include Ellis
-        # RS 2.2, Clifford RS 2.1, Santos RS 1.8). Wildcards use softer 1.5 floor.
-        min_rating_floor = moon_cfg.get("min_rating_floor", 2.0)
-        if not is_moonshot_wildcard and p["rating"] < min_rating_floor:
-            continue
-        if is_moonshot_wildcard and p["rating"] < 1.5:
+        # Minimum rating floor — all pathways use the same floor (no wildcard bypass).
+        min_rating_floor = moon_cfg.get("min_rating_floor", 3.0)
+        if p["rating"] < min_rating_floor:
             continue
 
         # ── Moonshot EV (matchup-aware) ─────────────────────────────────────────
@@ -3360,7 +3290,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
         core_pool = eligible_union[:core_size]
 
-        chalk = optimize_lineup(core_pool, n=5, sort_key="chalk_ev_capped",
+        # Chalk MILP must only use players that passed chalk eligibility gates.
+        # The core pool includes moonshot-only players (via role_spike/spot_starter)
+        # with synthetic chalk_ev_capped — running chalk MILP on the full core_pool
+        # lets sub-22-min players into Starting 5. Filter to chalk-eligible subset.
+        chalk_names = {p["name"] for p in chalk_eligible}
+        chalk_core = [p for p in core_pool if p["name"] in chalk_names]
+        if len(chalk_core) < 5:
+            chalk_core = core_pool  # safety fallback — use full pool if insufficient
+        chalk = optimize_lineup(chalk_core, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
                                 max_per_team=2,
                                 max_low_boost=chalk_max_stars,

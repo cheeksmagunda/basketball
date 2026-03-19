@@ -1007,7 +1007,7 @@ class TestConfigCoverage:
     def test_moonshot_min_rating_floor_readable(self):
         from api.index import _cfg
         val = _cfg("moonshot.min_rating_floor", None)
-        assert val == 2.0, f"Expected 2.0, got {val}"
+        assert val == 3.0, f"Expected 3.0 (raised from 2.0 in v45 simplification), got {val}"
 
     def test_line_min_confidence_readable(self):
         from api.index import _cfg
