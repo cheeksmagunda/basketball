@@ -3623,7 +3623,7 @@ async def version() -> dict:
 
 
 @app.get("/api/games")
-async def get_games() -> dict:
+async def get_games():
     """Never returns 500; on exception returns 200 with empty list."""
     try:
         games = fetch_games()
