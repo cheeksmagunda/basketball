@@ -1,6 +1,6 @@
 # The Oracle — NBA Draft Optimizer for Real Sports
 
-AI-powered daily NBA draft optimizer for the **Real Sports App**. Projects player Real Scores via Monte Carlo simulation, estimates card boosts, and builds MILP-optimized lineups. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+AI-powered daily NBA draft optimizer for the **Real Sports App**. Projects player Real Scores via Monte Carlo simulation, ingests pre-game card boosts when available (with fallback estimation), and builds MILP-optimized lineups. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## What Real Sports Scores
 
@@ -29,8 +29,9 @@ data/predictions/      — Git-tracked daily prediction CSVs
 data/actuals/          — Git-tracked daily actual result CSVs
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
-data/slate/            — GitHub-persisted prediction cache (cold-start recovery)
-data/locks/            — Cold-start lock recovery: {date}_slate.json at lock time
+data/slate/            — GitHub-persisted prediction cache (current slate + games + bust marker)
+data/locks/            — Cold-start lock recovery: {date}_slate.json at lock time (active slate only)
+data/boosts/           — Pre-game boost uploads (Layer 0 ground-truth boosts, {date}.json)
 data/skipped-uploads.json — User-selected dates to skip uploading
 railway.toml           — Railway config (crons, health check, watchPatterns)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
@@ -55,7 +56,7 @@ ESPN API (games, rosters, injuries, spreads)
   → LightGBM model (11 features, 50% weight in AI blend)
   → Contextual adjustments (pace, spread, home/away)
   → Monte Carlo Real Score (closeness Cc, clutch Ck, momentum Mm)
-  → Card Boost estimate (sigmoid tier + player_overrides lookup)
+  → Card Boost resolution (Layer 0 ingested boosts → overrides/ownership/sigmoid fallback)
   → MILP slot optimizer → Starting 5 + Moonshot lineups
 ```
 
@@ -66,6 +67,8 @@ Predictions are generated **once per day** and cached across three layers:
 1. **`/tmp`** (Railway container) — fastest, ephemeral on cold start/redeploy
 2. **GitHub `data/slate/`** — persistent `{date}_slate.json` + `{date}_games.json`, survives cold starts
 3. **Full pipeline** — ESPN + LightGBM + Monte Carlo + MILP; only runs on true first request of the day
+
+Two-pass usage: `/api/slate` is Pass 1 (morning baseline), and Pass 2 reruns are conditional via `/api/slate-check` + `/api/force-regenerate` only when material triggers are detected.
 
 Subsequent visits serve from cache. Injury-triggered regeneration (`/api/injury-check` cron) only re-runs affected games. Config changes (`/api/lab/update-config`) bust the cache so the next request regenerates with new params.
 
@@ -100,7 +103,8 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
 | `/api/save-predictions` | POST | Save cached predictions to GitHub CSV (server-side lock guard — rejects pre-lock) |
-| `/api/parse-screenshot` | POST | Upload Real Sports screenshot; Claude Haiku parses it |
+| `/api/parse-screenshot` | POST | Upload Real Sports screenshot; Claude Haiku parses it (`actuals`, `most_drafted`, or `boosts`) |
+| `/api/save-boosts` | POST | Persist pre-game boosts to `data/boosts/{date}.json` (Layer 0) and bust slate cache |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV + auto-generate audit JSON |
 | `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc, top misses) |
 | `/api/log/dates` | GET | List dates with stored prediction/actual data |
@@ -109,7 +113,8 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set). Manual: `Authorization: Bearer <CRON_SECRET>` or `?key=<CRON_SECRET>` (keep URL private). |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
-| `/api/force-regenerate?scope=full\|remaining` | GET | Force-regenerate predictions mid-slate. `scope=full`: all games (dev deploy SHA mismatch — also fires automatically in background). `scope=remaining`: unlocked games only (Late Draft banner). CRON_SECRET-gated. |
+| `/api/force-regenerate?scope=full\|remaining` | GET | Force-regenerate predictions mid-slate. `scope=full`: all games (deploy/model refresh; CRON_SECRET-gated). `scope=remaining`: unlocked games only (Late Draft banner; user-facing). |
+| `/api/slate-check` | GET | Pass 2 trigger monitor: injury changes, watchlist activation, or Vegas total movement; returns `{changed, triggers, recommendation}` |
 
 ### Line of the Day
 | Endpoint | Method | Description |
@@ -275,5 +280,5 @@ Predictions lock 5 minutes before the earliest game tip-off. **Slates unlock bas
 - Line of the Day odds: picks loaded from the GitHub CSV lack `books_consensus`/`odds_over`/`odds_under` — rendered as `MODEL` label until odds are refreshed via `/api/refresh-line-odds`.
 - When over and under picks are the same player, `/api/refresh-line-odds` fetches Odds API once and applies the result to both (deduped).
 - RotoWire scraping is free-tier only (availability + injury flags, no projected minutes).
-- `data/locks/` accumulates one JSON per day with no automated cleanup — prune manually at season end.
+- Keep `data/slate/` and `data/locks/` lean. Old cache snapshots should be pruned so only active-slate artifacts remain.
 - History tab shows a 60-day date strip; dates with stored data are highlighted (from `/api/log/dates`).

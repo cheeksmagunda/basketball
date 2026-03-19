@@ -1402,9 +1402,9 @@ def _cascade_minutes(roster, stats_map):
 #
 # Real Score proxy: PTS + REB + AST×1.5 + STL×4.5 + BLK×4.0 - TOV×1.2
 #
-# STARTING 5: MILP optimizes Σ rating × (slot + card_boost)
-# MOONSHOT: same ranking, next 5 players (ranks 6-10) — different exposure,
-#           same methodology. Avoids DNP risks from extreme low-ownership picks.
+# STARTING 5: MILP optimizes reliability-weighted EV with capped boost exposure.
+# MOONSHOT: separate contrarian MILP (two-phase) that prioritizes ceiling while
+#           still enforcing floor/rotation guardrails.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _normalize_boost_name(name):
