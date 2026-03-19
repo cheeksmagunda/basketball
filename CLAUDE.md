@@ -29,6 +29,7 @@ data/audit/            — Git-tracked daily audit JSONs (auto-generated on save
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
 data/slate/            — GitHub-persisted prediction cache ({date}_slate.json, {date}_games.json)
 data/locks/            — Cold-start recovery: {date}_slate.json written at lock-promotion time
+data/boosts/           — Pre-game player boosts (fixed daily constants from Real, {date}.json)
 data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
 lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
 train_lgbm.py          — Training script (11 features, run locally or via GitHub Actions)
@@ -135,6 +136,8 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
 | `/api/lab/calibrate-boost` | GET | Fit card boost log formula params (log_a, log_b) from real ownership data in `data/ownership/`; requires ≥4 samples |
 | `/api/save-ownership` | POST | Save parsed Most Drafted data to `data/ownership/{date}.csv`; used as input for calibrate-boost |
+| `/api/save-boosts` | POST | Save pre-game player boosts (fixed daily constants from Real). Stores to `data/boosts/{date}.json`; busts slate cache so pipeline uses real boosts. Body: `{date?, players: [{player_name, boost, team?, rax_cost?}]}` |
+| `/api/slate-check` | GET | Pass 2 trigger check — detects material changes since Pass 1 (injury, Vegas movement, watchlist activation). Returns `{changed, triggers, recommendation}` |
 
 **Admin / optional (not used by main UI):** `POST /api/reset-uploads` — deletes actuals + audit for a date (admin/debug). `POST /api/hindsight` — optimal hindsight lineup from actual RS (Ben-driven or future). `GET /api/version` — build identifier for deploy/monitoring.
 
@@ -238,6 +241,52 @@ A **Magic 8-ball** animation plays on app load and during API calls (slate fetch
 - CSS keyframe animation: `ballFloat` (3s ease loop), `ballShake` on load
 - Controlled by `showLoader()` / `hideLoader()` in JS
 - Messages cycle: "READING THE GAME", "CONSULTING THE ORACLE", "CALCULATING EDGE", etc.
+
+## Two-Pass Pipeline Architecture
+
+### Key Insight: Boosts Are Fixed Daily Constants
+Player boosts are set once per day by Real Sports and do not recalculate based on final draft counts. This means boosts are **observable inputs, not predictions**. The only unknown at draft time is the player's actual Real Score.
+
+### Pass 1 — Morning Pipeline (Primary)
+Runs via `/api/slate` when first user visits or cache is empty. Uses all available data:
+- Ingested boosts from `data/boosts/{date}.json` (Layer 0) when available, otherwise falls back to estimation
+- ESPN rosters, stats, injury reports
+- Vegas lines and totals (opening lines)
+- RotoWire availability
+- LightGBM + Monte Carlo RS projection → MILP optimization
+
+**Output**: Slate response includes `lineups`, `watchlist` (cascade-sensitive players), `boosts_ingested` flag, `pass: 1`.
+
+### Pass 2 — Pre-Game Pipeline (Conditional)
+Runs via `/api/force-regenerate?scope=remaining` when material changes detected. **Only updates RS projections** — boosts and slots don't change.
+
+### Monitoring: `/api/slate-check`
+Detects material changes since Pass 1:
+1. **Injury status changes** for players in the current lineup (severity: high)
+2. **Watchlist activation** — a player the lineup depends on goes OUT, activating a cascade candidate (severity: medium)
+3. **Vegas line movement** — game total moves ≥3 points from Pass 1 value (severity: medium)
+4. **New starter ruled OUT** — cascade opportunity on any game
+
+Returns `{changed, triggers, recommendation: "hold"|"rerun"}`. Recommendation = "rerun" if any high-severity trigger or ≥2 triggers total.
+
+### Watchlist (`_build_watchlist`)
+Generated during Pass 1 (and Pass 2 reruns). Identifies players NOT in the lineup whose value would spike if a specific event occurs:
+- **Injury cascade**: Bench player on same team as lineup player who would inherit significant minutes if lineup player goes OUT
+- Filters: base rating ≥ 2.0, season min ≥ 12, projected boost rating ≥ min_chalk_rating, card boost ≥ 1.0
+- Sorted by projected upside, capped at 10 entries
+
+### Boost Ingestion Flow
+1. User screenshots Real Sports pre-game player list (boosts visible)
+2. Upload via `/api/parse-screenshot` with `screenshot_type="boosts"` — Claude Haiku extracts player_name, boost, team, rax_cost
+3. Save via `/api/save-boosts` → writes `data/boosts/{date}.json` to GitHub
+4. Slate cache busted → next `/api/slate` call uses real boosts (Layer 0)
+5. Pipeline falls through to estimation layers only for players not in the boosts file
+
+### What the App Does NOT Need
+With boosts as known constants:
+- **Boost prediction modeling** — not needed when daily boosts are ingested
+- **Real-time draft count tracking** — boosts are already set
+- **DFS ownership projection** — proxy not needed since boosts are directly observable
 
 ## Prediction Save Deduplication
 
@@ -404,10 +453,12 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits). `recent_vs_season` = recent scoring vs season average (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts).
 - Retrained nightly by GitHub Actions (`retrain-model.yml`). Retrain manually: `python train_lgbm.py`.
 
-### Card Boost (`_est_card_boost`)
-- Default: exponential heuristic `scalar × decay_base^hype + base_offset`.
-- Log-formula path (calibrated, off by default): `log_a - log_b × log10(predicted_drafts)`. Activate with `card_boost.log_formula_active: true` in config once 50+ actuals collected.
-- Continuous fame multiplier: `fame_mult = max(1.0, (pts / fame_pts_base) ** fame_exponent)` — replaces the old `star_players` hardcoded list. Tunable via `card_boost.fame_pts_base` (default 8.0) and `card_boost.fame_exponent` (default 2.5).
+### Card Boost (`_est_card_boost`) — 4-Layer (v25)
+Boosts are **fixed daily constants** published by Real Sports before drafts open. They are **observable, not predicted**. The pipeline uses a 4-layer cascade:
+- **Layer 0 — Daily ingestion** (`data/boosts/{date}.json`): Pre-game boosts uploaded via `/api/save-boosts` or screenshot parse (`type="boosts"`). Ground truth when available — no estimation needed.
+- **Layer 1 — Config overrides** (`card_boost.player_overrides`): Manually curated boost map (~114 players). Used when daily boosts not yet ingested.
+- **Layer 2 — Ownership data** (`data/ownership/` + `data/actuals/` CSVs): Auto-populated from post-game screenshots. Most recent observation per player.
+- **Layer 3 — Sigmoid fallback**: `boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)`. Big market discount -0.15x. For unknown players only.
 
 ### Moonshot Formula (v7 — quality over quantity)
 `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)`
@@ -663,7 +714,7 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 | **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
 | **api/real_score.py** | Monte Carlo Real Score | RS projection (closeness, clutch, momentum). Used by projection pipeline in index. |
-| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Used by game runner in index. |
+| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Two-phase optimization for moonshot (Phase 1: player selection with shaped ratings; Phase 2: slot assignment with raw RS). No position-per-team constraint (Real Sports has no position requirements). Used by game runner in index. |
 | **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production runs as a persistent Docker container on Railway. |
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
 | **scripts/sync_model_config.py** | Config sync | Syncs model-config from GitHub (used by workflows). |
@@ -710,6 +761,9 @@ TestPicksServeFromCache     — per-game cache loading, GitHub fallback for pick
 TestClaudeContextLayer      — context pass enable/disable, multiplier clamping, graceful fallback
 TestPredMinTolerance        — chalk (2.0) and moonshot (3.0) tolerance band config and code presence
 TestMoonshotPtsFloor        — separate moonshot pts floor (4.0) config and chalk enforcement (7.0)
+TestDailyBoostIngestion     — Layer 0 daily boost load/parse, _est_card_boost priority over config overrides
+TestWatchlist               — _build_watchlist cascade candidate detection, max-10 cap
+TestBoostsScreenshotType    — parse-screenshot accepts 'boosts' screenshot_type
 TestOddsEnrichment          — odds enrichment skip when disabled, upward blend at divergence, no-blend below threshold
 TestWebSearch               — Claude web_search skip when disabled/no key, fetch+cache, cache reuse
 TestContextPassWithNews     — web search called from context pass, news text in prompt
@@ -726,7 +780,7 @@ TestContextPassWithNews     — web search called from context pass, news text i
 - **TestNormalizePlayer** — _normalize_player() contract: all required fields present with correct types
 - **TestNormalizeLinePick** — _normalize_line_pick() contract: all required fields, result defaults to "pending"
 - **TestRealScoreEngine** — Monte Carlo closeness/clutch/momentum coefficients (pure numpy, no I/O)
-- **TestAssetOptimizer** — optimize_lineup() MILP slot assignment: chalk vs moonshot modes, edge cases
+- **TestAssetOptimizer** — optimize_lineup() MILP slot assignment: chalk vs moonshot modes, edge cases, RS-ordered slotting, two-phase moonshot, same-position-same-team allowed
 - **TestConfigCoverage** — all major model floors read from model-config.json via _cfg()
 - **TestProjectPlayerContract** — project_player() returns all required fields after _normalize_player()
 - **TestLineEngineHelpers** — line_engine.py helpers with no external deps (_abbr_matches, stat meta)
@@ -827,6 +881,8 @@ If slate, line, and/or log all fail to load:
 | Line over model tightening | `api/line_engine.py` | Over picks penalized -12 confidence when no catalyst signals (cascade/form/B2B). Prompt expanded with explicit over-specific rules citing 17% historical hit rate. Recent form trend indicators (↑HOT/↓COLD) added to player context. |
 | `.ok` check before `.json()` | `index.html` | `/api/lab/update-config` response: check `.ok` before parsing JSON to prevent misleading error handling. |
 | Vercel→Railway comment cleanup | `api/index.py` | Replaced 7 stale Vercel references with Railway equivalents (watchPatterns, container instances, timeout limits). |
+| MILP solver audit — 3 fixes | `api/asset_optimizer.py`, `api/index.py` | (1) Removed `leverage_top_slots` constraint — mathematically wrong for additive formula `RS × (Slot + Boost)` since boost is player-constant; solver naturally places highest RS in highest slot. (2) Two-phase moonshot optimization — Phase 1 selects players using shaped ratings (boost leverage, variance uplift); Phase 2 re-assigns slots using raw RS for optimal placement. Decouples selection from slotting. (3) Removed position-per-team constraint — Real Sports has no position requirements; artificial constraint blocked legitimate same-position stacks. |
+| Two-pass pipeline + boost ingestion | `api/index.py` | Boosts are fixed daily constants — observable, not predicted. (1) Layer 0 boost ingestion: `POST /api/save-boosts` stores pre-game boosts to `data/boosts/{date}.json`; `_est_card_boost` checks Layer 0 first, falls through to estimation only when unavailable. (2) `screenshot_type="boosts"` in parse-screenshot for Claude Haiku extraction. (3) Two-pass architecture: Pass 1 (morning `/api/slate`) + Pass 2 (conditional `/api/force-regenerate`). (4) `GET /api/slate-check` monitors for material changes (injury, Vegas ≥3pt move, watchlist activation). (5) `_build_watchlist()` identifies cascade-sensitive players near lineup bubble. Slate response includes `watchlist`, `boosts_ingested`, `pass` fields. |
 
 ## Loading audit
 

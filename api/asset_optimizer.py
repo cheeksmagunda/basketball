@@ -12,6 +12,11 @@
 # This is the ADDITIVE Real Sports formula — slot and card boost add together.
 # Assigning the highest raw-score player to 2.0x is optimal because marginal
 # slot benefit scales with raw score.
+#
+# TWO-PHASE OPTIMIZATION (moonshot):
+#   Phase 1: Select 5 players using shaped ratings (boost leverage, variance)
+#   Phase 2: Re-assign slots using pure raw RS — because boost is a player-level
+#            constant, only raw RS determines optimal slot placement.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import copy
@@ -25,16 +30,6 @@ try:
 except ImportError:
     PULP_AVAILABLE = False
 
-# Position group map — mirrors index.py POS_GROUPS (same keys, same default)
-_POS_GROUPS = {
-    "PG": "G", "SG": "G", "G": "G",
-    "SF": "F", "PF": "F", "F": "F",
-    "C": "C",
-}
-
-def _pos_group(pos):
-    return _POS_GROUPS.get(pos, "G")
-
 # Slot multipliers: Real Sports App draft slot values
 SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]
 SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
@@ -44,12 +39,12 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     sort_key="chalk_ev", rating_key="rating",
                     card_boost_key="est_mult", time_limit=5,
                     max_low_boost=0, low_boost_threshold=0.0,
-                    leverage_top_slots=0, leverage_boost_threshold=0.0,
                     objective_mode=None,
                     variance_penalty=0.0, variance_uplift=0.0,
                     boost_leverage_extra_power=0.0,
                     overlap_player_ids=None, overlap_cap=0,
-                    overlap_id_key="id"):
+                    overlap_id_key="id",
+                    two_phase=False, raw_rating_key=None):
     """Find the optimal player-to-slot assignment using MILP.
 
     Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
@@ -60,13 +55,11 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         min_per_team: Minimum players per team (0 = no constraint)
         max_per_team: Maximum players per team (0 = no constraint)
         sort_key: Key to sort by in fallback mode
-        rating_key: Key containing raw score (for slot assignment)
+        rating_key: Key containing score for player selection
         card_boost_key: Key containing additive card boost
         time_limit: Solver time limit in seconds
         max_low_boost: Max low-boost (star) players allowed (0 = no limit)
         low_boost_threshold: Boost below this = "low boost" player
-        leverage_top_slots: Require this many contrarian players in top 2 slots (0 = off)
-        leverage_boost_threshold: Card boost above this qualifies as "contrarian"
         objective_mode: Optional shaping ("chalk"|"moonshot") applied to the
             MILP objective coefficients using player_variance.
         variance_penalty: Used when objective_mode="chalk" to downweight
@@ -81,6 +74,12 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         overlap_cap: Maximum allowed overlapped players in the returned lineup.
             Interpreted as a count of players (not slots).
         overlap_id_key: Projection dict key containing the player id.
+        two_phase: When True, run Phase 1 (player selection with shaped
+            ratings) then Phase 2 (slot assignment with raw RS). This
+            decouples selection from slotting so moonshot shaping doesn't
+            corrupt slot placement.
+        raw_rating_key: Key for raw (unaltered) RS used in Phase 2 slotting.
+            Required when two_phase=True. Falls back to rating_key if unset.
 
     Returns:
         List of n player dicts with slot assignments applied
@@ -95,21 +94,31 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         return _fallback_sort(projections, n, sort_key)
 
     try:
-        return _solve_milp(projections, n, min_per_team, max_per_team,
-                           rating_key, card_boost_key, time_limit,
-                           max_low_boost, low_boost_threshold,
-                           leverage_top_slots, leverage_boost_threshold,
-                           objective_mode,
-                           variance_penalty, variance_uplift,
-                           boost_leverage_extra_power,
-                           overlap_player_ids, overlap_cap, overlap_id_key)
+        selected = _solve_milp(projections, n, min_per_team, max_per_team,
+                               rating_key, card_boost_key, time_limit,
+                               max_low_boost, low_boost_threshold,
+                               objective_mode,
+                               variance_penalty, variance_uplift,
+                               boost_leverage_extra_power,
+                               overlap_player_ids, overlap_cap, overlap_id_key)
+
+        if two_phase and len(selected) == n:
+            # Phase 2: re-assign slots using raw RS for optimal placement.
+            # In Score = RS × (Slot + Boost), boost is player-constant so
+            # highest raw RS must go in highest slot.
+            rr_key = raw_rating_key or rating_key
+            return _solve_milp(selected, n, 0, 0,
+                               rr_key, card_boost_key, time_limit,
+                               0, 0.0, None, 0.0, 0.0, 0.0,
+                               None, 0, overlap_id_key)
+
+        return selected
     except Exception:
         return _fallback_sort(projections, n, sort_key)
 
 
 def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 card_boost_key, time_limit, max_low_boost=0, low_boost_threshold=0.0,
-                leverage_top_slots=0, leverage_boost_threshold=0.0,
                 objective_mode=None,
                 variance_penalty=0.0, variance_uplift=0.0,
                 boost_leverage_extra_power=0.0,
@@ -175,18 +184,8 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 x[i, j] for i in player_indices for j in slots
             ) <= max_per_team
 
-    # Position-per-team constraint: at most 1 player per (team, pos_group) in lineup.
-    # Prevents two centers (or two guards, two forwards) from the same team both
-    # appearing — they share a real-world role and the pick looks redundant.
-    pos_team_groups = {}
-    for i, p in enumerate(projections):
-        key = (p.get("team", ""), _pos_group(p.get("pos", "")))
-        pos_team_groups.setdefault(key, []).append(i)
-    for player_indices in pos_team_groups.values():
-        if len(player_indices) >= 2:
-            prob += lpSum(
-                x[i, j] for i in player_indices for j in slots
-            ) <= 1
+    # No position-per-team constraint — Real Sports has no position requirements.
+    # The solver freely selects any player combination regardless of position overlap.
 
     # Low-boost star cap: prevents 3+ superstars (low card boost) crowding out
     # higher-EV role players. Only active when both params are set (chalk mode).
@@ -199,21 +198,6 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in low_boost_players for j in slots
             ) <= max_low_boost
-
-    # Leverage constraint: force at least N contrarian players (high card boost)
-    # into the top 2 slots (2.0x, 1.8x). This differentiates the lineup from
-    # the field — pure EV always puts the same superstars in top slots as
-    # everyone else. Only active when both params are set.
-    if leverage_top_slots > 0 and leverage_boost_threshold > 0:
-        contrarian_players = [
-            i for i, p in enumerate(projections)
-            if p.get(card_boost_key, 0) > leverage_boost_threshold
-        ]
-        top_slots = [j for j in slots if j < 2]  # slots 0 and 1 (2.0x, 1.8x)
-        if contrarian_players and top_slots:
-            prob += lpSum(
-                x[i, j] for i in contrarian_players for j in top_slots
-            ) >= min(leverage_top_slots, len(top_slots))
 
     # Overlap constraint: allow at most overlap_cap players from overlap_player_ids.
     # This is applied only when feasible based on candidate pool size.
