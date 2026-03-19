@@ -3168,7 +3168,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             **p,
             "moonshot_ev":    moonshot_ev,
             "adj_ceiling":    adj_ceiling,
-            "_matchup_factor": round(combined_factor, 3),
+            "_matchup_factor": round(matchup_factor, 3),
             "_rw_cleared":    True,
         })
 
