@@ -1,6 +1,6 @@
 {
-  "version": 40,
-  "updated_at": "2026-03-18T12:00:00Z",
+  "version": 43,
+  "updated_at": "2026-03-19T01:00:00Z",
   "updated_by": "lab",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -13,12 +13,13 @@
     "chalk_boost_cap": 1.5,
     "scoring_bias_base": 0.85,
     "scoring_bias_pts_weight": 0.35,
-    "star_anchor_ppg": 20.0
+    "star_anchor_ppg": 20.0,
+    "min_game_pts": 8.0
   },
   "card_boost": {
     "ceiling": 3.0,
     "floor": 0.2,
-    "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
+    "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","LAC","CHI"],
     "sig_ceiling": 3.0,
     "sig_range": 2.8,
     "sig_midpoint": 12.0,
@@ -31,7 +32,7 @@
       "Bam Adebayo": 0.6, "Bilal Coulibaly": 1.9, "Bobby Portis": 1.6,
       "Brandon Ingram": 0.7, "Brandin Podziemski": 1.3, "Brice Sensabaugh": 2.1,
       "Brook Lopez": 3.0, "Bryce McGowens": 3.0,
-      "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Clint Capela": 3.0, "Daeqwon Plowden": 3.0,
+      "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Christian Braun": 3.0, "Clint Capela": 3.0, "Daeqwon Plowden": 3.0,
       "Cody Williams": 3.0, "Collin Gillespie": 1.2, "Collin Sexton": 2.0,
       "Cooper Flagg": 0.7,
       "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.7, "DeMar DeRozan": 0.9,
@@ -39,17 +40,17 @@
       "Deni Avdija": 0.4, "Derik Queen": 1.4, "Derrick White": 0.7,
       "Desmond Bane": 0.7, "Devin Booker": 0.5, "Devin Carter": 3.0,
       "Donovan Clingan": 0.9, "Donovan Mitchell": 0.2, "Draymond Green": 2.0,
-      "Gary Payton II": 3.0, "Grant Williams": 2.8, "Gui Santos": 2.5,
+      "Gary Payton II": 3.0, "Grant Williams": 2.8, "Gui Santos": 2.6,
       "Isaiah Collier": 1.4,
       "Jakob Poeltl": 1.6, "Jalen Brunson": 0.4, "Jalen Duren": 0.7,
-      "Jalen Johnson": 0.3, "James Harden": 0.3, "Jamir Watkins": 3.0, "Jarace Walker": 2.3,
+      "Jalen Johnson": 0.3, "Jalen Slawson": 2.8, "James Harden": 0.3, "Jamir Watkins": 3.0, "Jarace Walker": 2.3, "Jared McCain": 2.9,
       "Javon Small": 2.0, "Jaylen Brown": 0.3, "Jordan Miller": 2.5,
       "Josh Minott": 3.0, "Jrue Holiday": 0.9, "Julian Reese": 3.0,
       "Julius Randle": 0.6,
       "Justin Edwards": 3.0, "Kam Jones": 3.0, "Kasparas Jakucionis": 3.0, "Karl-Anthony Towns": 0.6, "Karlo Matković": 3.0,
       "Kawhi Leonard": 0.2, "Kel'el Ware": 1.4, "Kevin Durant": 0.5, "Killian Hayes": 3.0,
       "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kristaps Porzingis": 1.0,
-      "Kyle Filipowski": 1.9, "Kyle Kuzma": 1.7,
+      "Kyle Filipowski": 2.0, "Kyle Kuzma": 1.7,
       "LaMelo Ball": 0.6, "Leonard Miller": 3.0, "Luka Dončić": 0.0,
       "Marcus Sasser": 3.0, "Matas Buzelis": 1.3, "Maxime Raynaud": 2.1,
       "Mitchell Robinson": 2.1, "Myles Turner": 1.6,
@@ -57,14 +58,14 @@
       "OG Anunoby": 1.1, "Olivier-Maxence Prosper": 3.0, "Oso Ighodaro": 2.9,
       "Ousmane Dieng": 3.0,
       "P.J. Washington": 1.5, "Paolo Banchero": 0.6, "Pat Spencer": 3.0,
-      "Pelle Larsson": 2.0, "Precious Achiuwa": 2.1,
+      "Pelle Larsson": 2.0, "Precious Achiuwa": 2.3,
       "Quentin Grimes": 1.7, "Quinten Post": 3.0,
       "Reed Sheppard": 1.5, "Robert Williams III": 2.3, "Ron Harper Jr.": 3.0,
       "Royce O'Neale": 2.0, "Rudy Gobert": 1.1, "Russell Westbrook": 1.1,
       "Scottie Barnes": 0.5, "Shai Gilgeous-Alexander": 0.0,
       "Simone Fontecchio": 3.0, "Spencer Jones": 3.0, "Stephon Castle": 0.8,
       "Tari Eason": 1.9, "Taylor Hendricks": 3.0, "Trey Murphy III": 0.6,
-      "Tristan Vukcevic": 3.0, "Tristan da Silva": 2.4, "Tyler Herro": 0.8,
+      "Tristan Vukcevic": 3.0, "Tristan da Silva": 2.7, "Tyler Herro": 0.8,
       "Victor Wembanyama": 0.2, "Will Riley": 3.0,
       "Yves Missi": 3.0, "Zaccharie Risacher": 2.4
     }
@@ -123,7 +124,9 @@
     "compression_power": 0.72,
     "rs_cap": 20.0,
     "ai_blend_weight": 0.35,
-    "calibration_scale": 1.15
+    "calibration_scale": 1.15,
+    "calibration_scale_role": 1.22,
+    "calibration_scale_star": 1.10
   },
   "cascade": {
     "redistribution_rate": 0.7,
@@ -142,7 +145,7 @@
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
-    "chalk_season_min_floor": 20.0,
+    "chalk_season_min_floor": 15.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
     "chalk_recent_min_floor": 15.0,
@@ -154,7 +157,7 @@
       "reb_baseline": 6.0,
       "reb_scale": 0.04,
       "blk_scale": 0.10,
-      "pts_cap": 16.0
+      "pts_cap": 20.0
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
@@ -189,6 +192,7 @@
   },
   "lineup": {
     "chalk_rating_floor": 2.0,
+    "game_recent_min_floor": 15.0,
     "game_chalk_rating_floor": 3.5,
     "avg_slot_multiplier": 1.6,
     "slot_multipliers": [
@@ -226,16 +230,38 @@
     "wildcard_min_boost": 2.0,
     "wildcard_min_minutes": 6.0,
     "wildcard_min_season_pts": 3.0,
-    "dev_team_pts_floor": 4.0,
     "role_spike_ratio": 1.4,
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
     "pred_min_tolerance": 3.0
   },
+  "matchup": {
+    "enabled": true,
+    "claude_enabled": true,
+    "def_scale": 0.35,
+    "pos_scale_g": 1.05,
+    "pos_scale_f": 1.00,
+    "pos_scale_c": 0.90,
+    "chalk_adj_min": 0.92,
+    "chalk_adj_max": 1.10,
+    "moonshot_adj_min": 0.75,
+    "moonshot_adj_max": 1.30,
+    "claude_timeout_seconds": 25
+  },
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 42,
+      "date": "2026-03-19",
+      "change": "13-day historical analysis (Mar 5-17) — 4 targeted improvements: (1) Per-tier calibration scale: role players (season_pts < 20) now get calibration_scale_role=1.22, stars get calibration_scale_star=1.10. Fixes 65% under-projection rate (58 under vs 31 over) — role player winners (da Silva 5x, Filipowski 5x, Santos 4x, Achiuwa 3x) were being filtered out by RS gates due to systematic under-projection. Stars stay conservative; extreme nights handled by Claude context layer. (2) big_man_calibration.pts_cap 16.0→20.0: Bam Adebayo (pred 3.0, actual 12.7 — largest error in dataset) and elite centers have binary outcomes requiring a higher ceiling for big man calibration bonus to apply. (3) Player override audit for recurring winners: da Silva 2.4→2.7, Filipowski 1.9→2.0, Achiuwa 2.1→2.3, Santos 2.5→2.6 — empirically aligned with 13-day ownership data. (4) simulated_draft_score added to _compute_audit(): measures 60+ draft goal progress by computing optimal hindsight score (top-5 actuals × slot 2.0x→1.2x + actual card boost). Tracks what was achievable each night vs what was predicted."
+    },
+    {
+      "version": 41,
+      "date": "2026-03-19",
+      "change": "Remove dev-team bonus, add matchup-based analysis. (1) Replaced win_pct team_bonus in moonshot formula with combined matchup_factor: math-based opponent def quality (_compute_matchup_factor, using ESPN pts_allowed vs league avg 115, position-scaled G/F/C) × Claude DvP web_search intelligence (_fetch_matchup_intelligence, Layer 1.5 between news and context pass). (2) Added light matchup adjustment [0.92, 1.10] to chalk_ev so Starting 5 also considers opponent defensive quality. (3) Added opp field to all player projections in _run_game() for downstream matchup lookups. (4) Replaced _fetch_team_win_pcts() with _fetch_team_def_stats() using same ESPN standings endpoint. (5) Removed dev_team_pts_floor config key. Rationale: dev-team bonus was double-counting ownership signal already in card boost; matchup quality is a direct RS predictor."
+    },
     {
       "version": 40,
       "date": "2026-03-18",

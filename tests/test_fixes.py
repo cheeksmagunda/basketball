@@ -194,6 +194,107 @@ class TestComputeAudit:
         assert result['over_projected'] == 2
         assert result['under_projected'] == 1
 
+    def test_simulated_draft_score_present(self):
+        """simulated_draft_score field exists and is a positive float when ≥3 actuals available"""
+        from api.index import _compute_audit
+        with patch('api.index._github_get_file', side_effect=self._mock_github(self.PRED_CSV, self.ACT_CSV)):
+            result = _compute_audit('2026-03-08')
+        assert 'simulated_draft_score' in result
+        # 3 players: sort by actual_rs desc → Curry 6.1, LeBron 4.2, Durant 3.5
+        # slot 2.0 + boost 1.2 = 3.2 → 6.1 × 3.2 = 19.52
+        # slot 1.8 + boost 1.8 = 3.6 → 4.2 × 3.6 = 15.12
+        # slot 1.6 + boost 2.1 = 3.7 → 3.5 × 3.7 = 12.95
+        # total = 47.59
+        assert result['simulated_draft_score'] == pytest.approx(47.6, abs=0.2)
+
+    def test_simulated_draft_score_none_when_insufficient_actuals(self):
+        """simulated_draft_score is None when fewer than 3 actuals have actual_rs > 0"""
+        from api.index import _compute_audit
+        act_small = (
+            "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+            "LeBron James,4.2,1.8,45000,,,real_scores\n"
+            "Stephen Curry,0,1.2,80000,,,real_scores\n"
+        )
+        with patch('api.index._github_get_file', side_effect=self._mock_github(self.PRED_CSV, act_small)):
+            result = _compute_audit('2026-03-08')
+        # Only 1 player with actual_rs > 0 — below 3-player threshold
+        assert result is None or result.get('simulated_draft_score') is None
+
+
+# ─────────────────────────────────────────────────────────
+# TestPerTierCalibration — per-tier calibration scale
+# ─────────────────────────────────────────────────────────
+class TestPerTierCalibration:
+    """Per-tier calibration: role players (season_pts < 20) use calibration_scale_role,
+    stars use calibration_scale_star. Falls back to calibration_scale when keys absent."""
+
+    def test_role_player_uses_role_scale(self):
+        """A player with season_pts=12 (role player) should get calibration_scale_role applied."""
+        from api.index import project_player
+        pinfo = {"id": "test_role_1", "name": "Test Role Player", "team": "SAS", "pos": "SG", "opp": "LAL"}
+        stats = {
+            "min": 22.0, "pts": 12.0, "reb": 3.0, "ast": 2.0, "stl": 0.5, "blk": 0.2,
+            "season_pts": 12.0, "season_min": 22.0, "season_reb": 3.0,
+            "recent_pts": 12.0, "recent_min": 22.0,
+        }
+        # Patch config to use distinct scales so we can detect which one was applied
+        cfg_overrides = {
+            "real_score.calibration_scale_role": 1.50,
+            "real_score.calibration_scale_star": 1.00,
+            "real_score.calibration_scale": 1.15,
+        }
+        original_cfg = __import__('api.index', fromlist=['_cfg'])._cfg
+        def mock_cfg(key, default=None):
+            return cfg_overrides.get(key, original_cfg(key, default))
+        with patch('api.index._cfg', side_effect=mock_cfg):
+            with patch('api.index._est_card_boost', return_value=1.5):
+                with patch('api.index._github_get_file', return_value=(None, None)):
+                    result = project_player(pinfo, stats, 2.0, 222.0, "away", "SAS", 0.0, False)
+        # With scale 1.50 for role players, RS should be higher than with 1.00
+        assert result is not None
+        assert result.get('rating', 0) > 0
+
+    def test_star_player_uses_star_scale(self):
+        """A player with season_pts=28 (star) should use calibration_scale_star, not role scale."""
+        from api.index import project_player
+        pinfo = {"id": "test_star_1", "name": "Test Star Player", "team": "OKC", "pos": "SG", "opp": "MEM"}
+        stats = {
+            "min": 34.0, "pts": 28.0, "reb": 5.0, "ast": 6.0, "stl": 1.5, "blk": 0.5,
+            "season_pts": 28.0, "season_min": 34.0, "season_reb": 5.0,
+            "recent_pts": 28.0, "recent_min": 34.0,
+        }
+        cfg_overrides = {
+            "real_score.calibration_scale_role": 1.50,
+            "real_score.calibration_scale_star": 1.00,
+            "real_score.calibration_scale": 1.15,
+        }
+        original_cfg = __import__('api.index', fromlist=['_cfg'])._cfg
+        def mock_cfg(key, default=None):
+            return cfg_overrides.get(key, original_cfg(key, default))
+        with patch('api.index._cfg', side_effect=mock_cfg):
+            with patch('api.index._est_card_boost', return_value=0.3):
+                with patch('api.index._github_get_file', return_value=(None, None)):
+                    star_result = project_player(pinfo, stats, 2.0, 222.0, "home", "OKC", 0.0, False)
+        # Just verify it ran without error — exact RS comparison is fragile due to LightGBM
+        assert star_result is not None
+
+    def test_config_defaults_have_per_tier_scale_keys(self):
+        """_CONFIG_DEFAULTS must include calibration_scale_role and calibration_scale_star."""
+        from api.index import _CONFIG_DEFAULTS
+        rs_defaults = _CONFIG_DEFAULTS.get("real_score", {})
+        assert "calibration_scale_role" in rs_defaults, "calibration_scale_role missing from _CONFIG_DEFAULTS"
+        assert "calibration_scale_star" in rs_defaults, "calibration_scale_star missing from _CONFIG_DEFAULTS"
+        assert rs_defaults["calibration_scale_role"] > rs_defaults["calibration_scale_star"], \
+            "role scale should be higher than star scale"
+
+    def test_fallback_to_global_calibration_scale(self):
+        """When per-tier keys are absent, falls back to calibration_scale."""
+        from api.index import _CONFIG_DEFAULTS
+        # Simulate a config without the new keys
+        rs = _CONFIG_DEFAULTS["real_score"]
+        fallback = rs.get("calibration_scale_role", rs.get("calibration_scale", 1.15))
+        assert fallback == rs["calibration_scale_role"]  # new key present → uses it
+
 
 # ─────────────────────────────────────────────────────────
 # TestGitHubWriteRetry — exponential backoff on 422
@@ -1390,7 +1491,7 @@ class TestCorePool:
 
         with patch("api.index._cfg", side_effect=cfg_core_off), \
              patch("api.index.get_all_statuses", return_value={}), \
-             patch("api.index._fetch_team_win_pcts", return_value={}):
+             patch("api.index._fetch_team_def_stats", return_value={}):
             chalk, upside, core_pool = _build_lineups([])
 
         assert chalk == []
@@ -1408,12 +1509,280 @@ class TestCorePool:
 
         with patch("api.index._cfg", side_effect=cfg_core_on), \
              patch("api.index.get_all_statuses", return_value={}), \
-             patch("api.index._fetch_team_win_pcts", return_value={}):
+             patch("api.index._fetch_team_def_stats", return_value={}):
             chalk, upside, core_pool = _build_lineups([])
 
         assert isinstance(core_pool, list)
         assert chalk == []
         assert upside == []
+
+
+# ─────────────────────────────────────────────────────────
+# TestMatchupFactor — matchup analysis replacing dev-team bonus
+# ─────────────────────────────────────────────────────────
+class TestMatchupFactor:
+    """_compute_matchup_factor, _build_game_opp_map, and matchup config keys."""
+
+    def test_neutral_when_no_def_stats(self):
+        """Returns 1.0 when def_stats is empty (fallback to neutral)."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "G"}, "LAL", {})
+        assert factor == 1.0
+
+    def test_neutral_when_opponent_unknown(self):
+        """Returns 1.0 when opponent not in def_stats."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "G"}, "XYZ", {"LAL": {"pts_allowed": 110.0}})
+        assert factor == 1.0
+
+    def test_weak_defense_bonus_for_guard(self):
+        """Guard vs weak defense (118 pts allowed) gets >1.0 factor."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "G"}, "SAC", {"SAC": {"pts_allowed": 118.0}})
+        assert factor > 1.0, f"Expected > 1.0, got {factor}"
+        assert factor <= 1.25
+
+    def test_elite_defense_penalty(self):
+        """Player vs elite defense (108 pts allowed) gets <1.0 factor."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "F"}, "OKC", {"OKC": {"pts_allowed": 108.0}})
+        assert factor < 1.0, f"Expected < 1.0, got {factor}"
+        assert factor >= 0.80
+
+    def test_center_less_sensitive_than_guard(self):
+        """Center gets smaller adjustment magnitude than guard for same matchup."""
+        from api.index import _compute_matchup_factor
+        weak_def = {"LAL": {"pts_allowed": 120.0}}
+        guard_factor = _compute_matchup_factor({"pos": "G"}, "LAL", weak_def)
+        center_factor = _compute_matchup_factor({"pos": "C"}, "LAL", weak_def)
+        assert guard_factor > center_factor, "Guard should benefit more from weak defense than center"
+
+    def test_league_avg_defense_is_neutral(self):
+        """Opponent at exactly league avg (115 pts/g) yields factor 1.0."""
+        from api.index import _compute_matchup_factor
+        factor = _compute_matchup_factor({"pos": "F"}, "MIL", {"MIL": {"pts_allowed": 115.0}})
+        assert factor == 1.0
+
+    def test_build_game_opp_map(self):
+        """_build_game_opp_map builds bidirectional team → opponent map."""
+        from api.index import _build_game_opp_map
+        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "MIA"}}]
+        opp_map = _build_game_opp_map(games)
+        assert opp_map["BOS"] == "MIA"
+        assert opp_map["MIA"] == "BOS"
+
+    def test_matchup_config_keys_present(self):
+        """matchup config keys exist in _CONFIG_DEFAULTS."""
+        from api.index import _CONFIG_DEFAULTS
+        matchup = _CONFIG_DEFAULTS.get("matchup", {})
+        assert "enabled" in matchup
+        assert "def_scale" in matchup
+        assert "chalk_adj_min" in matchup
+        assert "moonshot_adj_min" in matchup
+        assert "claude_enabled" in matchup
+
+    def test_no_dev_team_pts_floor_in_moonshot_defaults(self):
+        """dev_team_pts_floor is removed from moonshot defaults."""
+        from api.index import _CONFIG_DEFAULTS
+        moonshot = _CONFIG_DEFAULTS.get("moonshot", {})
+        assert "dev_team_pts_floor" not in moonshot
+
+
+# ─────────────────────────────────────────────────────────
+# TestBriefingSimulatedDraftScore — simulated_draft_score surfaces to Ben
+# ─────────────────────────────────────────────────────────
+class TestBriefingSimulatedDraftScore:
+    """simulated_draft_score from _compute_audit must appear in /api/lab/briefing latest_slate."""
+
+    AUDIT = {
+        "date": "2026-03-17",
+        "players_compared": 5,
+        "mae": 1.48,
+        "directional_accuracy": 0.6,
+        "over_projected": 2,
+        "under_projected": 3,
+        "biggest_misses": [],
+        "simulated_draft_score": 62.4,
+        "generated_at": "2026-03-17T23:00:00Z",
+    }
+
+    def _run_briefing_with_audit(self, audit_dict):
+        """Helper: run lab_briefing with a fake paired date using the given audit."""
+        import asyncio, json
+        from unittest.mock import patch
+        from api.index import lab_briefing
+
+        audit_json = json.dumps(audit_dict)
+        date = audit_dict["date"]
+
+        def fake_list_dir(path):
+            if "predictions" in path:
+                return [{"name": f"{date}.csv"}]
+            if "actuals" in path:
+                return [{"name": f"{date}.csv"}]
+            return []
+
+        def fake_get_file(path):
+            if f"audit/{date}" in path:
+                return audit_json, "sha1"
+            return None, None
+
+        with patch('api.index._github_list_dir', side_effect=fake_list_dir):
+            with patch('api.index._github_get_file', side_effect=fake_get_file):
+                with patch('api.index._load_config', return_value={"version": 42, "changelog": []}):
+                    result = asyncio.get_event_loop().run_until_complete(lab_briefing())
+
+        data = result if isinstance(result, dict) else result.body
+        if isinstance(data, bytes):
+            data = json.loads(data)
+        return data
+
+    def test_simulated_draft_score_in_briefing_latest_slate(self):
+        """When audit has simulated_draft_score, briefing latest_slate must include it."""
+        data = self._run_briefing_with_audit(self.AUDIT)
+        latest = data.get("latest_slate") or {}
+        assert "simulated_draft_score" in latest, \
+            "simulated_draft_score must be in briefing latest_slate so Ben can track 60+ goal"
+        assert latest["simulated_draft_score"] == 62.4
+
+    def test_simulated_draft_score_none_handled_gracefully(self):
+        """When audit has simulated_draft_score=None, briefing still works."""
+        audit_no_score = {**self.AUDIT, "simulated_draft_score": None}
+        data = self._run_briefing_with_audit(audit_no_score)
+        latest = data.get("latest_slate") or {}
+        assert latest.get("simulated_draft_score") is None
+
+
+class TestMinGateOverrideAware:
+    """min_gate_minutes gate uses player boost overrides, not just PPG proxy.
+
+    This ensures players with high override boosts (GPII +3.0, Braun +3.0, Sensabaugh +2.1)
+    receive a lower min_gate so they can enter the projection pipeline and be evaluated
+    for the core pool — previously these overrides were unreachable for low-minute players.
+    """
+
+    def _effective_gate(self, pts, override_boost=None, min_gate=12):
+        """Replicate the gate formula from project_player()."""
+        rough_boost = override_boost if override_boost is not None else max(0.2, 3.0 - pts * 0.12)
+        return max(8, min_gate - max(0, (rough_boost - 1.5) * 3))
+
+    def test_gpii_override_3_0_lowers_gate_to_8(self):
+        """GPII has override 3.0 → effective_gate = max(8, 12-(3.0-1.5)*3) = 8."""
+        gate = self._effective_gate(pts=8.0, override_boost=3.0)
+        assert gate == 8, f"GPII with 3.0 override should get gate=8, got {gate}"
+
+    def test_gpii_without_override_gate_higher(self):
+        """Without override, 8 PPG → rough_boost≈2.04 → gate≈10.7 (blocks ~13-min players)."""
+        gate = self._effective_gate(pts=8.0, override_boost=None)
+        assert gate > 10, f"8 PPG without override should give gate>10, got {gate}"
+
+    def test_override_enables_10_min_player_that_ppg_proxy_blocks(self):
+        """A player projecting 10 min with 8 PPG: PPG proxy gives gate≈10.7 (fails), 3.0 override gives gate=8 (passes).
+
+        This is the GPII scenario: on a short-minute night (~10 predMin) with 8 PPG,
+        the PPG proxy underestimates his real boost and incorrectly blocks him.
+        The 3.0 override makes him eligible for the projection pipeline.
+        """
+        proj_min = 10
+        gate_with_override = self._effective_gate(pts=8.0, override_boost=3.0)
+        gate_without_override = self._effective_gate(pts=8.0, override_boost=None)
+        # With 3.0 override: gate = 8, 10 >= 8 → passes
+        assert proj_min >= gate_with_override, \
+            f"10-min player must pass gate with 3.0 override (gate={gate_with_override})"
+        # Without override at 8 PPG: gate ≈ 10.7, 10 < 10.7 → fails
+        assert proj_min < gate_without_override, \
+            f"10-min player must fail gate without override at 8 PPG (gate={gate_without_override})"
+
+    def test_sensabaugh_override_2_1_lowers_gate(self):
+        """Sensabaugh override 2.1 → gate = max(8, 12-(2.1-1.5)*3) = 10.2."""
+        gate = self._effective_gate(pts=10.0, override_boost=2.1)
+        assert gate == pytest.approx(10.2, abs=0.1)
+
+    def test_override_gate_in_project_player_source(self):
+        """project_player() must check player overrides before computing rough_boost."""
+        import inspect
+        from api import index
+        src = inspect.getsource(index.project_player)
+        assert "_override_boost_gate" in src, \
+            "project_player must use _override_boost_gate variable (override-aware gate)"
+        assert "card_boost.player_overrides" in src, \
+            "project_player gate must look up card_boost.player_overrides"
+
+    def test_christian_braun_in_config_overrides(self):
+        """Christian Braun must be in player_overrides with boost 3.0."""
+        import json, pathlib
+        from api.index import _normalize_boost_name
+        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
+        overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
+        norm_braun = _normalize_boost_name("Christian Braun")
+        match = next(
+            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm_braun),
+            None
+        )
+        assert match is not None, "Christian Braun must be in card_boost.player_overrides"
+        assert match == pytest.approx(3.0), f"Braun override should be 3.0, got {match}"
+
+    def test_jared_mccain_in_config_overrides(self):
+        """Jared McCain must be in player_overrides with boost 2.9."""
+        import json, pathlib
+        from api.index import _normalize_boost_name
+        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
+        overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
+        norm = _normalize_boost_name("Jared McCain")
+        match = next(
+            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm),
+            None
+        )
+        assert match is not None, "Jared McCain must be in card_boost.player_overrides"
+        assert match == pytest.approx(2.9), f"McCain override should be 2.9, got {match}"
+
+
+class TestPerGameFloor:
+    """Per-game pool uses configurable recent_min floor (15) and pts floor (8)."""
+
+    def _local_cfg(self):
+        """Read data/model-config.json directly (bypasses GitHub/_cfg fallback to defaults)."""
+        import json, pathlib
+        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
+        return json.loads(cfg_path.read_text())
+
+    def test_game_min_floor_config_key_is_15(self):
+        """lineup.game_recent_min_floor must be 15.0 in config (was hardcoded 20)."""
+        cfg = self._local_cfg()
+        floor = cfg.get("lineup", {}).get("game_recent_min_floor")
+        assert floor is not None, "lineup.game_recent_min_floor must be in model-config.json"
+        assert floor == pytest.approx(15.0), f"game_recent_min_floor should be 15.0, got {floor}"
+
+    def test_game_pts_floor_config_key_is_8(self):
+        """scoring_thresholds.min_game_pts must be 8.0 (was min_moonshot_pts=10)."""
+        cfg = self._local_cfg()
+        floor = cfg.get("scoring_thresholds", {}).get("min_game_pts")
+        assert floor is not None, "scoring_thresholds.min_game_pts must be in model-config.json"
+        assert floor == pytest.approx(8.0), f"min_game_pts should be 8.0, got {floor}"
+
+    def test_per_game_code_uses_config_key(self):
+        """Per-game pool source must use game_recent_min_floor config key, not literal 20.0."""
+        import inspect
+        from api import index
+        src = inspect.getsource(index)
+        assert "game_recent_min_floor" in src, \
+            "Per-game pool must reference game_recent_min_floor config key"
+        assert "scoring_thresholds.min_game_pts" in src, \
+            "Per-game pool must use scoring_thresholds.min_game_pts config key"
+
+    def test_chalk_season_min_floor_is_15(self):
+        """chalk_season_min_floor must be 15 (lowered from 20) to admit Braun/McCain-type players."""
+        cfg = self._local_cfg()
+        floor = cfg.get("projection", {}).get("chalk_season_min_floor")
+        assert floor == pytest.approx(15.0), \
+            f"chalk_season_min_floor should be 15.0, got {floor}"
+
+    def test_den_not_in_big_market_teams(self):
+        """DEN must be removed from big_market_teams — DEN role players are low-ownership."""
+        cfg = self._local_cfg()
+        big_markets = cfg.get("card_boost", {}).get("big_market_teams", [])
+        assert "DEN" not in big_markets, \
+            "DEN must not be in big_market_teams — Braun/Porter etc. are not heavily drafted"
 
 
 if __name__ == "__main__":

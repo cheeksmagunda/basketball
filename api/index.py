@@ -528,6 +528,8 @@ _CONFIG_DEFAULTS = {
         "rs_cap": 20.0,
         "ai_blend_weight": 0.35,
         "calibration_scale": 1.15,
+        "calibration_scale_role": 1.22,
+        "calibration_scale_star": 1.10,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -547,7 +549,7 @@ _CONFIG_DEFAULTS = {
         "leverage_top_slots": 1,        # force 1 contrarian into top slot; star anchor goes in 2.0x (v21: was 2→1)
         "leverage_boost_threshold": 1.5, # contrarian = boost above this (was 1.0; raise to ensure real contrarians)
         "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
-            "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 16.0,
+            "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 20.0,
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
@@ -565,8 +567,20 @@ _CONFIG_DEFAULTS = {
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 6.0, "wildcard_min_season_pts": 3.0,
-        "dev_team_pts_floor": 4.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
+    },
+    "matchup": {
+        "enabled": True,
+        "claude_enabled": True,
+        "def_scale": 0.35,        # how strongly opponent pts_allowed affects the factor
+        "pos_scale_g": 1.05,      # guards benefit most from weak defenses (pts-driver)
+        "pos_scale_f": 1.00,      # forwards neutral
+        "pos_scale_c": 0.90,      # centers less sensitive (RS from reb/blk not just pts)
+        "chalk_adj_min": 0.92,    # narrow range for chalk — reliability first
+        "chalk_adj_max": 1.10,
+        "moonshot_adj_min": 0.75, # wider range for moonshot — upside signal
+        "moonshot_adj_max": 1.30,
+        "claude_timeout_seconds": 25,
     },
     "lineup": {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
@@ -770,7 +784,7 @@ def _et_date() -> str:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ESPN DATA FETCHERS
-# grep: _espn_get, fetch_games, fetch_roster, _fetch_athlete, _fetch_b2b_teams, _fetch_team_win_pcts
+# grep: _espn_get, fetch_games, fetch_roster, _fetch_athlete, _fetch_b2b_teams, _fetch_team_def_stats
 # _fetch_athlete: returns blended season+recent stats dict for a player
 # fetch_games: returns today's game list with lock/complete status
 # ─────────────────────────────────────────────────────────────────────────────
@@ -807,30 +821,43 @@ def _fetch_b2b_teams():
     _cs(cache_key, list(b2b))
     return b2b
 
-def _fetch_team_win_pcts() -> dict:
-    """Fetch current NBA team win percentages from ESPN standings.
-    Returns {abbr: win_pct} e.g. {"OKC": 0.776, "SAC": 0.250}.
+def _fetch_team_def_stats() -> dict:
+    """Fetch NBA team defensive stats (pts allowed per game) from ESPN standings.
+    Returns {abbr: {"pts_allowed": float}} e.g. {"SAC": {"pts_allowed": 118.5}}.
     Cached for the calendar day (ET). On any failure returns {} —
-    caller defaults unknown teams to 0.5 (no bonus), so moonshot still works.
+    callers fall back to league avg (115.0), yielding a neutral matchup factor.
     """
-    cache_key = f"standings_{_et_date().strftime('%Y%m%d')}"
+    cache_key = f"team_def_stats_{_et_date().strftime('%Y%m%d')}"
     cached = _cg(cache_key)
     if cached is not None:
         return cached
     data = _espn_get("https://site.api.espn.com/apis/v2/sports/basketball/nba/standings")
-    win_pcts = {}
+    result = {}
     try:
         for entry in data.get("standings", {}).get("entries", []):
             abbr = entry.get("team", {}).get("abbreviation", "")
-            for stat in entry.get("stats", []):
-                if stat.get("name") == "winPercent":
-                    win_pcts[abbr] = float(stat["value"])
-                    break
+            if not abbr:
+                continue
+            stats_dict = {}
+            for s in entry.get("stats", []):
+                if "value" in s:
+                    try:
+                        stats_dict[s["name"]] = float(s["value"])
+                    except (TypeError, ValueError):
+                        pass
+            pts_allowed = (
+                stats_dict.get("avgPointsAgainst")
+                or stats_dict.get("pointsAgainst")
+                or stats_dict.get("avgPointsAllowed")
+                or stats_dict.get("opponentAvgPoints")
+            )
+            if pts_allowed and pts_allowed > 50:  # sanity check — must be pts/game not a rate
+                result[abbr] = {"pts_allowed": pts_allowed}
     except Exception:
         pass
-    if win_pcts:
-        _cs(cache_key, win_pcts)
-    return win_pcts
+    if result:
+        _cs(cache_key, result)
+    return result
 
 _GAMES_CACHE_TS: dict = {}  # cache_key → timestamp for TTL enforcement
 
@@ -1609,10 +1636,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Minutes gate — boost-aware: low-PPG contrarians get a lower threshold
     # because high card boost EV compensates for DNP risk.
     # Formula: effective_gate = max(8, min_gate - (rough_boost - 1.5) * 3)
-    # rough_boost proxy: low-PPG players are low-ownership = higher card boost
+    # Check player_overrides FIRST so override boosts (e.g. GPII 3.0, Sensabaugh 2.1,
+    # Christian Braun 3.0) are reflected in the gate — otherwise those overrides are
+    # unreachable for low-minute players who fail the PPG proxy threshold.
     min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
     _pts_for_gate = stats.get("pts", 0)
-    _rough_boost = max(0.2, 3.0 - _pts_for_gate * 0.12)
+    _override_boost_gate = None
+    _norm_for_gate = _normalize_boost_name(pinfo.get("name", ""))
+    if _norm_for_gate:
+        for _k, _v in _cfg("card_boost.player_overrides", {}).items():
+            if _normalize_boost_name(_k) == _norm_for_gate:
+                _override_boost_gate = float(_v)
+                break
+    _rough_boost = _override_boost_gate if _override_boost_gate is not None else max(0.2, 3.0 - _pts_for_gate * 0.12)
     effective_gate = max(8, min_gate - max(0, (_rough_boost - 1.5) * 3))
     if proj_min < effective_gate: return None
 
@@ -1819,10 +1855,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     raw_score = min(raw_score * scoring_bias, rs_cap)
 
     # RS calibration scale — corrects systematic under-projection bias.
-    # 13-date backtest (Mar 5–17) showed model under-projects RS by ~34% on average
-    # (avg predicted 4.3 vs avg actual 5.2 for matched leaderboard players).
-    # Conservative 1.15 scale (not full 1.34 which is biased toward leaderboard tail).
-    cal_scale = rs_cfg.get("calibration_scale", 1.15)
+    # 13-date backtest (Mar 5–17): 65% under-projection rate, avg MAE 1.48 RS.
+    # Per-tier: role players get calibration_scale_role (1.22) — they are more
+    # consistently under-projected. Stars get calibration_scale_star (1.10) —
+    # lower to avoid over-projecting on flat nights; extreme nights are captured
+    # by Claude context layer instead. Falls back to global calibration_scale.
+    _star_ppg = _cfg("scoring_thresholds.star_anchor_ppg", 20.0)
+    if season_pts >= _star_ppg:
+        cal_scale = rs_cfg.get("calibration_scale_star", rs_cfg.get("calibration_scale", 1.15))
+    else:
+        cal_scale = rs_cfg.get("calibration_scale_role", rs_cfg.get("calibration_scale", 1.15))
     raw_score = min(raw_score * cal_scale, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
@@ -2093,6 +2135,191 @@ def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> st
     except Exception as e:
         print(f"[web_search] Claude web_search error (non-fatal): {e}")
         return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MATCHUP ANALYSIS (Layer 1.5 of the projection pipeline)
+# grep: MATCHUP ANALYSIS, _build_game_opp_map, _compute_matchup_factor, _fetch_matchup_intelligence
+# Replaces the crude dev-team win_pct bonus with real opponent defensive quality,
+# position-specific scaling, and Claude web_search for DvP intelligence.
+# Runs between Layer 1 (news) and Layer 2 (context pass).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_game_opp_map(games: list) -> dict:
+    """Return {team_abbr: opp_abbr} for every team playing today.
+    Used to look up a player's opponent from their team abbreviation.
+    """
+    opp_map = {}
+    for g in games:
+        home = g.get("home", {}).get("abbr", "")
+        away = g.get("away", {}).get("abbr", "")
+        if home and away:
+            opp_map[home] = away
+            opp_map[away] = home
+    return opp_map
+
+
+def _compute_matchup_factor(player: dict, opp_abbr: str, def_stats: dict) -> float:
+    """Compute a matchup quality multiplier [0.80, 1.25] based on opponent defense.
+
+    Components:
+    - def_factor: opponent pts_allowed vs league avg 115 → scaled by matchup.def_scale
+    - pos_scale: position-specific weighting (guards see more of the signal, centers less)
+
+    Falls back to 1.0 (neutral) when def_stats is empty or opponent unknown.
+    Config keys: matchup.def_scale (0.35), matchup.pos_scale_g/f/c (1.05/1.00/0.90)
+    """
+    if not _cfg("matchup.enabled", True):
+        return 1.0
+    if not def_stats or not opp_abbr:
+        return 1.0
+
+    opp = def_stats.get(opp_abbr, {})
+    pts_allowed = opp.get("pts_allowed")
+    if not pts_allowed:
+        return 1.0
+
+    league_avg = 115.0
+    def_scale = float(_cfg("matchup.def_scale", 0.35))
+    # Weak defense (allows 120) → +1.6% ×0.35 = ~+12% at 30pts above avg
+    # Elite defense (allows 108) → -7pts ×0.35 = ~-8% below avg
+    def_factor = 1.0 + (pts_allowed - league_avg) / 30.0 * def_scale
+
+    # Position scaling: guards score more pts → benefit more from a weak defense
+    pos = _pos_group(player.get("pos", ""))
+    pos_scales = {
+        "G": float(_cfg("matchup.pos_scale_g", 1.05)),
+        "F": float(_cfg("matchup.pos_scale_f", 1.00)),
+        "C": float(_cfg("matchup.pos_scale_c", 0.90)),
+    }
+    pos_scale = pos_scales.get(pos, 1.0)
+    adjusted = 1.0 + (def_factor - 1.0) * pos_scale
+
+    return max(0.80, min(1.25, round(adjusted, 3)))
+
+
+def _fetch_matchup_intelligence(games: list, all_proj: list, def_stats: dict,
+                                 game_opp_map: dict, news_context: str = "") -> dict:
+    """Layer 1.5: Claude analyzes tonight's matchups with web_search for DvP data.
+
+    Returns {player_name: {"factor": float, "reason": str}} where factor is a
+    [0.80, 1.20] multiplier applied on top of the math-based matchup_factor.
+    Config-gated: matchup.claude_enabled (default True).
+    Cached daily per slate date.
+    Non-fatal: returns {} on any error so math-only factors are used instead.
+    """
+    if not _cfg("matchup.enabled", True) or not _cfg("matchup.claude_enabled", True):
+        return {}
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        return {}
+
+    today = _et_date().isoformat()
+    cache_key = f"matchup_intel_{today}"
+    cached = _cg(cache_key)
+    if cached is not None:
+        return cached.get("players_map", {})
+
+    # Build matchup table for prompt
+    matchup_lines = []
+    for g in games:
+        home = g.get("home", {}).get("abbr", "")
+        away = g.get("away", {}).get("abbr", "")
+        home_def = def_stats.get(home, {}).get("pts_allowed", "?")
+        away_def = def_stats.get(away, {}).get("pts_allowed", "?")
+        spread = g.get("spread")
+        total = g.get("total")
+        spread_str = f"spread {spread:+.1f}" if spread else ""
+        total_str = f"total {total}" if total else ""
+        extras = ", ".join(filter(None, [spread_str, total_str]))
+        home_def_str = f"{home_def:.1f}" if isinstance(home_def, float) else home_def
+        away_def_str = f"{away_def:.1f}" if isinstance(away_def, float) else away_def
+        matchup_lines.append(
+            f"{away} (allows {away_def_str} pts/g) @ {home} (allows {home_def_str} pts/g)"
+            + (f" [{extras}]" if extras else "")
+        )
+
+    matchup_table = "\n".join(matchup_lines) if matchup_lines else "No games found"
+
+    # Top projected players with opponent context
+    top_players = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:30]
+    player_lines = []
+    for p in top_players:
+        opp = game_opp_map.get(p.get("team", ""), "?")
+        opp_def = def_stats.get(opp, {}).get("pts_allowed", "?")
+        opp_def_str = f"{opp_def:.1f}" if isinstance(opp_def, float) else opp_def
+        player_lines.append(
+            f"- {p.get('name', '')} ({p.get('pos', '?')}, {p.get('team', '')} vs {opp}, "
+            f"opp allows {opp_def_str}): proj RS {p.get('rating', 0):.1f}, "
+            f"{p.get('season_pts', p.get('pts', 0)):.0f} pts/g avg"
+        )
+
+    player_blurb = "\n".join(player_lines)
+    news_section = f"\n\nKNOWN NEWS (from earlier today):\n{news_context}\n" if news_context else ""
+
+    timeout_s = float(_cfg("matchup.claude_timeout_seconds", 25))
+    model_id = _cfg("context_layer.web_search_model", "claude-opus-4-20250514")
+
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=anthropic_key)
+        msg = client.messages.create(
+            model=model_id,
+            max_tokens=2000,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Today is {today}. I need matchup quality analysis for tonight's NBA games "
+                    f"to adjust player projections.\n\n"
+                    f"TONIGHT'S MATCHUPS (pts allowed per game this season):\n{matchup_table}\n\n"
+                    f"TOP PROJECTED PLAYERS:\n{player_blurb}"
+                    f"{news_section}\n\n"
+                    "Use web_search to find defense-vs-position (DvP) data for tonight's teams:\n"
+                    "1. How many points does each team allow to guards, forwards, and centers this season?\n"
+                    "2. Which teams are top-5 / bottom-5 vs each position?\n"
+                    "3. Any pace or style matchup advantages (e.g. fast team vs slow defense)?\n\n"
+                    "Based on your research, return ONLY a JSON object with per-player matchup factors.\n"
+                    "Only include players where the matchup meaningfully helps or hurts them (skip neutral).\n"
+                    "Factor range: 0.80 (very tough matchup) to 1.20 (very favorable matchup).\n"
+                    "Keep reasons under 15 words each.\n\n"
+                    'Respond with ONLY valid JSON: {"players": [{"name": "Player Name", "factor": 1.12, "reason": "brief reason"}]}'
+                ),
+            }],
+            timeout=timeout_s,
+        )
+        # Extract JSON from text blocks
+        text_parts = []
+        for block in msg.content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text.strip())
+        raw_text = "\n".join(text_parts)
+
+        # Parse JSON — be lenient (Claude may wrap in markdown)
+        json_match = re.search(r'\{.*"players".*\}', raw_text, re.DOTALL)
+        if not json_match:
+            return {}
+        parsed = json.loads(json_match.group())
+        players_list = parsed.get("players", [])
+
+        # Build name → factor map, clamp to safe range
+        players_map = {}
+        for entry in players_list:
+            name = entry.get("name", "")
+            factor = float(entry.get("factor", 1.0))
+            factor = max(0.80, min(1.20, factor))
+            reason = entry.get("reason", "")
+            if name and factor != 1.0:
+                players_map[name] = {"factor": factor, "reason": reason}
+
+        _cs(cache_key, {"players_map": players_map, "ts": datetime.now(timezone.utc).isoformat()})
+        print(f"[matchup_intel] Claude returned {len(players_map)} player adjustments")
+        return players_map
+
+    except Exception as e:
+        print(f"[matchup_intel] Claude matchup analysis error (non-fatal): {e}")
+        return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2476,9 +2703,12 @@ def _run_game(game):
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
         # Check if this player's team is on a back-to-back
         b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
+        # Determine opponent for matchup analysis
+        opp_abbr = game["away"]["abbr"] if sd == "home" else game["home"]["abbr"]
         proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
                               cascade_bonus=cascade_bonus, is_b2b=bool(b2b))
         if proj:
+            proj["opp"] = opp_abbr  # store opponent for matchup factor in _build_lineups
             out.append(proj)
     _cs(cache_key, out)
     return out
@@ -2491,7 +2721,7 @@ def _run_game(game):
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal-only fields never sent to the frontend
-_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_team_dev_mult"}
+_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_matchup_factor"}
 
 def _normalize_player(p: dict) -> dict:
     """Stable frontend contract for player projection objects.
@@ -2569,7 +2799,7 @@ def _normalize_line_pick(p: dict) -> dict:
     return {**base, **extras}
 
 
-def _build_lineups(projections):
+def _build_lineups(projections, def_stats=None, matchup_intel=None):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
     chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
@@ -2654,7 +2884,14 @@ def _build_lineups(projections):
             continue
         capped_boost = min(p["est_mult"], boost_cap)
         p["capped_boost"] = capped_boost
-        p["chalk_ev_capped"] = round(p["rating"] * (avg_slot + capped_boost), 2)
+        # Light matchup adjustment for chalk (narrower range than moonshot — reliability first)
+        opp = p.get("opp", "")
+        chalk_matchup = _compute_matchup_factor(p, opp, def_stats or {})
+        chalk_matchup = max(
+            float(_cfg("matchup.chalk_adj_min", 0.92)),
+            min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
+        )
+        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
     chalk_max_stars  = int(_cfg("projection.chalk_max_stars", 2))
@@ -2675,17 +2912,17 @@ def _build_lineups(projections):
                                 leverage_top_slots=leverage_top,
                                 leverage_boost_threshold=leverage_thresh)
 
-    # ── MOONSHOT: Contrarian EV strategy (v6 — leaderboard-informed) ─────────
+    # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
-    # on dev teams with 3-5x card boost. Stars almost NEVER win moonshot (4/5 days
-    # pure role players). The formula is simple: maximize RS × (slot + boost).
+    # with high card boost. Stars almost NEVER win moonshot (4/5 days pure role
+    # players). The formula: maximize RS × (slot + boost) with matchup adjustment.
     #
-    # Simplified approach (v6):
+    # Approach:
     #   - Card boost >= 1.5 (contrarian — low ownership)
     #   - Season/recent avg >= 15 min (was 25; Santos/Clifford/Ellis play 15-20)
     #   - Rating >= 2.0 (was 3.0; Ellis RS 2.2, Clifford RS 2.1 were winners)
     #   - RotoWire: only exclude confirmed OUT
-    #   - Dev team bonus from live standings
+    #   - Matchup factor: opponent def quality × Claude DvP intelligence (replaces dev-team bonus)
     #   - Boost leverage baked into adj_ceiling for MILP
     #   - No center penalty (Poeltl, Queta, Achiuwa all win)
     #   - Light variance damping (moonshot wants upside)
@@ -2693,20 +2930,15 @@ def _build_lineups(projections):
     min_floor        = moon_cfg.get("min_minutes_floor", 15)
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 15)
     min_boost        = moon_cfg.get("min_card_boost", 1.5)
-    team_win_pcts    = _fetch_team_win_pcts()
 
-    # Wildcard and dev-team thresholds — read once outside the loop
+    # Wildcard thresholds — read once outside the loop
     # Wildcard gate: ultra-high-boost deep bench players bypass season/recent min floors.
-    # Mar 15 fix: GPII (predMin 16.5, boost 2.7x) failed old 24-min gate; lowered to 10.
-    # Boost threshold lowered to 2.5 (was 2.9) — our estimator runs 30-50% below actuals.
     wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.5)
     wildcard_min          = moon_cfg.get("wildcard_min_minutes", 10.0)
     wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 5.0)
-    # Dev team pts floor: lower threshold so low-scoring dev-team role players (Williams
-    # 6ppg UTAH, Cardwell 5.4ppg SAC) receive the rebuild win_pct bonus in moonshot ranking.
-    # Old floor of 10.0 suppressed the bonus for exactly the players we want.
-    dev_pts_floor         = moon_cfg.get("dev_team_pts_floor", 6.0)
     variance_penalty_coef = moon_cfg.get("variance_penalty", 0.15)
+    # Matchup intel from Claude Layer 1.5 (pre-fetched, passed in)
+    _matchup_intel = matchup_intel or {}
 
     # v5: Starting 5 and Moonshot can share players. They represent two independent
     # draft strategies (reliability vs ceiling) — if a player is the best pick for
@@ -2787,20 +3019,28 @@ def _build_lineups(projections):
         if is_moonshot_wildcard and p["rating"] < 1.5:
             continue
 
-        # ── Moonshot EV (simplified v6) ────────────────────────────────────────
-        # Leaderboard analysis: winning moonshots are high-boost role players on
-        # dev teams. The formula should maximize RS × (slot + boost) — same as
-        # the MILP objective. We only add two lightweight adjustments:
-        #   1. Dev team bonus (low win% teams have lower ownership → higher boost)
-        #   2. Boost leverage (bake ownership advantage into MILP rating)
-        # Removed: center penalty (Poeltl, Queta, Achiuwa all win), heavy variance
-        # penalty (moonshot WANTS upside), defensive rate bonus (marginal signal),
-        # scoring anchor (stars almost never win moonshot — 4/5 days pure role players).
+        # ── Moonshot EV (matchup-aware) ─────────────────────────────────────────
+        # The formula maximizes RS × (slot + boost) with matchup intelligence:
+        #   1. Math matchup factor: opponent defensive quality vs player position
+        #   2. Claude matchup factor: DvP web intelligence (Layer 1.5)
+        #   3. Boost leverage: bake ownership advantage into MILP rating
+        # Replaces: dev-team win% bonus (double-counted card boost signal)
 
-        # Dev team bonus from live standings
-        win_pct   = team_win_pcts.get(p.get("team", ""), 0.5)
-        raw_bonus = max(1.0, 1.0 + max(0.0, 0.5 - win_pct))
-        team_bonus = raw_bonus if season_pts >= dev_pts_floor else 1.0
+        # Math-based matchup factor: opponent defensive quality vs player position
+        opp_abbr = p.get("opp", "")
+        matchup_factor = _compute_matchup_factor(p, opp_abbr, def_stats or {})
+
+        # Claude matchup intelligence (Layer 1.5): DvP-aware adjustment
+        claude_entry = _matchup_intel.get(p.get("name", ""), {})
+        claude_factor = float(claude_entry.get("factor", 1.0))
+        claude_factor = max(0.80, min(1.20, claude_factor))
+
+        # Combined matchup factor (clamped to safe range)
+        combined_factor = max(
+            float(_cfg("matchup.moonshot_adj_min", 0.75)),
+            min(float(_cfg("matchup.moonshot_adj_max", 1.30)),
+                matchup_factor * claude_factor)
+        )
 
         # Boost leverage — the core moonshot signal. High-boost players get
         # exponentially more weight so the MILP strongly favors them.
@@ -2812,17 +3052,17 @@ def _build_lineups(projections):
         var_penalty = variance_penalty_coef
         base_rating = p["rating"] * max(0.85, 1.0 - p_var * var_penalty)
 
-        adj_ceiling = round(base_rating * team_bonus * boost_leverage, 3)
+        adj_ceiling = round(base_rating * combined_factor * boost_leverage, 3)
 
         # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
 
         moonshot_pool.append({
             **p,
-            "moonshot_ev":  moonshot_ev,
-            "adj_ceiling":  adj_ceiling,
-            "_team_dev_mult": round(team_bonus, 3),
-            "_rw_cleared":  True,
+            "moonshot_ev":    moonshot_ev,
+            "adj_ceiling":    adj_ceiling,
+            "_matchup_factor": round(combined_factor, 3),
+            "_rw_cleared":    True,
         })
 
     # Cap centers in moonshot — centers generate fewer RS events per minute
@@ -2846,18 +3086,23 @@ def _build_lineups(projections):
 
     if core_pool_enabled:
         # ── Core pool path: one 7–10 player core; both lineups are configurations of it ──
-        def _moonshot_ev_for_player(p, _avg_slot, _moon_cfg, _team_win_pcts):
-            _dev_pts_floor = _moon_cfg.get("dev_team_pts_floor", 6.0)
-            _win_pct = _team_win_pcts.get(p.get("team", ""), 0.5)
-            _raw_bonus = max(1.0, 1.0 + max(0.0, 0.5 - _win_pct))
-            _team_bonus = _raw_bonus if (p.get("season_pts", p.get("pts", 0)) >= _dev_pts_floor) else 1.0
+        def _moonshot_ev_for_player(p, _avg_slot, _moon_cfg, _def_stats, _matchup_intel_map):
             _est = p.get("est_mult", 0.3)
             _boost_power = _moon_cfg.get("boost_leverage_power", 1.6)
             _boost_leverage = max(_est, 0.2) ** _boost_power
             _p_var = min(p.get("player_variance", 0.0), 0.6)
             _var_penalty = _moon_cfg.get("variance_penalty", 0.15)
             _base = p["rating"] * max(0.85, 1.0 - _p_var * _var_penalty)
-            _adj = round(_base * _team_bonus * _boost_leverage, 3)
+            # Matchup factor replaces dev-team bonus
+            _opp = p.get("opp", "")
+            _matchup = _compute_matchup_factor(p, _opp, _def_stats or {})
+            _claude_f = float((_matchup_intel_map.get(p.get("name", "")) or {}).get("factor", 1.0))
+            _claude_f = max(0.80, min(1.20, _claude_f))
+            _combined = max(
+                float(_cfg("matchup.moonshot_adj_min", 0.75)),
+                min(float(_cfg("matchup.moonshot_adj_max", 1.30)), _matchup * _claude_f)
+            )
+            _adj = round(_base * _combined * _boost_leverage, 3)
             return round(_adj * (_avg_slot + _est), 2), _adj
 
         moonshot_by_name = {p["name"]: p for p in moonshot_pool}
@@ -2868,7 +3113,7 @@ def _build_lineups(projections):
                 rec["moonshot_ev"] = moonshot_by_name[p["name"]]["moonshot_ev"]
                 rec["adj_ceiling"] = moonshot_by_name[p["name"]]["adj_ceiling"]
             else:
-                _mev, _adj = _moonshot_ev_for_player(p, avg_slot, moon_cfg, team_win_pcts)
+                _mev, _adj = _moonshot_ev_for_player(p, avg_slot, moon_cfg, def_stats, _matchup_intel)
                 rec["moonshot_ev"] = _mev
                 rec["adj_ceiling"] = _adj
             eligible_union.append(rec)
@@ -2973,13 +3218,15 @@ def _build_game_lineups(projections, game):
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
     rescored = _apply_game_script(projections, game)
 
-    # PER-GAME: Requires min 20 recent minutes — same philosophy as slate-wide.
-    # Also enforces pts floor: a player projecting < 10 pts is a ceiling liability
+    # PER-GAME: Requires min recent minutes — configurable via lineup.game_recent_min_floor
+    # (default 15; was 20 which excluded role players like Braun/GPII who pop in single-game).
+    # Also enforces pts floor: a player projecting < 8 pts is a ceiling liability
     # in single-game format where card boost is irrelevant.
-    min_game_pts = _cfg("scoring_thresholds.min_moonshot_pts", 10.0)
+    game_min_floor = _cfg("lineup.game_recent_min_floor", 15.0)
+    min_game_pts = _cfg("scoring_thresholds.min_game_pts", 8.0)
     eligible_pool = [
         p for p in rescored
-        if p.get("recent_min", 0) >= 20.0
+        if p.get("recent_min", 0) >= game_min_floor
         and p["rating"] >= game_chalk_floor
         and p.get("pts", 0) >= min_game_pts
         and p.get("name") not in BLACKLISTED_PLAYERS
@@ -3530,19 +3777,34 @@ def _get_slate_impl():
             _enrich_projections_with_odds(all_proj, draftable_games)
         except Exception as _odds_err:
             print(f"[odds_enrich] call-site error: {_odds_err}")
+        # Matchup data: opponent defensive stats + game opponent map (used by Layer 1.5 and _build_lineups)
+        _def_stats = {}
+        try:
+            _def_stats = _fetch_team_def_stats()
+        except Exception as _def_err:
+            print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+        _game_opp_map = _build_game_opp_map(draftable_games)
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
-        # Capture news_text so Layer 3 can reuse it (avoids redundant web search).
+        # Capture news_text so Layer 1.5 and Layer 3 can reuse it.
         _slate_news_text = ""
         try:
             _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
         except Exception:
             pass
+        # Layer 1.5: Claude matchup intelligence (DvP analysis via web_search)
+        _matchup_intel = {}
+        try:
+            _matchup_intel = _fetch_matchup_intelligence(
+                draftable_games, all_proj, _def_stats, _game_opp_map, _slate_news_text
+            )
+        except Exception as _mi_err:
+            print(f"[matchup_intel] call-site error (non-fatal): {_mi_err}")
         try:
             _claude_context_pass(all_proj, draftable_games)
         except Exception as _ctx_err:
             print(f"[context_pass] call-site error: {_ctx_err}")
-        chalk, upside, core_pool = _build_lineups(all_proj)
+        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel)
         try:
             chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool, news_context=_slate_news_text)
         except Exception as _rev_err:
@@ -3911,8 +4173,13 @@ def _force_regenerate_sync(scope: str):
     if not all_proj:
         return {"status": "no_projections", "scope": scope, "date": today_str}
 
-    # Step 2: Build slate-wide lineups (Starting 5 + Moonshot)
-    chalk, upside, core_pool = _build_lineups(all_proj)
+    # Step 2: Build slate-wide lineups (Starting 5 + Moonshot) with matchup data
+    _fr_def_stats = {}
+    try:
+        _fr_def_stats = _fetch_team_def_stats()
+    except Exception:
+        pass
+    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats)
     try:
         chalk, upside = _lineup_review_opus(chalk, upside, all_proj, game_pool, core_pool=core_pool)
     except Exception as _rev_err:
@@ -4193,6 +4460,22 @@ def _compute_audit(date_str):
     over  = [e for e in misses if e["error"] < 0]
     under = [e for e in misses if e["error"] > 0]
 
+    # Simulated draft score — measures progress toward 60+ goal.
+    # Optimal hindsight: sort actuals by RS, assign slots 2.0x→1.2x to top 5,
+    # compute RS × (slot + actual_card_boost) for each. Shows what was achievable.
+    slot_mults = [2.0, 1.8, 1.6, 1.4, 1.2]
+    top5_actuals = sorted(
+        [a for a in actuals if _safe_float(a.get("actual_rs")) > 0],
+        key=lambda a: _safe_float(a.get("actual_rs")),
+        reverse=True
+    )[:5]
+    simulated_draft_score = None
+    if len(top5_actuals) >= 3:
+        simulated_draft_score = round(sum(
+            _safe_float(p.get("actual_rs")) * (slot_mults[i] + _safe_float(p.get("actual_card_boost", 0)))
+            for i, p in enumerate(top5_actuals)
+        ), 1)
+
     return {
         "date":               date_str,
         "players_compared":   len(errors),
@@ -4201,6 +4484,7 @@ def _compute_audit(date_str):
         "over_projected":     len(over),
         "under_projected":    len(under),
         "biggest_misses":     misses[:8],
+        "simulated_draft_score": simulated_draft_score,
         "generated_at":       datetime.now(timezone.utc).isoformat(),
     }
 
@@ -6358,6 +6642,7 @@ async def lab_briefing():
                 "over_projected":        a.get("over_projected", 0),
                 "under_projected":       a.get("under_projected", 0),
                 "biggest_misses":        a.get("biggest_misses", [])[:5],
+                "simulated_draft_score": a.get("simulated_draft_score"),
             }
 
     overall_mae = round(sum(rolling_errors) / len(rolling_errors), 2) if rolling_errors else None
