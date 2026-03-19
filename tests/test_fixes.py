@@ -1588,5 +1588,70 @@ class TestMatchupFactor:
         assert "dev_team_pts_floor" not in moonshot
 
 
+# ─────────────────────────────────────────────────────────
+# TestBriefingSimulatedDraftScore — simulated_draft_score surfaces to Ben
+# ─────────────────────────────────────────────────────────
+class TestBriefingSimulatedDraftScore:
+    """simulated_draft_score from _compute_audit must appear in /api/lab/briefing latest_slate."""
+
+    AUDIT = {
+        "date": "2026-03-17",
+        "players_compared": 5,
+        "mae": 1.48,
+        "directional_accuracy": 0.6,
+        "over_projected": 2,
+        "under_projected": 3,
+        "biggest_misses": [],
+        "simulated_draft_score": 62.4,
+        "generated_at": "2026-03-17T23:00:00Z",
+    }
+
+    def _run_briefing_with_audit(self, audit_dict):
+        """Helper: run lab_briefing with a fake paired date using the given audit."""
+        import asyncio, json
+        from unittest.mock import patch
+        from api.index import lab_briefing
+
+        audit_json = json.dumps(audit_dict)
+        date = audit_dict["date"]
+
+        def fake_list_dir(path):
+            if "predictions" in path:
+                return [{"name": f"{date}.csv"}]
+            if "actuals" in path:
+                return [{"name": f"{date}.csv"}]
+            return []
+
+        def fake_get_file(path):
+            if f"audit/{date}" in path:
+                return audit_json, "sha1"
+            return None, None
+
+        with patch('api.index._github_list_dir', side_effect=fake_list_dir):
+            with patch('api.index._github_get_file', side_effect=fake_get_file):
+                with patch('api.index._load_config', return_value={"version": 42, "changelog": []}):
+                    result = asyncio.get_event_loop().run_until_complete(lab_briefing())
+
+        data = result if isinstance(result, dict) else result.body
+        if isinstance(data, bytes):
+            data = json.loads(data)
+        return data
+
+    def test_simulated_draft_score_in_briefing_latest_slate(self):
+        """When audit has simulated_draft_score, briefing latest_slate must include it."""
+        data = self._run_briefing_with_audit(self.AUDIT)
+        latest = data.get("latest_slate") or {}
+        assert "simulated_draft_score" in latest, \
+            "simulated_draft_score must be in briefing latest_slate so Ben can track 60+ goal"
+        assert latest["simulated_draft_score"] == 62.4
+
+    def test_simulated_draft_score_none_handled_gracefully(self):
+        """When audit has simulated_draft_score=None, briefing still works."""
+        audit_no_score = {**self.AUDIT, "simulated_draft_score": None}
+        data = self._run_briefing_with_audit(audit_no_score)
+        latest = data.get("latest_slate") or {}
+        assert latest.get("simulated_draft_score") is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

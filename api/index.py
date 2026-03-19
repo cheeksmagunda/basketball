@@ -6631,6 +6631,7 @@ async def lab_briefing():
                 "over_projected":        a.get("over_projected", 0),
                 "under_projected":       a.get("under_projected", 0),
                 "biggest_misses":        a.get("biggest_misses", [])[:5],
+                "simulated_draft_score": a.get("simulated_draft_score"),
             }
 
     overall_mae = round(sum(rolling_errors) / len(rolling_errors), 2) if rolling_errors else None
