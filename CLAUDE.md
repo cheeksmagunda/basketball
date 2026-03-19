@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A daily NBA draft optimizer for the **Real Sports** app. It projects player Real Scores, estimates card boosts, and builds optimized 5-player lineups using MILP (mixed-integer linear programming). Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+A daily NBA draft optimizer for the **Real Sports** app. It projects player Real Scores, ingests pre-game card boosts when available (with fallback estimation), and builds optimized 5-player lineups using MILP (mixed-integer linear programming). Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## How Real Sports Works
 
@@ -109,7 +109,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear cache + config cache (cron at 7pm UTC; no auth required — non-destructive) |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only (requires CRON_SECRET when set) |
-| `/api/force-regenerate?scope=X` | GET | **Force-regenerate predictions mid-slate.** `scope=full`: all games (dev deploy). `scope=remaining`: only unlocked games (late draft). CRON_SECRET-gated. Updates `data/predictions/` CSV and all cache layers. |
+| `/api/force-regenerate?scope=X` | GET | **Force-regenerate predictions mid-slate.** `scope=full`: all games (dev deploy/model refresh; CRON_SECRET-gated). `scope=remaining`: only unlocked games (late draft, user-facing). Updates `data/predictions/` CSV and all cache layers. |
 
 ### Line of the Day
 | Endpoint | Method | Purpose |
@@ -136,7 +136,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
 | `/api/lab/calibrate-boost` | GET | Fit card boost log formula params (log_a, log_b) from real ownership data in `data/ownership/`; requires ≥4 samples |
 | `/api/save-ownership` | POST | Save parsed Most Drafted data to `data/ownership/{date}.csv`; used as input for calibrate-boost |
-| `/api/save-boosts` | POST | Save pre-game player boosts (fixed daily constants from Real). Stores to `data/boosts/{date}.json`; busts slate cache so pipeline uses real boosts. Body: `{date?, players: [{player_name, boost, team?, rax_cost?}]}` |
+| `/api/save-boosts` | POST | Save pre-game player boosts (fixed daily constants from Real). Stores to `data/boosts/{date}.json`; busts slate cache so pipeline uses Layer 0 ground-truth boosts. Body: `{date?, players: [{player_name, boost, team?, rax_cost?}]}` |
 | `/api/slate-check` | GET | Pass 2 trigger check — detects material changes since Pass 1 (injury, Vegas movement, watchlist activation). Returns `{changed, triggers, recommendation}` |
 
 **Admin / optional (not used by main UI):** `POST /api/reset-uploads` — deletes actuals + audit for a date (admin/debug). `POST /api/hindsight` — optimal hindsight lineup from actual RS (Ben-driven or future). `GET /api/version` — build identifier for deploy/monitoring.
@@ -190,6 +190,7 @@ Predictions are generated **once per day** and cached. Subsequent requests serve
 - **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → next request regenerates with new params
 - **Manual refresh** (`/api/refresh`): calls `_bust_slate_cache()` → full cache clear
 - **Injury check** (`/api/injury-check`): regenerates only affected games, updates both layers
+- **Boost upload** (`/api/save-boosts`): busts slate cache so new Layer 0 constants are used on the next slate run
 
 ### Where GitHub Cache is NOT Used
 The Line of the Day engine paths (`_run_line_engine_for_date()` and `_get_projections_for_date()`) skip the GitHub cache layer entirely. The extra ~1-2s GitHub API round-trip adds latency without benefit — the line engine still needs to run Haiku calls regardless. These paths go directly from `/tmp` cache to the full pipeline.
@@ -799,7 +800,7 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 - `/tmp` is cleared on container restart (redeploy or crash) — caches don't survive restarts. GitHub-persisted caches (`data/slate/`, `data/locks/`) provide cold-start recovery for both predictions and lock state.
 - **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
-- `data/locks/` accumulates one JSON per day with no automated cleanup. GitHub directory listings get marginally slower over a long season; manually prune if needed.
+- Historical slate/lock cache files can create operational noise. Keep `data/slate/` and `data/locks/` pruned to active-slate artifacts.
 - Log tab shows a 60-day date strip (no "Load more"); dates with stored data are highlighted via `/api/log/dates`.
 - Fetch timeouts: All frontend calls have hard limits (10s default, 30s screenshot). Exception: `/api/lab/chat` uses a raw streaming fetch (SSE) by design — no timeout on the stream body, only on connection.
 - Upload screenshot type validation is client-side trust only — the system cannot verify that a "Real Scores" button upload actually contains a Real Scores screenshot. Wrong uploads produce skewed audit data for that date.
