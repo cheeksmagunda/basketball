@@ -3506,16 +3506,19 @@ def _get_slate_impl():
         _lk_pre["locked"] = True
         _lk_pre.setdefault("draftable_count", 0)
         return _lk_pre
-    # Cold-start fast path: check GitHub backup before making any ESPN calls.
+    # Cold-start fast path: check GitHub backup and fetch games in parallel.
     # The backup is written at lock-promotion time so it exists on most cold starts.
-    _gh_pre = _slate_restore_from_github()
+    # Running both concurrently saves 1-2s vs sequential on every cold start.
+    with ThreadPoolExecutor(max_workers=2) as _pre_pool:
+        _gh_pre_fut = _pre_pool.submit(_slate_restore_from_github)
+        _games_fut  = _pre_pool.submit(fetch_games)
+        _gh_pre = _gh_pre_fut.result()
+        games   = _games_fut.result()
     if _gh_pre and _gh_pre.get("date") == today_str and _gh_pre.get("locked"):
         _gh_pre["locked"] = True
         _gh_pre.setdefault("draftable_count", 0)
         _ls("slate_v5_locked", _gh_pre)
         return _gh_pre
-
-    games = fetch_games()
 
     # Midnight rollover guard: if none of today's games have started yet but
     # yesterday's games are still in progress, hold yesterday's locked slate.
@@ -3819,21 +3822,32 @@ def _get_slate_impl():
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
             _cs("slate_v5", result)
-            # Persist to GitHub so all Railway instances serve the same picks
-            _slate_cache_to_github(result)
-            # Clear bust sentinel so future cold starts can use this slate from GitHub
-            try:
-                today = _et_date().isoformat()
-                _github_write_file(f"data/slate/{today}_bust.json", "{}", f"clear bust {today}")
-            except Exception as e:
-                print(f"[slate-cache] clear bust err: {e}")
-            if game_proj_map:
-                _games_cache_to_github(game_proj_map)
-            # Write lock backup for both pre-lock and post-lock regeneration.
-            # Pre-lock: normal first-run backup. Post-lock: admin forced regeneration
-            # (e.g. after bust busted the lock file to fix wrong lineups).
-            # _slate_backup_to_github overwrites tombstones but skips valid existing files.
-            _slate_backup_to_github(result)
+            # GitHub writes are fire-and-forget: store to /tmp first so any concurrent
+            # request is served immediately, then persist to GitHub in the background.
+            # This removes 2-3s of blocking I/O from the hot path — the user gets
+            # the slate response as soon as the pipeline finishes, not after writes.
+            _bg_result       = result
+            _bg_game_proj    = game_proj_map
+            _bg_today        = _et_date().isoformat()
+            def _slate_persist_bg():
+                try:
+                    _slate_cache_to_github(_bg_result)
+                except Exception as _e:
+                    print(f"[slate-cache] bg write err: {_e}")
+                try:
+                    _github_write_file(f"data/slate/{_bg_today}_bust.json", "{}", f"clear bust {_bg_today}")
+                except Exception as _e:
+                    print(f"[slate-cache] bg clear bust err: {_e}")
+                if _bg_game_proj:
+                    try:
+                        _games_cache_to_github(_bg_game_proj)
+                    except Exception as _e:
+                        print(f"[slate-cache] bg games write err: {_e}")
+                try:
+                    _slate_backup_to_github(_bg_result)
+                except Exception as _e:
+                    print(f"[slate-cache] bg backup err: {_e}")
+            threading.Thread(target=_slate_persist_bg, daemon=True).start()
         if locked:
             _ls("slate_v5_locked", result)
         return result
@@ -5518,11 +5532,18 @@ async def _get_or_generate_next_slate_pick(today, direction: str):
 
     # Persist to GitHub (merge into existing file if it has the other direction)
     try:
+        other_key = "under_pick" if dir_key == "over_pick" else "over_pick"
         saves = {"over_pick": (next_picks or {}).get("over_pick"),
                  "under_pick": (next_picks or {}).get("under_pick")}
         saves[dir_key] = new_pick
+        # Also save the other direction from engine result if currently missing in file —
+        # avoids a wasted second engine run when the other direction is needed.
+        if not saves.get(other_key) and eng_result.get(other_key):
+            other = dict(eng_result[other_key])
+            other.setdefault("date", next_str)
+            saves[other_key] = other
         _github_write_file(f"data/lines/{next_str}_pick.json",
-                           json.dumps(saves), f"line {direction} pick for {next_str}")
+                           json.dumps(saves), f"line picks for {next_str}")
     except Exception:
         pass
 
@@ -5603,8 +5624,10 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             if not err and eng_result:
                 if missing_over and eng_result.get("over_pick"):
                     today_picks["over_pick"] = eng_result["over_pick"]
+                    today_picks["over_pick"].setdefault("date", today_str)
                 if missing_under and eng_result.get("under_pick"):
                     today_picks["under_pick"] = eng_result["under_pick"]
+                    today_picks["under_pick"].setdefault("date", today_str)
                 try:
                     _github_write_file(f"data/lines/{today_str}_pick.json",
                                        json.dumps(today_picks),
@@ -6179,6 +6202,10 @@ async def auto_resolve_line(request: Request):
                         "over_pick":  (existing_tomorrow or {}).get("over_pick") or eng_result.get("over_pick"),
                         "under_pick": (existing_tomorrow or {}).get("under_pick") or eng_result.get("under_pick"),
                     }
+                    # Stamp date on freshly generated picks so the card shows the right date
+                    for _dk in ("over_pick", "under_pick"):
+                        if saves.get(_dk) and isinstance(saves[_dk], dict) and not saves[_dk].get("date"):
+                            saves[_dk]["date"] = next_day_str
                     _github_write_file(tomorrow_json, json.dumps(saves),
                                        f"line picks for {next_day_str}")
                     results["next_day"] = next_day_str
@@ -6186,6 +6213,56 @@ async def auto_resolve_line(request: Request):
                     print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err}")
         except Exception as e:
             print(f"[auto-resolve] next-day generation err: {e}")
+
+    # ── Backfill: resolve pending picks from past 7 days ──
+    # auto_resolve_line only checks today/yesterday. Picks that couldn't be resolved
+    # (ESPN lag, rate limit, midnight rollover) stay pending forever and never appear
+    # in history. Scan back 7 days and attempt resolution for any still-pending pick.
+    try:
+        for _back_days in range(2, 8):
+            _back_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=_back_days)).date().isoformat()
+            _back_json = f"data/lines/{_back_date}_pick.json"
+            _back_raw, _ = _github_get_file(_back_json)
+            if not _back_raw:
+                continue
+            try:
+                _back_data = json.loads(_back_raw)
+            except Exception:
+                continue
+            _back_espn_date = _back_date.replace("-", "")
+            _back_changed = False
+            for _bdir in ("over", "under"):
+                _bdk = f"{_bdir}_pick"
+                _bp = _back_data.get(_bdk)
+                if not _bp or not isinstance(_bp, dict):
+                    continue
+                if _bp.get("result") and _bp["result"] not in ("pending", ""):
+                    continue  # already resolved
+                _bpn = _bp.get("player_name", "")
+                _bst = _bp.get("stat_type", "points")
+                if not _bpn:
+                    continue
+                _bactual = _fetch_player_final_stat(_bpn, _bst, date_str=_back_espn_date, team=_bp.get("team"))
+                if _bactual is None:
+                    continue
+                _bline = _safe_float(_bp.get("line", 0))
+                _bres = "hit" if (_bactual > _bline if _bdir == "over" else _bactual < _bline) else "miss"
+                _back_data[_bdk]["result"] = _bres
+                _back_data[_bdk]["actual_stat"] = _bactual
+                _back_changed = True
+                print(f"[auto-resolve] backfill {_bdir} ({_bpn}) on {_back_date} → {_bres}")
+            if _back_changed:
+                try:
+                    _github_write_file(_back_json, json.dumps(_back_data), f"backfill resolve {_back_date}")
+                    # Bust history cache so resolved picks appear immediately
+                    try:
+                        _hc2 = _cp("line_history_v1")
+                        if _hc2.exists(): _hc2.unlink()
+                    except Exception: pass
+                except Exception as _be:
+                    print(f"[auto-resolve] backfill write err {_back_date}: {_be}")
+    except Exception as _backfill_err:
+        print(f"[auto-resolve] backfill err: {_backfill_err}")
 
     # ── Piggyback: save predictions for any newly-locked games ──
     # This cron runs every 30 min. On split-window days (e.g. 1 PM + 7 PM games),
