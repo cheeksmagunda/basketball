@@ -300,7 +300,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 0.5,
+    "chalk_min_boost_floor": 0.9,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
@@ -311,10 +311,10 @@
     "enabled": true,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
-    "min_boost": 0.3,
+    "min_boost": 0.6,
     "min_rating": 4.0,
-    "require_count": 2,
-    "max_count": 3
+    "require_count": 1,
+    "max_count": 1
   },
   "context_layer": {
     "enabled": true,
@@ -440,6 +440,10 @@
     "min_mult": 0.88,
     "max_mult": 1.12,
     "team_overrides": {}
+  },
+  "signals": {
+    "hot_streak_ratio": 1.15,
+    "ai_signal_min_adj": 1.05
   },
   "lab": {
     "auto_improve_threshold_pct": 3.0
