@@ -207,8 +207,8 @@
   "real_score": {
     "dfs_weights": {
       "pts": 1.5,
-      "reb": 0.95,
-      "ast": 0.3,
+      "reb": 0.5,
+      "ast": 0.65,
       "stl": 8.0,
       "blk": 0.35,
       "tov": -1.0
@@ -242,7 +242,9 @@
         "starter": 1.0,
         "wing_role": 1.02,
         "bench_microwave": 1.08,
-        "big": 1.04
+        "big": 0.90,
+        "pure_rebounder": 0.82,
+        "scorer": 1.10
       }
     },
     "post_lock_calibration": {
@@ -397,6 +399,12 @@
     },
     "scoring_pts_bias_threshold": 10.0,
     "scoring_pts_bias_scale": 0.015,
+    "scorer_upside": {
+      "enabled": true,
+      "min_pts_per_min": 0.55,
+      "min_season_pts": 15.0,
+      "multiplier": 1.10
+    },
     "rs_bypass": {
       "enabled": true,
       "min_rating": 5.0,
