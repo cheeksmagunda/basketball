@@ -2041,8 +2041,17 @@ def _infer_player_archetype(pts: float, avg_min: float, reb: float, stats: dict)
     recent_vs = recent_pts / max(season_pts, 1.0)
     if season_pts >= 21.0 and avg_min >= 28.0:
         return "star"
+    # Pure rebounder: high reb rate but limited scoring — Lopez, Gobert, Capela.
+    # These players over-project because reb volume inflates DFS score more than RS justifies.
+    if reb_pm >= 0.28 and season_pts < 12.0:
+        return "pure_rebounder"
     if reb_pm >= 0.22:
         return "big"
+    # Efficient scorer: high pts/min with real volume — Jalen Green, DeRozan, Nesmith.
+    # These players under-project; when shots fall they generate RS 4.5–7.
+    ppm = pts / max(avg_min, 1)
+    if ppm >= 0.55 and season_pts >= 15.0:
+        return "scorer"
     if avg_min < 22.0 and recent_vs >= 1.12:
         return "bench_microwave"
     if avg_min >= 28.0:
@@ -3338,7 +3347,21 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                           _recent_min_chalk >= chalk_recent_floor)
         is_spot_starter = (p.get("predMin", 0) >= 28.0 and
                            p.get("_cascade_bonus", 0) >= 10.0)
-        if not (is_regular or is_spot_starter):
+        # High-boost role player pathway for chalk: stricter thresholds than moonshot
+        # because Starting 5 requires reliability. Only players with a strong boost
+        # signal AND consistent recent minutes qualify. Boost >= 2.5 means Real Sports
+        # considers them significantly underrated — a reliable contrarian play.
+        chalk_hbr_enabled    = _cfg("projection.chalk_hbr_enabled", True)
+        chalk_hbr_min_boost  = float(_cfg("projection.chalk_hbr_min_boost", 2.5))
+        chalk_hbr_min_recent = float(_cfg("projection.chalk_hbr_min_recent_min", 16.0))
+        chalk_hbr_min_pred   = float(_cfg("projection.chalk_hbr_min_pred_min", 16.0))
+        is_chalk_high_boost_role = (
+            chalk_hbr_enabled
+            and p.get("est_mult", 0) >= chalk_hbr_min_boost
+            and _recent_min_chalk >= chalk_hbr_min_recent
+            and p.get("predMin", 0) >= chalk_hbr_min_pred
+        )
+        if not (is_regular or is_spot_starter or is_chalk_high_boost_role):
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -3491,8 +3514,23 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             and recent_min >= season_min * role_spike_ratio
             and est_mult >= min_boost
         )
+        # High-boost role player pathway: consistent rotation player whose value comes
+        # from a high card boost + real RS projection, not from minutes volume.
+        # Example: 16 min/game player with +2.5x boost and RS 4.5 → chalk_ev 18.45 —
+        # beats many starters on EV. The boost floor IS the quality gate here.
+        hbr_cfg = moon_cfg.get("high_boost_role", {})
+        hbr_enabled     = hbr_cfg.get("enabled", True)
+        hbr_min_boost   = float(hbr_cfg.get("min_boost", 2.0))
+        hbr_min_recent  = float(hbr_cfg.get("min_recent_min", 14.0))
+        hbr_min_pred    = float(hbr_cfg.get("min_pred_min", 14.0))
+        is_high_boost_role = (
+            hbr_enabled
+            and est_mult >= hbr_min_boost
+            and recent_min >= hbr_min_recent
+            and pred_min >= hbr_min_pred
+        )
         if not (is_moonshot_regular or is_moonshot_spot_starter
-                or is_role_spike):
+                or is_role_spike or is_high_boost_role):
             continue
 
         # Never draft a moonshot player projected well below their season minute average.
@@ -3547,6 +3585,20 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if pts_bias_scale > 0 and p.get("pts", 0) > pts_bias_threshold:
             pts_bias = 1.0 + (p["pts"] - pts_bias_threshold) * pts_bias_scale
             adj_ceiling = round(adj_ceiling * pts_bias, 3)
+
+        # Scorer upside: efficient scorers with real volume get a moonshot ceiling boost.
+        # Data: Jalen Green, Aaron Nesmith, DeRozan under-projected on multiple dates —
+        # they generate RS 4.5–6.8 when hot but project 2.6–4.1 from season averages.
+        # Only applies when season_min data is present (not inferred projections).
+        scorer_upside_cfg = moon_cfg.get("scorer_upside", {})
+        if scorer_upside_cfg.get("enabled", True):
+            su_min_ppm = float(scorer_upside_cfg.get("min_pts_per_min", 0.55))
+            su_min_pts = float(scorer_upside_cfg.get("min_season_pts", 15.0))
+            su_mult = float(scorer_upside_cfg.get("multiplier", 1.10))
+            su_ppm = p.get("pts", 0) / max(p.get("season_min", 1) or 1, 1)
+            su_season_pts = p.get("season_pts", p.get("pts", 0)) or 0
+            if su_ppm >= su_min_ppm and su_season_pts >= su_min_pts:
+                adj_ceiling = round(adj_ceiling * su_mult, 3)
 
         # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)

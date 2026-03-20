@@ -1,7 +1,7 @@
 {
-  "version": 54,
-  "updated_at": "2026-03-20T23:30:00Z",
-  "updated_by": "game-context-rs-signals",
+  "version": 55,
+  "updated_at": "2026-03-20T23:45:00Z",
+  "updated_by": "high-boost-role-pathway",
   "scoring_thresholds": {
     "min_pts_projection": 6.0,
     "min_pts_projection_moonshot": 6.0,
@@ -207,8 +207,8 @@
   "real_score": {
     "dfs_weights": {
       "pts": 1.5,
-      "reb": 0.95,
-      "ast": 0.3,
+      "reb": 0.5,
+      "ast": 0.65,
       "stl": 8.0,
       "blk": 0.35,
       "tov": -1.0
@@ -242,7 +242,9 @@
         "starter": 1.0,
         "wing_role": 1.02,
         "bench_microwave": 1.08,
-        "big": 1.04
+        "big": 0.90,
+        "pure_rebounder": 0.82,
+        "scorer": 1.10
       }
     },
     "post_lock_calibration": {
@@ -299,7 +301,11 @@
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
     "chalk_min_boost_floor": 0.5,
-    "pred_min_tolerance": 2.0
+    "pred_min_tolerance": 2.0,
+    "chalk_hbr_enabled": true,
+    "chalk_hbr_min_boost": 2.5,
+    "chalk_hbr_min_recent_min": 16.0,
+    "chalk_hbr_min_pred_min": 16.0
   },
   "star_anchor": {
     "enabled": true,
@@ -385,8 +391,20 @@
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
     "pred_min_tolerance": 3.0,
+    "high_boost_role": {
+      "enabled": true,
+      "min_boost": 2.0,
+      "min_recent_min": 14.0,
+      "min_pred_min": 14.0
+    },
     "scoring_pts_bias_threshold": 10.0,
     "scoring_pts_bias_scale": 0.015,
+    "scorer_upside": {
+      "enabled": true,
+      "min_pts_per_min": 0.55,
+      "min_season_pts": 15.0,
+      "multiplier": 1.10
+    },
     "rs_bypass": {
       "enabled": true,
       "min_rating": 5.0,
@@ -427,6 +445,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 55,
+      "date": "2026-03-20",
+      "change": "High-boost role player pathway (v55). Adds a 4th eligibility pathway to both moonshot and chalk pools for consistent rotation players whose value comes from a high card boost + real RS projection, not minutes volume. Moonshot: est_mult >= 2.0, recent_min >= 14, pred_min >= 14 (bypasses the 20-min season floor). Chalk: stricter est_mult >= 2.5, recent_min >= 16, pred_min >= 16. Example: a 16 min/game player with +2.5x boost and RS 4.5 projects chalk_ev 18.45 — beats many 30-min starters. The boost floor IS the quality gate; 2.0x+ signals Real Sports considers the player significantly underrated. Config: moonshot.high_boost_role.{enabled, min_boost, min_recent_min, min_pred_min}, projection.{chalk_hbr_enabled, chalk_hbr_min_boost, chalk_hbr_min_recent_min, chalk_hbr_min_pred_min}."
+    },
     {
       "version": 52,
       "date": "2026-03-20",

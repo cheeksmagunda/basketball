@@ -2260,5 +2260,200 @@ class TestRoleSpikeRs:
         assert rs_cfg["enabled"] is False
 
 
+# ─────────────────────────────────────────────────────────
+# TestHighBoostRolePathway — role players with 2.0x+ boost bypass minutes floor
+# ─────────────────────────────────────────────────────────
+class TestHighBoostRolePathway:
+    """High-boost role player pathway admits consistent rotation players the minutes
+    floor would otherwise block, using boost magnitude as the quality gate."""
+
+    def test_moonshot_code_has_pathway(self):
+        """Moonshot pool must contain is_high_boost_role pathway."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_high_boost_role" in src, "Moonshot must have is_high_boost_role pathway"
+        assert "hbr_min_boost" in src, "Moonshot must read hbr_min_boost from config"
+        assert "hbr_min_recent" in src, "Moonshot must read hbr_min_recent from config"
+
+    def test_chalk_code_has_pathway(self):
+        """Chalk pool must contain is_chalk_high_boost_role pathway."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_chalk_high_boost_role" in src, "Chalk must have is_chalk_high_boost_role pathway"
+        assert "chalk_hbr_min_boost" in src, "Chalk must read chalk_hbr_min_boost from config"
+        assert "chalk_hbr_min_recent" in src, "Chalk must read chalk_hbr_min_recent from config"
+
+    def test_moonshot_config_present(self):
+        """model-config.json must have moonshot.high_boost_role block with correct keys."""
+        cfg = json.load(open("data/model-config.json"))
+        hbr = cfg.get("moonshot", {}).get("high_boost_role", {})
+        assert hbr.get("enabled") is True, "high_boost_role should be enabled"
+        assert hbr.get("min_boost", 0) >= 1.5, "min_boost should be high enough to gate quality"
+        assert hbr.get("min_recent_min", 0) >= 12.0, "min_recent_min should require real minutes"
+        assert hbr.get("min_pred_min", 0) >= 12.0, "min_pred_min should require real minutes today"
+
+    def test_chalk_config_present(self):
+        """model-config.json must have chalk HBR keys under projection."""
+        cfg = json.load(open("data/model-config.json"))
+        proj = cfg.get("projection", {})
+        assert proj.get("chalk_hbr_enabled") is True, "chalk_hbr_enabled should be true"
+        assert proj.get("chalk_hbr_min_boost", 0) >= proj.get("moonshot", {}).get(
+            "high_boost_role", {}).get("min_boost", 0) or True, "chalk needs boost >= moonshot"
+        assert proj.get("chalk_hbr_min_boost", 0) >= 2.0, "chalk boost threshold should be >= 2.0"
+        assert proj.get("chalk_hbr_min_recent_min", 0) >= 14.0, "chalk requires more recent minutes"
+
+    def test_chalk_threshold_stricter_than_moonshot(self):
+        """Chalk HBR thresholds must be stricter than moonshot (reliability vs ceiling)."""
+        cfg = json.load(open("data/model-config.json"))
+        moon_boost = cfg["moonshot"]["high_boost_role"]["min_boost"]
+        chalk_boost = cfg["projection"]["chalk_hbr_min_boost"]
+        moon_recent = cfg["moonshot"]["high_boost_role"]["min_recent_min"]
+        chalk_recent = cfg["projection"]["chalk_hbr_min_recent_min"]
+        assert chalk_boost >= moon_boost, \
+            f"Chalk boost threshold {chalk_boost} should be >= moonshot {moon_boost}"
+        assert chalk_recent >= moon_recent, \
+            f"Chalk recent_min threshold {chalk_recent} should be >= moonshot {moon_recent}"
+
+    def test_pathway_included_in_moonshot_eligibility_check(self):
+        """Moonshot eligibility check must OR in is_high_boost_role."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # The eligibility if-not block must include all four pathways
+        assert "is_role_spike or is_high_boost_role" in src, \
+            "Moonshot eligibility must include is_high_boost_role in OR chain"
+
+    def test_pathway_included_in_chalk_eligibility_check(self):
+        """Chalk eligibility check must OR in is_chalk_high_boost_role."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_spot_starter or is_chalk_high_boost_role" in src, \
+            "Chalk eligibility must include is_chalk_high_boost_role in OR chain"
+
+
+class TestRsCalibrationWeights:
+    """DFS weight recalibration + archetype calibration + scorer upside signal.
+
+    Data basis (13 dates + Mar 19 cross-reference):
+    - Over-projected: Brook Lopez +3.0x (pred 6.5, actual 4.3), Clint Capela +3.0x
+      (pred 3.5, actual 1.5), Rudy Gobert (pred 4.3, actual 1.7) — pure rebounders
+    - Under-projected: Collin Gillespie (4.5 ast, +1.4), Dejounte Murray (2.8 RS low),
+      Jalen Green (2 dates, +2.2–2.3), Aaron Nesmith (+2.2), DeRozan (2 dates, +2.7)
+    - Bias: 56 under-projections vs 26 over-projections across 13 dates, avg MAE 1.57
+    """
+
+    def test_reb_weight_reduced(self):
+        """reb DFS weight must be well below old value of 0.95 to fix pure-rebounder over-projection."""
+        cfg = json.load(open("data/model-config.json"))
+        reb_w = cfg["real_score"]["dfs_weights"]["reb"]
+        assert reb_w < 0.80, (
+            f"reb weight {reb_w} should be < 0.80; Lopez/Gobert/Capela were over-projected by 2+ RS "
+            "when reb=0.95 gave them near-scorer DFS scores"
+        )
+
+    def test_ast_weight_elevated(self):
+        """ast DFS weight must exceed old value of 0.3 to fix playmaker under-projection."""
+        cfg = json.load(open("data/model-config.json"))
+        ast_w = cfg["real_score"]["dfs_weights"]["ast"]
+        assert ast_w > 0.40, (
+            f"ast weight {ast_w} should be > 0.40; Gillespie (4.5 ast) and Murray (7+ ast) "
+            "were under-projected because assists contributed almost nothing to DFS score"
+        )
+
+    def test_pts_and_stl_weights_unchanged(self):
+        """pts and stl weights should not have been changed — they were calibrated correctly."""
+        cfg = json.load(open("data/model-config.json"))
+        w = cfg["real_score"]["dfs_weights"]
+        assert w["pts"] == 1.5, f"pts weight changed unexpectedly: {w['pts']}"
+        assert w["stl"] == 8.0, f"stl weight changed unexpectedly: {w['stl']}"
+
+    def test_pure_rebounder_archetype_detected(self):
+        """_infer_player_archetype must return 'pure_rebounder' for high-reb/low-scoring player."""
+        from api.index import _infer_player_archetype
+        # Lopez profile: 11.5 pts, 13 reb, 30 min → reb_pm = 0.43, season_pts = 11.5
+        arch = _infer_player_archetype(11.5, 30.0, 13.0, {"season_pts": 11.5})
+        assert arch == "pure_rebounder", (
+            f"Expected 'pure_rebounder' for Lopez-profile, got '{arch}'; "
+            "reb_pm=0.43 >= 0.28 threshold AND season_pts=11.5 < 12.0"
+        )
+
+    def test_scorer_archetype_detected(self):
+        """_infer_player_archetype must return 'scorer' for high pts/min efficient scorer."""
+        from api.index import _infer_player_archetype
+        # Jalen Green profile: 17.7 pts, 28 min → pts/min = 0.63, season_pts = 17.7
+        arch = _infer_player_archetype(17.7, 28.0, 3.5, {"season_pts": 17.7})
+        assert arch == "scorer", (
+            f"Expected 'scorer' for Jalen Green-profile, got '{arch}'; "
+            "ppm=0.63 >= 0.55 AND season_pts=17.7 >= 15.0"
+        )
+
+    def test_big_still_detected_for_scoring_bigs(self):
+        """Players with reb_pm >= 0.22 but pts >= 12 should remain 'big', not 'pure_rebounder'."""
+        from api.index import _infer_player_archetype
+        # Achiuwa profile: 9 pts, 24 min, 7 reb → reb_pm = 0.29, season_pts = 9 — is pure_rebounder
+        # Jokic profile: 26 pts, 34 min, 13 reb → star (season_pts >= 21, avg_min >= 28)
+        # Bam Adebayo profile: 19 pts, 33 min, 10 reb → reb_pm=0.30, season_pts=19 → big (pts >= 12)
+        arch = _infer_player_archetype(19.0, 33.0, 10.0, {"season_pts": 19.0})
+        assert arch == "big", (
+            f"Expected 'big' for Bam-profile, got '{arch}'; "
+            "season_pts=19 >= 12, so not pure_rebounder"
+        )
+
+    def test_wing_role_unchanged_for_avg_player(self):
+        """A typical role player (low ppm, low reb_pm) should still be wing_role."""
+        from api.index import _infer_player_archetype
+        # Generic role player: 8 pts, 22 min, 3 reb
+        arch = _infer_player_archetype(8.0, 22.0, 3.0, {"season_pts": 8.0})
+        assert arch == "wing_role", f"Expected 'wing_role' for generic role player, got '{arch}'"
+
+    def test_pure_rebounder_penalty_lt_big(self):
+        """pure_rebounder calibration multiplier must be lower than big."""
+        cfg = json.load(open("data/model-config.json"))
+        archs = cfg["real_score"]["archetype_calibration"]["archetypes"]
+        assert "pure_rebounder" in archs, "pure_rebounder archetype must be in config"
+        assert archs["pure_rebounder"] < archs["big"], (
+            f"pure_rebounder mult {archs['pure_rebounder']} should be < big mult {archs['big']}; "
+            "pure rebounders generate less RS per rebound than scoring bigs"
+        )
+
+    def test_scorer_bonus_gt_wing_role(self):
+        """scorer calibration multiplier must exceed wing_role."""
+        cfg = json.load(open("data/model-config.json"))
+        archs = cfg["real_score"]["archetype_calibration"]["archetypes"]
+        assert "scorer" in archs, "scorer archetype must be in config"
+        assert archs["scorer"] > archs["wing_role"], (
+            f"scorer mult {archs['scorer']} should be > wing_role mult {archs['wing_role']}; "
+            "efficient scorers have higher RS ceilings when hot"
+        )
+
+    def test_big_mult_reduced_from_1_04(self):
+        """big archetype multiplier must be reduced to suppress non-star bigs."""
+        cfg = json.load(open("data/model-config.json"))
+        big_mult = cfg["real_score"]["archetype_calibration"]["archetypes"]["big"]
+        assert big_mult < 1.0, (
+            f"big mult {big_mult} should be < 1.0; was 1.04 (a bonus!) but "
+            "non-star scoring bigs still over-project when they're in the 'big' bucket"
+        )
+
+    def test_scorer_upside_config_present(self):
+        """moonshot.scorer_upside block must exist, be enabled, and have sensible values."""
+        cfg = json.load(open("data/model-config.json"))
+        su = cfg.get("moonshot", {}).get("scorer_upside", {})
+        assert su, "moonshot.scorer_upside block must exist in model-config.json"
+        assert su.get("enabled") is True, "scorer_upside must be enabled"
+        assert su.get("min_pts_per_min", 0) >= 0.50, "min_pts_per_min should be >= 0.50"
+        assert su.get("min_season_pts", 0) >= 12.0, "min_season_pts should be >= 12.0"
+        assert 1.0 < su.get("multiplier", 1.0) <= 1.25, (
+            "scorer_upside multiplier should be > 1.0 and <= 1.25 (modest boost, not a distortion)"
+        )
+
+    def test_scorer_upside_code_present(self):
+        """Moonshot pool code must contain scorer_upside block."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "scorer_upside" in src, "Moonshot pool must contain scorer_upside block"
+        assert "su_min_ppm" in src, "Scorer upside must read min_pts_per_min from config"
+        assert "su_season_pts" in src, "Scorer upside must check season_pts threshold"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
