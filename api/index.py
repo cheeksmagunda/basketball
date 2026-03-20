@@ -3161,6 +3161,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
 
         adj_ceiling = round(p["rating"] * matchup_factor * boost_leverage, 3)
 
+        # Scoring bias: reward players who actually score over pure rebounders/defenders.
+        # Leaderboard data (Mar 15-19): winners are scorers (Harkless RS 4.2, Bailey RS 5.0,
+        # Williams RS 4.0, Gillespie RS 4.5) — not big men accumulating reb/blk only.
+        pts_bias_threshold = float(moon_cfg.get("scoring_pts_bias_threshold", 10.0))
+        pts_bias_scale = float(moon_cfg.get("scoring_pts_bias_scale", 0.0))
+        if pts_bias_scale > 0 and p.get("pts", 0) > pts_bias_threshold:
+            pts_bias = 1.0 + (p["pts"] - pts_bias_threshold) * pts_bias_scale
+            adj_ceiling = round(adj_ceiling * pts_bias, 3)
+
         # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
 
@@ -3190,6 +3199,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                 min(float(_cfg("matchup.moonshot_adj_max", 1.15)), _matchup)
             )
             _adj = round(p["rating"] * _matchup * _boost_leverage, 3)
+            _pts_threshold = float(_moon_cfg.get("scoring_pts_bias_threshold", 10.0))
+            _pts_scale = float(_moon_cfg.get("scoring_pts_bias_scale", 0.0))
+            if _pts_scale > 0 and p.get("pts", 0) > _pts_threshold:
+                _adj = round(_adj * (1.0 + (p["pts"] - _pts_threshold) * _pts_scale), 3)
             return round(_adj * (_avg_slot + _est), 2), _adj
 
         moonshot_by_name = {p["name"]: p for p in moonshot_pool}
