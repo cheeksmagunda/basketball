@@ -1,19 +1,37 @@
+"""
+Train dual-head LightGBM bundle for Real Score (RS) with ranking-focused sample weights.
+
+Head A (baseline): predicts core RS level for all players.
+Head B (spike): predicts positive residual above baseline (role-player eruption signal).
+
+Training objectives:
+- Sample weights up-weight high actual_rs within each game date (top-10 RS days matter more).
+- Evaluation: top-5 RS recall, NDCG@5 RS, MAE (reported on held-out dates).
+
+Feature list must stay aligned with api/index.py::_lgbm_feature_vector().
+"""
 import os
 import re
 import glob
+import json
 import time
-import pandas as pd
-import numpy as np
-import lightgbm as lgb
+import math
 import pickle
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
 from nba_api.stats.endpoints import playergamelogs
 from requests.exceptions import RequestException
 from sklearn.model_selection import train_test_split
 
 # Pull 3 seasons of NBA game logs
-SEASONS = ['2023-24', '2024-25', '2025-26']
+SEASONS = ["2023-24", "2024-25", "2025-26"]
 
-def _fetch_season_logs_with_retry(season: str, max_attempts: int = 4) -> pd.DataFrame:
+# Total feature count — must match inference (see api/index.py)
+N_FEATURES = 16
+
+
+def _fetch_season_logs_with_retry(season: str, max_attempts: int = 6) -> pd.DataFrame:
     """Fetch one season of logs with retry/backoff for transient NBA API timeouts."""
     for attempt in range(1, max_attempts + 1):
         try:
@@ -22,36 +40,21 @@ def _fetch_season_logs_with_retry(season: str, max_attempts: int = 4) -> pd.Data
             if df_s is None or df_s.empty:
                 raise RuntimeError(f"empty response for season {season}")
             return df_s
-        except (RequestException, TimeoutError, RuntimeError) as e:
+        except (
+            RequestException,
+            TimeoutError,
+            RuntimeError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
             if attempt == max_attempts:
                 raise
-            backoff = min(20, 2 ** attempt)
-            print(f"   [WARN] {season} fetch attempt {attempt}/{max_attempts} failed: {e}; retrying in {backoff}s...")
+            backoff = min(45, 5 * attempt)
+            print(
+                f"   [WARN] {season} fetch attempt {attempt}/{max_attempts} failed: {e}; retrying in {backoff}s..."
+            )
             time.sleep(backoff)
 
-
-print(f"1. Fetching NBA game logs for {len(SEASONS)} seasons...")
-frames = []
-for season in SEASONS:
-    print(f"   Fetching {season}...")
-    df_s = _fetch_season_logs_with_retry(season)
-    df_s['SEASON'] = season
-    frames.append(df_s)
-    print(f"   Got {len(df_s)} game logs for {season}")
-    if season != SEASONS[-1]:
-        time.sleep(3)  # Avoid Cloudflare rate limiting
-
-df = pd.concat(frames, ignore_index=True)
-print(f"Total: {len(df)} game logs across {len(SEASONS)} seasons. Engineering features...")
-
-# Sort by player, season, and date to calculate accurate "past" stats
-df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'].astype(str).str[:10])
-df = df.sort_values(by=['PLAYER_ID', 'SEASON', 'GAME_DATE'])
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TARGET: Observed Real Scores from data/actuals/ (true target)
-# Falls back to formula target if no actuals are available.
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _normalize_name(name):
     n = str(name).lower().strip()
@@ -59,6 +62,56 @@ def _normalize_name(name):
     n = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
     return re.sub(r"\s+", " ", n).strip()
 
+
+def _ndcg_at_k(pred_order: list, relevance: dict, k: int = 5) -> float:
+    dcg = 0.0
+    for i, pid in enumerate(pred_order[:k]):
+        rel = relevance.get(pid, 0.0)
+        dcg += rel / math.log2(i + 2)
+    ideal = sorted(relevance.values(), reverse=True)[:k]
+    idcg = sum(rel / math.log2(i + 2) for i, rel in enumerate(ideal))
+    return (dcg / idcg) if idcg > 0 else 0.0
+
+
+def _top5_recall(pred_top5: set, actual_top5: set) -> float:
+    return len(pred_top5 & actual_top5) / 5.0
+
+
+print(f"1. Fetching NBA game logs for {len(SEASONS)} seasons...")
+frames = []
+for season in SEASONS:
+    print(f"   Fetching {season}...")
+    df_s = _fetch_season_logs_with_retry(season)
+    df_s["SEASON"] = season
+    frames.append(df_s)
+    print(f"   Got {len(df_s)} game logs for {season}")
+    if season != SEASONS[-1]:
+        time.sleep(3)
+
+df = pd.concat(frames, ignore_index=True)
+print(f"Total: {len(df)} game logs across {len(SEASONS)} seasons. Engineering features...")
+
+# playergamelogs (nba_api) exposes MATCHUP + TEAM_ABBREVIATION, not OPP_TEAM
+if "OPP_TEAM" not in df.columns and "MATCHUP" in df.columns and "TEAM_ABBREVIATION" in df.columns:
+    def _parse_opp(mu: str, team_abbr: str) -> str:
+        mu = str(mu)
+        tb = str(team_abbr).strip()
+        if " vs. " in mu:
+            t1, t2 = [x.strip() for x in mu.split(" vs. ", 1)]
+            return t2 if t1 == tb else t1
+        if " @ " in mu:
+            away, home = [x.strip() for x in mu.split(" @ ", 1)]
+            return home if tb == away else away
+        return tb
+
+    df["OPP_TEAM"] = [_parse_opp(m, t) for m, t in zip(df["MATCHUP"], df["TEAM_ABBREVIATION"])]
+
+df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"].astype(str).str[:10])
+df = df.sort_values(by=["PLAYER_ID", "SEASON", "GAME_DATE"])
+df["norm_name"] = df["PLAYER_NAME"].apply(_normalize_name)
+df["date_key"] = df["GAME_DATE"].dt.normalize()
+
+# ── Load actuals for labeling (merge AFTER feature engineering on full logs) ─
 actuals_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "actuals")
 actuals_frames = []
 for fpath in glob.glob(os.path.join(actuals_dir, "*.csv")):
@@ -74,131 +127,222 @@ for fpath in glob.glob(os.path.join(actuals_dir, "*.csv")):
     except Exception as e:
         print(f"   [WARN] Could not load {fpath}: {e}")
 
+actuals_df = None
 if actuals_frames:
     actuals_df = pd.concat(actuals_frames, ignore_index=True).dropna(subset=["actual_rs"])
-    print(f"   Loaded {len(actuals_df)} actuals rows from {len(actuals_frames)} files.")
-    df["norm_name"] = df["PLAYER_NAME"].apply(_normalize_name)
-    df["date_key"] = df["GAME_DATE"].dt.normalize()
     actuals_df["date_key"] = actuals_df["date_key"].dt.normalize()
-    df = df.merge(actuals_df[["norm_name", "date_key", "actual_rs"]],
-                  on=["norm_name", "date_key"], how="inner")
-    print(f"   After merge with actuals: {len(df)} training samples.")
+    print(f"   Loaded {len(actuals_df)} actuals rows from {len(actuals_frames)} files.")
+
+g = df.groupby(["PLAYER_ID", "SEASON"])
+
+df["avg_min"] = g["MIN"].transform(lambda x: x.expanding().mean().shift(1))
+df["avg_pts"] = g["PTS"].transform(lambda x: x.expanding().mean().shift(1))
+df["recent_min"] = g["MIN"].transform(lambda x: x.rolling(5).mean().shift(1))
+
+USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
+df = df.dropna(subset=["avg_min", "avg_pts", "recent_min"]).copy()
+g = df.groupby(["PLAYER_ID", "SEASON"])
+df["usage_trend"] = np.where(df["avg_min"] > 0, df["recent_min"] / df["avg_min"], 1.0)
+df["usage_trend"] = df["usage_trend"].clip(USAGE_TREND_MIN, USAGE_TREND_MAX)
+
+opp_pts_allowed = df.groupby("OPP_TEAM")["PTS"].mean().to_dict()
+df["opp_def_rating"] = df["OPP_TEAM"].map(opp_pts_allowed)
+df["home_away"] = df["MATCHUP"].str.contains(r"vs\.", regex=True).astype(float)
+
+df["avg_ast"] = g["AST"].transform(lambda x: x.rolling(5).mean().shift(1))
+df["ast_rate"] = np.where(df["recent_min"] > 0, df["avg_ast"] / df["recent_min"], 0.0)
+
+df["avg_stl"] = g["STL"].transform(lambda x: x.rolling(5).mean().shift(1))
+df["avg_blk"] = g["BLK"].transform(lambda x: x.rolling(5).mean().shift(1))
+df["def_rate"] = np.where(
+    df["recent_min"] > 0, (df["avg_stl"] + df["avg_blk"]) / df["recent_min"], 0.0
+)
+
+df["pts_per_min"] = np.where(df["recent_min"] > 0, df["avg_pts"] / df["recent_min"], 0.0)
+
+df["prev_date"] = g["GAME_DATE"].transform(lambda x: x.shift(1))
+df["rest_days"] = (df["GAME_DATE"] - df["prev_date"]).dt.days.fillna(3).clip(1, 7)
+
+df["recent_5g_pts"] = g["PTS"].transform(lambda x: x.rolling(5).mean().shift(1))
+df["recent_vs_season"] = np.where(
+    df["avg_pts"] > 0, df["recent_5g_pts"] / df["avg_pts"], 1.0
+).clip(0.5, 2.0)
+
+df["games_played"] = g.cumcount()
+
+df["reb_per_min"] = np.where(
+    df["avg_min"] > 0, df["REB"] / df["avg_min"], 0.0
+).clip(0.0, 1.5)
+
+# Role-volatility features (known before game)
+df["roll3_pts"] = g["PTS"].transform(lambda x: x.rolling(3).mean().shift(1))
+df["l3_vs_l5_pts"] = np.where(
+    df["recent_5g_pts"] > 0, df["roll3_pts"] / df["recent_5g_pts"], 1.0
+).clip(0.4, 2.5)
+
+df["min_roll5_std"] = g["MIN"].transform(lambda x: x.rolling(5).std().shift(1))
+df["min_volatility"] = np.where(
+    df["avg_min"] > 0, df["min_roll5_std"] / (df["avg_min"] + 0.5), 0.0
+).clip(0.0, 1.2)
+
+df["starter_proxy"] = (df["avg_min"] >= 26.0).astype(float)
+
+# Placeholder for teammate/cascade signal at inference (training uses 0)
+df["cascade_signal"] = 0.0
+
+features = [
+    "avg_min",
+    "avg_pts",
+    "usage_trend",
+    "opp_def_rating",
+    "home_away",
+    "ast_rate",
+    "def_rate",
+    "pts_per_min",
+    "rest_days",
+    "recent_vs_season",
+    "games_played",
+    "reb_per_min",
+    "l3_vs_l5_pts",
+    "min_volatility",
+    "starter_proxy",
+    "cascade_signal",
+]
+
+assert len(features) == N_FEATURES
+
+if actuals_df is not None:
+    df = df.merge(
+        actuals_df[["norm_name", "date_key", "actual_rs"]],
+        on=["norm_name", "date_key"],
+        how="left",
+    )
+    n_labeled = int(df["actual_rs"].notna().sum())
+    print(f"   Rows with actual_rs label: {n_labeled} (of {len(df)} after feature prep).")
     target = "actual_rs"
+    df = df.dropna(subset=["actual_rs"])
 else:
     print("   [WARN] No actuals found — falling back to formula target.")
     df["actual_base_score"] = (
-        df["PTS"] + df["REB"] + (df["AST"] * 1.5) +
-        (df["STL"] * 4.5) + (df["BLK"] * 4.0) - (df["TOV"] * 1.2)
+        df["PTS"]
+        + df["REB"]
+        + (df["AST"] * 1.5)
+        + (df["STL"] * 4.5)
+        + (df["BLK"] * 4.0)
+        - (df["TOV"] * 1.2)
     )
     target = "actual_base_score"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FEATURES — all computed as "what was known BEFORE this game" (shift(1))
-# ─────────────────────────────────────────────────────────────────────────────
-
-g = df.groupby(['PLAYER_ID', 'SEASON'])
-
-# Feature 1: Season avg minutes (before this game)
-df['avg_min'] = g['MIN'].transform(lambda x: x.expanding().mean().shift(1))
-
-# Feature 2: Season avg points (before this game)
-df['avg_pts'] = g['PTS'].transform(lambda x: x.expanding().mean().shift(1))
-
-# Feature 3: Recent form — rolling 5-game minutes avg
-df['recent_min'] = g['MIN'].transform(lambda x: x.rolling(5).mean().shift(1))
-
-# Feature 4: Usage trend (recent/season minutes ratio)
-# Clipping constants must match api/index.py inference
-USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
-df = df.dropna(subset=['avg_min', 'avg_pts', 'recent_min'])
-df['usage_trend'] = np.where(df['avg_min'] > 0, df['recent_min'] / df['avg_min'], 1.0)
-df['usage_trend'] = df['usage_trend'].clip(USAGE_TREND_MIN, USAGE_TREND_MAX)
-
-# Feature 5: Opponent defensive rating — avg points scored against each team
-# (actual points allowed per player, a real measure of defensive permissiveness)
-opp_pts_allowed = df.groupby('OPP_TEAM')['PTS'].mean().to_dict()
-df['opp_def_rating'] = df['OPP_TEAM'].map(opp_pts_allowed)
-
-# Feature 6: Home/away (home=1, away=0)
-# MATCHUP format: "TEAM vs. OPP" = home, "TEAM @ OPP" = away
-df['home_away'] = df['MATCHUP'].str.contains('vs\.', regex=True).astype(float)
-
-# Feature 7: Assist rate — rolling 5-game AST/MIN (playmaker proxy)
-df['avg_ast'] = g['AST'].transform(lambda x: x.rolling(5).mean().shift(1))
-df['ast_rate'] = np.where(df['recent_min'] > 0, df['avg_ast'] / df['recent_min'], 0.0)
-
-# Feature 8: Defensive rate — rolling 5-game (STL+BLK)/MIN
-df['avg_stl'] = g['STL'].transform(lambda x: x.rolling(5).mean().shift(1))
-df['avg_blk'] = g['BLK'].transform(lambda x: x.rolling(5).mean().shift(1))
-df['def_rate'] = np.where(df['recent_min'] > 0, (df['avg_stl'] + df['avg_blk']) / df['recent_min'], 0.0)
-
-# Feature 9: Points per minute — scoring efficiency
-df['pts_per_min'] = np.where(df['recent_min'] > 0, df['avg_pts'] / df['recent_min'], 0.0)
-
-# Feature 10: Rest days — days since last game (B2B = 1, normal = 2, long rest = 3+)
-df['prev_date'] = g['GAME_DATE'].transform(lambda x: x.shift(1))
-df['rest_days'] = (df['GAME_DATE'] - df['prev_date']).dt.days.fillna(3).clip(1, 7)
-
-# Feature 11: Recent vs season scoring (must match inference: recent_pts / season_pts)
-df['recent_5g_pts'] = g['PTS'].transform(lambda x: x.rolling(5).mean().shift(1))
-df['recent_vs_season'] = np.where(
-    df['avg_pts'] > 0,
-    df['recent_5g_pts'] / df['avg_pts'],
-    1.0
-).clip(0.5, 2.0)
-
-# Feature 12: Games played this season (sample size / reliability proxy)
-df['games_played'] = g.cumcount()  # 0-indexed, represents games BEFORE this one
-
-# Feature 13: Rebounds per minute — critical for C/PF accuracy.
-# LightGBM was blind to rebounding volume, causing systematic underestimation
-# of interior bigs like Poeltl (9reb, ~2.5 projected, 5.4 actual).
-# Must also be updated in project_player() inference vector (api/index.py).
-df['reb_per_min'] = np.where(
-    df['avg_min'] > 0,
-    df['REB'] / df['avg_min'],
-    0.0
-).clip(0.0, 1.5)  # guard vs. center range: ~0.1 to ~0.4 typical
-
-# Drop rows with NaN in any feature
-features = [
-    'avg_min', 'avg_pts', 'usage_trend', 'opp_def_rating',
-    'home_away', 'ast_rate', 'def_rate', 'pts_per_min',
-    'rest_days', 'recent_vs_season', 'games_played', 'reb_per_min'
-]
 df = df.dropna(subset=features + [target])
 print(f"After feature engineering: {len(df)} samples with complete features.")
 
-if len(df) < 50:
-    print(f"[ERROR] Only {len(df)} samples after merge — aborting.")
-    import sys; sys.exit(1)
+if len(df) < 80:
+    print(f"[ERROR] Only {len(df)} samples — need more for stable two-head training.")
+    import sys
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TRAIN
-# ─────────────────────────────────────────────────────────────────────────────
-X = df[features]
-y = df[target]
+    sys.exit(1)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# ── Ranking-focused sample weights (per calendar date) ───────────────────────
+date_col = df["GAME_DATE"].dt.normalize()
 
-print(f"2. Training LightGBM on {len(X_train)} samples ({len(SEASONS)} seasons)...")
-print(f"   Features ({len(features)}): {features}")
-model = lgb.LGBMRegressor(
-    n_estimators=600,
-    learning_rate=0.05,
-    max_depth=7,
-    num_leaves=40,
-    random_state=42
+
+def _assign_weights(y_series: pd.Series) -> pd.Series:
+    """Higher weight for top actual RS within the same day (approximate game slate)."""
+    ranks = y_series.rank(pct=True, method="average")
+    w = 1.0 + 4.0 * (ranks >= 0.90) + 2.0 * ((ranks >= 0.75) & (ranks < 0.90))
+    return w
+
+
+sample_weight = df.groupby(date_col, group_keys=False)[target].transform(_assign_weights)
+
+X = df[features].copy()
+y = df[target].astype(float)
+
+(
+    X_train,
+    X_test,
+    y_train,
+    y_test,
+    w_train,
+    w_test,
+    _date_train,
+    _date_test,
+    _idx_train,
+    test_idx,
+) = train_test_split(
+    X,
+    y,
+    sample_weight,
+    df["GAME_DATE"],
+    df.index,
+    test_size=0.2,
+    random_state=42,
 )
-model.fit(X_train, y_train, eval_set=[(X_test, y_test)])
 
-# Save feature list alongside model so inference can verify alignment
-model_bundle = {"model": model, "features": features}
+print(f"2. Training dual-head LightGBM on {len(X_train)} samples...")
+print(f"   Features ({len(features)}): {features}")
 
-print("3. Saving AI model to lgbm_model.pkl...")
+base_params = dict(
+    n_estimators=700,
+    learning_rate=0.045,
+    max_depth=7,
+    num_leaves=48,
+    random_state=42,
+    subsample=0.85,
+    colsample_bytree=0.85,
+)
+
+model_baseline = lgb.LGBMRegressor(**base_params)
+model_baseline.fit(
+    X_train,
+    y_train,
+    sample_weight=w_train,
+    eval_set=[(X_test, y_test)],
+)
+
+baseline_pred_full = model_baseline.predict(X)
+spike_y = np.maximum(0.0, y.values - baseline_pred_full)
+
+model_spike = lgb.LGBMRegressor(**base_params)
+model_spike.fit(X, spike_y, sample_weight=sample_weight.values)
+
+# ── Evaluation on test split (ranking KPIs) ────────────────────────────────
+test_df = df.loc[test_idx].copy()
+test_df["pred_rs"] = model_baseline.predict(X_test) + model_spike.predict(X_test)
+
+recalls = []
+ndcgs = []
+for d, sub in test_df.groupby("GAME_DATE"):
+    if len(sub) < 10:
+        continue
+    # top 5 by actual
+    sub = sub.sort_values(target, ascending=False)
+    actual_top5 = set(sub.head(5)["PLAYER_ID"])
+    sub_pred = sub.sort_values("pred_rs", ascending=False)
+    pred_top5 = set(sub_pred.head(5)["PLAYER_ID"])
+    recalls.append(_top5_recall(pred_top5, actual_top5))
+    rel = {row.PLAYER_ID: row[target] for _, row in sub.iterrows()}
+    order = sub_pred["PLAYER_ID"].tolist()
+    ndcgs.append(_ndcg_at_k(order, rel, k=5))
+
+print(
+    f"3. Test metrics — top5_recall_avg: {np.mean(recalls):.3f} | ndcg5_avg: {np.mean(ndcgs):.3f} | "
+    f"MAE: {np.mean(np.abs(test_df[target] - test_df['pred_rs'])):.3f}"
+)
+
+model_bundle = {
+    "bundle_version": 2,
+    "model_baseline": model_baseline,
+    "model_spike": model_spike,
+    "features": features,
+}
+
+print("4. Saving bundle to lgbm_model.pkl...")
 with open("lgbm_model.pkl", "wb") as f:
     pickle.dump(model_bundle, f)
-print(f"Done! Model trained on {len(X_train)} samples from seasons: {', '.join(SEASONS)}")
-print(f"Feature importances:")
-for feat, imp in sorted(zip(features, model.feature_importances_), key=lambda x: -x[1]):
+
+print("Done! Feature importances (baseline):")
+for feat, imp in sorted(
+    zip(features, model_baseline.feature_importances_), key=lambda x: -x[1]
+):
     print(f"  {feat}: {imp}")

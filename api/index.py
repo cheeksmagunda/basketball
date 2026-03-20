@@ -527,6 +527,33 @@ _CONFIG_DEFAULTS = {
         "compression_power": 0.78,
         "rs_cap": 20.0,
         "ai_blend_weight": 0.25,
+        # Optional RS bucket calibration (disabled by default).
+        # Use to correct systematic bias by scoring tier without touching base model.
+        "bucket_calibration": {
+            "enabled": False,
+            "high_pts_threshold": 18.462,
+            "mid_pts_threshold": 6.324,
+            "high_mult": 0.8206,
+            "mid_mult": 0.9336,
+            "low_mult": 1.0813,
+        },
+        "archetype_calibration": {
+            "enabled": True,
+            "archetypes": {
+                "star": 0.92,
+                "starter": 1.0,
+                "wing_role": 1.02,
+                "bench_microwave": 1.08,
+                "big": 1.04,
+            },
+        },
+        "post_lock_calibration": {
+            "enabled": True,
+            "require_locked_slate": True,
+            "recency_strength": 0.12,
+            "max_nudge": 0.12,
+            "cascade_weight": 0.06,
+        },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -662,7 +689,9 @@ def _cfg(path, default=None):
             return default
     return val
 
-AI_MODEL = None
+AI_MODEL = None  # Legacy single-head bundle
+AI_MODEL_BASELINE = None  # bundle_version 2
+AI_MODEL_SPIKE = None
 AI_FEATURES = None  # Feature list saved alongside model to verify alignment
 _LGBM_LOAD_ATTEMPTED = False
 _LGBM_LOAD_LOCK = threading.Lock()
@@ -681,8 +710,8 @@ _LGBM_PATHS = [
 
 def _ensure_lgbm_loaded():
     """Lazy-load the LightGBM model bundle on first use.
-    Safe to call from concurrent requests — load is attempted once via lock."""
-    global AI_MODEL, AI_FEATURES, _LGBM_LOAD_ATTEMPTED
+    Supports bundle_version 2 (baseline + spike) or legacy single model."""
+    global AI_MODEL, AI_MODEL_BASELINE, AI_MODEL_SPIKE, AI_FEATURES, _LGBM_LOAD_ATTEMPTED
     if _LGBM_LOAD_ATTEMPTED:
         return
     with _LGBM_LOAD_LOCK:
@@ -693,16 +722,100 @@ def _ensure_lgbm_loaded():
                 try:
                     with open(_p, "rb") as _f:
                         _bundle = pickle.load(_f)
-                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                        AI_MODEL    = _bundle["model"]
-                        AI_FEATURES = _bundle["features"]
+                    if not isinstance(_bundle, dict) or "features" not in _bundle:
+                        continue
+                    AI_FEATURES = _bundle["features"]
+                    if _bundle.get("bundle_version") == 2 and "model_baseline" in _bundle and "model_spike" in _bundle:
+                        AI_MODEL_BASELINE = _bundle["model_baseline"]
+                        AI_MODEL_SPIKE = _bundle["model_spike"]
+                        AI_MODEL = None
                         break
-                    # Legacy bare model format not supported — require bundled features for alignment
-                except (OSError, pickle.UnpicklingError, KeyError, ValueError):
+                    if "model" in _bundle:
+                        AI_MODEL = _bundle["model"]
+                        AI_MODEL_BASELINE = None
+                        AI_MODEL_SPIKE = None
+                        break
+                except (OSError, pickle.UnpicklingError, KeyError, ValueError, ModuleNotFoundError):
+                    # ModuleNotFoundError: e.g. lightgbm not installed in env but pickle references it
                     pass
         _LGBM_LOAD_ATTEMPTED = True
-        if AI_MODEL is None:
+        if AI_MODEL is None and AI_MODEL_BASELINE is None:
             print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
+
+
+def _lgbm_predict_rs(feat_vec: list) -> Optional[float]:
+    """Return blended RS prediction from loaded bundle, or None if unavailable."""
+    _ensure_lgbm_loaded()
+    if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
+        raise ValueError(f"Feature mismatch: model expects {len(AI_FEATURES)}, got {len(feat_vec)}")
+    arr = np.array([feat_vec])
+    if AI_MODEL_BASELINE is not None and AI_MODEL_SPIKE is not None:
+        base = float(AI_MODEL_BASELINE.predict(arr)[0])
+        spike = float(AI_MODEL_SPIKE.predict(arr)[0])
+        return base + max(0.0, spike)
+    if AI_MODEL is not None:
+        return float(AI_MODEL.predict(arr)[0])
+    return None
+
+
+def _lgbm_feature_vector(
+    *,
+    avg_min: float,
+    pts: float,
+    reb: float,
+    ast: float,
+    stl: float,
+    blk: float,
+    spread: Optional[float],
+    side: str,
+    season_pts: float,
+    recent_pts: float,
+    season_min: float,
+    recent_min: float,
+    cascade_bonus: float,
+    games_played: Optional[float] = None,
+) -> list:
+    """Build feature vector aligned with train_lgbm.py (16 features)."""
+    USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
+    # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
+    usage = float(
+        np.clip(recent_min / max(avg_min, 1), USAGE_TREND_MIN, USAGE_TREND_MAX)
+    )
+    sign = 1.0 if side == "away" else -1.0
+    opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
+    ast_rate_ = ast / max(avg_min, 1)
+    def_rate_ = (stl + blk) / max(avg_min, 1)
+    pts_per_min_ = pts / max(avg_min, 1)
+    home_away_ = 1.0 if side == "home" else 0.0
+    rest_days_ = 2.0
+    recent_vs_season_ = float(np.clip(recent_pts / max(season_pts, 1), 0.5, 2.0))
+    games_played_ = float(games_played) if games_played is not None else 40.0
+    reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
+    # Inference proxies for last-3 vs last-5 scoring shape (correlate with training features).
+    l3_vs_l5_pts = float(np.clip((0.55 * recent_pts + 0.45 * season_pts) / max(recent_pts, 0.1), 0.4, 2.5))
+    min_volatility = float(
+        np.clip(abs(recent_min - season_min) / max(season_min, 1.0), 0.0, 1.2)
+    )
+    starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
+    cascade_signal = float(np.clip(max(cascade_bonus, 0.0) / 15.0, 0.0, 1.5))
+    return [
+        avg_min,
+        season_pts,
+        usage,
+        opp_def_rating,
+        home_away_,
+        ast_rate_,
+        def_rate_,
+        pts_per_min_,
+        rest_days_,
+        recent_vs_season_,
+        games_played_,
+        reb_per_min_,
+        l3_vs_l5_pts,
+        min_volatility,
+        starter_proxy,
+        cascade_signal,
+    ]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -1856,6 +1969,51 @@ def _game_script_label(total):
     return "Track Meet"
 
 
+def _infer_player_archetype(pts: float, avg_min: float, reb: float, stats: dict) -> str:
+    """Coarse role bucket for RS archetype calibration (not position-specific)."""
+    season_pts = float(stats.get("season_pts", pts) or pts)
+    recent_pts = float(stats.get("recent_pts", pts) or pts)
+    reb_pm = reb / max(avg_min, 1)
+    recent_vs = recent_pts / max(season_pts, 1.0)
+    if season_pts >= 21.0 and avg_min >= 28.0:
+        return "star"
+    if reb_pm >= 0.22:
+        return "big"
+    if avg_min < 22.0 and recent_vs >= 1.12:
+        return "bench_microwave"
+    if avg_min >= 28.0:
+        return "starter"
+    return "wing_role"
+
+
+def _apply_post_lock_rs_calibration(projections: list, *, slate_locked: bool) -> None:
+    """Re-rank tilt from recency + cascade right before MILP (config-gated)."""
+    cfg = _cfg("real_score.post_lock_calibration", _CONFIG_DEFAULTS["real_score"].get("post_lock_calibration", {}))
+    if not cfg.get("enabled", False):
+        return
+    if cfg.get("require_locked_slate", True) and not slate_locked:
+        return
+    strength = float(cfg.get("recency_strength", 0.12))
+    max_nudge = float(cfg.get("max_nudge", 0.12))
+    cascade_w = float(cfg.get("cascade_weight", 0.06))
+    avg_slot = float(_cfg("lineup.avg_slot_multiplier", 1.6))
+    for p in projections:
+        season_pts = max(float(p.get("season_pts", 0) or p.get("pts", 0)), 0.1)
+        recent_pts = float(p.get("recent_pts", season_pts))
+        r = recent_pts / season_pts
+        nudge = 1.0 + max(-max_nudge, min(max_nudge, (r - 1.0) * strength))
+        cb = float(p.get("_cascade_bonus", 0) or 0)
+        if cb > 4.0:
+            nudge *= 1.0 + min(cascade_w, cb / 200.0)
+        if abs(nudge - 1.0) < 0.001:
+            continue
+        old = float(p.get("rating", 0))
+        p["rating"] = round(old * nudge, 1)
+        p["chalk_ev"] = round(p["rating"] * (avg_slot + float(p.get("est_mult", 0))), 2)
+        p["ceiling_score"] = round(float(p.get("ceiling_score", p["rating"])) * nudge, 1)
+        p["_post_lock_rs_nudge"] = round(nudge, 4)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PLAYER PROJECTION ENGINE
 # grep: project_player, pinfo, stats, spread, total, rating, est_mult, blk, stl
@@ -1963,42 +2121,33 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         heuristic *= decline_factor
 
     # ── LightGBM inference — collect ai_pred only, do NOT blend yet ──────────
-    # The model is trained on observed Real Scores (RS units). Blending happens
-    # AFTER the heuristic has been run through the RS pipeline so both values
-    # are in the same RS unit space (no double-compression of ai_pred).
-    # Usage trend clipping must match train_lgbm.py.
-    USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
+    # Bundle v2: baseline + spike heads (train_lgbm.py). Legacy: single regressor.
     _ensure_lgbm_loaded()
     ai_pred = None
-    if AI_MODEL is not None:
+    if AI_MODEL is not None or AI_MODEL_BASELINE is not None:
         try:
-            usage = min(max(pts / max(avg_min, 1) * 0.8, USAGE_TREND_MIN), USAGE_TREND_MAX)
-            sign = 1.0 if side == "away" else -1.0
-            opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
-
-            # Feature vector — must match train_lgbm.py feature order exactly.
-            # Values not available from ESPN at inference time use neutral defaults.
-            # Feature 11: recent_vs_season (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts)
-            season_pts_   = stats.get("season_pts", pts)
-            ast_rate_     = ast / max(avg_min, 1)
-            def_rate_     = (stl + blk) / max(avg_min, 1)
-            pts_per_min_  = pts / max(avg_min, 1)
-            home_away_    = 1.0 if side == "home" else 0.0
-            rest_days_    = 2.0   # typical NBA schedule; not in ESPN splits
-            recent_vs_season_ = stats.get("recent_pts", pts) / max(stats.get("season_pts", pts), 1)
-            recent_vs_season_ = float(np.clip(recent_vs_season_, 0.5, 2.0))
-            games_played_ = 40.0  # mid-season default; not in ESPN splits
-
-            reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
-            feat_vec = [avg_min, season_pts_, usage, opp_def_rating,
-                        home_away_, ast_rate_, def_rate_, pts_per_min_,
-                        rest_days_, recent_vs_season_, games_played_, reb_per_min_]
-
-            # If the saved model has a known feature list, verify length matches
-            if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
-                raise ValueError(f"Feature mismatch: model expects {len(AI_FEATURES)}, got {len(feat_vec)}")
-
-            ai_pred = float(AI_MODEL.predict(np.array([feat_vec]))[0])
+            season_pts_ = stats.get("season_pts", pts)
+            recent_pts_ = stats.get("recent_pts", pts)
+            season_min_ = stats.get("season_min", avg_min)
+            recent_min_ = stats.get("recent_min", avg_min)
+            _gp = stats.get("gp", stats.get("games_played"))
+            feat_vec = _lgbm_feature_vector(
+                avg_min=avg_min,
+                pts=pts,
+                reb=reb,
+                ast=ast,
+                stl=stl,
+                blk=blk,
+                spread=spread,
+                side=side,
+                season_pts=season_pts_,
+                recent_pts=recent_pts_,
+                season_min=season_min_,
+                recent_min=recent_min_,
+                cascade_bonus=cascade_bonus,
+                games_played=float(_gp) if _gp is not None else None,
+            )
+            ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:
             print(f"[WARN] LightGBM inference failed for player, using heuristic: {_lgbm_e}")
 
@@ -2066,6 +2215,28 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
     else:
         raw_score = heuristic_rs
+
+    # Optional per-bucket RS calibration to reduce star inflation and
+    # lift under-projected low-PPG role players.
+    bucket_cfg = rs_cfg.get("bucket_calibration", {})
+    if bucket_cfg.get("enabled", False):
+        high_thr = float(bucket_cfg.get("high_pts_threshold", 16.0))
+        mid_thr = float(bucket_cfg.get("mid_pts_threshold", 8.0))
+        if pts >= high_thr:
+            raw_score *= float(bucket_cfg.get("high_mult", 1.0))
+        elif pts >= mid_thr:
+            raw_score *= float(bucket_cfg.get("mid_mult", 1.0))
+        else:
+            raw_score *= float(bucket_cfg.get("low_mult", 1.0))
+        raw_score = min(raw_score, rs_cap)
+
+    arch_cfg = rs_cfg.get("archetype_calibration", {})
+    if arch_cfg.get("enabled", False):
+        arch = _infer_player_archetype(pts, avg_min, reb, stats)
+        mults = arch_cfg.get("archetypes", {}) or {}
+        m = float(mults.get(arch, 1.0))
+        if m != 1.0:
+            raw_score = min(raw_score * m, rs_cap)
 
     # (big man calibration, scoring bias, calibration scale all removed —
     # these were stacked multipliers that inflated bench players to RS 3.5-4.0
@@ -4055,6 +4226,7 @@ def _get_slate_impl():
             _claude_context_pass(all_proj, draftable_games)
         except Exception as _ctx_err:
             print(f"[context_pass] call-site error: {_ctx_err}")
+        _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
         chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel)
         try:
             chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool, news_context=_slate_news_text)
@@ -4451,6 +4623,9 @@ def _force_regenerate_sync(scope: str):
         _fr_def_stats = _fetch_team_def_stats()
     except Exception:
         pass
+    _fr_starts = [g["startTime"] for g in games if g.get("startTime")]
+    _fr_any_locked = bool(_fr_starts) and any(_is_locked(st) for st in _fr_starts)
+    _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
     chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats)
     try:
         chalk, upside = _lineup_review_opus(chalk, upside, all_proj, game_pool, core_pool=core_pool)
@@ -5413,6 +5588,9 @@ async def injury_check(request: Request):
     if not all_proj:
         return {"status": "regen_failed", "injuries_found": len(injured_games)}
 
+    _inj_starts = [g["startTime"] for g in games if g.get("startTime")]
+    _inj_locked = bool(_inj_starts) and any(_is_locked(st) for st in _inj_starts)
+    _apply_post_lock_rs_calibration(all_proj, slate_locked=_inj_locked)
     chalk, upside, core_pool = _build_lineups(all_proj)
     draftable_for_review = cached_slate.get("games", [])
     try:

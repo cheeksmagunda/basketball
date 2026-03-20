@@ -121,7 +121,32 @@
     "compression_divisor": 4.5,
     "compression_power": 0.78,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.25
+    "ai_blend_weight": 0.25,
+    "bucket_calibration": {
+      "enabled": false,
+      "high_pts_threshold": 18.462,
+      "mid_pts_threshold": 6.324,
+      "high_mult": 0.8206,
+      "mid_mult": 0.9336,
+      "low_mult": 1.0813
+    },
+    "archetype_calibration": {
+      "enabled": true,
+      "archetypes": {
+        "star": 0.92,
+        "starter": 1.0,
+        "wing_role": 1.02,
+        "bench_microwave": 1.08,
+        "big": 1.04
+      }
+    },
+    "post_lock_calibration": {
+      "enabled": true,
+      "require_locked_slate": true,
+      "recency_strength": 0.12,
+      "max_nudge": 0.12,
+      "cascade_weight": 0.06
+    }
   },
   "cascade": {
     "redistribution_rate": 0.7,

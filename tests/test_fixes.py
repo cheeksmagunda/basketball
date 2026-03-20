@@ -555,13 +555,37 @@ class TestLgbmFeatureAlignment:
         AI_FEATURES = idx.AI_FEATURES
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
-        assert len(AI_FEATURES) == 12, f"Expected 12 features, got {len(AI_FEATURES)}: {AI_FEATURES}"
+        n = len(AI_FEATURES)
+        assert n in (12, 16), f"Expected 12 (legacy) or 16 (bundle v2) features, got {n}: {AI_FEATURES}"
         assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
             f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
         )
         assert AI_FEATURES[11] == "reb_per_min", (
             f"12th feature (index 11) must be reb_per_min, got {AI_FEATURES[11]!r}"
         )
+        if n == 16:
+            assert AI_FEATURES[2] == "usage_trend", f"index 2 must be usage_trend, got {AI_FEATURES[2]!r}"
+            assert AI_FEATURES[12] == "l3_vs_l5_pts", f"index 12 must be l3_vs_l5_pts, got {AI_FEATURES[12]!r}"
+            assert AI_FEATURES[13] == "min_volatility", f"index 13 must be min_volatility, got {AI_FEATURES[13]!r}"
+            assert AI_FEATURES[14] == "starter_proxy", f"index 14 must be starter_proxy, got {AI_FEATURES[14]!r}"
+            assert AI_FEATURES[15] == "cascade_signal", f"index 15 must be cascade_signal, got {AI_FEATURES[15]!r}"
+            vec = idx._lgbm_feature_vector(
+                avg_min=24.0,
+                pts=14.0,
+                reb=5.0,
+                ast=3.0,
+                stl=1.0,
+                blk=0.5,
+                spread=3.0,
+                side="home",
+                season_pts=14.0,
+                recent_pts=16.0,
+                season_min=24.0,
+                recent_min=26.0,
+                cascade_bonus=0.0,
+                games_played=40.0,
+            )
+            assert len(vec) == 16, f"_lgbm_feature_vector must return 16 values, got {len(vec)}"
 
 
 # ─────────────────────────────────────────────────────────
