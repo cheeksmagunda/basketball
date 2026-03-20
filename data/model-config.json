@@ -3,11 +3,11 @@
   "updated_at": "2026-03-20T23:30:00Z",
   "updated_by": "game-context-rs-signals",
   "scoring_thresholds": {
-    "min_pts_projection": 7.0,
+    "min_pts_projection": 6.0,
     "min_pts_projection_moonshot": 6.0,
-    "min_pts_per_minute": 0.28,
+    "min_pts_per_minute": 0.25,
     "min_pts_per_minute_moonshot": 0.22,
-    "min_chalk_rating": 4.0,
+    "min_chalk_rating": 3.5,
     "min_moonshot_rating": 3.5,
     "min_moonshot_pts": 6.0,
     "chalk_boost_cap": 3.0,
@@ -268,8 +268,8 @@
     }
   },
   "cascade": {
-    "redistribution_rate": 0.7,
-    "per_player_cap_minutes": 2.0,
+    "redistribution_rate": 0.85,
+    "per_player_cap_minutes": 3.0,
     "center_forward_share": 0.3
   },
   "projection": {
@@ -284,7 +284,7 @@
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 2.5,
-    "chalk_season_min_floor": 22.0,
+    "chalk_season_min_floor": 20.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
     "chalk_recent_min_floor": 20.0,

@@ -1116,7 +1116,7 @@ class TestMoonshotPtsFloor:
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        assert cfg["scoring_thresholds"]["min_pts_projection"] == 7.0
+        assert cfg["scoring_thresholds"]["min_pts_projection"] == 6.0
         # moonshot floor raised to 6.0 in v44 (was 3.0) — bench players need real production
         assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 5.0, \
             f"moonshot pts floor should be >= 5.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
@@ -1851,12 +1851,12 @@ class TestPerGameFloor:
         assert "scoring_thresholds.min_game_pts" in src, \
             "Per-game pool must use scoring_thresholds.min_game_pts config key"
 
-    def test_chalk_season_min_floor_is_22(self):
-        """chalk_season_min_floor must be 22 — proven rotation players only in Starting 5."""
+    def test_chalk_season_min_floor_is_20(self):
+        """chalk_season_min_floor must be 20 — rotation players in Starting 5 (lowered from 22 for tight-game coverage)."""
         cfg = self._local_cfg()
         floor = cfg.get("projection", {}).get("chalk_season_min_floor")
-        assert floor == pytest.approx(22.0), \
-            f"chalk_season_min_floor should be 22.0, got {floor}"
+        assert floor == pytest.approx(20.0), \
+            f"chalk_season_min_floor should be 20.0, got {floor}"
 
     def test_den_not_in_big_market_teams(self):
         """DEN must be removed from big_market_teams — DEN role players are low-ownership."""
