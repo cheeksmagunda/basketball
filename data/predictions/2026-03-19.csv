@@ -1,0 +1,51 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Ausar Thompson,4684742,DET,G,3.6,2.0,27.4,9.9,5.8,2.8,1.8,0.8
+slate,chalk,1.8x,Jalen Green,4437244,PHX,G,3.6,1.6,26.5,17.7,3.6,2.7,1.1,0.1
+slate,chalk,1.6x,Julian Reese,4683742,WSH,F,3.1,3.0,31.6,9.2,9.4,1.8,1.0,0.4
+slate,chalk,1.4x,Maxime Raynaud,4898371,SAC,C,3.0,2.1,27.4,11.4,7.3,1.3,0.5,0.5
+slate,chalk,1.2x,Precious Achiuwa,4431679,SAC,PF,3.0,2.3,23.0,8.9,6.2,1.2,0.8,0.7
+slate,upside,2.0x,Ausar Thompson,4684742,DET,G,3.6,2.0,27.4,9.9,5.8,2.8,1.8,0.8
+slate,upside,1.8x,Collin Sexton,4277811,CHI,G,3.2,2.0,23.0,15.3,2.1,3.5,1.0,0.1
+slate,upside,1.6x,Kyle Kuzma,3134907,MIL,F,3.1,1.7,28.4,13.7,4.9,2.6,0.7,0.4
+slate,upside,1.4x,Julian Reese,4683742,WSH,F,3.1,3.0,31.6,9.2,9.4,1.8,1.0,0.4
+slate,upside,1.2x,Precious Achiuwa,4431679,SAC,PF,3.0,2.3,23.0,8.9,6.2,1.2,0.8,0.7
+CLE @ CHI,the_lineup,2.0x,James Harden,3992,CLE,G,5.1,0.0,36.9,24.0,5.0,7.9,1.2,0.4
+CLE @ CHI,the_lineup,1.8x,Evan Mobley,4432158,CLE,C,4.9,0.0,33.7,17.8,8.9,3.5,0.8,1.8
+CLE @ CHI,the_lineup,1.6x,Josh Giddey,4871145,CHI,G,4.5,0.0,29.4,17.1,8.2,8.3,1.1,0.4
+CLE @ CHI,the_lineup,1.4x,Matas Buzelis,4711294,CHI,F,3.8,0.0,23.4,15.4,5.4,2.0,0.7,1.4
+CLE @ CHI,the_lineup,1.0x,Max Strus,4065778,CLE,G,3.3,0.0,25.5,14.1,6.3,2.5,0.1,0.0
+PHX @ SA,the_lineup,2.0x,Victor Wembanyama,5104157,SA,F,5.9,0.0,29.7,24.0,11.1,3.0,1.0,3.1
+PHX @ SA,the_lineup,1.8x,Devin Booker,3136193,PHX,G,4.5,0.0,33.7,25.5,4.0,5.8,0.8,0.3
+PHX @ SA,the_lineup,1.6x,De'Aaron Fox,4066259,SA,G,4.4,0.0,31.7,19.4,3.8,6.3,1.2,0.3
+PHX @ SA,the_lineup,1.4x,Jalen Green,4437244,PHX,G,3.6,0.0,26.5,17.7,3.6,2.7,1.1,0.1
+PHX @ SA,the_lineup,1.2x,Devin Vassell,4395630,SA,G,3.5,0.0,30.3,14.3,3.9,2.5,0.8,0.4
+MIL @ UTAH,the_lineup,2.0x,Ryan Rollins,4591725,MIL,G,3.7,0.0,25.3,15.5,4.3,5.2,1.4,0.4
+MIL @ UTAH,the_lineup,1.8x,Myles Turner,3133628,MIL,C,3.5,0.0,28.8,12.5,5.7,1.5,0.7,1.6
+MIL @ UTAH,the_lineup,1.0x,Kyle Kuzma,3134907,MIL,F,3.1,0.0,28.4,13.7,4.9,2.6,0.7,0.4
+MIL @ UTAH,the_lineup,1.0x,Bobby Portis,3064482,MIL,F,3.1,0.0,25.2,13.4,6.5,1.5,0.6,0.2
+MIL @ UTAH,the_lineup,1.0x,Kyle Filipowski,4684793,UTAH,F,2.9,0.0,21.8,10.4,6.8,2.4,1.0,0.5
+PHI @ SAC,the_lineup,2.0x,Russell Westbrook,3468,SAC,G,4.5,0.0,31.8,16.3,5.8,6.9,1.4,0.2
+PHI @ SAC,the_lineup,1.8x,Paul George,4251,PHI,F,4.4,0.0,33.0,16.9,5.3,3.7,1.5,0.5
+PHI @ SAC,the_lineup,1.6x,VJ Edgecombe,5124612,PHI,G,4.3,0.0,36.8,15.3,5.5,3.9,1.4,0.6
+PHI @ SAC,the_lineup,1.4x,DeMar DeRozan,3978,SAC,G,4.2,0.0,34.3,19.1,3.3,4.0,1.1,0.3
+PHI @ SAC,the_lineup,1.0x,Quentin Grimes,4397014,PHI,G,3.1,0.0,28.5,13.0,3.6,3.2,0.9,0.4
+LAC @ NO,the_lineup,2.0x,Trey Murphy III,4397688,NO,F,4.5,0.0,26.6,20.6,5.4,3.6,1.5,0.3
+LAC @ NO,the_lineup,1.8x,Zion Williamson,4395628,NO,F,4.4,0.0,26.3,21.9,5.9,3.5,1.0,0.6
+LAC @ NO,the_lineup,1.6x,Saddiq Bey,4397136,NO,G,3.5,0.0,28.0,16.8,5.6,2.4,1.0,0.1
+LAC @ NO,the_lineup,1.0x,Derik Queen,4869780,NO,C,3.4,0.0,21.9,11.6,6.9,3.8,0.9,0.9
+LAC @ NO,the_lineup,1.0x,John Collins,3908845,LAC,F,3.2,0.0,25.1,14.1,5.7,1.1,0.8,0.8
+DET @ WSH,the_lineup,2.0x,Alex Sarr,5160992,WSH,C,4.7,0.0,29.5,16.4,7.4,2.6,0.8,1.9
+DET @ WSH,the_lineup,1.8x,Jalen Duren,4433621,DET,C,4.4,0.0,28.4,17.8,10.5,1.8,0.9,0.9
+DET @ WSH,the_lineup,1.6x,Ausar Thompson,4684742,DET,G,3.7,0.0,27.4,9.9,5.8,2.8,1.8,0.8
+DET @ WSH,the_lineup,1.0x,Tobias Harris,6440,DET,F,3.2,0.0,29.7,13.7,5.4,2.3,0.9,0.3
+DET @ WSH,the_lineup,1.0x,Julian Reese,4683742,WSH,F,3.1,0.0,31.6,9.2,9.4,1.8,1.0,0.4
+ORL @ CHA,the_lineup,2.0x,Paolo Banchero,4432573,ORL,F,4.8,0.0,36.6,22.4,8.4,4.9,0.6,0.6
+ORL @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,4.6,0.0,28.4,19.7,5.0,7.2,1.2,0.2
+ORL @ CHA,the_lineup,1.6x,Brandon Miller,4433287,CHA,F,4.4,0.0,31.2,20.0,4.9,3.3,1.1,0.8
+ORL @ CHA,the_lineup,1.4x,Desmond Bane,4066320,ORL,G,4.3,0.0,33.1,20.1,4.2,4.1,1.0,0.4
+ORL @ CHA,the_lineup,1.2x,Miles Bridges,4066383,CHA,F,4.0,0.0,32.2,17.2,6.0,3.2,0.6,0.5
+LAL @ MIA,the_lineup,2.0x,Luka Doncic,3945274,LAL,G,6.0,0.0,31.4,32.2,8.0,8.5,1.5,0.6
+LAL @ MIA,the_lineup,1.8x,Bam Adebayo,4066261,MIA,C,4.9,0.0,33.4,19.2,9.5,3.0,1.2,0.7
+LAL @ MIA,the_lineup,1.6x,LeBron James,1966,LAL,F,4.5,0.0,30.5,22.5,6.0,6.9,1.2,0.6
+LAL @ MIA,the_lineup,1.4x,Austin Reaves,4066457,LAL,G,4.4,0.0,27.6,22.0,4.5,5.4,1.0,0.4
+LAL @ MIA,the_lineup,1.2x,Tyler Herro,4395725,MIA,G,4.2,0.0,31.4,21.0,4.8,3.8,0.8,0.4
