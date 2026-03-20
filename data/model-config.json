@@ -206,12 +206,22 @@
   },
   "real_score": {
     "dfs_weights": {
-      "pts": 2.5,
-      "reb": 0.5,
-      "ast": 1.0,
-      "stl": 2.0,
-      "blk": 1.5,
-      "tov": -1.5
+      "pts": 1.5,
+      "reb": 0.95,
+      "ast": 0.3,
+      "stl": 8.0,
+      "blk": 0.35,
+      "tov": -1.0
+    },
+    "stat_stuffer": {
+      "enabled": true,
+      "pts_threshold": 15,
+      "reb_threshold": 7,
+      "ast_threshold": 5,
+      "stl_threshold": 1.5,
+      "blk_threshold": 1.0,
+      "bonus_3cat": 1.08,
+      "bonus_td": 1.15
     },
     "compression_divisor": 4.5,
     "compression_power": 0.78,

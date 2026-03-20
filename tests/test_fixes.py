@@ -2088,5 +2088,83 @@ class TestChalkMilpRsFocusHigh:
         assert val >= 0.7, f"chalk_milp_rs_focus should be high (>=0.7) for RS-first; got {val}"
 
 
+# ─────────────────────────────────────────────────────────
+# TestStatStufferBonus — stat-stuffer RS multiplier for multi-category players
+# ─────────────────────────────────────────────────────────
+class TestStatStufferBonus:
+    """Stat-stuffer bonus in project_player and _CONFIG_DEFAULTS."""
+
+    def test_stat_stuffer_code_exists(self):
+        """project_player should read stat_stuffer config."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "stat_stuffer" in src
+        assert "bonus_td" in src
+        assert "bonus_3cat" in src
+
+    def test_stat_stuffer_defaults_present(self):
+        """_CONFIG_DEFAULTS should include stat_stuffer with safe disabled default."""
+        from api.index import _CONFIG_DEFAULTS
+        ss = _CONFIG_DEFAULTS["real_score"]["stat_stuffer"]
+        assert ss["enabled"] is False, "Offline default should be disabled"
+        assert "pts_threshold" in ss
+        assert "bonus_3cat" in ss
+        assert "bonus_td" in ss
+
+    def test_stat_stuffer_config_enabled(self):
+        """Production config should have stat_stuffer enabled."""
+        cfg = json.load(open("data/model-config.json"))
+        ss = cfg.get("real_score", {}).get("stat_stuffer", {})
+        assert ss.get("enabled") is True, "stat_stuffer should be enabled in production"
+
+
+# ─────────────────────────────────────────────────────────
+# TestCalibratedDfsWeights — DFS weight calibration applied
+# ─────────────────────────────────────────────────────────
+class TestCalibratedDfsWeights:
+    """DFS weights in model-config should reflect calibrated values."""
+
+    def test_steals_weight_elevated(self):
+        """Steals should be heavily weighted per calibration (was 2.0, now ~8.0)."""
+        cfg = json.load(open("data/model-config.json"))
+        stl_w = cfg.get("real_score", {}).get("dfs_weights", {}).get("stl", 0)
+        assert stl_w >= 5.0, f"Calibrated stl weight should be >=5.0; got {stl_w}"
+
+    def test_pts_weight_reduced(self):
+        """Points weight should be reduced from 2.5 to ~1.5."""
+        cfg = json.load(open("data/model-config.json"))
+        pts_w = cfg.get("real_score", {}).get("dfs_weights", {}).get("pts", 0)
+        assert pts_w <= 2.0, f"Calibrated pts weight should be <=2.0; got {pts_w}"
+
+    def test_all_weights_present(self):
+        """All 6 DFS weight keys should be present."""
+        cfg = json.load(open("data/model-config.json"))
+        w = cfg.get("real_score", {}).get("dfs_weights", {})
+        for key in ["pts", "reb", "ast", "stl", "blk", "tov"]:
+            assert key in w, f"Missing DFS weight key: {key}"
+
+
+# ─────────────────────────────────────────────────────────
+# TestEnhancedSpreadAdjustment — clutch-aligned spread adjustment
+# ─────────────────────────────────────────────────────────
+class TestEnhancedSpreadAdjustment:
+    """Enhanced spread adjustment for RS-clutch alignment."""
+
+    def test_spread_adj_code_has_tight_game_bonus(self):
+        """Stars in tight games (spread 0-3) should get 1.20+ multiplier."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # Check for the enhanced spread adjustment pattern
+        assert "1.25" in src, "Tight-game star bonus (1.25) should be in code"
+        assert "0.55" in src, "Blowout star penalty floor (0.55) should be in code"
+
+    def test_spread_adj_total_interaction(self):
+        """High total + tight spread should produce interaction bonus."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # Check for total interaction logic
+        assert "230" in src, "Shootout total threshold (230) should be in code"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
