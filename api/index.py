@@ -1640,14 +1640,25 @@ _OWNERSHIP_BOOST_TS = 0
 
 def _load_ownership_boosts():
     """Build {normalized_name: boost} from all ownership + actuals CSVs.
-    Uses most recent observation per player. Cached 10 min."""
+
+    Uses most recent observation per player with trend extrapolation:
+    - For players with 3+ observations showing consistent decline (≥0.3 total drop),
+      extrapolates one step forward at 50% of the observed decay rate.
+    - Never inflates above the most-recent observed value.
+    - Extrapolation capped at 0.3 below most-recent to avoid over-correcting.
+
+    Cached 10 min.
+    """
     global _OWNERSHIP_BOOST_CACHE, _OWNERSHIP_BOOST_TS
     import time
     now = time.time()
     if _OWNERSHIP_BOOST_CACHE and (now - _OWNERSHIP_BOOST_TS) < 600:
         return _OWNERSHIP_BOOST_CACHE
 
-    boosts = {}  # {normalized_name: (date, boost_value, original_name)}
+    # Collect all observations per player: {nkey: {date_str: (boost_val, original_name)}}
+    # Using a dict keyed by date to automatically deduplicate (ownership + actuals may
+    # both have data for the same player on the same date — keep the latest file's value).
+    raw_obs = {}  # {normalized_name: {date_str: (boost_val, original_name)}}
     for subdir in ["ownership", "actuals"]:
         dirpath = os.path.join(os.path.dirname(__file__), "..", "data", subdir)
         if not os.path.isdir(dirpath):
@@ -1676,13 +1687,35 @@ def _load_ownership_boosts():
                         if bval <= 0:
                             continue
                         nkey = _normalize_boost_name(name)
-                        # Keep most recent date's value
-                        if nkey not in boosts or date_str > boosts[nkey][0]:
-                            boosts[nkey] = (date_str, bval, name)
+                        raw_obs.setdefault(nkey, {})[date_str] = (bval, name)
             except Exception:
                 continue
 
-    _OWNERSHIP_BOOST_CACHE = {k: v[1] for k, v in boosts.items()}
+    result = {}
+    for nkey, date_map in raw_obs.items():
+        # Build deduplicated, date-sorted observation list
+        obs_list = sorted(date_map.items())  # [(date_str, (bval, name)), ...]
+        latest_date, (latest_boost, _name) = obs_list[-1]
+
+        # Trend extrapolation: if 3+ observations with consistent decline ≥ 0.3 total,
+        # apply 50% of average per-step decay as a forward estimate.
+        if len(obs_list) >= 3:
+            boosts = [bval for _, (bval, _) in obs_list[-3:]]  # last 3
+            diffs = [boosts[i] - boosts[i+1] for i in range(len(boosts)-1)]
+            # Consistent decline: all diffs positive (each step lower) and total ≥ 0.3
+            if all(d > 0 for d in diffs) and sum(diffs) >= 0.3:
+                avg_decay = sum(diffs) / len(diffs)
+                # Apply 50% of avg decay as forward extrapolation
+                extrapolated = latest_boost - (avg_decay * 0.5)
+                # Never drop more than 0.3 below last observed, never inflate
+                extrapolated = max(extrapolated, latest_boost - 0.3)
+                extrapolated = min(extrapolated, latest_boost)
+                result[nkey] = round(extrapolated, 1)
+                continue
+
+        result[nkey] = latest_boost
+
+    _OWNERSHIP_BOOST_CACHE = result
     _OWNERSHIP_BOOST_TS = now
     return _OWNERSHIP_BOOST_CACHE
 
@@ -1690,13 +1723,16 @@ def _load_ownership_boosts():
 def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Four-layer approach (v25):
+    Four-layer approach (v51):
     0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
        When available, this is the definitive value — no estimation needed.
-    1. LOOKUP — player_overrides from config (manually curated historical data).
-    2. OWNERSHIP DATA — auto-populated from data/ownership/ + data/actuals/ CSVs.
-       Uses most recent observation per player. Refreshed every 10 min.
-    3. SIGMOID TIER FALLBACK — for unknown players, estimate from PPG.
+    1. OBSERVED DATA — auto-populated from data/actuals/ + data/ownership/ CSVs.
+       Most recent observation + trend extrapolation for consistently declining players.
+       Refreshed every 10 min. Takes precedence over manual config overrides because
+       real observations are always more accurate than static estimates.
+    2. CONFIG OVERRIDES — player_overrides from model-config.json.
+       Fallback for players not yet observed in actuals (pre-season or rarely played).
+    3. SIGMOID TIER FALLBACK — for completely unknown players, estimate from PPG.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -1711,18 +1747,19 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
         if norm_name in daily_boosts:
             return round(min(max(daily_boosts[norm_name], floor_val), ceiling), 1)
 
-    # Layer 1: Player lookup from config overrides (name-normalized)
+    # Layer 1: Observed from actuals/ownership CSVs (most recent + trend adjustment)
+    # Real observations beat static config estimates — avoids stale manual overrides.
+    if norm_name:
+        ownership_boosts = _load_ownership_boosts()
+        if norm_name in ownership_boosts:
+            return round(min(max(ownership_boosts[norm_name], floor_val), ceiling), 1)
+
+    # Layer 2: Config overrides (fallback for players not yet observed in actuals)
     overrides = cb.get("player_overrides", {})
     if norm_name:
         for k, v in overrides.items():
             if _normalize_boost_name(k) == norm_name:
                 return float(v)
-
-    # Layer 2: Auto-populated from ownership/actuals data
-    if norm_name:
-        ownership_boosts = _load_ownership_boosts()
-        if norm_name in ownership_boosts:
-            return round(min(max(ownership_boosts[norm_name], floor_val), ceiling), 1)
 
     # Layer 3: Sigmoid tier estimation from PPG
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)

@@ -1,6 +1,6 @@
 {
-  "version": 50,
-  "updated_at": "2026-03-20T18:00:00Z",
+  "version": 51,
+  "updated_at": "2026-03-20T20:00:00Z",
   "updated_by": "audit",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -271,6 +271,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 51,
+      "date": "2026-03-20",
+      "change": "Dynamic boost prediction framework (v51). Replaces priority of hardcoded player_overrides with data-driven actuals lookup. (1) Layer ordering fix: actuals/ownership CSV data (Layer 1) now takes precedence over config player_overrides (Layer 2). Real observations are always more accurate than manually maintained estimates — e.g. Christian Braun was config=3.0 but actual=1.8 (1.2x error). (2) Trend extrapolation: players with 3+ observations showing a consistent monotonic decline of ≥0.3 total now get a forward extrapolation of 50% of avg per-step decay, capped at 0.3 below most-recent value. Jalen Green (2.1→1.8→1.6) extrapolates to 1.5. (3) Deduplication: when both ownership/ and actuals/ have data for the same player+date, keep one entry per date (was double-counting, breaking trend detection). (4) Config player_overrides remain as Layer 2 fallback for players not yet observed in actuals (pre-season or rarely on top leaderboard). Sigmoid remains Layer 3 universal fallback."
+    },
     {
       "version": 50,
       "date": "2026-03-20",
