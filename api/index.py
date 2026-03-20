@@ -589,6 +589,16 @@ _CONFIG_DEFAULTS = {
             "max_nudge": 0.12,
             "cascade_weight": 0.06,
         },
+        "stat_stuffer": {
+            "enabled": False,
+            "pts_threshold": 15,
+            "reb_threshold": 7,
+            "ast_threshold": 5,
+            "stl_threshold": 1.5,
+            "blk_threshold": 1.0,
+            "bonus_3cat": 1.08,
+            "bonus_td": 1.15,
+        },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -625,6 +635,8 @@ _CONFIG_DEFAULTS = {
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
+        # RS-bypass: high-RS proven scorers bypass the boost floor (disabled offline for safety)
+        "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
     },
     "matchup": {
         "enabled": True,
@@ -2138,8 +2150,21 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
 
-    # (clutch potential multiplier removed — was stacking 5-40% on ALL players
-    # regardless of quality, compounding RS inflation for bench players)
+    # Stat-stuffer bonus: RS rewards breadth (pts+reb+ast+stl+blk all contribute
+    # micro-ratings). Players projected in 3+ categories get an RS uplift because
+    # their floor is higher and they generate more clutch-context plays.
+    ss_cfg = _cfg("real_score.stat_stuffer", {})
+    if ss_cfg.get("enabled", False):
+        cats = 0
+        if pts >= float(ss_cfg.get("pts_threshold", 15)): cats += 1
+        if reb >= float(ss_cfg.get("reb_threshold", 7)): cats += 1
+        if ast >= float(ss_cfg.get("ast_threshold", 5)): cats += 1
+        if stl >= float(ss_cfg.get("stl_threshold", 1.5)): cats += 1
+        if blk >= float(ss_cfg.get("blk_threshold", 1.0)): cats += 1
+        if cats >= 4:
+            heuristic *= float(ss_cfg.get("bonus_td", 1.15))
+        elif cats >= 3:
+            heuristic *= float(ss_cfg.get("bonus_3cat", 1.08))
 
     # Scale heuristic by minute boost from cascade (capped at 1.25x)
     if cascade_bonus > 0 and avg_min > 0:
@@ -2193,36 +2218,35 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # ai_pred is already in RS units; only the heuristic path needs these.
     pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
 
-    # Spread adjustment — role-aware.
-    # March 3 lesson: PHI got blown out 131-91 yet 3 of the top 8 highest-value
-    # players were PHI bench guys (Raynaud +4.2, Yabusele +3.4, McCain +3.0).
-    # Blowouts HURT stars (pulled early) but HELP bench (garbage-time minutes).
-    #
-    # Strategy: bench/role players (low PPG, low minutes) get a BOOST in
-    # blowouts because they inherit extended garbage-time run. Stars still
-    # get penalized because they sit Q4 in blowouts.
+    # Spread adjustment — RS-clutch-aligned (v8).
+    # RS algorithm heavily weights game closeness: tight games → every play matters →
+    # higher micro-ratings. Blowouts → garbage time → devalued stats + stars sit Q4.
+    # Tight spread + high total = back-and-forth shootout = RS goldmine.
     abs_spread = abs(spread or 0)
-    # Bench threshold: role players get blowout bonus; stars get blowout penalty.
-    # Original cutoffs (12pts, 26min) missed dev-team rotation players like
-    # P.J. Washington (11pts, 28min) and Naji Marshall (~14pts, 28min) who
-    # play extended minutes on rebuilding teams but have star-level minute counts.
     bench_pts = float(_cfg("projection.bench_pts_threshold", 14.0))
     bench_min = float(_cfg("projection.bench_min_threshold", 30.0))
     is_bench = pts <= bench_pts and avg_min <= bench_min
     if is_bench:
-        # Bench players: continuous rise as blowout probability increases.
-        # Neutral in close-to-moderate games; bonus grows past spread 4.
+        # Bench players: neutral in close games, bonus in blowouts (garbage-time minutes)
         if abs_spread <= 4:
             spread_adj = 1.0
         else:
             spread_adj = min(1.15, 1.0 + (abs_spread - 4) * 0.02)
     else:
-        # Stars/starters: continuous decay from pick'em peak; steep drop past spread 6.
-        # Eliminates the 7% discontinuity cliff between spread 2.0 and 2.1.
-        if abs_spread <= 6:
-            spread_adj = 1.15 - (abs_spread * 0.025)   # 1.15 at 0 → 1.0 at 6
+        # Stars/starters: strong clutch bonus in tight games, steep blowout penalty.
+        # RS data: Luka 9.1 in tight game, but stars in blowouts produce low RS
+        # because clutch context multiplier → 0 in garbage time.
+        if abs_spread <= 3:
+            spread_adj = 1.25 - (abs_spread * 0.03)   # 1.25 at 0 → 1.16 at 3
+        elif abs_spread <= 7:
+            spread_adj = 1.16 - ((abs_spread - 3) * 0.04)  # 1.16 at 3 → 1.0 at 7
         else:
-            spread_adj = max(0.70, 1.0 - (abs_spread - 6) * 0.07)  # steep decay past 6
+            spread_adj = max(0.55, 1.0 - (abs_spread - 7) * 0.09)  # steep: 1.0 at 7 → 0.55 at 12
+
+    # Total interaction: high total + tight spread = shootout bonus
+    _total = total or DEFAULT_TOTAL
+    if not is_bench and _total >= 230 and abs_spread <= 5:
+        spread_adj *= 1.0 + min(0.10, (_total - 230) * 0.005)  # up to +10% bonus
     home_adj   = 1.02 if side == "home" else 1.0
 
     s_base = heuristic * pace_adj * spread_adj * home_adj
@@ -3414,9 +3438,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if pred_min < (season_min - moon_min_tol):
             continue
 
-        # Hard boost floor — ALL players must meet this, no exceptions.
+        # Hard boost floor — with RS-bypass for high-RS proven scorers.
         if est_mult < min_boost:
-            continue
+            rs_bypass = moon_cfg.get("rs_bypass", {})
+            if (rs_bypass.get("enabled", False)
+                    and p.get("rating", 0) >= float(rs_bypass.get("min_rating", 5.0))
+                    and season_min >= float(rs_bypass.get("min_season_min", 25.0))
+                    and est_mult >= float(rs_bypass.get("min_boost", 0.3))):
+                pass  # high-RS bypass
+            else:
+                continue
 
         # RotoWire: only exclude confirmed OUT players.
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
@@ -3515,7 +3546,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
         for r in eligible_union:
             ce, me = r.get("chalk_ev_capped", 0), r.get("moonshot_ev", 0)
-            r["_core_score"] = max(ce, me) if core_metric == "max_ev" else (blend_w * ce + (1 - blend_w) * me)
+            if core_metric == "rs":
+                r["_core_score"] = r.get("rating", 0)
+            elif core_metric == "max_ev":
+                r["_core_score"] = max(ce, me)
+            else:
+                r["_core_score"] = blend_w * ce + (1 - blend_w) * me
         eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
         core_pool = eligible_union[:core_size]
 

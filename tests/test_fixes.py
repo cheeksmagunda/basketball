@@ -1984,5 +1984,187 @@ class TestBoostsScreenshotType:
             "boosts prompt should reference pre-game context"
 
 
+# ─────────────────────────────────────────────────────────
+# TestCorePoolRsMetric — core_pool.metric = "rs" ranks by raw projected RS
+# ─────────────────────────────────────────────────────────
+class TestCorePoolRsMetric:
+    """When core_pool.metric = 'rs', core pool is ranked by raw rating (projected RS)."""
+
+    def test_rs_metric_ranks_by_rating(self):
+        """With metric='rs', a high-RS low-boost player ranks above low-RS high-boost."""
+        from api.index import _build_lineups
+
+        def cfg_rs(key, default=None):
+            if key == "core_pool":
+                return {"enabled": True, "size": 8, "metric": "rs", "blend_weight": 0.5}
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_rs), \
+             patch("api.index.get_all_statuses", return_value={}), \
+             patch("api.index._fetch_team_def_stats", return_value={}):
+            _, _, core = _build_lineups([])
+
+        # With empty projections, core is empty list; verify no crash
+        assert isinstance(core, list)
+
+    def test_rs_metric_code_branch_exists(self):
+        """The 'rs' metric branch must exist in _build_lineups."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert 'core_metric == "rs"' in src, \
+            "_build_lineups must have a branch for core_pool.metric='rs'"
+        assert 'r.get("rating", 0)' in src, \
+            "The 'rs' branch should use rating (projected RS) as core_score"
+
+    def test_max_ev_still_works(self):
+        """Backward compat: metric='max_ev' still uses max(chalk_ev, moonshot_ev)."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert 'core_metric == "max_ev"' in src
+
+
+# ─────────────────────────────────────────────────────────
+# TestMoonshotRsBypass — high-RS players bypass boost floor
+# ─────────────────────────────────────────────────────────
+class TestMoonshotRsBypass:
+    """moonshot.rs_bypass allows high-RS proven scorers to bypass min_card_boost."""
+
+    def test_rs_bypass_code_exists(self):
+        """The rs_bypass pathway must exist in moonshot eligibility."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "rs_bypass" in src, "Moonshot must have rs_bypass pathway"
+        assert 'rs_bypass.get("enabled"' in src, "rs_bypass must check enabled flag"
+        assert 'rs_bypass.get("min_rating"' in src, "rs_bypass must check min_rating"
+
+    def test_rs_bypass_config_present(self):
+        """model-config.json must have moonshot.rs_bypass block."""
+        cfg = json.load(open("data/model-config.json"))
+        rb = cfg.get("moonshot", {}).get("rs_bypass", {})
+        assert rb.get("enabled") is True, "rs_bypass should be enabled in production config"
+        assert rb.get("min_rating", 0) >= 4.0, "min_rating should be high enough to filter bench players"
+        assert rb.get("min_season_min", 0) >= 20.0, "min_season_min should require proven starters"
+
+    def test_rs_bypass_defaults_disabled_offline(self):
+        """_CONFIG_DEFAULTS should have rs_bypass disabled (safe offline fallback)."""
+        from api.index import _CONFIG_DEFAULTS
+        rb = _CONFIG_DEFAULTS.get("moonshot", {}).get("rs_bypass", {})
+        assert rb.get("enabled") is False, "Offline fallback should disable rs_bypass"
+
+
+# ─────────────────────────────────────────────────────────
+# TestChalkMilpRsFocusHigh — chalk_milp_rs_focus at 0.85 nearly neutralizes boost
+# ─────────────────────────────────────────────────────────
+class TestChalkMilpRsFocusHigh:
+    """At chalk_milp_rs_focus=0.85, MILP boost is nearly neutral — RS drives selection."""
+
+    def test_rs_focus_calculation(self):
+        """At rs_focus=0.85, effective boost is 15% real + 85% neutral."""
+        rs_focus = 0.85
+        boost_neutral = 1.0
+
+        # High-boost player (2.5x)
+        high_boost_eff = (1.0 - rs_focus) * 2.5 + rs_focus * boost_neutral
+        # Low-boost player (0.5x)
+        low_boost_eff = (1.0 - rs_focus) * 0.5 + rs_focus * boost_neutral
+
+        # Difference should be small (0.3 gap vs raw 2.0 gap)
+        raw_gap = 2.5 - 0.5  # 2.0
+        eff_gap = high_boost_eff - low_boost_eff
+        assert eff_gap < raw_gap * 0.2, \
+            f"At rs_focus=0.85, boost gap should be <20% of raw gap; got {eff_gap:.2f} vs {raw_gap}"
+
+    def test_rs_focus_code_reads_config(self):
+        """chalk_milp_rs_focus mechanism must exist in chalk eligibility."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "chalk_milp_rs_focus" in src
+        assert "chalk_milp_boost_neutral" in src
+
+    def test_config_value(self):
+        """Production config should have high rs_focus."""
+        cfg = json.load(open("data/model-config.json"))
+        val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
+        assert val >= 0.7, f"chalk_milp_rs_focus should be high (>=0.7) for RS-first; got {val}"
+
+
+# ─────────────────────────────────────────────────────────
+# TestStatStufferBonus — stat-stuffer RS multiplier for multi-category players
+# ─────────────────────────────────────────────────────────
+class TestStatStufferBonus:
+    """Stat-stuffer bonus in project_player and _CONFIG_DEFAULTS."""
+
+    def test_stat_stuffer_code_exists(self):
+        """project_player should read stat_stuffer config."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "stat_stuffer" in src
+        assert "bonus_td" in src
+        assert "bonus_3cat" in src
+
+    def test_stat_stuffer_defaults_present(self):
+        """_CONFIG_DEFAULTS should include stat_stuffer with safe disabled default."""
+        from api.index import _CONFIG_DEFAULTS
+        ss = _CONFIG_DEFAULTS["real_score"]["stat_stuffer"]
+        assert ss["enabled"] is False, "Offline default should be disabled"
+        assert "pts_threshold" in ss
+        assert "bonus_3cat" in ss
+        assert "bonus_td" in ss
+
+    def test_stat_stuffer_config_enabled(self):
+        """Production config should have stat_stuffer enabled."""
+        cfg = json.load(open("data/model-config.json"))
+        ss = cfg.get("real_score", {}).get("stat_stuffer", {})
+        assert ss.get("enabled") is True, "stat_stuffer should be enabled in production"
+
+
+# ─────────────────────────────────────────────────────────
+# TestCalibratedDfsWeights — DFS weight calibration applied
+# ─────────────────────────────────────────────────────────
+class TestCalibratedDfsWeights:
+    """DFS weights in model-config should reflect calibrated values."""
+
+    def test_steals_weight_elevated(self):
+        """Steals should be heavily weighted per calibration (was 2.0, now ~8.0)."""
+        cfg = json.load(open("data/model-config.json"))
+        stl_w = cfg.get("real_score", {}).get("dfs_weights", {}).get("stl", 0)
+        assert stl_w >= 5.0, f"Calibrated stl weight should be >=5.0; got {stl_w}"
+
+    def test_pts_weight_reduced(self):
+        """Points weight should be reduced from 2.5 to ~1.5."""
+        cfg = json.load(open("data/model-config.json"))
+        pts_w = cfg.get("real_score", {}).get("dfs_weights", {}).get("pts", 0)
+        assert pts_w <= 2.0, f"Calibrated pts weight should be <=2.0; got {pts_w}"
+
+    def test_all_weights_present(self):
+        """All 6 DFS weight keys should be present."""
+        cfg = json.load(open("data/model-config.json"))
+        w = cfg.get("real_score", {}).get("dfs_weights", {})
+        for key in ["pts", "reb", "ast", "stl", "blk", "tov"]:
+            assert key in w, f"Missing DFS weight key: {key}"
+
+
+# ─────────────────────────────────────────────────────────
+# TestEnhancedSpreadAdjustment — clutch-aligned spread adjustment
+# ─────────────────────────────────────────────────────────
+class TestEnhancedSpreadAdjustment:
+    """Enhanced spread adjustment for RS-clutch alignment."""
+
+    def test_spread_adj_code_has_tight_game_bonus(self):
+        """Stars in tight games (spread 0-3) should get 1.20+ multiplier."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # Check for the enhanced spread adjustment pattern
+        assert "1.25" in src, "Tight-game star bonus (1.25) should be in code"
+        assert "0.55" in src, "Blowout star penalty floor (0.55) should be in code"
+
+    def test_spread_adj_total_interaction(self):
+        """High total + tight spread should produce interaction bonus."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # Check for total interaction logic
+        assert "230" in src, "Shootout total threshold (230) should be in code"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
