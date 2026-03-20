@@ -1,6 +1,6 @@
 {
-  "version": 51,
-  "updated_at": "2026-03-20T20:00:00Z",
+  "version": 52,
+  "updated_at": "2026-03-20T22:00:00Z",
   "updated_by": "audit",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -16,56 +16,151 @@
   "card_boost": {
     "ceiling": 3.0,
     "floor": 0.2,
-    "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","LAC","CHI"],
+    "big_market_teams": [
+      "LAL",
+      "GS",
+      "GSW",
+      "BOS",
+      "NY",
+      "NYK",
+      "PHI",
+      "MIA",
+      "LAC",
+      "CHI"
+    ],
     "sig_ceiling": 3.0,
     "sig_range": 2.8,
     "sig_midpoint": 12.0,
     "sig_scale": 4.0,
     "big_market_discount": 0.15,
     "player_overrides": {
-      "Aaron Nesmith": 1.9, "Ace Bailey": 2.0, "Al Horford": 2.0,
-      "Alex Caruso": 3.0, "Amen Thompson": 0.6, "Andersson Garcia": 2.5, "Andre Drummond": 2.3,
-      "Anthony Edwards": 0.3, "Ausar Thompson": 2.0, "Austin Reaves": 0.5,
-      "Bam Adebayo": 0.6, "Bilal Coulibaly": 1.9, "Bobby Portis": 1.6,
-      "Brandon Ingram": 0.7, "Brandin Podziemski": 1.3, "Brice Sensabaugh": 2.1,
-      "Brook Lopez": 3.0, "Bryce McGowens": 3.0, "Bub Carrington": 2.4,
-      "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Caris LeVert": 3.0, "Christian Braun": 3.0, "Clint Capela": 3.0, "Coby White": 1.3, "Daeqwon Plowden": 3.0,
-      "Cody Williams": 3.0, "Collin Gillespie": 1.2, "Collin Sexton": 2.0,
+      "Aaron Nesmith": 1.9,
+      "Ace Bailey": 2.0,
+      "Al Horford": 2.0,
+      "Alex Caruso": 3.0,
+      "Amen Thompson": 0.6,
+      "Andersson Garcia": 2.5,
+      "Andre Drummond": 2.3,
+      "Anthony Edwards": 0.3,
+      "Ausar Thompson": 2.0,
+      "Austin Reaves": 0.5,
+      "Bam Adebayo": 0.6,
+      "Bilal Coulibaly": 1.9,
+      "Bobby Portis": 1.6,
+      "Brandon Ingram": 0.7,
+      "Brandin Podziemski": 1.3,
+      "Brice Sensabaugh": 2.1,
+      "Brook Lopez": 3.0,
+      "Bryce McGowens": 3.0,
+      "Bub Carrington": 2.4,
+      "Cade Cunningham": 0.2,
+      "Cameron Payne": 3.0,
+      "Caris LeVert": 3.0,
+      "Christian Braun": 3.0,
+      "Clint Capela": 3.0,
+      "Coby White": 1.3,
+      "Daeqwon Plowden": 3.0,
+      "Cody Williams": 3.0,
+      "Collin Gillespie": 1.2,
+      "Collin Sexton": 2.0,
       "Cooper Flagg": 0.7,
-      "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.7, "DeMar DeRozan": 0.9,
-      "Daniel Gafford": 2.2, "Dejounte Murray": 1.1,
-      "Deni Avdija": 0.4, "Derik Queen": 1.4, "Derrick White": 0.7,
-      "Desmond Bane": 0.7, "Devin Booker": 0.5, "Devin Carter": 3.0,
-      "Donovan Clingan": 0.9, "Donovan Mitchell": 0.2, "Draymond Green": 2.0,
+      "De'Aaron Fox": 0.6,
+      "De'Anthony Melton": 1.7,
+      "DeMar DeRozan": 0.9,
+      "Daniel Gafford": 2.2,
+      "Dejounte Murray": 1.1,
+      "Deni Avdija": 0.4,
+      "Derik Queen": 1.4,
+      "Derrick White": 0.7,
+      "Desmond Bane": 0.7,
+      "Devin Booker": 0.5,
+      "Devin Carter": 3.0,
+      "Donovan Clingan": 0.9,
+      "Donovan Mitchell": 0.2,
+      "Draymond Green": 2.0,
       "Elijah Harkless": 3.0,
-      "Gary Payton II": 3.0, "Grant Williams": 2.8, "Gui Santos": 2.6,
+      "Gary Payton II": 3.0,
+      "Grant Williams": 2.8,
+      "Gui Santos": 2.6,
       "Isaiah Collier": 1.4,
-      "Jakob Poeltl": 1.6, "Jalen Brunson": 0.4, "Jalen Duren": 0.7,
-      "Jalen Johnson": 0.3, "Jalen Slawson": 2.8, "James Harden": 0.3, "Jamir Watkins": 3.0, "Jarace Walker": 2.3, "Jared McCain": 2.9,
-      "Javon Small": 2.0, "Jaylen Brown": 0.3, "Jordan Miller": 2.5,
-      "Josh Minott": 3.0, "Jrue Holiday": 0.9, "Julian Reese": 3.0,
+      "Jakob Poeltl": 1.6,
+      "Jalen Brunson": 0.4,
+      "Jalen Duren": 0.7,
+      "Jalen Johnson": 0.3,
+      "Jalen Slawson": 2.8,
+      "James Harden": 0.3,
+      "Jamir Watkins": 3.0,
+      "Jarace Walker": 2.3,
+      "Jared McCain": 2.9,
+      "Javon Small": 2.0,
+      "Jaylen Brown": 0.3,
+      "Jordan Miller": 2.5,
+      "Josh Minott": 3.0,
+      "Jrue Holiday": 0.9,
+      "Julian Reese": 3.0,
       "Julius Randle": 0.6,
-      "Justin Edwards": 3.0, "Kam Jones": 3.0, "Kasparas Jakucionis": 3.0, "Karl-Anthony Towns": 0.6, "Karlo Matković": 3.0,
-      "Kawhi Leonard": 0.2, "Kel'el Ware": 1.4, "Kevin Durant": 0.5, "Killian Hayes": 3.0, "Kyle Anderson": 2.5,
-      "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kristaps Porzingis": 1.0,
-      "Kyle Filipowski": 2.0, "Kyle Kuzma": 1.7,
-      "LaMelo Ball": 0.6, "Leonard Miller": 3.0, "Luka Dončić": 0.0,
-      "Marcus Sasser": 3.0, "Matas Buzelis": 1.3, "Maxime Raynaud": 2.1,
-      "Mitchell Robinson": 2.1, "Myles Turner": 1.6,
-      "Naji Marshall": 1.4, "Neemias Queta": 1.5, "Nickeil Alexander-Walker": 0.9, "Noah Clowney": 2.0,
-      "OG Anunoby": 1.1, "Olivier-Maxence Prosper": 3.0, "Oso Ighodaro": 2.9,
+      "Justin Edwards": 3.0,
+      "Kam Jones": 3.0,
+      "Kasparas Jakucionis": 3.0,
+      "Karl-Anthony Towns": 0.6,
+      "Karlo Matkovi\u0107": 3.0,
+      "Kawhi Leonard": 0.2,
+      "Kel'el Ware": 1.4,
+      "Kevin Durant": 0.5,
+      "Killian Hayes": 3.0,
+      "Kyle Anderson": 2.5,
+      "Klay Thompson": 2.6,
+      "Kon Knueppel": 0.8,
+      "Kristaps Porzingis": 1.0,
+      "Kyle Filipowski": 2.0,
+      "Kyle Kuzma": 1.7,
+      "LaMelo Ball": 0.6,
+      "Leonard Miller": 3.0,
+      "Luka Don\u010di\u0107": 0.0,
+      "Marcus Sasser": 3.0,
+      "Matas Buzelis": 1.3,
+      "Maxime Raynaud": 2.1,
+      "Mitchell Robinson": 2.1,
+      "Myles Turner": 1.6,
+      "Naji Marshall": 1.4,
+      "Neemias Queta": 1.5,
+      "Nickeil Alexander-Walker": 0.9,
+      "Noah Clowney": 2.0,
+      "OG Anunoby": 1.1,
+      "Olivier-Maxence Prosper": 3.0,
+      "Oso Ighodaro": 2.9,
       "Ousmane Dieng": 3.0,
-      "P.J. Washington": 1.5, "Paolo Banchero": 0.6, "Pat Spencer": 3.0,
-      "Paul Reed": 2.8, "Pelle Larsson": 2.0, "Precious Achiuwa": 2.3,
-      "Quentin Grimes": 1.6, "Quinten Post": 3.0,
-      "Reed Sheppard": 1.5, "Robert Williams III": 2.3, "Ron Harper Jr.": 3.0, "Ryan Kalkbrenner": 2.3,
-      "Royce O'Neale": 2.0, "Rudy Gobert": 1.1, "Russell Westbrook": 1.1,
-      "Scottie Barnes": 0.5, "Shai Gilgeous-Alexander": 0.0,
-      "Simone Fontecchio": 3.0, "Spencer Jones": 3.0, "Stephon Castle": 0.8,
-      "Tari Eason": 1.9, "Taylor Hendricks": 3.0, "Trey Murphy III": 0.6,
-      "Tristan Vukcevic": 3.0, "Tristan da Silva": 2.7, "Tyler Herro": 0.8,
-      "VJ Edgecombe": 1.0, "Victor Wembanyama": 0.2, "Will Riley": 3.0,
-      "Yves Missi": 3.0, "Zaccharie Risacher": 2.4
+      "P.J. Washington": 1.5,
+      "Paolo Banchero": 0.6,
+      "Pat Spencer": 3.0,
+      "Paul Reed": 2.8,
+      "Pelle Larsson": 2.0,
+      "Precious Achiuwa": 2.3,
+      "Quentin Grimes": 1.6,
+      "Quinten Post": 3.0,
+      "Reed Sheppard": 1.5,
+      "Robert Williams III": 2.3,
+      "Ron Harper Jr.": 3.0,
+      "Ryan Kalkbrenner": 2.3,
+      "Royce O'Neale": 2.0,
+      "Rudy Gobert": 1.1,
+      "Russell Westbrook": 1.1,
+      "Scottie Barnes": 0.5,
+      "Shai Gilgeous-Alexander": 0.0,
+      "Simone Fontecchio": 3.0,
+      "Spencer Jones": 3.0,
+      "Stephon Castle": 0.8,
+      "Tari Eason": 1.9,
+      "Taylor Hendricks": 3.0,
+      "Trey Murphy III": 0.6,
+      "Tristan Vukcevic": 3.0,
+      "Tristan da Silva": 2.7,
+      "Tyler Herro": 0.8,
+      "VJ Edgecombe": 1.0,
+      "Victor Wembanyama": 0.2,
+      "Will Riley": 3.0,
+      "Yves Missi": 3.0,
+      "Zaccharie Risacher": 2.4
     }
   },
   "game_script": {
@@ -121,7 +216,7 @@
     "compression_divisor": 4.5,
     "compression_power": 0.78,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.25,
+    "ai_blend_weight": 0.4,
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -160,7 +255,7 @@
     "major_role_change_threshold": 0.75,
     "major_role_change_recent_weight": 0.8,
     "moderate_decline_threshold": 0.9,
-    "moderate_decline_recent_weight": 0.80,
+    "moderate_decline_recent_weight": 0.8,
     "gtd_minute_penalty": 0.75,
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
@@ -174,7 +269,7 @@
     "big_man_calibration": {
       "reb_baseline": 6.0,
       "reb_scale": 0.04,
-      "blk_scale": 0.10,
+      "blk_scale": 0.1,
       "pts_cap": 20.0
     },
     "bench_pts_threshold": 14.0,
@@ -188,8 +283,8 @@
     "min_season_min": 25.0,
     "min_boost": 0.8,
     "min_rating": 4.0,
-    "require_count": 1,
-    "max_count": 1
+    "require_count": 2,
+    "max_count": 2
   },
   "context_layer": {
     "enabled": true,
@@ -227,7 +322,9 @@
       1.6,
       1.4,
       1.2
-    ]
+    ],
+    "chalk_milp_rs_focus": 0.45,
+    "chalk_milp_boost_neutral": 1.0
   },
   "line": {
     "min_confidence": 50,
@@ -238,7 +335,11 @@
     "min_edge_other": 1.5,
     "min_edge_other_over": 2.5,
     "min_season_minutes": 20.0,
-    "stat_floors": { "points": 6.0, "rebounds": 5.5, "assists": 1.5 }
+    "stat_floors": {
+      "points": 6.0,
+      "rebounds": 5.5,
+      "assists": 1.5
+    }
   },
   "moonshot": {
     "min_minutes_floor": 20,
@@ -268,11 +369,11 @@
     "claude_enabled": false,
     "def_scale": 0.35,
     "pos_scale_g": 1.05,
-    "pos_scale_f": 1.00,
-    "pos_scale_c": 0.90,
+    "pos_scale_f": 1.0,
+    "pos_scale_c": 0.9,
     "chalk_adj_min": 0.92,
-    "chalk_adj_max": 1.10,
-    "moonshot_adj_min": 0.90,
+    "chalk_adj_max": 1.1,
+    "moonshot_adj_min": 0.9,
     "moonshot_adj_max": 1.15,
     "claude_timeout_seconds": 25
   },
@@ -283,11 +384,11 @@
     "playin_gap_games": 2.0,
     "elimination_buffer_games": 3.0,
     "tier_a_mult_chalk": 1.08,
-    "tier_b_mult_chalk": 1.00,
-    "tier_c_mult_chalk": 0.90,
-    "tier_a_mult_moonshot": 1.00,
-    "tier_b_mult_moonshot": 1.00,
-    "tier_c_mult_moonshot": 1.00,
+    "tier_b_mult_chalk": 1.0,
+    "tier_c_mult_chalk": 0.9,
+    "tier_a_mult_moonshot": 1.0,
+    "tier_b_mult_moonshot": 1.0,
+    "tier_c_mult_moonshot": 1.0,
     "min_mult": 0.88,
     "max_mult": 1.12,
     "team_overrides": {}
@@ -297,79 +398,84 @@
   },
   "changelog": [
     {
+      "version": 52,
+      "date": "2026-03-20",
+      "change": "RS-first Starting 5 MILP (v52). (1) chalk_milp_boost: MILP uses blend (1-rs_focus)*capped_boost + rs_focus*neutral (lineup.chalk_milp_rs_focus=0.45, chalk_milp_boost_neutral=1.0) so projected RS/top scorers drive the 5; chalk_ev_capped display unchanged (real capped boost). (2) star_anchor require_count/max_count 1\u21922 \u2014 when \u22652 star anchors in pool, MILP takes at most 2 and requires 2; wired max_count into asset_optimizer. (3) real_score.ai_blend_weight 0.25\u21920.4 \u2014 more LightGBM weight on RS ordering. _CONFIG_DEFAULTS keeps chalk_milp_rs_focus 0.0 for GitHub-offline legacy MILP until config loads."
+    },
+    {
       "version": 51,
       "date": "2026-03-20",
-      "change": "Dynamic boost prediction framework (v51). Replaces priority of hardcoded player_overrides with data-driven actuals lookup. (1) Layer ordering fix: actuals/ownership CSV data (Layer 1) now takes precedence over config player_overrides (Layer 2). Real observations are always more accurate than manually maintained estimates — e.g. Christian Braun was config=3.0 but actual=1.8 (1.2x error). (2) Trend extrapolation: players with 3+ observations showing a consistent monotonic decline of ≥0.3 total now get a forward extrapolation of 50% of avg per-step decay, capped at 0.3 below most-recent value. Jalen Green (2.1→1.8→1.6) extrapolates to 1.5. (3) Deduplication: when both ownership/ and actuals/ have data for the same player+date, keep one entry per date (was double-counting, breaking trend detection). (4) Config player_overrides remain as Layer 2 fallback for players not yet observed in actuals (pre-season or rarely on top leaderboard). Sigmoid remains Layer 3 universal fallback."
+      "change": "Dynamic boost prediction framework (v51). Replaces priority of hardcoded player_overrides with data-driven actuals lookup. (1) Layer ordering fix: actuals/ownership CSV data (Layer 1) now takes precedence over config player_overrides (Layer 2). Real observations are always more accurate than manually maintained estimates \u2014 e.g. Christian Braun was config=3.0 but actual=1.8 (1.2x error). (2) Trend extrapolation: players with 3+ observations showing a consistent monotonic decline of \u22650.3 total now get a forward extrapolation of 50% of avg per-step decay, capped at 0.3 below most-recent value. Jalen Green (2.1\u21921.8\u21921.6) extrapolates to 1.5. (3) Deduplication: when both ownership/ and actuals/ have data for the same player+date, keep one entry per date (was double-counting, breaking trend detection). (4) Config player_overrides remain as Layer 2 fallback for players not yet observed in actuals (pre-season or rarely on top leaderboard). Sigmoid remains Layer 3 universal fallback."
     },
     {
       "version": 50,
       "date": "2026-03-20",
-      "change": "Scoring-dominant DFS weights + star anchor constraint. (1) DFS weights calibrated to actual RS drivers: pts 1.5→2.5 (scoring IS Real Score), reb 1.0→0.5 (rebounds alone don't win), ast 1.5→1.0, stl 4.5→2.0 (was 3x a point — insane), blk 4.0→1.5 (was 2.7x a point), tov -1.2→-1.5. Previously: 1 block = 2.7 pts scored in DFS value, making every big man project RS 4-5 while actual scorers projected 3-4. Now: a 20-PPG scorer projects RS 7-8, a 5-PPG big projects RS 2-3. This is the single biggest model fix. (2) Star anchor constraint: at least 1 player per lineup must be a genuine scorer (season_pts >= 20, season_min >= 25, boost >= 0.8, rating >= 4.0). These players bypass the chalk_min_boost_floor of 1.0 if they meet star criteria. MILP min_star_count=1 ensures exactly 1 star per lineup. This captures the Josh Hart (+1.1x RS 7.6), Jalen Green (+1.6x RS 5.6), OG Anunoby (+1.1x RS 7.1) wins we were missing. (3) Update _CONFIG_DEFAULTS to match new weights (prevents silent behavior change on GitHub outage)."
+      "change": "Scoring-dominant DFS weights + star anchor constraint. (1) DFS weights calibrated to actual RS drivers: pts 1.5\u21922.5 (scoring IS Real Score), reb 1.0\u21920.5 (rebounds alone don't win), ast 1.5\u21921.0, stl 4.5\u21922.0 (was 3x a point \u2014 insane), blk 4.0\u21921.5 (was 2.7x a point), tov -1.2\u2192-1.5. Previously: 1 block = 2.7 pts scored in DFS value, making every big man project RS 4-5 while actual scorers projected 3-4. Now: a 20-PPG scorer projects RS 7-8, a 5-PPG big projects RS 2-3. This is the single biggest model fix. (2) Star anchor constraint: at least 1 player per lineup must be a genuine scorer (season_pts >= 20, season_min >= 25, boost >= 0.8, rating >= 4.0). These players bypass the chalk_min_boost_floor of 1.0 if they meet star criteria. MILP min_star_count=1 ensures exactly 1 star per lineup. This captures the Josh Hart (+1.1x RS 7.6), Jalen Green (+1.6x RS 5.6), OG Anunoby (+1.1x RS 7.1) wins we were missing. (3) Update _CONFIG_DEFAULTS to match new weights (prevents silent behavior change on GitHub outage)."
     },
     {
       "version": 49,
       "date": "2026-03-20",
-      "change": "Core pool chalk gate bypass fix + RS spread unlock. (1) CRITICAL BUG: core pool fallback at line 3243 used full core_pool when <5 chalk-eligible players in core — let moonshot-only players (RS 3.5-3.9) into Starting 5 bypassing min_chalk_rating 4.0. Fixed: fallback now uses chalk_eligible (full list that passed all chalk gates). (2) core_pool.size 8→12 — larger pool ensures ≥5 chalk-eligible players available, reducing fallback frequency. (3) RS compression unlocked: compression_divisor 5.5→4.5, compression_power 0.72→0.78, ai_blend_weight 0.35→0.25. Effect: scorers (18+ PPG) project RS 6-7 instead of 4-5; accumulators stay RS 2-3; the gap between them drives lineup selection toward high-impact players. (4) Strategy: high RS × high boost, not medium × medium."
+      "change": "Core pool chalk gate bypass fix + RS spread unlock. (1) CRITICAL BUG: core pool fallback at line 3243 used full core_pool when <5 chalk-eligible players in core \u2014 let moonshot-only players (RS 3.5-3.9) into Starting 5 bypassing min_chalk_rating 4.0. Fixed: fallback now uses chalk_eligible (full list that passed all chalk gates). (2) core_pool.size 8\u219212 \u2014 larger pool ensures \u22655 chalk-eligible players available, reducing fallback frequency. (3) RS compression unlocked: compression_divisor 5.5\u21924.5, compression_power 0.72\u21920.78, ai_blend_weight 0.35\u21920.25. Effect: scorers (18+ PPG) project RS 6-7 instead of 4-5; accumulators stay RS 2-3; the gap between them drives lineup selection toward high-impact players. (4) Strategy: high RS \u00d7 high boost, not medium \u00d7 medium."
     },
     {
       "version": 48,
       "date": "2026-03-20",
-      "change": "Mar 20 leaderboard audit — model picked RS 3.1-3.8 players (Kalkbrenner 3.1, Carrington 3.1, Raynaud 3.4) while actual winners had RS 3.7-5.4 (Bailey 5.4 +2.0x Value 21, Harkless 4.3 +3.0x Value 21, Williams 4.0 +3.0x Value 19, Ighodaro 3.7 +2.8x Value 17). Fixes: (1) min_chalk_rating 3.5→4.0 — all chalk winners consistently RS ≥4.0. (2) min_moonshot_rating 3.0→3.5 — filters out RS 3.0-3.4 players that never win. (3) dfs_weights.pts 1.3→1.5 — further reward scorers who drive high RS over accumulator bigs. (4) context_layer enabled — Claude RS adjustments for game narrative and late-breaking news. (5) New/updated player overrides from Mar 19-20 leaderboard: Ausar Thompson 2.0, Bub Carrington 2.4, Ryan Kalkbrenner 2.3, VJ Edgecombe 1.0, Andersson Garcia 2.5, Kyle Anderson 2.5, Quentin Grimes 1.7→1.6."
+      "change": "Mar 20 leaderboard audit \u2014 model picked RS 3.1-3.8 players (Kalkbrenner 3.1, Carrington 3.1, Raynaud 3.4) while actual winners had RS 3.7-5.4 (Bailey 5.4 +2.0x Value 21, Harkless 4.3 +3.0x Value 21, Williams 4.0 +3.0x Value 19, Ighodaro 3.7 +2.8x Value 17). Fixes: (1) min_chalk_rating 3.5\u21924.0 \u2014 all chalk winners consistently RS \u22654.0. (2) min_moonshot_rating 3.0\u21923.5 \u2014 filters out RS 3.0-3.4 players that never win. (3) dfs_weights.pts 1.3\u21921.5 \u2014 further reward scorers who drive high RS over accumulator bigs. (4) context_layer enabled \u2014 Claude RS adjustments for game narrative and late-breaking news. (5) New/updated player overrides from Mar 19-20 leaderboard: Ausar Thompson 2.0, Bub Carrington 2.4, Ryan Kalkbrenner 2.3, VJ Edgecombe 1.0, Andersson Garcia 2.5, Kyle Anderson 2.5, Quentin Grimes 1.7\u21921.6."
     },
     {
       "version": 47,
       "date": "2026-03-20",
-      "change": "Scorer bias — Mar 15-19 leaderboard pattern: winners are unpopular SCORERS (Harkless RS 4.2 +3x, Bailey RS 5.0 +2x, Williams RS 4.0 +3x, Gillespie RS 4.5 +1.2x, Carrington RS 4.7 +2.4x). Our picks were high-boost rebounders/bigs (Reese 9.4 reb, Raynaud 7.3 reb, Achiuwa 6.2 reb) who don't score enough to generate high RS. Root cause: pts=1.0 same as reb=1.0 and stl/blk massively overweighted vs scoring. Fixes: (1) dfs_weights.pts 1.0→1.3 — scorers project higher RS directly. For every 10 pts, player now gets 13 DFS pts instead of 10. (2) moonshot scoring_pts_bias — players projecting >10 PPG get adj_ceiling × (1 + (pts-10) × 0.015); a 15 PPG scorer gets +7.5% adj_ceiling, 20 PPG scorer gets +15%. Pushes scoring guards/wings above accumulator bigs in moonshot ranking. (3) New player overrides from Mar 19 leaderboard: Elijah Harkless 3.0 (4 drafts), Caris LeVert 3.0 (2 drafts), Paul Reed 2.8 (1 draft), Coby White 1.3 (CHI big market but confirmed low ownership). (4) Ace Bailey correction 2.1→2.0 (observed actual was +2.0x)."
+      "change": "Scorer bias \u2014 Mar 15-19 leaderboard pattern: winners are unpopular SCORERS (Harkless RS 4.2 +3x, Bailey RS 5.0 +2x, Williams RS 4.0 +3x, Gillespie RS 4.5 +1.2x, Carrington RS 4.7 +2.4x). Our picks were high-boost rebounders/bigs (Reese 9.4 reb, Raynaud 7.3 reb, Achiuwa 6.2 reb) who don't score enough to generate high RS. Root cause: pts=1.0 same as reb=1.0 and stl/blk massively overweighted vs scoring. Fixes: (1) dfs_weights.pts 1.0\u21921.3 \u2014 scorers project higher RS directly. For every 10 pts, player now gets 13 DFS pts instead of 10. (2) moonshot scoring_pts_bias \u2014 players projecting >10 PPG get adj_ceiling \u00d7 (1 + (pts-10) \u00d7 0.015); a 15 PPG scorer gets +7.5% adj_ceiling, 20 PPG scorer gets +15%. Pushes scoring guards/wings above accumulator bigs in moonshot ranking. (3) New player overrides from Mar 19 leaderboard: Elijah Harkless 3.0 (4 drafts), Caris LeVert 3.0 (2 drafts), Paul Reed 2.8 (1 draft), Coby White 1.3 (CHI big market but confirmed low ownership). (4) Ace Bailey correction 2.1\u21922.0 (observed actual was +2.0x)."
     },
     {
       "version": 46,
       "date": "2026-03-19",
-      "change": "BOOST DOMINANCE AUDIT — strip to mathematically proven winning formula. Leaderboard evidence is unambiguous: boost leverage dominates everything. Removed 8 overthinking modules: (1) Star anchor pathway — let 20+ PPG players bypass boost floor; Jokic/Luka/Wemby should NEVER enter pool with 0.0-0.3x boost. (2) Reliability multiplier — was dampening chalk_ev by 0.70-1.0x based on minute consistency; removed from formula (RS projection already accounts for this). (3) Claude context pass (Layer 2) — was overriding RS by ±40% based on subjective reasoning; disabled. (4) Claude lineup review (Layer 3) — was swapping MILP-optimal players post-optimization; disabled. (5) Claude matchup intelligence — was injecting DvP analysis noise; disabled. (6) Team motivation multiplier — was ±12% based on standings; disabled. (7) Variance penalty on moonshot — was penalizing volatile players who ARE the winning profile; set to 0. (8) Center cap — was limiting centers to 3 in moonshot; removed (Poeltl/Queta/Achiuwa all win). Config: boost floors lowered to 1.0x (from 1.2x chalk, 1.5x moonshot), chalk_boost_cap raised to 3.0 (uncapped), season_recent_blend 0.5→0.2 (80% recent form), moonshot matchup range tightened [0.90, 1.15]. Simplified formulas: chalk_ev = rating × (slot + boost), moonshot_ev = rating × boost_leverage × (slot + boost)."
+      "change": "BOOST DOMINANCE AUDIT \u2014 strip to mathematically proven winning formula. Leaderboard evidence is unambiguous: boost leverage dominates everything. Removed 8 overthinking modules: (1) Star anchor pathway \u2014 let 20+ PPG players bypass boost floor; Jokic/Luka/Wemby should NEVER enter pool with 0.0-0.3x boost. (2) Reliability multiplier \u2014 was dampening chalk_ev by 0.70-1.0x based on minute consistency; removed from formula (RS projection already accounts for this). (3) Claude context pass (Layer 2) \u2014 was overriding RS by \u00b140% based on subjective reasoning; disabled. (4) Claude lineup review (Layer 3) \u2014 was swapping MILP-optimal players post-optimization; disabled. (5) Claude matchup intelligence \u2014 was injecting DvP analysis noise; disabled. (6) Team motivation multiplier \u2014 was \u00b112% based on standings; disabled. (7) Variance penalty on moonshot \u2014 was penalizing volatile players who ARE the winning profile; set to 0. (8) Center cap \u2014 was limiting centers to 3 in moonshot; removed (Poeltl/Queta/Achiuwa all win). Config: boost floors lowered to 1.0x (from 1.2x chalk, 1.5x moonshot), chalk_boost_cap raised to 3.0 (uncapped), season_recent_blend 0.5\u21920.2 (80% recent form), moonshot matchup range tightened [0.90, 1.15]. Simplified formulas: chalk_ev = rating \u00d7 (slot + boost), moonshot_ev = rating \u00d7 boost_leverage \u00d7 (slot + boost)."
     },
     {
       "version": 45,
       "date": "2026-03-19",
-      "change": "RS pipeline simplified — removed 5 stacked multipliers that inflated bench players from RS 2→4 (actual RS 1.5). Removed: (1) clutch potential ×1.05-1.40 applied to all players, (2) Monte Carlo closeness×clutch×momentum ×1.3-1.7 applied to all players, (3) big man calibration ×1.0-1.40, (4) scoring bias ×0.85-1.20, (5) calibration scale ×1.10-1.15. Pipeline now: DFS → spread adj → compress((s_base/5.5)^0.72) → blend 35% LightGBM + 65% heuristic. With same compression params, bench player DFS 16 → RS 2.3 (was 3.75 with MC). Removed wildcard moonshot pathway (boost>=2.0 + 15min backdoor that bypassed all quality gates). Core pool chalk MILP now filtered to chalk-eligible players only — prevents moonshot-only players with synthetic chalk_ev from appearing in Starting 5. Config: removed calibration_scale, calibration_scale_role, calibration_scale_star from real_score (unused), removed scoring_bias_base/pts_weight from scoring_thresholds (unused)."
+      "change": "RS pipeline simplified \u2014 removed 5 stacked multipliers that inflated bench players from RS 2\u21924 (actual RS 1.5). Removed: (1) clutch potential \u00d71.05-1.40 applied to all players, (2) Monte Carlo closeness\u00d7clutch\u00d7momentum \u00d71.3-1.7 applied to all players, (3) big man calibration \u00d71.0-1.40, (4) scoring bias \u00d70.85-1.20, (5) calibration scale \u00d71.10-1.15. Pipeline now: DFS \u2192 spread adj \u2192 compress((s_base/5.5)^0.72) \u2192 blend 35% LightGBM + 65% heuristic. With same compression params, bench player DFS 16 \u2192 RS 2.3 (was 3.75 with MC). Removed wildcard moonshot pathway (boost>=2.0 + 15min backdoor that bypassed all quality gates). Core pool chalk MILP now filtered to chalk-eligible players only \u2014 prevents moonshot-only players with synthetic chalk_ev from appearing in Starting 5. Config: removed calibration_scale, calibration_scale_role, calibration_scale_star from real_score (unused), removed scoring_bias_base/pts_weight from scoring_thresholds (unused)."
     },
     {
       "version": 44,
       "date": "2026-03-19",
-      "change": "Fix deep bench trash dominating lineups. Mar 18 our picks (Missi RS 1.5, Jackson RS 1.4, Matkovic RS 1.5, Ziaire RS 0.7) vs winners (McCain RS 4.1 +3x, Sensabaugh RS 4.5 +2.1x, Clingan RS 5.2 +2.7x, GP2 RS 3.5 +3x). Root cause: v40 lowered gates to 12 min/3 PPG letting in deep bench garbage-time players whose +3x boost dominated via boost_leverage_power 1.6 (=5.8x). Fixes: (1) moonshot min_minutes 12→20, min_recent_minutes 12→20 — filters Matkovic 14min, Jackson 16min, Payne 17min. (2) boost_leverage_power 1.6→1.2 — reduces +3x advantage from 5.8x to 3.7x so RS quality matters more. (3) wildcard gates: min_minutes 6→15, min_season_pts 3→7 — no more garbage-time wildcards. (4) min_pts_projection_moonshot 3→6, min_ppm_moonshot 0.15→0.22, min_rating_floor 2.0→3.0 — require real production. (5) chalk_season_min_floor 15→22, chalk_recent_min_floor 15→20, min_gate 12→15 — chalk requires proven rotation players. (6) calibration_scale_role 1.22→1.10 — stop inflating deep bench RS projections by 22%. All Mar 18 winners (Sensabaugh 22min/14ppg, McCain 33min/18ppg, GP2 20min/8ppg, Clingan 23min/12ppg) still pass new gates."
+      "change": "Fix deep bench trash dominating lineups. Mar 18 our picks (Missi RS 1.5, Jackson RS 1.4, Matkovic RS 1.5, Ziaire RS 0.7) vs winners (McCain RS 4.1 +3x, Sensabaugh RS 4.5 +2.1x, Clingan RS 5.2 +2.7x, GP2 RS 3.5 +3x). Root cause: v40 lowered gates to 12 min/3 PPG letting in deep bench garbage-time players whose +3x boost dominated via boost_leverage_power 1.6 (=5.8x). Fixes: (1) moonshot min_minutes 12\u219220, min_recent_minutes 12\u219220 \u2014 filters Matkovic 14min, Jackson 16min, Payne 17min. (2) boost_leverage_power 1.6\u21921.2 \u2014 reduces +3x advantage from 5.8x to 3.7x so RS quality matters more. (3) wildcard gates: min_minutes 6\u219215, min_season_pts 3\u21927 \u2014 no more garbage-time wildcards. (4) min_pts_projection_moonshot 3\u21926, min_ppm_moonshot 0.15\u21920.22, min_rating_floor 2.0\u21923.0 \u2014 require real production. (5) chalk_season_min_floor 15\u219222, chalk_recent_min_floor 15\u219220, min_gate 12\u219215 \u2014 chalk requires proven rotation players. (6) calibration_scale_role 1.22\u21921.10 \u2014 stop inflating deep bench RS projections by 22%. All Mar 18 winners (Sensabaugh 22min/14ppg, McCain 33min/18ppg, GP2 20min/8ppg, Clingan 23min/12ppg) still pass new gates."
     },
     {
       "version": 42,
       "date": "2026-03-19",
-      "change": "13-day historical analysis (Mar 5-17) — 4 targeted improvements: (1) Per-tier calibration scale: role players (season_pts < 20) now get calibration_scale_role=1.22, stars get calibration_scale_star=1.10. Fixes 65% under-projection rate (58 under vs 31 over) — role player winners (da Silva 5x, Filipowski 5x, Santos 4x, Achiuwa 3x) were being filtered out by RS gates due to systematic under-projection. Stars stay conservative; extreme nights handled by Claude context layer. (2) big_man_calibration.pts_cap 16.0→20.0: Bam Adebayo (pred 3.0, actual 12.7 — largest error in dataset) and elite centers have binary outcomes requiring a higher ceiling for big man calibration bonus to apply. (3) Player override audit for recurring winners: da Silva 2.4→2.7, Filipowski 1.9→2.0, Achiuwa 2.1→2.3, Santos 2.5→2.6 — empirically aligned with 13-day ownership data. (4) simulated_draft_score added to _compute_audit(): measures 60+ draft goal progress by computing optimal hindsight score (top-5 actuals × slot 2.0x→1.2x + actual card boost). Tracks what was achievable each night vs what was predicted."
+      "change": "13-day historical analysis (Mar 5-17) \u2014 4 targeted improvements: (1) Per-tier calibration scale: role players (season_pts < 20) now get calibration_scale_role=1.22, stars get calibration_scale_star=1.10. Fixes 65% under-projection rate (58 under vs 31 over) \u2014 role player winners (da Silva 5x, Filipowski 5x, Santos 4x, Achiuwa 3x) were being filtered out by RS gates due to systematic under-projection. Stars stay conservative; extreme nights handled by Claude context layer. (2) big_man_calibration.pts_cap 16.0\u219220.0: Bam Adebayo (pred 3.0, actual 12.7 \u2014 largest error in dataset) and elite centers have binary outcomes requiring a higher ceiling for big man calibration bonus to apply. (3) Player override audit for recurring winners: da Silva 2.4\u21922.7, Filipowski 1.9\u21922.0, Achiuwa 2.1\u21922.3, Santos 2.5\u21922.6 \u2014 empirically aligned with 13-day ownership data. (4) simulated_draft_score added to _compute_audit(): measures 60+ draft goal progress by computing optimal hindsight score (top-5 actuals \u00d7 slot 2.0x\u21921.2x + actual card boost). Tracks what was achievable each night vs what was predicted."
     },
     {
       "version": 41,
       "date": "2026-03-19",
-      "change": "Remove dev-team bonus, add matchup-based analysis. (1) Replaced win_pct team_bonus in moonshot formula with combined matchup_factor: math-based opponent def quality (_compute_matchup_factor, using ESPN pts_allowed vs league avg 115, position-scaled G/F/C) × Claude DvP web_search intelligence (_fetch_matchup_intelligence, Layer 1.5 between news and context pass). (2) Added light matchup adjustment [0.92, 1.10] to chalk_ev so Starting 5 also considers opponent defensive quality. (3) Added opp field to all player projections in _run_game() for downstream matchup lookups. (4) Replaced _fetch_team_win_pcts() with _fetch_team_def_stats() using same ESPN standings endpoint. (5) Removed dev_team_pts_floor config key. Rationale: dev-team bonus was double-counting ownership signal already in card boost; matchup quality is a direct RS predictor."
+      "change": "Remove dev-team bonus, add matchup-based analysis. (1) Replaced win_pct team_bonus in moonshot formula with combined matchup_factor: math-based opponent def quality (_compute_matchup_factor, using ESPN pts_allowed vs league avg 115, position-scaled G/F/C) \u00d7 Claude DvP web_search intelligence (_fetch_matchup_intelligence, Layer 1.5 between news and context pass). (2) Added light matchup adjustment [0.92, 1.10] to chalk_ev so Starting 5 also considers opponent defensive quality. (3) Added opp field to all player projections in _run_game() for downstream matchup lookups. (4) Replaced _fetch_team_win_pcts() with _fetch_team_def_stats() using same ESPN standings endpoint. (5) Removed dev_team_pts_floor config key. Rationale: dev-team bonus was double-counting ownership signal already in card boost; matchup quality is a direct RS predictor."
     },
     {
       "version": 40,
       "date": "2026-03-18",
-      "change": "13-date accuracy audit (Mar 5-17) — 5 systematic fixes: (1) RS calibration_scale=1.15 — model under-projects RS by 34% (avg pred 4.3 vs avg actual 5.2); conservative 1.15 scale applied post-scoring-bias in project_player(). (2) ai_blend_weight 0.5→0.35 — LightGBM clusters outputs in 2.5-4.5, compressing distribution; reducing its weight lets Monte Carlo heuristic spread RS wider. (3) Card boost 3-layer system — name-normalized lookup: config overrides → auto-populated from 170 ownership/actuals samples (10-min cache) → sigmoid fallback. Fixes MAE 0.59 card boost error and 0.0 predictions for players with actual 1.3-2.3x. (4) Moonshot pool widened — min_minutes_floor 15→12, min_recent_minutes_floor 15→12, wildcard_min_minutes 8→6, min_pts_projection_moonshot 4→3, min_pts_per_minute_moonshot 0.20→0.15. Catches recurring missed dark horses (Gui Santos 4x, Cody Williams 3x, etc.) who averaged 10-15 min. (5) Coverage improvement — 59% of leaderboard players were completely absent from predictions; widened gates should recover 15-20% of missed players."
+      "change": "13-date accuracy audit (Mar 5-17) \u2014 5 systematic fixes: (1) RS calibration_scale=1.15 \u2014 model under-projects RS by 34% (avg pred 4.3 vs avg actual 5.2); conservative 1.15 scale applied post-scoring-bias in project_player(). (2) ai_blend_weight 0.5\u21920.35 \u2014 LightGBM clusters outputs in 2.5-4.5, compressing distribution; reducing its weight lets Monte Carlo heuristic spread RS wider. (3) Card boost 3-layer system \u2014 name-normalized lookup: config overrides \u2192 auto-populated from 170 ownership/actuals samples (10-min cache) \u2192 sigmoid fallback. Fixes MAE 0.59 card boost error and 0.0 predictions for players with actual 1.3-2.3x. (4) Moonshot pool widened \u2014 min_minutes_floor 15\u219212, min_recent_minutes_floor 15\u219212, wildcard_min_minutes 8\u21926, min_pts_projection_moonshot 4\u21923, min_pts_per_minute_moonshot 0.20\u21920.15. Catches recurring missed dark horses (Gui Santos 4x, Cody Williams 3x, etc.) who averaged 10-15 min. (5) Coverage improvement \u2014 59% of leaderboard players were completely absent from predictions; widened gates should recover 15-20% of missed players."
     },
     {
       "version": 39,
       "date": "2026-03-18",
-      "change": "Core pool architecture: single 7–10 player core (core_pool.enabled, size, metric). Both Starting 5 and Moonshot are built from the same core pool — two configurations (reliability vs ceiling), high exposure/repeats intended. Eligible union = chalk OR moonshot eligibility; core score = max_ev or blend; top N by score = core_pool; chalk MILP and moonshot MILP run on core_pool only. Claude prompts updated so both lineups are described as same core. Config: core_pool.enabled, core_pool.size (default 8), core_pool.metric (max_ev|blend), core_pool.blend_weight."
+      "change": "Core pool architecture: single 7\u201310 player core (core_pool.enabled, size, metric). Both Starting 5 and Moonshot are built from the same core pool \u2014 two configurations (reliability vs ceiling), high exposure/repeats intended. Eligible union = chalk OR moonshot eligibility; core score = max_ev or blend; top N by score = core_pool; chalk MILP and moonshot MILP run on core_pool only. Claude prompts updated so both lineups are described as same core. Config: core_pool.enabled, core_pool.size (default 8), core_pool.metric (max_ev|blend), core_pool.blend_weight."
     },
     {
       "version": 38,
       "date": "2026-03-18",
-      "change": "3-layer Opus pipeline: (1) Layer 1 — web search upgraded to Opus (context_layer.web_search_model), player/RS-aware prompt (top 25 by rating passed so intel prioritizes likely draft picks). (2) Layer 2 — context pass uses Opus (context_layer.model), improved RECENT NBA NEWS directive (map each news bullet to specific players and adjustments). (3) Layer 3 — post-lineup review (lineup_review.enabled, default off): Opus + web_search reviews assembled Starting 5 and Moonshot, suggests swaps for late-breaking news, auto-applies valid swaps. Config: lineup_review.model, lineup_review.timeout_seconds. Non-fatal: on error original lineups returned."
+      "change": "3-layer Opus pipeline: (1) Layer 1 \u2014 web search upgraded to Opus (context_layer.web_search_model), player/RS-aware prompt (top 25 by rating passed so intel prioritizes likely draft picks). (2) Layer 2 \u2014 context pass uses Opus (context_layer.model), improved RECENT NBA NEWS directive (map each news bullet to specific players and adjustments). (3) Layer 3 \u2014 post-lineup review (lineup_review.enabled, default off): Opus + web_search reviews assembled Starting 5 and Moonshot, suggests swaps for late-breaking news, auto-applies valid swaps. Config: lineup_review.model, lineup_review.timeout_seconds. Non-fatal: on error original lineups returned."
     },
     {
       "version": 37,
       "date": "2026-03-18",
-      "change": "Draft model gate relaxation + market & news intelligence (5 changes): (1) min_chalk_rating 4.0→3.5 — sync with code fallback, Mar 17 showed 7/9 missed players filtered by this gate. (2) predMin tolerance band — chalk allows 2.0 min below season avg (projection.pred_min_tolerance), moonshot allows 3.0 (moonshot.pred_min_tolerance); saved Bub Carrington (1.5 gap), Jenkins (0.7), Riley (0.8), Champagnie (1.8). (3) Separate moonshot pts floor — min_pts_projection_moonshot=4.0 and min_pts_per_minute_moonshot=0.20; chalk keeps 7.0/0.28. Oso Ighodaro (4 PPG, +2.9x, Value 16.4) now enters moonshot pool. (4) Odds API enrichment — _enrich_projections_with_odds() blends sportsbook player props into projections; upward-only 20% blend when books diverge 15%+ from model. (5) Brave Search web intelligence — _fetch_nba_news_context() searches recent NBA news per team; feeds into Claude context pass so it can reason about coach quotes, rotation changes, injury impacts."
+      "change": "Draft model gate relaxation + market & news intelligence (5 changes): (1) min_chalk_rating 4.0\u21923.5 \u2014 sync with code fallback, Mar 17 showed 7/9 missed players filtered by this gate. (2) predMin tolerance band \u2014 chalk allows 2.0 min below season avg (projection.pred_min_tolerance), moonshot allows 3.0 (moonshot.pred_min_tolerance); saved Bub Carrington (1.5 gap), Jenkins (0.7), Riley (0.8), Champagnie (1.8). (3) Separate moonshot pts floor \u2014 min_pts_projection_moonshot=4.0 and min_pts_per_minute_moonshot=0.20; chalk keeps 7.0/0.28. Oso Ighodaro (4 PPG, +2.9x, Value 16.4) now enters moonshot pool. (4) Odds API enrichment \u2014 _enrich_projections_with_odds() blends sportsbook player props into projections; upward-only 20% blend when books diverge 15%+ from model. (5) Brave Search web intelligence \u2014 _fetch_nba_news_context() searches recent NBA news per team; feeds into Claude context pass so it can reason about coach quotes, rotation changes, injury impacts."
     },
     {
       "version": 36,
       "date": "2026-03-18",
-      "change": "14 new + 3 corrections from additional Highest Value + Most Popular screenshots. Corrections: Anthony Edwards 0.2→0.3 (confirmed +0.3x across 3 screenshots), Kyle Filipowski 2.1→1.9, Brandin Podziemski 1.3→1.8. New: Dejounte Murray 1.1, Mitchell Robinson 2.1, Javon Small 2.0, Brandon Ingram 0.7, Jrue Holiday 0.9, Marcus Sasser 3.0, Kawhi Leonard 0.2, Pelle Larsson 2.0, Zaccharie Risacher 2.4, Spencer Jones 3.0, Josh Minott 3.0, Kasparas Jakucionis 3.0, Taylor Hendricks 3.0, Daniel Gafford 2.2. Total overrides: 114."
+      "change": "14 new + 3 corrections from additional Highest Value + Most Popular screenshots. Corrections: Anthony Edwards 0.2\u21920.3 (confirmed +0.3x across 3 screenshots), Kyle Filipowski 2.1\u21921.9, Brandin Podziemski 1.3\u21921.8. New: Dejounte Murray 1.1, Mitchell Robinson 2.1, Javon Small 2.0, Brandon Ingram 0.7, Jrue Holiday 0.9, Marcus Sasser 3.0, Kawhi Leonard 0.2, Pelle Larsson 2.0, Zaccharie Risacher 2.4, Spencer Jones 3.0, Josh Minott 3.0, Kasparas Jakucionis 3.0, Taylor Hendricks 3.0, Daniel Gafford 2.2. Total overrides: 114."
     },
     {
       "version": 35,
@@ -379,57 +485,57 @@
     {
       "version": 34,
       "date": "2026-03-18",
-      "change": "Boost override audit from Mar 17-18 screenshots (Highest Value + Most Popular + 3x players). 9 corrections: Gary Payton II 2.8→3.0 (confirmed both days), Will Riley 2.8→3.0, De'Anthony Melton 1.9→1.7, Victor Wembanyama 0.3→0.2, Matas Buzelis 1.4→1.3, Donovan Clingan 1.0→0.9, Gui Santos 2.6→2.5 (confirmed both days), Isaiah Collier 1.5→1.4, Precious Achiuwa 2.2→2.1. 31 new overrides from observed data: Alex Caruso 3.0, Austin Reaves 0.5, Bilal Coulibaly 1.9, Bobby Portis 1.6, Brandin Podziemski 1.3, Brice Sensabaugh 2.1, DeMar DeRozan 0.9, Deni Avdija 0.4, Desmond Bane 0.7, Devin Booker 0.5, Donovan Mitchell 0.2, Jakob Poeltl 1.6, Jalen Brunson 0.4, Jalen Duren 0.7, James Harden 0.3, Karl-Anthony Towns 0.6, Karlo Matković 3.0, Killian Hayes 3.0, Kristaps Porzingis 1.0, Naji Marshall 1.4, Nickeil Alexander-Walker 0.9, Olivier-Maxence Prosper 3.0, Oso Ighodaro 2.9, P.J. Washington 1.5, Paolo Banchero 0.6, Quentin Grimes 1.7, Quinten Post 3.0, Shai Gilgeous-Alexander 0.0, Stephon Castle 0.8, Trey Murphy III 0.6, Tristan Vukcevic 3.0, Yves Missi 3.0. Total overrides: 95 players (was 64). Sigmoid fallback now only fires for truly unknown players."
+      "change": "Boost override audit from Mar 17-18 screenshots (Highest Value + Most Popular + 3x players). 9 corrections: Gary Payton II 2.8\u21923.0 (confirmed both days), Will Riley 2.8\u21923.0, De'Anthony Melton 1.9\u21921.7, Victor Wembanyama 0.3\u21920.2, Matas Buzelis 1.4\u21921.3, Donovan Clingan 1.0\u21920.9, Gui Santos 2.6\u21922.5 (confirmed both days), Isaiah Collier 1.5\u21921.4, Precious Achiuwa 2.2\u21922.1. 31 new overrides from observed data: Alex Caruso 3.0, Austin Reaves 0.5, Bilal Coulibaly 1.9, Bobby Portis 1.6, Brandin Podziemski 1.3, Brice Sensabaugh 2.1, DeMar DeRozan 0.9, Deni Avdija 0.4, Desmond Bane 0.7, Devin Booker 0.5, Donovan Mitchell 0.2, Jakob Poeltl 1.6, Jalen Brunson 0.4, Jalen Duren 0.7, James Harden 0.3, Karl-Anthony Towns 0.6, Karlo Matkovi\u0107 3.0, Killian Hayes 3.0, Kristaps Porzingis 1.0, Naji Marshall 1.4, Nickeil Alexander-Walker 0.9, Olivier-Maxence Prosper 3.0, Oso Ighodaro 2.9, P.J. Washington 1.5, Paolo Banchero 0.6, Quentin Grimes 1.7, Quinten Post 3.0, Shai Gilgeous-Alexander 0.0, Stephon Castle 0.8, Trey Murphy III 0.6, Tristan Vukcevic 3.0, Yves Missi 3.0. Total overrides: 95 players (was 64). Sigmoid fallback now only fires for truly unknown players."
     },
     {
       "version": 33,
       "date": "2026-03-17",
-      "change": "Boost overrides from actual observed data (same night, two drafts): Collin Gillespie 1.2x — sigmoid estimated ~2.2x at his scoring rate but actual was +1.2x, nearly 2x overestimate that inflated his EV into both drafts. Tari Eason 1.9x — actual observed +1.9x, pins the sigmoid estimate (was ~2.2x). Both appeared in back-to-back bad drafts; fixing the boost estimate removes them from chalk/moonshot pool consideration when RS projection is also low."
+      "change": "Boost overrides from actual observed data (same night, two drafts): Collin Gillespie 1.2x \u2014 sigmoid estimated ~2.2x at his scoring rate but actual was +1.2x, nearly 2x overestimate that inflated his EV into both drafts. Tari Eason 1.9x \u2014 actual observed +1.9x, pins the sigmoid estimate (was ~2.2x). Both appeared in back-to-back bad drafts; fixing the boost estimate removes them from chalk/moonshot pool consideration when RS projection is also low."
     },
     {
       "version": 32,
       "date": "2026-03-17",
-      "change": "Post-game autopsy — 3 fixes: (1) Removed Luke Kennard from player_overrides (was 3.0x). Kennard has RS 0 performance, the 3.0x override was inflating his chalk_ev above NAW/Buzelis types. Sigmoid ~2.1x at his ~10 PPG is more honest. (2) Calibrated Tristan da Silva override 2.8→2.4 (actual observed boost was +2.4x — Real Sports pool is large enough that 1.8k drafts still earns 2.4x boost; the problem was RS projection not the boost estimate). (3) Raised min_chalk_rating 3.5→4.0 — every chalk winner had RS 4.6+ (NAW 6.8, Buzelis 5.0, Marshall 4.6, Melton 4.1). The 3.5 floor was allowing marginal RS projections to qualify as chalk when boosted. Boost cannot rescue a weak base. (4) Raised chalk_recent_min_floor 15→20 — players losing minutes recently should not be in the chalk pool."
+      "change": "Post-game autopsy \u2014 3 fixes: (1) Removed Luke Kennard from player_overrides (was 3.0x). Kennard has RS 0 performance, the 3.0x override was inflating his chalk_ev above NAW/Buzelis types. Sigmoid ~2.1x at his ~10 PPG is more honest. (2) Calibrated Tristan da Silva override 2.8\u21922.4 (actual observed boost was +2.4x \u2014 Real Sports pool is large enough that 1.8k drafts still earns 2.4x boost; the problem was RS projection not the boost estimate). (3) Raised min_chalk_rating 3.5\u21924.0 \u2014 every chalk winner had RS 4.6+ (NAW 6.8, Buzelis 5.0, Marshall 4.6, Melton 4.1). The 3.5 floor was allowing marginal RS projections to qualify as chalk when boosted. Boost cannot rescue a weak base. (4) Raised chalk_recent_min_floor 15\u219220 \u2014 players losing minutes recently should not be in the chalk pool."
     },
     {
       "version": 31,
       "date": "2026-03-17",
-      "change": "Enable Claude context layer by default (context_layer.enabled: true). Haiku makes one RS adjustment call per fresh slate generation — blowout risk, defensive value, rivalry closeness. ±40% max multiplier cap. Graceful fallback: any error silently skips. Mar 17 results confirm GSW defensive role players (Draymond, GPII, Melton) were top performers — exactly the narrative context Claude can flag."
+      "change": "Enable Claude context layer by default (context_layer.enabled: true). Haiku makes one RS adjustment call per fresh slate generation \u2014 blowout risk, defensive value, rivalry closeness. \u00b140% max multiplier cap. Graceful fallback: any error silently skips. Mar 17 results confirm GSW defensive role players (Draymond, GPII, Melton) were top performers \u2014 exactly the narrative context Claude can flag."
     },
     {
       "version": 30,
       "date": "2026-03-17",
-      "change": "Mar 17 autopsy — 4 fixes: (1) min_pts_per_minute 0.35→0.28 — defense-first players (Draymond Green ~0.31 pts/min, Gary Payton II ~0.29 pts/min) were failing this gate before RS was even computed. They were 4 of top 9 actual performers. Lowered floor allows elite defenders/playmakers to enter projection pool while still excluding true non-contributors. (2) chalk_star_anchor_min_boost=0.6 (new config key) — star anchor pathway was allowing LeBron (+0.2x boost) into Starting 5 because RS 8.9 × (2.0+0.2) = 19.6 EV beats most alternatives. Stars below 0.6x boost (LeBron 0.2, Luka 0.0, Wemby 0.3, Tatum) now excluded from chalk even via star anchor. Bam (0.6x) remains borderline. (3) Player overrides: added Draymond Green (2.0x — defense-first, consistently ~5 drafts), Gary Payton II (2.8x — ultra-low ownership fringe player), Will Riley (2.8x — rookie with very low drafts). Gui Santos (2.6x) was already in overrides. (4) context_layer config block added (enabled=false) — gating the new Claude Haiku context pass feature that adjusts RS projections based on game narrative."
+      "change": "Mar 17 autopsy \u2014 4 fixes: (1) min_pts_per_minute 0.35\u21920.28 \u2014 defense-first players (Draymond Green ~0.31 pts/min, Gary Payton II ~0.29 pts/min) were failing this gate before RS was even computed. They were 4 of top 9 actual performers. Lowered floor allows elite defenders/playmakers to enter projection pool while still excluding true non-contributors. (2) chalk_star_anchor_min_boost=0.6 (new config key) \u2014 star anchor pathway was allowing LeBron (+0.2x boost) into Starting 5 because RS 8.9 \u00d7 (2.0+0.2) = 19.6 EV beats most alternatives. Stars below 0.6x boost (LeBron 0.2, Luka 0.0, Wemby 0.3, Tatum) now excluded from chalk even via star anchor. Bam (0.6x) remains borderline. (3) Player overrides: added Draymond Green (2.0x \u2014 defense-first, consistently ~5 drafts), Gary Payton II (2.8x \u2014 ultra-low ownership fringe player), Will Riley (2.8x \u2014 rookie with very low drafts). Gui Santos (2.6x) was already in overrides. (4) context_layer config block added (enabled=false) \u2014 gating the new Claude Haiku context pass feature that adjusts RS projections based on game narrative."
     },
     {
       "version": 29,
       "date": "2026-03-16",
-      "change": "Moonshot star anchor — same logic as Starting 5. Stars (season_pts >= 20, star_anchor_ppg) now qualify as a 5th moonshot eligibility pathway alongside regular/spot-starter/wildcard/role-spike. Star anchors bypass min_card_boost gate (same pattern as chalk bypassing chalk_min_boost_floor). Requirements: season_min >= 25, rating >= 4.0, pred_min >= season_min (real starters projecting well tonight). MILP max_low_boost=1 + low_boost_threshold=0.8 limits moonshot to at most 1 star — other 4 slots stay high-boost role players. Both lineups now operate on the same star anchor logic: high-boost role players PLUS one big shoota who can pop off."
+      "change": "Moonshot star anchor \u2014 same logic as Starting 5. Stars (season_pts >= 20, star_anchor_ppg) now qualify as a 5th moonshot eligibility pathway alongside regular/spot-starter/wildcard/role-spike. Star anchors bypass min_card_boost gate (same pattern as chalk bypassing chalk_min_boost_floor). Requirements: season_min >= 25, rating >= 4.0, pred_min >= season_min (real starters projecting well tonight). MILP max_low_boost=1 + low_boost_threshold=0.8 limits moonshot to at most 1 star \u2014 other 4 slots stay high-boost role players. Both lineups now operate on the same star anchor logic: high-boost role players PLUS one big shoota who can pop off."
     },
     {
       "version": 28,
       "date": "2026-03-16",
-      "change": "Leaderboard simplification v6 — 5-day analysis (Mar 8-13) reveals winning strategy is simpler than our model assumes. Winners are role players with 3-5x boost on dev teams (da Silva 4/5 days, Ellis 3/5, Clifford 3/5, Santos 3/5). Stars almost never win moonshot (4/5 days pure role players; Mar 12 exception needed Luka 9.3 RS monster). Changes: (1) Moonshot gates widened: min_minutes_floor 25→15, min_recent_minutes_floor 25→15, min_rating_floor 2.8→2.0, min_moonshot_pts 10→5 — old gates blocked the exact players who win (Santos ~15 min, Ellis RS 2.2, Clifford ~15 min). (2) Moonshot formula simplified: removed center penalty (Poeltl/Queta/Achiuwa all win), removed scoring anchor (stars don't win moonshot), variance_penalty 0.45→0.15 (moonshot wants upside), removed defensive rate bonus and low_pts_penalty (marginal signals adding complexity). (3) Wildcard gates widened: min_boost 2.5→2.0, min_minutes 10→8, min_season_pts 5→3 — our boost estimator runs 30-50% below actuals. (4) max_centers 2→3 (Mar 8 winner had 3 bigs), max_per_team stays 3. (5) Chalk star anchor kept (max_stars=1) as safety valve for rare star nights like Mar 12. (6) dev_team_pts_floor 6→4, role_spike floors lowered."
+      "change": "Leaderboard simplification v6 \u2014 5-day analysis (Mar 8-13) reveals winning strategy is simpler than our model assumes. Winners are role players with 3-5x boost on dev teams (da Silva 4/5 days, Ellis 3/5, Clifford 3/5, Santos 3/5). Stars almost never win moonshot (4/5 days pure role players; Mar 12 exception needed Luka 9.3 RS monster). Changes: (1) Moonshot gates widened: min_minutes_floor 25\u219215, min_recent_minutes_floor 25\u219215, min_rating_floor 2.8\u21922.0, min_moonshot_pts 10\u21925 \u2014 old gates blocked the exact players who win (Santos ~15 min, Ellis RS 2.2, Clifford ~15 min). (2) Moonshot formula simplified: removed center penalty (Poeltl/Queta/Achiuwa all win), removed scoring anchor (stars don't win moonshot), variance_penalty 0.45\u21920.15 (moonshot wants upside), removed defensive rate bonus and low_pts_penalty (marginal signals adding complexity). (3) Wildcard gates widened: min_boost 2.5\u21922.0, min_minutes 10\u21928, min_season_pts 5\u21923 \u2014 our boost estimator runs 30-50% below actuals. (4) max_centers 2\u21923 (Mar 8 winner had 3 bigs), max_per_team stays 3. (5) Chalk star anchor kept (max_stars=1) as safety valve for rare star nights like Mar 12. (6) dev_team_pts_floor 6\u21924, role_spike floors lowered."
     },
     {
       "version": 27,
       "date": "2026-03-16",
-      "change": "Star anchor pathways — lineups were 100% role players because chalk_min_boost_floor=1.2 and moonshot min_card_boost=1.5 blocked every star (KD 0.5x, Luka 0.0x, Tatum, Curry all under threshold). Today's 8-game slate has 10+ stars averaging 20-28 PPG and the model picked zero. Fixes: (1) Chalk star anchor — players with season_pts >= 20 (star_anchor_ppg) bypass the boost floor. These are the guys who pop off for 30-40 pts; their RS ceiling compensates for low card boost. chalk_max_stars constraint still limits to 1-2 stars max, so role players fill the other slots. (2) Moonshot scoring anchor — elite scorers (season_pts >= 25, season_min >= 25, rating >= 4.0) can enter moonshot pool even with low boost, competing on RS ceiling × scoring_anchor_scale instead of boost_leverage. One elite scorer can anchor the moonshot for upside exposure that pure contrarian picks can't reach. New config: scoring_thresholds.star_anchor_ppg=20.0, moonshot.scoring_anchor_ppg=25.0, moonshot.scoring_anchor_scale=2.0."
+      "change": "Star anchor pathways \u2014 lineups were 100% role players because chalk_min_boost_floor=1.2 and moonshot min_card_boost=1.5 blocked every star (KD 0.5x, Luka 0.0x, Tatum, Curry all under threshold). Today's 8-game slate has 10+ stars averaging 20-28 PPG and the model picked zero. Fixes: (1) Chalk star anchor \u2014 players with season_pts >= 20 (star_anchor_ppg) bypass the boost floor. These are the guys who pop off for 30-40 pts; their RS ceiling compensates for low card boost. chalk_max_stars constraint still limits to 1-2 stars max, so role players fill the other slots. (2) Moonshot scoring anchor \u2014 elite scorers (season_pts >= 25, season_min >= 25, rating >= 4.0) can enter moonshot pool even with low boost, competing on RS ceiling \u00d7 scoring_anchor_scale instead of boost_leverage. One elite scorer can anchor the moonshot for upside exposure that pure contrarian picks can't reach. New config: scoring_thresholds.star_anchor_ppg=20.0, moonshot.scoring_anchor_ppg=25.0, moonshot.scoring_anchor_scale=2.0."
     },
     {
       "version": 26,
       "date": "2026-03-16",
-      "change": "RS distribution unlock + shared lineups: (1) compression_divisor 7.0→5.5, compression_power 0.62→0.72 — asymmetric: preserves floor accuracy but widens ceiling from ~4.5 RS max to 6-8 RS for upside players. Old symmetric compression crushed everyone into 3-4 RS regardless of stats. (2) AI blend weight 70/30→50/50 — LightGBM clusters outputs in 2.5-4.5 range; at 70% weight it dominated the blend and killed heuristic upside. 50/50 lets Monte Carlo (closeness×clutch×momentum) pull high-ceiling players to RS 5-7. (3) rs_cap raised from 15.0→20.0 (configurable) — the hard 15.0 cap was applied 4 times in the pipeline, each re-squashing any upside that escaped. (4) Starting 5 and Moonshot can now share players — they represent two independent draft strategies (reliability vs ceiling). If a player is the best pick for both, they appear in both. Together they predict the two best possible drafts of the day. Target: 70+ total draft score for both lineup types."
+      "change": "RS distribution unlock + shared lineups: (1) compression_divisor 7.0\u21925.5, compression_power 0.62\u21920.72 \u2014 asymmetric: preserves floor accuracy but widens ceiling from ~4.5 RS max to 6-8 RS for upside players. Old symmetric compression crushed everyone into 3-4 RS regardless of stats. (2) AI blend weight 70/30\u219250/50 \u2014 LightGBM clusters outputs in 2.5-4.5 range; at 70% weight it dominated the blend and killed heuristic upside. 50/50 lets Monte Carlo (closeness\u00d7clutch\u00d7momentum) pull high-ceiling players to RS 5-7. (3) rs_cap raised from 15.0\u219220.0 (configurable) \u2014 the hard 15.0 cap was applied 4 times in the pipeline, each re-squashing any upside that escaped. (4) Starting 5 and Moonshot can now share players \u2014 they represent two independent draft strategies (reliability vs ceiling). If a player is the best pick for both, they appear in both. Together they predict the two best possible drafts of the day. Target: 70+ total draft score for both lineup types."
     },
     {
       "version": 25,
       "date": "2026-03-16",
-      "change": "Scoring upside gates v5: (1) project_player() 7pt minimum projection floor + 0.35 pts/min efficiency floor — eliminates Bitadze (5.7pt), Mashack (5.0pt), ultra-low-minute centers from all pools entirely. (2) Scoring bias multiplier on raw_score — pts_share (pts/base) scales rating by 0.85-1.20x; pure scorers rewarded over balanced accumulators. (3) Chalk pool: rating < 3.5 hard gate before boost applied — boost cannot rescue a weak RS base; kills Lopez/Kennard archetype. (4) Moonshot: rating floor 2.8→3.0 (non-wildcard), pts floor 10.0 added (non-wildcard). (5) Per-game lineup: pts floor 10.0 added. New scoring_thresholds config block for all tunable floors."
+      "change": "Scoring upside gates v5: (1) project_player() 7pt minimum projection floor + 0.35 pts/min efficiency floor \u2014 eliminates Bitadze (5.7pt), Mashack (5.0pt), ultra-low-minute centers from all pools entirely. (2) Scoring bias multiplier on raw_score \u2014 pts_share (pts/base) scales rating by 0.85-1.20x; pure scorers rewarded over balanced accumulators. (3) Chalk pool: rating < 3.5 hard gate before boost applied \u2014 boost cannot rescue a weak RS base; kills Lopez/Kennard archetype. (4) Moonshot: rating floor 2.8\u21923.0 (non-wildcard), pts floor 10.0 added (non-wildcard). (5) Per-game lineup: pts floor 10.0 added. New scoring_thresholds config block for all tunable floors."
     },
     {
       "version": 24,
       "date": "2026-03-16",
-      "change": "Mar 15 autopsy — 4 structural fixes: (1) chalk_min_boost_floor=1.2 (new) — minimum card boost for Starting 5 eligibility. Westbrook (1.1x override) and Clingan (1.0x override) won 2.0x/1.8x chalk slots despite near-zero boost, killing Starting 5 EV. Stars below 1.2x boost are now excluded from chalk pool entirely. (2) Wildcard gate relaxed: wildcard_min_minutes 24→10, wildcard_min_boost 2.9→2.5, wildcard_min_season_pts 8→5. GPII (predMin 16.5, boost 2.7x) and similar deep-bench high-boost plays were blocked by 24-min gate; now surfaced as moonshot wildcards. (3) dev_team_pts_floor 10→6 — dev team win_pct rebuild bonus was suppressed for players scoring <10ppg. Williams (6ppg UTAH) and Cardwell (5.4ppg SAC) now receive the bonus, improving moonshot slot ranking for low-scoring dev-team role players. (4) is_role_spike path added to moonshot eligibility — players with recent_min ≥ 25 AND recent/season ratio ≥ 1.4 now qualify regardless of season_min floor. Catches Hayes (season 16min, recent 26min, 2.7x boost, actual RS 3.3 / value 16.5) and similar role-change pickups. dnp_risk_min_threshold 8→5: stopped flagging 5-8min players as inactive, giving deep bench contrarians a chance to pass projection."
+      "change": "Mar 15 autopsy \u2014 4 structural fixes: (1) chalk_min_boost_floor=1.2 (new) \u2014 minimum card boost for Starting 5 eligibility. Westbrook (1.1x override) and Clingan (1.0x override) won 2.0x/1.8x chalk slots despite near-zero boost, killing Starting 5 EV. Stars below 1.2x boost are now excluded from chalk pool entirely. (2) Wildcard gate relaxed: wildcard_min_minutes 24\u219210, wildcard_min_boost 2.9\u21922.5, wildcard_min_season_pts 8\u21925. GPII (predMin 16.5, boost 2.7x) and similar deep-bench high-boost plays were blocked by 24-min gate; now surfaced as moonshot wildcards. (3) dev_team_pts_floor 10\u21926 \u2014 dev team win_pct rebuild bonus was suppressed for players scoring <10ppg. Williams (6ppg UTAH) and Cardwell (5.4ppg SAC) now receive the bonus, improving moonshot slot ranking for low-scoring dev-team role players. (4) is_role_spike path added to moonshot eligibility \u2014 players with recent_min \u2265 25 AND recent/season ratio \u2265 1.4 now qualify regardless of season_min floor. Catches Hayes (season 16min, recent 26min, 2.7x boost, actual RS 3.3 / value 16.5) and similar role-change pickups. dnp_risk_min_threshold 8\u21925: stopped flagging 5-8min players as inactive, giving deep bench contrarians a chance to pass projection."
     },
     {
       "version": 1,
@@ -504,42 +610,42 @@
     {
       "version": 20,
       "date": "2026-03-16",
-      "change": "Over model tightening (17% hit rate → targeting 55%+): (1) stat_floors.rebounds 2.0→5.5 — eliminates fringe rebounders (Nance 2.5, Love borderline) from rebounds picks; only legit rotation bigs qualify. (2) min_edge_other_over: 2.5 (new) — over picks on rebounds/assists need a 2.5+ projection edge vs the 1.5 threshold kept for under picks; rebounds are too volatile for small-edge overs. (3) recent_form_over_ratio 1.08→1.15 — require 15% recent form spike to unlock the +12 confidence bonus for overs (was 8%); under model unchanged at 0.92. (4) Claude prompt AVOID clause updated — rebounds/assists overs now require a catalyst (cascade, opp-B2B, or 230+ total); prefer points over when edge quality is similar."
+      "change": "Over model tightening (17% hit rate \u2192 targeting 55%+): (1) stat_floors.rebounds 2.0\u21925.5 \u2014 eliminates fringe rebounders (Nance 2.5, Love borderline) from rebounds picks; only legit rotation bigs qualify. (2) min_edge_other_over: 2.5 (new) \u2014 over picks on rebounds/assists need a 2.5+ projection edge vs the 1.5 threshold kept for under picks; rebounds are too volatile for small-edge overs. (3) recent_form_over_ratio 1.08\u21921.15 \u2014 require 15% recent form spike to unlock the +12 confidence bonus for overs (was 8%); under model unchanged at 0.92. (4) Claude prompt AVOID clause updated \u2014 rebounds/assists overs now require a catalyst (cascade, opp-B2B, or 230+ total); prefer points over when edge quality is similar."
     },
     {
       "version": 23,
       "date": "2026-03-16",
-      "change": "Complete boost model rewrite — lookup + sigmoid tier (v23). Cross-date analysis proved boost is a STABLE per-player attribute (Wemby +0.3x on both 1400 and 8500 drafts, Cade +0.2x on both 5300 and 1200 drafts, Bam +0.6x on both 2200 and 388 drafts). Old formula tried to predict daily drafts from PPG/minutes — fundamentally wrong. New approach: (1) player_overrides lookup from 60+ real observations across Mar 6/9/10 ownership/actuals data — exact match returns known boost. (2) Sigmoid tier fallback for unknown players: boost = 3.0 - 2.8 × sigmoid((PPG - 12) / 4). Calibrated: 25+ PPG → ~0.2x, 20 PPG → ~0.5x, 15 PPG → ~1.1x, 12 PPG → ~1.6x, 10 PPG → ~1.9x, 8 PPG → ~2.3x, <5 PPG → ~2.6x. Big market discount -0.15. Removed: decay_base, scalar, base_offset, log_formula_active, log_a, log_b, log_ownership_scalar, fame_pts_base, fame_exponent, fame_cap."
+      "change": "Complete boost model rewrite \u2014 lookup + sigmoid tier (v23). Cross-date analysis proved boost is a STABLE per-player attribute (Wemby +0.3x on both 1400 and 8500 drafts, Cade +0.2x on both 5300 and 1200 drafts, Bam +0.6x on both 2200 and 388 drafts). Old formula tried to predict daily drafts from PPG/minutes \u2014 fundamentally wrong. New approach: (1) player_overrides lookup from 60+ real observations across Mar 6/9/10 ownership/actuals data \u2014 exact match returns known boost. (2) Sigmoid tier fallback for unknown players: boost = 3.0 - 2.8 \u00d7 sigmoid((PPG - 12) / 4). Calibrated: 25+ PPG \u2192 ~0.2x, 20 PPG \u2192 ~0.5x, 15 PPG \u2192 ~1.1x, 12 PPG \u2192 ~1.6x, 10 PPG \u2192 ~1.9x, 8 PPG \u2192 ~2.3x, <5 PPG \u2192 ~2.6x. Big market discount -0.15. Removed: decay_base, scalar, base_offset, log_formula_active, log_a, log_b, log_ownership_scalar, fame_pts_base, fame_exponent, fame_cap."
     },
     {
       "version": 22,
       "date": "2026-03-16",
-      "change": "14-date backtest (Feb 28 - Mar 14, 56 winning lineups): Gate C wildcard tier relaxed. (1) wildcard_min_minutes 15→8 — Santos/Clifford/Walker archetype (7-14 min avg) consistently appeared in winning lineups (Santos in 8/14 dates, Clifford in 5/14) but Gate C's 15-min floor excluded them even after v21 added the wildcard tier. 8-min floor matches the pipeline effective_gate floor so any player who passes projection also qualifies for wildcard evaluation. (2) wildcard_min_boost 2.5→2.0 — our boost estimation runs systematically 30-50% below actual leaderboard boosts (e.g. Clifford estimated ~2.3x, actual 4.2-4.8x; Raynaud estimated ~2.2x, actual 3.3-4.2x). Lowering the threshold ensures near-wildcard players qualify through Gate C when their estimated boost is in the 2.0-2.5 range."
+      "change": "14-date backtest (Feb 28 - Mar 14, 56 winning lineups): Gate C wildcard tier relaxed. (1) wildcard_min_minutes 15\u21928 \u2014 Santos/Clifford/Walker archetype (7-14 min avg) consistently appeared in winning lineups (Santos in 8/14 dates, Clifford in 5/14) but Gate C's 15-min floor excluded them even after v21 added the wildcard tier. 8-min floor matches the pipeline effective_gate floor so any player who passes projection also qualifies for wildcard evaluation. (2) wildcard_min_boost 2.5\u21922.0 \u2014 our boost estimation runs systematically 30-50% below actual leaderboard boosts (e.g. Clifford estimated ~2.3x, actual 4.2-4.8x; Raynaud estimated ~2.2x, actual 3.3-4.2x). Lowering the threshold ensures near-wildcard players qualify through Gate C when their estimated boost is in the 2.0-2.5 range."
     },
     {
       "version": 21,
       "date": "2026-03-16",
-      "change": "Leaderboard autopsy Mar 11-14 (winners 69-82, our sim ~55-67): 4 fixes. (1) Moonshot wildcard gate C — ultra-high-boost bench players (boost>=2.5, pred_min>=15) now qualify regardless of season/recent min floor. Captures Santos/Plowden/Hendricks archetype (10-18 min avg, 3-6ppg, 4.0-4.5x total multiplier) that appeared in all 4 winning leaderboards but was outside our projection pool. Wildcards bypass the 2.0 rating floor (their upside is pure boost leverage). (2) Moonshot max_per_team 2→3 (configurable via moonshot.max_per_team) — March 14 optimal play was 3-5 SAC players (Achiuwa RS 5.1, Raynaud RS 3.8, Westbrook RS 4.1, Clifford RS 2.1, Plowden RS 3.3); hardcoded max_per_team=2 prevented this entire stack. (3) S5 leverage_top_slots 2→1 — winning lineups put the high-RS anchor (Bane 6.5, Doncic 9.3, Murray 6.7, Jokic 5.1-6.5) in the 2.0x TOP slot, but our leverage_top_slots=2 forced both top slots to contrarians, never allowing a star anchor. (4) Dev team pts floor (moonshot.dev_team_pts_floor=8.0) — dev team bonus now suppressed for players with pts<8 (aging bench fodder like Jordan 6pts on NO got 1.30x undeservedly; Sensabaugh 12pts/UTAH still gets full bonus)."
+      "change": "Leaderboard autopsy Mar 11-14 (winners 69-82, our sim ~55-67): 4 fixes. (1) Moonshot wildcard gate C \u2014 ultra-high-boost bench players (boost>=2.5, pred_min>=15) now qualify regardless of season/recent min floor. Captures Santos/Plowden/Hendricks archetype (10-18 min avg, 3-6ppg, 4.0-4.5x total multiplier) that appeared in all 4 winning leaderboards but was outside our projection pool. Wildcards bypass the 2.0 rating floor (their upside is pure boost leverage). (2) Moonshot max_per_team 2\u21923 (configurable via moonshot.max_per_team) \u2014 March 14 optimal play was 3-5 SAC players (Achiuwa RS 5.1, Raynaud RS 3.8, Westbrook RS 4.1, Clifford RS 2.1, Plowden RS 3.3); hardcoded max_per_team=2 prevented this entire stack. (3) S5 leverage_top_slots 2\u21921 \u2014 winning lineups put the high-RS anchor (Bane 6.5, Doncic 9.3, Murray 6.7, Jokic 5.1-6.5) in the 2.0x TOP slot, but our leverage_top_slots=2 forced both top slots to contrarians, never allowing a star anchor. (4) Dev team pts floor (moonshot.dev_team_pts_floor=8.0) \u2014 dev team bonus now suppressed for players with pts<8 (aging bench fodder like Jordan 6pts on NO got 1.30x undeservedly; Sensabaugh 12pts/UTAH still gets full bonus)."
     },
     {
       "version": 19,
       "date": "2026-03-16",
-      "change": "Moonshot variance penalty + dev-team bench threshold: (1) moonshot.variance_penalty=0.3 — ceiling_score was rewarding RS variance (Westbrook gets +30% adj_ceiling boost from volatility), making boom/bust high-usage players outrank reliable role players. Replaced ceiling_score with consistency_base = raw_score × max(0.75, 1.0 - variance × 0.3). Westbrook-type (variance=0.6) loses 37% of moonshot ranking; Nesmith-type (variance=0.1) loses only 7%. (2) bench_pts_threshold 12→14, bench_min_threshold 26→30 — dev-team rotation players like P.J. Washington (11pts, 28min) and Marshall (~14pts, 28min) were incorrectly classified as 'stars' and got the spread penalty instead of the bench blowout bonus. Raising the thresholds captures role players on rebuilding teams who play extended minutes."
+      "change": "Moonshot variance penalty + dev-team bench threshold: (1) moonshot.variance_penalty=0.3 \u2014 ceiling_score was rewarding RS variance (Westbrook gets +30% adj_ceiling boost from volatility), making boom/bust high-usage players outrank reliable role players. Replaced ceiling_score with consistency_base = raw_score \u00d7 max(0.75, 1.0 - variance \u00d7 0.3). Westbrook-type (variance=0.6) loses 37% of moonshot ranking; Nesmith-type (variance=0.1) loses only 7%. (2) bench_pts_threshold 12\u219214, bench_min_threshold 26\u219230 \u2014 dev-team rotation players like P.J. Washington (11pts, 28min) and Marshall (~14pts, 28min) were incorrectly classified as 'stars' and got the spread penalty instead of the bench blowout bonus. Raising the thresholds captures role players on rebuilding teams who play extended minutes."
     },
     {
       "version": 18,
       "date": "2026-03-16",
-      "change": "Big-man calibration: (1) Post-LightGBM multiplier for low-scoring interior bigs (projection.big_man_calibration) — LightGBM has no rebounding feature, causing systematic underestimation of C/PF players like Poeltl (9ppg, 9reb → was projected ~2.5 RS, actual 5.4) and Portis (14ppg, 9reb → actual 5.2). Multiplier applies to pos=C/F with season_pts < 16 only, capped at +40%. reb_bonus = (season_reb-6)×0.04, blk_bonus = season_blk×0.10. High-scoring stars (Giannis 28ppg, Randle 24ppg) untouched. (2) big_pos_efficiency 0.70→0.85 — empirical data shows ~15% efficiency gap vs guards, not 30%. 0.70 was over-penalizing exactly the bigs we want in moonshot."
+      "change": "Big-man calibration: (1) Post-LightGBM multiplier for low-scoring interior bigs (projection.big_man_calibration) \u2014 LightGBM has no rebounding feature, causing systematic underestimation of C/PF players like Poeltl (9ppg, 9reb \u2192 was projected ~2.5 RS, actual 5.4) and Portis (14ppg, 9reb \u2192 actual 5.2). Multiplier applies to pos=C/F with season_pts < 16 only, capped at +40%. reb_bonus = (season_reb-6)\u00d70.04, blk_bonus = season_blk\u00d70.10. High-scoring stars (Giannis 28ppg, Randle 24ppg) untouched. (2) big_pos_efficiency 0.70\u21920.85 \u2014 empirical data shows ~15% efficiency gap vs guards, not 30%. 0.70 was over-penalizing exactly the bigs we want in moonshot."
     },
     {
       "version": 17,
       "date": "2026-03-16",
-      "change": "Mar 15 moonshot blind spots: (1) min_recent_minutes_floor 25→20 — Caruso (~20 min, +3.0x actual) and Walker (~20-22 min, +2.3x actual) were blocked by the minutes gate before boost was even evaluated. The boost filter (min_card_boost=1.5) is the real quality gate; the minutes floor was over-conservative. (2) boost_leverage_power 1.3→1.6 — at 1.3, a +3.0x player had only 1.6x adj_ceiling advantage over a +2.0x player, not enough to overcome RS projection differences. At 1.6 the ratio is 1.91x, making ultra-low-ownership plays rank decisively higher."
+      "change": "Mar 15 moonshot blind spots: (1) min_recent_minutes_floor 25\u219220 \u2014 Caruso (~20 min, +3.0x actual) and Walker (~20-22 min, +2.3x actual) were blocked by the minutes gate before boost was even evaluated. The boost filter (min_card_boost=1.5) is the real quality gate; the minutes floor was over-conservative. (2) boost_leverage_power 1.3\u21921.6 \u2014 at 1.3, a +3.0x player had only 1.6x adj_ceiling advantage over a +2.0x player, not enough to overcome RS projection differences. At 1.6 the ratio is 1.91x, making ultra-low-ownership plays rank decisively higher."
     },
     {
       "version": 16,
       "date": "2026-03-16",
-      "change": "Mar 15 ownership model audit: (1) fame_pts_base 8.0→14.0 — role players (10-14 ppg) were being treated as famous, inflating predicted ownership and suppressing boost estimates. Nesmith (12ppg) was getting ~1.46x estimated boost → filtered out by min_card_boost=1.5 despite +1.9x actual. Fix: only 18+ ppg scorers attract meaningful ownership inflation. (2) Replaced hardcoded development_teams list with continuous rebuild multiplier from live ESPN standings — team_bonus = max(1.0, 1.0 + max(0, 0.5 - win_pct)). SAC .250 → 1.25x, MEM .348 → 1.15x, competitive teams (.500+) → 1.0x. No maintenance required, auto-updates with standings daily. Removed development_teams and dev_team_boost from config entirely."
+      "change": "Mar 15 ownership model audit: (1) fame_pts_base 8.0\u219214.0 \u2014 role players (10-14 ppg) were being treated as famous, inflating predicted ownership and suppressing boost estimates. Nesmith (12ppg) was getting ~1.46x estimated boost \u2192 filtered out by min_card_boost=1.5 despite +1.9x actual. Fix: only 18+ ppg scorers attract meaningful ownership inflation. (2) Replaced hardcoded development_teams list with continuous rebuild multiplier from live ESPN standings \u2014 team_bonus = max(1.0, 1.0 + max(0, 0.5 - win_pct)). SAC .250 \u2192 1.25x, MEM .348 \u2192 1.15x, competitive teams (.500+) \u2192 1.0x. No maintenance required, auto-updates with standings daily. Removed development_teams and dev_team_boost from config entirely."
     },
     {
       "version": 15,

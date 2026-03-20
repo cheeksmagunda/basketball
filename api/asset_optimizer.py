@@ -45,7 +45,7 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     overlap_player_ids=None, overlap_cap=0,
                     overlap_id_key="id",
                     two_phase=False, raw_rating_key=None,
-                    star_indices=None, min_star_count=0):
+                    star_indices=None, min_star_count=0, max_star_count=0):
     """Find the optimal player-to-slot assignment using MILP.
 
     Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
@@ -86,6 +86,8 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
             minimum star presence in the lineup.
         min_star_count: Minimum number of players from star_indices that must
             appear in the lineup (default 0 = no constraint).
+        max_star_count: If >0, at most this many star_indices players in the
+            lineup (default 0 = no upper cap).
 
     Returns:
         List of n player dicts with slot assignments applied
@@ -108,7 +110,8 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                                boost_leverage_extra_power,
                                overlap_player_ids, overlap_cap, overlap_id_key,
                                star_indices=star_indices,
-                               min_star_count=min_star_count)
+                               min_star_count=min_star_count,
+                               max_star_count=max_star_count)
 
         if two_phase and len(selected) == n:
             # Phase 2: re-assign slots using raw RS for optimal placement.
@@ -118,7 +121,9 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
             return _solve_milp(selected, n, 0, 0,
                                rr_key, card_boost_key, time_limit,
                                0, 0.0, None, 0.0, 0.0, 0.0,
-                               None, 0, overlap_id_key)
+                               None, 0, overlap_id_key,
+                               star_indices=None, min_star_count=0,
+                               max_star_count=0)
 
         return selected
     except Exception:
@@ -131,7 +136,7 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 variance_penalty=0.0, variance_uplift=0.0,
                 boost_leverage_extra_power=0.0,
                 overlap_player_ids=None, overlap_cap=0, overlap_id_key="id",
-                star_indices=None, min_star_count=0):
+                star_indices=None, min_star_count=0, max_star_count=0):
     """Run the MILP solver to find optimal player-slot assignments."""
     players = list(range(len(projections)))
     slots = list(range(n))
@@ -231,6 +236,14 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in valid_stars for j in slots
             ) >= min_star_count
+
+    # Cap how many designated star anchors can appear (when config sets max_count).
+    if star_indices and max_star_count and max_star_count > 0:
+        valid_stars_cap = [i for i in star_indices if i in players]
+        if valid_stars_cap:
+            prob += lpSum(
+                x[i, j] for i in valid_stars_cap for j in slots
+            ) <= min(int(max_star_count), n)
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)

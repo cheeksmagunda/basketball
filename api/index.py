@@ -665,6 +665,9 @@ _CONFIG_DEFAULTS = {
         "game_chalk_rating_floor": 3.5,
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
+        # Starting 5 MILP: blend boost toward neutral so RS drives selection (0 = legacy).
+        "chalk_milp_rs_focus": 0.0,
+        "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
         "enabled": True,
@@ -3299,6 +3302,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             float(_cfg("matchup.chalk_adj_min", 0.92)),
             min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
         )
+        # MILP additive term only: pull boost toward neutral so projected RS competes with
+        # high-boost role players. UI chalk_ev_capped still uses real capped_boost.
+        _lu = _cfg("lineup", _CONFIG_DEFAULTS["lineup"])
+        _rs_focus = max(0.0, min(1.0, float(_lu.get("chalk_milp_rs_focus", 0.0))))
+        _boost_neutral = float(_lu.get("chalk_milp_boost_neutral", 1.0))
+        p["chalk_milp_boost"] = round(
+            (1.0 - _rs_focus) * float(capped_boost) + _rs_focus * _boost_neutral,
+            4,
+        )
         # Core value: RS × matchup × (slot + boost). No team motivation — disabled by audit.
         p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
@@ -3309,6 +3321,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
     sa_cfg = _cfg("star_anchor", {})
     sa_enabled = sa_cfg.get("enabled", True) if isinstance(sa_cfg, dict) else True
     sa_require = int(sa_cfg.get("require_count", 1)) if isinstance(sa_cfg, dict) else 1
+    sa_max = int(sa_cfg.get("max_count", 0)) if isinstance(sa_cfg, dict) else 0
     chalk_star_indices = [
         i for i, p in enumerate(chalk_eligible)
         if p.get("_is_star_anchor", False)
@@ -3320,10 +3333,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
 
     if not core_pool_enabled:
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
-                                rating_key="rating", card_boost_key="capped_boost",
+                                rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=2,
                                 star_indices=chalk_star_indices if chalk_star_indices else None,
-                                min_star_count=sa_require if chalk_star_indices else 0)
+                                min_star_count=sa_require if chalk_star_indices else 0,
+                                max_star_count=sa_max if sa_max > 0 else 0)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -3516,12 +3530,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             if p.get("_is_star_anchor", False)
         ] if sa_enabled else []
         chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
-                                rating_key="rating", card_boost_key="capped_boost",
+                                rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=2,
                                 objective_mode="chalk",
                                 variance_penalty=0.5,
                                 star_indices=_core_star_indices if _core_star_indices else None,
-                                min_star_count=sa_require if _core_star_indices else 0)
+                                min_star_count=sa_require if _core_star_indices else 0,
+                                max_star_count=sa_max if sa_max > 0 else 0)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
         # Star indices relative to core_pool for moonshot
         _moon_star_indices = [
@@ -3541,7 +3556,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  two_phase=True,
                                  raw_rating_key="rating",
                                  star_indices=_moon_star_indices if _moon_star_indices else None,
-                                 min_star_count=sa_require if _moon_star_indices else 0)
+                                 min_star_count=sa_require if _moon_star_indices else 0,
+                                 max_star_count=sa_max if sa_max > 0 else 0)
     else:
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
