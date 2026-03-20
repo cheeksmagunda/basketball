@@ -3207,6 +3207,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
 
         moonshot_by_name = {p["name"]: p for p in moonshot_pool}
         eligible_union = []
+        # Core pool = players eligible for BOTH chalk and moonshot (intersection),
+        # plus chalk-only and moonshot-only with computed cross-EVs.
+        # Both Starting 5 and Moonshot MILP run on the same core pool — one pool,
+        # two configurations (reliability vs ceiling). No separate filtering needed.
         for p in chalk_eligible:
             rec = {**p, "chalk_ev_capped": p["chalk_ev_capped"], "capped_boost": p["capped_boost"]}
             if p["name"] in moonshot_by_name:
@@ -3217,12 +3221,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                 rec["moonshot_ev"] = _mev
                 rec["adj_ceiling"] = _adj
             eligible_union.append(rec)
-        for p in moonshot_pool:
-            if p["name"] in {r["name"] for r in eligible_union}:
-                continue
-            cap_boost = min(p["est_mult"], boost_cap)
-            rec = {**p, "chalk_ev_capped": round(p["rating"] * (avg_slot + cap_boost), 2), "capped_boost": cap_boost}
-            eligible_union.append(rec)
+        # Moonshot-only players (pass moonshot gates but not chalk gates) are NOT added
+        # to the core pool. The core pool is one shared pool — if a player can't make
+        # Starting 5, they shouldn't be in the pool at all. This prevents the chalk gate
+        # bypass where sub-4.0-RS moonshot-only players leaked into Starting 5.
 
         core_size = min(int(core_pool_cfg.get("size", 8)), max(5, len(eligible_union)))
         core_metric = (core_pool_cfg.get("metric") or "max_ev").lower()
@@ -3233,15 +3235,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
         core_pool = eligible_union[:core_size]
 
-        # Chalk MILP must only use players that passed chalk eligibility gates.
-        # The core pool includes moonshot-only players (via role_spike/spot_starter)
-        # with synthetic chalk_ev_capped — running chalk MILP on the full core_pool
-        # lets sub-22-min players into Starting 5. Filter to chalk-eligible subset.
-        chalk_names = {p["name"] for p in chalk_eligible}
-        chalk_core = [p for p in core_pool if p["name"] in chalk_names]
-        if len(chalk_core) < 5:
-            chalk_core = core_pool  # safety fallback — use full pool if insufficient
-        chalk = optimize_lineup(chalk_core, n=5, sort_key="chalk_ev_capped",
+        # Core pool is built exclusively from chalk_eligible — all players passed
+        # chalk gates (4.0 RS, 22 min, 7 pts, 0.28 ppm). Both MILP runs use core_pool.
+        # If core pool has <5 players, fall back to full chalk_eligible.
+        chalk_source = core_pool if len(core_pool) >= 5 else chalk_eligible
+        chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
                                 max_per_team=2,
                                 objective_mode="chalk",

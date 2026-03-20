@@ -1,6 +1,6 @@
 {
-  "version": 48,
-  "updated_at": "2026-03-20T12:00:00Z",
+  "version": 49,
+  "updated_at": "2026-03-20T13:00:00Z",
   "updated_by": "audit",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -118,10 +118,10 @@
       "blk": 4.0,
       "tov": -1.2
     },
-    "compression_divisor": 5.5,
-    "compression_power": 0.72,
+    "compression_divisor": 4.5,
+    "compression_power": 0.78,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.35
+    "ai_blend_weight": 0.25
   },
   "cascade": {
     "redistribution_rate": 0.7,
@@ -172,7 +172,7 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 8,
+    "size": 12,
     "metric": "max_ev",
     "blend_weight": 0.5
   },
@@ -262,6 +262,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 49,
+      "date": "2026-03-20",
+      "change": "Core pool chalk gate bypass fix + RS spread unlock. (1) CRITICAL BUG: core pool fallback at line 3243 used full core_pool when <5 chalk-eligible players in core — let moonshot-only players (RS 3.5-3.9) into Starting 5 bypassing min_chalk_rating 4.0. Fixed: fallback now uses chalk_eligible (full list that passed all chalk gates). (2) core_pool.size 8→12 — larger pool ensures ≥5 chalk-eligible players available, reducing fallback frequency. (3) RS compression unlocked: compression_divisor 5.5→4.5, compression_power 0.72→0.78, ai_blend_weight 0.35→0.25. Effect: scorers (18+ PPG) project RS 6-7 instead of 4-5; accumulators stay RS 2-3; the gap between them drives lineup selection toward high-impact players. (4) Strategy: high RS × high boost, not medium × medium."
+    },
     {
       "version": 48,
       "date": "2026-03-20",
