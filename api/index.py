@@ -522,11 +522,11 @@ _CONFIG_DEFAULTS = {
         "blowout_ast_penalty":0.90,"blowout_reb_penalty":0.94,
     },
     "real_score": {
-        "dfs_weights":{"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2},
-        "compression_divisor": 5.5,
-        "compression_power": 0.72,
+        "dfs_weights":{"pts":2.5,"reb":0.5,"ast":1.0,"stl":2.0,"blk":1.5,"tov":-1.5},
+        "compression_divisor": 4.5,
+        "compression_power": 0.78,
         "rs_cap": 20.0,
-        "ai_blend_weight": 0.35,
+        "ai_blend_weight": 0.25,
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
     "projection": {
@@ -1747,10 +1747,10 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
-    w = _cfg("real_score.dfs_weights", {"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2})
-    return (pts * w.get("pts", 1.0) + reb * w.get("reb", 1.0) +
-            ast * w.get("ast", 1.5) + stl * w.get("stl", 4.5) +
-            blk * w.get("blk", 4.0) + tov * w.get("tov", -1.2))
+    w = _cfg("real_score.dfs_weights", {"pts":2.5,"reb":0.5,"ast":1.0,"stl":2.0,"blk":1.5,"tov":-1.5})
+    return (pts * w.get("pts", 2.5) + reb * w.get("reb", 0.5) +
+            ast * w.get("ast", 1.0) + stl * w.get("stl", 2.0) +
+            blk * w.get("blk", 1.5) + tov * w.get("tov", -1.5))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3016,13 +3016,29 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         chalk_min_tol = float(_cfg("projection.pred_min_tolerance", 2.0))
         if p.get("predMin", 0) < (p.get("season_min", 0) - chalk_min_tol):
             continue
-        # Hard boost floor — ALL players must meet this threshold, no exceptions.
-        # Boost dominance audit (Mar 19): removed star anchor pathway that let 20+ PPG
-        # players bypass the boost floor. Jokic (+0.2x), Luka (+0.0x), Wemby (+0.3x)
-        # should NEVER enter the chalk pool — their low boost kills lineup EV.
+        # Boost floor — players below this threshold fail unless star anchor applies.
         chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.0))
-        if p.get("est_mult", 0) < chalk_min_boost:
-            continue
+        est_boost = p.get("est_mult", 0)
+        is_star_anchor = False
+        if est_boost < chalk_min_boost:
+            # Star anchor pathway: genuine scorers (season_pts >= 20) with decent boost
+            # bypass the boost floor so lineups always include at least 1 high-PPG player.
+            # Stars blocked: Jokic (+0.2x), Luka (+0.0x), Wemby (+0.3x) — kills EV.
+            # Stars allowed: Josh Hart (+1.1x), OG Anunoby (+1.1x), Jalen Green (+1.6x).
+            sa_cfg = _cfg("star_anchor", {})
+            sa_enabled = sa_cfg.get("enabled", True) if isinstance(sa_cfg, dict) else True
+            sa_min_pts = float(sa_cfg.get("min_season_pts", 20.0)) if isinstance(sa_cfg, dict) else 20.0
+            sa_min_min = float(sa_cfg.get("min_season_min", 25.0)) if isinstance(sa_cfg, dict) else 25.0
+            sa_min_boost = float(sa_cfg.get("min_boost", 0.8)) if isinstance(sa_cfg, dict) else 0.8
+            sa_min_rating = float(sa_cfg.get("min_rating", 4.0)) if isinstance(sa_cfg, dict) else 4.0
+            if (sa_enabled
+                    and p.get("season_pts", 0) >= sa_min_pts
+                    and p.get("season_min", 0) >= sa_min_min
+                    and est_boost >= sa_min_boost
+                    and p.get("rating", 0) >= sa_min_rating):
+                is_star_anchor = True
+            else:
+                continue
         # Minimum rating gate: boost cannot rescue a weak base.
         # A player with rating < 3.5 doesn't generate enough RS to be a viable chalk pick
         # regardless of card boost. Kills Lopez (+3x, 11.6 pts) and Kennard (+3x, 8.9 pts)
@@ -3030,8 +3046,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         min_chalk_rating = _cfg("scoring_thresholds.min_chalk_rating", 3.5)
         if p["rating"] < min_chalk_rating:
             continue
-        capped_boost = min(p["est_mult"], boost_cap)
+        capped_boost = min(est_boost, boost_cap)
         p["capped_boost"] = capped_boost
+        p["_is_star_anchor"] = is_star_anchor
         # Light matchup adjustment for chalk (narrower range than moonshot — reliability first)
         opp = p.get("opp", "")
         chalk_matchup = _compute_matchup_factor(p, opp, def_stats or {})
@@ -3043,8 +3060,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
-    # Star anchor constraints removed — boost dominance audit (Mar 19).
-    # All players must meet boost floor; no special star treatment.
+    # Star anchor: identify star candidate indices for the MILP constraint.
+    # These are players that bypassed the boost floor via the star anchor pathway.
+    # The MILP will require at least min_star_count of them in the lineup.
+    sa_cfg = _cfg("star_anchor", {})
+    sa_enabled = sa_cfg.get("enabled", True) if isinstance(sa_cfg, dict) else True
+    sa_require = int(sa_cfg.get("require_count", 1)) if isinstance(sa_cfg, dict) else 1
+    chalk_star_indices = [
+        i for i, p in enumerate(chalk_eligible)
+        if p.get("_is_star_anchor", False)
+    ] if sa_enabled else []
 
     # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
     core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
@@ -3053,7 +3078,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
     if not core_pool_enabled:
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
-                                max_per_team=2)
+                                max_per_team=2,
+                                star_indices=chalk_star_indices if chalk_star_indices else None,
+                                min_star_count=sa_require if chalk_star_indices else 0)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -3239,12 +3266,25 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         # chalk gates (4.0 RS, 22 min, 7 pts, 0.28 ppm). Both MILP runs use core_pool.
         # If core pool has <5 players, fall back to full chalk_eligible.
         chalk_source = core_pool if len(core_pool) >= 5 else chalk_eligible
+        # Star indices relative to chalk_source
+        _chalk_source_names = [p["name"] for p in chalk_source]
+        _core_star_indices = [
+            i for i, p in enumerate(chalk_source)
+            if p.get("_is_star_anchor", False)
+        ] if sa_enabled else []
         chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
                                 max_per_team=2,
                                 objective_mode="chalk",
-                                variance_penalty=0.5)
+                                variance_penalty=0.5,
+                                star_indices=_core_star_indices if _core_star_indices else None,
+                                min_star_count=sa_require if _core_star_indices else 0)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
+        # Star indices relative to core_pool for moonshot
+        _moon_star_indices = [
+            i for i, p in enumerate(core_pool)
+            if p.get("_is_star_anchor", False)
+        ] if sa_enabled else []
         # No center cap — position balancing removed (boost dominance audit Mar 19)
         upside = optimize_lineup(core_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
@@ -3256,7 +3296,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  overlap_player_ids=chalk_ids,
                                  overlap_cap=3,
                                  two_phase=True,
-                                 raw_rating_key="rating")
+                                 raw_rating_key="rating",
+                                 star_indices=_moon_star_indices if _moon_star_indices else None,
+                                 min_star_count=sa_require if _moon_star_indices else 0)
     else:
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
@@ -7412,10 +7454,10 @@ async def lab_backtest(payload: dict = Body(...)):
                 k.startswith("real_score") for k in proposed_changes
             ):
                 w = proposed_cfg.get("real_score",{}).get("dfs_weights",
-                    {"pts":1.0,"reb":1.0,"ast":1.5,"stl":4.5,"blk":4.0,"tov":-1.2})
-                new_dfs = (pts*w.get("pts",1.0) + reb*w.get("reb",1.0) +
-                           ast*w.get("ast",1.5) + stl*w.get("stl",4.5) +
-                           blk*w.get("blk",4.0))
+                    {"pts":2.5,"reb":0.5,"ast":1.0,"stl":2.0,"blk":1.5,"tov":-1.5})
+                new_dfs = (pts*w.get("pts",2.5) + reb*w.get("reb",0.5) +
+                           ast*w.get("ast",1.0) + stl*w.get("stl",2.0) +
+                           blk*w.get("blk",1.5))
                 # Scale proposed RS proportionally
                 if pred_rs > 0:
                     old_w = current_cfg.get("real_score",{}).get("dfs_weights",
