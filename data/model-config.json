@@ -1,7 +1,7 @@
 {
-  "version": 52,
-  "updated_at": "2026-03-20T22:00:00Z",
-  "updated_by": "audit",
+  "version": 53,
+  "updated_at": "2026-03-20T23:00:00Z",
+  "updated_by": "rs-first-strategy",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 6.0,
@@ -216,7 +216,7 @@
     "compression_divisor": 4.5,
     "compression_power": 0.78,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.4,
+    "ai_blend_weight": 0.5,
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -274,17 +274,17 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.0,
+    "chalk_min_boost_floor": 0.5,
     "pred_min_tolerance": 2.0
   },
   "star_anchor": {
     "enabled": true,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
-    "min_boost": 0.8,
+    "min_boost": 0.3,
     "min_rating": 4.0,
     "require_count": 2,
-    "max_count": 2
+    "max_count": 3
   },
   "context_layer": {
     "enabled": true,
@@ -301,8 +301,8 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 12,
-    "metric": "max_ev",
+    "size": 15,
+    "metric": "rs",
     "blend_weight": 0.5
   },
   "odds_enrichment": {
@@ -323,7 +323,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.45,
+    "chalk_milp_rs_focus": 0.85,
     "chalk_milp_boost_neutral": 1.0
   },
   "line": {
@@ -344,14 +344,14 @@
   "moonshot": {
     "min_minutes_floor": 20,
     "min_recent_minutes_floor": 20,
-    "min_card_boost": 1.0,
+    "min_card_boost": 0.5,
     "min_rating_floor": 3.5,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 1.2,
+    "boost_leverage_power": 0.6,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -362,7 +362,13 @@
     "role_spike_season_floor": 8.0,
     "pred_min_tolerance": 3.0,
     "scoring_pts_bias_threshold": 10.0,
-    "scoring_pts_bias_scale": 0.015
+    "scoring_pts_bias_scale": 0.015,
+    "rs_bypass": {
+      "enabled": true,
+      "min_rating": 5.0,
+      "min_season_min": 25.0,
+      "min_boost": 0.3
+    }
   },
   "matchup": {
     "enabled": true,

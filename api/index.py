@@ -625,6 +625,8 @@ _CONFIG_DEFAULTS = {
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
+        # RS-bypass: high-RS proven scorers bypass the boost floor (disabled offline for safety)
+        "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
     },
     "matchup": {
         "enabled": True,
@@ -3414,9 +3416,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if pred_min < (season_min - moon_min_tol):
             continue
 
-        # Hard boost floor — ALL players must meet this, no exceptions.
+        # Hard boost floor — with RS-bypass for high-RS proven scorers.
         if est_mult < min_boost:
-            continue
+            rs_bypass = moon_cfg.get("rs_bypass", {})
+            if (rs_bypass.get("enabled", False)
+                    and p.get("rating", 0) >= float(rs_bypass.get("min_rating", 5.0))
+                    and season_min >= float(rs_bypass.get("min_season_min", 25.0))
+                    and est_mult >= float(rs_bypass.get("min_boost", 0.3))):
+                pass  # high-RS bypass
+            else:
+                continue
 
         # RotoWire: only exclude confirmed OUT players.
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
@@ -3515,7 +3524,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
         for r in eligible_union:
             ce, me = r.get("chalk_ev_capped", 0), r.get("moonshot_ev", 0)
-            r["_core_score"] = max(ce, me) if core_metric == "max_ev" else (blend_w * ce + (1 - blend_w) * me)
+            if core_metric == "rs":
+                r["_core_score"] = r.get("rating", 0)
+            elif core_metric == "max_ev":
+                r["_core_score"] = max(ce, me)
+            else:
+                r["_core_score"] = blend_w * ce + (1 - blend_w) * me
         eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
         core_pool = eligible_union[:core_size]
 
