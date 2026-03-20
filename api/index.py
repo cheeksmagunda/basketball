@@ -5914,7 +5914,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                     if _cached_at:
                         try:
                             _age_s = (datetime.utcnow() - datetime.fromisoformat(_cached_at)).total_seconds()
-                            if _age_s > 7200:
+                            if _age_s > 1800:  # 30 min — was 2h; fresher line picks
                                 cached = None
                         except Exception:
                             pass
@@ -6691,8 +6691,8 @@ async def line_history():
     # still appear in history — the JSON has the resolved results.
     csv_dates  = {i["name"][:-4]  for i in items if i.get("name", "").endswith(".csv")}
     json_dates = {i["name"][:-10] for i in items if i.get("name", "").endswith("_pick.json")}
-    # Cap at 14 days — UI shows 10 picks max; 30 dates meant up to 60 GitHub calls on cold start
-    all_dates  = sorted(csv_dates | json_dates, reverse=True)[:14]
+    # Cap at 30 days for more comprehensive history; parallel GitHub fetches keep it fast
+    all_dates  = sorted(csv_dates | json_dates, reverse=True)[:30]
 
     # Fetch CSV + JSON for each date in parallel
     def _fetch_date_files(date_str):
