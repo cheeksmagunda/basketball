@@ -367,6 +367,41 @@ def _slate_cache_from_github():
         print(f"[slate-cache] read err: {e}")
     return None
 
+
+def _github_slate_bust_active() -> bool:
+    """True if today's slate bust sentinel is active on GitHub (/api/refresh, lab config).
+
+    Railway runs multiple instances; /api/refresh only clears /tmp on one container.
+    Without this check, locked slates keep serving stale lineups from slate_v5_locked.
+
+    Uses only data/slate/{date}_bust.json (not data/locks/*): the lock backup may still
+    be a tombstone briefly while bust.json is already cleared after sync regen."""
+    try:
+        today = _et_date().isoformat()
+        bust_path = f"data/slate/{today}_bust.json"
+        for ref in (None, "main"):
+            bust_content, _ = _github_get_file(bust_path, ref_override=ref)
+            if bust_content:
+                bust_data = json.loads(bust_content)
+                if bust_data.get("_busted") or bust_data.get("at"):
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _clear_local_slate_tmp_caches():
+    """Remove today's slate + lock JSON from this instance's /tmp (hashed paths)."""
+    try:
+        _lp("slate_v5_locked").unlink(missing_ok=True)
+    except Exception:
+        pass
+    try:
+        _cp("slate_v5").unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def _games_cache_to_github(all_game_projections: dict):
     """Persist per-game projections {gameId: [players...]} to GitHub.
     Allows /api/picks to serve from cache without re-running _run_game()."""
@@ -4065,6 +4100,13 @@ def _get_slate_impl():
             pass
 
     if locked:
+        # Multi-instance: refresh busts GitHub but other containers still have
+        # stale slate_v5_locked in /tmp — drop local files when GitHub says busted.
+        try:
+            if _github_slate_bust_active():
+                _clear_local_slate_tmp_caches()
+        except Exception as _bust_chk_err:
+            print(f"[slate] github bust check err: {_bust_chk_err}")
         lock_cached = _lg("slate_v5_locked")
         if lock_cached:
             lock_cached["locked"] = True
@@ -4280,6 +4322,18 @@ def _get_slate_impl():
             threading.Thread(target=_slate_persist_bg, daemon=True).start()
         if locked:
             _ls("slate_v5_locked", result)
+        # Sync-clear bust so other Railway instances stop dropping /tmp on every
+        # locked request (bg-only clear races multi-instance).
+        if chalk or upside:
+            try:
+                _st = _et_date().isoformat()
+                _github_write_file(
+                    f"data/slate/{_st}_bust.json",
+                    "{}",
+                    f"clear bust sync after slate gen {_st}",
+                )
+            except Exception as _e:
+                print(f"[slate-cache] sync clear bust err: {_e}")
         return result
     finally:
         if not already_running:
