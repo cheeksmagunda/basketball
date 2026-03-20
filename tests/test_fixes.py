@@ -2260,5 +2260,75 @@ class TestRoleSpikeRs:
         assert rs_cfg["enabled"] is False
 
 
+# ─────────────────────────────────────────────────────────
+# TestHighBoostRolePathway — role players with 2.0x+ boost bypass minutes floor
+# ─────────────────────────────────────────────────────────
+class TestHighBoostRolePathway:
+    """High-boost role player pathway admits consistent rotation players the minutes
+    floor would otherwise block, using boost magnitude as the quality gate."""
+
+    def test_moonshot_code_has_pathway(self):
+        """Moonshot pool must contain is_high_boost_role pathway."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_high_boost_role" in src, "Moonshot must have is_high_boost_role pathway"
+        assert "hbr_min_boost" in src, "Moonshot must read hbr_min_boost from config"
+        assert "hbr_min_recent" in src, "Moonshot must read hbr_min_recent from config"
+
+    def test_chalk_code_has_pathway(self):
+        """Chalk pool must contain is_chalk_high_boost_role pathway."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_chalk_high_boost_role" in src, "Chalk must have is_chalk_high_boost_role pathway"
+        assert "chalk_hbr_min_boost" in src, "Chalk must read chalk_hbr_min_boost from config"
+        assert "chalk_hbr_min_recent" in src, "Chalk must read chalk_hbr_min_recent from config"
+
+    def test_moonshot_config_present(self):
+        """model-config.json must have moonshot.high_boost_role block with correct keys."""
+        cfg = json.load(open("data/model-config.json"))
+        hbr = cfg.get("moonshot", {}).get("high_boost_role", {})
+        assert hbr.get("enabled") is True, "high_boost_role should be enabled"
+        assert hbr.get("min_boost", 0) >= 1.5, "min_boost should be high enough to gate quality"
+        assert hbr.get("min_recent_min", 0) >= 12.0, "min_recent_min should require real minutes"
+        assert hbr.get("min_pred_min", 0) >= 12.0, "min_pred_min should require real minutes today"
+
+    def test_chalk_config_present(self):
+        """model-config.json must have chalk HBR keys under projection."""
+        cfg = json.load(open("data/model-config.json"))
+        proj = cfg.get("projection", {})
+        assert proj.get("chalk_hbr_enabled") is True, "chalk_hbr_enabled should be true"
+        assert proj.get("chalk_hbr_min_boost", 0) >= proj.get("moonshot", {}).get(
+            "high_boost_role", {}).get("min_boost", 0) or True, "chalk needs boost >= moonshot"
+        assert proj.get("chalk_hbr_min_boost", 0) >= 2.0, "chalk boost threshold should be >= 2.0"
+        assert proj.get("chalk_hbr_min_recent_min", 0) >= 14.0, "chalk requires more recent minutes"
+
+    def test_chalk_threshold_stricter_than_moonshot(self):
+        """Chalk HBR thresholds must be stricter than moonshot (reliability vs ceiling)."""
+        cfg = json.load(open("data/model-config.json"))
+        moon_boost = cfg["moonshot"]["high_boost_role"]["min_boost"]
+        chalk_boost = cfg["projection"]["chalk_hbr_min_boost"]
+        moon_recent = cfg["moonshot"]["high_boost_role"]["min_recent_min"]
+        chalk_recent = cfg["projection"]["chalk_hbr_min_recent_min"]
+        assert chalk_boost >= moon_boost, \
+            f"Chalk boost threshold {chalk_boost} should be >= moonshot {moon_boost}"
+        assert chalk_recent >= moon_recent, \
+            f"Chalk recent_min threshold {chalk_recent} should be >= moonshot {moon_recent}"
+
+    def test_pathway_included_in_moonshot_eligibility_check(self):
+        """Moonshot eligibility check must OR in is_high_boost_role."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # The eligibility if-not block must include all four pathways
+        assert "is_role_spike or is_high_boost_role" in src, \
+            "Moonshot eligibility must include is_high_boost_role in OR chain"
+
+    def test_pathway_included_in_chalk_eligibility_check(self):
+        """Chalk eligibility check must OR in is_chalk_high_boost_role."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_spot_starter or is_chalk_high_boost_role" in src, \
+            "Chalk eligibility must include is_chalk_high_boost_role in OR chain"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -3338,7 +3338,21 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                           _recent_min_chalk >= chalk_recent_floor)
         is_spot_starter = (p.get("predMin", 0) >= 28.0 and
                            p.get("_cascade_bonus", 0) >= 10.0)
-        if not (is_regular or is_spot_starter):
+        # High-boost role player pathway for chalk: stricter thresholds than moonshot
+        # because Starting 5 requires reliability. Only players with a strong boost
+        # signal AND consistent recent minutes qualify. Boost >= 2.5 means Real Sports
+        # considers them significantly underrated — a reliable contrarian play.
+        chalk_hbr_enabled    = _cfg("projection.chalk_hbr_enabled", True)
+        chalk_hbr_min_boost  = float(_cfg("projection.chalk_hbr_min_boost", 2.5))
+        chalk_hbr_min_recent = float(_cfg("projection.chalk_hbr_min_recent_min", 16.0))
+        chalk_hbr_min_pred   = float(_cfg("projection.chalk_hbr_min_pred_min", 16.0))
+        is_chalk_high_boost_role = (
+            chalk_hbr_enabled
+            and p.get("est_mult", 0) >= chalk_hbr_min_boost
+            and _recent_min_chalk >= chalk_hbr_min_recent
+            and p.get("predMin", 0) >= chalk_hbr_min_pred
+        )
+        if not (is_regular or is_spot_starter or is_chalk_high_boost_role):
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -3491,8 +3505,23 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             and recent_min >= season_min * role_spike_ratio
             and est_mult >= min_boost
         )
+        # High-boost role player pathway: consistent rotation player whose value comes
+        # from a high card boost + real RS projection, not from minutes volume.
+        # Example: 16 min/game player with +2.5x boost and RS 4.5 → chalk_ev 18.45 —
+        # beats many starters on EV. The boost floor IS the quality gate here.
+        hbr_cfg = moon_cfg.get("high_boost_role", {})
+        hbr_enabled     = hbr_cfg.get("enabled", True)
+        hbr_min_boost   = float(hbr_cfg.get("min_boost", 2.0))
+        hbr_min_recent  = float(hbr_cfg.get("min_recent_min", 14.0))
+        hbr_min_pred    = float(hbr_cfg.get("min_pred_min", 14.0))
+        is_high_boost_role = (
+            hbr_enabled
+            and est_mult >= hbr_min_boost
+            and recent_min >= hbr_min_recent
+            and pred_min >= hbr_min_pred
+        )
         if not (is_moonshot_regular or is_moonshot_spot_starter
-                or is_role_spike):
+                or is_role_spike or is_high_boost_role):
             continue
 
         # Never draft a moonshot player projected well below their season minute average.
