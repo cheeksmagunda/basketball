@@ -1,6 +1,6 @@
 {
-  "version": 49,
-  "updated_at": "2026-03-20T13:00:00Z",
+  "version": 51,
+  "updated_at": "2026-03-20T20:00:00Z",
   "updated_by": "audit",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
@@ -111,12 +111,12 @@
   },
   "real_score": {
     "dfs_weights": {
-      "pts": 1.5,
-      "reb": 1.0,
-      "ast": 1.5,
-      "stl": 4.5,
-      "blk": 4.0,
-      "tov": -1.2
+      "pts": 2.5,
+      "reb": 0.5,
+      "ast": 1.0,
+      "stl": 2.0,
+      "blk": 1.5,
+      "tov": -1.5
     },
     "compression_divisor": 4.5,
     "compression_power": 0.78,
@@ -156,6 +156,15 @@
     "bench_min_threshold": 30.0,
     "chalk_min_boost_floor": 1.0,
     "pred_min_tolerance": 2.0
+  },
+  "star_anchor": {
+    "enabled": true,
+    "min_season_pts": 20.0,
+    "min_season_min": 25.0,
+    "min_boost": 0.8,
+    "min_rating": 4.0,
+    "require_count": 1,
+    "max_count": 1
   },
   "context_layer": {
     "enabled": true,
@@ -262,6 +271,16 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 51,
+      "date": "2026-03-20",
+      "change": "Dynamic boost prediction framework (v51). Replaces priority of hardcoded player_overrides with data-driven actuals lookup. (1) Layer ordering fix: actuals/ownership CSV data (Layer 1) now takes precedence over config player_overrides (Layer 2). Real observations are always more accurate than manually maintained estimates — e.g. Christian Braun was config=3.0 but actual=1.8 (1.2x error). (2) Trend extrapolation: players with 3+ observations showing a consistent monotonic decline of ≥0.3 total now get a forward extrapolation of 50% of avg per-step decay, capped at 0.3 below most-recent value. Jalen Green (2.1→1.8→1.6) extrapolates to 1.5. (3) Deduplication: when both ownership/ and actuals/ have data for the same player+date, keep one entry per date (was double-counting, breaking trend detection). (4) Config player_overrides remain as Layer 2 fallback for players not yet observed in actuals (pre-season or rarely on top leaderboard). Sigmoid remains Layer 3 universal fallback."
+    },
+    {
+      "version": 50,
+      "date": "2026-03-20",
+      "change": "Scoring-dominant DFS weights + star anchor constraint. (1) DFS weights calibrated to actual RS drivers: pts 1.5→2.5 (scoring IS Real Score), reb 1.0→0.5 (rebounds alone don't win), ast 1.5→1.0, stl 4.5→2.0 (was 3x a point — insane), blk 4.0→1.5 (was 2.7x a point), tov -1.2→-1.5. Previously: 1 block = 2.7 pts scored in DFS value, making every big man project RS 4-5 while actual scorers projected 3-4. Now: a 20-PPG scorer projects RS 7-8, a 5-PPG big projects RS 2-3. This is the single biggest model fix. (2) Star anchor constraint: at least 1 player per lineup must be a genuine scorer (season_pts >= 20, season_min >= 25, boost >= 0.8, rating >= 4.0). These players bypass the chalk_min_boost_floor of 1.0 if they meet star criteria. MILP min_star_count=1 ensures exactly 1 star per lineup. This captures the Josh Hart (+1.1x RS 7.6), Jalen Green (+1.6x RS 5.6), OG Anunoby (+1.1x RS 7.1) wins we were missing. (3) Update _CONFIG_DEFAULTS to match new weights (prevents silent behavior change on GitHub outage)."
+    },
     {
       "version": 49,
       "date": "2026-03-20",
