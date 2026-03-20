@@ -3240,7 +3240,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         chalk_names = {p["name"] for p in chalk_eligible}
         chalk_core = [p for p in core_pool if p["name"] in chalk_names]
         if len(chalk_core) < 5:
-            chalk_core = core_pool  # safety fallback — use full pool if insufficient
+            # Safety fallback — use full chalk_eligible list (NOT core_pool).
+            # Using core_pool here would bypass chalk rating gates by letting
+            # moonshot-only players (lower min_rating_floor) into Starting 5.
+            chalk_core = chalk_eligible
         chalk = optimize_lineup(chalk_core, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="capped_boost",
                                 max_per_team=2,
