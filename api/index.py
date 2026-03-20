@@ -2432,6 +2432,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "season_blk": round(stats.get("season_blk", blk), 1),
         "recent_blk": round(stats.get("recent_blk", blk), 1),
         "injury_status": pinfo.get("injury_status", ""),
+        # Overperform signals — surfaced as pills on player cards.
+        # _hot_streak: recent pts >= 1.15x season avg (configurable via signals.hot_streak_ratio)
+        "_hot_streak": bool(
+            season_pts > 0
+            and recent_pts / season_pts >= float(_cfg("signals.hot_streak_ratio", 1.15))
+        ),
     }
 
 # ─────────────────────────────────────────────────────────────────────────────

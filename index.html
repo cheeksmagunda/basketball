@@ -352,6 +352,9 @@
       border-radius: 20px; padding: 2px 8px;
       color: var(--text-dim); white-space: nowrap;
     }
+    .overperform-hot  { color: #FF8C00; border-color: #FF8C0044; }
+    .overperform-odds { color: var(--line); border-color: #c9a22244; }
+    .overperform-ai   { color: var(--lab);  border-color: #5bcab344; }
     .stat-grid-row {
       display: flex; gap: 2px;
     }
@@ -2057,6 +2060,9 @@ function renderCards(picks, containerId, mode, opts = {}) {
       p.est_mult && `<span class="stat-context-pill">+${p.est_mult}x card</span>`,
       minPillText && `<span class="stat-context-pill">${minPillText}</span>`,
       (p._decline && p._decline < 0.85) && `<span class="stat-context-pill" style="color:var(--color-danger);border-color:rgba(255,180,180,0.15)">↓${Math.round((1-p._decline)*100)}% usage</span>`,
+      p._hot_streak && `<span class="stat-context-pill overperform-hot">🔥 HOT</span>`,
+      p._odds_adjusted && `<span class="stat-context-pill overperform-odds">📈 ODDS EDGE</span>`,
+      (p._context_adj && p._context_adj > 1.05) && `<span class="stat-context-pill overperform-ai">🧠 +${Math.round((p._context_adj - 1) * 100)}%</span>`,
       (isLog && !hasActuals && !playerStats) ? '<span class="pending-results">Waiting for results</span>' : '',
     ].filter(Boolean);
 
