@@ -1,7 +1,7 @@
 {
-  "version": 53,
-  "updated_at": "2026-03-20T23:00:00Z",
-  "updated_by": "rs-first-strategy",
+  "version": 54,
+  "updated_at": "2026-03-20T23:30:00Z",
+  "updated_by": "game-context-rs-signals",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 6.0,
@@ -251,6 +251,20 @@
       "recency_strength": 0.12,
       "max_nudge": 0.12,
       "cascade_weight": 0.06
+    },
+    "closeness": {
+      "enabled": true,
+      "strength": 0.5,
+      "max_mult": 1.40
+    },
+    "cascade_rs": {
+      "enabled": true,
+      "strength": 0.6
+    },
+    "role_spike_rs": {
+      "enabled": true,
+      "min_ratio": 1.2,
+      "strength": 0.4
     }
   },
   "cascade": {

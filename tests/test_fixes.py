@@ -2166,5 +2166,99 @@ class TestEnhancedSpreadAdjustment:
         assert "230" in src, "Shootout total threshold (230) should be in code"
 
 
+# ─────────────────────────────────────────────────────────
+# TestClosenessCoefficient — game-context RS multiplier
+# ─────────────────────────────────────────────────────────
+class TestClosenessCoefficient:
+    """Closeness coefficient re-integrated selectively in project_player."""
+
+    def test_closeness_import_available(self):
+        """closeness_coefficient should be importable from real_score."""
+        from api.real_score import closeness_coefficient
+        assert callable(closeness_coefficient)
+
+    def test_tight_game_higher_than_blowout(self):
+        """Pick'em game should have higher closeness than 12-point spread."""
+        from api.real_score import closeness_coefficient
+        tight = closeness_coefficient(0, 222)
+        blowout = closeness_coefficient(12, 222)
+        assert tight > blowout, f"Tight {tight} should exceed blowout {blowout}"
+        assert tight >= 1.5, f"Pick'em closeness should be >= 1.5; got {tight}"
+        assert blowout <= 1.3, f"Blowout closeness should be <= 1.3; got {blowout}"
+
+    def test_closeness_code_in_project_player(self):
+        """project_player should use closeness_coefficient when enabled."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "closeness_coefficient" in src
+        assert "close_cfg" in src
+        assert "usage_scale" in src
+
+    def test_closeness_config_enabled(self):
+        """Production config should have closeness enabled."""
+        cfg = json.load(open("data/model-config.json"))
+        cc = cfg.get("real_score", {}).get("closeness", {})
+        assert cc.get("enabled") is True
+
+    def test_closeness_defaults_disabled_offline(self):
+        """_CONFIG_DEFAULTS should have closeness disabled (safe fallback)."""
+        from api.index import _CONFIG_DEFAULTS
+        cc = _CONFIG_DEFAULTS["real_score"]["closeness"]
+        assert cc["enabled"] is False
+
+
+# ─────────────────────────────────────────────────────────
+# TestCascadeRsBoost — usage-spike RS multiplier from injuries
+# ─────────────────────────────────────────────────────────
+class TestCascadeRsBoost:
+    """Cascade RS boost gives direct RS multiplier for injury beneficiaries."""
+
+    def test_cascade_rs_code_exists(self):
+        """project_player should have cascade_rs logic."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "cascade_rs" in src
+        assert "cascade_rs_mult" in src
+
+    def test_cascade_rs_config_enabled(self):
+        """Production config should have cascade_rs enabled."""
+        cfg = json.load(open("data/model-config.json"))
+        cr = cfg.get("real_score", {}).get("cascade_rs", {})
+        assert cr.get("enabled") is True
+
+    def test_cascade_rs_defaults_disabled(self):
+        """_CONFIG_DEFAULTS should have cascade_rs disabled."""
+        from api.index import _CONFIG_DEFAULTS
+        cr = _CONFIG_DEFAULTS["real_score"]["cascade_rs"]
+        assert cr["enabled"] is False
+
+
+# ─────────────────────────────────────────────────────────
+# TestRoleSpikeRs — hot streak / expanded role RS boost
+# ─────────────────────────────────────────────────────────
+class TestRoleSpikeRs:
+    """Role-spike RS boost for players in expanded roles."""
+
+    def test_role_spike_rs_code_exists(self):
+        """project_player should have role_spike_rs logic."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "role_spike_rs" in src
+        assert "spike_mult" in src
+        assert "pts_surge" in src
+
+    def test_role_spike_config_enabled(self):
+        """Production config should have role_spike_rs enabled."""
+        cfg = json.load(open("data/model-config.json"))
+        rs = cfg.get("real_score", {}).get("role_spike_rs", {})
+        assert rs.get("enabled") is True
+
+    def test_role_spike_defaults_disabled(self):
+        """_CONFIG_DEFAULTS should have role_spike_rs disabled."""
+        from api.index import _CONFIG_DEFAULTS
+        rs_cfg = _CONFIG_DEFAULTS["real_score"]["role_spike_rs"]
+        assert rs_cfg["enabled"] is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

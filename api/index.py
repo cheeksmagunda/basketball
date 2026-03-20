@@ -40,12 +40,12 @@ load_dotenv()
 
 # Real Score Ecosystem modules
 try:
-    from api.real_score import real_score_projection, _make_rng
+    from api.real_score import real_score_projection, _make_rng, closeness_coefficient
     from api.asset_optimizer import optimize_lineup
     from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
 except ImportError:
-    from .real_score import real_score_projection, _make_rng
+    from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
@@ -598,6 +598,20 @@ _CONFIG_DEFAULTS = {
             "blk_threshold": 1.0,
             "bonus_3cat": 1.08,
             "bonus_td": 1.15,
+        },
+        "closeness": {
+            "enabled": False,
+            "strength": 0.5,
+            "max_mult": 1.40,
+        },
+        "cascade_rs": {
+            "enabled": False,
+            "strength": 0.6,
+        },
+        "role_spike_rs": {
+            "enabled": False,
+            "min_ratio": 1.2,
+            "strength": 0.4,
         },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
@@ -2300,9 +2314,58 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         if m != 1.0:
             raw_score = min(raw_score * m, rs_cap)
 
-    # (big man calibration, scoring bias, calibration scale all removed —
-    # these were stacked multipliers that inflated bench players to RS 3.5-4.0
-    # when they actually deliver RS 1.5. Simpler = fewer compounding errors.)
+    # ── Game closeness RS multiplier — selective by player usage ──────────
+    # The RS algorithm HEAVILY rewards plays in tight games (clutch factor).
+    # Re-integrated from real_score.py but scaled by usage so bench players
+    # don't inflate (the old bug). High-usage players in tight games get the
+    # full closeness bonus. Low-usage bench players get almost nothing.
+    #
+    # Key insight: a role player in a 2-point game with 3 steals and a scoring
+    # run will outscore a superstar in a blowout EVERY TIME in RS.
+    close_cfg = rs_cfg.get("closeness", {})
+    if close_cfg.get("enabled", False):
+        try:
+            c_c = closeness_coefficient(spread, total)
+            # Usage proxy: pts_per_min normalized (league avg ~0.5 pts/min)
+            ppm = pts / max(avg_min, 1)
+            usage_scale = min(ppm / 0.5, 1.5)  # caps at 1.5 for elite scorers
+            strength = float(close_cfg.get("strength", 0.5))
+            # Selective: only the (c_c - 1.0) bonus is scaled by usage
+            # Bench player (ppm 0.25, usage_scale 0.5): gets 50% of bonus
+            # Star (ppm 0.75, usage_scale 1.5): gets 150% of bonus (capped)
+            close_mult = 1.0 + (c_c - 1.0) * usage_scale * strength
+            close_mult = max(0.85, min(close_mult, float(close_cfg.get("max_mult", 1.40))))
+            raw_score = min(raw_score * close_mult, rs_cap)
+        except Exception:
+            pass  # non-fatal: real_score.py import or math error
+
+    # ── Cascade RS boost — usage spike from teammate injury ────────────────
+    # When a starter is OUT, backups inherit not just minutes but USAGE.
+    # More touches = more RS opportunity. This is additive to the minute scaling
+    # already applied to the heuristic. Mar 10: Cameron Payne (Lowry OUT) went
+    # from projected 2.6 to actual 7.7 — minute scaling alone can't explain this.
+    cascade_cfg = rs_cfg.get("cascade_rs", {})
+    if cascade_cfg.get("enabled", False) and cascade_bonus > 0:
+        cascade_str = float(cascade_cfg.get("strength", 0.6))
+        # Scale: +10 cascade min → ~1.10× RS boost (with strength 0.6)
+        cascade_rs_mult = 1.0 + min(cascade_bonus / 15.0, 0.30) * cascade_str
+        raw_score = min(raw_score * cascade_rs_mult, rs_cap)
+
+    # ── Role-spike RS boost — hot streak / expanded role detection ─────────
+    # Players whose recent production significantly exceeds their season average
+    # are in an expanded role (injury, trade, coach decision). RS correlates with
+    # opportunity: more minutes + more usage = exponentially more RS.
+    # Mar 12: Middleton (recent 28min vs season 26min) hit RS 5.8.
+    # Mar 7: Hendricks (took Achiuwa's minutes) hit RS 4.1.
+    spike_cfg = rs_cfg.get("role_spike_rs", {})
+    if spike_cfg.get("enabled", False):
+        _spike_ratio = float(spike_cfg.get("min_ratio", 1.2))
+        if season_min > 0 and recent_min >= season_min * _spike_ratio and recent_pts > 0:
+            pts_surge = recent_pts / max(season_pts, 1)
+            spike_str = float(spike_cfg.get("strength", 0.4))
+            spike_mult = 1.0 + min(pts_surge - 1.0, 0.30) * spike_str
+            if spike_mult > 1.0:
+                raw_score = min(raw_score * spike_mult, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
