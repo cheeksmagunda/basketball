@@ -117,7 +117,7 @@
       z-index: 0;
     }
 
-    .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 170px; }
+    .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 140px; }
 
     /* Uppercase letter-spacing for readability (buttons, labels, metadata) */
     [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: 0.06em; }
@@ -161,7 +161,7 @@
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
       position: fixed;
-      bottom: 28px;
+      bottom: 8px;
       left: 50%;
       transform: translateX(-50%);
       width: calc(100% - 32px);
@@ -896,7 +896,7 @@
     /* Ben tab: fixed-height flex column — messages scroll, input always visible */
     #tab-lab.active {
       display: flex; flex-direction: column;
-      height: calc(100dvh - 80px - 150px);
+      height: calc(100dvh - 80px - 120px);
       transition: height 0.15s ease;
       padding-top: 0; overflow: hidden;
     }
@@ -1194,6 +1194,7 @@
         <div id="lineNoPickMsg" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:center;font-size:0.78rem;color:var(--muted)"></div>
         <div id="linePickCard"></div>
         <div id="lineSlateSummary" style="margin-top:16px"></div>
+        <div style="text-align:center;margin-top:12px"><button type="button" id="lineRefreshBtn" class="secondary-btn" style="font-size:0.68rem;padding:6px 14px;opacity:0.7" onclick="forceRefreshLinePicks()">Refresh Picks</button></div>
       </div>
       <!-- Pick detail bottom sheet -->
       <div id="linePickModal" onclick="closeLinePickModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1001;align-items:flex-end">
@@ -3190,6 +3191,24 @@ function retryLineOfTheDay() {
   fetchLineOfTheDay();
 }
 
+async function forceRefreshLinePicks() {
+  const btn = _el('lineRefreshBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing...'; }
+  try {
+    const r = await fetchWithTimeout('/api/line-force-regenerate', {}, 90000);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
+    _renderLineLOTDFromState();
+    if (btn) { btn.textContent = 'Refreshed!'; btn.style.color = 'var(--color-success)'; }
+    fetchLineHistory(); // refresh history too
+    setTimeout(function() { if (btn) { btn.textContent = 'Refresh Picks'; btn.disabled = false; btn.style.color = ''; } }, 2000);
+  } catch(e) {
+    console.warn('[line] force refresh failed:', e);
+    if (btn) { btn.textContent = 'Failed — Retry'; btn.disabled = false; }
+  }
+}
+
 function renderNextSlatePending() {
   return '<div style="text-align:center;padding:24px 16px;color:var(--color-text-muted);font-size:0.82rem">'
     + '<div style="font-size:1.4rem;margin-bottom:8px">🏀</div>'
@@ -3246,7 +3265,17 @@ async function initLinePage() {
   const todayET = _etToday();
   const dateChanged = LINE_LOADED_DATE !== todayET;
   if (!dateChanged) {
-    // Same day — show cached state immediately, then background re-fetch so we get
+    // Same day — check if data is stale (>15 min since last success).
+    // If stale, do a foreground fetch with skeleton; otherwise background re-fetch.
+    const _lotdAge = LINE_LOTD_STATE.loadedAt ? (Date.now() - LINE_LOTD_STATE.loadedAt) : Infinity;
+    const _isStale = _lotdAge > 15 * 60 * 1000; // 15 min staleness threshold
+    if (_isStale) {
+      // Data too old — foreground fetch with skeleton so user sees loading indicator
+      fetchLineOfTheDay(true, false);
+      fetchLineHistory();
+      return;
+    }
+    // Fresh data — show cached state immediately, then background re-fetch so we get
     // rotated pick after a hit (first load after bet resolves).
     _renderLineLOTDFromState();
     switchLineDir(LINE_DIR);
