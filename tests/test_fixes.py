@@ -2455,5 +2455,91 @@ class TestRsCalibrationWeights:
         assert "su_season_pts" in src, "Scorer upside must check season_pts threshold"
 
 
+# ─────────────────────────────────────────────────────────
+# TestCascadeCapFix — per_player_cap_minutes raised to 10.0
+# Ensures primary-backup cascade scenarios correctly propagate significant minutes
+# ─────────────────────────────────────────────────────────
+class TestCascadeCapFix:
+    """Cascade cap raised from 2-3 min to 10 min so primary backups correctly inherit
+    starter-level minutes when a teammate goes OUT."""
+
+    def test_cascade_cap_in_config(self):
+        """model-config.json must have per_player_cap_minutes >= 8.0."""
+        cfg = json.load(open("data/model-config.json"))
+        cap = cfg.get("cascade", {}).get("per_player_cap_minutes", 0)
+        assert cap >= 8.0, (
+            f"per_player_cap_minutes should be >= 8.0 to allow meaningful cascade propagation, got {cap}"
+        )
+
+    def test_cascade_cap_in_defaults(self):
+        """_CONFIG_DEFAULTS cascade.per_player_cap_minutes must be >= 8.0 in source."""
+        src = open("api/index.py").read()
+        # Find per_player_cap_minutes in the _CONFIG_DEFAULTS dict
+        m = re.search(r'"cascade":\s*\{[^}]*"per_player_cap_minutes"\s*:\s*([\d.]+)', src)
+        assert m, "_CONFIG_DEFAULTS must define cascade.per_player_cap_minutes"
+        cap = float(m.group(1))
+        assert cap >= 8.0, (
+            f"_CONFIG_DEFAULTS per_player_cap_minutes should be >= 8.0, got {cap}"
+        )
+
+    def test_cascade_rs_enabled_in_config(self):
+        """Production config must have cascade_rs enabled so cascade players get RS uplift."""
+        cfg = json.load(open("data/model-config.json"))
+        cr = cfg.get("real_score", {}).get("cascade_rs", {})
+        assert cr.get("enabled") is True, "cascade_rs.enabled must be True in production config"
+
+
+# ─────────────────────────────────────────────────────────
+# TestRotoConfirmedRatingException — confirmed rotation players bypass min_rating_floor
+# ─────────────────────────────────────────────────────────
+class TestRotoConfirmedRatingException:
+    """Confirmed rotation players with high boost pass a lower RS floor (2.2) in
+    the moonshot pool, capturing players like Garza, Paul Reed, Taylor Hendricks."""
+
+    def test_roto_confirmed_exception_code_exists(self):
+        """Moonshot pool must have roto_confirmed_min_rating exception logic."""
+        src = open("api/index.py").read()
+        assert "roto_confirmed_min_rating" in src, (
+            "Moonshot pool must read roto_confirmed_min_rating from config"
+        )
+        assert "roto_confirmed_min_boost" in src, (
+            "Moonshot pool must read roto_confirmed_min_boost from config"
+        )
+        assert "_is_roto_confirmed" in src, (
+            "Moonshot pool must check _is_roto_confirmed for the exception"
+        )
+        assert "_has_cascade" in src, (
+            "Moonshot pool must allow cascade-elevated players via _has_cascade"
+        )
+
+    def test_roto_confirmed_config_keys(self):
+        """model-config.json moonshot section must have roto_confirmed_min_rating and min_boost."""
+        cfg = json.load(open("data/model-config.json"))
+        moon = cfg.get("moonshot", {})
+        assert "roto_confirmed_min_rating" in moon, (
+            "moonshot.roto_confirmed_min_rating must exist in model-config.json"
+        )
+        assert "roto_confirmed_min_boost" in moon, (
+            "moonshot.roto_confirmed_min_boost must exist in model-config.json"
+        )
+        min_rating = moon["roto_confirmed_min_rating"]
+        min_boost = moon["roto_confirmed_min_boost"]
+        assert 2.0 <= min_rating <= 2.5, (
+            f"roto_confirmed_min_rating should be 2.0-2.5 (selective but not too strict), got {min_rating}"
+        )
+        assert 2.0 <= min_boost <= 3.0, (
+            f"roto_confirmed_min_boost should be 2.0-3.0, got {min_boost}"
+        )
+
+    def test_context_pass_includes_cascade_fields(self):
+        """Context pass player payload must include cascade_bonus and roto_status."""
+        src = open("api/index.py").read()
+        assert '"cascade_bonus"' in src, "Context pass payload must include cascade_bonus field"
+        assert '"roto_status"' in src, "Context pass payload must include roto_status field"
+        assert "CASCADE & ROLE CONFIRMATION SIGNALS" in src, (
+            "Context pass prompt must include cascade signal instructions"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

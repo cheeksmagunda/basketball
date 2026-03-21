@@ -271,7 +271,7 @@
   },
   "cascade": {
     "redistribution_rate": 0.85,
-    "per_player_cap_minutes": 3.0,
+    "per_player_cap_minutes": 10.0,
     "center_forward_share": 0.3
   },
   "projection": {
@@ -410,7 +410,9 @@
       "min_rating": 5.0,
       "min_season_min": 25.0,
       "min_boost": 0.3
-    }
+    },
+    "roto_confirmed_min_rating": 2.2,
+    "roto_confirmed_min_boost": 2.5
   },
   "matchup": {
     "enabled": true,

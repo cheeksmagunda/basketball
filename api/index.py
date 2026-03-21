@@ -614,7 +614,7 @@ _CONFIG_DEFAULTS = {
             "strength": 0.4,
         },
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
     "projection": {
         "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
@@ -2607,11 +2607,14 @@ def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> st
                 "content": (
                     f"Today is {today}. I need a concise NBA intelligence briefing for these teams "
                     f"playing tonight: {team_list}.{key_players_blurb}\n\n"
-                    "Search for the latest news (last 48 hours) on:\n"
-                    "1. Injury updates and their impact on teammates (e.g. star out = role player minutes up)\n"
-                    "2. Coach press conference quotes about rotation changes or minute increases\n"
-                    "3. Notable rest days, back-to-backs, or load management\n"
-                    "4. Any breaking roster news (trades, call-ups, returns from injury)\n\n"
+                    "PRIORITY: Search for confirmed OUT players and their positional backups who will "
+                    f"inherit 15+ minutes tonight (e.g. 'NBA OUT tonight {today}', 'NBA injury report "
+                    f"{today}'). Name the starter who is OUT and the specific backup likely to start "
+                    "or play extended minutes. These cascade situations are the highest-value signals.\n\n"
+                    "Also search for:\n"
+                    "1. Coach press conference quotes about rotation changes or minute increases\n"
+                    "2. Notable rest days, back-to-backs, or load management\n"
+                    "3. Any breaking roster news (trades, call-ups, returns from injury)\n\n"
                     "Return ONLY a bullet-point summary of actionable findings. Each bullet should name "
                     "the specific player(s) affected and why. Skip teams with no relevant news. "
                     "Keep it under 2000 characters total. No preamble — start with the first bullet."
@@ -2866,12 +2869,23 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         game_ctx[home] = {"opp": away, "spread": spread, "total": total, "side": "home"}
         game_ctx[away] = {"opp": home, "spread": -spread, "total": total, "side": "away"}
 
+    # Fetch RotoWire statuses for cascade/role confirmation signals (uses 30-min cache)
+    rw_ctx = {}
+    try:
+        from api.rotowire import get_all_statuses as _gcs
+        rw_ctx = _gcs() or {}
+    except Exception:
+        pass
+
     # Build compact player list for prompt (top 40 by rating to keep prompt small)
     sorted_proj = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:40]
     players_payload = []
     for p in sorted_proj:
         team = p.get("team", "")
         ctx  = game_ctx.get(team, {})
+        cascade_bonus = round(p.get("_cascade_bonus", 0), 1)
+        roto_entry = rw_ctx.get(p["name"].lower(), {})
+        roto_status = roto_entry.get("status", "unknown")
         entry = {
             "name":        p["name"],
             "team":        team,
@@ -2885,6 +2899,9 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
             "season_blk":  round(p.get("season_blk", 0), 1),
             "projected_rs": p.get("rating", 0),
             "card_boost":   round(p.get("est_mult", 0), 1),
+            "pred_min":     round(p.get("predMin", p.get("season_min", 0)), 1),
+            "cascade_bonus": cascade_bonus,
+            "roto_status":  roto_status,
         }
         # Include Odds API lines if available (from _enrich_projections_with_odds)
         if p.get("odds_pts_line"):
@@ -2953,6 +2970,19 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "signals expanded role (teammate injury, matchup, coaching decision). "
         "Use this as a CONFIRMING signal — if odds + narrative both point up, that's "
         "a strong adjustment. Don't adjust purely on odds divergence alone.\n\n"
+
+        "CASCADE & ROLE CONFIRMATION SIGNALS:\n"
+        "Each player now includes `cascade_bonus` (extra minutes inherited from a teammate injury) "
+        "and `roto_status` (RotoWire confirmation: 'confirmed'=in starting lineup, "
+        "'expected'=likely in rotation, 'questionable'=uncertain, 'unknown'=not listed).\n"
+        "- cascade_bonus >= 5.0: This player is inheriting real starter minutes tonight. "
+        "If card_boost >= 2.0, apply 1.15–1.25x UP — the extra minutes create outsized RS "
+        "opportunities (clutch moments, defensive plays, hustle stats in a close game). "
+        "Do NOT penalize these players for blowout risk — their minutes are coach-committed.\n"
+        "- roto_status='confirmed' + cascade_bonus >= 8: Apply 1.20–1.30x UP — high-confidence "
+        "starter-role situation with real upside.\n"
+        "- roto_status='unknown' + pred_min < 18: Apply 0.85–0.90x DOWN — player not in RotoWire "
+        "rotation and has fragile minute floor; DNP or early hook risk is meaningful.\n\n"
 
         "CALIBRATION: Most players get NO adjustment (omit them). Only adjust when you have "
         "a clear narrative reason. Typical batch: 4-8 players out of 40. "
@@ -3560,10 +3590,22 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
             continue
 
-        # Minimum rating floor — all pathways use the same floor (no wildcard bypass).
+        # Minimum rating floor — all pathways use the same floor.
+        # Exception: confirmed rotation players with high boost pass a lower floor.
+        # This captures cascade-elevated backups (e.g. Garza when Porzingis is OUT)
+        # and confirmed role players with very high boosts (e.g. Taylor Hendricks +3.0x).
         min_rating_floor = moon_cfg.get("min_rating_floor", 3.0)
         if p["rating"] < min_rating_floor:
-            continue
+            roto_confirmed_min_rating = float(moon_cfg.get("roto_confirmed_min_rating", 2.2))
+            roto_confirmed_min_boost = float(moon_cfg.get("roto_confirmed_min_boost", 2.5))
+            _roto_entry = (rw_statuses or {}).get(p["name"].lower(), {})
+            _roto_status = _roto_entry.get("status", "unknown")
+            _is_roto_confirmed = _roto_status in ("confirmed", "expected")
+            _has_cascade = p.get("_cascade_bonus", 0) >= 5.0
+            if (_is_roto_confirmed or _has_cascade) and est_mult >= roto_confirmed_min_boost and p["rating"] >= roto_confirmed_min_rating:
+                pass  # confirmed rotation player with meaningful boost — allow through
+            else:
+                continue
 
         # ── Moonshot EV (boost-dominance formula) ──────────────────────────────
         # Core formula: RS × boost_leverage × (slot + boost)
