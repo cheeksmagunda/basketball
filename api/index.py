@@ -654,7 +654,7 @@ _CONFIG_DEFAULTS = {
     },
     "matchup": {
         "enabled": True,
-        "claude_enabled": True,
+        "claude_enabled": False,  # Layer 1.5 killed — ESPN def stats in _compute_matchup_factor() sufficient
         "def_scale": 0.35,        # how strongly opponent pts_allowed affects the factor
         "pos_scale_g": 1.05,      # guards benefit most from weak defenses (pts-driver)
         "pos_scale_f": 1.00,      # forwards neutral
@@ -2578,7 +2578,7 @@ def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> st
         )
 
     timeout_s = float(_cfg("context_layer.timeout_seconds", 20))
-    web_search_model = _cfg("context_layer.web_search_model", "claude-opus-4-20250514")
+    web_search_model = _cfg("context_layer.web_search_model", "claude-sonnet-4-6-20250514")
 
     try:
         import anthropic as _anthropic
@@ -2746,7 +2746,7 @@ def _fetch_matchup_intelligence(games: list, all_proj: list, def_stats: dict,
     news_section = f"\n\nKNOWN NEWS (from earlier today):\n{news_context}\n" if news_context else ""
 
     timeout_s = float(_cfg("matchup.claude_timeout_seconds", 25))
-    model_id = _cfg("context_layer.web_search_model", "claude-opus-4-20250514")
+    model_id = _cfg("context_layer.web_search_model", "claude-sonnet-4-6-20250514")
 
     try:
         import anthropic as _anthropic
@@ -2830,7 +2830,7 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     if not _cfg("context_layer.enabled", False):
         return
 
-    model_id = _cfg("context_layer.model", "claude-opus-4-20250514")
+    model_id = _cfg("context_layer.model", "claude-sonnet-4-6-20250514")
     max_adj = float(_cfg("context_layer.max_adjustment", 0.4))
     timeout_s = float(_cfg("context_layer.timeout_seconds", 15))
 
@@ -3038,7 +3038,7 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
     if not anthropic_key:
         return chalk, upside
 
-    model_id = _cfg("lineup_review.model", "claude-opus-4-20250514")
+    model_id = _cfg("lineup_review.model", "claude-sonnet-4-6-20250514")
     timeout_s = float(_cfg("lineup_review.timeout_seconds", 30))
 
     def _describe_lineup(players: list, label: str) -> str:
@@ -4371,14 +4371,10 @@ def _get_slate_impl():
             _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
         except Exception:
             pass
-        # Layer 1.5: Claude matchup intelligence (DvP analysis via web_search)
+        # Layer 1.5: Claude matchup intelligence — DISABLED (cost reduction).
+        # ESPN def stats in _compute_matchup_factor() provide equivalent signal at zero cost.
+        # Re-enable via matchup.claude_enabled=true in model-config.json if needed.
         _matchup_intel = {}
-        try:
-            _matchup_intel = _fetch_matchup_intelligence(
-                draftable_games, all_proj, _def_stats, _game_opp_map, _slate_news_text
-            )
-        except Exception as _mi_err:
-            print(f"[matchup_intel] call-site error (non-fatal): {_mi_err}")
         try:
             _claude_context_pass(all_proj, draftable_games)
         except Exception as _ctx_err:
