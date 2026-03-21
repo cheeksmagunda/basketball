@@ -5501,7 +5501,7 @@ async def log_dates():
     try:
         cached = _cg("log_dates_v1")
         if cached is not None and isinstance(cached, dict) and "data" in cached:
-            if time.time() - cached.get("ts", 0) < 180:
+            if time.time() - cached.get("ts", 0) < 600:  # 10-min TTL (dates change rarely)
                 return cached["data"]
         dates = set()
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -5521,10 +5521,17 @@ async def log_dates():
 
 @app.get("/api/log/get")
 async def log_get(date: str = Query(None)):
-    """Get stored predictions and actuals for a date."""
+    """Get stored predictions and actuals for a date. Cached 5 min."""
     date_str = date or _et_date().isoformat()
     bad = _validate_date(date_str)
     if bad: return bad
+
+    # 5-min cache — historical dates are static; today changes only at save-predictions time
+    _log_cache_key = f"log_get_{date_str}"
+    _log_cached = _cg(_log_cache_key)
+    if _log_cached is not None and isinstance(_log_cached, dict) and "ts" in _log_cached:
+        if time.time() - _log_cached["ts"] < 300:
+            return _log_cached["data"]
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         (pred_csv, _), (act_csv, _) = list(pool.map(
@@ -5555,13 +5562,15 @@ async def log_get(date: str = Query(None)):
             "blk": row.get("blk", ""),
         }))
 
-    return {
+    _result = {
         "date": date_str,
         "has_predictions": bool(predictions),
         "has_actuals": bool(actuals),
         "scopes": scopes,
         "actuals": actuals,
     }
+    _cs(_log_cache_key, {"data": _result, "ts": time.time()})
+    return _result
 
 
 @app.get("/api/log/actuals-stats")

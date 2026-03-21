@@ -1602,6 +1602,7 @@ let _slateNextDayPoll = null;     // Poll for next-day slate after all_complete
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let LOG_LOADED_AT = 0; // timestamp of last initLogPage — staleness guard
 const LOG = {
   selectedDate: null,
   scope: null,           // 'slate' | matchup label
@@ -1613,6 +1614,11 @@ const LOG = {
   _refetchedToday: false, // guard against re-fetch loops in renderLogGrid
   _maxCacheSize: 15,      // LRU eviction: keep last N dates in memory
 };
+// Restore datesWithData from localStorage (instant date strip on reload)
+try {
+  const _savedLogDates = JSON.parse(localStorage.getItem('log_dates_with_data') || '[]');
+  if (Array.isArray(_savedLogDates)) _savedLogDates.forEach(function(d) { LOG.datesWithData.add(d); });
+} catch(e) {}
 function _evictLogCache() {
   const keys = Object.keys(LOG.dateCache);
   if (keys.length > LOG._maxCacheSize) {
@@ -1704,7 +1710,9 @@ function switchTab(tab) {
   document.documentElement.style.setProperty('--tab-glow', tabGlows[tab] || tabGlows.predictions);
   if (tab === 'log') {
     closeLogDrilldown();  // always return to grid view on tab entry
-    if (!LOG.selectedDate) initLogPage();
+    // Staleness guard: only re-init if never loaded or > 5 min old
+    const _logStale = LOG_LOADED_AT > 0 && (Date.now() - LOG_LOADED_AT) > 5 * 60 * 1000;
+    if (!LOG.selectedDate || _logStale) initLogPage();
   }
   if (tab === 'predictions') {
     let stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
@@ -2721,7 +2729,7 @@ function openParlayModal(parlay) {
       const legResult = leg.result;
       html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 20px 8px;' +
         'background:' + (legResult === 'hit' ? 'rgba(var(--green-rgb),0.08)' : 'rgba(var(--red-rgb),0.06)') + ';border-bottom:1px solid rgba(255,255,255,0.04)">' +
-        '<span style="font-size:0.68rem;color:var(--muted)">Actual: <strong style="color:var(--text)">' + actualVal + '</strong></span>' +
+        '<span style="font-size:0.68rem;color:var(--muted)">Actual: <strong style="color:var(--text)">' + _escapeHtml(String(actualVal)) + '</strong></span>' +
         '<span class="line-result-pill ' + legResult + '" style="font-size:0.58rem">' + legResult.toUpperCase() + '</span>' +
       '</div>';
     }
@@ -2823,8 +2831,10 @@ async function initLogPage() {
 
   const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
 
+  LOG_LOADED_AT = Date.now();
   if (datesRes.status === 'fulfilled') {
     datesRes.value.forEach(d => LOG.datesWithData.add(d));
+    try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
     buildLogDateStrip();
   }
 
@@ -2879,6 +2889,7 @@ async function selectLogDate(dateStr) {
     // Update dot for this chip progressively (catches /api/log/dates timeout/failure)
     if (data.has_predictions || data.has_actuals) {
       LOG.datesWithData.add(dateStr);
+      try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
       const chip = document.querySelector(`.date-chip[data-date="${dateStr}"]`);
       if (chip) {
         const dot = chip.querySelector('.date-chip-dot');

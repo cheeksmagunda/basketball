@@ -593,10 +593,10 @@ Crons and frontend poll intervals are tuned to minimize Railway compute and ESPN
 | Schedule (UTC) | Endpoint | Purpose |
 |----------------|----------|---------|
 | `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
-| `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement |
-| `55 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync (at :55) |
-| `0 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (hourly at :00) |
-| `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
+| `0 9 * * 0,3` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement (Wed + Sun only — 2×/week) |
+| `55 19-23,0-6 * * *` | `/api/refresh-line-odds` | Bookmaker odds sync during game-window hours only (2 PM–1 AM ET) |
+| `0 20-23,0-7 * * *` | `/api/auto-resolve-line` | Resolve line picks during game-window hours only (3 PM–2 AM ET) |
+| `0 18,22,2 * * *` | `/api/injury-check` | 3 key windows: pre-tip (1 PM ET), mid-evening (5 PM ET), late (9 PM ET) |
 | `0 6 * * 1` | `/api/mae-drift-check` | Weekly MAE drift monitoring (Monday 6am UTC); CRON_SECRET-gated |
 
 ## Deployment Pipeline
@@ -701,9 +701,12 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | Model config (`data/model-config.json`) | 5 min | Runtime tuning parameters | `/api/refresh` clears; Lab writes bypass cache |
 | RotoWire lineups | 30 min | Player availability (OUT, questionable, etc.) | 30 min expiration; manual refresh via app |
 | Lock status per game | 6 hours | 5 min before tip to 6h after (ceiling) | Natural expiration |
-| Line odds (`books_consensus`) | 1 hour | Bookmaker consensus line (refreshed by cron) | Hourly cron runs; slate-lock freeze |
+| Line odds (`books_consensus`) | 1 hour | Bookmaker consensus line (refreshed by cron) | Game-window cron runs; slate-lock freeze |
 | L5 game stats (`_get_last5_game_stats`) | 30 min | Real last-5 PTS/REB/AST per player (nba_api) | Stored with ts in cache; TTL checked on read |
 | Slate cache (`data/slate/`) | 1 day | GitHub-persisted predictions (full slate + per-game) | `_bust_slate_cache()` via refresh, config change, or injury check |
+| Log dates (`log_dates_v1`) | 10 min | Dates with stored prediction/actual data | `/api/refresh` clears all /tmp caches |
+| Log get (`log_get_{date}`) | 5 min | Per-date predictions + actuals from GitHub | `/api/refresh` clears all /tmp caches |
+| Parlay history (`parlay_history_v1`) | 10 min | Recent parlay results from `data/parlays/` | `/api/refresh` clears all /tmp caches |
 
 ### Midnight Rollover Handling
 `auto_resolve_line()` correctly handles games finishing after midnight ET:

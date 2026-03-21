@@ -15,24 +15,28 @@ restartPolicyMaxRetries = 3
 schedule = "0 19 * * *"
 command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh')\""
 
-# Auto-tune model if ≥3% MAE improvement (9am UTC)
+# Auto-tune model if ≥3% MAE improvement (Wed + Sun, 9am UTC)
+# Reduced from daily to 2x/week — model changes don't need daily evaluation
 [[crons.jobs]]
-schedule = "0 9 * * *"
+schedule = "0 9 * * 0,3"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/lab/auto-improve',headers=h)\""
 
-# Hourly bookmaker odds sync (at :55, hits 6:55 PM ET lock window)
+# Bookmaker odds sync — game-window hours only (2 PM - 1 AM ET = 19-06 UTC)
+# Reduced from hourly (24/day) to game-window only (12/day) — saves ~50% cron compute
 [[crons.jobs]]
-schedule = "55 * * * *"
+schedule = "55 19,20,21,22,23,0,1,2,3,4,5,6 * * *"
 command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh-line-odds')\""
 
-# Resolve line picks as each game ends (hourly)
+# Resolve line picks — game-window hours only (3 PM - 2 AM ET = 20-07 UTC)
+# Reduced from hourly (24/day) to game-window only (12/day) — saves ~50% cron compute
 [[crons.jobs]]
-schedule = "0 * * * *"
+schedule = "0 20,21,22,23,0,1,2,3,4,5,6,7 * * *"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/auto-resolve-line',headers=h)\""
 
-# Injury check during game windows
+# Injury check — reduced to 3 key windows (pre-tip + mid-evening + late)
+# Reduced from 6/day to 3/day — saves 50% cron compute; user can check manually via Predict tab
 [[crons.jobs]]
-schedule = "0 14,16,18,20,22,0 * * *"
+schedule = "0 18,22,2 * * *"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/injury-check',headers=h)\""
 
 # Weekly MAE drift check (backend-only flag + logs)
