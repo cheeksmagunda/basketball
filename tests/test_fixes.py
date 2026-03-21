@@ -2541,5 +2541,152 @@ class TestRotoConfirmedRatingException:
         )
 
 
+class TestMaxPerGameConstraint:
+    """MILP optimizer must limit players from the same game matchup."""
+
+    def test_max_per_game_config_keys_exist(self):
+        """model-config.json lineup section must have chalk_max_per_game and moonshot_max_per_game."""
+        cfg = json.load(open("data/model-config.json"))
+        lu = cfg.get("lineup", {})
+        assert "chalk_max_per_game" in lu, "lineup.chalk_max_per_game must exist in model-config.json"
+        assert "moonshot_max_per_game" in lu, "lineup.moonshot_max_per_game must exist in model-config.json"
+        assert lu["chalk_max_per_game"] in (2, 3), (
+            f"chalk_max_per_game should be 2 or 3, got {lu['chalk_max_per_game']}"
+        )
+        assert lu["moonshot_max_per_game"] in (2, 3), (
+            f"moonshot_max_per_game should be 2 or 3, got {lu['moonshot_max_per_game']}"
+        )
+
+    def test_max_per_game_optimizer_params(self):
+        """asset_optimizer.py must accept max_per_game and player_games parameters."""
+        src = open("api/asset_optimizer.py").read()
+        assert "max_per_game=0" in src, "optimize_lineup must have max_per_game=0 default param"
+        assert "player_games=None" in src, "optimize_lineup must have player_games=None default param"
+        assert "max_per_game_{game_id}" in src, "_solve_milp must add named per-game constraint"
+
+    def test_max_per_game_constraint_enforced(self):
+        """MILP must not select more than max_per_game players from the same game."""
+        try:
+            from api.asset_optimizer import optimize_lineup, PULP_AVAILABLE
+            if not PULP_AVAILABLE:
+                pytest.skip("PuLP not available")
+        except Exception:
+            pytest.skip("PuLP not available")
+
+        # 3 players from LAL vs BOS, 2 from other games — max_per_game=2 should block 3rd LAL/BOS
+        players = [
+            {"name": "A", "rating": 5.0, "est_mult": 1.5, "team": "LAL", "opp": "BOS", "chalk_ev": 10.0, "player_variance": 0},
+            {"name": "B", "rating": 4.5, "est_mult": 1.5, "team": "BOS", "opp": "LAL", "chalk_ev": 9.5, "player_variance": 0},
+            {"name": "C", "rating": 4.0, "est_mult": 1.5, "team": "LAL", "opp": "BOS", "chalk_ev": 9.0, "player_variance": 0},
+            {"name": "D", "rating": 3.5, "est_mult": 1.5, "team": "GSW", "opp": "PHX", "chalk_ev": 8.0, "player_variance": 0},
+            {"name": "E", "rating": 3.0, "est_mult": 1.5, "team": "MIA", "opp": "ATL", "chalk_ev": 7.0, "player_variance": 0},
+            {"name": "F", "rating": 2.5, "est_mult": 1.5, "team": "CHI", "opp": "DET", "chalk_ev": 6.0, "player_variance": 0},
+        ]
+        game_ids = ["BOS_vs_LAL", "BOS_vs_LAL", "BOS_vs_LAL", "GSW_vs_PHX", "ATL_vs_MIA", "CHI_vs_DET"]
+
+        result = optimize_lineup(players, n=5, player_games=game_ids, max_per_game=2)
+        lal_bos_count = sum(1 for p in result if p.get("team") in ("LAL", "BOS"))
+        assert lal_bos_count <= 2, (
+            f"Expected at most 2 players from LAL/BOS game, got {lal_bos_count}: "
+            f"{[p['name'] for p in result]}"
+        )
+
+    def test_player_game_id_derivation_in_build_lineups(self):
+        """index.py must derive player_game_id from team+opp and pass player_games to MILP."""
+        src = open("api/index.py").read()
+        assert "_player_game_id" in src, "_build_lineups must define _player_game_id helper"
+        assert "chalk_max_per_game" in src, "_build_lineups must read chalk_max_per_game config"
+        assert "moonshot_max_per_game" in src, "_build_lineups must read moonshot_max_per_game config"
+        assert "_chalk_elig_games" in src or "_chalk_source_games" in src, (
+            "_build_lineups must build player_games list for chalk MILP"
+        )
+        assert "_moon_pool_games" in src, (
+            "_build_lineups must build player_games list for moonshot MILP"
+        )
+
+
+class TestMinHighBoostConstraint:
+    """MILP optimizer must guarantee minimum high-boost player count in chalk lineup."""
+
+    def test_min_high_boost_config_keys_exist(self):
+        """model-config.json lineup section must have high-boost count and threshold keys."""
+        cfg = json.load(open("data/model-config.json"))
+        lu = cfg.get("lineup", {})
+        required = [
+            "chalk_min_high_boost_count",
+            "chalk_high_boost_threshold",
+            "chalk_min_big_boost_count",
+            "chalk_big_boost_threshold",
+        ]
+        for key in required:
+            assert key in lu, f"lineup.{key} must exist in model-config.json"
+        assert lu["chalk_min_high_boost_count"] >= 1, "Should require at least 1 high-boost player"
+        assert lu["chalk_high_boost_threshold"] >= 1.5, "High-boost threshold should be at least 1.5x"
+        assert lu["chalk_big_boost_threshold"] > lu["chalk_high_boost_threshold"], (
+            "Big-boost threshold must exceed high-boost threshold"
+        )
+
+    def test_min_high_boost_optimizer_params(self):
+        """asset_optimizer.py must accept min_high_boost_count and related params."""
+        src = open("api/asset_optimizer.py").read()
+        assert "min_high_boost_count=0" in src, "optimize_lineup must have min_high_boost_count=0 default"
+        assert "high_boost_threshold=2.0" in src, "optimize_lineup must have high_boost_threshold=2.0 default"
+        assert "min_big_boost_count=0" in src, "optimize_lineup must have min_big_boost_count=0 default"
+        assert "big_boost_threshold=2.8" in src, "optimize_lineup must have big_boost_threshold=2.8 default"
+        assert "min_high_boost" in src, "_solve_milp must add min_high_boost named constraint"
+        assert "min_big_boost" in src, "_solve_milp must add min_big_boost named constraint"
+
+    def test_min_high_boost_uses_raw_est_mult(self):
+        """Boost constraints must check raw est_mult, not blended chalk_milp_boost."""
+        src = open("api/asset_optimizer.py").read()
+        # The constraint should index p.get("est_mult") — not card_boost_key
+        assert 'p.get("est_mult", 0) >= high_boost_threshold' in src, (
+            "min_high_boost constraint must check raw est_mult, not blended card_boost_key"
+        )
+        assert 'p.get("est_mult", 0) >= big_boost_threshold' in src, (
+            "min_big_boost constraint must check raw est_mult, not blended card_boost_key"
+        )
+
+    def test_min_high_boost_constraint_enforced(self):
+        """MILP must include at least min_high_boost_count players with boost >= threshold."""
+        try:
+            from api.asset_optimizer import optimize_lineup, PULP_AVAILABLE
+            if not PULP_AVAILABLE:
+                pytest.skip("PuLP not available")
+        except Exception:
+            pytest.skip("PuLP not available")
+
+        # 2 high-boost players (3.0x), 4 moderate-boost players (1.0x) — must pick both high-boost
+        players = [
+            {"name": "Star1",  "rating": 5.0, "est_mult": 1.0, "team": "LAL", "opp": "BOS", "chalk_ev": 10.0, "player_variance": 0},
+            {"name": "Star2",  "rating": 4.8, "est_mult": 1.0, "team": "BOS", "opp": "LAL", "chalk_ev": 9.8, "player_variance": 0},
+            {"name": "Star3",  "rating": 4.5, "est_mult": 1.0, "team": "GSW", "opp": "PHX", "chalk_ev": 9.5, "player_variance": 0},
+            {"name": "Boost1", "rating": 3.0, "est_mult": 3.0, "team": "MIA", "opp": "ATL", "chalk_ev": 8.0, "player_variance": 0},
+            {"name": "Boost2", "rating": 2.8, "est_mult": 2.5, "team": "CHI", "opp": "DET", "chalk_ev": 7.5, "player_variance": 0},
+            {"name": "Filler", "rating": 2.0, "est_mult": 1.0, "team": "ORL", "opp": "IND", "chalk_ev": 5.0, "player_variance": 0},
+        ]
+
+        result = optimize_lineup(players, n=5, min_high_boost_count=2, high_boost_threshold=2.0)
+        high_boost_count = sum(1 for p in result if p.get("est_mult", 0) >= 2.0)
+        assert high_boost_count >= 2, (
+            f"Expected at least 2 high-boost players (>=2.0x), got {high_boost_count}: "
+            f"{[(p['name'], p.get('est_mult')) for p in result]}"
+        )
+
+    def test_min_high_boost_passes_to_milp_calls(self):
+        """index.py must pass high-boost constraints to chalk optimize_lineup calls."""
+        src = open("api/index.py").read()
+        assert "chalk_min_high_boost_count" in src, "_build_lineups must read chalk_min_high_boost_count config"
+        assert "chalk_high_boost_threshold" in src, "_build_lineups must read chalk_high_boost_threshold config"
+        assert "chalk_min_big_boost_count" in src, "_build_lineups must read chalk_min_big_boost_count config"
+        assert "chalk_big_boost_threshold" in src, "_build_lineups must read chalk_big_boost_threshold config"
+        assert "min_high_boost_count=_chalk_min_high_boost" in src, (
+            "_build_lineups must pass min_high_boost_count to chalk optimize_lineup"
+        )
+        assert "min_big_boost_count=_chalk_min_big_boost" in src, (
+            "_build_lineups must pass min_big_boost_count to chalk optimize_lineup"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

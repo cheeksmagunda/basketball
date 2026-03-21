@@ -354,7 +354,13 @@
       1.2
     ],
     "chalk_milp_rs_focus": 0.85,
-    "chalk_milp_boost_neutral": 1.0
+    "chalk_milp_boost_neutral": 1.0,
+    "chalk_max_per_game": 2,
+    "moonshot_max_per_game": 2,
+    "chalk_min_high_boost_count": 2,
+    "chalk_high_boost_threshold": 2.0,
+    "chalk_min_big_boost_count": 1,
+    "chalk_big_boost_threshold": 2.8
   },
   "line": {
     "min_confidence": 50,
