@@ -1,0 +1,16 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Dejounte Murray,3907497,NO,G,11.3,1.1,29.0,18.6,5.4,5.8,1.7,0.2
+slate,chalk,1.8x,Desmond Bane,4066320,ORL,G,10.7,0.7,32.9,20.1,4.3,4.1,1.0,0.4
+slate,chalk,1.6x,VJ Edgecombe,5124612,PHI,G,9.0,1.0,40.8,15.6,5.6,4.0,1.4,0.6
+slate,chalk,1.4x,Ace Bailey,4873138,UTAH,G,7.6,2.0,33.7,12.8,4.0,1.7,0.9,0.5
+slate,chalk,1.2x,Klay Thompson,6475,DAL,G,8.2,2.6,30.3,13.2,2.4,1.6,0.6,0.3
+slate,upside,2.0x,Klay Thompson,6475,DAL,G,8.2,2.6,30.3,13.2,2.4,1.6,0.6,0.3
+slate,upside,1.8x,Cameron Payne,3064230,PHI,PG,6.3,3.0,27.2,7.4,1.8,2.6,1.3,0.3
+slate,upside,1.6x,Justin Edwards,4711297,PHI,F,6.0,3.0,20.8,6.5,1.8,1.4,0.9,0.2
+slate,upside,1.4x,Alex Caruso,2991350,OKC,G,5.8,3.0,24.5,6.5,2.8,2.1,1.4,0.3
+slate,upside,1.2x,Brook Lopez,3448,LAC,C,5.0,3.0,23.6,9.2,3.7,1.2,0.6,1.2
+OKC @ WSH,the_lineup,2.0x,Ajay Mitchell,4900671,OKC,G,7.7,0.0,27.5,13.5,3.4,3.4,1.3,0.3
+OKC @ WSH,the_lineup,1.8x,Bilal Coulibaly,5104155,WSH,G,7.2,0.0,32.7,10.9,4.4,2.6,1.4,0.9
+OKC @ WSH,the_lineup,1.6x,Cason Wallace,4683692,OKC,G,6.9,0.0,30.7,8.5,3.1,2.6,2.0,0.4
+OKC @ WSH,the_lineup,1.4x,Aaron Wiggins,4397183,OKC,G,5.9,0.0,25.9,9.7,3.3,1.7,0.9,0.5
+OKC @ WSH,the_lineup,1.2x,Bub Carrington,4845374,WSH,G,5.7,0.0,33.2,10.0,3.7,4.5,0.6,0.2
