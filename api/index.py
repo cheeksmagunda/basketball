@@ -3695,13 +3695,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                 min_star_count=sa_require if _core_star_indices else 0,
                                 max_star_count=sa_max if sa_max > 0 else 0)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
-        # Star indices relative to core_pool for moonshot
-        _moon_star_indices = [
-            i for i, p in enumerate(core_pool)
-            if p.get("_is_star_anchor", False)
-        ] if sa_enabled else []
-        # No center cap — position balancing removed (boost dominance audit Mar 19)
-        upside = optimize_lineup(core_pool, n=5, sort_key="moonshot_ev",
+        # Moonshot uses the full moonshot_pool (boost-ranked contrarians), NOT core_pool.
+        # core_pool is built exclusively from chalk_eligible — it excludes moonshot-only
+        # players (high-boost role players who fail chalk gates like 7 PPG or 20 min floor).
+        # Using core_pool for moonshot caused it to pick the same RS-ranked stars as chalk.
+        # moonshot_pool has its own eligibility gates (boost >= min_card_boost, RS >= 3.0,
+        # high-boost-role pathway for 2.0x+/14min players) and ranks by moonshot_ev which
+        # uses boost_leverage_power to strongly favor 3.0x boost players.
+        # overlap_cap=3 ensures Moonshot differentiates from Starting 5 (max 3 shared players).
+        # No star_count constraints — contrarian moonshot skips the star anchor concept.
+        upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
@@ -3711,10 +3714,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  overlap_player_ids=chalk_ids,
                                  overlap_cap=3,
                                  two_phase=True,
-                                 raw_rating_key="rating",
-                                 star_indices=_moon_star_indices if _moon_star_indices else None,
-                                 min_star_count=sa_require if _moon_star_indices else 0,
-                                 max_star_count=sa_max if sa_max > 0 else 0)
+                                 raw_rating_key="rating")
     else:
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
