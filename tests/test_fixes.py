@@ -2260,5 +2260,144 @@ class TestRoleSpikeRs:
         assert rs_cfg["enabled"] is False
 
 
+class TestLineSignals:
+    """_generate_signals produces driver signals for narrative transparency."""
+
+    def _make_player(self, **overrides):
+        base = {"name": "Test Player", "team": "BOS", "pts": 12, "season_pts": 10,
+                "recent_pts": 11, "predMin": 28, "season_min": 28, "min": 28,
+                "_cascade_bonus": 0, "_matchup_factor": 1.0, "_odds_adjusted": False}
+        base.update(overrides)
+        return base
+
+    def _make_gctx(self, **overrides):
+        base = {"total": 222, "spread": -5, "opp_b2b": False, "opponent": "LAL"}
+        base.update(overrides)
+        return base
+
+    def test_high_total_over(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player()
+        gctx = self._make_gctx(total=234)
+        signals, bonus = _generate_signals(p, gctx, "over", "points", 10, 11, 12, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "high_total" in types
+        assert bonus >= 8
+
+    def test_high_total_not_under(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player()
+        gctx = self._make_gctx(total=234)
+        signals, _ = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "high_total" not in types
+
+    def test_low_total_under(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player()
+        gctx = self._make_gctx(total=212)
+        signals, bonus = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "low_total" in types
+
+    def test_low_total_not_over(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player()
+        gctx = self._make_gctx(total=212)
+        signals, _ = _generate_signals(p, gctx, "over", "points", 10, 11, 12, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "low_total" not in types
+
+    def test_matchup_weak_defense_over(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(_matchup_factor=1.10)
+        gctx = self._make_gctx()
+        signals, bonus = _generate_signals(p, gctx, "over", "points", 10, 11, 12, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "matchup" in types
+
+    def test_matchup_strong_defense_under(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(_matchup_factor=0.90)
+        gctx = self._make_gctx()
+        signals, _ = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "matchup" in types
+
+    def test_matchup_neutral_no_signal(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(_matchup_factor=1.02)
+        gctx = self._make_gctx()
+        signals, _ = _generate_signals(p, gctx, "over", "points", 10, 11, 12, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "matchup" not in types
+
+    def test_books_agree_over(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(_odds_adjusted=True, odds_points_line=12.5)
+        gctx = self._make_gctx()
+        signals, _ = _generate_signals(p, gctx, "over", "points", 10, 11, 12, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "books_agree" in types
+
+    def test_books_agree_not_under(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(_odds_adjusted=True, odds_points_line=12.5)
+        gctx = self._make_gctx()
+        signals, _ = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "books_agree" not in types
+
+    def test_minutes_drop_under(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(predMin=25, season_min=33)
+        gctx = self._make_gctx()
+        signals, _ = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "minutes_drop" in types
+        detail = [s["detail"] for s in signals if s["type"] == "minutes_drop"][0]
+        assert "25" in detail and "33" in detail
+
+    def test_minutes_drop_small_no_signal(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player(predMin=30, season_min=31)
+        gctx = self._make_gctx()
+        signals, _ = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "minutes_drop" not in types
+
+    def test_blowout_risk_under(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player()
+        gctx = self._make_gctx(spread=-10)
+        signals, _ = _generate_signals(p, gctx, "under", "points", 10, 8, 8, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "blowout_risk" in types
+
+    def test_close_game_over(self):
+        from api.line_engine import _generate_signals
+        p = self._make_player()
+        gctx = self._make_gctx(spread=-2)
+        signals, _ = _generate_signals(p, gctx, "over", "points", 10, 11, 12, 10.5, {})
+        types = [s["type"] for s in signals]
+        assert "close_game" in types
+
+    def test_narrative_includes_driver(self):
+        """run_model_fallback narrative should cite signals when present."""
+        from api.line_engine import run_model_fallback
+        proj = [self._make_player(name="Test Star", pts=15, season_pts=10, recent_pts=12,
+                                  reb=5, season_reb=4, recent_reb=4, ast=3, season_ast=2,
+                                  recent_ast=2, predMin=30, season_min=30, id="123")]
+        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "LAL"},
+                  "total": 235, "spread": -2, "startTime": ""}]
+        result = run_model_fallback(proj, games, {"min_confidence": 0})
+        over = result.get("over_pick")
+        if over:
+            # With total=235 and spread=-2, should have high_total and/or close_game signals
+            assert over["signals"], "Over pick should have signals with high total + tight spread"
+            # Narrative should not be bare "Model projects X — a Y edge vs Z baseline"
+            assert "baseline" not in over["narrative"] or len(over["signals"]) == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
