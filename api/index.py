@@ -614,7 +614,7 @@ _CONFIG_DEFAULTS = {
             "strength": 0.4,
         },
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":2.0,"center_forward_share":0.30},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
     "projection": {
         "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
@@ -2041,8 +2041,17 @@ def _infer_player_archetype(pts: float, avg_min: float, reb: float, stats: dict)
     recent_vs = recent_pts / max(season_pts, 1.0)
     if season_pts >= 21.0 and avg_min >= 28.0:
         return "star"
+    # Pure rebounder: high reb rate but limited scoring — Lopez, Gobert, Capela.
+    # These players over-project because reb volume inflates DFS score more than RS justifies.
+    if reb_pm >= 0.28 and season_pts < 12.0:
+        return "pure_rebounder"
     if reb_pm >= 0.22:
         return "big"
+    # Efficient scorer: high pts/min with real volume — Jalen Green, DeRozan, Nesmith.
+    # These players under-project; when shots fall they generate RS 4.5–7.
+    ppm = pts / max(avg_min, 1)
+    if ppm >= 0.55 and season_pts >= 15.0:
+        return "scorer"
     if avg_min < 22.0 and recent_vs >= 1.12:
         return "bench_microwave"
     if avg_min >= 28.0:
@@ -2423,6 +2432,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "season_blk": round(stats.get("season_blk", blk), 1),
         "recent_blk": round(stats.get("recent_blk", blk), 1),
         "injury_status": pinfo.get("injury_status", ""),
+        # Overperform signals — surfaced as pills on player cards.
+        # _hot_streak: recent pts >= 1.15x season avg (configurable via signals.hot_streak_ratio)
+        "_hot_streak": bool(
+            season_pts > 0
+            and recent_pts / season_pts >= float(_cfg("signals.hot_streak_ratio", 1.15))
+        ),
     }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2592,11 +2607,14 @@ def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> st
                 "content": (
                     f"Today is {today}. I need a concise NBA intelligence briefing for these teams "
                     f"playing tonight: {team_list}.{key_players_blurb}\n\n"
-                    "Search for the latest news (last 48 hours) on:\n"
-                    "1. Injury updates and their impact on teammates (e.g. star out = role player minutes up)\n"
-                    "2. Coach press conference quotes about rotation changes or minute increases\n"
-                    "3. Notable rest days, back-to-backs, or load management\n"
-                    "4. Any breaking roster news (trades, call-ups, returns from injury)\n\n"
+                    "PRIORITY: Search for confirmed OUT players and their positional backups who will "
+                    f"inherit 15+ minutes tonight (e.g. 'NBA OUT tonight {today}', 'NBA injury report "
+                    f"{today}'). Name the starter who is OUT and the specific backup likely to start "
+                    "or play extended minutes. These cascade situations are the highest-value signals.\n\n"
+                    "Also search for:\n"
+                    "1. Coach press conference quotes about rotation changes or minute increases\n"
+                    "2. Notable rest days, back-to-backs, or load management\n"
+                    "3. Any breaking roster news (trades, call-ups, returns from injury)\n\n"
                     "Return ONLY a bullet-point summary of actionable findings. Each bullet should name "
                     "the specific player(s) affected and why. Skip teams with no relevant news. "
                     "Keep it under 2000 characters total. No preamble — start with the first bullet."
@@ -2851,12 +2869,23 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         game_ctx[home] = {"opp": away, "spread": spread, "total": total, "side": "home"}
         game_ctx[away] = {"opp": home, "spread": -spread, "total": total, "side": "away"}
 
+    # Fetch RotoWire statuses for cascade/role confirmation signals (uses 30-min cache)
+    rw_ctx = {}
+    try:
+        from api.rotowire import get_all_statuses as _gcs
+        rw_ctx = _gcs() or {}
+    except Exception:
+        pass
+
     # Build compact player list for prompt (top 40 by rating to keep prompt small)
     sorted_proj = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:40]
     players_payload = []
     for p in sorted_proj:
         team = p.get("team", "")
         ctx  = game_ctx.get(team, {})
+        cascade_bonus = round(p.get("_cascade_bonus", 0), 1)
+        roto_entry = rw_ctx.get(p["name"].lower(), {})
+        roto_status = roto_entry.get("status", "unknown")
         entry = {
             "name":        p["name"],
             "team":        team,
@@ -2870,6 +2899,9 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
             "season_blk":  round(p.get("season_blk", 0), 1),
             "projected_rs": p.get("rating", 0),
             "card_boost":   round(p.get("est_mult", 0), 1),
+            "pred_min":     round(p.get("predMin", p.get("season_min", 0)), 1),
+            "cascade_bonus": cascade_bonus,
+            "roto_status":  roto_status,
         }
         # Include Odds API lines if available (from _enrich_projections_with_odds)
         if p.get("odds_pts_line"):
@@ -2938,6 +2970,19 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "signals expanded role (teammate injury, matchup, coaching decision). "
         "Use this as a CONFIRMING signal — if odds + narrative both point up, that's "
         "a strong adjustment. Don't adjust purely on odds divergence alone.\n\n"
+
+        "CASCADE & ROLE CONFIRMATION SIGNALS:\n"
+        "Each player now includes `cascade_bonus` (extra minutes inherited from a teammate injury) "
+        "and `roto_status` (RotoWire confirmation: 'confirmed'=in starting lineup, "
+        "'expected'=likely in rotation, 'questionable'=uncertain, 'unknown'=not listed).\n"
+        "- cascade_bonus >= 5.0: This player is inheriting real starter minutes tonight. "
+        "If card_boost >= 2.0, apply 1.15–1.25x UP — the extra minutes create outsized RS "
+        "opportunities (clutch moments, defensive plays, hustle stats in a close game). "
+        "Do NOT penalize these players for blowout risk — their minutes are coach-committed.\n"
+        "- roto_status='confirmed' + cascade_bonus >= 8: Apply 1.20–1.30x UP — high-confidence "
+        "starter-role situation with real upside.\n"
+        "- roto_status='unknown' + pred_min < 18: Apply 0.85–0.90x DOWN — player not in RotoWire "
+        "rotation and has fragile minute floor; DNP or early hook risk is meaningful.\n\n"
 
         "CALIBRATION: Most players get NO adjustment (omit them). Only adjust when you have "
         "a clear narrative reason. Typical batch: 4-8 players out of 40. "
@@ -3338,7 +3383,21 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                           _recent_min_chalk >= chalk_recent_floor)
         is_spot_starter = (p.get("predMin", 0) >= 28.0 and
                            p.get("_cascade_bonus", 0) >= 10.0)
-        if not (is_regular or is_spot_starter):
+        # High-boost role player pathway for chalk: stricter thresholds than moonshot
+        # because Starting 5 requires reliability. Only players with a strong boost
+        # signal AND consistent recent minutes qualify. Boost >= 2.5 means Real Sports
+        # considers them significantly underrated — a reliable contrarian play.
+        chalk_hbr_enabled    = _cfg("projection.chalk_hbr_enabled", True)
+        chalk_hbr_min_boost  = float(_cfg("projection.chalk_hbr_min_boost", 2.5))
+        chalk_hbr_min_recent = float(_cfg("projection.chalk_hbr_min_recent_min", 16.0))
+        chalk_hbr_min_pred   = float(_cfg("projection.chalk_hbr_min_pred_min", 16.0))
+        is_chalk_high_boost_role = (
+            chalk_hbr_enabled
+            and p.get("est_mult", 0) >= chalk_hbr_min_boost
+            and _recent_min_chalk >= chalk_hbr_min_recent
+            and p.get("predMin", 0) >= chalk_hbr_min_pred
+        )
+        if not (is_regular or is_spot_starter or is_chalk_high_boost_role):
             continue
         # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
         if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
@@ -3414,17 +3473,37 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if p.get("_is_star_anchor", False)
     ] if sa_enabled else []
 
+    # Lineup quality constraints — per-game cap and boost floors.
+    _lu_cfg = _cfg("lineup", {})
+    _chalk_max_per_game = int(_lu_cfg.get("chalk_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
+    _moon_max_per_game = int(_lu_cfg.get("moonshot_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_min_high_boost = int(_lu_cfg.get("chalk_min_high_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_high_boost_thr = float(_lu_cfg.get("chalk_high_boost_threshold", 2.0)) if isinstance(_lu_cfg, dict) else 2.0
+    _chalk_min_big_boost = int(_lu_cfg.get("chalk_min_big_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_big_boost_thr = float(_lu_cfg.get("chalk_big_boost_threshold", 2.8)) if isinstance(_lu_cfg, dict) else 2.8
+
+    def _player_game_id(p):
+        """Derive a canonical game ID from team + opp pair (order-independent)."""
+        return "_vs_".join(sorted([p.get("team", ""), p.get("opp", "")]))
+
     # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
     core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
     core_pool_enabled = core_pool_cfg.get("enabled", False) if isinstance(core_pool_cfg, dict) else False
 
     if not core_pool_enabled:
+        _chalk_elig_games = [_player_game_id(p) for p in chalk_eligible]
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=2,
                                 star_indices=chalk_star_indices if chalk_star_indices else None,
                                 min_star_count=sa_require if chalk_star_indices else 0,
-                                max_star_count=sa_max if sa_max > 0 else 0)
+                                max_star_count=sa_max if sa_max > 0 else 0,
+                                max_per_game=_chalk_max_per_game,
+                                player_games=_chalk_elig_games,
+                                min_high_boost_count=_chalk_min_high_boost,
+                                high_boost_threshold=_chalk_high_boost_thr,
+                                min_big_boost_count=_chalk_min_big_boost,
+                                big_boost_threshold=_chalk_big_boost_thr)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -3491,8 +3570,23 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             and recent_min >= season_min * role_spike_ratio
             and est_mult >= min_boost
         )
+        # High-boost role player pathway: consistent rotation player whose value comes
+        # from a high card boost + real RS projection, not from minutes volume.
+        # Example: 16 min/game player with +2.5x boost and RS 4.5 → chalk_ev 18.45 —
+        # beats many starters on EV. The boost floor IS the quality gate here.
+        hbr_cfg = moon_cfg.get("high_boost_role", {})
+        hbr_enabled     = hbr_cfg.get("enabled", True)
+        hbr_min_boost   = float(hbr_cfg.get("min_boost", 2.0))
+        hbr_min_recent  = float(hbr_cfg.get("min_recent_min", 14.0))
+        hbr_min_pred    = float(hbr_cfg.get("min_pred_min", 14.0))
+        is_high_boost_role = (
+            hbr_enabled
+            and est_mult >= hbr_min_boost
+            and recent_min >= hbr_min_recent
+            and pred_min >= hbr_min_pred
+        )
         if not (is_moonshot_regular or is_moonshot_spot_starter
-                or is_role_spike):
+                or is_role_spike or is_high_boost_role):
             continue
 
         # Never draft a moonshot player projected well below their season minute average.
@@ -3516,10 +3610,22 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
             continue
 
-        # Minimum rating floor — all pathways use the same floor (no wildcard bypass).
+        # Minimum rating floor — all pathways use the same floor.
+        # Exception: confirmed rotation players with high boost pass a lower floor.
+        # This captures cascade-elevated backups (e.g. Garza when Porzingis is OUT)
+        # and confirmed role players with very high boosts (e.g. Taylor Hendricks +3.0x).
         min_rating_floor = moon_cfg.get("min_rating_floor", 3.0)
         if p["rating"] < min_rating_floor:
-            continue
+            roto_confirmed_min_rating = float(moon_cfg.get("roto_confirmed_min_rating", 2.2))
+            roto_confirmed_min_boost = float(moon_cfg.get("roto_confirmed_min_boost", 2.5))
+            _roto_entry = (rw_statuses or {}).get(p["name"].lower(), {})
+            _roto_status = _roto_entry.get("status", "unknown")
+            _is_roto_confirmed = _roto_status in ("confirmed", "expected")
+            _has_cascade = p.get("_cascade_bonus", 0) >= 5.0
+            if (_is_roto_confirmed or _has_cascade) and est_mult >= roto_confirmed_min_boost and p["rating"] >= roto_confirmed_min_rating:
+                pass  # confirmed rotation player with meaningful boost — allow through
+            else:
+                continue
 
         # ── Moonshot EV (boost-dominance formula) ──────────────────────────────
         # Core formula: RS × boost_leverage × (slot + boost)
@@ -3547,6 +3653,20 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if pts_bias_scale > 0 and p.get("pts", 0) > pts_bias_threshold:
             pts_bias = 1.0 + (p["pts"] - pts_bias_threshold) * pts_bias_scale
             adj_ceiling = round(adj_ceiling * pts_bias, 3)
+
+        # Scorer upside: efficient scorers with real volume get a moonshot ceiling boost.
+        # Data: Jalen Green, Aaron Nesmith, DeRozan under-projected on multiple dates —
+        # they generate RS 4.5–6.8 when hot but project 2.6–4.1 from season averages.
+        # Only applies when season_min data is present (not inferred projections).
+        scorer_upside_cfg = moon_cfg.get("scorer_upside", {})
+        if scorer_upside_cfg.get("enabled", True):
+            su_min_ppm = float(scorer_upside_cfg.get("min_pts_per_min", 0.55))
+            su_min_pts = float(scorer_upside_cfg.get("min_season_pts", 15.0))
+            su_mult = float(scorer_upside_cfg.get("multiplier", 1.10))
+            su_ppm = p.get("pts", 0) / max(p.get("season_min", 1) or 1, 1)
+            su_season_pts = p.get("season_pts", p.get("pts", 0)) or 0
+            if su_ppm >= su_min_ppm and su_season_pts >= su_min_pts:
+                adj_ceiling = round(adj_ceiling * su_mult, 3)
 
         # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
@@ -3628,6 +3748,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             i for i, p in enumerate(chalk_source)
             if p.get("_is_star_anchor", False)
         ] if sa_enabled else []
+        _chalk_source_games = [_player_game_id(p) for p in chalk_source]
         chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=2,
@@ -3635,15 +3756,25 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                 variance_penalty=0.5,
                                 star_indices=_core_star_indices if _core_star_indices else None,
                                 min_star_count=sa_require if _core_star_indices else 0,
-                                max_star_count=sa_max if sa_max > 0 else 0)
+                                max_star_count=sa_max if sa_max > 0 else 0,
+                                max_per_game=_chalk_max_per_game,
+                                player_games=_chalk_source_games,
+                                min_high_boost_count=_chalk_min_high_boost,
+                                high_boost_threshold=_chalk_high_boost_thr,
+                                min_big_boost_count=_chalk_min_big_boost,
+                                big_boost_threshold=_chalk_big_boost_thr)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
-        # Star indices relative to core_pool for moonshot
-        _moon_star_indices = [
-            i for i, p in enumerate(core_pool)
-            if p.get("_is_star_anchor", False)
-        ] if sa_enabled else []
-        # No center cap — position balancing removed (boost dominance audit Mar 19)
-        upside = optimize_lineup(core_pool, n=5, sort_key="moonshot_ev",
+        # Moonshot uses the full moonshot_pool (boost-ranked contrarians), NOT core_pool.
+        # core_pool is built exclusively from chalk_eligible — it excludes moonshot-only
+        # players (high-boost role players who fail chalk gates like 7 PPG or 20 min floor).
+        # Using core_pool for moonshot caused it to pick the same RS-ranked stars as chalk.
+        # moonshot_pool has its own eligibility gates (boost >= min_card_boost, RS >= 3.0,
+        # high-boost-role pathway for 2.0x+/14min players) and ranks by moonshot_ev which
+        # uses boost_leverage_power to strongly favor 3.0x boost players.
+        # overlap_cap=3 ensures Moonshot differentiates from Starting 5 (max 3 shared players).
+        # No star_count constraints — contrarian moonshot skips the star anchor concept.
+        _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
+        upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
@@ -3654,10 +3785,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  overlap_cap=3,
                                  two_phase=True,
                                  raw_rating_key="rating",
-                                 star_indices=_moon_star_indices if _moon_star_indices else None,
-                                 min_star_count=sa_require if _moon_star_indices else 0,
-                                 max_star_count=sa_max if sa_max > 0 else 0)
+                                 max_per_game=_moon_max_per_game,
+                                 player_games=_moon_pool_games)
     else:
+        _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
@@ -3666,7 +3797,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.2,
                                  two_phase=True,
-                                 raw_rating_key="rating")
+                                 raw_rating_key="rating",
+                                 max_per_game=_moon_max_per_game,
+                                 player_games=_moon_pool_games)
         core_pool = None
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
@@ -8151,7 +8284,14 @@ def _ben_chat_read_history_locked() -> list:
             return []
         raw = _BEN_CHAT_HISTORY_PATH.read_text()
         data = json.loads(raw) if raw else []
-        return data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            return []
+        # Trim trailing user messages — these are orphaned when a previous API call
+        # failed after the user message was persisted but before the assistant responded.
+        # Sending consecutive user messages causes a 400 from Anthropic on the next call.
+        while data and data[-1].get("role") == "user":
+            data.pop()
+        return data
     except Exception:
         return []
 
@@ -8275,7 +8415,16 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
             yield _sse({"type": "content", "text": text})
 
         except Exception as e:
-            yield _sse({"type": "content", "error": f"Anthropic API error: {str(e)}", "text": ""})
+            err_body = ""
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    err_body = e.response.text[:400]
+                except Exception:
+                    pass
+            error_msg = f"Anthropic API error: {str(e)}"
+            if err_body:
+                error_msg += f" — {err_body}"
+            yield _sse({"type": "content", "error": error_msg, "text": ""})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

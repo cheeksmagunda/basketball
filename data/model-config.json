@@ -1,7 +1,7 @@
 {
-  "version": 54,
-  "updated_at": "2026-03-20T23:30:00Z",
-  "updated_by": "game-context-rs-signals",
+  "version": 56,
+  "updated_at": "2026-03-21T00:00:00Z",
+  "updated_by": "moonshot-pool-fix-contrarian-restore",
   "scoring_thresholds": {
     "min_pts_projection": 6.0,
     "min_pts_projection_moonshot": 6.0,
@@ -207,8 +207,8 @@
   "real_score": {
     "dfs_weights": {
       "pts": 1.5,
-      "reb": 0.95,
-      "ast": 0.3,
+      "reb": 0.5,
+      "ast": 0.65,
       "stl": 8.0,
       "blk": 0.35,
       "tov": -1.0
@@ -242,7 +242,9 @@
         "starter": 1.0,
         "wing_role": 1.02,
         "bench_microwave": 1.08,
-        "big": 1.04
+        "big": 0.90,
+        "pure_rebounder": 0.82,
+        "scorer": 1.10
       }
     },
     "post_lock_calibration": {
@@ -269,7 +271,7 @@
   },
   "cascade": {
     "redistribution_rate": 0.85,
-    "per_player_cap_minutes": 3.0,
+    "per_player_cap_minutes": 10.0,
     "center_forward_share": 0.3
   },
   "projection": {
@@ -298,17 +300,21 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 0.5,
-    "pred_min_tolerance": 2.0
+    "chalk_min_boost_floor": 0.9,
+    "pred_min_tolerance": 2.0,
+    "chalk_hbr_enabled": true,
+    "chalk_hbr_min_boost": 2.5,
+    "chalk_hbr_min_recent_min": 16.0,
+    "chalk_hbr_min_pred_min": 16.0
   },
   "star_anchor": {
     "enabled": true,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
-    "min_boost": 0.3,
+    "min_boost": 0.6,
     "min_rating": 4.0,
-    "require_count": 2,
-    "max_count": 3
+    "require_count": 1,
+    "max_count": 1
   },
   "context_layer": {
     "enabled": true,
@@ -348,7 +354,13 @@
       1.2
     ],
     "chalk_milp_rs_focus": 0.85,
-    "chalk_milp_boost_neutral": 1.0
+    "chalk_milp_boost_neutral": 1.0,
+    "chalk_max_per_game": 2,
+    "moonshot_max_per_game": 2,
+    "chalk_min_high_boost_count": 2,
+    "chalk_high_boost_threshold": 2.0,
+    "chalk_min_big_boost_count": 1,
+    "chalk_big_boost_threshold": 2.8
   },
   "line": {
     "min_confidence": 50,
@@ -368,14 +380,14 @@
   "moonshot": {
     "min_minutes_floor": 20,
     "min_recent_minutes_floor": 20,
-    "min_card_boost": 0.5,
-    "min_rating_floor": 3.5,
+    "min_card_boost": 1.5,
+    "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.6,
+    "boost_leverage_power": 1.6,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -385,14 +397,28 @@
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
     "pred_min_tolerance": 3.0,
+    "high_boost_role": {
+      "enabled": true,
+      "min_boost": 2.0,
+      "min_recent_min": 14.0,
+      "min_pred_min": 14.0
+    },
     "scoring_pts_bias_threshold": 10.0,
     "scoring_pts_bias_scale": 0.015,
+    "scorer_upside": {
+      "enabled": true,
+      "min_pts_per_min": 0.55,
+      "min_season_pts": 15.0,
+      "multiplier": 1.10
+    },
     "rs_bypass": {
       "enabled": true,
       "min_rating": 5.0,
       "min_season_min": 25.0,
       "min_boost": 0.3
-    }
+    },
+    "roto_confirmed_min_rating": 2.2,
+    "roto_confirmed_min_boost": 2.5
   },
   "matchup": {
     "enabled": true,
@@ -423,10 +449,19 @@
     "max_mult": 1.12,
     "team_overrides": {}
   },
+  "signals": {
+    "hot_streak_ratio": 1.15,
+    "ai_signal_min_adj": 1.05
+  },
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 55,
+      "date": "2026-03-20",
+      "change": "High-boost role player pathway (v55). Adds a 4th eligibility pathway to both moonshot and chalk pools for consistent rotation players whose value comes from a high card boost + real RS projection, not minutes volume. Moonshot: est_mult >= 2.0, recent_min >= 14, pred_min >= 14 (bypasses the 20-min season floor). Chalk: stricter est_mult >= 2.5, recent_min >= 16, pred_min >= 16. Example: a 16 min/game player with +2.5x boost and RS 4.5 projects chalk_ev 18.45 — beats many 30-min starters. The boost floor IS the quality gate; 2.0x+ signals Real Sports considers the player significantly underrated. Config: moonshot.high_boost_role.{enabled, min_boost, min_recent_min, min_pred_min}, projection.{chalk_hbr_enabled, chalk_hbr_min_boost, chalk_hbr_min_recent_min, chalk_hbr_min_pred_min}."
+    },
     {
       "version": 52,
       "date": "2026-03-20",

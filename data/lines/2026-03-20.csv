@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-20,Bruce Brown,4065670,DEN,TOR,points,7.5,over,7.7,0.2,52,Model projects 7.7 points vs the 7.5 baseline.,pending,

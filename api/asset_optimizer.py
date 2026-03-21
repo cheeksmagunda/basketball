@@ -45,7 +45,10 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     overlap_player_ids=None, overlap_cap=0,
                     overlap_id_key="id",
                     two_phase=False, raw_rating_key=None,
-                    star_indices=None, min_star_count=0, max_star_count=0):
+                    star_indices=None, min_star_count=0, max_star_count=0,
+                    max_per_game=0, player_games=None,
+                    min_high_boost_count=0, high_boost_threshold=2.0,
+                    min_big_boost_count=0, big_boost_threshold=2.8):
     """Find the optimal player-to-slot assignment using MILP.
 
     Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
@@ -88,6 +91,16 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
             appear in the lineup (default 0 = no constraint).
         max_star_count: If >0, at most this many star_indices players in the
             lineup (default 0 = no upper cap).
+        max_per_game: Maximum players from the same game matchup (0 = no
+            constraint). Prevents over-concentration from a single game.
+        player_games: List of game IDs (one per player, same order as
+            projections). Required when max_per_game > 0.
+        min_high_boost_count: Minimum players with est_mult >= high_boost_threshold
+            in the lineup (0 = no constraint). Ensures contrarian plays.
+        high_boost_threshold: Boost floor for high-boost constraint (default 2.0).
+        min_big_boost_count: Minimum players with est_mult >= big_boost_threshold
+            in the lineup (0 = no constraint).
+        big_boost_threshold: Boost floor for big-boost constraint (default 2.8).
 
     Returns:
         List of n player dicts with slot assignments applied
@@ -111,7 +124,13 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                                overlap_player_ids, overlap_cap, overlap_id_key,
                                star_indices=star_indices,
                                min_star_count=min_star_count,
-                               max_star_count=max_star_count)
+                               max_star_count=max_star_count,
+                               max_per_game=max_per_game,
+                               player_games=player_games,
+                               min_high_boost_count=min_high_boost_count,
+                               high_boost_threshold=high_boost_threshold,
+                               min_big_boost_count=min_big_boost_count,
+                               big_boost_threshold=big_boost_threshold)
 
         if two_phase and len(selected) == n:
             # Phase 2: re-assign slots using raw RS for optimal placement.
@@ -136,7 +155,10 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 variance_penalty=0.0, variance_uplift=0.0,
                 boost_leverage_extra_power=0.0,
                 overlap_player_ids=None, overlap_cap=0, overlap_id_key="id",
-                star_indices=None, min_star_count=0, max_star_count=0):
+                star_indices=None, min_star_count=0, max_star_count=0,
+                max_per_game=0, player_games=None,
+                min_high_boost_count=0, high_boost_threshold=2.0,
+                min_big_boost_count=0, big_boost_threshold=2.8):
     """Run the MILP solver to find optimal player-slot assignments."""
     players = list(range(len(projections)))
     slots = list(range(n))
@@ -244,6 +266,44 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in valid_stars_cap for j in slots
             ) <= min(int(max_star_count), n)
+
+    # Max players per game (matchup) — prevents over-concentration in one game.
+    # Uses raw est_mult-derived game IDs passed in as player_games list.
+    if max_per_game > 0 and player_games and len(player_games) == len(projections):
+        game_groups = {}
+        for i, game_id in enumerate(player_games):
+            game_groups.setdefault(game_id, []).append(i)
+        for game_id, game_idxs in game_groups.items():
+            valid_idxs = [i for i in game_idxs if i in players]
+            # Only add constraint when the game has more players than the cap.
+            if len(valid_idxs) > max_per_game:
+                prob += lpSum(
+                    x[i, j] for i in valid_idxs for j in slots
+                ) <= max_per_game, f"max_per_game_{game_id}"
+
+    # Minimum high-boost players — ensures contrarian plays are present.
+    # Always checks raw est_mult (not blended chalk_milp_boost) so real boosts
+    # are correctly identified regardless of objective blending.
+    if min_high_boost_count > 0:
+        hb_indices = [
+            i for i, p in enumerate(projections)
+            if p.get("est_mult", 0) >= high_boost_threshold
+        ]
+        if len(hb_indices) >= min_high_boost_count:
+            prob += lpSum(
+                x[i, j] for i in hb_indices for j in slots
+            ) >= min_high_boost_count, "min_high_boost"
+
+    # Minimum big-boost players — ensures at least one high-leverage play.
+    if min_big_boost_count > 0:
+        bb_indices = [
+            i for i, p in enumerate(projections)
+            if p.get("est_mult", 0) >= big_boost_threshold
+        ]
+        if len(bb_indices) >= min_big_boost_count:
+            prob += lpSum(
+                x[i, j] for i in bb_indices for j in slots
+            ) >= min_big_boost_count, "min_big_boost"
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)

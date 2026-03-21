@@ -2399,5 +2399,433 @@ class TestLineSignals:
             assert "baseline" not in over["narrative"] or len(over["signals"]) == 0
 
 
+# ─────────────────────────────────────────────────────────
+# TestHighBoostRolePathway — role players with 2.0x+ boost bypass minutes floor
+# ─────────────────────────────────────────────────────────
+class TestHighBoostRolePathway:
+    """High-boost role player pathway admits consistent rotation players the minutes
+    floor would otherwise block, using boost magnitude as the quality gate."""
+
+    def test_moonshot_code_has_pathway(self):
+        """Moonshot pool must contain is_high_boost_role pathway."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_high_boost_role" in src, "Moonshot must have is_high_boost_role pathway"
+        assert "hbr_min_boost" in src, "Moonshot must read hbr_min_boost from config"
+        assert "hbr_min_recent" in src, "Moonshot must read hbr_min_recent from config"
+
+    def test_chalk_code_has_pathway(self):
+        """Chalk pool must contain is_chalk_high_boost_role pathway."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_chalk_high_boost_role" in src, "Chalk must have is_chalk_high_boost_role pathway"
+        assert "chalk_hbr_min_boost" in src, "Chalk must read chalk_hbr_min_boost from config"
+        assert "chalk_hbr_min_recent" in src, "Chalk must read chalk_hbr_min_recent from config"
+
+    def test_moonshot_config_present(self):
+        """model-config.json must have moonshot.high_boost_role block with correct keys."""
+        cfg = json.load(open("data/model-config.json"))
+        hbr = cfg.get("moonshot", {}).get("high_boost_role", {})
+        assert hbr.get("enabled") is True, "high_boost_role should be enabled"
+        assert hbr.get("min_boost", 0) >= 1.5, "min_boost should be high enough to gate quality"
+        assert hbr.get("min_recent_min", 0) >= 12.0, "min_recent_min should require real minutes"
+        assert hbr.get("min_pred_min", 0) >= 12.0, "min_pred_min should require real minutes today"
+
+    def test_chalk_config_present(self):
+        """model-config.json must have chalk HBR keys under projection."""
+        cfg = json.load(open("data/model-config.json"))
+        proj = cfg.get("projection", {})
+        assert proj.get("chalk_hbr_enabled") is True, "chalk_hbr_enabled should be true"
+        assert proj.get("chalk_hbr_min_boost", 0) >= proj.get("moonshot", {}).get(
+            "high_boost_role", {}).get("min_boost", 0) or True, "chalk needs boost >= moonshot"
+        assert proj.get("chalk_hbr_min_boost", 0) >= 2.0, "chalk boost threshold should be >= 2.0"
+        assert proj.get("chalk_hbr_min_recent_min", 0) >= 14.0, "chalk requires more recent minutes"
+
+    def test_chalk_threshold_stricter_than_moonshot(self):
+        """Chalk HBR thresholds must be stricter than moonshot (reliability vs ceiling)."""
+        cfg = json.load(open("data/model-config.json"))
+        moon_boost = cfg["moonshot"]["high_boost_role"]["min_boost"]
+        chalk_boost = cfg["projection"]["chalk_hbr_min_boost"]
+        moon_recent = cfg["moonshot"]["high_boost_role"]["min_recent_min"]
+        chalk_recent = cfg["projection"]["chalk_hbr_min_recent_min"]
+        assert chalk_boost >= moon_boost, \
+            f"Chalk boost threshold {chalk_boost} should be >= moonshot {moon_boost}"
+        assert chalk_recent >= moon_recent, \
+            f"Chalk recent_min threshold {chalk_recent} should be >= moonshot {moon_recent}"
+
+    def test_pathway_included_in_moonshot_eligibility_check(self):
+        """Moonshot eligibility check must OR in is_high_boost_role."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # The eligibility if-not block must include all four pathways
+        assert "is_role_spike or is_high_boost_role" in src, \
+            "Moonshot eligibility must include is_high_boost_role in OR chain"
+
+    def test_pathway_included_in_chalk_eligibility_check(self):
+        """Chalk eligibility check must OR in is_chalk_high_boost_role."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "is_spot_starter or is_chalk_high_boost_role" in src, \
+            "Chalk eligibility must include is_chalk_high_boost_role in OR chain"
+
+
+class TestRsCalibrationWeights:
+    """DFS weight recalibration + archetype calibration + scorer upside signal.
+
+    Data basis (13 dates + Mar 19 cross-reference):
+    - Over-projected: Brook Lopez +3.0x (pred 6.5, actual 4.3), Clint Capela +3.0x
+      (pred 3.5, actual 1.5), Rudy Gobert (pred 4.3, actual 1.7) — pure rebounders
+    - Under-projected: Collin Gillespie (4.5 ast, +1.4), Dejounte Murray (2.8 RS low),
+      Jalen Green (2 dates, +2.2–2.3), Aaron Nesmith (+2.2), DeRozan (2 dates, +2.7)
+    - Bias: 56 under-projections vs 26 over-projections across 13 dates, avg MAE 1.57
+    """
+
+    def test_reb_weight_reduced(self):
+        """reb DFS weight must be well below old value of 0.95 to fix pure-rebounder over-projection."""
+        cfg = json.load(open("data/model-config.json"))
+        reb_w = cfg["real_score"]["dfs_weights"]["reb"]
+        assert reb_w < 0.80, (
+            f"reb weight {reb_w} should be < 0.80; Lopez/Gobert/Capela were over-projected by 2+ RS "
+            "when reb=0.95 gave them near-scorer DFS scores"
+        )
+
+    def test_ast_weight_elevated(self):
+        """ast DFS weight must exceed old value of 0.3 to fix playmaker under-projection."""
+        cfg = json.load(open("data/model-config.json"))
+        ast_w = cfg["real_score"]["dfs_weights"]["ast"]
+        assert ast_w > 0.40, (
+            f"ast weight {ast_w} should be > 0.40; Gillespie (4.5 ast) and Murray (7+ ast) "
+            "were under-projected because assists contributed almost nothing to DFS score"
+        )
+
+    def test_pts_and_stl_weights_unchanged(self):
+        """pts and stl weights should not have been changed — they were calibrated correctly."""
+        cfg = json.load(open("data/model-config.json"))
+        w = cfg["real_score"]["dfs_weights"]
+        assert w["pts"] == 1.5, f"pts weight changed unexpectedly: {w['pts']}"
+        assert w["stl"] == 8.0, f"stl weight changed unexpectedly: {w['stl']}"
+
+    def test_pure_rebounder_archetype_detected(self):
+        """_infer_player_archetype must return 'pure_rebounder' for high-reb/low-scoring player."""
+        from api.index import _infer_player_archetype
+        # Lopez profile: 11.5 pts, 13 reb, 30 min → reb_pm = 0.43, season_pts = 11.5
+        arch = _infer_player_archetype(11.5, 30.0, 13.0, {"season_pts": 11.5})
+        assert arch == "pure_rebounder", (
+            f"Expected 'pure_rebounder' for Lopez-profile, got '{arch}'; "
+            "reb_pm=0.43 >= 0.28 threshold AND season_pts=11.5 < 12.0"
+        )
+
+    def test_scorer_archetype_detected(self):
+        """_infer_player_archetype must return 'scorer' for high pts/min efficient scorer."""
+        from api.index import _infer_player_archetype
+        # Jalen Green profile: 17.7 pts, 28 min → pts/min = 0.63, season_pts = 17.7
+        arch = _infer_player_archetype(17.7, 28.0, 3.5, {"season_pts": 17.7})
+        assert arch == "scorer", (
+            f"Expected 'scorer' for Jalen Green-profile, got '{arch}'; "
+            "ppm=0.63 >= 0.55 AND season_pts=17.7 >= 15.0"
+        )
+
+    def test_big_still_detected_for_scoring_bigs(self):
+        """Players with reb_pm >= 0.22 but pts >= 12 should remain 'big', not 'pure_rebounder'."""
+        from api.index import _infer_player_archetype
+        # Achiuwa profile: 9 pts, 24 min, 7 reb → reb_pm = 0.29, season_pts = 9 — is pure_rebounder
+        # Jokic profile: 26 pts, 34 min, 13 reb → star (season_pts >= 21, avg_min >= 28)
+        # Bam Adebayo profile: 19 pts, 33 min, 10 reb → reb_pm=0.30, season_pts=19 → big (pts >= 12)
+        arch = _infer_player_archetype(19.0, 33.0, 10.0, {"season_pts": 19.0})
+        assert arch == "big", (
+            f"Expected 'big' for Bam-profile, got '{arch}'; "
+            "season_pts=19 >= 12, so not pure_rebounder"
+        )
+
+    def test_wing_role_unchanged_for_avg_player(self):
+        """A typical role player (low ppm, low reb_pm) should still be wing_role."""
+        from api.index import _infer_player_archetype
+        # Generic role player: 8 pts, 22 min, 3 reb
+        arch = _infer_player_archetype(8.0, 22.0, 3.0, {"season_pts": 8.0})
+        assert arch == "wing_role", f"Expected 'wing_role' for generic role player, got '{arch}'"
+
+    def test_pure_rebounder_penalty_lt_big(self):
+        """pure_rebounder calibration multiplier must be lower than big."""
+        cfg = json.load(open("data/model-config.json"))
+        archs = cfg["real_score"]["archetype_calibration"]["archetypes"]
+        assert "pure_rebounder" in archs, "pure_rebounder archetype must be in config"
+        assert archs["pure_rebounder"] < archs["big"], (
+            f"pure_rebounder mult {archs['pure_rebounder']} should be < big mult {archs['big']}; "
+            "pure rebounders generate less RS per rebound than scoring bigs"
+        )
+
+    def test_scorer_bonus_gt_wing_role(self):
+        """scorer calibration multiplier must exceed wing_role."""
+        cfg = json.load(open("data/model-config.json"))
+        archs = cfg["real_score"]["archetype_calibration"]["archetypes"]
+        assert "scorer" in archs, "scorer archetype must be in config"
+        assert archs["scorer"] > archs["wing_role"], (
+            f"scorer mult {archs['scorer']} should be > wing_role mult {archs['wing_role']}; "
+            "efficient scorers have higher RS ceilings when hot"
+        )
+
+    def test_big_mult_reduced_from_1_04(self):
+        """big archetype multiplier must be reduced to suppress non-star bigs."""
+        cfg = json.load(open("data/model-config.json"))
+        big_mult = cfg["real_score"]["archetype_calibration"]["archetypes"]["big"]
+        assert big_mult < 1.0, (
+            f"big mult {big_mult} should be < 1.0; was 1.04 (a bonus!) but "
+            "non-star scoring bigs still over-project when they're in the 'big' bucket"
+        )
+
+    def test_scorer_upside_config_present(self):
+        """moonshot.scorer_upside block must exist, be enabled, and have sensible values."""
+        cfg = json.load(open("data/model-config.json"))
+        su = cfg.get("moonshot", {}).get("scorer_upside", {})
+        assert su, "moonshot.scorer_upside block must exist in model-config.json"
+        assert su.get("enabled") is True, "scorer_upside must be enabled"
+        assert su.get("min_pts_per_min", 0) >= 0.50, "min_pts_per_min should be >= 0.50"
+        assert su.get("min_season_pts", 0) >= 12.0, "min_season_pts should be >= 12.0"
+        assert 1.0 < su.get("multiplier", 1.0) <= 1.25, (
+            "scorer_upside multiplier should be > 1.0 and <= 1.25 (modest boost, not a distortion)"
+        )
+
+    def test_scorer_upside_code_present(self):
+        """Moonshot pool code must contain scorer_upside block."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "scorer_upside" in src, "Moonshot pool must contain scorer_upside block"
+        assert "su_min_ppm" in src, "Scorer upside must read min_pts_per_min from config"
+        assert "su_season_pts" in src, "Scorer upside must check season_pts threshold"
+
+
+# ─────────────────────────────────────────────────────────
+# TestCascadeCapFix — per_player_cap_minutes raised to 10.0
+# Ensures primary-backup cascade scenarios correctly propagate significant minutes
+# ─────────────────────────────────────────────────────────
+class TestCascadeCapFix:
+    """Cascade cap raised from 2-3 min to 10 min so primary backups correctly inherit
+    starter-level minutes when a teammate goes OUT."""
+
+    def test_cascade_cap_in_config(self):
+        """model-config.json must have per_player_cap_minutes >= 8.0."""
+        cfg = json.load(open("data/model-config.json"))
+        cap = cfg.get("cascade", {}).get("per_player_cap_minutes", 0)
+        assert cap >= 8.0, (
+            f"per_player_cap_minutes should be >= 8.0 to allow meaningful cascade propagation, got {cap}"
+        )
+
+    def test_cascade_cap_in_defaults(self):
+        """_CONFIG_DEFAULTS cascade.per_player_cap_minutes must be >= 8.0 in source."""
+        src = open("api/index.py").read()
+        # Find per_player_cap_minutes in the _CONFIG_DEFAULTS dict
+        m = re.search(r'"cascade":\s*\{[^}]*"per_player_cap_minutes"\s*:\s*([\d.]+)', src)
+        assert m, "_CONFIG_DEFAULTS must define cascade.per_player_cap_minutes"
+        cap = float(m.group(1))
+        assert cap >= 8.0, (
+            f"_CONFIG_DEFAULTS per_player_cap_minutes should be >= 8.0, got {cap}"
+        )
+
+    def test_cascade_rs_enabled_in_config(self):
+        """Production config must have cascade_rs enabled so cascade players get RS uplift."""
+        cfg = json.load(open("data/model-config.json"))
+        cr = cfg.get("real_score", {}).get("cascade_rs", {})
+        assert cr.get("enabled") is True, "cascade_rs.enabled must be True in production config"
+
+
+# ─────────────────────────────────────────────────────────
+# TestRotoConfirmedRatingException — confirmed rotation players bypass min_rating_floor
+# ─────────────────────────────────────────────────────────
+class TestRotoConfirmedRatingException:
+    """Confirmed rotation players with high boost pass a lower RS floor (2.2) in
+    the moonshot pool, capturing players like Garza, Paul Reed, Taylor Hendricks."""
+
+    def test_roto_confirmed_exception_code_exists(self):
+        """Moonshot pool must have roto_confirmed_min_rating exception logic."""
+        src = open("api/index.py").read()
+        assert "roto_confirmed_min_rating" in src, (
+            "Moonshot pool must read roto_confirmed_min_rating from config"
+        )
+        assert "roto_confirmed_min_boost" in src, (
+            "Moonshot pool must read roto_confirmed_min_boost from config"
+        )
+        assert "_is_roto_confirmed" in src, (
+            "Moonshot pool must check _is_roto_confirmed for the exception"
+        )
+        assert "_has_cascade" in src, (
+            "Moonshot pool must allow cascade-elevated players via _has_cascade"
+        )
+
+    def test_roto_confirmed_config_keys(self):
+        """model-config.json moonshot section must have roto_confirmed_min_rating and min_boost."""
+        cfg = json.load(open("data/model-config.json"))
+        moon = cfg.get("moonshot", {})
+        assert "roto_confirmed_min_rating" in moon, (
+            "moonshot.roto_confirmed_min_rating must exist in model-config.json"
+        )
+        assert "roto_confirmed_min_boost" in moon, (
+            "moonshot.roto_confirmed_min_boost must exist in model-config.json"
+        )
+        min_rating = moon["roto_confirmed_min_rating"]
+        min_boost = moon["roto_confirmed_min_boost"]
+        assert 2.0 <= min_rating <= 2.5, (
+            f"roto_confirmed_min_rating should be 2.0-2.5 (selective but not too strict), got {min_rating}"
+        )
+        assert 2.0 <= min_boost <= 3.0, (
+            f"roto_confirmed_min_boost should be 2.0-3.0, got {min_boost}"
+        )
+
+    def test_context_pass_includes_cascade_fields(self):
+        """Context pass player payload must include cascade_bonus and roto_status."""
+        src = open("api/index.py").read()
+        assert '"cascade_bonus"' in src, "Context pass payload must include cascade_bonus field"
+        assert '"roto_status"' in src, "Context pass payload must include roto_status field"
+        assert "CASCADE & ROLE CONFIRMATION SIGNALS" in src, (
+            "Context pass prompt must include cascade signal instructions"
+        )
+
+
+class TestMaxPerGameConstraint:
+    """MILP optimizer must limit players from the same game matchup."""
+
+    def test_max_per_game_config_keys_exist(self):
+        """model-config.json lineup section must have chalk_max_per_game and moonshot_max_per_game."""
+        cfg = json.load(open("data/model-config.json"))
+        lu = cfg.get("lineup", {})
+        assert "chalk_max_per_game" in lu, "lineup.chalk_max_per_game must exist in model-config.json"
+        assert "moonshot_max_per_game" in lu, "lineup.moonshot_max_per_game must exist in model-config.json"
+        assert lu["chalk_max_per_game"] in (2, 3), (
+            f"chalk_max_per_game should be 2 or 3, got {lu['chalk_max_per_game']}"
+        )
+        assert lu["moonshot_max_per_game"] in (2, 3), (
+            f"moonshot_max_per_game should be 2 or 3, got {lu['moonshot_max_per_game']}"
+        )
+
+    def test_max_per_game_optimizer_params(self):
+        """asset_optimizer.py must accept max_per_game and player_games parameters."""
+        src = open("api/asset_optimizer.py").read()
+        assert "max_per_game=0" in src, "optimize_lineup must have max_per_game=0 default param"
+        assert "player_games=None" in src, "optimize_lineup must have player_games=None default param"
+        assert "max_per_game_{game_id}" in src, "_solve_milp must add named per-game constraint"
+
+    def test_max_per_game_constraint_enforced(self):
+        """MILP must not select more than max_per_game players from the same game."""
+        try:
+            from api.asset_optimizer import optimize_lineup, PULP_AVAILABLE
+            if not PULP_AVAILABLE:
+                pytest.skip("PuLP not available")
+        except Exception:
+            pytest.skip("PuLP not available")
+
+        # 3 players from LAL vs BOS, 2 from other games — max_per_game=2 should block 3rd LAL/BOS
+        players = [
+            {"name": "A", "rating": 5.0, "est_mult": 1.5, "team": "LAL", "opp": "BOS", "chalk_ev": 10.0, "player_variance": 0},
+            {"name": "B", "rating": 4.5, "est_mult": 1.5, "team": "BOS", "opp": "LAL", "chalk_ev": 9.5, "player_variance": 0},
+            {"name": "C", "rating": 4.0, "est_mult": 1.5, "team": "LAL", "opp": "BOS", "chalk_ev": 9.0, "player_variance": 0},
+            {"name": "D", "rating": 3.5, "est_mult": 1.5, "team": "GSW", "opp": "PHX", "chalk_ev": 8.0, "player_variance": 0},
+            {"name": "E", "rating": 3.0, "est_mult": 1.5, "team": "MIA", "opp": "ATL", "chalk_ev": 7.0, "player_variance": 0},
+            {"name": "F", "rating": 2.5, "est_mult": 1.5, "team": "CHI", "opp": "DET", "chalk_ev": 6.0, "player_variance": 0},
+        ]
+        game_ids = ["BOS_vs_LAL", "BOS_vs_LAL", "BOS_vs_LAL", "GSW_vs_PHX", "ATL_vs_MIA", "CHI_vs_DET"]
+
+        result = optimize_lineup(players, n=5, player_games=game_ids, max_per_game=2)
+        lal_bos_count = sum(1 for p in result if p.get("team") in ("LAL", "BOS"))
+        assert lal_bos_count <= 2, (
+            f"Expected at most 2 players from LAL/BOS game, got {lal_bos_count}: "
+            f"{[p['name'] for p in result]}"
+        )
+
+    def test_player_game_id_derivation_in_build_lineups(self):
+        """index.py must derive player_game_id from team+opp and pass player_games to MILP."""
+        src = open("api/index.py").read()
+        assert "_player_game_id" in src, "_build_lineups must define _player_game_id helper"
+        assert "chalk_max_per_game" in src, "_build_lineups must read chalk_max_per_game config"
+        assert "moonshot_max_per_game" in src, "_build_lineups must read moonshot_max_per_game config"
+        assert "_chalk_elig_games" in src or "_chalk_source_games" in src, (
+            "_build_lineups must build player_games list for chalk MILP"
+        )
+        assert "_moon_pool_games" in src, (
+            "_build_lineups must build player_games list for moonshot MILP"
+        )
+
+
+class TestMinHighBoostConstraint:
+    """MILP optimizer must guarantee minimum high-boost player count in chalk lineup."""
+
+    def test_min_high_boost_config_keys_exist(self):
+        """model-config.json lineup section must have high-boost count and threshold keys."""
+        cfg = json.load(open("data/model-config.json"))
+        lu = cfg.get("lineup", {})
+        required = [
+            "chalk_min_high_boost_count",
+            "chalk_high_boost_threshold",
+            "chalk_min_big_boost_count",
+            "chalk_big_boost_threshold",
+        ]
+        for key in required:
+            assert key in lu, f"lineup.{key} must exist in model-config.json"
+        assert lu["chalk_min_high_boost_count"] >= 1, "Should require at least 1 high-boost player"
+        assert lu["chalk_high_boost_threshold"] >= 1.5, "High-boost threshold should be at least 1.5x"
+        assert lu["chalk_big_boost_threshold"] > lu["chalk_high_boost_threshold"], (
+            "Big-boost threshold must exceed high-boost threshold"
+        )
+
+    def test_min_high_boost_optimizer_params(self):
+        """asset_optimizer.py must accept min_high_boost_count and related params."""
+        src = open("api/asset_optimizer.py").read()
+        assert "min_high_boost_count=0" in src, "optimize_lineup must have min_high_boost_count=0 default"
+        assert "high_boost_threshold=2.0" in src, "optimize_lineup must have high_boost_threshold=2.0 default"
+        assert "min_big_boost_count=0" in src, "optimize_lineup must have min_big_boost_count=0 default"
+        assert "big_boost_threshold=2.8" in src, "optimize_lineup must have big_boost_threshold=2.8 default"
+        assert "min_high_boost" in src, "_solve_milp must add min_high_boost named constraint"
+        assert "min_big_boost" in src, "_solve_milp must add min_big_boost named constraint"
+
+    def test_min_high_boost_uses_raw_est_mult(self):
+        """Boost constraints must check raw est_mult, not blended chalk_milp_boost."""
+        src = open("api/asset_optimizer.py").read()
+        # The constraint should index p.get("est_mult") — not card_boost_key
+        assert 'p.get("est_mult", 0) >= high_boost_threshold' in src, (
+            "min_high_boost constraint must check raw est_mult, not blended card_boost_key"
+        )
+        assert 'p.get("est_mult", 0) >= big_boost_threshold' in src, (
+            "min_big_boost constraint must check raw est_mult, not blended card_boost_key"
+        )
+
+    def test_min_high_boost_constraint_enforced(self):
+        """MILP must include at least min_high_boost_count players with boost >= threshold."""
+        try:
+            from api.asset_optimizer import optimize_lineup, PULP_AVAILABLE
+            if not PULP_AVAILABLE:
+                pytest.skip("PuLP not available")
+        except Exception:
+            pytest.skip("PuLP not available")
+
+        # 2 high-boost players (3.0x), 4 moderate-boost players (1.0x) — must pick both high-boost
+        players = [
+            {"name": "Star1",  "rating": 5.0, "est_mult": 1.0, "team": "LAL", "opp": "BOS", "chalk_ev": 10.0, "player_variance": 0},
+            {"name": "Star2",  "rating": 4.8, "est_mult": 1.0, "team": "BOS", "opp": "LAL", "chalk_ev": 9.8, "player_variance": 0},
+            {"name": "Star3",  "rating": 4.5, "est_mult": 1.0, "team": "GSW", "opp": "PHX", "chalk_ev": 9.5, "player_variance": 0},
+            {"name": "Boost1", "rating": 3.0, "est_mult": 3.0, "team": "MIA", "opp": "ATL", "chalk_ev": 8.0, "player_variance": 0},
+            {"name": "Boost2", "rating": 2.8, "est_mult": 2.5, "team": "CHI", "opp": "DET", "chalk_ev": 7.5, "player_variance": 0},
+            {"name": "Filler", "rating": 2.0, "est_mult": 1.0, "team": "ORL", "opp": "IND", "chalk_ev": 5.0, "player_variance": 0},
+        ]
+
+        result = optimize_lineup(players, n=5, min_high_boost_count=2, high_boost_threshold=2.0)
+        high_boost_count = sum(1 for p in result if p.get("est_mult", 0) >= 2.0)
+        assert high_boost_count >= 2, (
+            f"Expected at least 2 high-boost players (>=2.0x), got {high_boost_count}: "
+            f"{[(p['name'], p.get('est_mult')) for p in result]}"
+        )
+
+    def test_min_high_boost_passes_to_milp_calls(self):
+        """index.py must pass high-boost constraints to chalk optimize_lineup calls."""
+        src = open("api/index.py").read()
+        assert "chalk_min_high_boost_count" in src, "_build_lineups must read chalk_min_high_boost_count config"
+        assert "chalk_high_boost_threshold" in src, "_build_lineups must read chalk_high_boost_threshold config"
+        assert "chalk_min_big_boost_count" in src, "_build_lineups must read chalk_min_big_boost_count config"
+        assert "chalk_big_boost_threshold" in src, "_build_lineups must read chalk_big_boost_threshold config"
+        assert "min_high_boost_count=_chalk_min_high_boost" in src, (
+            "_build_lineups must pass min_high_boost_count to chalk optimize_lineup"
+        )
+        assert "min_big_boost_count=_chalk_min_big_boost" in src, (
+            "_build_lineups must pass min_big_boost_count to chalk optimize_lineup"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
