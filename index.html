@@ -1197,7 +1197,7 @@
         <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
         <span class="bnav-label">Line</span>
       </button>
-      <button class="bnav-icon-btn" data-tab="parlay" onclick="switchTab('parlay')">
+      <button class="bnav-icon-btn" data-tab="parlay" onclick="switchTab('parlay')" aria-label="Parlay tab">
         <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="5" rx="1.5"/><rect x="3" y="10" width="18" height="5" rx="1.5"/><rect x="3" y="17" width="18" height="4" rx="1.5"/></svg></div>
         <span class="bnav-label">Parlay</span>
       </button>
@@ -1353,16 +1353,32 @@
   </div>
 
   <!-- ══ TAB: PARLAY ══ -->
-  <div id="tab-parlay" class="tab-page">
+  <div id="tab-parlay" class="tab-page" role="tabpanel" aria-label="Parlay picks">
     <div style="margin-bottom:10px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Safest Parlay</div>
     </div>
-    <div id="parlayContent">
-      <div id="parlayEmpty" style="display:none">
-        <div class="empty-state"><span class="icon">🎰</span><p id="parlayEmptyMsg">No parlay available yet.</p><button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="fetchParlay()">Retry</button></div>
+    <div id="parlayContent" aria-live="polite">
+      <div id="parlayEmpty" style="display:none" role="status">
+        <div class="empty-state"><span class="icon" aria-hidden="true">🎰</span><p id="parlayEmptyMsg">No parlay available yet.</p><button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="fetchParlay()" aria-label="Retry loading parlay">Retry</button></div>
       </div>
-      <div id="parlayLoading" style="display:none"></div>
+      <div id="parlayLoading" style="display:none" role="status" aria-label="Loading parlay"></div>
       <div id="parlayTicket" style="display:none"></div>
+    </div>
+    <!-- Parlay History -->
+    <div id="parlayHistoryWrap" style="display:none;margin-top:20px" role="region" aria-label="Parlay history">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="section-label" style="margin-top:0;margin-bottom:0">Recent Parlays</div>
+      </div>
+      <div id="parlayHistoryStats"></div>
+      <div id="parlayHistoryList" style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+    </div>
+  </div>
+
+  <!-- Parlay Detail Modal (bottom sheet) -->
+  <div id="parlayModal" onclick="closeParlayModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1001;align-items:flex-end" role="dialog" aria-modal="true" aria-label="Parlay detail">
+    <div onclick="event.stopPropagation()" style="background:var(--surface2);border-radius:18px 18px 0 0;padding:20px 16px max(28px, env(safe-area-inset-bottom));width:100%;max-height:80vh;overflow-y:auto">
+      <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px" aria-hidden="true"></div>
+      <div id="parlayModalContent"></div>
     </div>
   </div>
 
@@ -1643,6 +1659,7 @@ let PICKS_STATE = asyncStateInitial();  // Per-game picks AsyncState
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   closeLinePickModal();
+  closeParlayModal();
   hideLoader(); // Dismiss 8-ball overlay on ANY tab switch (scoped to Predict but belt-and-suspenders)
 
   // Live stat poll lifecycle: stop when leaving Line tab, restart when returning
@@ -2429,6 +2446,7 @@ async function triggerLateDraft() {
 // ════════════════════════════════════════════════════════
 let PARLAY_STATE = asyncStateInitial();
 let PARLAY_LOADED_DATE = '';
+let PARLAY_HIST_DATA = null;
 
 function _parlaySkeletons() {
   const skel = `
@@ -2588,12 +2606,161 @@ async function fetchParlay() {
 function initParlayPage() {
   const todayET = _etToday();
   if (PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success') {
-    // Same day, already loaded — re-render from cache
     renderParlayTicket(PARLAY_STATE.data);
+    if (PARLAY_HIST_DATA) renderParlayHistory(PARLAY_HIST_DATA);
     return;
   }
   PARLAY_LOADED_DATE = todayET;
   fetchParlay();
+  fetchParlayHistory(); // fire-and-forget
+}
+
+// ── Parlay History ──────────────────────────────────────────────────────
+
+async function fetchParlayHistory() {
+  try {
+    const r = await fetchWithTimeout('/api/parlay-history', {}, 15000);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    PARLAY_HIST_DATA = data;
+    renderParlayHistory(data);
+  } catch (err) {
+    console.warn('[parlay] history fetch error:', err);
+  }
+}
+
+function renderParlayHistory(hist) {
+  const wrap = _el('parlayHistoryWrap');
+  if (!wrap) return;
+  const parlays = hist.parlays || [];
+  if (!parlays.length) { wrap.style.display = 'none'; return; }
+
+  // Stats chips (hit rate + streak)
+  const statsEl = _el('parlayHistoryStats');
+  if (statsEl) {
+    const hitRate = hist.hit_rate;
+    const streak = hist.streak || 0;
+    const streakType = hist.streak_type;
+    let statsHtml = '';
+    if (hitRate !== null || streak) {
+      const streakColor = streakType === 'hit' ? 'var(--color-success)' : 'var(--color-danger)';
+      statsHtml = '<div style="display:flex;gap:12px;margin-bottom:14px">' +
+        '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:var(--parlay)">' + (hitRate != null ? hitRate + '%' : '\u2014') + '</div>' +
+          '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>' +
+        '</div>' +
+        (streak ? '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
+          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:' + streakColor + ';line-height:1">' + streak + '\u00d7 ' + streakType.toUpperCase() + '</div>' +
+          '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>' +
+        '</div>' : '') +
+      '</div>';
+    }
+    statsEl.innerHTML = statsHtml;
+  }
+
+  // History rows
+  const listEl = _el('parlayHistoryList');
+  if (!listEl) return;
+  let rowsHtml = '';
+  for (let i = 0; i < parlays.length; i++) {
+    const p = parlays[i];
+    const result = p.result || 'pending';
+    const legs = p.legs || [];
+    const legSummary = legs.map(function(l) {
+      const sl = {'points':'PTS','rebounds':'REB','assists':'AST'}[l.stat_type] || (l.stat_type || '').toUpperCase();
+      return _escapeHtml(l.player_name) + ' ' + (l.direction || 'O').charAt(0).toUpperCase() + ' ' + (l.line || '') + ' ' + sl;
+    }).join(' + ');
+    const dateLabel = p.date || '';
+    const resultClass = result === 'hit' ? 'hit' : result === 'miss' ? 'miss' : 'pending';
+    const legsResolved = legs.filter(function(l) { return l.result === 'hit' || l.result === 'miss'; }).length;
+    const legsHit = legs.filter(function(l) { return l.result === 'hit'; }).length;
+    const legsPill = legsResolved > 0 ? ' <span style="font-size:0.6rem;color:var(--muted);margin-left:4px">' + legsHit + '/' + legs.length + '</span>' : '';
+
+    rowsHtml += '<div class="line-history-row" style="cursor:pointer" data-parlay-idx="' + i + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
+      '<div style="display:flex;align-items:center;gap:7px;min-width:0">' +
+        '<span class="line-hist-dir-pill" style="background:rgba(217,70,239,0.12);color:var(--parlay);border:1px solid rgba(217,70,239,0.25);font-size:0.55rem">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
+        '<div style="min-width:0">' +
+          '<div class="line-history-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">' + legSummary + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;flex-shrink:0">' +
+        '<span class="line-result-pill ' + resultClass + '">' + result.toUpperCase() + '</span>' +
+        legsPill +
+      '</div>' +
+    '</div>';
+  }
+  listEl.innerHTML = rowsHtml;
+  wrap.style.display = 'block';
+}
+
+// ── Parlay Modal ──────────────────────────────────────────────────────
+
+function openParlayModal(parlay) {
+  const modal = _el('parlayModal');
+  const content = _el('parlayModalContent');
+  if (!modal || !content) return;
+
+  const legs = parlay.legs || [];
+  const result = parlay.result || 'pending';
+  const comboPct = parlay.combined_probability != null ? (parlay.combined_probability * 100).toFixed(1) : '\u2014';
+
+  // Header
+  let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:0.06em;text-transform:uppercase;color:var(--parlay)">Parlay \u2014 ' + _escapeHtml(parlay.date || '') + '</div>' +
+    '<span class="line-result-pill ' + result + '">' + result.toUpperCase() + '</span>' +
+  '</div>';
+
+  // Ticket with result overlays
+  html += '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(217,70,239,0.18);margin-bottom:12px">';
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    html += renderParlayLeg(leg, i, legs.length);
+    // Result overlay row for resolved legs
+    if (leg.result && leg.result !== 'pending') {
+      const actualVal = leg.actual_stat != null ? leg.actual_stat : '\u2014';
+      const legResult = leg.result;
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 20px 8px;' +
+        'background:' + (legResult === 'hit' ? 'rgba(var(--green-rgb),0.08)' : 'rgba(var(--red-rgb),0.06)') + ';border-bottom:1px solid rgba(255,255,255,0.04)">' +
+        '<span style="font-size:0.68rem;color:var(--muted)">Actual: <strong style="color:var(--text)">' + actualVal + '</strong></span>' +
+        '<span class="line-result-pill ' + legResult + '" style="font-size:0.58rem">' + legResult.toUpperCase() + '</span>' +
+      '</div>';
+    }
+  }
+  html += '</div>';
+
+  // Stats row
+  html += '<div style="display:flex;gap:12px;margin-bottom:12px">' +
+    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:8px 14px;flex:1;text-align:center">' +
+      '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Combined</div>' +
+      '<div style="font-weight:800;font-size:0.82rem;color:var(--parlay)">' + comboPct + '%</div>' +
+    '</div>' +
+    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:8px 14px;flex:1;text-align:center">' +
+      '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Legs Hit</div>' +
+      '<div style="font-weight:800;font-size:0.82rem;color:var(--text)">' + legs.filter(function(l){ return l.result === 'hit'; }).length + '/' + legs.length + '</div>' +
+    '</div>' +
+  '</div>';
+
+  // Narrative
+  if (parlay.narrative) {
+    html += '<div class="line-pick-conclusion-wrap"><p class="line-pick-conclusion">' + _escapeHtml(parlay.narrative) + '</p></div>';
+  }
+
+  content.innerHTML = html;
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function openParlayModalByIdx(el) {
+  const idx = parseInt(el.getAttribute('data-parlay-idx'), 10);
+  if (PARLAY_HIST_DATA && PARLAY_HIST_DATA.parlays && PARLAY_HIST_DATA.parlays[idx]) {
+    openParlayModal(PARLAY_HIST_DATA.parlays[idx]);
+  }
+}
+
+function closeParlayModal() {
+  const modal = _el('parlayModal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
 }
 
 // ════════════════════════════════════════════════════════
@@ -3889,7 +4056,7 @@ function closeLinePickModal() {
 
 
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeLinePickModal();
+  if (e.key === 'Escape') { closeLinePickModal(); closeParlayModal(); }
 });
 
 function filterLineHistory(dir) {

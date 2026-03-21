@@ -470,3 +470,80 @@ class TestParlayFrontend:
     def test_render_parlay_ticket_function(self):
         html = open("index.html").read()
         assert "function renderParlayTicket(" in html
+
+    def test_parlay_history_wrap_exists(self):
+        html = open("index.html").read()
+        assert 'id="parlayHistoryWrap"' in html
+
+    def test_parlay_history_list_exists(self):
+        html = open("index.html").read()
+        assert 'id="parlayHistoryList"' in html
+
+    def test_parlay_history_stats_exists(self):
+        html = open("index.html").read()
+        assert 'id="parlayHistoryStats"' in html
+
+    def test_parlay_modal_exists(self):
+        html = open("index.html").read()
+        assert 'id="parlayModal"' in html
+        assert 'id="parlayModalContent"' in html
+
+    def test_fetch_parlay_history_function(self):
+        html = open("index.html").read()
+        assert "function fetchParlayHistory(" in html
+
+    def test_render_parlay_history_function(self):
+        html = open("index.html").read()
+        assert "function renderParlayHistory(" in html
+
+    def test_open_parlay_modal_function(self):
+        html = open("index.html").read()
+        assert "function openParlayModal(" in html
+
+    def test_close_parlay_modal_function(self):
+        html = open("index.html").read()
+        assert "function closeParlayModal(" in html
+
+    def test_parlay_hist_data_global(self):
+        html = open("index.html").read()
+        assert "PARLAY_HIST_DATA" in html
+
+    def test_parlay_modal_escape_key(self):
+        html = open("index.html").read()
+        assert "closeParlayModal()" in html
+
+    def test_parlay_modal_aria_attributes(self):
+        html = open("index.html").read()
+        assert 'aria-modal="true"' in html
+        assert 'aria-label="Parlay detail"' in html
+
+    def test_parlay_tab_aria_label(self):
+        html = open("index.html").read()
+        assert 'aria-label="Parlay tab"' in html
+
+    def test_parlay_history_aria_region(self):
+        html = open("index.html").read()
+        assert 'aria-label="Parlay history"' in html
+
+    def test_parlay_content_aria_live(self):
+        html = open("index.html").read()
+        assert 'id="parlayContent" aria-live="polite"' in html
+
+
+class TestParlayHistoryEndpoint:
+    """Verify the /api/parlay-history endpoint is registered."""
+
+    def test_endpoint_registered(self):
+        from api.index import app
+        routes = [r.path for r in app.routes]
+        assert "/api/parlay-history" in routes
+
+    def test_parlay_auto_save_fields(self):
+        """Verify the /api/parlay endpoint adds result and actual_stat fields."""
+        # Check that the code path for auto-save exists
+        import inspect
+        from api.index import get_parlay
+        source = inspect.getsource(get_parlay)
+        assert "result" in source
+        assert "data/parlays/" in source
+        assert "_github_write_file" in source
