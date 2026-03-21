@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-20,Ty Jerome,4065733,MEM,BOS,points,20,under,18,-2,80,Model projects 18.0 points — a 2.0 edge vs the 20.0 season baseline.,pending,
