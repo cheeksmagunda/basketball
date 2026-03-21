@@ -312,7 +312,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 })
 
     print(f"[parlay] filter funnel: {_f}")
-    return candidates
+    return candidates, _f
 
 
 def _std_dev(values):
@@ -471,7 +471,7 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
     cfg = parlay_config or {}
 
     # Step 1: Build all valid candidate legs
-    candidates = build_candidate_legs(
+    candidates, filter_funnel = build_candidate_legs(
         projections, games, player_odds_map, gamelogs,
         rw_statuses, cfg,
     )
@@ -550,5 +550,6 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
         "narrative": narrative,
         "candidates_evaluated": len(candidates),
         "combinations_scored": combos_scored,
+        "filter_funnel": filter_funnel,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

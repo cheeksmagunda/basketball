@@ -8810,12 +8810,12 @@ def _run_parlay_engine_sync(today):
     """Run the full parlay pipeline (blocking). Call via asyncio.to_thread()."""
     games = fetch_games(today)
     if not games:
-        return None, "no_games"
+        return None, "no_games", {}
 
     draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
     target_games = draftable if draftable else games
     if not target_games:
-        return None, "no_games"
+        return None, "no_games", {}
 
     # Get projections (reuse /tmp per-game cache when warm)
     all_proj = []
@@ -8835,14 +8835,16 @@ def _run_parlay_engine_sync(today):
             except TimeoutError:
                 print(f"[parlay] projection pool timed out, got {len(all_proj)}")
     if not all_proj:
-        return None, "no_projections"
+        return None, "no_projections", {}
 
     # Fetch odds
     player_odds_map = _build_player_odds_map(target_games)
+    print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
 
     # Fetch gamelogs for all projected players
     player_ids = list(set(str(p.get("id", "")) for p in all_proj if p.get("id")))
     gamelogs = _fetch_gamelogs_batch(player_ids)
+    print(f"[parlay] gamelogs fetched={len(gamelogs)} / {len(player_ids)} players")
 
     # RotoWire statuses
     rw_statuses = {}
@@ -8854,11 +8856,19 @@ def _run_parlay_engine_sync(today):
     # Parlay config from model-config
     parlay_config = _cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {}))
 
+    debug = {
+        "projections": len(all_proj),
+        "odds_entries": len(player_odds_map),
+        "gamelogs": len(gamelogs),
+        "odds_available": len(player_odds_map) > 0,
+    }
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
         rw_statuses, parlay_config,
     )
-    return result, None
+    if result and result.get("filter_funnel"):
+        debug["filter_funnel"] = result["filter_funnel"]
+    return result, None, debug
 
 
 @app.get("/api/parlay")
@@ -8886,12 +8896,19 @@ async def get_parlay(request: Request):
                 except Exception:
                     pass
 
-        result, err = await asyncio.to_thread(_run_parlay_engine_sync, today)
+        result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
 
         if err or not result:
+            no_odds = debug and not debug.get("odds_available")
+            narrative = (
+                "Parlay requires sportsbook odds data (ODDS_API_KEY). No player prop lines available for today's slate."
+                if no_odds else
+                "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks."
+            )
             return JSONResponse({
                 "legs": [], "error": err or "no_valid_parlay",
-                "narrative": "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks.",
+                "narrative": narrative,
+                "debug": debug or {},
             }, status_code=200)
 
         # Normalize legs for frontend
