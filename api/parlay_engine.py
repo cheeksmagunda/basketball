@@ -139,11 +139,11 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
     """
     cfg = parlay_config or {}
     max_spread = cfg.get("max_spread", 8.5)
-    max_minutes_cv = cfg.get("max_minutes_cv", 0.25)
-    min_blended_conf = cfg.get("min_blended_conf", 0.55)
-    min_season_minutes = cfg.get("min_season_minutes", 24.0)
-    min_games_played = cfg.get("min_games_played", 15)
-    juice_threshold = cfg.get("juice_threshold", -125)  # Vegas must juice at least this much
+    max_minutes_cv = cfg.get("max_minutes_cv", 0.30)
+    min_blended_conf = cfg.get("min_blended_conf", 0.52)
+    min_season_minutes = cfg.get("min_season_minutes", 20.0)
+    min_games_played = cfg.get("min_games_played", 10)
+    juice_threshold = cfg.get("juice_threshold", -105)  # Vegas must juice at least this much
 
     # Build game lookup: team_abbr → game info
     game_lookup = {}
@@ -163,37 +163,48 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
 
     stat_types = ["points", "rebounds", "assists"]
     candidates = []
+    # Diagnostic counters for pipeline visibility
+    _f = {"total": 0, "no_id": 0, "low_min": 0, "injury": 0, "no_game": 0,
+          "blowout": 0, "gtd": 0, "high_cv": 0, "low_games": 0,
+          "no_odds": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
 
     for p in projections:
         pid = str(p.get("id", ""))
         name = p.get("name", "")
         team = p.get("team", "")
         name_lower = name.lower()
+        _f["total"] += 1
 
         if not pid or not name or not team:
+            _f["no_id"] += 1
             continue
 
         # Season minutes floor
         season_min = float(p.get("season_min") or p.get("predMin") or 0)
         if season_min < min_season_minutes:
+            _f["low_min"] += 1
             continue
 
         # Injury filter — skip OUT or questionable players
         injury = (p.get("injury_status") or "").lower()
         if injury in ("out", "questionable"):
+            _f["injury"] += 1
             continue
 
         # Game context
         gctx = game_lookup.get(team)
         if not gctx:
+            _f["no_game"] += 1
             continue
 
         # Blowout filter
         if _is_blowout_game(gctx.get("spread"), max_spread):
+            _f["blowout"] += 1
             continue
 
         # GTD star teammate filter
         if _has_gtd_star_teammate(team, rw_statuses, name_lower):
+            _f["gtd"] += 1
             continue
 
         # Minutes volatility filter
@@ -201,11 +212,13 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
         log_minutes = player_log.get("minutes", [])
         cv = _minutes_cv(log_minutes)
         if cv > max_minutes_cv:
+            _f["high_cv"] += 1
             continue
 
         # Games played filter (need enough data for reliable std dev)
         games_in_log = len(log_minutes)
         if games_in_log < min_games_played:
+            _f["low_games"] += 1
             continue
 
         # Build legs for each stat type × direction
@@ -226,10 +239,12 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                             odds_data = odata
                             break
             if not odds_data:
+                _f["no_odds"] += 1
                 continue  # No sportsbook line → can't build a parlay leg
 
             book_line = float(odds_data.get("line", 0))
             if book_line <= 0:
+                _f["no_odds"] += 1
                 continue
 
             # Determine direction: pick the side where model + Vegas agree
@@ -243,27 +258,33 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 if american_odds is not None:
                     try:
                         if float(american_odds) > juice_threshold:
+                            _f["no_juice"] += 1
                             continue  # Not juiced enough — Vegas doesn't favor this side
                     except (TypeError, ValueError):
+                        _f["no_juice"] += 1
                         continue
 
                 # Compute model hit probability via Z-score
                 log_values = player_log.get(stat, [])
                 if len(log_values) < 5:
+                    _f["no_log"] += 1
                     continue
                 std_dev = _std_dev(log_values)
                 model_prob = _compute_hit_probability(proj_val, book_line, std_dev, direction)
                 if model_prob is None:
+                    _f["no_log"] += 1
                     continue
 
                 # Blended confidence
                 blended = _compute_blended_confidence(model_prob, vegas_prob)
                 if blended is None or blended < min_blended_conf:
+                    _f["low_conf"] += 1
                     continue
 
                 # Raw edge
                 edge = proj_val - book_line if direction == "over" else book_line - proj_val
 
+                _f["accepted"] += 1
                 candidates.append({
                     "player_name": name,
                     "player_id": pid,
@@ -290,6 +311,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                     "away_team": gctx.get("away", ""),
                 })
 
+    print(f"[parlay] filter funnel: {_f}")
     return candidates
 
 

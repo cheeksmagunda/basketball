@@ -385,11 +385,11 @@ class TestParlayConfigDefaults:
 
     def test_parlay_min_blended_conf(self):
         from api.index import _CONFIG_DEFAULTS
-        assert _CONFIG_DEFAULTS["parlay"]["min_blended_conf"] == 0.55
+        assert _CONFIG_DEFAULTS["parlay"]["min_blended_conf"] == 0.52
 
     def test_parlay_max_minutes_cv(self):
         from api.index import _CONFIG_DEFAULTS
-        assert _CONFIG_DEFAULTS["parlay"]["max_minutes_cv"] == 0.25
+        assert _CONFIG_DEFAULTS["parlay"]["max_minutes_cv"] == 0.30
 
 
 class TestParlayRateLimit:

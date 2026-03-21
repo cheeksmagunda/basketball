@@ -720,12 +720,12 @@ _CONFIG_DEFAULTS = {
     },
     "parlay": {
         "max_spread": 8.5,
-        "max_minutes_cv": 0.25,
-        "min_blended_conf": 0.55,
-        "min_season_minutes": 24.0,
-        "min_games_played": 15,
-        "juice_threshold": -125,
-        "max_candidates_for_combinations": 25,
+        "max_minutes_cv": 0.30,
+        "min_blended_conf": 0.52,
+        "min_season_minutes": 20.0,
+        "min_games_played": 10,
+        "juice_threshold": -105,
+        "max_candidates_for_combinations": 30,
         "positive_correlation_boost": 1.08,
         "shootout_correlation_boost": 1.05,
     },
@@ -8726,34 +8726,33 @@ def _fetch_gamelog(pid, num_games=15):
         return {}
 
     try:
-        # ESPN gamelog structure: seasonTypes[] -> categories[] -> events[]
-        # Each category has "labels" (stat names) and "events" (game rows)
+        # ESPN gamelog structure:
+        #   Top-level: labels[] (display: "MIN","PTS","REB","AST",...) and
+        #              names[] (machine: "minutes","points","totalRebounds","assists",...)
+        #   Data:      seasonTypes[] -> categories[] -> events[] (each event has stats[] aligned to labels/names)
         stat_arrays = {"points": [], "rebounds": [], "assists": [], "minutes": []}
 
-        season_types = data.get("seasonTypes", [])
-        for st in season_types:
-            categories = st.get("categories", [])
-            for cat in categories:
-                labels = [lbl.lower() for lbl in cat.get("labels", [])]
-                events = cat.get("events", [])
+        # Build index map from top-level labels (display names)
+        top_labels = [lbl.lower() for lbl in data.get("labels", [])]
+        idx_map = {}
+        for stat_name, lbl_options in [
+            ("points", ["pts"]),
+            ("rebounds", ["reb"]),
+            ("assists", ["ast"]),
+            ("minutes", ["min"]),
+        ]:
+            for lbl in lbl_options:
+                if lbl in top_labels:
+                    idx_map[stat_name] = top_labels.index(lbl)
+                    break
 
-                # Map label indices
-                idx_map = {}
-                for stat_name, lbl_options in [
-                    ("points", ["pts"]),
-                    ("rebounds", ["reb"]),
-                    ("assists", ["ast"]),
-                    ("minutes", ["min"]),
-                ]:
-                    for lbl in lbl_options:
-                        if lbl in labels:
-                            idx_map[stat_name] = labels.index(lbl)
-                            break
+        if not idx_map:
+            return {}
 
-                if not idx_map:
-                    continue
-
-                for event in events:
+        # Collect game rows from seasonTypes -> categories -> events
+        for st in data.get("seasonTypes", []):
+            for cat in st.get("categories", []):
+                for event in cat.get("events", []):
                     stats = event.get("stats", [])
                     if not stats:
                         continue
