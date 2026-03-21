@@ -43,3 +43,9 @@ command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.envir
 [[crons.jobs]]
 schedule = "0 6 * * 1"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/mae-drift-check',headers=h)\""
+
+# Pre-lock parlay generation: noon ET (17:00 UTC) — well before first evening tip
+# Generates parlay with real Odds API props and saves to GitHub so it survives post-lock
+[[crons.jobs]]
+schedule = "0 17 * * *"
+command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/parlay-force-regenerate',timeout=120)\""
