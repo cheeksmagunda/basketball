@@ -44,11 +44,13 @@ try:
     from api.asset_optimizer import optimize_lineup
     from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
+    from api.parlay_engine import run_parlay_engine
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
+    from .parlay_engine import run_parlay_engine
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -715,6 +717,17 @@ _CONFIG_DEFAULTS = {
     },
     "lab": {
         "auto_improve_threshold_pct": 3.0,
+    },
+    "parlay": {
+        "max_spread": 8.5,
+        "max_minutes_cv": 0.25,
+        "min_blended_conf": 0.55,
+        "min_season_minutes": 24.0,
+        "min_games_played": 15,
+        "juice_threshold": -125,
+        "max_candidates_for_combinations": 25,
+        "positive_correlation_boost": 1.08,
+        "shootout_correlation_boost": 1.05,
     },
 }
 
@@ -4102,7 +4115,7 @@ CRON_SECRET = os.getenv("CRON_SECRET", "")
 _RATE_LIMIT_STORE = {}  # (ip, path_key) -> [timestamps]
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_WINDOW = 60  # seconds
-_RATE_LIMITS = {"parse-screenshot": 5, "lab/chat": 20, "line-of-the-day": 10}
+_RATE_LIMITS = {"parse-screenshot": 5, "lab/chat": 20, "line-of-the-day": 10, "parlay": 10}
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
@@ -8685,3 +8698,206 @@ async def lab_calibrate_boost():
     except Exception as e:
         print(f"[calibrate-boost] Error: {e}")
         return {"error": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# grep: PARLAY ENGINE — /api/parlay, _fetch_gamelog, _fetch_gamelogs_batch
+# Safest 3-leg player prop parlay optimizer (certainty over edge).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_gamelog(pid, num_games=15):
+    """Fetch a player's game log from ESPN and return structured stat arrays.
+
+    Hits https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/gamelog
+    Caches in /tmp per player per date.
+
+    Returns: {"points": [float, ...], "rebounds": [float, ...], "assists": [float, ...], "minutes": [float, ...]}
+             or {} on failure.
+    """
+    cache_key = f"gamelog_{pid}"
+    cached = _cg(cache_key)
+    if cached:
+        return cached
+
+    url = (f"https://site.api.espn.com/apis/common/v3/sports/basketball"
+           f"/nba/athletes/{pid}/gamelog")
+    data = _espn_get(url)
+    if not data:
+        return {}
+
+    try:
+        # ESPN gamelog structure: seasonTypes[] -> categories[] -> events[]
+        # Each category has "labels" (stat names) and "events" (game rows)
+        stat_arrays = {"points": [], "rebounds": [], "assists": [], "minutes": []}
+
+        season_types = data.get("seasonTypes", [])
+        for st in season_types:
+            categories = st.get("categories", [])
+            for cat in categories:
+                labels = [lbl.lower() for lbl in cat.get("labels", [])]
+                events = cat.get("events", [])
+
+                # Map label indices
+                idx_map = {}
+                for stat_name, lbl_options in [
+                    ("points", ["pts"]),
+                    ("rebounds", ["reb"]),
+                    ("assists", ["ast"]),
+                    ("minutes", ["min"]),
+                ]:
+                    for lbl in lbl_options:
+                        if lbl in labels:
+                            idx_map[stat_name] = labels.index(lbl)
+                            break
+
+                if not idx_map:
+                    continue
+
+                for event in events:
+                    stats = event.get("stats", [])
+                    if not stats:
+                        continue
+                    for stat_name, idx in idx_map.items():
+                        if idx < len(stats):
+                            try:
+                                val = float(stats[idx])
+                                stat_arrays[stat_name].append(val)
+                            except (ValueError, TypeError):
+                                pass
+
+        # Trim to last N games
+        for k in stat_arrays:
+            stat_arrays[k] = stat_arrays[k][:num_games]
+
+        if any(len(v) > 0 for v in stat_arrays.values()):
+            _cs(cache_key, stat_arrays)
+            return stat_arrays
+        return {}
+
+    except Exception as e:
+        print(f"[gamelog] parse error for {pid}: {e}")
+        return {}
+
+
+def _fetch_gamelogs_batch(player_ids, num_games=15):
+    """Fetch gamelogs for multiple players in parallel.
+    Returns {player_id: {"points": [...], "rebounds": [...], "assists": [...], "minutes": [...]}}"""
+    result = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_gamelog, pid, num_games): pid for pid in player_ids}
+        for fut in as_completed(futures, timeout=30):
+            pid = futures[fut]
+            try:
+                log = fut.result(timeout=5)
+                if log:
+                    result[pid] = log
+            except Exception as e:
+                print(f"[gamelog-batch] {pid} error: {e}")
+    return result
+
+
+def _run_parlay_engine_sync(today):
+    """Run the full parlay pipeline (blocking). Call via asyncio.to_thread()."""
+    games = fetch_games(today)
+    if not games:
+        return None, "no_games"
+
+    draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
+    target_games = draftable if draftable else games
+    if not target_games:
+        return None, "no_games"
+
+    # Get projections (reuse /tmp per-game cache when warm)
+    all_proj = []
+    for g in target_games:
+        gp = _cg(f"game_proj_{g['gameId']}")
+        if gp:
+            all_proj.extend(gp)
+    if not all_proj:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futs = {pool.submit(_run_game, g): g for g in target_games}
+            try:
+                for fut in as_completed(futs, timeout=60):
+                    try:
+                        all_proj.extend(fut.result(timeout=10))
+                    except Exception as e:
+                        print(f"[parlay] proj err: {e}")
+            except TimeoutError:
+                print(f"[parlay] projection pool timed out, got {len(all_proj)}")
+    if not all_proj:
+        return None, "no_projections"
+
+    # Fetch odds
+    player_odds_map = _build_player_odds_map(target_games)
+
+    # Fetch gamelogs for all projected players
+    player_ids = list(set(str(p.get("id", "")) for p in all_proj if p.get("id")))
+    gamelogs = _fetch_gamelogs_batch(player_ids)
+
+    # RotoWire statuses
+    rw_statuses = {}
+    try:
+        rw_statuses = get_all_statuses()
+    except Exception as e:
+        print(f"[parlay] RotoWire error (non-fatal): {e}")
+
+    # Parlay config from model-config
+    parlay_config = _cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {}))
+
+    result = run_parlay_engine(
+        all_proj, target_games, player_odds_map, gamelogs,
+        rw_statuses, parlay_config,
+    )
+    return result, None
+
+
+@app.get("/api/parlay")
+async def get_parlay(request: Request):
+    """Safest 3-leg player prop parlay on today's slate.
+    Optimizes for certainty (floor) using Z-score hit probabilities,
+    market alignment, anti-fragility filters, and correlation scoring.
+    Never returns 500."""
+    rl = _check_rate_limit(request, "parlay")
+    if rl is not None:
+        return rl
+    try:
+        today = _et_date()
+        today_str = today.isoformat()
+
+        # Cache check (30-min TTL)
+        cached = _cg("parlay_v1")
+        if cached and cached.get("_cache_date") == today_str:
+            cached_at = cached.get("_cached_at")
+            if cached_at:
+                try:
+                    age_s = (datetime.utcnow() - datetime.fromisoformat(cached_at)).total_seconds()
+                    if age_s < 1800:
+                        return JSONResponse(cached)
+                except Exception:
+                    pass
+
+        result, err = await asyncio.to_thread(_run_parlay_engine_sync, today)
+
+        if err or not result:
+            return JSONResponse({
+                "legs": [], "error": err or "no_valid_parlay",
+                "narrative": "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks.",
+            }, status_code=200)
+
+        # Normalize legs for frontend
+        for leg in result.get("legs", []):
+            leg["date"] = today_str
+
+        result["_cached_at"] = datetime.utcnow().isoformat()
+        result["_cache_date"] = today_str
+        _cs("parlay_v1", result)
+
+        return JSONResponse(result)
+
+    except Exception as e:
+        print(f"[parlay] error: {e}")
+        traceback.print_exc()
+        return JSONResponse({
+            "legs": [], "error": "parlay_failed",
+            "narrative": "The Oracle encountered an error building today's parlay. Please try again.",
+        }, status_code=200)

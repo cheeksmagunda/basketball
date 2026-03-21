@@ -16,11 +16,12 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predict | Line | Ben | Log, vanilla JS)
-api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line)
+index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
+api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
 api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
+api/parlay_engine.py   — Safest 3-leg parlay optimizer (Z-score + correlation scoring)
 api/rotowire.py        — RotoWire lineup scraper (free tier: availability + injury flags)
 data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
@@ -40,10 +41,11 @@ server.py              — Local dev server (uvicorn)
 
 ## UI Structure
 
-4-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Ben | Log**
+5-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Parlay | Ben | Log**
 
 - **Predict**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis ("THE LINE UP" — single 5-player format, no card boost). "Slate-Wide | Game" sub-tabs inline at top of tab. Magic 8-ball loading animation.
 - **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Odds refresh hourly from Odds API; pick cards show "Odds · [time] CT".
+- **Parlay**: Safest 3-leg player prop parlay (electric purple accent `--parlay: #d946ef`). Optimizes for **certainty** (floor), not edge. Uses Z-score hit probabilities, Vegas market alignment, anti-fragility filters, and strategic correlation scoring. Displays a stacked "ticket" card with combined probability, correlation multiplier, and narrative explanation.
 - **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
 - **Log**: Historical drill-down — date strip, game grid, graded prediction cards vs actuals (no user input — upload happens through Ben). Cards have two states: **Pending** ("Waiting for results") and **Graded** (actual RS + ESPN box score stats overlaid on projections with hit/miss coloring).
 
@@ -87,6 +89,7 @@ grep: LOCK HELPERS             — _is_locked, _is_past_lock_window, _et_date
 grep: ALL GAMES FINAL          — _all_games_final, ESPN scoreboard poll, midnight rollover, 4.5h fallback
 grep: NEXT SLATE DATE          — _find_next_slate_date, multi-day gap, All-Star break
 grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
+grep: PARLAY ENGINE            — /api/parlay, _fetch_gamelog, _fetch_gamelogs_batch
 ```
 
 ## Key Endpoints
@@ -124,6 +127,11 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/line-history` | GET | Recent picks with streak + hit rate (only resolved picks — never pending) |
 | `/api/line-force-regenerate` | GET | Force-generate today's line picks (overwrites stale artifacts, busts cache) |
 
+### Parlay
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/parlay` | GET | **Safest 3-leg player prop parlay** on today's slate. Optimizes for certainty via Z-score hit probabilities, Vegas market alignment, anti-fragility filters (blowout, minutes CV, GTD risk), and strategic correlation scoring. Returns `{legs[], combined_probability, correlation_multiplier, correlation_reasons[], parlay_score, narrative}`. 30-min cache. Rate-limited 10/min. Never returns 500. |
+
 ### Lab (Ben)
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -150,6 +158,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 - **Tab load (lazy):** Line, Log, and Lab load on first visit when `switchTab()` is called:
   - **Line:** `initLinePage()` → fire-and-forget `GET /api/auto-resolve-line`, then `GET /api/line-of-the-day`, `GET /api/line-history`; live stat poll and resolve poll when applicable.
   - **Log:** `initLogPage()` → `GET /api/log/dates`, then `buildLogDateStrip()` (60-day strip); selecting a date calls `GET /api/log/get?date=X`; drill-down may call `GET /api/log/actuals-stats?date=X` (cached in `LOG._statsCache`).
+  - **Parlay:** `initParlayPage()` → `GET /api/parlay` (90s timeout). Skeleton loading. Same-day cache guard (`PARLAY_LOADED_DATE`). Renders stacked 3-leg ticket card with combined probability + correlation multiplier + narrative.
   - **Lab:** `initLabPage()` → pre-warm `GET /api/health`, then `GET /api/lab/status`; on unlock, loads briefing + config-history + line-of-the-day + slate + log for context; lock poll every 120s when locked.
 
 ## Environment Variables (Railway)
@@ -452,6 +461,13 @@ Odds enrichment in `odds_enrichment`: `enabled`, `blend_weight`, `min_divergence
 Context layer in `context_layer`: `enabled`, `web_search_enabled`, `model`, `max_adjustment`,
 `timeout_seconds`.
 
+Parlay in `parlay`: `max_spread` (blowout filter, default 8.5), `max_minutes_cv` (volatility filter,
+default 0.25), `min_blended_conf` (minimum blended hit probability, default 0.55),
+`min_season_minutes` (floor, default 24.0), `min_games_played` (gamelog depth, default 15),
+`juice_threshold` (Vegas juice floor, default -125), `max_candidates_for_combinations` (pool cap,
+default 25), `positive_correlation_boost` (PG assists + teammate points, default 1.08),
+`shootout_correlation_boost` (opposing scorers in tight game, default 1.05).
+
 ---
 
 ## Two Draft Strategies (Core Pool Architecture)
@@ -742,6 +758,7 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 | File | Role | Notes |
 |------|------|------|
 | **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
+| **api/parlay_engine.py** | Safest 3-leg parlay optimizer | Z-score hit probability, anti-fragility filters (blowout/CV/GTD), market alignment, correlation scoring. Called by api/index.py `/api/parlay`. Pure computation; no external I/O. |
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
 | **api/real_score.py** | Monte Carlo Real Score | RS projection (closeness, clutch, momentum). Used by projection pipeline in index. |
 | **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Two-phase optimization for moonshot (Phase 1: player selection with shaped ratings; Phase 2: slot assignment with raw RS). No position-per-team constraint (Real Sports has no position requirements). Used by game runner in index. |
@@ -828,6 +845,25 @@ TestMinHighBoostConstraint  — MILP min_big_boost ensures minimum high-boost pl
 - **TestLogGetNormalization** — log_get() builds player cards from CSV rows with correct field mapping
 - **TestUpdateConfigValidation** — /api/lab/update-config accepts dot-notation keys, rejects invalid paths
 - **TestFrontendAuditFixes** — regression guards for frontend null guards and .ok checks
+
+**tests/test_parlay.py** — Parlay engine: Z-score math, anti-fragility filters, correlation scoring, end-to-end:
+
+- **TestAmericanToImplied** — American odds to implied probability conversion (-140, +150, edge cases)
+- **TestZToProbability** — Cumulative normal Z-score approximation
+- **TestComputeHitProbability** — Over/under hit probability from projection, line, and σ
+- **TestBlendedConfidence** — Model + Vegas probability blending (55/45 split)
+- **TestBlowoutFilter** — Spread > 8.5 filtering
+- **TestMinutesCV** — Minutes coefficient of variation (rotation stability)
+- **TestGTDStarTeammate** — Questionable starter RotoWire filter
+- **TestCorrelationModifier** — VETO (same-team rebounds/assists), positive (PG assists + teammate points, shootout)
+- **TestStdDev** — Population standard deviation helper
+- **TestNarrativeBuilder** — Natural-language parlay narrative generation
+- **TestRunParlayEngine** — End-to-end: valid data → 3-leg result, empty → None, blowout → None
+- **TestParlayConfigDefaults** — parlay section in _CONFIG_DEFAULTS
+- **TestParlayRateLimit** — parlay in _RATE_LIMITS
+- **TestFetchGamelog** — _fetch_gamelog callable, graceful on invalid PID
+- **TestParlayEndpointExists** — /api/parlay in app routes
+- **TestParlayFrontend** — tab-parlay, nav button, CSS variable, state, ticket container, rendering functions
 
 Run all: `pytest tests/ -v`  
 Run fast subset only: `pytest tests/test_fixes.py -v`  
@@ -938,6 +974,7 @@ If slate, line, and/or log all fail to load:
 | Explicit fetch timeouts (audit) | `index.html` | Added explicit 15s timeout to 5 `/api/log/get` calls and 10s to `/api/save-line` background save. All fetches now have documented timeouts. |
 | LOG.dateCache LRU eviction | `index.html` | `_evictLogCache()` keeps last 15 dates in memory, evicts oldest by `loadedAt`. Prevents unbounded memory growth when browsing many dates. |
 | Silent catch logging | `index.html` | Added `console.warn` to silent `.catch()` blocks on lab/status pre-warm and save-line background save for debugging visibility. |
+| Parlay engine + tab | `api/parlay_engine.py`, `api/index.py`, `index.html` | New "Parlay" tab (5th nav icon, electric purple accent `#d946ef`). Backend: `_fetch_gamelog()` ESPN gamelog helper (cached), `_fetch_gamelogs_batch()` parallel fetcher, `_run_parlay_engine_sync()` full pipeline, `GET /api/parlay` endpoint (30-min cache, rate-limited). Engine: Z-score hit probability, American odds → implied probability, blended confidence (55% model / 45% Vegas), anti-fragility filters (blowout >8.5 spread, minutes CV >0.25, GTD star teammate, injury), correlation scoring (VETO same-team rebounds/assists over, boost PG assists + teammate points, shootout opposing scorers). Frontend: `PARLAY_STATE`, `initParlayPage()`, `fetchParlay()` (90s timeout), stacked ticket card with 3 legs + combined probability + narrative. Config: `parlay.*` in model-config.json. Tests: 65 tests in `tests/test_parlay.py`. |
 
 ## Loading audit
 
