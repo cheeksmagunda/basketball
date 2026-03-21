@@ -8896,6 +8896,22 @@ async def get_parlay(request: Request):
                 except Exception:
                     pass
 
+        # GitHub fallback: serve today's parlay if already saved (e.g. after container restart
+        # or when slate is locked and Odds API no longer has pre-game props)
+        parlay_path = f"data/parlays/{today_str}.json"
+        try:
+            gh_parlay_raw, _ = _github_get_file(parlay_path)
+            if gh_parlay_raw:
+                gh_parlay = json.loads(gh_parlay_raw)
+                if gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
+                    gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
+                    gh_parlay["_cache_date"] = today_str
+                    _cs("parlay_v1", gh_parlay)
+                    print(f"[parlay] served from GitHub: {parlay_path}")
+                    return JSONResponse(gh_parlay)
+        except Exception as _ge:
+            print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
+
         result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
 
         if err or not result:
