@@ -15,14 +15,14 @@ All blocking API calls use `fetchWithTimeout(url, options, timeoutMs)`. Default 
 | Predict | `/api/save-predictions` | 10s default | POST |
 | Predict | `/api/force-regenerate?scope=remaining` | 60s | Late draft |
 | Log | `/api/log/dates` | 15s | Date strip |
-| Log | `/api/log/get?date=X` | 10s default | Grid data |
+| Log | `/api/log/get?date=X` | 15s | Grid data (explicit timeout added) |
 | Log | `/api/log/actuals-stats?date=X` | 15s | ESPN box scores |
 | Log drill-down | `/api/audit/get?date=X` | 10s | MAE, misses |
 | Line | `/api/line-of-the-day` | 90s | Main LOTD (cold can be slow) |
 | Line (Ben context) | `/api/line-of-the-day` | 30s | When building Lab context |
 | Line | `/api/line-history` | 25s | Recent picks |
 | Line | `/api/line-live-stat` | 10s default | Live in-game stat |
-| Line | `/api/save-line` | 10s default | POST; fire-and-forget |
+| Line | `/api/save-line` | 10s | POST; fire-and-forget (explicit timeout added) |
 | Lab | `/api/lab/status` | 10s | Lock poll + init |
 | Lab | `/api/lab/briefing` | 10s (action) / 30s (context) | Context load 30s |
 | Lab | `/api/lab/config-history` | 10s | |
@@ -96,7 +96,7 @@ Used for: slate, picks, log, line LOTD, line history.
 | Line card flash | Fixed | Live poll updates card only when `_lineLastLiveKey` changes. |
 | First load after hit | Fixed | Same-day Line tab does background `fetchLineOfTheDay(true, true)` so rotated pick appears without skeleton. |
 | save-predictions timeout | 10s default | OK for GitHub write; no change. |
-| Log get (no explicit timeout) | 10s default | OK; consider 15s if log payload grows. |
+| Log get | **15s explicit** | Updated: all `/api/log/get` calls now have explicit 15s timeout (was 10s default). 5 call sites updated. |
 | Lab chat stream | No body timeout | By design; 60s connection timeout only. |
 | Retry surfaces | Present | Predict (slate/picks), Line (Retry / Check for picks), Log (date reselect), Lab (chat retry, upload retry). |
 
@@ -106,6 +106,7 @@ Used for: slate, picks, log, line LOTD, line history.
 - **Line-of-the-day:** Cold generation can be slow; 90s timeout. Background re-fetch on same-day avoids showing loader again.
 - **Line live poll:** 60s interval; card only re-renders when live data changed (no flash).
 - **Lab lock:** 2 min; no loader.
+- **LOG.dateCache:** LRU eviction keeps last 15 dates in memory; `_evictLogCache()` runs after every cache insertion to prevent unbounded memory growth.
 
 ---
 

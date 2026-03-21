@@ -1574,7 +1574,16 @@ const LOG = {
   currentTab: 'chalk',
   dateCache: {},        // { [dateStr]: { data, loadedAt } }
   _refetchedToday: false, // guard against re-fetch loops in renderLogGrid
+  _maxCacheSize: 15,      // LRU eviction: keep last N dates in memory
 };
+function _evictLogCache() {
+  const keys = Object.keys(LOG.dateCache);
+  if (keys.length > LOG._maxCacheSize) {
+    // Evict oldest by loadedAt
+    keys.sort((a, b) => (LOG.dateCache[a].loadedAt || 0) - (LOG.dateCache[b].loadedAt || 0));
+    while (keys.length > LOG._maxCacheSize) delete LOG.dateCache[keys.shift()];
+  }
+}
 
 // ════════════════════════════════════════════════════════════════════
 // ASYNC STATE — grep: asyncStateInitial, asyncStateLoading, asyncStateSuccess, asyncStateError
@@ -1983,7 +1992,7 @@ async function loadSlate() {
     fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(function(s) {
       LAB.cachedStatus = s;
       LAB.statusFetchedAt = Date.now();
-    }).catch(function() {});
+    }).catch(function(e) { console.warn('[lab/status] pre-warm failed:', e); });
     _slateRetryCount = 0; // reset AFTER all processing succeeds (not before)
   } catch(e) {
     // Auto-retry up to 2 times — cold start warms the function so retries succeed fast
@@ -2447,7 +2456,7 @@ async function initLogPage() {
   _renderLogGridFromState(todayStr);
 
   const datesPromise = fetchWithTimeout('/api/log/dates', {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('dates ' + r.status)));
-  const getPromise = fetchWithTimeout(`/api/log/get?date=${todayStr}`).then(r => r.ok ? r.json() : Promise.reject(new Error('get ' + r.status)));
+  const getPromise = fetchWithTimeout(`/api/log/get?date=${todayStr}`, {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('get ' + r.status)));
 
   const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
 
@@ -2458,7 +2467,7 @@ async function initLogPage() {
 
   if (getRes.status === 'fulfilled') {
     const data = getRes.value;
-    LOG.dateCache[todayStr] = { data, loadedAt: Date.now() };
+    LOG.dateCache[todayStr] = { data, loadedAt: Date.now() }; _evictLogCache();
     LOG.data = data;
     LOG_STATE = asyncStateSuccess(LOG_STATE, data);
     // Smart default: if today has no predictions, jump to most recent date with data
@@ -2498,10 +2507,10 @@ async function selectLogDate(dateStr) {
   _renderLogGridFromState(dateStr);
 
   try {
-    const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`);
+    const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`, {}, 15000);
     if (!r.ok) throw new Error('Failed to load log data');
     const data = await r.json();
-    LOG.dateCache[dateStr] = { data, loadedAt: Date.now() };
+    LOG.dateCache[dateStr] = { data, loadedAt: Date.now() }; _evictLogCache();
     LOG.data = data;
     LOG_STATE = asyncStateSuccess(LOG_STATE, data);
     // Update dot for this chip progressively (catches /api/log/dates timeout/failure)
@@ -2546,11 +2555,11 @@ function renderLogGrid(dateStr) {
     LOG._refetchedToday = true;
     delete LOG.dateCache[dateStr];
     fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 30000).catch(function(){}).finally(function() {
-      fetchWithTimeout('/api/log/get?date=' + dateStr).then(function(r) {
+      fetchWithTimeout('/api/log/get?date=' + dateStr, {}, 15000).then(function(r) {
         if (!r.ok) throw new Error('Failed');
         return r.json();
       }).then(function(freshData) {
-        LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() };
+        LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() }; _evictLogCache();
         LOG.data = freshData;
         LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
         renderLogGrid(dateStr);
@@ -2577,11 +2586,11 @@ function renderLogGrid(dateStr) {
       _renderLogGridFromState(dateStr);
       // Fire save-predictions first so the backend auto-computes any missing games
       fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 30000).catch(function(){}).finally(function() {
-        fetchWithTimeout('/api/log/get?date=' + dateStr).then(function(r) {
+        fetchWithTimeout('/api/log/get?date=' + dateStr, {}, 15000).then(function(r) {
           if (!r.ok) throw new Error('Failed');
           return r.json();
         }).then(function(freshData) {
-          LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() };
+          LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() }; _evictLogCache();
           LOG.data = freshData;
           LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
           renderLogGrid(dateStr);
@@ -3302,7 +3311,7 @@ async function fetchLineOfTheDay(nocache = false, background = false) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-        }).catch(function() {});
+        }, 10000).catch(function(e) { console.warn('[save-line] background save failed:', e); });
       }
       // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
       // when a game finishes and re-fetches line-of-the-day for per-direction rotation.
@@ -3947,7 +3956,7 @@ async function showLabUnlocked(status) {
     fetchWithTimeout('/api/lab/config-history', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
     _cachedLine,
     _cachedSlate,
-    fetchWithTimeout(`/api/log/get?date=${_etToday()}`).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    fetchWithTimeout(`/api/log/get?date=${_etToday()}`, {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
   ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes]) {
     if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
     if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
@@ -4104,8 +4113,10 @@ async function labCallClaude(attachedImage = null) {
       return { role: m.role, content: m.content };
     });
 
+    // SSE streaming requires raw fetch() — fetchWithTimeout doesn't support streaming responses.
+    // Manual AbortController provides 60s connection timeout.
     const chatAbort = new AbortController();
-    const chatTimeoutId = setTimeout(() => chatAbort.abort(), 60000); // 60s connection timeout
+    const chatTimeoutId = setTimeout(() => chatAbort.abort(), 60000);
     const r = await fetch('/api/lab/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
