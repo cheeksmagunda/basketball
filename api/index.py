@@ -8841,6 +8841,23 @@ def _run_parlay_engine_sync(today):
     player_odds_map = _build_player_odds_map(target_games)
     print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
 
+    # Synthetic odds fallback: when no Odds API data (post-lock or key absent),
+    # build model-only candidate legs using projection as the sportsbook line.
+    # Line is set 0.5 below projection so the over direction gets ~55-60% model hit prob.
+    projection_only = False
+    if not player_odds_map and all_proj:
+        projection_only = True
+        for p in all_proj:
+            name_lower = (p.get("name") or "").lower()
+            for stat, stat_key in [("points", "pts"), ("rebounds", "reb"), ("assists", "ast")]:
+                proj_val = float(p.get(stat_key) or 0)
+                if proj_val > 0:
+                    player_odds_map[(name_lower, stat)] = {
+                        "line": round(proj_val - 0.5, 1),
+                        "odds_over": None, "odds_under": None, "books_consensus": 0,
+                    }
+        print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections")
+
     # Fetch gamelogs for all projected players
     player_ids = list(set(str(p.get("id", "")) for p in all_proj if p.get("id")))
     gamelogs = _fetch_gamelogs_batch(player_ids)
@@ -8853,21 +8870,27 @@ def _run_parlay_engine_sync(today):
     except Exception as e:
         print(f"[parlay] RotoWire error (non-fatal): {e}")
 
-    # Parlay config from model-config
-    parlay_config = _cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {}))
+    # Parlay config from model-config; relax thresholds for projection-only mode
+    parlay_config = dict(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
+    if projection_only:
+        parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
+        parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
 
     debug = {
         "projections": len(all_proj),
-        "odds_entries": len(player_odds_map),
+        "odds_entries": 0 if projection_only else len(player_odds_map),
         "gamelogs": len(gamelogs),
-        "odds_available": len(player_odds_map) > 0,
+        "odds_available": not projection_only,
+        "projection_only": projection_only,
     }
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
         rw_statuses, parlay_config,
     )
-    if result and result.get("filter_funnel"):
-        debug["filter_funnel"] = result["filter_funnel"]
+    if result:
+        result["projection_only"] = projection_only
+        if result.get("filter_funnel"):
+            debug["filter_funnel"] = result["filter_funnel"]
     return result, None, debug
 
 
@@ -8895,6 +8918,23 @@ async def get_parlay(request: Request):
                         return JSONResponse(cached)
                 except Exception:
                     pass
+
+        # GitHub fallback: serve today's parlay if already saved (e.g. after container restart
+        # or when slate is locked and Odds API no longer has pre-game props)
+        parlay_path = f"data/parlays/{today_str}.json"
+        try:
+            gh_parlay_raw, _ = _github_get_file(parlay_path)
+            if gh_parlay_raw:
+                gh_parlay = json.loads(gh_parlay_raw)
+                if gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
+                    gh_parlay["_from_github"] = True
+                    gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
+                    gh_parlay["_cache_date"] = today_str
+                    _cs("parlay_v1", gh_parlay)
+                    print(f"[parlay] served from GitHub: {parlay_path}")
+                    return JSONResponse(gh_parlay)
+        except Exception as _ge:
+            print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
 
         result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
 
@@ -8952,6 +8992,67 @@ async def get_parlay(request: Request):
             "legs": [], "error": "parlay_failed",
             "narrative": "The Oracle encountered an error building today's parlay. Please try again.",
         }, status_code=200)
+
+
+@app.get("/api/parlay-force-regenerate")
+async def parlay_force_regenerate():
+    """Force-generate (or re-generate) today's parlay, overwriting any cached/saved version.
+    Uses real Odds API props when available; falls back to synthetic projection-based lines
+    when the slate is locked and sportsbook props are no longer served (post-lock mode).
+    No CRON_SECRET required — user-facing from the Parlay tab."""
+    today = _et_date()
+    today_str = today.isoformat()
+
+    # Clear /tmp parlay cache so the engine runs fresh
+    try:
+        _pc = _cp("parlay_v1")
+        if _pc.exists():
+            _pc.unlink()
+    except Exception:
+        pass
+
+    result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
+
+    if err or not result:
+        return JSONResponse({
+            "error": err or "no_valid_parlay",
+            "narrative": "Could not generate a parlay for today's slate.",
+            "debug": debug or {},
+        }, status_code=503)
+
+    # Overwrite GitHub parlay for today
+    try:
+        _save_payload = {
+            "date": today_str, "result": "pending",
+            "legs": result.get("legs", []),
+            "combined_probability": result.get("combined_probability"),
+            "correlation_multiplier": result.get("correlation_multiplier"),
+            "correlation_reasons": result.get("correlation_reasons", []),
+            "parlay_score": result.get("parlay_score"),
+            "narrative": result.get("narrative", ""),
+            "projection_only": result.get("projection_only", False),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _github_write_file(f"data/parlays/{today_str}.json", json.dumps(_save_payload),
+                           f"force regen parlay {today_str}")
+    except Exception as _pe:
+        print(f"[parlay-force-regen] GitHub save failed (non-fatal): {_pe}")
+
+    # Populate /tmp cache
+    result["_cached_at"] = datetime.utcnow().isoformat()
+    result["_cache_date"] = today_str
+    _cs("parlay_v1", result)
+
+    # Bust history cache
+    try:
+        _hc = _cp("parlay_history_v1")
+        if _hc.exists():
+            _hc.unlink()
+    except Exception:
+        pass
+
+    print(f"[parlay-force-regen] done — projection_only={result.get('projection_only')} legs={len(result.get('legs',[]))}")
+    return JSONResponse({"status": "ok", "forced": True, "date": today_str, **result})
 
 
 # grep: PARLAY HISTORY — /api/parlay-history

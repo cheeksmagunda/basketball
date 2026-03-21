@@ -1359,7 +1359,11 @@
     </div>
     <div id="parlayContent" aria-live="polite">
       <div id="parlayEmpty" style="display:none" role="status">
-        <div class="empty-state"><span class="icon" aria-hidden="true">🎰</span><p id="parlayEmptyMsg">No parlay available yet.</p><button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="fetchParlay()" aria-label="Retry loading parlay">Retry</button></div>
+        <div class="empty-state"><span class="icon" aria-hidden="true">🎰</span><p id="parlayEmptyMsg">No parlay available yet.</p>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap">
+          <button type="button" class="secondary-btn" style="font-size:0.72rem" onclick="fetchParlay()" aria-label="Retry loading parlay">Retry</button>
+          <button type="button" id="parlayForceBtn" class="secondary-btn" style="font-size:0.72rem;background:rgba(217,70,239,0.12);border-color:rgba(217,70,239,0.35);color:var(--parlay)" onclick="forceRegenerateParlay()" aria-label="Generate parlay from projections">Generate Parlay</button>
+        </div></div>
       </div>
       <div id="parlayLoading" style="display:none" role="status" aria-label="Loading parlay"></div>
       <div id="parlayTicket" style="display:none"></div>
@@ -2557,10 +2561,16 @@ function renderParlayTicket(data) {
 
   const narrativeHtml = data.narrative ? '<p class="line-pick-conclusion">' + _escapeHtml(data.narrative) + '</p>' : '';
 
+  const lockBadge = data._from_github
+    ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(217,70,239,0.15);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">LOCKED</span>'
+    : data.projection_only
+      ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(255,255,255,0.07);color:var(--color-text-muted);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">MODEL ONLY</span>'
+      : '';
+
   wrap.innerHTML =
     '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(217,70,239,0.18);box-shadow:0 4px 24px rgba(217,70,239,0.10), 0 2px 12px rgba(0,0,0,0.28)">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(217,70,239,0.06);border-bottom:1px solid rgba(217,70,239,0.12)">' +
-        '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket</div>' +
+        '<div style="display:flex;align-items:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket' + lockBadge + '</div>' +
         '<div style="display:flex;gap:12px;align-items:center">' +
           '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Combined</div><div style="font-weight:800;font-size:0.78rem;color:var(--parlay)">' + comboPct + '%</div></div>' +
           (parseFloat(corrMult) !== 1.0 ? '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Corr</div><div style="font-weight:700;font-size:0.72rem;color:var(--color-success)">' + corrMult + 'x</div></div>' : '') +
@@ -2576,6 +2586,39 @@ function renderParlayTicket(data) {
     '</div>';
 
   wrap.style.display = 'block';
+}
+
+async function forceRegenerateParlay() {
+  const empty = _el('parlayEmpty');
+  const loading = _el('parlayLoading');
+  const ticket = _el('parlayTicket');
+  const btn = _el('parlayForceBtn');
+  if (empty) empty.style.display = 'none';
+  if (ticket) ticket.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  if (loading) { loading.innerHTML = _parlaySkeletons(); loading.style.display = 'block'; }
+  PARLAY_STATE = asyncStateLoading(PARLAY_STATE);
+  try {
+    const r = await fetchWithTimeout('/api/parlay-force-regenerate', {}, 120000);
+    if (loading) loading.style.display = 'none';
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (data.legs && data.legs.length > 0) {
+      PARLAY_STATE = asyncStateSuccess(PARLAY_STATE, data);
+      PARLAY_LOADED_DATE = _etToday();
+      renderParlayTicket(data);
+    } else {
+      PARLAY_STATE = asyncStateError(PARLAY_STATE, data.error || 'no_valid_parlay');
+      if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = data.narrative || 'Could not generate a parlay for today.'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate Parlay'; }
+    }
+  } catch (err) {
+    if (loading) loading.style.display = 'none';
+    PARLAY_STATE = asyncStateError(PARLAY_STATE, err);
+    if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = 'Could not reach the server. Please try again.'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate Parlay'; }
+    console.warn('[parlay] force-regen error:', err);
+  }
 }
 
 async function fetchParlay() {
