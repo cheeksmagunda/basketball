@@ -207,6 +207,8 @@ UNDER-SPECIFIC: Unders are more reliable. Stars on heavy favorites (spread >8) s
 Set "line" to the [book: X.X] value when shown — that is the real bookmaker number and is more accurate than the season average. Only fall back to season average rounded to nearest 0.5 if no [book: X.X] is present. Recalculate "edge" as projection minus the line you use.
 Confidence range: 60-85.
 
+NARRATIVE REQUIREMENT: Your narrative MUST explain WHY the projection differs from the baseline — not just restate the numbers. Cite at least one concrete driver: game pace/total, opponent defense quality, recent form trend, injury cascade, opponent B2B fatigue, spread/blowout risk, minutes projection change, or bookmaker line alignment. Bad: "Model projects 9.2 points vs 7.5 baseline." Good: "High-total game (235) and weak Wizards defense create extra scoring opportunities; Lopez has seen 28+ minutes in 3 of last 5."
+
 Respond with ONLY valid JSON, no markdown fences:
 {{
   "player_name": "Full Name",
@@ -218,8 +220,8 @@ Respond with ONLY valid JSON, no markdown fences:
   "projection": 26.8,
   "edge": 4.3,
   "confidence": 74,
-  "narrative": "2-3 sentences explaining the pick with specific data points",
-  "signals": ["Cascade: +4.2 projected minutes from teammate injury", "Opponent on B2B", "High total (234.5)"]
+  "narrative": "2-3 sentences explaining WHY with specific data points and drivers",
+  "signals": ["High-total game (234.5) — more possessions expected", "Favorable matchup vs weak defense", "Opponent on B2B"]
 }}"""
 
 
@@ -303,6 +305,87 @@ def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=N
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SIGNAL GENERATION — shared by both main candidate loop and last-resort path
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _generate_signals(p, gctx, direction, stat_type, season_val, recent_val, proj_val, line, cfg):
+    """Build driver signals and compute signal_bonus for a candidate pick.
+
+    Returns (signals, signal_bonus) where signals is a list of
+    {"type": str, "detail": str} dicts.
+    """
+    signals, signal_bonus = [], 0
+    recent_form_over_ratio = cfg.get("recent_form_over_ratio", 1.08)
+    recent_form_under_ratio = cfg.get("recent_form_under_ratio", 0.92)
+
+    # 1. Cascade (injury minutes) — strongest signal
+    cascade = p.get("_cascade_bonus", 0)
+    if cascade > 0:
+        signals.append({"type": "cascade", "detail": f"Injury upgrade — +{cascade:.1f} projected minutes"})
+        signal_bonus += 15
+
+    # 2. Recent form
+    if direction == "over" and recent_val > season_val * recent_form_over_ratio:
+        signals.append({"type": "recent_form", "detail": f"Averaging {recent_val:.1f} {stat_type} recently vs {season_val:.1f} season"})
+        signal_bonus += 12
+    elif direction == "under" and recent_val < season_val * recent_form_under_ratio:
+        signals.append({"type": "recent_form", "detail": f"Averaging {recent_val:.1f} {stat_type} recently vs {season_val:.1f} season"})
+        signal_bonus += 12
+
+    # 3. Opponent on B2B
+    if gctx.get("opp_b2b"):
+        signals.append({"type": "opp_b2b", "detail": "Opponent on second night of B2B"})
+        signal_bonus += 10
+
+    # 4. Game total / pace
+    game_total = gctx.get("total", 222)
+    if game_total >= 230 and direction == "over":
+        signals.append({"type": "high_total", "detail": f"High-total game ({game_total}) — more possessions expected"})
+        signal_bonus += 8
+    elif game_total <= 215 and direction == "under":
+        signals.append({"type": "low_total", "detail": f"Low-total game ({game_total}) — fewer scoring opportunities"})
+        signal_bonus += 8
+
+    # 5. Matchup — opponent defensive quality
+    matchup = p.get("_matchup_factor", 1.0)
+    if matchup >= 1.06 and direction == "over":
+        signals.append({"type": "matchup", "detail": "Favorable matchup vs weak defense"})
+        signal_bonus += 6
+    elif matchup <= 0.94 and direction == "under":
+        signals.append({"type": "matchup", "detail": "Tough matchup vs strong defense"})
+        signal_bonus += 6
+
+    # 6. Books agreement (odds blend pushed projection up)
+    if p.get("_odds_adjusted") and direction == "over":
+        odds_field = f"odds_{stat_type.rstrip('s') if stat_type != 'assists' else 'ast'}_line"
+        # Try common field patterns
+        book_val = p.get(f"odds_{stat_type}_line", 0) or p.get(odds_field, 0)
+        if book_val > 0:
+            signals.append({"type": "books_agree", "detail": f"Sportsbooks project higher ({book_val:.1f} {stat_type})"})
+            signal_bonus += 5
+
+    # 7. Minutes drop (for unders)
+    pred_min = p.get("predMin", 0) or p.get("season_min", p.get("min", 0))
+    season_min_val = p.get("season_min", p.get("min", 0))
+    if direction == "under" and pred_min > 0 and season_min_val > 0:
+        min_drop = season_min_val - pred_min
+        if min_drop >= 3.0:
+            signals.append({"type": "minutes_drop", "detail": f"Projected {pred_min:.0f} min vs {season_min_val:.0f} season avg"})
+            signal_bonus += 8
+
+    # 8. Spread — blowout risk (starters sit) or close game (full minutes)
+    spread = abs(gctx.get("spread", 0))
+    if direction == "under" and spread >= 8:
+        signals.append({"type": "blowout_risk", "detail": f"Heavy favorite (spread {spread:.1f}) — starters may sit early"})
+        signal_bonus += 6
+    elif direction == "over" and spread <= 3:
+        signals.append({"type": "close_game", "detail": f"Tight spread ({spread:.1f}) — starters play full minutes"})
+        signal_bonus += 4
+
+    return signals, signal_bonus
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ALGORITHMIC FALLBACK — pure ESPN model, no external API calls
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -361,23 +444,10 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             if abs(edge) < min_edge:
                 continue
 
-            signals, signal_bonus = [], 0
-            cascade = p.get("_cascade_bonus", 0)
-            if cascade > 0:
-                signals.append({"type": "cascade", "detail": f"Injury upgrade — +{cascade:.1f} projected minutes"})
-                signal_bonus += 15
-
             recent_val = p.get(recent_field, proj_val)
-            if direction == "over" and recent_val > season_val * recent_form_over_ratio:
-                signals.append({"type": "recent_form", "detail": f"Averaging {recent_val:.1f} {stat_type} recently vs {season_val:.1f} season"})
-                signal_bonus += 12
-            elif direction == "under" and recent_val < season_val * recent_form_under_ratio:
-                signals.append({"type": "recent_form", "detail": f"Averaging {recent_val:.1f} {stat_type} recently vs {season_val:.1f} season"})
-                signal_bonus += 12
-
-            if gctx.get("opp_b2b"):
-                signals.append({"type": "opp_b2b", "detail": "Opponent on second night of B2B"})
-                signal_bonus += 10
+            signals, signal_bonus = _generate_signals(
+                p, gctx, direction, stat_type, season_val, recent_val, proj_val, line, cfg
+            )
 
             edge_score = min(abs(edge) / 5.0 * 40, 40)
             # Penalty for overs without strong catalysts — overs hit only 17% historically.
@@ -386,10 +456,18 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             if direction == "over" and signal_bonus == 0:
                 over_penalty = 12  # 12-point confidence penalty for unsupported overs
             confidence = round(min(52 + edge_score + signal_bonus - over_penalty, 80))
-            narrative  = (
-                f"Model projects {proj_val:.1f} {stat_type} — a {abs(edge):.1f} edge "
-                f"vs the {line:.1f} season baseline."
-            )
+            # Driver-aware narrative: cite top signals when available
+            if signals:
+                driver_summary = "; ".join(s["detail"] for s in signals[:2])
+                narrative = (
+                    f"Model projects {proj_val:.1f} {stat_type} ({direction} {line:.1f}). "
+                    f"{driver_summary}."
+                )
+            else:
+                narrative = (
+                    f"Model projects {proj_val:.1f} {stat_type} — a {abs(edge):.1f} edge "
+                    f"vs the {line:.1f} season baseline."
+                )
             edge_pct = (abs(edge) / line * 100.0) if line and line > 0 else 0.0
             if confidence < min_confidence or (min_edge_pct > 0 and edge_pct < min_edge_pct):
                 continue
@@ -445,6 +523,18 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                     continue
                 if direction == "under" and under_pick:
                     continue
+                recent_val = p.get(recent_field, proj_val)
+                lr_signals, _ = _generate_signals(
+                    p, gctx, direction, stat_type, season_val, recent_val, proj_val, line, cfg
+                )
+                if lr_signals:
+                    driver_summary = "; ".join(s["detail"] for s in lr_signals[:2])
+                    lr_narrative = (
+                        f"Model projects {proj_val:.1f} {stat_type} ({direction} {line:.1f}). "
+                        f"{driver_summary}."
+                    )
+                else:
+                    lr_narrative = f"Model projects {proj_val:.1f} {stat_type} vs the {line:.1f} baseline."
                 avg_min = p.get("season_min", p.get("min", 0))
                 last_resort.append({
                     "player_name": p["name"], "player_id": p.get("id", ""),
@@ -454,8 +544,8 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                     "odds_over": lr_book["odds_over"] if lr_book else None,
                     "odds_under": lr_book["odds_under"] if lr_book else None,
                     "books_consensus": lr_book["books_consensus"] if lr_book else 0,
-                    "model_only": not bool(lr_book), "signals": [],
-                    "narrative": f"Model projects {proj_val:.1f} {stat_type} vs the {line:.1f} baseline.",
+                    "model_only": not bool(lr_book), "signals": lr_signals,
+                    "narrative": lr_narrative,
                     "season_avg": round(season_val, 1),
                     "proj_min": round(pred_min, 1),
                     "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
