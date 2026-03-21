@@ -110,6 +110,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/refresh` | GET | Clear cache + config cache (cron at 7pm UTC; no auth required — non-destructive) |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only (requires CRON_SECRET when set) |
 | `/api/force-regenerate?scope=X` | GET | **Force-regenerate predictions mid-slate.** `scope=full`: all games (dev deploy/model refresh; CRON_SECRET-gated). `scope=remaining`: only unlocked games (late draft, user-facing). Updates `data/predictions/` CSV and all cache layers. |
+| `/api/mae-drift-check` | GET | **Weekly cron** (Monday 6am UTC): compute 7-day rolling MAE, write backend flag if > 2.5 threshold. CRON_SECRET-gated. Returns `{status, computed_mae, triggered, per_date}` |
 
 ### Line of the Day
 | Endpoint | Method | Purpose |
@@ -121,6 +122,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/auto-resolve-line` | GET | **Cron** — resolves each pick when its game ends; generates next-day picks when both resolve (requires CRON_SECRET when set) |
 | `/api/line-live-stat` | GET | Fetch live in-game stat value for pick tracking (single-game lock check) |
 | `/api/line-history` | GET | Recent picks with streak + hit rate (only resolved picks — never pending) |
+| `/api/line-force-regenerate` | GET | Force-generate today's line picks (overwrites stale artifacts, busts cache) |
 
 ### Lab (Ben)
 | Endpoint | Method | Purpose |
@@ -132,6 +134,7 @@ grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
 | `/api/lab/auto-improve` | GET | **Cron** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% (requires CRON_SECRET when set) |
+| `/api/lab/chat-history` | GET | Return persisted daily Ben chat history as array `[{role, content}, ...]` |
 | `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt (keeps key server-side) |
 | `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
 | `/api/lab/calibrate-boost` | GET | Fit card boost log formula params (log_a, log_b) from real ownership data in `data/ownership/`; requires ≥4 samples |
@@ -422,7 +425,27 @@ Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
 `min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
 `wildcard_min_boost`, `wildcard_min_minutes`, `wildcard_min_season_pts`,
 `max_centers`, `max_per_team`, `dev_team_pts_floor`, `pred_min_tolerance` (default 3.0),
-`rs_bypass.enabled`, `rs_bypass.min_rating`, `rs_bypass.min_season_min`, `rs_bypass.min_boost`.
+`rs_bypass.enabled`, `rs_bypass.min_rating`, `rs_bypass.min_season_min`, `rs_bypass.min_boost`,
+`high_boost_role.enabled`, `high_boost_role.min_boost`, `high_boost_role.min_recent_min`,
+`high_boost_role.min_pred_min`, `scorer_upside.enabled`, `scorer_upside.min_pts_per_min`,
+`scorer_upside.min_season_pts`, `scorer_upside.multiplier`,
+`roto_confirmed_min_rating`, `roto_confirmed_min_boost`.
+
+Chalk high-boost role pathway: `projection.chalk_hbr_enabled`, `chalk_hbr_min_boost`,
+`chalk_hbr_min_recent_min`.
+
+Lineup constraints in `lineup`: `chalk_max_per_game`, `moonshot_max_per_game` (max players from
+same game matchup), `chalk_min_big_boost_count`, `chalk_min_big_boost_threshold`,
+`moonshot_min_big_boost_count`, `moonshot_min_big_boost_threshold` (minimum high-boost players
+in lineup).
+
+RS calibration in `real_score`: `dfs_weights` (`pts`, `reb`, `ast`, `stl`, `blk`, `tov`),
+`archetype_calibration.enabled`, `archetype_calibration.archetypes` (`star`, `scorer`, `big`,
+`pure_rebounder`, `wing_role` multipliers), `cascade_rs.enabled`, `cascade_rs.mult`,
+`role_spike_rs.enabled`, `role_spike_rs.min_recent_min`, `role_spike_rs.ratio_threshold`,
+`role_spike_rs.mult`.
+
+Cascade: `cascade.per_player_cap_minutes` (raised to 10.0 for meaningful cascade propagation).
 
 Odds enrichment in `odds_enrichment`: `enabled`, `blend_weight`, `min_divergence_pct`, `upward_only`.
 
@@ -556,6 +579,7 @@ Crons and frontend poll intervals are tuned to minimize Railway compute and ESPN
 | `55 * * * *` | `/api/refresh-line-odds` | Hourly bookmaker odds sync (at :55) |
 | `0 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (hourly at :00) |
 | `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
+| `0 6 * * 1` | `/api/mae-drift-check` | Weekly MAE drift monitoring (Monday 6am UTC); CRON_SECRET-gated |
 
 ## Deployment Pipeline
 
@@ -776,6 +800,13 @@ TestChalkMilpRsFocusHigh    — chalk_milp_rs_focus=0.85 nearly neutralizes boos
 TestOddsEnrichment          — odds enrichment skip when disabled, upward blend at divergence, no-blend below threshold
 TestWebSearch               — Claude web_search skip when disabled/no key, fetch+cache, cache reuse
 TestContextPassWithNews     — web search called from context pass, news text in prompt
+TestLineSignals             — _generate_signals produces driver signals for narrative transparency (8 signal types)
+TestHighBoostRolePathway    — high-boost role players bypass minutes floor in moonshot + chalk pools
+TestRsCalibrationWeights    — DFS weight recalibration, archetype detection + calibration, scorer upside
+TestCascadeCapFix           — per_player_cap_minutes raised to 10.0 for meaningful cascade propagation
+TestRotoConfirmedRatingException — confirmed rotation players with high boost bypass min_rating_floor
+TestMaxPerGameConstraint    — MILP max_per_game limits players from same game matchup
+TestMinHighBoostConstraint  — MILP min_big_boost ensures minimum high-boost players in lineup
 ```
 
 **tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions, and contract guards:
@@ -894,6 +925,19 @@ If slate, line, and/or log all fail to load:
 | Vercel→Railway comment cleanup | `api/index.py` | Replaced 7 stale Vercel references with Railway equivalents (watchPatterns, container instances, timeout limits). |
 | MILP solver audit — 3 fixes | `api/asset_optimizer.py`, `api/index.py` | (1) Removed `leverage_top_slots` constraint — mathematically wrong for additive formula `RS × (Slot + Boost)` since boost is player-constant; solver naturally places highest RS in highest slot. (2) Two-phase moonshot optimization — Phase 1 selects players using shaped ratings (boost leverage, variance uplift); Phase 2 re-assigns slots using raw RS for optimal placement. Decouples selection from slotting. (3) Removed position-per-team constraint — Real Sports has no position requirements; artificial constraint blocked legitimate same-position stacks. |
 | Two-pass pipeline + boost ingestion | `api/index.py` | Boosts are fixed daily constants — observable, not predicted. (1) Layer 0 boost ingestion: `POST /api/save-boosts` stores pre-game boosts to `data/boosts/{date}.json`; `_est_card_boost` checks Layer 0 first, falls through to estimation only when unavailable. (2) `screenshot_type="boosts"` in parse-screenshot for Claude Haiku extraction. (3) Two-pass architecture: Pass 1 (morning `/api/slate`) + Pass 2 (conditional `/api/force-regenerate`). (4) `GET /api/slate-check` monitors for material changes (injury, Vegas ≥3pt move, watchlist activation). (5) `_build_watchlist()` identifies cascade-sensitive players near lineup bubble. Slate response includes `watchlist`, `boosts_ingested`, `pass` fields. |
+| High-boost role pathway | `api/index.py`, `data/model-config.json` | Rotation players with 2.0x+ boost bypass minutes floor in both moonshot and chalk pools (`is_high_boost_role`, `is_chalk_high_boost_role`). Config: `moonshot.high_boost_role.*`, `projection.chalk_hbr_*`. |
+| RS calibration weights | `api/index.py`, `data/model-config.json` | DFS weight recalibration from 13-date audit (reb 0.95→0.65, ast 0.3→0.55). `_infer_player_archetype()` detects star/scorer/big/pure_rebounder/wing_role. `archetype_calibration` applies per-archetype RS multipliers. `scorer_upside` gives efficient scorers moonshot bonus. |
+| Cascade cap fix | `api/index.py`, `data/model-config.json` | `cascade.per_player_cap_minutes` raised from 2-3 to 10.0 so primary backups correctly inherit starter-level minutes. `cascade_rs` and `role_spike_rs` add RS uplift for cascade-elevated players. |
+| Roto confirmed rating exception | `api/index.py`, `data/model-config.json` | Confirmed rotation players with high boost (2.5x+) bypass `min_rating_floor` in moonshot (use 2.2 floor instead). Context pass includes cascade_bonus and roto_status. |
+| Max per game MILP constraint | `api/asset_optimizer.py`, `api/index.py`, `data/model-config.json` | `lineup.chalk_max_per_game=2`, `moonshot_max_per_game=2` — limits players from same game matchup. Prevents over-concentration in single games. |
+| Min big boost MILP constraint | `api/asset_optimizer.py`, `api/index.py`, `data/model-config.json` | `lineup.chalk_min_big_boost_count=1`, `moonshot_min_big_boost_count=1` — ensures minimum high-boost players in lineup for card boost value. |
+| Line narrative signals | `api/line_engine.py` | `_generate_signals()` produces 8 signal types (high_total, low_total, matchup, books_agree, minutes_drop, blowout_risk, close_game, cascade) so both over and under picks explain WHY, not just restate numbers. |
+| MAE drift check cron | `api/index.py`, `railway.toml` | Weekly (Monday 6am UTC) MAE drift monitoring — computes 7-day rolling MAE, writes backend flag if > 2.5 threshold. CRON_SECRET-gated. |
+| Line force regenerate | `api/index.py` | `/api/line-force-regenerate` — force-generate today's line picks, overwrite stale artifacts, bust history cache. |
+| Ben chat history | `api/index.py` | `/api/lab/chat-history` — persisted daily chat history with thread-safe read via `_BEN_CHAT_HISTORY_LOCK`. |
+| Explicit fetch timeouts (audit) | `index.html` | Added explicit 15s timeout to 5 `/api/log/get` calls and 10s to `/api/save-line` background save. All fetches now have documented timeouts. |
+| LOG.dateCache LRU eviction | `index.html` | `_evictLogCache()` keeps last 15 dates in memory, evicts oldest by `loadedAt`. Prevents unbounded memory growth when browsing many dates. |
+| Silent catch logging | `index.html` | Added `console.warn` to silent `.catch()` blocks on lab/status pre-warm and save-line background save for debugging visibility. |
 
 ## Loading audit
 

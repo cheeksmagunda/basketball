@@ -1,6 +1,6 @@
 # Production Audit — The Oracle (Basketball)
 
-**Audit date:** 2026-03-08  
+**Audit date:** 2026-03-08 (updated 2026-03-21)
 **Scope:** Security, reliability, performance, deployment, observability.
 
 ---
@@ -23,8 +23,10 @@
 | `/api/lab/backtest` | POST | `proposed_changes`, `description` | None |
 | `/api/lab/chat` | POST | `messages`, `system` | None (Anthropic API) |
 | `/api/lab/skip-uploads` | POST | `date` | `data/skipped-uploads.json` |
+| `/api/save-boosts` | POST | `date`, `players[]` | `data/boosts/{date}.json` |
+| `/api/save-ownership` | POST | `date`, `players[]` | `data/ownership/{date}.csv` |
 
-**Input validation:** Lab config keys are restricted to alphanumeric dot-paths (regex in `lab_update_config`). Ben system prompt restricts file writes to `data/model-config.json`. No rate limiting or request signing on any endpoint.
+**Input validation:** Lab config keys are restricted to alphanumeric dot-paths (regex in `lab_update_config`). Ben system prompt restricts file writes to `data/model-config.json`. Rate limiting on `parse-screenshot` (5/min), `lab/chat` (20/min), `line-of-the-day` (10/min) via thread-safe `_check_rate_limit()`.
 
 ### 1.2 Secrets and sensitive data
 
@@ -57,13 +59,15 @@
 | initLinePage | `/api/auto-resolve-line` (fire-and-forget) | **none** | Background; no timeout by design. |
 | initLinePage | `/api/line-of-the-day` | 10s | OK |
 | Line refresh button | `/api/refresh-line-odds` | 10s | OK |
-| save-line, line-history | `/api/save-line`, `/api/line-history` | 10s | OK |
-| lab/status, lab/briefing, config-history, slate, log | Various | 10s | OK |
-| **lab/chat** | `/api/lab/chat` | **none** | Raw `fetch`; streaming by design. Connection timeout only. |
-| **lab/backtest** | `/api/lab/backtest` | **none** | Raw `fetch`; long-running. Should use fetchWithTimeout (e.g. 120s). |
-| **lab/update-config** | `/api/lab/update-config` | **none** | Raw `fetch`; should use fetchWithTimeout (e.g. 15s). |
+| save-line | `/api/save-line` | 10s | Fire-and-forget with console.warn on failure |
+| line-history | `/api/line-history` | 25s | OK |
+| log/get (all 5 sites) | `/api/log/get?date=X` | 15s | Explicit timeout (was 10s default) |
+| lab/status, lab/briefing, config-history, slate, log | Various | 10s-30s | OK |
+| **lab/chat** | `/api/lab/chat` | **60s AbortController** | Raw `fetch`; SSE streaming by design. |
+| lab/backtest | `/api/lab/backtest` | 120s | fetchWithTimeout |
+| lab/update-config | `/api/lab/update-config` | 15s | fetchWithTimeout |
 
-**Addressed:** `lab/backtest` and `lab/update-config` now use `fetchWithTimeout` (120s and 15s). `lab/chat` remains raw fetch for streaming.
+**All fetches accounted for.** `lab/chat` is the only raw `fetch()` — intentional for SSE streaming; 60s connection timeout via manual AbortController.
 
 ### 2.2 Request lock and write guards
 
@@ -97,20 +101,22 @@
 
 ### 4.1 Verdict
 
-- **ignoreCommand:** `git diff --quiet HEAD~1 HEAD -- . ':!data' ':!.github'` — builds skip when only `data/` or `.github/` change. Correct for avoiding redeploys on data-only commits.
-- **Crons (current):**
-  - `/api/refresh` at 19:00 UTC only.
-  - `/api/lab/auto-improve` at 09:00 UTC — daily.
-  - `/api/refresh-line-odds` at :55 each hour — hourly pre-lock.
-  - `/api/auto-resolve-line` at :00 and :30 each hour — every 30 min.
-- **maxDuration:** 300s (Pro plan). Documented.
+- **watchPatterns:** `railway.toml` watchPatterns excludes `data/` and `.github/` — only code changes trigger Docker rebuilds.
+- **Crons (current, Railway):**
+  - `/api/refresh` at 19:00 UTC — daily cache clear + auto-save.
+  - `/api/lab/auto-improve` at 09:00 UTC — daily auto-tune.
+  - `/api/refresh-line-odds` at :55 each hour — hourly odds sync.
+  - `/api/auto-resolve-line` at :00 each hour — resolve line picks.
+  - `/api/injury-check` at 14,16,18,20,22,0 UTC — RotoWire checks.
+  - `/api/mae-drift-check` at 06:00 UTC Monday — weekly MAE drift.
+- **Health check:** `/api/health` with 120s timeout in railway.toml.
 - **Cron secret (implemented):** `CRON_SECRET` env var; when set, cron-only endpoints require `Authorization: Bearer <CRON_SECRET>`.
 
 ### 4.2 Deployment recommendations
 
-1. **Cron secret:** Use Vercel cron secret (or custom `CRON_SECRET`) and reject non-cron requests to `/api/refresh`, `/api/auto-resolve-line`, `/api/refresh-line-odds`, `/api/lab/auto-improve`.
-2. **Docs:** Document minimum Vercel plan (Pro for 300s) and that `GITHUB_TOKEN`, `GITHUB_REPO`, `ANTHROPIC_API_KEY` are required; `ODDS_API_KEY` optional.
-3. **Optional:** `GET /api/version` returning build-time env (e.g. `VERCEL_GIT_COMMIT_SHA`) for "what’s deployed" checks.
+1. **Cron secret:** Railway injects `CRON_SECRET` via cron commands. Protected endpoints: `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`, `/api/mae-drift-check`, `/api/force-regenerate?scope=full`.
+2. **Docs:** `GITHUB_TOKEN`, `GITHUB_REPO`, `ANTHROPIC_API_KEY` required; `ODDS_API_KEY`, `CRON_SECRET`, `DOCS_SECRET` optional.
+3. **Version:** `GET /api/version` returns `RAILWAY_GIT_COMMIT_SHA` for deploy checks.
 
 ---
 
