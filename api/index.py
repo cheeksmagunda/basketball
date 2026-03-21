@@ -8768,14 +8768,16 @@ def _fetch_gamelog(pid, num_games=15):
                     for stat_name, idx in idx_map.items():
                         if idx < len(stats):
                             try:
-                                val = float(stats[idx])
+                                raw = stats[idx]
+                                # ESPN returns minutes as "MM:SS" — take integer part
+                                val = float(str(raw).split(":")[0]) if ":" in str(raw) else float(raw)
                                 stat_arrays[stat_name].append(val)
                             except (ValueError, TypeError):
                                 pass
 
-        # Trim to last N games
+        # Trim to last N games (most recent)
         for k in stat_arrays:
-            stat_arrays[k] = stat_arrays[k][:num_games]
+            stat_arrays[k] = stat_arrays[k][-num_games:]
 
         if any(len(v) > 0 for v in stat_arrays.values()):
             _cs(cache_key, stat_arrays)
