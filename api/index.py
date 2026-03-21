@@ -3473,17 +3473,37 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         if p.get("_is_star_anchor", False)
     ] if sa_enabled else []
 
+    # Lineup quality constraints — per-game cap and boost floors.
+    _lu_cfg = _cfg("lineup", {})
+    _chalk_max_per_game = int(_lu_cfg.get("chalk_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
+    _moon_max_per_game = int(_lu_cfg.get("moonshot_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_min_high_boost = int(_lu_cfg.get("chalk_min_high_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_high_boost_thr = float(_lu_cfg.get("chalk_high_boost_threshold", 2.0)) if isinstance(_lu_cfg, dict) else 2.0
+    _chalk_min_big_boost = int(_lu_cfg.get("chalk_min_big_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_big_boost_thr = float(_lu_cfg.get("chalk_big_boost_threshold", 2.8)) if isinstance(_lu_cfg, dict) else 2.8
+
+    def _player_game_id(p):
+        """Derive a canonical game ID from team + opp pair (order-independent)."""
+        return "_vs_".join(sorted([p.get("team", ""), p.get("opp", "")]))
+
     # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
     core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
     core_pool_enabled = core_pool_cfg.get("enabled", False) if isinstance(core_pool_cfg, dict) else False
 
     if not core_pool_enabled:
+        _chalk_elig_games = [_player_game_id(p) for p in chalk_eligible]
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=2,
                                 star_indices=chalk_star_indices if chalk_star_indices else None,
                                 min_star_count=sa_require if chalk_star_indices else 0,
-                                max_star_count=sa_max if sa_max > 0 else 0)
+                                max_star_count=sa_max if sa_max > 0 else 0,
+                                max_per_game=_chalk_max_per_game,
+                                player_games=_chalk_elig_games,
+                                min_high_boost_count=_chalk_min_high_boost,
+                                high_boost_threshold=_chalk_high_boost_thr,
+                                min_big_boost_count=_chalk_min_big_boost,
+                                big_boost_threshold=_chalk_big_boost_thr)
 
     # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
     # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
@@ -3728,6 +3748,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             i for i, p in enumerate(chalk_source)
             if p.get("_is_star_anchor", False)
         ] if sa_enabled else []
+        _chalk_source_games = [_player_game_id(p) for p in chalk_source]
         chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=2,
@@ -3735,7 +3756,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                 variance_penalty=0.5,
                                 star_indices=_core_star_indices if _core_star_indices else None,
                                 min_star_count=sa_require if _core_star_indices else 0,
-                                max_star_count=sa_max if sa_max > 0 else 0)
+                                max_star_count=sa_max if sa_max > 0 else 0,
+                                max_per_game=_chalk_max_per_game,
+                                player_games=_chalk_source_games,
+                                min_high_boost_count=_chalk_min_high_boost,
+                                high_boost_threshold=_chalk_high_boost_thr,
+                                min_big_boost_count=_chalk_min_big_boost,
+                                big_boost_threshold=_chalk_big_boost_thr)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
         # Moonshot uses the full moonshot_pool (boost-ranked contrarians), NOT core_pool.
         # core_pool is built exclusively from chalk_eligible — it excludes moonshot-only
@@ -3746,6 +3773,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         # uses boost_leverage_power to strongly favor 3.0x boost players.
         # overlap_cap=3 ensures Moonshot differentiates from Starting 5 (max 3 shared players).
         # No star_count constraints — contrarian moonshot skips the star anchor concept.
+        _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
@@ -3756,8 +3784,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  overlap_player_ids=chalk_ids,
                                  overlap_cap=3,
                                  two_phase=True,
-                                 raw_rating_key="rating")
+                                 raw_rating_key="rating",
+                                 max_per_game=_moon_max_per_game,
+                                 player_games=_moon_pool_games)
     else:
+        _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
@@ -3766,7 +3797,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.2,
                                  two_phase=True,
-                                 raw_rating_key="rating")
+                                 raw_rating_key="rating",
+                                 max_per_game=_moon_max_per_game,
+                                 player_games=_moon_pool_games)
         core_pool = None
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
