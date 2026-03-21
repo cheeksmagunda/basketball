@@ -8288,7 +8288,14 @@ def _ben_chat_read_history_locked() -> list:
             return []
         raw = _BEN_CHAT_HISTORY_PATH.read_text()
         data = json.loads(raw) if raw else []
-        return data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            return []
+        # Trim trailing user messages — these are orphaned when a previous API call
+        # failed after the user message was persisted but before the assistant responded.
+        # Sending consecutive user messages causes a 400 from Anthropic on the next call.
+        while data and data[-1].get("role") == "user":
+            data.pop()
+        return data
     except Exception:
         return []
 
@@ -8412,7 +8419,16 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
             yield _sse({"type": "content", "text": text})
 
         except Exception as e:
-            yield _sse({"type": "content", "error": f"Anthropic API error: {str(e)}", "text": ""})
+            err_body = ""
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    err_body = e.response.text[:400]
+                except Exception:
+                    pass
+            error_msg = f"Anthropic API error: {str(e)}"
+            if err_body:
+                error_msg += f" — {err_body}"
+            yield _sse({"type": "content", "error": error_msg, "text": ""})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
