@@ -227,6 +227,9 @@ Respond with ONLY valid JSON, no markdown fences:
 
 def _call_claude(prompt, stat_focus="points"):
     """Call Claude Haiku and return parsed JSON pick, or None on failure."""
+    if not ANTHROPIC_API_KEY:
+        print(f"[LineEngine] ANTHROPIC_API_KEY not set — using fallback for {stat_focus}")
+        return None
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -257,7 +260,7 @@ def _call_claude(prompt, stat_focus="points"):
         return pick
     except requests.exceptions.HTTPError as http_err:
         status = http_err.response.status_code if http_err.response is not None else "?"
-        label = {429: "rate-limited", 529: "overloaded"}.get(status, "HTTP error")
+        label = {402: "credits-exhausted", 429: "rate-limited", 529: "overloaded"}.get(status, "HTTP error")
         print(f"[LineEngine] Claude {label} ({status}) for {stat_focus} — using fallback")
         return None
     except Exception as e:

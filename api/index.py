@@ -3114,9 +3114,14 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "Return JSON adjustments only."
     )
 
+    _ctx_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not _ctx_api_key:
+        print("[context_pass] ANTHROPIC_API_KEY not set — skipping")
+        return
+
     try:
         import anthropic as _anthropic
-        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), max_retries=0)
+        client = _anthropic.Anthropic(api_key=_ctx_api_key, max_retries=0)
         msg = client.messages.create(
             model=model_id,
             max_tokens=1024,
@@ -5399,7 +5404,12 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
             },
             timeout=_T_HEAVY,
         )
-        r.raise_for_status()
+        if not r.ok:
+            if r.status_code == 402:
+                return _err("Claude API credits exhausted. Please top up Anthropic billing.", 402)
+            if r.status_code == 429:
+                return _err("Claude API rate limited. Please wait a moment and retry.", 429)
+            return _err(f"Claude API error (HTTP {r.status_code})", r.status_code)
         resp = r.json()
         text = resp["content"][0]["text"]
         # Extract JSON from response (may be wrapped in ```json blocks)
@@ -8526,7 +8536,12 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
         try:
             r = requests.post(f"{ANTHROPIC_API_BASE}/messages",
                               headers=headers, json=base_body, timeout=_T_CLAUDE)
-            r.raise_for_status()
+            if not r.ok:
+                _api_err = {402: "API credits exhausted. Please top up Anthropic billing.",
+                            429: "Rate limited. Please wait a moment and retry."}.get(
+                    r.status_code, f"Claude API error (HTTP {r.status_code})")
+                yield _sse({"type": "content", "error": _api_err, "text": ""})
+                return
             resp = r.json()
 
             # Handle up to 5 rounds of tool use — Claude often chains multiple
@@ -8558,7 +8573,11 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
                     json={**base_body, "messages": current_messages},
                     timeout=_T_CLAUDE,
                 )
-                r_next.raise_for_status()
+                if not r_next.ok:
+                    _api_err = {402: "API credits exhausted.", 429: "Rate limited."}.get(
+                        r_next.status_code, f"Claude API error (HTTP {r_next.status_code})")
+                    yield _sse({"type": "content", "error": _api_err, "text": ""})
+                    return
                 resp = r_next.json()
 
             text = next((b["text"] for b in resp.get("content", []) if b.get("type") == "text"), "")
