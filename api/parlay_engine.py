@@ -359,7 +359,7 @@ def _correlation_modifier(legs, parlay_config=None):
       - Two players on same team, both Rebounds Over (zero-sum boards)
     """
     cfg = parlay_config or {}
-    positive_boost = cfg.get("positive_correlation_boost", 1.08)
+    positive_boost = cfg.get("positive_correlation_boost", 1.15)
     shootout_boost = cfg.get("shootout_correlation_boost", 1.05)
 
     multiplier = 1.0
@@ -467,7 +467,7 @@ def _is_playmaker(leg):
     pos = leg.get("position", "")
     season_ast = leg.get("season_ast", 0)
     # PG position or averages 4+ assists per game (playmaker)
-    return "PG" in pos or "G" in pos and season_ast >= 4.0 or season_ast >= 5.0
+    return ("PG" in pos) or ("G" in pos and season_ast >= 4.0) or (season_ast >= 5.0)
 
 
 def _score_structure(legs, parlay_config=None):
@@ -499,11 +499,20 @@ def _score_structure(legs, parlay_config=None):
             p_name = pts_overs[0]["player_name"]
             # Stronger bonus if the assist player is a playmaker
             if _is_playmaker(ast_overs[0]):
-                bonus *= 1.25
+                bonus *= 1.50
                 reasons.append(f"Ideal structure: {a_name} assists feed {p_name} scoring")
             else:
-                bonus *= 1.12
+                bonus *= 1.30
                 reasons.append(f"Correlated pair: {a_name} assists + {p_name} scoring (same team)")
+
+    # Penalize duplicate stat types (even cross-team) — diversification matters
+    stat_counts = {}
+    for l in legs:
+        stat_counts[l["stat_type"]] = stat_counts.get(l["stat_type"], 0) + 1
+    has_duplicate_stat = any(v >= 2 for v in stat_counts.values())
+    if has_duplicate_stat:
+        bonus *= 0.65
+        reasons.append("Penalty: duplicate stat types reduce diversification")
 
     # Reward stat diversity — ideal parlay covers different stat types
     stat_types = set(l["stat_type"] for l in legs)
@@ -513,6 +522,31 @@ def _score_structure(legs, parlay_config=None):
     elif len(stat_types) >= 2:
         bonus *= 1.05
         reasons.append("Stat diversification across 2 categories")
+
+    # Reward including a "market match" leg (Vegas heavily juiced, high confidence)
+    has_market_match = any(
+        l.get("american_odds") is not None
+        and float(l.get("american_odds", 0)) <= -140
+        and l["blended_confidence"] >= 0.60
+        for l in legs
+    )
+    if has_market_match:
+        bonus *= 1.12
+        reasons.append("Market match: strong Vegas alignment on at least one leg")
+
+    # Penalize assists overs in wide-spread games (PG gets benched in blowouts)
+    for l in legs:
+        if l["stat_type"] == "assists" and l["direction"] == "over":
+            spread = abs(float(l.get("game_spread") or 0))
+            if spread > 6.5:
+                bonus *= 0.88
+                reasons.append(f"Risk: {l['player_name']} assists over in {spread}-pt spread game")
+
+    # Mild bonus for all-over combos (correlated with game pace)
+    all_overs = all(l["direction"] == "over" for l in legs)
+    if all_overs:
+        bonus *= 1.06
+        reasons.append("All overs: correlated with game pace")
 
     # Reward spread diversity — legs from different games reduce correlated risk
     game_ids = set(l["gameId"] for l in legs)
