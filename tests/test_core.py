@@ -1397,9 +1397,9 @@ class TestFrontendAuditFixes:
         return html[start:end]
 
     def test_briefing_fetch_has_ok_check(self, script_source):
-        """C1: /api/lab/briefing fetch must check .ok before .json()."""
-        assert "r.ok ? r.json() : Promise.reject('briefing ' + r.status)" in script_source, (
-            "C1 regression: briefing fetch missing .ok guard"
+        """C1: /api/lab/briefing fetch must check .ok before .json() (via _fetchJson helper)."""
+        assert "_fetchJson('/api/lab/briefing'" in script_source, (
+            "C1 regression: briefing fetch missing .ok guard (should use _fetchJson)"
         )
 
     def test_chat_streaming_has_ok_check(self, script_source):

@@ -1294,6 +1294,13 @@
     @keyframes textPulse {
       0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; }
     }
+    /* Bottom-sheet modal overlay (shared by Line + Parlay modals) */
+    .bottom-sheet-overlay {
+      display:none;position:fixed;inset:0;
+      background:rgba(0,0,0,0.55);
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+      z-index:1001;align-items:flex-end;
+    }
   </style>
 </head>
 <body>
@@ -1465,7 +1472,7 @@
         <div id="lineSlateSummary" style="margin-top:16px"></div>
       </div>
       <!-- Pick detail bottom sheet -->
-      <div id="linePickModal" onclick="closeLinePickModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1001;align-items:flex-end">
+      <div id="linePickModal" class="bottom-sheet-overlay" onclick="closeLinePickModal()">
         <div onclick="event.stopPropagation()" style="background:var(--surface2);border-radius:18px 18px 0 0;padding:20px 16px max(28px, env(safe-area-inset-bottom));width:100%;max-height:80vh;overflow-y:auto">
           <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px"></div>
           <div id="linePickModalContent"></div>
@@ -1514,7 +1521,7 @@
   </div>
 
   <!-- Parlay Detail Modal (bottom sheet) -->
-  <div id="parlayModal" onclick="closeParlayModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1001;align-items:flex-end" role="dialog" aria-modal="true" aria-label="Parlay detail">
+  <div id="parlayModal" class="bottom-sheet-overlay" onclick="closeParlayModal()" role="dialog" aria-modal="true" aria-label="Parlay detail">
     <div onclick="event.stopPropagation()" style="background:var(--surface2);border-radius:18px 18px 0 0;padding:20px 16px max(28px, env(safe-area-inset-bottom));width:100%;max-height:80vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px" aria-hidden="true"></div>
       <div id="parlayModalContent"></div>
@@ -1676,6 +1683,33 @@ function _safeParseLocalStorage(key, fallback) {
 
 /** Safe getElementById for resilience; use before accessing .style, .innerHTML, etc. */
 function _el(id) { return document.getElementById(id); }
+
+/** Hex color (#rrggbb) to rgba string. */
+function _hexToRgba(hex, a) {
+  const h = hex.replace('#', '');
+  return 'rgba(' + parseInt(h.slice(0,2),16) + ',' + parseInt(h.slice(2,4),16) + ',' + parseInt(h.slice(4,6),16) + ',' + a + ')';
+}
+
+/** Fetch JSON with timeout — wraps fetchWithTimeout + .ok check. */
+function _fetchJson(url, timeout) {
+  return fetchWithTimeout(url, {}, timeout || 10000).then(function(r) {
+    return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status));
+  });
+}
+
+/** Format date as "Mon, Mar 22" style (short weekday + month + day). */
+function _fmtDateShort(d, upper) {
+  const s = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return upper ? s.toUpperCase() : s;
+}
+
+/** Mark a Ben upload type as done in localStorage. */
+function _markBenUpload(date, key) {
+  const k = 'benUploads_' + date;
+  const u = _safeParseLocalStorage(k, {});
+  u[key] = true;
+  localStorage.setItem(k, JSON.stringify(u));
+}
 
 // ════════════════════════════════════════════════════════════════════
 // CONSTANTS — grep: TEAM_COLORS, team colors, accent bar, tcolor
@@ -2274,7 +2308,7 @@ async function loadSlate() {
       const gameCount = isLocked ? totalGames : draftable;
       const slateDate = SLATE.date || _etToday();
       const d = new Date(slateDate + 'T12:00:00');
-      const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const dateStr = _fmtDateShort(d);
       const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
       let lockLabel = 'Locked';
       if (isLocked && SLATE.lock_time) {
@@ -2297,7 +2331,7 @@ async function loadSlate() {
     savePredictions();
     showLateDraftBanner();
     // Pre-warm Lab status so Ben tab opens without blocking on /api/lab/status
-    fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(function(s) {
+    _fetchJson('/api/lab/status', 10000).then(function(s) {
       LAB.cachedStatus = s;
       LAB.statusFetchedAt = Date.now();
     }).catch(function(e) { console.warn('[lab/status] pre-warm failed:', e); });
@@ -2440,11 +2474,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
 
   const html = picks.map((p, i) => {
     const tc = TEAM_COLORS[p.team] || (isLog ? '#8ec5b8' : '#14b8a6');
-    const tcAlpha = (() => {
-      const hex = tc.replace('#','');
-      const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
-      return `rgba(${r},${g},${b},0.06)`;
-    })();
+    const tcAlpha = _hexToRgba(tc, 0.06);
 
     const actRS = isLog ? actualsMap[p.name] : undefined;
     const hasActuals = actRS !== undefined;
@@ -2739,9 +2769,7 @@ function renderParlayLeg(leg, index, total) {
   const dir = leg.direction || 'over';
   const statLabel = {'points':'PTS','rebounds':'REB','assists':'AST'}[leg.stat_type] || leg.stat_type.toUpperCase();
   const tcolor = TEAM_COLORS[leg.team] || '#14b8a6';
-  const _thex = tcolor.replace('#', '');
-  const _tr = parseInt(_thex.slice(0,2), 16), _tg = parseInt(_thex.slice(2,4), 16), _tb = parseInt(_thex.slice(4,6), 16);
-  const tcolorBorder = 'rgba(' + _tr + ',' + _tg + ',' + _tb + ',0.30)';
+  const tcolorBorder = _hexToRgba(tcolor, 0.30);
   const isLast = index === total - 1;
 
   function _ceilHalf(v) { return Math.ceil(Number(v) * 2) / 2; }
@@ -3055,7 +3083,7 @@ function _renderLogGridFromState(dateStr) {
   if (!grid || !label) return;
   if (LOG_STATE.status === 'initial' || LOG_STATE.status === 'loading') {
     const d = new Date(dateStr + 'T12:00:00');
-    label.textContent = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    label.textContent = _fmtDateShort(d, true);
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">⏳</span><p>Loading...</p></div>`;
     return;
   }
@@ -3099,8 +3127,8 @@ async function initLogPage() {
   LOG_STATE = asyncStateLoading(LOG_STATE);
   _renderLogGridFromState(todayStr);
 
-  const datesPromise = fetchWithTimeout('/api/log/dates', {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('dates ' + r.status)));
-  const getPromise = fetchWithTimeout(`/api/log/get?date=${todayStr}`, {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('get ' + r.status)));
+  const datesPromise = _fetchJson('/api/log/dates', 15000);
+  const getPromise = _fetchJson(`/api/log/get?date=${todayStr}`, 15000);
 
   const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
 
@@ -3183,7 +3211,7 @@ function renderLogGrid(dateStr) {
   if (!grid || !label) return;
 
   const d = new Date(dateStr + 'T12:00:00');
-  const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+  const dateLabel = _fmtDateShort(d, true);
   label.textContent = dateLabel;
 
   // Check if predictions look incomplete for today: fewer per-game scopes than locked games.
@@ -3324,7 +3352,7 @@ function openLogDrilldown(scope, gameLabel) {
   window.scrollTo({top: 0, behavior: 'smooth'});
 
   const d = new Date((LOG.selectedDate || '') + 'T12:00:00');
-  const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+  const dateLabel = _fmtDateShort(d, true);
 
   document.getElementById('logDrillTitle').textContent = gameLabel || scope;
   document.getElementById('logDrillDate').textContent = dateLabel;
@@ -3436,7 +3464,7 @@ function _initUploadBanner() {
   const _title = document.getElementById('benBannerTitle');
   if (_title) {
     const d = new Date(_pendingDate + 'T12:00:00');
-    const dayStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const dayStr = _fmtDateShort(d);
     const doneCount = [_ulFlags.real_scores, _ulFlags.top_drafts, _ulFlags.starting_5, _ulFlags.moonshot, _ulFlags.most_drafted].filter(Boolean).length;
     _title.textContent = '📋 Log Results — ' + dayStr + (doneCount > 0 ? '  ' + doneCount + '/5' : '');
   }
@@ -3500,9 +3528,7 @@ async function _runBenAnalysisForDate(dateStr) {
   } catch(e) {}
 
   try {
-    const freshBriefing = await fetchWithTimeout('/api/lab/briefing', {}, 10000).then(r =>
-      r.ok ? r.json() : Promise.reject('briefing ' + r.status)
-    );
+    const freshBriefing = await _fetchJson('/api/lab/briefing', 10000);
     LAB.briefing = freshBriefing;
     LAB.system = buildLabSystemPrompt();
   } catch(e) {}
@@ -3606,7 +3632,7 @@ async function _handleBenUpload(file, type, source) {
       const _uf = _safeParseLocalStorage('benUploads_' + date, {});
       const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot].filter(Boolean).length;
       const _t = document.getElementById('benBannerTitle');
-      if (_t) { const d = new Date(date + 'T12:00:00'); const ds = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/4' : ''); }
+      if (_t) { const d = new Date(date + 'T12:00:00'); const ds = _fmtDateShort(d); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/4' : ''); }
       setTimeout(() => { b.style.display = 'none'; }, 1500);
     };
 
@@ -3622,7 +3648,7 @@ async function _handleBenUpload(file, type, source) {
       if (!_saveRes.ok) throw new Error(`Save actuals failed (${_saveRes.status})`);
 
       // Write localStorage first so counter in _markBannerDone reads the updated count
-      { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      _markBenUpload(today, type);
       _markBannerDone(bannerBtnId, _labels[type], today);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
@@ -3642,7 +3668,7 @@ async function _handleBenUpload(file, type, source) {
         }, 10000);
         if (!_or.ok) throw new Error('Save ownership failed (' + _or.status + ')');
       }
-      { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u.most_drafted = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      _markBenUpload(today, 'most_drafted');
       _markBannerDone(bannerBtnId, _labels[type], today);
       _checkBannerDone();
       const ownerStr = ownershipPlayers.slice(0, 5).map(p => {
@@ -3672,7 +3698,7 @@ async function _handleBenUpload(file, type, source) {
           if (!_lr.ok) throw new Error('HTTP ' + _lr.status);
         } catch(e) { _appendMsg('assistant', 'Failed to save leaderboard — try again.'); return; }
       }
-      { const _lsKey = 'benUploads_' + today; const _u = _safeParseLocalStorage(_lsKey, {}); _u[type] = true; localStorage.setItem(_lsKey, JSON.stringify(_u)); }
+      _markBenUpload(today, type);
       _markBannerDone(bannerBtnId, _labels[type], today);
       if (chatBtnId) _markDone(chatBtnId, _labels[type]);
       _checkBannerDone();
@@ -3856,8 +3882,7 @@ async function _startLineLivePoll(overPick, underPick) {
       if (document.getElementById('tab-lab')?.classList.contains('active')) {
         console.warn('[event] Games final detected — triggering immediate lab status check');
         setTimeout(() => {
-          fetchWithTimeout('/api/lab/status', {}, 10000)
-            .then(r => r.ok ? r.json() : Promise.reject())
+          _fetchJson('/api/lab/status', 10000)
             .then(s => {
               if (!s.locked && LAB.locked) {
                 console.warn('[event] Lab unlocked by game final event');
@@ -4208,10 +4233,8 @@ function renderLinePickCard(pick, isPrimary) {
   const conclusionHtml = _buildLineConclusion(pick);
 
   const tcolor = TEAM_COLORS[pick.team] || '#d4a640';
-  const _thex = tcolor.replace('#', '');
-  const _tr = parseInt(_thex.slice(0,2), 16), _tg = parseInt(_thex.slice(2,4), 16), _tb = parseInt(_thex.slice(4,6), 16);
-  const tcolorBorder = `rgba(${_tr},${_tg},${_tb},0.30)`;
-  const tcolorGlow   = `rgba(${_tr},${_tg},${_tb},0.22)`;
+  const tcolorBorder = _hexToRgba(tcolor, 0.30);
+  const tcolorGlow   = _hexToRgba(tcolor, 0.22);
 
   return `
     <div class="line-pick-card" style="--tcolor:${tcolor};--tcolor-border:${tcolorBorder};--tcolor-glow:${tcolorGlow}">
@@ -4579,7 +4602,7 @@ async function showLabLocked(status) {
     if (!_labLocked || _labLocked.style.display === 'none') {
       clearInterval(LAB._lockPoll); LAB._lockPoll = null; return;
     }
-    fetchWithTimeout('/api/lab/status', {}, 10000).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); }).then(async function(s) {
+    _fetchJson('/api/lab/status', 10000).then(async function(s) {
       let labLockedEl = _el('labLocked');
       let labUnlockedEl = _el('labUnlocked');
       let lockedVisible = labLockedEl ? labLockedEl.style.display !== 'none' : false;
@@ -4624,15 +4647,15 @@ async function showLabUnlocked(status) {
   // Load context data in background (non-blocking) — chat is usable while this runs
   // Reuse cached data from other tabs when available to avoid redundant API calls
   let _cachedLine = (LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'success' && LINE_LOTD_STATE.data)
-    ? Promise.resolve(LINE_LOTD_STATE.data) : fetchWithTimeout('/api/line-of-the-day', {}, 30000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
+    ? Promise.resolve(LINE_LOTD_STATE.data) : _fetchJson('/api/line-of-the-day', 30000);
   let _cachedSlate = SLATE
-    ? Promise.resolve(SLATE) : fetchWithTimeout('/api/slate', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
+    ? Promise.resolve(SLATE) : _fetchJson('/api/slate', 10000);
   Promise.allSettled([
-    fetchWithTimeout('/api/lab/briefing', {}, 30000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
-    fetchWithTimeout('/api/lab/config-history', {}, 10000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    _fetchJson('/api/lab/briefing', 30000),
+    _fetchJson('/api/lab/config-history', 10000),
     _cachedLine,
     _cachedSlate,
-    fetchWithTimeout(`/api/log/get?date=${_etToday()}`, {}, 15000).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status))),
+    _fetchJson(`/api/log/get?date=${_etToday()}`, 15000),
   ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes]) {
     if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
     if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;

@@ -96,7 +96,7 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 def _validate_date(date_str: str) -> Optional[JSONResponse]:
     """Return a 400 JSONResponse if date_str is not YYYY-MM-DD format, else None."""
     if not _DATE_RE.match(date_str):
-        return JSONResponse({"error": "Invalid date format (expected YYYY-MM-DD)"}, status_code=400)
+        return _err("Invalid date format (expected YYYY-MM-DD)", 400)
     return None
 
 
@@ -293,7 +293,7 @@ def _slate_backup_to_github(slate_data: dict):
     """Write slate response to GitHub as a locked-state backup (deduped by date).
     Called once when we promote reg_cache -> lock_cache so cold-start instances can recover."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         path = f"data/locks/{today}_slate.json"
         existing, _ = _github_get_file(path)
         if existing:
@@ -311,7 +311,7 @@ def _slate_backup_to_github(slate_data: dict):
 def _slate_restore_from_github():
     """Read the locked-state slate backup from GitHub. Returns dict or None."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         path = f"data/locks/{today}_slate.json"
         content, _ = _github_get_file(path)
         if content:
@@ -335,7 +335,7 @@ def _slate_cache_to_github(slate_data: dict):
     Deduped by date — overwrites same-day file on regeneration (injury/config change).
     Embeds deploy_sha for Scenario 1 auto-detection (dev ships model update mid-slate)."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         path = f"data/slate/{today}_slate.json"
         # Stamp deploy SHA so /api/slate can detect when a new deploy invalidates cached picks
         sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
@@ -350,7 +350,7 @@ def _slate_cache_from_github():
     """Load today's cached slate from GitHub. Returns dict or None.
     Checks bust sentinel first (data branch and main so retrain workflow bust is seen)."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         bust_path = f"data/slate/{today}_bust.json"
         for ref in (None, "main"):  # data branch first, then main (retrain writes bust to main)
             bust_content, _ = _github_get_file(bust_path, ref_override=ref)
@@ -379,7 +379,7 @@ def _github_slate_bust_active() -> bool:
     Uses only data/slate/{date}_bust.json (not data/locks/*): the lock backup may still
     be a tombstone briefly while bust.json is already cleared after sync regen."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         bust_path = f"data/slate/{today}_bust.json"
         for ref in (None, "main"):
             bust_content, _ = _github_get_file(bust_path, ref_override=ref)
@@ -408,7 +408,7 @@ def _games_cache_to_github(all_game_projections: dict):
     """Persist per-game projections {gameId: [players...]} to GitHub.
     Allows /api/picks to serve from cache without re-running _run_game()."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         path = f"data/slate/{today}_games.json"
         content = json.dumps(all_game_projections, default=str)
         _github_write_file(path, content, f"game projections {today}")
@@ -418,7 +418,7 @@ def _games_cache_to_github(all_game_projections: dict):
 def _games_cache_from_github():
     """Load per-game projections from GitHub. Returns {gameId: [...]} or None."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         path = f"data/slate/{today}_games.json"
         content, _ = _github_get_file(path)
         if content:
@@ -440,7 +440,7 @@ def _bust_slate_cache():
     each instance has its own /tmp; the tombstone on GitHub forces all instances to
     treat slate cache as miss and regenerate. (3) If the app is still on an old deploy,
     merge and deploy the fix, then trigger /api/refresh or wait for next slate load."""
-    today = _et_date().isoformat()
+    today = _today_str()
     # Clear /tmp caches
     for key in [_CK_SLATE]:
         try:
@@ -699,7 +699,7 @@ _CONFIG_DEFAULTS = {
         # Unicorn (RS 5+, boost 2+), Hidden Star (RS 5+, low boost), Ghost (RS <5, boost 3.0x)
         "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.2, "min_rating_floor":3.5,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":3, "boost_leverage_power":0.65,
+        "max_centers":99, "boost_leverage_power":0.65,
         # boost_leverage_power 0.65: balanced — Unicorn > Ghost > Hidden Star ordering verified.
         # At 0.65, 3.0x boost gives 2.04x leverage (vs 1.55x at 0.4, 3.74x at 1.2).
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -786,6 +786,9 @@ _CONFIG_DEFAULTS = {
         "positive_correlation_boost": 1.08,
         "shootout_correlation_boost": 1.05,
         "min_line_floors": {"points": 10.5, "rebounds": 3.5, "assists": 2.5},
+    },
+    "pass2": {
+        "vegas_total_threshold": 3.0,
     },
 }
 
@@ -991,13 +994,13 @@ _STAT_MARKET = {
 
 def _cp(k, date_str=None):
     """Cache path for key k. date_str: optional slate date (YYYY-MM-DD) for midnight-rollover correctness."""
-    d = date_str or _et_date().isoformat()
+    d = date_str or _today_str()
     return CACHE_DIR / f"{hashlib.md5(f'{d}:{k}'.encode()).hexdigest()}.json"
 def _cg(k, date_str=None): return json.loads(_cp(k, date_str).read_text()) if _cp(k, date_str).exists() else None
 def _cs(k, v, date_str=None): _cp(k, date_str).write_text(json.dumps(v))
 def _lp(k, date_str=None):
     """Lock path for key k. date_str: optional slate date for midnight-rollover correctness."""
-    d = date_str or _et_date().isoformat()
+    d = date_str or _today_str()
     return LOCK_DIR / f"{hashlib.md5(f'{d}:{k}'.encode()).hexdigest()}.json"
 def _lg(k, date_str=None): return json.loads(_lp(k, date_str).read_text()) if _lp(k, date_str).exists() else None
 def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
@@ -1045,6 +1048,14 @@ def _et_date() -> str:
         now_utc = datetime.now(timezone.utc)
         offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
         return (now_utc + offset).date()
+
+def _err(msg: str, code: int = 400) -> JSONResponse:
+    """Standard error response helper (DRY)."""
+    return JSONResponse({"error": msg}, status_code=code)
+
+def _today_str() -> str:
+    """Current ET date as YYYY-MM-DD string (shorthand for _et_date().isoformat())."""
+    return _et_date().isoformat()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ESPN DATA FETCHERS
@@ -1850,7 +1861,7 @@ def _load_daily_boosts(date_str=None):
     import time
     now = time.time()
     if date_str is None:
-        date_str = _et_date().isoformat()
+        date_str = _today_str()
     if (_DAILY_BOOST_CACHE and _DAILY_BOOST_DATE == date_str
             and (now - _DAILY_BOOST_TS) < _TTL_CONFIG):
         return _DAILY_BOOST_CACHE
@@ -2793,7 +2804,7 @@ def _fetch_matchup_intelligence(games: list, all_proj: list, def_stats: dict,
     if not anthropic_key:
         return {}
 
-    today = _et_date().isoformat()
+    today = _today_str()
     cache_key = f"matchup_intel_{today}"
     cached = _cg(cache_key)
     if cached is not None:
@@ -2923,7 +2934,7 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
 
     model_id = _cfg("context_layer.model", "claude-sonnet-4-6-20250514")
     max_adj = float(_cfg("context_layer.max_adjustment", 0.4))
-    timeout_s = float(_cfg("context_layer.timeout_seconds", 15))
+    timeout_s = float(_cfg("context_layer.timeout_seconds", 20))
 
     # Fetch recent NBA news for teams on the slate (Layer 1: Opus + web_search)
     news_text = ""
@@ -4167,7 +4178,7 @@ def _get_mock_slate() -> dict:
     ]
     lineups = {"chalk": chalk, "upside": upside}
     return {
-        "date": _et_date().isoformat(),
+        "date": _today_str(),
         "mock": True,
         "games": mock_games,
         "lineups": lineups,
@@ -4303,7 +4314,7 @@ def _force_regenerate_bg_worker():
 def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
     # Fast path: if today's locked slate is already in memory, skip ALL external calls.
-    today_str = _et_date().isoformat()
+    today_str = _today_str()
     _lk_pre = _lg(_CK_SLATE_LOCKED)
     if _lk_pre and _lk_pre.get("date") == today_str:
         _lk_pre["locked"] = True
@@ -4485,7 +4496,7 @@ def _get_slate_impl():
             # Cold-start Lambdas handling the follow-up /api/save-predictions won't
             # have the slate cache — write slate rows to GitHub now while we have them.
             try:
-                today_str = _et_date().isoformat()
+                today_str = _today_str()
                 pred_path = f"data/predictions/{today_str}.csv"
                 pred_existing, _ = _github_get_file(pred_path)
                 if not pred_existing:
@@ -4628,7 +4639,7 @@ def _get_slate_impl():
             print(f"[watchlist] build error: {_wl_err}")
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
         _boosts_ingested = bool(_load_daily_boosts())
-        result = {"date": _et_date().isoformat(), "games": games,
+        result = {"date": _today_str(), "games": games,
                   "lineups": lineups, "locked": locked,
                   "all_complete": False, "draftable_count": len(draftable_games),
                   "lock_time": lock_time,
@@ -4645,7 +4656,7 @@ def _get_slate_impl():
             # the slate response as soon as the pipeline finishes, not after writes.
             _bg_result       = result
             _bg_game_proj    = game_proj_map
-            _bg_today        = _et_date().isoformat()
+            _bg_today        = _today_str()
             def _slate_persist_bg():
                 try:
                     _slate_cache_to_github(_bg_result)
@@ -4671,7 +4682,7 @@ def _get_slate_impl():
         # locked request (bg-only clear races multi-instance).
         if chalk or upside:
             try:
-                _st = _et_date().isoformat()
+                _st = _today_str()
                 _github_write_file(
                     f"data/slate/{_st}_bust.json",
                     "{}",
@@ -4699,7 +4710,7 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
         return JSONResponse(
             content={
                 "error": "slate_failed",
-                "date": _et_date().isoformat(),
+                "date": _today_str(),
                 "games": [],
                 "lineups": {"chalk": [], "upside": []},
                 "locked": False,
@@ -4722,7 +4733,7 @@ def _compute_game_picks(game):
             return None
         lineups_dict = _build_game_lineups(projections, game)
         result = {
-            "date": _et_date().isoformat(), "game": game,
+            "date": _today_str(), "game": game,
             "gameScript": _game_script_label(game.get("total")),
             "lineups": lineups_dict,
             "locked": True, "injuries": _get_injuries(game),
@@ -4743,7 +4754,7 @@ async def get_picks(gameId: str = Query(...)):
         mock_slate = _get_mock_slate()
         game_meta = next((g for g in mock_slate["games"] if g["gameId"] == gameId), None)
         if not game_meta:
-            return JSONResponse({"error": "Mock game not found"}, status_code=404)
+            return _err("Mock game not found", 404)
         # Return mock per-game lineup (subset of chalk players from different teams)
         the_lineup = [
             {"id":"mock_pg1","name":"Mock Game PG","pos":"PG","team":"CHI","rating":7.0,"predMin":36.0,
@@ -4764,13 +4775,13 @@ async def get_picks(gameId: str = Query(...)):
         ]
         # Per-game total = sum of ratings (25-35 range): 7+6+5.5+5+4.5 = 28.0 ✓
         lineups = {"the_lineup": the_lineup}
-        return {"date": _et_date().isoformat(), "game": game_meta, "mock": True,
+        return {"date": _today_str(), "game": game_meta, "mock": True,
                 "gameScript": "balanced", "lineups": lineups, "locked": False,
                 "injuries": [], "score_bounds": _score_bounds_for_lineups(lineups)}
 
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
     if not game:
-        return JSONResponse({"error": "Game not found"}, status_code=404)
+        return _err("Game not found", 404)
 
     start_time = game.get("startTime")
     locked = _is_locked(start_time) if start_time else False
@@ -4795,7 +4806,7 @@ async def get_picks(gameId: str = Query(...)):
                     label = game.get("label", f"game_{gameId}")
                     game_rows = _predictions_to_csv(reg_cached["lineups"], label)
                     if game_rows:
-                        today = _et_date().isoformat()
+                        today = _today_str()
                         pred_path = f"data/predictions/{today}.csv"
                         existing, _ = _github_get_file(pred_path)
                         if existing:
@@ -4813,7 +4824,7 @@ async def get_picks(gameId: str = Query(...)):
         auto = _compute_game_picks(game)
         if auto:
             return auto
-        return {"date": _et_date().isoformat(), "game": game,
+        return {"date": _today_str(), "game": game,
                 "gameScript": None,
                 "lineups": {"the_lineup": []},
                 "locked": True, "injuries": []}
@@ -4831,12 +4842,12 @@ async def get_picks(gameId: str = Query(...)):
         # True cold start with no cache anywhere — run engine (rare after first daily run)
         projections = _run_game(game)
     if not projections:
-        return JSONResponse({"error": "No projections available."}, status_code=503)
+        return _err("No projections available.", 503)
     lineups_dict = _build_game_lineups(projections, game)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
 
-    result = {"date": _et_date().isoformat(), "game": game,
+    result = {"date": _today_str(), "game": game,
               "gameScript": script,
               "lineups": lineups_dict,
               "locked": locked,
@@ -4849,7 +4860,7 @@ async def get_picks(gameId: str = Query(...)):
 @app.post("/api/save-predictions")
 async def save_predictions():
     """Save current predictions to GitHub as CSV."""
-    today = _et_date().isoformat()
+    today = _today_str()
     path = f"data/predictions/{today}.csv"
 
     # Guard: only write predictions after the slate has locked.
@@ -4861,7 +4872,7 @@ async def save_predictions():
     _games_now = fetch_games()
     _start_times = [g["startTime"] for g in _games_now if g.get("startTime")]
     if _start_times and not any(_is_locked(st) for st in _start_times):
-        return JSONResponse({"error": "Slate not locked yet — predictions not finalized"}, status_code=409)
+        return _err("Slate not locked yet — predictions not finalized", 409)
 
     # Gather slate predictions — try all cache layers before giving up
     rows = []
@@ -4902,7 +4913,7 @@ async def save_predictions():
                     traceback.print_exc()
 
     if not rows:
-        return JSONResponse({"error": "No predictions cached yet"}, status_code=404)
+        return _err("No predictions cached yet", 404)
 
     # Merge with existing CSV — on split-window days, later-locking games need to be
     # appended without overwriting earlier predictions (e.g. 5 PM game saved first,
@@ -4923,7 +4934,7 @@ async def save_predictions():
 
     result = _github_write_file(path, csv_content, f"predictions for {today}")
     if result.get("error"):
-        return JSONResponse({"error": result["error"]}, status_code=500)
+        return _err(result["error"], 500)
 
     # Also write the slate backup now so cold-start instances can recover after lock,
     # even if this Railway instance dies before the lock window promotes the reg cache.
@@ -4944,7 +4955,7 @@ def _force_write_predictions(rows, replace_all=False, replace_scopes=None):
 
     Returns dict with status + path + rows count.
     """
-    today = _et_date().isoformat()
+    today = _today_str()
     path = f"data/predictions/{today}.csv"
     if not rows:
         return {"error": "no_rows", "path": path}
@@ -4982,7 +4993,7 @@ def _force_regenerate_sync(scope: str):
 
     Returns summary dict.
     """
-    today_str = _et_date().isoformat()
+    today_str = _today_str()
     games = fetch_games()
     if not games:
         return {"status": "no_games", "scope": scope, "date": today_str}
@@ -5118,7 +5129,7 @@ def _slate_backup_to_github_force(slate_data: dict):
     """Write slate lock backup to GitHub, OVERWRITING any existing file.
     Used by force-regenerate (unlike _slate_backup_to_github which skips if existing)."""
     try:
-        today = _et_date().isoformat()
+        today = _today_str()
         path = f"data/locks/{today}_slate.json"
         content = json.dumps(slate_data, default=str)
         _github_write_file(path, content, f"force-regen lock backup {today}")
@@ -5143,7 +5154,7 @@ async def slate_check(request: Request):
 
     Returns: {changed: bool, triggers: [...], recommendation: "hold"|"rerun"}
     """
-    today = _et_date().isoformat()
+    today = _today_str()
     games = fetch_games()
     if not games:
         return {"changed": False, "triggers": [], "recommendation": "hold",
@@ -5251,9 +5262,9 @@ async def force_regenerate(request: Request, scope: str = Query("full")):
     scope=remaining: Only games not yet started (user woke up late). User-facing, no auth.
     """
     if scope == "full" and not _require_cron_secret(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return _err("Unauthorized", 401)
     if scope not in ("full", "remaining"):
-        return JSONResponse({"error": "scope must be 'full' or 'remaining'"}, status_code=400)
+        return _err("scope must be 'full' or 'remaining'", 400)
 
     try:
         result = await asyncio.to_thread(_force_regenerate_sync, scope)
@@ -5261,7 +5272,7 @@ async def force_regenerate(request: Request, scope: str = Query("full")):
     except Exception as e:
         print(f"[force-regenerate] error: {e}")
         traceback.print_exc()
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return _err(str(e), 500)
 
 
 
@@ -5270,7 +5281,7 @@ async def reset_uploads(body: dict):
     Used to undo an incorrect/early upload so Ben can re-prompt for the right date."""
     date_str = body.get("date")
     if not date_str:
-        return JSONResponse({"error": "date required"}, status_code=400)
+        return _err("date required", 400)
     bad = _validate_date(date_str)
     if bad: return bad
     deleted = []
@@ -5300,18 +5311,18 @@ async def parse_screenshot(
     if rl is not None:
         return rl
     if not ANTHROPIC_API_KEY:
-        return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
+        return _err("ANTHROPIC_API_KEY not configured", 500)
 
     image_bytes = await file.read()
     if len(image_bytes) > 10 * 1024 * 1024:
-        return JSONResponse({"error": "Image too large (max 10MB)"}, status_code=413)
+        return _err("Image too large (max 10MB)", 413)
     b64_image = base64.b64encode(image_bytes).decode("ascii")
 
     # Determine media type
     _ALLOWED_IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
     ct = file.content_type or ""
     if ct not in _ALLOWED_IMAGE_TYPES:
-        return JSONResponse({"error": f"Unsupported image type: {ct or 'unknown'}. Allowed: png, jpeg, gif, webp"}, status_code=415)
+        return _err(f"Unsupported image type: {ct or 'unknown'}. Allowed: png, jpeg, gif, webp", 415)
 
     if screenshot_type == "boosts":
         prompt = """Extract player boost data from this Real Sports pre-game screenshot.
@@ -5397,7 +5408,7 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
     except json.JSONDecodeError:
         return JSONResponse({"error": "Failed to parse Claude response as JSON", "raw": text[:500]}, status_code=500)
     except Exception as e:
-        return JSONResponse({"error": f"Screenshot parsing failed: {str(e)}"}, status_code=500)
+        return _err(f"Screenshot parsing failed: {str(e)}", 500)
 
 
 def _compute_audit(date_str):
@@ -5482,12 +5493,12 @@ async def save_actuals(payload: dict = Body(...)):
     Safety: Checks if user has skipped uploads for this date.
     If skipped, returns early without processing screenshots.
     """
-    date_str = payload.get("date", _et_date().isoformat())
+    date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
     if bad: return bad
     players = payload.get("players", [])
     if not players:
-        return JSONResponse({"error": "No player data"}, status_code=400)
+        return _err("No player data", 400)
 
     # Check if this date was marked as skipped by user
     try:
@@ -5532,7 +5543,7 @@ async def save_actuals(payload: dict = Body(...)):
     csv_content = header + "\n" + "\n".join(rows) + "\n"
     result = _github_write_file(path, csv_content, f"actuals for {date_str}")
     if result.get("error"):
-        return JSONResponse({"error": result["error"]}, status_code=500)
+        return _err(result["error"], 500)
 
     # Auto-generate audit JSON — only when real_scores data is present.
     # Audit compares predicted RS vs actual RS; meaningless without RS actuals.
@@ -5610,7 +5621,7 @@ async def log_dates():
 @app.get("/api/log/get")
 async def log_get(date: str = Query(None)):
     """Get stored predictions and actuals for a date. Cached 5 min."""
-    date_str = date or _et_date().isoformat()
+    date_str = date or _today_str()
     bad = _validate_date(date_str)
     if bad: return bad
 
@@ -5667,7 +5678,7 @@ async def log_actuals_stats(date: str = Query(None)):
     for all players on a given date's completed games. Returns a map of
     player_name -> {pts, reb, ast, stl, blk, min}. Cached for 24h since
     historical box scores don't change."""
-    date_str = date or _et_date().isoformat()
+    date_str = date or _today_str()
     bad = _validate_date(date_str)
     if bad: return bad
     cache_key = f"actuals_stats_{date_str}"
@@ -5734,7 +5745,7 @@ async def log_actuals_stats(date: str = Query(None)):
 @app.get("/api/audit/get")
 async def audit_get(date: str = Query(None)):
     """Return pre-computed audit JSON for a date (or compute live if missing)."""
-    date_str = date or _et_date().isoformat()
+    date_str = date or _today_str()
     bad = _validate_date(date_str)
     if bad: return bad
     # Try cached audit first
@@ -5754,7 +5765,7 @@ async def hindsight(payload: dict = Body(...)):
     """Given actual player RS scores, return the optimal hindsight lineup."""
     players = payload.get("players", [])
     if not players:
-        return JSONResponse({"error": "No players provided"}, status_code=400)
+        return _err("No players provided", 400)
 
     avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
     projections = []
@@ -5774,7 +5785,7 @@ async def hindsight(payload: dict = Body(...)):
         })
 
     if not projections:
-        return JSONResponse({"error": "No players with valid RS scores"}, status_code=400)
+        return _err("No players with valid RS scores", 400)
 
     lineup = optimize_lineup(projections, n=min(5, len(projections)),
                              sort_key="chalk_ev", rating_key="rating",
@@ -5802,7 +5813,7 @@ async def refresh(request: Request):
                     _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
                     _BEN_CHAT_HISTORY_PATH.write_text("[]")
                     _BEN_CHAT_HISTORY_DATE_PATH.write_text(
-                        json.dumps({"et_date": _et_date().isoformat()}, indent=2)
+                        json.dumps({"et_date": _today_str()}, indent=2)
                     )
             except Exception as e:
                 print(f"[ben-chat] reset on refresh failed: {e}")
@@ -5836,7 +5847,7 @@ async def refresh(request: Request):
     except Exception: pass
     # Bust today's GitHub parlay cache so next request regenerates with latest engine
     try:
-        _parlay_path = f"data/parlays/{_et_date().isoformat()}.json"
+        _parlay_path = f"data/parlays/{_today_str()}.json"
         _existing_parlay, _ = _github_get_file(_parlay_path)
         if _existing_parlay:
             _github_write_file(_parlay_path, json.dumps({"_busted": True}), "bust parlay cache")
@@ -5861,7 +5872,7 @@ _MAE_DRIFT_FLAG_PATH = Path("data/mae_drift_flag.json")
 async def mae_drift_check(request: Request):
     """Weekly cron: compute last 7 calendar days MAE and write a backend-only flag."""
     if not _require_cron_secret(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return _err("Unauthorized", 401)
 
     THRESHOLD = 2.5
     today = _et_date()
@@ -5927,9 +5938,9 @@ async def injury_check(request: Request):
     """Cron (every 2h): check RotoWire for newly OUT/questionable players in cached picks.
     If any cached player is OUT/questionable, regenerate affected games only."""
     if not _require_cron_secret(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return _err("Unauthorized", 401)
 
-    today = _et_date().isoformat()
+    today = _today_str()
 
     # Don't run if slate is locked — picks are frozen post-lock
     games = fetch_games()
@@ -6245,6 +6256,16 @@ def _build_player_odds_map(games):
 
 LINE_CSV_HEADER = "date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat"
 
+_LINE_ROW_FIELDS = [
+    "player_name", "player_id", "team", "opponent", "stat_type",
+    "line", "direction", "projection", "edge", "confidence", "narrative",
+]
+
+def _line_pick_to_csv(pick: dict, date_str: str) -> str:
+    """Build a full LINE CSV string (header + pending row) from a pick dict."""
+    row = ",".join(_csv_escape(str(pick.get(k, ""))) for k in _LINE_ROW_FIELDS)
+    return LINE_CSV_HEADER + "\n" + f"{date_str}," + row + ",pending,\n"
+
 
 def _get_projections_for_date(date_obj):
     """Return (all_proj, draftable_games) for the given date for line-engine enrichment.
@@ -6443,7 +6464,7 @@ def _picks_response(picks, **extra):
 def _get_mock_line_picks() -> dict:
     """Return a fully-formed mock Line of the Day response for testing.
     No Odds API, ESPN, LightGBM, or GitHub I/O. Safe to call anytime."""
-    today = _et_date().isoformat()
+    today = _today_str()
     _mock_over = {
         "player_name": "Mock Over Player", "player_id": "mock_over_001",
         "team": "BOS", "opponent": "LAL", "direction": "over",
@@ -6748,7 +6769,7 @@ async def line_force_regenerate():
 
     eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
     if err or not eng_result or not eng_result.get("pick"):
-        return JSONResponse({"error": err or "no_projections"}, status_code=503)
+        return _err(err or "no_projections", 503)
 
     saves = {"over_pick": eng_result.get("over_pick"), "under_pick": eng_result.get("under_pick")}
     _github_write_file(
@@ -6760,12 +6781,7 @@ async def line_force_regenerate():
     # Ensure a CSV row exists for history/resolve compatibility.
     primary = _primary_pick(saves)
     if primary:
-        row = ",".join(_csv_escape(str(primary.get(k, ""))) for k in [
-            "player_name", "player_id", "team", "opponent", "stat_type",
-            "line", "direction", "projection", "edge", "confidence", "narrative",
-        ])
-        csv_content = LINE_CSV_HEADER + "\n" + f"{today_str}," + row + ",pending,\n"
-        _github_write_file(f"data/lines/{today_str}.csv", csv_content, f"force regenerate line csv {today_str}")
+        _github_write_file(f"data/lines/{today_str}.csv", _line_pick_to_csv(primary, today_str), f"force regenerate line csv {today_str}")
 
     out = _picks_response(saves, from_github=False, slate_summary=eng_result.get("slate_summary"))
     out["_cached_at"] = datetime.utcnow().isoformat()
@@ -6788,7 +6804,7 @@ LINE_FIELDS = LINE_CSV_HEADER.split(",")
 @app.post("/api/save-line")
 async def save_line(payload: dict = Body(...)):
     """Save today's Line of the Day pick to data/lines/{date}.csv and a companion JSON."""
-    today = _et_date().isoformat()
+    today = _today_str()
     csv_path  = f"data/lines/{today}.csv"
     json_path = f"data/lines/{today}_pick.json"
 
@@ -6797,20 +6813,14 @@ async def save_line(payload: dict = Body(...)):
     under_pick = payload.get("under_pick")
     primary    = pick or over_pick or under_pick
     if not primary:
-        return JSONResponse({"error": "No pick provided"}, status_code=400)
+        return _err("No pick provided", 400)
 
     # Always ensure CSV exists (for history / resolve compatibility)
     existing_csv, _ = _github_get_file(csv_path)
     if not existing_csv:
-        row = ",".join(_csv_escape(str(primary.get(k, ""))) for k in [
-            "player_name", "player_id", "team", "opponent", "stat_type",
-            "line", "direction", "projection", "edge", "confidence", "narrative",
-        ])
-        row = f"{today}," + row + ",pending,"
-        csv_content = LINE_CSV_HEADER + "\n" + row + "\n"
-        result = _github_write_file(csv_path, csv_content, f"line pick for {today}")
+        result = _github_write_file(csv_path, _line_pick_to_csv(primary, today), f"line pick for {today}")
         if result.get("error"):
-            return JSONResponse({"error": result["error"]}, status_code=500)
+            return _err(result["error"], 500)
 
     # Dedup on JSON — if JSON already exists, CSV is now guaranteed to exist too
     existing_json, _ = _github_get_file(json_path)
@@ -6833,7 +6843,7 @@ async def save_line(payload: dict = Body(...)):
 async def refresh_line_odds():
     """Hourly cron + Line tab Refresh button: sync current bookmaker line from Odds API.
     No-op if slate is locked — odds freeze at the same boundary as picks (5 min before tip)."""
-    today_str = _et_date().isoformat()
+    today_str = _today_str()
 
     # Respect slate lock — stop updating once ANY game on the slate is locked.
     # Uses any() pattern (not min()) to match /api/slate and /api/save-predictions:
@@ -6960,26 +6970,26 @@ async def get_line_live_stat(
 @app.post("/api/resolve-line")
 async def resolve_line(payload: dict = Body(...)):
     """Mark today's line pick as hit or miss given the actual stat."""
-    date_str = payload.get("date", _et_date().isoformat())
+    date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
     if bad: return bad
     actual   = payload.get("actual_stat")
     if actual is None:
-        return JSONResponse({"error": "actual_stat required"}, status_code=400)
+        return _err("actual_stat required", 400)
 
     path = f"data/lines/{date_str}.csv"
     existing, sha = _github_get_file(path)
     if not existing:
-        return JSONResponse({"error": "No line pick found for this date"}, status_code=404)
+        return _err("No line pick found for this date", 404)
 
     lines = existing.strip().split("\n")
     if len(lines) < 2:
-        return JSONResponse({"error": "Empty line file"}, status_code=400)
+        return _err("Empty line file", 400)
 
     # Parse the pick row
     rows = _parse_csv(existing, LINE_FIELDS)
     if not rows:
-        return JSONResponse({"error": "Could not parse line file"}, status_code=400)
+        return _err("Could not parse line file", 400)
 
     row = rows[0]
     direction = row.get("direction", "over")
@@ -7116,8 +7126,8 @@ async def auto_resolve_line(request: Request):
     the right ESPN scoreboard, and compute the next-day target from pick_date+1
     (not _et_date()+1, which would skip a day after midnight rollover)."""
     if not _require_cron_secret(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    today = _et_date().isoformat()
+        return _err("Unauthorized", 401)
+    today = _today_str()
 
     # Determine which date's pick file to use — midnight rollover support.
     pick_date = today
@@ -7190,8 +7200,7 @@ async def auto_resolve_line(request: Request):
         # CSV was never created (save_line dedup returned early) — create it now
         primary = _primary_pick(pick_data)
         if primary:
-            row_vals = [pick_date] + [_csv_escape(str(primary.get(k, ""))) for k in LINE_FIELDS[1:]]
-            csv_existing = LINE_CSV_HEADER + "\n" + ",".join(row_vals) + "\n"
+            csv_existing = _line_pick_to_csv(primary, pick_date)
             _github_write_file(csv_path, csv_existing, f"line csv for {pick_date}")
             print(f"[auto-resolve] created missing CSV for {pick_date}")
     if csv_existing:
@@ -7419,7 +7428,7 @@ async def line_history():
                                 # No actual_stat — invert the CSV direction's result
                                 p["result"] = "miss" if csv_primary["result"] == "hit" else "hit"
                             p["actual_stat"] = csv_primary.get("actual_stat", "")
-                        elif date_str < _et_date().isoformat():
+                        elif date_str < _today_str():
                             # Different player, historical date — queue for parallel ESPN lookup
                             espn_queue.append((p, _safe_float(p.get("line", 0)), p.get("direction", "over"), date_str, jkey, jd))
                             added_dirs.add(p.get("direction"))
@@ -7806,7 +7815,7 @@ async def lab_briefing():
     # this is the date the user should upload actuals for.
     # IMPORTANT: exclude today — games may still be in progress and any upload
     # would be yesterday's screenshots misfiled under today's date.
-    today_iso = _et_date().isoformat()
+    today_iso = _today_str()
     pred_dates = sorted(
         [i["name"].replace(".csv","") for i in pred_items if i["name"].endswith(".csv")],
         reverse=True
@@ -7854,20 +7863,20 @@ async def lab_update_config(payload: dict = Body(...)):
     changes     = payload.get("changes", {})
     description = payload.get("change_description", "Lab update")
     if not changes:
-        return JSONResponse({"error": "No changes provided"}, status_code=400)
+        return _err("No changes provided", 400)
     # Block config changes during active slate — picks are frozen until all games finish
     try:
         _uc_games = fetch_games()
         _uc_starts = [g["startTime"] for g in _uc_games if g.get("startTime")]
         if _uc_starts and any(_is_locked(st) for st in _uc_starts):
-            return JSONResponse({"error": "Slate is active — config changes are locked until all games finish"}, status_code=423)
+            return _err("Slate is active — config changes are locked until all games finish", 423)
     except Exception:
         pass  # if games check fails, allow the write
     # Security: reject keys with non-alphanumeric path segments (prevents path traversal)
     import re as _re
     for key in changes:
         if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*([.][a-zA-Z_][a-zA-Z0-9_]*)*$', str(key)):
-            return JSONResponse({"error": f"Invalid key format: {key!r}"}, status_code=400)
+            return _err(f"Invalid key format: {key!r}", 400)
 
     cfg = _load_config()
     old_version = cfg.get("version", 1)
@@ -7897,7 +7906,7 @@ async def lab_update_config(payload: dict = Body(...)):
     changelog = cfg.get("changelog", [])
     changelog.append({
         "version":  new_version,
-        "date":     _et_date().isoformat(),
+        "date":     _today_str(),
         "change":   description,
         "snapshot": snapshot,   # previous values — used by lab/rollback
     })
@@ -7910,7 +7919,7 @@ async def lab_update_config(payload: dict = Body(...)):
     # succeeds retains its changelog entry, others are retried and see the updated config.
     result  = _github_write_file("data/model-config.json", content, f"Lab config v{new_version}: {description}")
     if result.get("error"):
-        return JSONResponse({"error": result["error"]}, status_code=500)
+        return _err(result["error"], 500)
 
     # Clear config cache so new values take effect immediately
     try:
@@ -7940,13 +7949,13 @@ async def lab_rollback(payload: dict = Body(...)):
     """Revert to a previous config version (creates new version with old values)."""
     target = payload.get("target_version")
     if target is None:
-        return JSONResponse({"error": "target_version required"}, status_code=400)
+        return _err("target_version required", 400)
     # Block rollbacks during active slate — same lock guard as update-config
     try:
         _rb_games = fetch_games()
         _rb_starts = [g["startTime"] for g in _rb_games if g.get("startTime")]
         if _rb_starts and any(_is_locked(st) for st in _rb_starts):
-            return JSONResponse({"error": "Slate is active — config changes are locked until all games finish"}, status_code=423)
+            return _err("Slate is active — config changes are locked until all games finish", 423)
     except Exception:
         pass
 
@@ -7954,7 +7963,7 @@ async def lab_rollback(payload: dict = Body(...)):
     changelog = cfg.get("changelog", [])
     current_version = cfg.get("version", 1)
     if int(target) >= current_version:
-        return JSONResponse({"error": "Target must be earlier than current version"}, status_code=400)
+        return _err("Target must be earlier than current version", 400)
 
     # Find the changelog entry FOR the target version — its snapshot holds the
     # pre-change values that were overwritten when that version was applied.
@@ -7981,7 +7990,7 @@ async def lab_rollback(payload: dict = Body(...)):
     cfg["updated_by"] = "lab-rollback"
     changelog.append({
         "version":  new_version,
-        "date":     _et_date().isoformat(),
+        "date":     _today_str(),
         "change":   f"Rollback to v{target}: restored {list(snapshot.keys())}",
         "snapshot": {k: cfg_val for k, cfg_val in snapshot.items()},
     })
@@ -7990,7 +7999,7 @@ async def lab_rollback(payload: dict = Body(...)):
     content = json.dumps(cfg, indent=2)
     result  = _github_write_file("data/model-config.json", content, f"Lab rollback to v{target}")
     if result.get("error"):
-        return JSONResponse({"error": result["error"]}, status_code=500)
+        return _err(result["error"], 500)
 
     try:
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
@@ -8012,7 +8021,7 @@ async def lab_backtest(payload: dict = Body(...)):
     proposed_changes = payload.get("proposed_changes", {})
     description      = payload.get("description", "Backtest")
     if not proposed_changes:
-        return JSONResponse({"error": "proposed_changes required"}, status_code=400)
+        return _err("proposed_changes required", 400)
 
     # Card boost and other non-RS params don't affect predicted_rs — they control
     # lineup selection EV (which players get picked), not projection accuracy.
@@ -8164,7 +8173,7 @@ async def lab_auto_improve(request: Request):
     If timeout occurs, returns error log without auto-applying.
     """
     if not _require_cron_secret(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return _err("Unauthorized", 401)
     if not ANTHROPIC_API_KEY:
         return {"status": "skipped", "reason": "ANTHROPIC_API_KEY not configured"}
 
@@ -8374,7 +8383,7 @@ def _ben_chat_sanitize_assistant_text(text: str) -> str:
 
 def _ben_chat_maybe_reset_for_today_locked() -> None:
     """Reset chat history when ET day changes."""
-    today = _et_date().isoformat()
+    today = _today_str()
 
     last_et = ""
     try:
@@ -8450,13 +8459,13 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
     if rl is not None:
         return rl
     if not ANTHROPIC_API_KEY:
-        return JSONResponse({"error": "ANTHROPIC_API_KEY not configured"}, status_code=500)
+        return _err("ANTHROPIC_API_KEY not configured", 500)
 
     messages = payload.get("messages", [])
     system   = payload.get("system", "")
 
     if not messages:
-        return JSONResponse({"error": "No messages provided"}, status_code=400)
+        return _err("No messages provided", 400)
 
     # Persist the latest user message before sending the Claude payload.
     try:
@@ -8560,7 +8569,7 @@ async def lab_skip_uploads(payload: dict = Body(...)):
     """
     date_str = payload.get("date", "").strip()
     if not date_str:
-        return JSONResponse({"error": "date required"}, status_code=400)
+        return _err("date required", 400)
     bad = _validate_date(date_str)
     if bad: return bad
 
@@ -8600,7 +8609,7 @@ async def save_boosts(payload: dict = Body(...)):
     Body: { date: str (optional), players: [{player_name, boost, team?, rax_cost?}] }
     """
     global _DAILY_BOOST_CACHE, _DAILY_BOOST_DATE, _DAILY_BOOST_TS
-    date_str = payload.get("date", _et_date().isoformat())
+    date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
     if bad: return bad
 
@@ -8637,7 +8646,7 @@ async def save_boosts(payload: dict = Body(...)):
         _github_write_file(path, content, f"pre-game boosts {date_str} ({len(clean_players)} players)")
     except Exception as e:
         print(f"[save-boosts] GitHub write failed: {e}")
-        return JSONResponse({"error": f"Failed to save boosts: {str(e)}"}, status_code=500)
+        return _err(f"Failed to save boosts: {str(e)}", 500)
 
     # Bust caches so next slate request uses real boosts
     _DAILY_BOOST_CACHE = {_normalize_boost_name(p["player_name"]): p["boost"] for p in clean_players}
@@ -8659,7 +8668,7 @@ async def save_ownership(payload: dict = Body(...)):
     Body: { date: str, players: [{player_name|name, team, draft_count, actual_rs,
                                    actual_card_boost, avg_finish, rank}] }
     """
-    date_str = payload.get("date", _et_date().isoformat())
+    date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
     if bad: return bad
 
@@ -8698,7 +8707,7 @@ async def save_ownership(payload: dict = Body(...)):
         _github_write_file(path, content, f"ownership data {date_str} ({saved} players)")
     except Exception as e:
         print(f"[save-ownership] GitHub write failed: {e}")
-        return JSONResponse({"error": f"Failed to save ownership data: {str(e)}"}, status_code=500)
+        return _err(f"Failed to save ownership data: {str(e)}", 500)
 
     return {"saved": saved, "date": date_str}
 
@@ -9198,7 +9207,7 @@ async def parlay_history():
         for ds, raw in pool.map(_fetch_parlay_json, json_dates):
             fetched[ds] = raw
 
-    today_str = _et_date().isoformat()
+    today_str = _today_str()
     results = []
     write_back_queue = []  # (date_str, parlay_dict) for resolved entries that need saving
 
