@@ -625,7 +625,7 @@ _CONFIG_DEFAULTS = {
         "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
         "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
         "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
-        "chalk_boost_cap":2.5,          # was 1.5; Mar 6: winners stacked 3.0x boost players in chalk
+        "chalk_boost_cap":3.0,          # was 2.5; 14-date audit: 36.9% of leaderboard has boost 2.6-3.0x — capping at 2.5 undervalued them
         "chalk_season_min_floor":22.0,  # season avg floor for Starting 5 — proven rotation players (22+ min)
         "chalk_recent_min_floor":20.0,  # recent avg floor — excludes players who've fallen out of rotation
                                         # despite high season avg (e.g. demoted starter, rest-management)
@@ -636,23 +636,32 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
-        "chalk_min_boost_floor": 1.2,   # minimum card boost required for chalk eligibility;
-                                        # excludes high-ownership stars (Westbrook 1.1x, Clingan 1.0x)
-                                        # Mar 15 fix: without this, top chalk slots go to near-zero-boost stars
+        "chalk_min_boost_floor": 1.0,   # minimum card boost required for chalk eligibility;
+                                        # was 1.2; 14-date audit: sweet spot RS 3.5-5.5 w/ boost >= 1.0 captures
+                                        # "known but underdrafted" tier (101-500 drafts, avg boost 1.43, best avg TV)
+                                        # Star anchor (PPG >= 20, boost >= 0.8) handles genuine stars separately
     },
     "moonshot": {
         # v6 (leaderboard-informed): gates widened to match actual winner profiles.
         # Winners are 15-25 min role players with 3x+ boost on dev teams (da Silva,
         # Ellis, Clifford, Santos, Sensabaugh). Old 25-min/3.0 rating gates blocked them.
-        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.5, "min_rating_floor":3.0,
+        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":3.0,
+        # min_card_boost was 1.5; 14-date audit: "Hidden Star" archetype (RS 5+, boost 1.0-1.5) wins 29%
+        # of daily contests. RS-bypass handles RS >= 5.0 but we also want Unicorns (RS 4-5, boost 1.0-1.5).
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":3, "boost_leverage_power":1.2,
+        "max_centers":3, "boost_leverage_power":0.4,
+        # boost_leverage_power was 1.2; 14-date audit revealed double-counting: boost appears in both
+        # leverage (boost^power) AND in (avg_slot + boost). At 1.2, Ghost (RS 4.0, boost 3.0) ranks
+        # above Unicorn (RS 5.5, boost 2.5) despite lower actual TV. At 0.4, Unicorns correctly
+        # rank first (matching 50% daily winner frequency). Mild contrarian tilt preserved.
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
-        # RS-bypass: high-RS proven scorers bypass the boost floor (disabled offline for safety)
-        "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
+        # RS-bypass: high-RS proven scorers bypass the boost floor.
+        # 14-date audit: "Hidden Star" archetype (RS 5+, boost < 2.0) wins 29% of daily contests.
+        # OG Anunoby (RS 7.1, boost 1.1), Josh Hart (RS 7.6, boost 1.1) — dominant RS overcomes low boost.
+        "rs_bypass": {"enabled": True, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
     },
     "matchup": {
         "enabled": True,
@@ -693,14 +702,17 @@ _CONFIG_DEFAULTS = {
         "game_chalk_rating_floor": 3.5,
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
-        # Starting 5 MILP: blend boost toward neutral so RS drives selection (0 = legacy).
-        "chalk_milp_rs_focus": 0.0,
+        # Starting 5 MILP: blend boost toward neutral so RS drives selection.
+        # 14-date audit: with 0.0, boost fully drove chalk selection — low-RS high-boost players
+        # crowded out Unicorns (RS 5+ / boost 2+) who win 50% of contests. At 0.5, RS quality
+        # competes fairly with boost signal in MILP player selection.
+        "chalk_milp_rs_focus": 0.5,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
         "enabled": True,
-        "size": 8,
-        "metric": "max_ev",
+        "size": 15,       # was 8 — too few candidates for MILP (only 3 spare for 5 picks)
+        "metric": "tv",   # was "max_ev" — new "tv" metric uses pure TV formula: rating × (avg_slot + boost)
         "blend_weight": 0.5,
     },
     "line": {
@@ -3743,7 +3755,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
         for r in eligible_union:
             ce, me = r.get("chalk_ev_capped", 0), r.get("moonshot_ev", 0)
-            if core_metric == "rs":
+            if core_metric == "tv":
+                # Pure Total Value formula: RS × (avg_slot + boost). No double-counting,
+                # no exponential leverage — ranks players by actual expected draft value.
+                # 14-date audit: this correctly ranks Unicorn > Ghost > Hidden Star,
+                # matching real winner frequencies (50% / 21% / 29%).
+                r["_core_score"] = r.get("rating", 0) * (avg_slot + r.get("est_mult", 0.3))
+            elif core_metric == "rs":
                 r["_core_score"] = r.get("rating", 0)
             elif core_metric == "max_ev":
                 r["_core_score"] = max(ce, me)

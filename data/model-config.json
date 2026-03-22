@@ -285,7 +285,7 @@
     "gtd_minute_penalty": 0.75,
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
-    "chalk_boost_cap": 2.5,
+    "chalk_boost_cap": 3.0,
     "chalk_season_min_floor": 20.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
@@ -332,7 +332,7 @@
   "core_pool": {
     "enabled": true,
     "size": 15,
-    "metric": "rs",
+    "metric": "tv",
     "blend_weight": 0.5
   },
   "odds_enrichment": {
@@ -380,14 +380,14 @@
   "moonshot": {
     "min_minutes_floor": 20,
     "min_recent_minutes_floor": 20,
-    "min_card_boost": 1.5,
+    "min_card_boost": 1.0,
     "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 1.6,
+    "boost_leverage_power": 0.4,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
