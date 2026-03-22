@@ -1,9 +1,9 @@
 {
-  "version": 56,
-  "updated_at": "2026-03-21T00:00:00Z",
-  "updated_by": "moonshot-pool-fix-contrarian-restore",
+  "version": 57,
+  "updated_at": "2026-03-22T00:00:00Z",
+  "updated_by": "14-date-leaderboard-audit-v57",
   "scoring_thresholds": {
-    "min_pts_projection": 6.0,
+    "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
     "min_pts_per_minute": 0.25,
     "min_pts_per_minute_moonshot": 0.22,
@@ -208,9 +208,9 @@
     "dfs_weights": {
       "pts": 1.5,
       "reb": 0.5,
-      "ast": 0.65,
-      "stl": 8.0,
-      "blk": 0.35,
+      "ast": 1.0,
+      "stl": 3.0,
+      "blk": 1.5,
       "tov": -1.0
     },
     "stat_stuffer": {
@@ -238,13 +238,13 @@
     "archetype_calibration": {
       "enabled": true,
       "archetypes": {
-        "star": 0.92,
+        "star": 0.95,
         "starter": 1.0,
         "wing_role": 1.02,
-        "bench_microwave": 1.08,
-        "big": 0.90,
-        "pure_rebounder": 0.82,
-        "scorer": 1.10
+        "bench_microwave": 1.10,
+        "big": 0.88,
+        "pure_rebounder": 0.78,
+        "scorer": 1.12
       }
     },
     "post_lock_calibration": {
@@ -300,7 +300,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 0.9,
+    "chalk_min_boost_floor": 1.0,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
@@ -311,10 +311,10 @@
     "enabled": true,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
-    "min_boost": 0.6,
+    "min_boost": 0.8,
     "min_rating": 4.0,
-    "require_count": 1,
-    "max_count": 1
+    "require_count": 0,
+    "max_count": 2
   },
   "context_layer": {
     "enabled": true,
@@ -331,7 +331,7 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 15,
+    "size": 12,
     "metric": "tv",
     "blend_weight": 0.5
   },
@@ -353,12 +353,12 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.85,
+    "chalk_milp_rs_focus": 0.40,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
-    "chalk_min_high_boost_count": 2,
-    "chalk_high_boost_threshold": 2.0,
+    "chalk_min_high_boost_count": 3,
+    "chalk_high_boost_threshold": 1.5,
     "chalk_min_big_boost_count": 1,
     "chalk_big_boost_threshold": 2.8
   },
@@ -380,14 +380,14 @@
   "moonshot": {
     "min_minutes_floor": 20,
     "min_recent_minutes_floor": 20,
-    "min_card_boost": 1.0,
-    "min_rating_floor": 3.0,
+    "min_card_boost": 1.2,
+    "min_rating_floor": 3.5,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.4,
+    "boost_leverage_power": 0.65,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -457,6 +457,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 57,
+      "date": "2026-03-22",
+      "change": "14-date leaderboard audit (v57, 187 entries). Data-driven overhaul targeting 3 winner archetypes: Unicorn (50% of daily #1: RS 5+ AND boost 2+), Hidden Star (29%: RS 5+ low boost), Ghost (21%: RS <5 but boost 3.0x). Key changes: (1) chalk_milp_rs_focus 0.85→0.40 — MILP was nearly ignoring boost, now RS and boost both drive Starting 5 selection. (2) boost_leverage_power 0.4→0.65 — moderate boost reward in moonshot (Unicorn > Ghost > Hidden Star ordering verified). (3) star_anchor.require_count 1→0, max_count 1→2 — superstars are a trap (Luka 3x appearances, avg TV 17.5 vs sweet spot avg 18.5); stop forcing them. (4) DFS weights: stl 8.0→3.0 (was 5.3x a point scored — insane), blk 0.35→1.5, ast 0.65→1.0. (5) Boost floors: chalk 0.9→1.0, moonshot 1.0→1.2, moonshot rating 3.0→3.5. (6) Archetype calibration: pure_rebounder 0.82→0.78, scorer 1.10→1.12, star 0.92→0.95. (7) chalk_min_pts_projection 6.0→5.0 (let high-boost role players through). (8) core_pool.size 15→12. (9) chalk_min_high_boost_count 2→3 at threshold 1.5 (was 2.0)."
+    },
     {
       "version": 55,
       "date": "2026-03-20",

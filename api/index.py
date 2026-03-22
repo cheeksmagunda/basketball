@@ -559,7 +559,7 @@ _CONFIG_DEFAULTS = {
         "blowout_ast_penalty":0.90,"blowout_reb_penalty":0.94,
     },
     "real_score": {
-        "dfs_weights":{"pts":2.5,"reb":0.5,"ast":1.0,"stl":2.0,"blk":1.5,"tov":-1.5},
+        "dfs_weights":{"pts":1.5,"reb":0.5,"ast":1.0,"stl":3.0,"blk":1.5,"tov":-1.0},
         "compression_divisor": 4.5,
         "compression_power": 0.78,
         "rs_cap": 20.0,
@@ -577,11 +577,13 @@ _CONFIG_DEFAULTS = {
         "archetype_calibration": {
             "enabled": True,
             "archetypes": {
-                "star": 0.92,
+                "star": 0.95,
                 "starter": 1.0,
                 "wing_role": 1.02,
-                "bench_microwave": 1.08,
-                "big": 1.04,
+                "bench_microwave": 1.10,
+                "big": 0.88,
+                "pure_rebounder": 0.78,
+                "scorer": 1.12,
             },
         },
         "post_lock_calibration": {
@@ -637,30 +639,21 @@ _CONFIG_DEFAULTS = {
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
         "chalk_min_boost_floor": 1.0,   # minimum card boost required for chalk eligibility;
-                                        # was 1.2; 14-date audit: sweet spot RS 3.5-5.5 w/ boost >= 1.0 captures
-                                        # "known but underdrafted" tier (101-500 drafts, avg boost 1.43, best avg TV)
-                                        # Star anchor (PPG >= 20, boost >= 0.8) handles genuine stars separately
+                                        # star anchor (PPG >= 20, boost >= 0.8) handles genuine stars separately
     },
     "moonshot": {
-        # v6 (leaderboard-informed): gates widened to match actual winner profiles.
-        # Winners are 15-25 min role players with 3x+ boost on dev teams (da Silva,
-        # Ellis, Clifford, Santos, Sensabaugh). Old 25-min/3.0 rating gates blocked them.
-        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":3.0,
-        # min_card_boost was 1.5; 14-date audit: "Hidden Star" archetype (RS 5+, boost 1.0-1.5) wins 29%
-        # of daily contests. RS-bypass handles RS >= 5.0 but we also want Unicorns (RS 4-5, boost 1.0-1.5).
+        # v57: 14-date audit alignment. Targets 3 archetypes:
+        # Unicorn (RS 5+, boost 2+), Hidden Star (RS 5+, low boost), Ghost (RS <5, boost 3.0x)
+        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.2, "min_rating_floor":3.5,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":3, "boost_leverage_power":0.4,
-        # boost_leverage_power was 1.2; 14-date audit revealed double-counting: boost appears in both
-        # leverage (boost^power) AND in (avg_slot + boost). At 1.2, Ghost (RS 4.0, boost 3.0) ranks
-        # above Unicorn (RS 5.5, boost 2.5) despite lower actual TV. At 0.4, Unicorns correctly
-        # rank first (matching 50% daily winner frequency). Mild contrarian tilt preserved.
+        "max_centers":3, "boost_leverage_power":0.65,
+        # boost_leverage_power 0.65: balanced — Unicorn > Ghost > Hidden Star ordering verified.
+        # At 0.65, 3.0x boost gives 2.04x leverage (vs 1.55x at 0.4, 3.74x at 1.2).
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
-        # RS-bypass: high-RS proven scorers bypass the boost floor.
-        # 14-date audit: "Hidden Star" archetype (RS 5+, boost < 2.0) wins 29% of daily contests.
-        # OG Anunoby (RS 7.1, boost 1.1), Josh Hart (RS 7.6, boost 1.1) — dominant RS overcomes low boost.
+        # RS-bypass: Hidden Star archetype (RS 5+, boost < 2.0) wins 29% of daily contests.
         "rs_bypass": {"enabled": True, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
     },
     "matchup": {
@@ -703,16 +696,15 @@ _CONFIG_DEFAULTS = {
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
-        # 14-date audit: with 0.0, boost fully drove chalk selection — low-RS high-boost players
-        # crowded out Unicorns (RS 5+ / boost 2+) who win 50% of contests. At 0.85, RS strongly
-        # drives slot assignment — boost is nearly neutralized in MILP, RS is the signal.
-        "chalk_milp_rs_focus": 0.85,
+        # v57: 0.40 lets boost matter (was 0.85 which nearly neutralized boost).
+        # At 0.40, a 3.0x boost player gets milp_boost = 0.6*3.0 + 0.4*1.0 = 2.2.
+        "chalk_milp_rs_focus": 0.40,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
         "enabled": True,
-        "size": 15,       # was 8 — too few candidates for MILP (only 3 spare for 5 picks)
-        "metric": "tv",   # was "max_ev" — new "tv" metric uses pure TV formula: rating × (avg_slot + boost)
+        "size": 12,       # v57: tighter pool (was 15) — better filtering means fewer needed
+        "metric": "tv",   # pure TV formula: rating × (avg_slot + boost)
         "blend_weight": 0.5,
     },
     "line": {
@@ -1987,10 +1979,10 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
-    w = _cfg("real_score.dfs_weights", {"pts":2.5,"reb":0.5,"ast":1.0,"stl":2.0,"blk":1.5,"tov":-1.5})
-    return (pts * w.get("pts", 2.5) + reb * w.get("reb", 0.5) +
-            ast * w.get("ast", 1.0) + stl * w.get("stl", 2.0) +
-            blk * w.get("blk", 1.5) + tov * w.get("tov", -1.5))
+    w = _cfg("real_score.dfs_weights", {"pts":1.5,"reb":0.5,"ast":1.0,"stl":3.0,"blk":1.5,"tov":-1.0})
+    return (pts * w.get("pts", 1.5) + reb * w.get("reb", 0.5) +
+            ast * w.get("ast", 1.0) + stl * w.get("stl", 3.0) +
+            blk * w.get("blk", 1.5) + tov * w.get("tov", -1.0))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3493,8 +3485,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             float(_cfg("matchup.chalk_adj_min", 0.92)),
             min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
         )
-        # MILP additive term only: pull boost toward neutral so projected RS competes with
-        # high-boost role players. UI chalk_ev_capped still uses real capped_boost.
+        # MILP additive term only: blend boost with neutral so both RS and boost drive selection.
+        # v57: rs_focus 0.40 means milp_boost = 0.6*real + 0.4*neutral. UI chalk_ev_capped uses real boost.
         _lu = _cfg("lineup", _CONFIG_DEFAULTS["lineup"])
         _rs_focus = max(0.0, min(1.0, float(_lu.get("chalk_milp_rs_focus", 0.0))))
         _boost_neutral = float(_lu.get("chalk_milp_boost_neutral", 1.0))

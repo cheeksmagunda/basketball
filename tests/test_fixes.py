@@ -1119,7 +1119,7 @@ class TestMoonshotPtsFloor:
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        assert cfg["scoring_thresholds"]["min_pts_projection"] == 6.0
+        assert cfg["scoring_thresholds"]["min_pts_projection"] == 5.0  # v57: 6.0→5.0, let high-boost role players through
         # moonshot floor raised to 6.0 in v44 (was 3.0) — bench players need real production
         assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 5.0, \
             f"moonshot pts floor should be >= 5.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
@@ -2056,14 +2056,14 @@ class TestMoonshotRsBypass:
 
 
 # ─────────────────────────────────────────────────────────
-# TestChalkMilpRsFocusHigh — chalk_milp_rs_focus at 0.85 nearly neutralizes boost
+# TestChalkMilpRsFocusBalanced — chalk_milp_rs_focus balances RS and boost
 # ─────────────────────────────────────────────────────────
 class TestChalkMilpRsFocusHigh:
-    """At chalk_milp_rs_focus=0.85, MILP boost is nearly neutral — RS drives selection."""
+    """At chalk_milp_rs_focus=0.40, MILP uses 60% real boost + 40% neutral."""
 
     def test_rs_focus_calculation(self):
-        """At rs_focus=0.85, effective boost is 15% real + 85% neutral."""
-        rs_focus = 0.85
+        """At rs_focus=0.40, effective boost is 60% real + 40% neutral."""
+        rs_focus = 0.40
         boost_neutral = 1.0
 
         # High-boost player (2.5x)
@@ -2071,11 +2071,13 @@ class TestChalkMilpRsFocusHigh:
         # Low-boost player (0.5x)
         low_boost_eff = (1.0 - rs_focus) * 0.5 + rs_focus * boost_neutral
 
-        # Difference should be small (0.3 gap vs raw 2.0 gap)
+        # At 0.40, boost gap = 60% of raw gap — boost matters meaningfully
         raw_gap = 2.5 - 0.5  # 2.0
         eff_gap = high_boost_eff - low_boost_eff
-        assert eff_gap < raw_gap * 0.2, \
-            f"At rs_focus=0.85, boost gap should be <20% of raw gap; got {eff_gap:.2f} vs {raw_gap}"
+        assert eff_gap > raw_gap * 0.5, \
+            f"At rs_focus=0.40, boost gap should be >50% of raw gap; got {eff_gap:.2f} vs {raw_gap}"
+        assert eff_gap < raw_gap * 0.7, \
+            f"At rs_focus=0.40, boost gap should be <70% of raw gap; got {eff_gap:.2f} vs {raw_gap}"
 
     def test_rs_focus_code_reads_config(self):
         """chalk_milp_rs_focus mechanism must exist in chalk eligibility."""
@@ -2085,10 +2087,10 @@ class TestChalkMilpRsFocusHigh:
         assert "chalk_milp_boost_neutral" in src
 
     def test_config_value(self):
-        """Production config should have high rs_focus."""
+        """Production config should have balanced rs_focus (0.3-0.5)."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert val >= 0.7, f"chalk_milp_rs_focus should be high (>=0.7) for RS-first; got {val}"
+        assert 0.3 <= val <= 0.5, f"chalk_milp_rs_focus should be 0.3-0.5 for balanced; got {val}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -2127,11 +2129,11 @@ class TestStatStufferBonus:
 class TestCalibratedDfsWeights:
     """DFS weights in model-config should reflect calibrated values."""
 
-    def test_steals_weight_elevated(self):
-        """Steals should be heavily weighted per calibration (was 2.0, now ~8.0)."""
+    def test_steals_weight_moderate(self):
+        """Steals weight should be moderate (v57: 8.0→3.0, 1 steal ≈ 2 pts scored)."""
         cfg = json.load(open("data/model-config.json"))
         stl_w = cfg.get("real_score", {}).get("dfs_weights", {}).get("stl", 0)
-        assert stl_w >= 5.0, f"Calibrated stl weight should be >=5.0; got {stl_w}"
+        assert 2.0 <= stl_w <= 5.0, f"Calibrated stl weight should be 2.0-5.0; got {stl_w}"
 
     def test_pts_weight_reduced(self):
         """Points weight should be reduced from 2.5 to ~1.5."""
@@ -2501,12 +2503,12 @@ class TestRsCalibrationWeights:
             "were under-projected because assists contributed almost nothing to DFS score"
         )
 
-    def test_pts_and_stl_weights_unchanged(self):
-        """pts and stl weights should not have been changed — they were calibrated correctly."""
+    def test_pts_weight_stable_and_stl_reduced(self):
+        """pts weight should be stable at 1.5; stl reduced from 8.0 to 3.0 (v57 audit)."""
         cfg = json.load(open("data/model-config.json"))
         w = cfg["real_score"]["dfs_weights"]
         assert w["pts"] == 1.5, f"pts weight changed unexpectedly: {w['pts']}"
-        assert w["stl"] == 8.0, f"stl weight changed unexpectedly: {w['stl']}"
+        assert w["stl"] == 3.0, f"stl weight should be 3.0 (v57); got {w['stl']}"
 
     def test_pure_rebounder_archetype_detected(self):
         """_infer_player_archetype must return 'pure_rebounder' for high-reb/low-scoring player."""
