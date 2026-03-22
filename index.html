@@ -970,6 +970,76 @@
       background: var(--surface2); border: 1px solid var(--border);
       border-radius: var(--radius-sm); padding: 4px 10px;
     }
+    /* ── PARLAY LEG COMPACT ── */
+    .parlay-leg-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .parlay-leg-who {
+      display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden;
+    }
+    .parlay-leg-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.1rem; font-weight: 900; letter-spacing: 0.02em;
+      color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .parlay-leg-matchup {
+      font-size: 0.62rem; color: var(--color-text-muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .parlay-leg-play {
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .parlay-leg-pill {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.72rem; font-weight: 900; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: var(--radius-pill);
+    }
+    .parlay-leg-pill.over {
+      background: rgba(212,166,64,0.14); color: var(--line);
+      border: 1px solid rgba(212,166,64,0.35);
+    }
+    .parlay-leg-pill.under {
+      background: rgba(20,184,166,0.14); color: var(--lab);
+      border: 1px solid rgba(20,184,166,0.35);
+    }
+    .parlay-leg-line {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.1rem; font-weight: 900; color: var(--text);
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .parlay-leg-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 6px; gap: 8px;
+    }
+    .parlay-leg-chips {
+      display: flex; gap: 4px; align-items: center;
+    }
+    .parlay-leg-chip {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.68rem; font-weight: 700; padding: 2px 7px;
+      border-radius: 6px; background: rgba(255,255,255,0.06);
+      color: var(--color-text-muted); font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .parlay-leg-chip.accent {
+      background: rgba(20,184,166,0.12); color: var(--parlay);
+    }
+    .parlay-leg-l5 {
+      display: flex; gap: 3px; align-items: center;
+    }
+    .parlay-leg-tile {
+      width: 22px; height: 20px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.6rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .parlay-leg-tile.hit {
+      background: rgba(0,230,118,0.15); color: var(--color-success);
+    }
+    .parlay-leg-tile.miss {
+      background: rgba(255,138,128,0.12); color: var(--color-danger);
+    }
+
     .line-history-row {
       display: flex; align-items: center; justify-content: space-between;
       padding: 8px 0; border-bottom: 1px solid var(--border);
@@ -2636,23 +2706,30 @@ let PARLAY_HIST_DATA = null;
 
 function _parlaySkeletons() {
   const skel = `
-    <div class="line-pick-card" style="pointer-events:none;margin-bottom:0;border-bottom:1px solid rgba(255,255,255,0.06)">
-      <div class="line-pick-header">
-        <div class="line-pick-header-left">
-          <div class="skeleton" style="padding:0;margin:0;border:none;background:transparent;display:block">
-            <div class="skel-block skel-line wide" style="height:16px;width:130px;margin-bottom:5px"></div>
-            <div class="skel-block skel-line narrow" style="height:11px;width:160px"></div>
-          </div>
+    <div class="line-pick-card" style="pointer-events:none;margin-bottom:0;padding:10px 14px;border-radius:0;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <div class="parlay-leg-header">
+        <div class="parlay-leg-who">
+          <div class="skel-block skel-line" style="height:14px;width:110px"></div>
+          <div class="skel-block skel-line narrow" style="height:10px;width:70px"></div>
+        </div>
+        <div class="parlay-leg-play">
+          <div class="skel-block" style="width:42px;height:18px;border-radius:var(--radius-pill)"></div>
+          <div class="skel-block skel-line" style="height:14px;width:50px"></div>
         </div>
       </div>
-      <div class="line-direction-row">
-        <div class="skel-block" style="width:48px;height:22px;border-radius:var(--radius-pill)"></div>
-        <div class="skel-block skel-line" style="height:13px;width:55px"></div>
-      </div>
-      <div class="line-pick-data-row">
-        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Hit %</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
-        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Edge</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
-        <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Line</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
+      <div class="parlay-leg-meta" style="margin-top:6px">
+        <div class="parlay-leg-chips">
+          <div class="skel-block" style="width:52px;height:20px;border-radius:6px"></div>
+          <div class="skel-block" style="width:46px;height:20px;border-radius:6px"></div>
+          <div class="skel-block" style="width:44px;height:20px;border-radius:6px"></div>
+        </div>
+        <div style="display:flex;gap:3px">
+          <div class="skel-block" style="width:22px;height:20px;border-radius:4px"></div>
+          <div class="skel-block" style="width:22px;height:20px;border-radius:4px"></div>
+          <div class="skel-block" style="width:22px;height:20px;border-radius:4px"></div>
+          <div class="skel-block" style="width:22px;height:20px;border-radius:4px"></div>
+          <div class="skel-block" style="width:22px;height:20px;border-radius:4px"></div>
+        </div>
       </div>
     </div>`;
   return `<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 20px rgba(0,0,0,0.28)">${skel}${skel}${skel}</div>`;
@@ -2667,45 +2744,39 @@ function renderParlayLeg(leg, index, total) {
   const tcolorBorder = 'rgba(' + _tr + ',' + _tg + ',' + _tb + ',0.30)';
   const isLast = index === total - 1;
 
-  // Data columns: Proj, Avg, L5, Minutes
   const projVal = leg.projection != null ? leg.projection : '\u2014';
   const seasonAvg = leg.season_avg != null ? leg.season_avg : '\u2014';
   const avgMin = leg.avg_min != null ? leg.avg_min : '\u2014';
-  const l5 = (leg.recent_values && leg.recent_values.length)
+
+  // L5 as color-coded mini tiles
+  const l5Tiles = (leg.recent_values && leg.recent_values.length)
     ? leg.recent_values.map(function(v) {
         const hit = dir === 'over' ? v >= (leg.line || 0) : v <= (leg.line || 0);
-        return '<span style="color:' + (hit ? 'var(--color-success)' : 'var(--color-danger)') + '">' + v + '</span>';
-      }).join('<span style="color:var(--color-text-muted)"> \u00b7 </span>')
-    : '\u2014';
+        return '<span class="parlay-leg-tile ' + (hit ? 'hit' : 'miss') + '">' + v + '</span>';
+      }).join('')
+    : '';
 
-  return '<div class="line-pick-card" style="--tcolor:' + tcolor + ';--tcolor-border:' + tcolorBorder + ';border-radius:0;margin-bottom:0;border-color:rgba(255,255,255,0.08);border-top-color:rgba(255,255,255,0.08);' + (isLast ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);') + '">' +
-    '<div class="line-pick-header">' +
-      '<div class="line-pick-header-left">' +
-        '<div class="line-pick-name">' + _escapeHtml(leg.player_name) + '</div>' +
-        '<div class="line-pick-team">' + _escapeHtml(leg.team) + ' vs ' + _escapeHtml(leg.opponent) + '</div>' +
+  return '<div class="line-pick-card" style="--tcolor:' + tcolor +
+    ';--tcolor-border:' + tcolorBorder +
+    ';border-radius:0;margin-bottom:0;padding:10px 14px;border-color:rgba(255,255,255,0.08);border-top-color:rgba(255,255,255,0.08);' +
+    (isLast ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);') + '">' +
+    '<div class="parlay-leg-header">' +
+      '<div class="parlay-leg-who">' +
+        '<span class="parlay-leg-name">' + _escapeHtml(leg.player_name) + '</span>' +
+        '<span class="parlay-leg-matchup">' + _escapeHtml(leg.team) + ' vs ' + _escapeHtml(leg.opponent) + '</span>' +
+      '</div>' +
+      '<div class="parlay-leg-play">' +
+        '<span class="parlay-leg-pill ' + dir + '">' + dir.toUpperCase() + '</span>' +
+        '<span class="parlay-leg-line">' + (leg.line ?? '\u2014') + ' ' + statLabel.toLowerCase() + '</span>' +
       '</div>' +
     '</div>' +
-    '<div class="line-direction-row">' +
-      '<span class="line-direction-pill ' + dir + '" style="' + (dir === 'over' ? 'background:rgba(212,166,64,0.14);border-color:rgba(212,166,64,0.35);color:var(--line)' : 'background:rgba(20,184,166,0.14);border-color:rgba(20,184,166,0.35);color:var(--lab)') + '">' + dir.toUpperCase() + '</span>' +
-      '<div class="line-stat-val">' + (leg.line ?? '\u2014') + ' ' + statLabel.toLowerCase() + '</div>' +
-    '</div>' +
-    '<div class="line-pick-data-row">' +
-      '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Proj</span>' +
-        '<span class="line-pick-micro-val" style="color:var(--parlay)">' + projVal + '</span>' +
+    '<div class="parlay-leg-meta">' +
+      '<div class="parlay-leg-chips">' +
+        '<span class="parlay-leg-chip accent">PROJ ' + projVal + '</span>' +
+        '<span class="parlay-leg-chip">AVG ' + seasonAvg + '</span>' +
+        '<span class="parlay-leg-chip">MIN ' + avgMin + '</span>' +
       '</div>' +
-      '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Avg</span>' +
-        '<span class="line-pick-micro-val">' + seasonAvg + '</span>' +
-      '</div>' +
-      '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Min</span>' +
-        '<span class="line-pick-micro-val">' + avgMin + '</span>' +
-      '</div>' +
-    '</div>' +
-    '<div style="margin-top:8px">' +
-      '<span class="line-pick-micro-lbl">L5</span>' +
-      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:0.82rem;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums">' + l5 + '</div>' +
+      (l5Tiles ? '<div class="parlay-leg-l5">' + l5Tiles + '</div>' : '') +
     '</div>' +
   '</div>';
 }
