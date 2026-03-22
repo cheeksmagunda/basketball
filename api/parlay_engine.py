@@ -253,6 +253,8 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
             if book_line <= 0:
                 _f["no_odds"] += 1
                 continue
+            # Snap to nearest 0.5 — real books always use whole or .5 lines
+            book_line = round(book_line * 2) / 2
 
             # Minimum line floor — filter trivially easy props (e.g. 0.5 ast, 1.5 reb)
             line_floor = _LINE_FLOORS.get(stat, 0)
