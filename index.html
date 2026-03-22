@@ -170,8 +170,8 @@
       transform: translateX(-50%);
       width: calc(100% - 48px);
       max-width: 440px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(var(--chalk-rgb),0.06);
+      border: 1px solid rgba(var(--chalk-rgb),0.10);
       border-radius: 999px;
       padding: 3px 4px;
       backdrop-filter: blur(20px) saturate(180%);
@@ -190,13 +190,13 @@
       padding: 6px 6px 5px;
       border: none; background: transparent; border-radius: 999px;
       cursor: pointer; transition: background 0.22s ease, color 0.22s ease;
-      color: rgba(255,255,255,0.50);
+      color: rgba(var(--chalk-rgb),0.50);
       position: relative;
     }
-    .bnav-icon-btn:hover { color: rgba(255,255,255,0.70); }
+    .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.70); }
     .bnav-icon-btn.active {
-      background: rgba(255,255,255,0.10);
-      color: #fff;
+      background: rgba(var(--chalk-rgb),0.12);
+      color: var(--chalk);
     }
     .bnav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
     .bnav-icon svg { width: 18px; height: 18px; display: block; }
@@ -211,8 +211,8 @@
       display: flex;
       gap: 2px;
       margin-bottom: 16px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(var(--chalk-rgb),0.04);
+      border: 1px solid rgba(var(--chalk-rgb),0.08);
       border-radius: var(--radius-md);
       padding: 3px;
       backdrop-filter: blur(20px) saturate(180%);
@@ -227,33 +227,33 @@
       border-radius: calc(var(--radius-md) - 3px);
       border: none;
       background: transparent;
-      color: rgba(255,255,255,0.50);
+      color: rgba(var(--chalk-rgb),0.50);
       cursor: pointer; transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
       white-space: nowrap;
       -webkit-tap-highlight-color: transparent;
     }
     .predict-sub-btn.active {
-      background: rgba(255,255,255,0.10);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 60%);
+      background: rgba(var(--chalk-rgb),0.12);
+      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.10) 0%, transparent 60%);
       color: var(--chalk);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(255,255,255,0.10) inset;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
     .predict-sub-btn.line-dir-btn {
       border-radius: calc(var(--radius-md) - 3px);
     }
     .predict-sub-btn.line-dir-btn.active[data-dir="over"] {
-      background: rgba(255,255,255,0.10);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, rgba(212,166,64,0.04) 60%, transparent 100%);
+      background: rgba(212,166,64,0.10);
+      background-image: linear-gradient(160deg, rgba(212,166,64,0.08) 0%, rgba(212,166,64,0.04) 60%, transparent 100%);
       color: var(--line);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(255,255,255,0.10) inset;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(212,166,64,0.12) inset;
     }
     .predict-sub-btn.line-dir-btn.active[data-dir="under"] {
-      background: rgba(255,255,255,0.10);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, rgba(20,184,166,0.04) 60%, transparent 100%);
+      background: rgba(var(--chalk-rgb),0.12);
+      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.08) 0%, rgba(var(--chalk-rgb),0.04) 60%, transparent 100%);
       color: var(--lab);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(255,255,255,0.10) inset;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
-    .predict-sub-btn:hover:not(.active) { color: rgba(255,255,255,0.70); }
+    .predict-sub-btn:hover:not(.active) { color: rgba(var(--chalk-rgb),0.70); }
 
     /* Predict sub-pages */
     .predict-sub-page { display: none; }
@@ -275,8 +275,8 @@
     /* ── CHALK/UPSIDE TABS ── */
     .mode-tabs {
       display: flex; gap: 2px; margin-bottom: 16px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(var(--chalk-rgb),0.04);
+      border: 1px solid rgba(var(--chalk-rgb),0.08);
       border-radius: var(--radius-md);
       padding: 3px;
       backdrop-filter: blur(20px) saturate(180%);
@@ -290,22 +290,22 @@
       border-radius: calc(var(--radius-md) - 3px);
       border: none;
       background: transparent;
-      color: rgba(255,255,255,0.50);
+      color: rgba(var(--chalk-rgb),0.50);
       cursor: pointer; transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
       -webkit-tap-highlight-color: transparent;
     }
-    .mode-tab:hover:not(.active) { color: rgba(255,255,255,0.70); }
+    .mode-tab:hover:not(.active) { color: rgba(var(--chalk-rgb),0.70); }
     .mode-tab.active[data-t="chalk"] {
-      background: rgba(255,255,255,0.10);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 60%);
+      background: rgba(var(--chalk-rgb),0.12);
+      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.10) 0%, transparent 60%);
       color: var(--chalk);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(255,255,255,0.10) inset;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
     .mode-tab.active[data-t="upside"] {
-      background: rgba(255,255,255,0.10);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 60%);
+      background: rgba(var(--chalk-rgb),0.12);
+      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.10) 0%, transparent 60%);
       color: var(--upside);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(255,255,255,0.10) inset;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
 
     /* ── PLAYER CARD ── */
