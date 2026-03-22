@@ -5747,6 +5747,15 @@ async def refresh(request: Request):
     try:
         _bust_slate_cache()
     except Exception: pass
+    # Bust today's GitHub parlay cache so next request regenerates with latest engine
+    try:
+        _parlay_path = f"data/parlays/{_et_date().isoformat()}.json"
+        _existing_parlay, _ = _github_get_file(_parlay_path)
+        if _existing_parlay:
+            _github_write_file(_parlay_path, json.dumps({"_busted": True}), "bust parlay cache")
+            print(f"[refresh] busted parlay cache: {_parlay_path}")
+    except Exception as _pe:
+        print(f"[refresh] parlay cache bust failed (non-fatal): {_pe}")
     # Clear daily boost cache so next load re-reads from GitHub
     global _DAILY_BOOST_CACHE, _DAILY_BOOST_TS
     _DAILY_BOOST_CACHE = {}
@@ -8933,7 +8942,9 @@ async def get_parlay(request: Request):
             gh_parlay_raw, _ = _github_get_file(parlay_path)
             if gh_parlay_raw:
                 gh_parlay = json.loads(gh_parlay_raw)
-                if gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
+                if gh_parlay.get("_busted"):
+                    print(f"[parlay] GitHub cache busted — regenerating")
+                elif gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
                     gh_parlay["locked"] = slate_locked
                     gh_parlay["_from_github"] = True
                     gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
