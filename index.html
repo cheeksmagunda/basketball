@@ -170,22 +170,29 @@
       transform: translateX(-50%);
       width: calc(100% - 48px);
       max-width: 440px;
-      /* Layer 1 — nearly-clear glass body */
-      background: rgba(10,14,22,0.18);
-      border: none;
-      border-top: 1px solid rgba(255,255,255,0.10);
       border-radius: 22px;
       padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
-      /* Minimal blur — clarity in center, refraction at edges does the work */
+      z-index: 1000;
+      /* No background/filter/backdrop on the nav itself — glass layer handles it */
+    }
+    /* Dedicated glass backdrop — receives filter + backdrop-filter so icons stay crisp */
+    .bottom-nav-glass {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      /* Nearly-clear glass body */
+      background: rgba(10,14,22,0.18);
+      border-top: 1px solid rgba(255,255,255,0.10);
+      /* Minimal blur — clarity in center, edge refraction does the work */
       backdrop-filter: blur(4px) saturate(120%);
       -webkit-backdrop-filter: blur(4px) saturate(120%);
       box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
-      z-index: 1000;
-      /* Edge refraction SVG filter */
+      /* Edge refraction — only warps the glass, not icons/text above */
       filter: url(#glass-refraction);
+      pointer-events: none;
     }
-    /* Layer 2 — inner depth: curved-glass inset glow */
-    .bottom-nav::before {
+    /* Inner depth: curved-glass inset glow (on glass layer) */
+    .bottom-nav-glass::before {
       content: '';
       position: absolute;
       inset: 0;
@@ -198,8 +205,8 @@
         inset -2px 0 3px rgba(255,255,255,0.03);
       pointer-events: none;
     }
-    /* Layer 3 — surface reflection (subtle top highlight) */
-    .bottom-nav::after {
+    /* Surface reflection — subtle top highlight (on glass layer) */
+    .bottom-nav-glass::after {
       content: '';
       position: absolute;
       inset: 0;
@@ -211,6 +218,7 @@
       display: flex;
       gap: 2px;
       position: relative;
+      z-index: 1; /* Above glass backdrop layer */
     }
     /* Sliding pill indicator — tinted glass chip */
     .bnav-pill {
@@ -1250,6 +1258,8 @@
 
   <!-- ══ BOTTOM TAB NAVIGATION — Apple Liquid Glass lozenge ══ -->
   <nav class="bottom-nav" id="bottomNav">
+    <!-- Glass backdrop layer — filtered separately so icons/text stay crisp -->
+    <div class="bottom-nav-glass"></div>
     <!-- Primary icon row -->
     <div class="bnav-icon-row">
       <div class="bnav-pill" id="bnavPill"></div>
