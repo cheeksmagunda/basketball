@@ -250,7 +250,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 _f["no_odds"] += 1
                 continue  # No sportsbook line → can't build a parlay leg
 
-            book_line = float(odds_data.get("line", 0))
+            book_line = round(float(odds_data.get("line", 0)) * 2) / 2  # Snap to nearest 0.5
             if book_line <= 0:
                 _f["no_odds"] += 1
                 continue
@@ -460,6 +460,39 @@ def _build_parlay_narrative(legs, correlation_reasons, combined_prob):
     return " ".join(parts)
 
 
+def _build_structured_narrative(legs, correlation_reasons, combined_prob):
+    """Build a narrative for a prescriptive structured parlay (Market Match + Correlated Pair)."""
+    parts = []
+    pct = round(combined_prob * 100, 1)
+    parts.append(f"This structured 3-leg parlay has a blended hit probability of {pct}%.")
+
+    if len(legs) >= 1:
+        mm = legs[0]
+        stat_label = _STAT_LABEL.get(mm["stat_type"], mm["stat_type"].upper())
+        juice = mm.get("american_odds", "")
+        juice_str = f" (juiced to {juice})" if juice else ""
+        parts.append(
+            f"The Market Match: {mm['player_name']} {mm['direction'].upper()} "
+            f"{mm['line']} {stat_label}{juice_str} — "
+            f"{round(mm['blended_confidence'] * 100, 1)}% confidence from a matchup advantage."
+        )
+
+    if len(legs) >= 3:
+        ast_leg = legs[1]
+        pts_leg = legs[2]
+        spread = abs(float(ast_leg.get("game_spread") or 0))
+        parts.append(
+            f"The Correlated Pair: {ast_leg['player_name']} Assists OVER {ast_leg['line']} "
+            f"feeds {pts_leg['player_name']} Points OVER {pts_leg['line']} "
+            f"in a tight {spread:.1f}-pt spread game."
+        )
+
+    if correlation_reasons:
+        parts.append(" ".join(correlation_reasons))
+
+    return " ".join(parts)
+
+
 # ── Main Engine ──────────────────────────────────────────────────────────────
 
 def _is_playmaker(leg):
@@ -563,16 +596,136 @@ def _score_structure(legs, parlay_config=None):
     return round(bonus, 4), reasons
 
 
+def _find_best_correlated_pair(pool, cfg=None):
+    """Find the best PG-assists-over + teammate-points-over correlated pair.
+
+    Returns (assists_leg, points_leg, score) or None if no valid pair exists.
+    """
+    cfg = cfg or {}
+    max_spread = cfg.get("correlated_pair_max_spread", 6.5)
+
+    # Collect all assists-over legs from playmakers in non-blowout games
+    ast_overs = [
+        l for l in pool
+        if l["stat_type"] == "assists"
+        and l["direction"] == "over"
+        and _is_playmaker(l)
+        and (l.get("game_spread") is None or abs(float(l.get("game_spread", 0))) <= max_spread)
+    ]
+    if not ast_overs:
+        return None
+
+    best = None
+    best_score = -1
+    for ast_leg in ast_overs:
+        # Find same-team points-over legs (potential lob targets / teammates)
+        pts_overs = [
+            l for l in pool
+            if l["team"] == ast_leg["team"]
+            and l["stat_type"] == "points"
+            and l["direction"] == "over"
+            and l["player_id"] != ast_leg["player_id"]
+        ]
+        for pts_leg in pts_overs:
+            spread = abs(float(ast_leg.get("game_spread") or 0))
+            # Tighter spread = more game time = better for both legs
+            spread_bonus = 1.15 if spread <= 3.0 else (1.08 if spread <= 5.0 else 1.0)
+            score = ast_leg["blended_confidence"] * pts_leg["blended_confidence"] * spread_bonus
+            if score > best_score:
+                best_score = score
+                best = (ast_leg, pts_leg, score)
+
+    return best
+
+
+def _find_best_market_match(pool, pair, cfg=None):
+    """Find the best market-match leg from a different game than the correlated pair.
+
+    Market match = role player stat OVER with heavy Vegas juice and high model confidence.
+    Returns leg dict or None.
+    """
+    cfg = cfg or {}
+    juice_threshold = cfg.get("market_match_juice_threshold", -140)
+    min_conf = cfg.get("market_match_min_conf", 0.58)
+
+    pair_game_id = pair[0]["gameId"]
+    pair_player_ids = {pair[0]["player_id"], pair[1]["player_id"]}
+
+    # Filter: different game, different players, over direction, meets juice + confidence
+    eligible = []
+    for l in pool:
+        if l["gameId"] == pair_game_id:
+            continue  # Must be from a different game for diversification
+        if l["player_id"] in pair_player_ids:
+            continue
+        if l["direction"] != "over":
+            continue
+        if l["blended_confidence"] < min_conf:
+            continue
+        odds = l.get("american_odds")
+        if odds is not None:
+            try:
+                if float(odds) > juice_threshold:
+                    continue  # Not juiced enough
+            except (TypeError, ValueError):
+                continue
+        eligible.append(l)
+
+    if not eligible:
+        # Relax juice threshold to -120 if nothing at -140
+        relaxed_juice = cfg.get("market_match_juice_relaxed", -120)
+        for l in pool:
+            if l["gameId"] == pair_game_id:
+                continue
+            if l["player_id"] in pair_player_ids:
+                continue
+            if l["direction"] != "over":
+                continue
+            if l["blended_confidence"] < min_conf:
+                continue
+            odds = l.get("american_odds")
+            if odds is not None:
+                try:
+                    if float(odds) > relaxed_juice:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+            eligible.append(l)
+
+    if not eligible:
+        # Final fallback: any over leg from a different game with decent confidence
+        for l in pool:
+            if l["gameId"] == pair_game_id:
+                continue
+            if l["player_id"] in pair_player_ids:
+                continue
+            if l["direction"] != "over":
+                continue
+            if l["blended_confidence"] >= min_conf:
+                eligible.append(l)
+
+    if not eligible:
+        return None
+
+    # Prefer rebounds (matchup-driven), then highest confidence
+    def _mm_sort(l):
+        stat_pref = 0 if l["stat_type"] == "rebounds" else 1
+        return (stat_pref, -l["blended_confidence"])
+
+    eligible.sort(key=_mm_sort)
+    return eligible[0]
+
+
 def run_parlay_engine(projections, games, player_odds_map, gamelogs,
                       rw_statuses=None, parlay_config=None):
     """Find the optimal 3-leg parlay from today's slate.
 
-    Optimizes for the ideal 3-leg structure:
+    Uses a PRESCRIPTIVE builder that targets the ideal 3-leg structure:
       Leg 1 (Market Match): Role player stat OVER with Vegas juice + high model confidence
       Leg 2 (Correlated Pair A): Playmaker assists OVER in tight-spread game
       Leg 3 (Correlated Pair B): That playmaker's teammate's points OVER
 
-    Scoring = combined_probability × correlation_modifier × structure_bonus
+    Falls back to combinatorial scoring if the ideal structure can't be built.
 
     Args:
         projections: Player projections from the pipeline.
@@ -607,12 +760,52 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
     if len(deduped) < 3:
         return None
 
-    # Sort by blended confidence descending; limit to top N for combinatorial sanity
+    # Sort by blended confidence descending; limit to top N
     max_candidates = cfg.get("max_candidates_for_combinations", 25)
     deduped.sort(key=lambda x: x["blended_confidence"], reverse=True)
     pool = deduped[:max_candidates]
 
-    # Step 2: Evaluate all 3-leg combinations with structure-aware scoring
+    # ── Step 2: TRY PRESCRIPTIVE STRUCTURE (Market Match + Correlated Pair) ──
+    structured_result = None
+    pair_data = _find_best_correlated_pair(pool, cfg)
+    if pair_data:
+        ast_leg, pts_leg, pair_score = pair_data
+        market_match = _find_best_market_match(pool, (ast_leg, pts_leg), cfg)
+        if market_match:
+            combo = [market_match, ast_leg, pts_leg]
+            # Verify no VETO from correlation check
+            corr_mult, corr_reasons = _correlation_modifier(combo, cfg)
+            if corr_mult > 0:
+                struct_bonus, struct_reasons = _score_structure(combo, cfg)
+                combined_prob = 1.0
+                for l in combo:
+                    combined_prob *= l["blended_confidence"]
+                score = combined_prob * corr_mult * struct_bonus
+                all_reasons = corr_reasons + struct_reasons
+                narrative = _build_structured_narrative(combo, all_reasons, combined_prob * corr_mult * struct_bonus)
+                structured_result = {
+                    "legs": combo,
+                    "combined_probability": round(combined_prob, 4),
+                    "correlation_multiplier": round(corr_mult * struct_bonus, 4),
+                    "correlation_reasons": all_reasons,
+                    "parlay_score": round(score, 6),
+                    "narrative": narrative,
+                    "candidates_evaluated": len(candidates),
+                    "combinations_scored": 1,
+                    "structured": True,
+                    "filter_funnel": filter_funnel,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                print(f"[parlay] structured build: market={market_match['player_name']} ({market_match['stat_type']}), "
+                      f"pair={ast_leg['player_name']} AST + {pts_leg['player_name']} PTS, "
+                      f"score={score:.4f}")
+
+    if structured_result:
+        return structured_result
+
+    print("[parlay] no ideal structure found — falling back to combinatorial scoring")
+
+    # ── Step 3: FALLBACK — combinatorial scoring (all 3-leg combos) ──
     best_score = -1
     best_combo = None
     best_corr_mult = 1.0
@@ -659,13 +852,11 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
         return None
 
     # Sort legs for display: correlated pair together, market match first
-    # Group by team to keep correlated pairs adjacent
     _team_count = {}
     for l in best_combo:
         _team_count[l["team"]] = _team_count.get(l["team"], 0) + 1
 
     def _leg_sort_key(l):
-        # Legs from teams with multiple entries (correlated pair) go last
         pair_team = _team_count.get(l["team"], 0) > 1
         return (pair_team, -l["blended_confidence"])
 
@@ -687,6 +878,7 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
         "narrative": narrative,
         "candidates_evaluated": len(candidates),
         "combinations_scored": combos_scored,
+        "structured": False,
         "filter_funnel": filter_funnel,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

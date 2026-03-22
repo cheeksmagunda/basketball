@@ -358,6 +358,143 @@ class TestRunParlayEngine:
         assert result["narrative"]
         assert result["candidates_evaluated"] > 0
 
+    def test_structured_builder_with_ideal_data(self):
+        """When PG assists + teammate points + market match exist → structured path."""
+        games = [
+            self._make_game("g1", "LAL", "BOS", spread=3.0, total=228),
+            self._make_game("g2", "MIA", "GSW", spread=2.0, total=220),
+        ]
+        projs = [
+            self._make_proj("p1", "PG Star", "LAL", pts=22, reb=5, ast=8, season_min=34),
+            self._make_proj("p2", "Teammate", "LAL", pts=20, reb=6, ast=3, season_min=32),
+            self._make_proj("p3", "Role Player", "MIA", pts=14, reb=8, ast=2, season_min=28),
+            self._make_proj("p4", "Other", "GSW", pts=25, reb=4, ast=6, season_min=33),
+        ]
+        # p1 is a PG/playmaker (ast=8), p2 is teammate (same team LAL)
+        # p3 is a role player on different game (MIA) → market match
+        projs[0]["position"] = "PG"
+        projs[1]["position"] = "SF"
+        projs[2]["position"] = "PF"
+        projs[3]["position"] = "SG"
+        odds = {
+            ("pg star", "assists"): {"line": 7.5, "odds_over": -145, "odds_under": 125, "books_consensus": 3},
+            ("teammate", "points"): {"line": 18.5, "odds_over": -140, "odds_under": 120, "books_consensus": 3},
+            ("role player", "rebounds"): {"line": 7.5, "odds_over": -150, "odds_under": 130, "books_consensus": 3},
+            ("other", "points"): {"line": 23.5, "odds_over": -135, "odds_under": 115, "books_consensus": 2},
+        }
+        gamelogs = {}
+        for pid, base_pts, base_reb, base_ast in [
+            ("p1", 22, 5, 8), ("p2", 20, 6, 3),
+            ("p3", 14, 8, 2), ("p4", 25, 4, 6),
+        ]:
+            gamelogs[pid] = {
+                "points": [base_pts + (i % 3 - 1) for i in range(15)],
+                "rebounds": [base_reb + (i % 3 - 1) for i in range(15)],
+                "assists": [base_ast + (i % 3 - 1) for i in range(15)],
+                "minutes": [32 + (i % 3 - 1) for i in range(15)],
+            }
+        result = run_parlay_engine(projs, games, odds, gamelogs, {}, {
+            "min_blended_conf": 0.50,
+            "juice_threshold": -120,
+            "min_games_played": 10,
+            "market_match_juice_threshold": -140,
+            "market_match_min_conf": 0.50,
+            "correlated_pair_max_spread": 6.5,
+        })
+        assert result is not None
+        assert len(result["legs"]) == 3
+        assert result.get("structured") is True
+        # Verify leg structure: market match first, then assists, then points
+        legs = result["legs"]
+        assert legs[0]["gameId"] != legs[1]["gameId"]  # Market match from different game
+        assert legs[1]["stat_type"] == "assists"
+        assert legs[1]["direction"] == "over"
+        assert legs[2]["stat_type"] == "points"
+        assert legs[2]["direction"] == "over"
+        assert legs[1]["team"] == legs[2]["team"]  # Correlated pair on same team
+
+    def test_lines_snap_to_half(self):
+        """All lines in parlay output should be on 0.5 increments."""
+        games = [
+            self._make_game("g1", "LAL", "BOS", spread=3.0, total=228),
+            self._make_game("g2", "MIA", "GSW", spread=2.0, total=220),
+        ]
+        projs = [
+            self._make_proj("p1", "Player A", "LAL", pts=22, reb=5, ast=3),
+            self._make_proj("p2", "Player B", "BOS", pts=20, reb=8, ast=5),
+            self._make_proj("p3", "Player C", "MIA", pts=18, reb=6, ast=7),
+            self._make_proj("p4", "Player D", "GSW", pts=25, reb=4, ast=6),
+        ]
+        # Use lines that are NOT on 0.5 — engine should snap them
+        odds = {
+            ("player a", "points"): {"line": 20.3, "odds_over": -140, "odds_under": 120, "books_consensus": 3},
+            ("player b", "rebounds"): {"line": 7.7, "odds_over": -135, "odds_under": 115, "books_consensus": 3},
+            ("player c", "assists"): {"line": 6.9, "odds_over": -130, "odds_under": 110, "books_consensus": 2},
+            ("player d", "points"): {"line": 23.1, "odds_over": -145, "odds_under": 125, "books_consensus": 3},
+        }
+        gamelogs = {}
+        for pid, base_pts, base_reb, base_ast in [
+            ("p1", 22, 5, 3), ("p2", 20, 8, 5),
+            ("p3", 18, 6, 7), ("p4", 25, 4, 6),
+        ]:
+            gamelogs[pid] = {
+                "points": [base_pts + (i % 3 - 1) for i in range(15)],
+                "rebounds": [base_reb + (i % 3 - 1) for i in range(15)],
+                "assists": [base_ast + (i % 3 - 1) for i in range(15)],
+                "minutes": [32 + (i % 3 - 1) for i in range(15)],
+            }
+        result = run_parlay_engine(projs, games, odds, gamelogs, {}, {
+            "min_blended_conf": 0.50,
+            "juice_threshold": -120,
+            "min_games_played": 10,
+        })
+        assert result is not None
+        for leg in result["legs"]:
+            # Every line must be on 0.5: line * 2 should be an integer
+            assert leg["line"] * 2 == int(leg["line"] * 2), \
+                f"Line {leg['line']} for {leg['player_name']} is not on 0.5 increment"
+
+    def test_fallback_to_combinatorial_when_no_pair(self):
+        """When no PG assists + teammate points pair exists, falls back to combinatorial."""
+        games = [
+            self._make_game("g1", "LAL", "BOS", spread=3.0, total=228),
+            self._make_game("g2", "MIA", "GSW", spread=2.0, total=220),
+        ]
+        # All players on different teams, no playmakers → no correlated pair
+        projs = [
+            self._make_proj("p1", "Player A", "LAL", pts=22, reb=5, ast=1),
+            self._make_proj("p2", "Player B", "BOS", pts=20, reb=8, ast=1),
+            self._make_proj("p3", "Player C", "MIA", pts=18, reb=6, ast=1),
+            self._make_proj("p4", "Player D", "GSW", pts=25, reb=4, ast=1),
+        ]
+        for p in projs:
+            p["position"] = "C"  # Centers, not playmakers
+        odds = {
+            ("player a", "points"): {"line": 20.5, "odds_over": -140, "odds_under": 120, "books_consensus": 3},
+            ("player b", "rebounds"): {"line": 7.5, "odds_over": -135, "odds_under": 115, "books_consensus": 3},
+            ("player c", "points"): {"line": 16.5, "odds_over": -130, "odds_under": 110, "books_consensus": 2},
+            ("player d", "points"): {"line": 23.5, "odds_over": -145, "odds_under": 125, "books_consensus": 3},
+        }
+        gamelogs = {}
+        for pid, base_pts, base_reb, base_ast in [
+            ("p1", 22, 5, 1), ("p2", 20, 8, 1),
+            ("p3", 18, 6, 1), ("p4", 25, 4, 1),
+        ]:
+            gamelogs[pid] = {
+                "points": [base_pts + (i % 3 - 1) for i in range(15)],
+                "rebounds": [base_reb + (i % 3 - 1) for i in range(15)],
+                "assists": [base_ast + (i % 3 - 1) for i in range(15)],
+                "minutes": [32 + (i % 3 - 1) for i in range(15)],
+            }
+        result = run_parlay_engine(projs, games, odds, gamelogs, {}, {
+            "min_blended_conf": 0.50,
+            "juice_threshold": -120,
+            "min_games_played": 10,
+        })
+        assert result is not None
+        assert result.get("structured") is False
+        assert len(result["legs"]) == 3
+
     def test_blowout_filter_removes_all(self):
         """All games are blowouts → no valid parlay."""
         games = [self._make_game("g1", "LAL", "BOS", spread=12.0)]
@@ -390,6 +527,14 @@ class TestParlayConfigDefaults:
     def test_parlay_max_minutes_cv(self):
         from api.index import _CONFIG_DEFAULTS
         assert _CONFIG_DEFAULTS["parlay"]["max_minutes_cv"] == 0.30
+
+    def test_parlay_structured_config_keys(self):
+        from api.index import _CONFIG_DEFAULTS
+        p = _CONFIG_DEFAULTS["parlay"]
+        assert p["market_match_juice_threshold"] == -140
+        assert p["market_match_juice_relaxed"] == -120
+        assert p["market_match_min_conf"] == 0.58
+        assert p["correlated_pair_max_spread"] == 6.5
 
 
 class TestParlayRateLimit:
