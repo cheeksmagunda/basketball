@@ -31,32 +31,34 @@
       --surface2: rgba(20, 30, 48, 0.52);
       --border: rgba(255,255,255,0.09);
       --border-bright: rgba(255,255,255,0.18);
-      --chalk: #4f8ef7;
-      --chalk-glow: rgba(79,142,247,0.25);
-      --upside: #f97316;
-      --upside-glow: rgba(249,115,22,0.25);
+      /* ── 3-color accent system: teal (primary) + gold (secondary) + coral (alert) ── */
+      --chalk: #14b8a6;
+      --chalk-glow: rgba(20,184,166,0.25);
+      --chalk-rgb: 20,184,166;
+      --upside: #14b8a6;
+      --upside-glow: rgba(20,184,166,0.25);
       --muted: #64748b;
       --text: #e8edf5;
       --text-dim: #94a3b8;
       --green: #22c55e;
       --red: #f43f5e;
       --r: var(--radius-card);
-      /* Line page accent — gold */
+      /* Line page accent — gold (secondary) */
       --line: #d4a640;
       --line-glow: rgba(212,166,64,0.22);
-      /* Lab page accent — teal */
+      /* Lab/Ben page accent — teal (same as primary) */
       --lab: #14b8a6;
       --lab-glow: rgba(20,184,166,0.22);
-      /* Parlay page accent — electric purple */
-      --parlay: #d946ef;
-      --parlay-glow: rgba(217,70,239,0.22);
+      /* Parlay page accent — teal (unified, no more magenta) */
+      --parlay: #14b8a6;
+      --parlay-glow: rgba(20,184,166,0.22);
       /* Per-tab ambient glow (set by switchTab) */
-      --tab-glow: rgba(79,142,247,0.06);
+      --tab-glow: rgba(20,184,166,0.06);
       /* Log page palette — desaturated, WCAG AA on dark bg */
-      --log-chalk: #7ba4c8;
-      --log-chalk-glow: rgba(123,164,200,0.2);
-      --log-upside: #b89878;
-      --log-upside-glow: rgba(184,152,120,0.2);
+      --log-chalk: #8ec5b8;
+      --log-chalk-glow: rgba(142,197,184,0.2);
+      --log-upside: #8ec5b8;
+      --log-upside-glow: rgba(142,197,184,0.2);
       --log-win: #d4a640;
       --log-win-glow: rgba(212,166,64,0.2);
       --log-opt: #9b80c8;
@@ -74,7 +76,7 @@
       --radius-sm: 8px;
       --radius-xs: 4px;
       --font-size-micro: 0.65rem;
-      --tracking-caps: 0.06em;
+      --tracking-caps: 0.08em;
       --surface-overlay: rgba(255,255,255,0.05);
       --surface-overlay-md: rgba(255,255,255,0.09);
       /* Liquid Glass design tokens — Apple iOS 26 / macOS Tahoe aesthetic */
@@ -88,7 +90,7 @@
       /* Decorative one-offs */
       --color-injury-bg: #3B1C1C;
       --color-line-under: #5eead4;
-      --color-oracle-label: #81D4FA;
+      --color-oracle-label: #5eead4;
       --color-date-chip-bg: #1E2633;
       --color-date-chip-hover: #243040;
     }
@@ -104,16 +106,7 @@
       overflow-x: hidden;
     }
 
-    /* Court texture overlay */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background-image:
-        repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(255,255,255,0.018) 60px),
-        repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(255,255,255,0.018) 60px);
-      pointer-events: none;
-      z-index: 0;
-    }
+    /* Court texture overlay — removed (was creating visible grid artifacts on dark backgrounds) */
 
     /* Ambient glow blob */
     body::after {
@@ -129,7 +122,7 @@
     .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 140px; }
 
     /* Uppercase letter-spacing for readability (buttons, labels, metadata) */
-    [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: 0.06em; }
+    [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: var(--tracking-caps); }
 
     /* ── HEADER ── */
     header {
@@ -150,10 +143,10 @@
       width: 44px; height: 44px; border-radius: var(--radius-md);
       background-color: var(--chalk);
       background-image: linear-gradient(145deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
-      border: 1px solid rgba(255,255,255,0.30);
+      border: 1px solid rgba(255,255,255,0.24);
       display: flex; align-items: center; justify-content: center;
       font-size: 1.3rem;
-      box-shadow: 0 4px 20px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.32) inset;
+      box-shadow: 0 4px 20px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.26) inset;
     }
     .logo-sub {
       font-size: 0.72rem; font-weight: 700; color: var(--muted);
@@ -197,16 +190,24 @@
       gap: 4px;
       padding: 9px 8px 8px;
       border: 1px solid transparent; background: transparent; border-radius: 20px;
-      cursor: pointer; transition: background 0.22s ease, box-shadow 0.22s ease, color 0.22s ease, border-color 0.22s ease;
+      cursor: pointer; transition: color 0.22s ease;
       color: rgba(255,255,255,0.32);
+      position: relative;
     }
     .bnav-icon-btn:hover { color: rgba(255,255,255,0.60); }
     .bnav-icon-btn.active {
-      background-color: rgba(255,255,255,0.14);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.02) 100%);
-      border-color: rgba(255,255,255,0.32);
-      box-shadow: 0 2px 16px rgba(0,0,0,0.40), 0 1px 0 rgba(255,255,255,0.36) inset;
-      color: var(--color-text-primary);
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+      color: var(--chalk);
+    }
+    /* Active dot indicator under icon */
+    .bnav-icon-btn.active::after {
+      content: '';
+      position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--chalk);
+      box-shadow: 0 0 6px var(--chalk-glow);
     }
     .bnav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
     .bnav-icon svg { width: 22px; height: 22px; display: block; }
@@ -241,11 +242,11 @@
       -webkit-tap-highlight-color: transparent;
     }
     .predict-sub-btn.active {
-      background-color: rgba(79,142,247,0.14);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(79,142,247,0.06) 60%, transparent 100%);
-      border-color: rgba(79,142,247,0.35); border-top-color: rgba(255,255,255,0.28);
+      background-color: rgba(20,184,166,0.12);
+      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(20,184,166,0.06) 60%, transparent 100%);
+      border-color: rgba(20,184,166,0.32); border-top-color: rgba(255,255,255,0.28);
       color: var(--chalk);
-      box-shadow: 0 2px 14px rgba(79,142,247,0.22), 0 1px 0 rgba(255,255,255,0.22) inset;
+      box-shadow: 0 2px 14px rgba(20,184,166,0.18), 0 1px 0 rgba(255,255,255,0.22) inset;
     }
     .predict-sub-btn.line-dir-btn {
       border-radius: var(--r);
@@ -301,18 +302,18 @@
       box-shadow: 0 2px 10px rgba(0,0,0,0.20), 0 1px 0 rgba(255,255,255,0.12) inset;
     }
     .mode-tab.active[data-t="chalk"] {
-      background-color: rgba(79,142,247,0.14);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(79,142,247,0.06) 60%, transparent 100%);
-      border-color: rgba(79,142,247,0.35); border-top-color: rgba(255,255,255,0.28);
+      background-color: rgba(20,184,166,0.12);
+      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(20,184,166,0.06) 60%, transparent 100%);
+      border-color: rgba(20,184,166,0.32); border-top-color: rgba(255,255,255,0.28);
       color: var(--chalk);
-      box-shadow: 0 2px 14px rgba(79,142,247,0.22), 0 1px 0 rgba(255,255,255,0.22) inset;
+      box-shadow: 0 2px 14px rgba(20,184,166,0.18), 0 1px 0 rgba(255,255,255,0.22) inset;
     }
     .mode-tab.active[data-t="upside"] {
-      background-color: rgba(249,115,22,0.12);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(249,115,22,0.06) 60%, transparent 100%);
-      border-color: rgba(249,115,22,0.35); border-top-color: rgba(255,255,255,0.28);
+      background-color: rgba(20,184,166,0.12);
+      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(20,184,166,0.06) 60%, transparent 100%);
+      border-color: rgba(20,184,166,0.32); border-top-color: rgba(255,255,255,0.28);
       color: var(--upside);
-      box-shadow: 0 2px 14px rgba(249,115,22,0.18), 0 1px 0 rgba(255,255,255,0.22) inset;
+      box-shadow: 0 2px 14px rgba(20,184,166,0.18), 0 1px 0 rgba(255,255,255,0.22) inset;
     }
 
     /* ── PLAYER CARD ── */
@@ -355,7 +356,7 @@
     .player-card::after {
       content: '';
       position: absolute; inset: 0;
-      background: radial-gradient(ellipse at 0% 50%, var(--tcolor-alpha, rgba(79,142,247,0.04)) 0%, transparent 60%);
+      background: radial-gradient(ellipse at 0% 50%, var(--tcolor-alpha, rgba(20,184,166,0.04)) 0%, transparent 60%);
       pointer-events: none;
     }
 
@@ -394,7 +395,7 @@
     }
     .player-name {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.15rem; font-weight: 800; line-height: 1;
+      font-size: 1.25rem; font-weight: 900; line-height: 1;
       color: var(--color-text-primary); margin-bottom: 6px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
@@ -408,9 +409,9 @@
       border-radius: 20px; padding: 2px 8px;
       color: var(--text-dim); white-space: nowrap;
     }
-    .overperform-hot  { color: #FF8C00; border-color: #FF8C0044; }
-    .overperform-odds { color: var(--line); border-color: #c9a22244; }
-    .overperform-ai   { color: var(--lab);  border-color: #5bcab344; }
+    .overperform-hot  { color: var(--line); border-color: rgba(212,166,64,0.25); }
+    .overperform-odds { color: var(--line); border-color: rgba(212,166,64,0.25); }
+    .overperform-ai   { color: var(--lab);  border-color: rgba(20,184,166,0.25); }
     .stat-grid-row {
       display: flex; gap: 2px;
     }
@@ -420,7 +421,7 @@
     }
     .stat-col-val {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.82rem; font-weight: 800; color: var(--color-text-primary); line-height: 1;
+      font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); line-height: 1;
       font-variant-numeric: tabular-nums;
     }
     .stat-col-avg {
@@ -450,26 +451,26 @@
     }
     .score-num {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 2rem; font-weight: 900; line-height: 1;
+      font-size: 2.2rem; font-weight: 900; line-height: 1;
       color: var(--score-color, var(--chalk));
     }
     .score-label {
-      font-size: 0.6rem; font-weight: 700; color: rgba(147,197,253,0.8);
+      font-size: 0.6rem; font-weight: 700; color: var(--color-text-muted);
       text-transform: uppercase; letter-spacing: 0.1em; display: block; margin-top: 3px;
     }
     .slot-badge {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.7rem; font-weight: 700;
-      color: var(--score-color, var(--chalk));
-      background: rgba(79,142,247,0.1);
-      border: 1px solid rgba(79,142,247,0.2);
+      color: var(--color-text-muted);
+      background: var(--surface-overlay);
+      border: 1px solid var(--border);
       border-radius: var(--radius-xs); padding: 2px 6px;
       display: inline-block; margin-top: 4px;
     }
 
     .mult-badge {
-      background: rgba(255,215,0,0.1); color: var(--color-warning);
-      border: 1px solid rgba(255,215,0,0.25);
+      background: var(--surface-overlay); color: var(--color-text-muted);
+      border: 1px solid var(--border);
       font-size: 0.6rem; padding: 2px 6px; border-radius: var(--radius-xs);
     }
 
@@ -525,26 +526,26 @@
       box-shadow: 0 3px 16px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.10) inset;
       transition: border-color 0.22s, box-shadow 0.22s;
     }
-    select:focus { border-color: rgba(79,142,247,0.60); border-top-color: rgba(255,255,255,0.30); box-shadow: 0 3px 20px rgba(0,0,0,0.32), 0 0 0 2px rgba(79,142,247,0.15), 0 1px 0 rgba(255,255,255,0.12) inset; }
+    select:focus { border-color: rgba(20,184,166,0.55); border-top-color: rgba(255,255,255,0.30); box-shadow: 0 3px 20px rgba(0,0,0,0.32), 0 0 0 2px rgba(20,184,166,0.12), 0 1px 0 rgba(255,255,255,0.12) inset; }
 
     /* ── BUTTONS ── */
     .analyze-btn {
       width: 100%;
       background-color: var(--chalk);
       background-image: linear-gradient(160deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 40%, transparent 100%);
-      color: #fff;
+      color: var(--bg);
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.95rem; font-weight: 900;
       letter-spacing: 0.08em; text-transform: uppercase;
       padding: 13px;
       border-radius: var(--radius-md);
-      border: 1px solid rgba(255,255,255,0.28); cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.20); cursor: pointer;
       transition: all 0.22s;
-      box-shadow: 0 4px 20px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.30) inset;
+      box-shadow: 0 4px 20px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.24) inset;
       margin-bottom: 16px;
       display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .analyze-btn:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); box-shadow: 0 8px 28px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.34) inset; }
+    .analyze-btn:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); box-shadow: 0 8px 28px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.28) inset; }
     .analyze-btn:disabled { opacity: 0.35; filter: grayscale(0.5); transform: none; box-shadow: none; cursor: not-allowed; }
     .analyze-btn .spinner {
       width: 16px; height: 16px;
@@ -627,7 +628,7 @@
       color: var(--text); cursor: pointer; font-weight: 600;
       box-shadow: 0 1px 8px rgba(0,0,0,0.20), 0 1px 0 rgba(255,255,255,0.14) inset;
     }
-    .retry-inline-btn:hover { background-color: var(--chalk); color: var(--bg); border-color: var(--chalk); }
+    .retry-inline-btn:hover { background-color: var(--chalk); color: var(--bg); border-color: rgba(20,184,166,0.4); }
 
     .hidden { display: none !important; }
 
@@ -656,10 +657,10 @@
     }
     .date-chip:hover { border-color: rgba(255,255,255,0.22); border-top-color: rgba(255,255,255,0.30); background-color: rgba(28, 38, 60, 0.70); }
     .date-chip.active {
-      background-color: rgba(79,142,247,0.14);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(79,142,247,0.04) 60%, transparent 100%);
-      border-color: rgba(79,142,247,0.40); border-top-color: rgba(255,255,255,0.28);
-      box-shadow: 0 2px 14px rgba(79,142,247,0.20), 0 1px 0 rgba(255,255,255,0.16) inset;
+      background-color: rgba(20,184,166,0.12);
+      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(20,184,166,0.04) 60%, transparent 100%);
+      border-color: rgba(20,184,166,0.35); border-top-color: rgba(255,255,255,0.28);
+      box-shadow: 0 2px 14px rgba(20,184,166,0.18), 0 1px 0 rgba(255,255,255,0.16) inset;
     }
     .date-chip-day {
       font-family: 'Barlow Condensed', sans-serif;
@@ -677,15 +678,15 @@
       background: var(--log-win); opacity: 0.8;
     }
     .date-chip-dot.hidden-dot { opacity: 0; }
-    .date-chip-dot.historical-dot { background: var(--chalk); }
+    .date-chip-dot.historical-dot { background: var(--color-text-muted); }
 
     /* Log game grid */
     .log-game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
     .log-slate-card {
       grid-column: 1 / -1;
-      background-color: rgba(79,142,247,0.07);
+      background-color: rgba(20,184,166,0.06);
       background-image: linear-gradient(160deg, rgba(255,255,255,0.10) 0%, transparent 55%);
-      border: 1px solid rgba(79,142,247,0.22);
+      border: 1px solid rgba(20,184,166,0.20);
       border-top-color: rgba(255,255,255,0.18);
       border-radius: var(--r); padding: 16px 20px;
       cursor: pointer; transition: all 0.22s;
@@ -694,7 +695,7 @@
       -webkit-backdrop-filter: blur(20px) saturate(150%);
       box-shadow: 0 3px 18px rgba(0,0,0,0.26), 0 1px 0 rgba(255,255,255,0.10) inset;
     }
-    .log-slate-card:hover { border-color: rgba(79,142,247,0.40); border-top-color: rgba(255,255,255,0.24); background-color: rgba(79,142,247,0.11); box-shadow: 0 6px 24px rgba(79,142,247,0.16), 0 1px 0 rgba(255,255,255,0.14) inset; }
+    .log-slate-card:hover { border-color: rgba(20,184,166,0.35); border-top-color: rgba(255,255,255,0.24); background-color: rgba(20,184,166,0.10); box-shadow: 0 6px 24px rgba(20,184,166,0.14), 0 1px 0 rgba(255,255,255,0.14) inset; }
     .log-slate-card-label {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 1rem; font-weight: 900; letter-spacing: 0.05em;
@@ -740,13 +741,13 @@
     .player-card.log-card .rank-badge { color: var(--tcolor, var(--log-chalk)); }
     .player-card.log-card .score-num { color: var(--log-score-color, var(--log-chalk)); }
     .player-card.log-card .slot-badge {
-      color: var(--log-score-color, var(--log-chalk));
-      background: rgba(123,164,200,0.08);
-      border-color: rgba(123,164,200,0.2);
+      color: var(--color-text-muted);
+      background: var(--surface-overlay);
+      border-color: var(--border);
     }
     .player-card.log-card .mult-badge {
-      background: rgba(123,164,200,0.08); color: var(--log-chalk);
-      border-color: rgba(123,164,200,0.2);
+      background: var(--surface-overlay); color: var(--color-text-muted);
+      border-color: var(--border);
     }
 
 
@@ -1095,7 +1096,7 @@
       box-shadow:
         0 0 0 1px rgba(255,255,255,0.06),
         0 8px 40px rgba(0,0,0,0.8),
-        0 0 60px rgba(79,142,247,0.08),
+        0 0 60px rgba(20,184,166,0.08),
         inset 4px 4px 14px rgba(255,255,255,0.055),
         inset -4px -4px 14px rgba(0,0,0,0.6);
       position: relative;
@@ -1138,7 +1139,7 @@
       position: absolute; inset: 0;
       background: radial-gradient(ellipse at 50% 80%, #0a1628 0%, #060a10 100%);
       clip-path: polygon(50% 2%, 100% 100%, 0% 100%);
-      border: 1px solid rgba(79,142,247,0.25);
+      border: 1px solid rgba(20,184,166,0.20);
     }
     .magic8-text {
       position: relative; z-index: 1;
@@ -1154,7 +1155,7 @@
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
       text-transform: uppercase; color: var(--color-oracle-label);
-      text-shadow: 0 0 12px rgba(129,212,250,0.4), 0 0 24px rgba(129,212,250,0.15);
+      text-shadow: 0 0 12px rgba(94,234,212,0.4), 0 0 24px rgba(94,234,212,0.15);
       animation: textPulse 2s ease-in-out infinite;
     }
 
@@ -1257,9 +1258,8 @@
         Analyze Draft
       </button>
 
-      <div id="gameAnalysisEmpty" style="text-align:center;padding:64px 20px 40px">
-        <div style="font-size:3rem;opacity:0.15;margin-bottom:14px">🔮</div>
-        <div style="font-size:0.78rem;color:var(--muted);letter-spacing:0.04em">Select a game above to generate analysis</div>
+      <div id="gameAnalysisEmpty">
+        <div id="gameQuickPicks" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px"></div>
       </div>
 
       <div id="theLineupHeader" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;color:var(--chalk);margin-bottom:14px;text-align:center;">
@@ -1362,7 +1362,7 @@
         <div class="empty-state"><span class="icon" aria-hidden="true">🎰</span><p id="parlayEmptyMsg">No parlay available yet.</p>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap">
           <button type="button" class="secondary-btn" style="font-size:0.72rem" onclick="fetchParlay()" aria-label="Retry loading parlay">Retry</button>
-          <button type="button" id="parlayForceBtn" class="secondary-btn" style="font-size:0.72rem;background:rgba(217,70,239,0.12);border-color:rgba(217,70,239,0.35);color:var(--parlay)" onclick="forceRegenerateParlay()" aria-label="Generate parlay from projections">Generate Parlay</button>
+          <button type="button" id="parlayForceBtn" class="secondary-btn" style="font-size:0.72rem;background:rgba(20,184,166,0.10);border-color:rgba(20,184,166,0.30);color:var(--parlay)" onclick="forceRegenerateParlay()" aria-label="Generate parlay from projections">Generate Parlay</button>
         </div></div>
       </div>
       <div id="parlayLoading" style="display:none" role="status" aria-label="Loading parlay"></div>
@@ -1710,7 +1710,7 @@ function switchTab(tab) {
 
   movePill(tab);
   setPillAccent(tab);
-  const tabGlows = { predictions: 'rgba(79,142,247,0.07)', line: 'rgba(212,166,64,0.06)', parlay: 'rgba(217,70,239,0.06)', lab: 'rgba(20,184,166,0.06)', log: 'rgba(123,164,200,0.05)' };
+  const tabGlows = { predictions: 'rgba(20,184,166,0.06)', line: 'rgba(212,166,64,0.06)', parlay: 'rgba(20,184,166,0.06)', lab: 'rgba(20,184,166,0.06)', log: 'rgba(20,184,166,0.05)' };
   document.documentElement.style.setProperty('--tab-glow', tabGlows[tab] || tabGlows.predictions);
   if (tab === 'log') {
     closeLogDrilldown();  // always return to grid view on tab entry
@@ -1754,11 +1754,11 @@ function movePill(tab) { /* no pill in icon-only nav */ }
 
 // Pill accent color per tab
 const TAB_ACCENT = {
-  predictions: { rgb: '79,142,247' },
+  predictions: { rgb: '20,184,166' },
   line:        { rgb: '212,166,64' },
-  parlay:      { rgb: '217,70,239' },
+  parlay:      { rgb: '20,184,166' },
   lab:         { rgb: '20,184,166' },
-  log:         { rgb: '123,164,200' },
+  log:         { rgb: '20,184,166' },
 };
 
 function setPillAccent(tab) {
@@ -1864,6 +1864,34 @@ function populateGameSelector(games, opts) {
   });
   sel.onchange = () => { if (btn) btn.disabled = !sel.value; };
   if (btn) btn.disabled = !sel.value;
+  // Also populate quick-pick game cards
+  _populateGameQuickPicks(games, slateLocked);
+}
+
+/** Render tappable game cards in the Game sub-page empty state */
+function _populateGameQuickPicks(games, slateLocked) {
+  const grid = _el('gameQuickPicks');
+  if (!grid || !Array.isArray(games) || !games.length) return;
+  grid.innerHTML = games.map(g => {
+    const gid = g.gameId || g.id || '';
+    const parts = (g.label || '').split(' vs ');
+    const away = parts[0] || '?';
+    const home = parts[1] || '?';
+    const locked = slateLocked || (g.locked === true) || (g.startTime && (new Date(g.startTime).getTime() - Date.now()) <= 5 * 60 * 1000);
+    let timeStr = '';
+    if (g.startTime) {
+      const s = new Date(g.startTime);
+      timeStr = s.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+    const totalStr = g.total ? 'O/U ' + g.total : '';
+    const meta = [timeStr, totalStr].filter(Boolean).join(' · ');
+    return `<div onclick="document.getElementById('gameSel').value='${gid}';document.getElementById('gameSel').dispatchEvent(new Event('change'));runAnalysis()"
+      style="background:var(--surface);border:1px solid var(--border);border-top-color:rgba(255,255,255,0.14);border-radius:var(--radius-card);padding:14px;cursor:pointer;transition:all 0.18s;backdrop-filter:blur(16px) saturate(150%);box-shadow:0 2px 12px rgba(0,0,0,0.22), 0 1px 0 rgba(255,255,255,0.08) inset"
+      onmouseover="this.style.borderColor='rgba(20,184,166,0.3)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.09)'">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:0.92rem;font-weight:800;color:var(--text)">${_escapeHtml(away)} <span style="color:var(--muted);font-weight:600">vs</span> ${_escapeHtml(home)}</div>
+      <div style="font-size:0.65rem;color:var(--muted);margin-top:4px">${_escapeHtml(meta)}${locked ? ' 🔒' : ''}</div>
+    </div>`;
+  }).join('');
 }
 
 async function initGameSelector() {
@@ -2195,7 +2223,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
   const statsActualsMap = opts.statsActualsMap || {};
 
   const html = picks.map((p, i) => {
-    const tc = TEAM_COLORS[p.team] || (isLog ? '#7ba4c8' : '#4f8ef7');
+    const tc = TEAM_COLORS[p.team] || (isLog ? '#8ec5b8' : '#14b8a6');
     const tcAlpha = (() => {
       const hex = tc.replace('#','');
       const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
@@ -2300,7 +2328,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
         <div class="score-col" style="--score-color:${scoreColor};">
           <div class="score-num">${p.rating}</div>
           <span class="score-label">RS</span>
-          ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:rgba(147,197,253,0.7);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
+          ${p.chalk_ev ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;color:var(--color-text-muted);margin-top:2px">${p.chalk_ev} EV</div>` : ''}
         </div>`;
     }
 
@@ -2481,7 +2509,7 @@ function _parlaySkeletons() {
         <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Line</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
       </div>
     </div>`;
-  return `<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(217,70,239,0.18);box-shadow:0 4px 20px rgba(0,0,0,0.28)">${skel}${skel}${skel}</div>
+  return `<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 20px rgba(0,0,0,0.28)">${skel}${skel}${skel}</div>
     <div class="line-pick-conclusion-wrap" style="margin-top:12px">
       <div class="skel-block skel-line wide" style="height:12px;margin-bottom:8px"></div>
       <div class="skel-block skel-line narrow" style="height:12px;width:75%"></div>
@@ -2491,7 +2519,7 @@ function _parlaySkeletons() {
 function renderParlayLeg(leg, index, total) {
   const dir = leg.direction || 'over';
   const statLabel = {'points':'PTS','rebounds':'REB','assists':'AST'}[leg.stat_type] || leg.stat_type.toUpperCase();
-  const tcolor = TEAM_COLORS[leg.team] || '#d946ef';
+  const tcolor = TEAM_COLORS[leg.team] || '#14b8a6';
   const _thex = tcolor.replace('#', '');
   const _tr = parseInt(_thex.slice(0,2), 16), _tg = parseInt(_thex.slice(2,4), 16), _tb = parseInt(_thex.slice(4,6), 16);
   const tcolorBorder = 'rgba(' + _tr + ',' + _tg + ',' + _tb + ',0.30)';
@@ -2515,7 +2543,7 @@ function renderParlayLeg(leg, index, total) {
       '</div>' +
     '</div>' +
     '<div class="line-direction-row">' +
-      '<span class="line-direction-pill ' + dir + '" style="' + (dir === 'over' ? 'background:rgba(217,70,239,0.14);border-color:rgba(217,70,239,0.35);color:var(--parlay)' : 'background:rgba(20,184,166,0.14);border-color:rgba(20,184,166,0.35);color:var(--lab)') + '">' + dir.toUpperCase() + '</span>' +
+      '<span class="line-direction-pill ' + dir + '" style="' + (dir === 'over' ? 'background:rgba(212,166,64,0.14);border-color:rgba(212,166,64,0.35);color:var(--line)' : 'background:rgba(20,184,166,0.14);border-color:rgba(20,184,166,0.35);color:var(--lab)') + '">' + dir.toUpperCase() + '</span>' +
       '<div class="line-stat-val">' + (leg.line ?? '\u2014') + ' ' + statLabel.toLowerCase() + '</div>' +
     '</div>' +
     '<div class="line-pick-data-row">' +
@@ -2562,14 +2590,14 @@ function renderParlayTicket(data) {
   const narrativeHtml = data.narrative ? '<p class="line-pick-conclusion">' + _escapeHtml(data.narrative) + '</p>' : '';
 
   const lockBadge = data._from_github
-    ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(217,70,239,0.15);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">LOCKED</span>'
+    ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(20,184,166,0.12);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">LOCKED</span>'
     : data.projection_only
       ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(255,255,255,0.07);color:var(--color-text-muted);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">MODEL ONLY</span>'
       : '';
 
   wrap.innerHTML =
-    '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(217,70,239,0.18);box-shadow:0 4px 24px rgba(217,70,239,0.10), 0 2px 12px rgba(0,0,0,0.28)">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(217,70,239,0.06);border-bottom:1px solid rgba(217,70,239,0.12)">' +
+    '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 24px rgba(20,184,166,0.08), 0 2px 12px rgba(0,0,0,0.28)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(20,184,166,0.05);border-bottom:1px solid rgba(20,184,166,0.10)">' +
         '<div style="display:flex;align-items:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket' + lockBadge + '</div>' +
         '<div style="display:flex;gap:12px;align-items:center">' +
           '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Combined</div><div style="font-weight:800;font-size:0.78rem;color:var(--parlay)">' + comboPct + '%</div></div>' +
@@ -2729,7 +2757,7 @@ function renderParlayHistory(hist) {
 
     rowsHtml += '<div class="line-history-row" style="cursor:pointer" data-parlay-idx="' + i + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
       '<div style="display:flex;align-items:center;gap:7px;min-width:0">' +
-        '<span class="line-hist-dir-pill" style="background:rgba(217,70,239,0.12);color:var(--parlay);border:1px solid rgba(217,70,239,0.25);font-size:0.55rem">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
+        '<span class="line-hist-dir-pill" style="background:rgba(20,184,166,0.10);color:var(--parlay);border:1px solid rgba(20,184,166,0.20);font-size:0.55rem">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
         '<div style="min-width:0">' +
           '<div class="line-history-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">' + legSummary + '</div>' +
         '</div>' +
@@ -2762,7 +2790,7 @@ function openParlayModal(parlay) {
   '</div>';
 
   // Ticket with result overlays
-  html += '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(217,70,239,0.18);margin-bottom:12px">';
+  html += '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);margin-bottom:12px">';
   for (let i = 0; i < legs.length; i++) {
     const leg = legs[i];
     html += renderParlayLeg(leg, i, legs.length);

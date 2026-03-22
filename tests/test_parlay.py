@@ -441,7 +441,8 @@ class TestParlayFrontend:
     def test_parlay_accent_in_tab_accent(self):
         html = open("index.html").read()
         assert "parlay:" in html
-        assert "217,70,239" in html
+        # Parlay uses teal accent (unified color system)
+        assert "20,184,166" in html
 
     def test_parlay_css_variable(self):
         html = open("index.html").read()
@@ -461,7 +462,8 @@ class TestParlayFrontend:
 
     def test_parlay_tab_glow(self):
         html = open("index.html").read()
-        assert "parlay: 'rgba(217,70,239" in html
+        # Parlay tab glow uses teal (unified color system)
+        assert "parlay: 'rgba(20,184,166" in html
 
     def test_render_parlay_leg_function(self):
         html = open("index.html").read()
