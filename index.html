@@ -2474,11 +2474,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
 
   const html = picks.map((p, i) => {
     const tc = TEAM_COLORS[p.team] || (isLog ? '#8ec5b8' : '#14b8a6');
-    const tcAlpha = (() => {
-      const hex = tc.replace('#','');
-      const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
-      return `rgba(${r},${g},${b},0.06)`;
-    })();
+    const tcAlpha = _hexToRgba(tc, 0.06);
 
     const actRS = isLog ? actualsMap[p.name] : undefined;
     const hasActuals = actRS !== undefined;
