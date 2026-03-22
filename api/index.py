@@ -786,6 +786,10 @@ _CONFIG_DEFAULTS = {
         "positive_correlation_boost": 1.08,
         "shootout_correlation_boost": 1.05,
         "min_line_floors": {"points": 10.5, "rebounds": 3.5, "assists": 2.5},
+        "market_match_juice_threshold": -140,
+        "market_match_juice_relaxed": -120,
+        "market_match_min_conf": 0.58,
+        "correlated_pair_max_spread": 6.5,
     },
     "pass2": {
         "vegas_total_threshold": 3.0,
@@ -8961,7 +8965,7 @@ def _run_parlay_engine_sync(today):
                 proj_val = float(p.get(stat_key) or 0)
                 if proj_val > 0:
                     player_odds_map[(name_lower, stat)] = {
-                        "line": round(proj_val - 0.5, 1),
+                        "line": math.floor(proj_val * 2) / 2,  # Snap to nearest 0.5 below projection
                         "odds_over": None, "odds_under": None, "books_consensus": 0,
                     }
         print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections")
