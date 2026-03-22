@@ -13,10 +13,11 @@
 import math
 import itertools
 from datetime import datetime, timezone
+from api.shared import STAT_ABBR
 
 # ── Statistical helpers ──────────────────────────────────────────────────────
 
-_STAT_LABEL = {"points": "PTS", "rebounds": "REB", "assists": "AST"}
+_STAT_LABEL = STAT_ABBR
 
 def _american_to_implied(american_odds):
     """Convert American odds (e.g. -140, +120) to implied probability [0, 1]."""

@@ -129,7 +129,7 @@ def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Opt
     r = requests.get(url, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
-    }, timeout=10)
+    }, timeout=_T_DEFAULT)
     if r.status_code == 200:
         data = r.json()
         content = base64.b64decode(data["content"]).decode("utf-8")
@@ -147,7 +147,7 @@ def _github_list_dir(path: str, ref_override: Optional[str] = None) -> list:
     r = requests.get(url, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
-    }, timeout=10)
+    }, timeout=_T_DEFAULT)
     if r.status_code == 200:
         return r.json()
     return []
@@ -173,7 +173,7 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
             r = requests.put(url, json=payload, headers={
                 "Authorization": f"Bearer {GITHUB_TOKEN}",
                 "Accept": "application/vnd.github.v3+json",
-            }, timeout=15)
+            }, timeout=_T_GITHUB)
 
             if r.status_code in (200, 201):
                 return {"ok": True, "path": path}
@@ -212,7 +212,7 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
         # Get the current commit SHA for the target branch
         ref_r = requests.get(
             f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{branch}",
-            headers=h, timeout=10,
+            headers=h, timeout=_T_DEFAULT,
         )
         if ref_r.status_code != 200:
             raise ValueError(f"ref lookup failed: {ref_r.status_code}")
@@ -220,7 +220,7 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
         # Get the tree SHA of the base commit
         commit_r = requests.get(
             f"https://api.github.com/repos/{GITHUB_REPO}/git/commits/{base_sha}",
-            headers=h, timeout=10,
+            headers=h, timeout=_T_DEFAULT,
         )
         if commit_r.status_code != 200:
             raise ValueError(f"commit lookup failed: {commit_r.status_code}")
@@ -238,7 +238,7 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
         tree_r = requests.post(
             f"https://api.github.com/repos/{GITHUB_REPO}/git/trees",
             json={"base_tree": base_tree_sha, "tree": tree_entries},
-            headers=h, timeout=15,
+            headers=h, timeout=_T_GITHUB,
         )
         if tree_r.status_code not in (200, 201):
             raise ValueError(f"tree create failed: {tree_r.status_code}")
@@ -247,7 +247,7 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
         commit_create_r = requests.post(
             f"https://api.github.com/repos/{GITHUB_REPO}/git/commits",
             json={"message": message, "tree": new_tree_sha, "parents": [base_sha]},
-            headers=h, timeout=15,
+            headers=h, timeout=_T_GITHUB,
         )
         if commit_create_r.status_code not in (200, 201):
             raise ValueError(f"commit create failed: {commit_create_r.status_code}")
@@ -256,7 +256,7 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
         ref_update_r = requests.patch(
             f"https://api.github.com/repos/{GITHUB_REPO}/git/refs/heads/{branch}",
             json={"sha": new_commit_sha},
-            headers=h, timeout=10,
+            headers=h, timeout=_T_DEFAULT,
         )
         if ref_update_r.status_code != 200:
             raise ValueError(f"ref update failed: {ref_update_r.status_code}")
@@ -285,7 +285,7 @@ def _github_delete_file(path, sha, message="auto-delete"):
     r = requests.delete(url, json=payload, headers={
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
-    }, timeout=15)
+    }, timeout=_T_GITHUB)
     return r.status_code in (200, 204)
 
 
@@ -395,11 +395,11 @@ def _github_slate_bust_active() -> bool:
 def _clear_local_slate_tmp_caches():
     """Remove today's slate + lock JSON from this instance's /tmp (hashed paths)."""
     try:
-        _lp("slate_v5_locked").unlink(missing_ok=True)
+        _lp(_CK_SLATE_LOCKED).unlink(missing_ok=True)
     except Exception:
         pass
     try:
-        _cp("slate_v5").unlink(missing_ok=True)
+        _cp(_CK_SLATE).unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -442,7 +442,7 @@ def _bust_slate_cache():
     merge and deploy the fix, then trigger /api/refresh or wait for next slate load."""
     today = _et_date().isoformat()
     # Clear /tmp caches
-    for key in ["slate_v5"]:
+    for key in [_CK_SLATE]:
         try:
             _cp(key).unlink()
         except Exception:
@@ -499,6 +499,59 @@ LOCK_DIR.mkdir(exist_ok=True)
 
 CONFIG_CACHE_DIR = Path("/tmp/nba_config_v1")
 CONFIG_CACHE_DIR.mkdir(exist_ok=True)
+
+# ── Extracted constants (DRY audit) ──────────────────────────────────────────
+# Cache key constants — single source of truth for all tmp/lock cache lookups.
+_CK_SLATE = "slate_v5"
+_CK_SLATE_LOCKED = "slate_v5_locked"
+_CK_LINE = "line_v1"
+_CK_LINE_HISTORY = "line_history_v1"
+_CK_LOG_DATES = "log_dates_v1"
+_CK_PARLAY = "parlay_v1"
+_CK_PARLAY_HISTORY = "parlay_history_v1"
+def _ck_picks(gid): return f"picks_{gid}"
+def _ck_game_proj(gid): return f"game_proj_{gid}"
+def _ck_picks_locked(gid): return f"picks_locked_{gid}"
+
+# Request timeout constants (seconds) for requests.get/post calls.
+_T_DEFAULT = 10
+_T_GITHUB = 15
+_T_HEAVY = 30
+_T_CLAUDE = 45
+_T_EXECUTOR = 60
+_T_LINE_ENGINE = 120
+
+# Cache TTL constants (seconds).
+_TTL_CONFIG = 300       # 5 min — model-config.json reload interval
+_TTL_GAMES = 300        # 5 min — ESPN game data freshness
+_TTL_LOG = 600          # 10 min — log dates / parlay history
+_TTL_LOCKED = 60        # 1 min — game final check during locked slate
+_TTL_PRE_SLATE = 180    # 3 min — pre-slate polling
+_TTL_L5 = 1800          # 30 min — player last-5 game stats
+_TTL_HOUR = 3600        # 1 hour — infrequently changing data
+
+# ThreadPoolExecutor worker counts.
+_W_LIGHT = 2            # light parallelism (2-way fetch)
+_W_STANDARD = 8         # standard game/slate/picks processing
+_W_L5 = 10              # L5 enrichment (I/O-bound nba_api calls)
+
+# GitHub data path builder — replaces 34+ hardcoded "data/..." strings.
+_DATA_PREFIXES = {
+    "slate": "data/slate", "predictions": "data/predictions",
+    "locks": "data/locks", "boosts": "data/boosts",
+    "parlays": "data/parlays", "ownership": "data/ownership",
+    "actuals": "data/actuals", "audit": "data/audit",
+    "lines": "data/lines",
+}
+def _data_path(kind, date, ext="json", suffix=""):
+    """Build GitHub data path.
+    _data_path('slate', '2026-03-22', suffix='_slate') -> 'data/slate/2026-03-22_slate.json'
+    _data_path('predictions', '2026-03-22', ext='csv')  -> 'data/predictions/2026-03-22.csv'
+    """
+    return f"{_DATA_PREFIXES[kind]}/{date}{suffix}.{ext}"
+
+# Shared slot multipliers (imported from api.shared for single source of truth)
+from api.shared import SLOT_MULTIPLIERS as _SLOT_MULTS_SHARED
 
 # Hardcoded draft-lineup blacklist (Starting 5, Moonshot, THE LINE UP only).
 # This is an application-layer override and is intentionally NOT part of
@@ -694,7 +747,7 @@ _CONFIG_DEFAULTS = {
         "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
         "game_chalk_rating_floor": 3.5,
         "avg_slot_multiplier": 1.6,
-        "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
+        "slot_multipliers": _SLOT_MULTS_SHARED,
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
         # v57: 0.40 lets boost matter (was 0.85 which nearly neutralized boost).
         # At 0.40, a 3.0x boost player gets milp_boost = 0.6*3.0 + 0.4*1.0 = 2.2.
@@ -744,7 +797,7 @@ def _load_config():
     if cache_file.exists():
         try:
             age = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
-            if age < 300:
+            if age < _TTL_CONFIG:
                 return json.loads(cache_file.read_text())
         except Exception as _ce:
             print(f"[WARN] Config cache read failed: {_ce}")
@@ -1005,7 +1058,7 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
 
 def _espn_get(url):
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=_T_DEFAULT)
         if not r.ok: return {}
         return r.json()
     except (requests.RequestException, ValueError): return {}
@@ -1235,7 +1288,7 @@ def fetch_games(date=None):
     c = _cg(cache_key)
     if c:
         cached_at = _GAMES_CACHE_TS.get(cache_key, 0)
-        if time.time() - cached_at < 300:  # 5 min TTL
+        if time.time() - cached_at < _TTL_GAMES:  # 5 min TTL
             return c
     b2b_teams = _fetch_b2b_teams()
     date_str = today_et.strftime("%Y%m%d")
@@ -1799,7 +1852,7 @@ def _load_daily_boosts(date_str=None):
     if date_str is None:
         date_str = _et_date().isoformat()
     if (_DAILY_BOOST_CACHE and _DAILY_BOOST_DATE == date_str
-            and (now - _DAILY_BOOST_TS) < 300):
+            and (now - _DAILY_BOOST_TS) < _TTL_CONFIG):
         return _DAILY_BOOST_CACHE
     # Try GitHub
     try:
@@ -1847,7 +1900,7 @@ def _load_ownership_boosts():
     global _OWNERSHIP_BOOST_CACHE, _OWNERSHIP_BOOST_TS
     import time
     now = time.time()
-    if _OWNERSHIP_BOOST_CACHE and (now - _OWNERSHIP_BOOST_TS) < 600:
+    if _OWNERSHIP_BOOST_CACHE and (now - _OWNERSHIP_BOOST_TS) < _TTL_LOG:
         return _OWNERSHIP_BOOST_CACHE
 
     # Collect all observations per player: {nkey: {date_str: (boost_val, original_name)}}
@@ -2302,18 +2355,19 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
 
     rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
-    comp_div = rs_cfg.get("compression_divisor", 5.5)
-    comp_pow = rs_cfg.get("compression_power", 0.72)
+    _rs_defaults = _CONFIG_DEFAULTS["real_score"]
+    comp_div = rs_cfg.get("compression_divisor", _rs_defaults["compression_divisor"])
+    comp_pow = rs_cfg.get("compression_power", _rs_defaults["compression_power"])
     raw_linear = s_base / comp_div
     heuristic_rs = raw_linear ** comp_pow
     # Asymmetric cap: high ceiling (20.0) to allow RS 6-8 projections for upside players,
     # but floor stays accurate because compression_power still dampens low values.
-    rs_cap = rs_cfg.get("rs_cap", 20.0)
+    rs_cap = rs_cfg.get("rs_cap", _rs_defaults["rs_cap"])
     heuristic_rs = min(heuristic_rs, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
     # LightGBM outputs native RS units. 35% AI / 65% heuristic.
-    ai_weight = rs_cfg.get("ai_blend_weight", 0.35)
+    ai_weight = rs_cfg.get("ai_blend_weight", _rs_defaults["ai_blend_weight"])
     if ai_pred is not None:
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
     else:
@@ -2321,16 +2375,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     # Optional per-bucket RS calibration to reduce star inflation and
     # lift under-projected low-PPG role players.
-    bucket_cfg = rs_cfg.get("bucket_calibration", {})
+    _bc_defaults = _rs_defaults.get("bucket_calibration", {})
+    bucket_cfg = rs_cfg.get("bucket_calibration", _bc_defaults)
     if bucket_cfg.get("enabled", False):
-        high_thr = float(bucket_cfg.get("high_pts_threshold", 16.0))
-        mid_thr = float(bucket_cfg.get("mid_pts_threshold", 8.0))
+        high_thr = float(bucket_cfg.get("high_pts_threshold", _bc_defaults.get("high_pts_threshold", 18.462)))
+        mid_thr = float(bucket_cfg.get("mid_pts_threshold", _bc_defaults.get("mid_pts_threshold", 6.324)))
         if pts >= high_thr:
-            raw_score *= float(bucket_cfg.get("high_mult", 1.0))
+            raw_score *= float(bucket_cfg.get("high_mult", _bc_defaults.get("high_mult", 1.0)))
         elif pts >= mid_thr:
-            raw_score *= float(bucket_cfg.get("mid_mult", 1.0))
+            raw_score *= float(bucket_cfg.get("mid_mult", _bc_defaults.get("mid_mult", 1.0)))
         else:
-            raw_score *= float(bucket_cfg.get("low_mult", 1.0))
+            raw_score *= float(bucket_cfg.get("low_mult", _bc_defaults.get("low_mult", 1.0)))
         raw_score = min(raw_score, rs_cap)
 
     arch_cfg = rs_cfg.get("archetype_calibration", {})
@@ -3228,7 +3283,7 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
 # _build_lineups: top-5 chalk (MILP) + moonshot (ranks 6-10 same EV)
 # ─────────────────────────────────────────────────────────────────────────────
 def _run_game(game):
-    cache_key = f"game_proj_{game['gameId']}"
+    cache_key = _ck_game_proj(game['gameId'])
     cached = _cg(cache_key)
     if cached: return cached
 
@@ -3243,7 +3298,7 @@ def _run_game(game):
 
     # Fetch all athlete stats first
     stats_map = {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         futs = {pool.submit(_fetch_athlete, p["id"]): p for p, _, _ in players_in}
         for fut in as_completed(futs):
             p = futs[fut]
@@ -3372,9 +3427,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
     chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
-    boost_cap = proj_cfg.get("chalk_boost_cap", 2.5)
+    _proj_defaults = _CONFIG_DEFAULTS["projection"]
+    boost_cap = proj_cfg.get("chalk_boost_cap", _proj_defaults.get("chalk_boost_cap", 2.5))
 
     moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
+    _moon_defaults = _CONFIG_DEFAULTS["moonshot"]
     use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
 
     # Fetch RotoWire lineup statuses once — shared by chalk AND moonshot
@@ -3557,16 +3614,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
     #   - No center penalty (Poeltl, Queta, Achiuwa all win)
     #   - Light variance damping (moonshot wants upside)
     # ─────────────────────────────────────────────────────────────────────────
-    min_floor        = moon_cfg.get("min_minutes_floor", 15)
-    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", 15)
-    min_boost        = moon_cfg.get("min_card_boost", 1.5)
+    min_floor        = moon_cfg.get("min_minutes_floor", _moon_defaults["min_minutes_floor"])
+    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", _moon_defaults["min_recent_minutes_floor"])
+    min_boost        = moon_cfg.get("min_card_boost", _moon_defaults["min_card_boost"])
 
     # Wildcard thresholds — read once outside the loop
     # Wildcard gate: ultra-high-boost deep bench players bypass season/recent min floors.
-    wildcard_boost        = moon_cfg.get("wildcard_min_boost", 2.5)
-    wildcard_min          = moon_cfg.get("wildcard_min_minutes", 10.0)
-    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", 5.0)
-    variance_penalty_coef = moon_cfg.get("variance_penalty", 0.15)
+    wildcard_boost        = moon_cfg.get("wildcard_min_boost", _moon_defaults["wildcard_min_boost"])
+    wildcard_min          = moon_cfg.get("wildcard_min_minutes", _moon_defaults["wildcard_min_minutes"])
+    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", _moon_defaults["wildcard_min_season_pts"])
+    variance_penalty_coef = moon_cfg.get("variance_penalty", _moon_defaults["variance_penalty"])
     # Matchup intel from Claude Layer 1.5 (pre-fetched, passed in)
     _matchup_intel = matchup_intel or {}
 
@@ -3598,9 +3655,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         #   Role spike:   recent minutes >> season (role change/injury)
         is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
         is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
-        role_spike_ratio  = moon_cfg.get("role_spike_ratio", 1.4)
-        role_spike_recent = moon_cfg.get("role_spike_recent_floor", 20.0)
-        role_spike_season = moon_cfg.get("role_spike_season_floor", 10.0)
+        role_spike_ratio  = moon_cfg.get("role_spike_ratio", _moon_defaults["role_spike_ratio"])
+        role_spike_recent = moon_cfg.get("role_spike_recent_floor", _moon_defaults["role_spike_recent_floor"])
+        role_spike_season = moon_cfg.get("role_spike_season_floor", _moon_defaults["role_spike_season_floor"])
         is_role_spike = (
             recent_min >= role_spike_recent
             and season_min >= role_spike_season
@@ -3651,7 +3708,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         # Exception: confirmed rotation players with high boost pass a lower floor.
         # This captures cascade-elevated backups (e.g. Garza when Porzingis is OUT)
         # and confirmed role players with very high boosts (e.g. Taylor Hendricks +3.0x).
-        min_rating_floor = moon_cfg.get("min_rating_floor", 3.0)
+        min_rating_floor = moon_cfg.get("min_rating_floor", _moon_defaults["min_rating_floor"])
         if p["rating"] < min_rating_floor:
             roto_confirmed_min_rating = float(moon_cfg.get("roto_confirmed_min_rating", 2.2))
             roto_confirmed_min_boost = float(moon_cfg.get("roto_confirmed_min_boost", 2.5))
@@ -3671,13 +3728,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         opp_abbr = p.get("opp", "")
         matchup_factor = _compute_matchup_factor(p, opp_abbr, def_stats or {})
         matchup_factor = max(
-            float(_cfg("matchup.moonshot_adj_min", 0.90)),
-            min(float(_cfg("matchup.moonshot_adj_max", 1.15)), matchup_factor)
+            float(_cfg("matchup.moonshot_adj_min", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_min"])),
+            min(float(_cfg("matchup.moonshot_adj_max", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_max"])), matchup_factor)
         )
 
         # Boost leverage — the core moonshot signal. High-boost players get
         # exponentially more weight so the MILP strongly favors them.
-        boost_power = moon_cfg.get("boost_leverage_power", 1.6)
+        boost_power = moon_cfg.get("boost_leverage_power", _moon_defaults["boost_leverage_power"])
         boost_leverage = max(est_mult, 0.2) ** boost_power
 
         adj_ceiling = round(p["rating"] * matchup_factor * boost_leverage, 3)
@@ -3724,14 +3781,14 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         # ── Core pool path: one 7–10 player core; both lineups are configurations of it ──
         def _moonshot_ev_for_player(p, _avg_slot, _moon_cfg, _def_stats, _matchup_intel_map):
             _est = p.get("est_mult", 0.3)
-            _boost_power = _moon_cfg.get("boost_leverage_power", 1.6)
+            _boost_power = _moon_cfg.get("boost_leverage_power", _CONFIG_DEFAULTS["moonshot"]["boost_leverage_power"])
             _boost_leverage = max(_est, 0.2) ** _boost_power
             # Simplified: rating × matchup × boost_leverage (no variance, no Claude)
             _opp = p.get("opp", "")
             _matchup = _compute_matchup_factor(p, _opp, _def_stats or {})
             _matchup = max(
-                float(_cfg("matchup.moonshot_adj_min", 0.90)),
-                min(float(_cfg("matchup.moonshot_adj_max", 1.15)), _matchup)
+                float(_cfg("matchup.moonshot_adj_min", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_min"])),
+                min(float(_cfg("matchup.moonshot_adj_max", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_max"])), _matchup)
             )
             _adj = round(p["rating"] * _matchup * _boost_leverage, 3)
             _pts_threshold = float(_moon_cfg.get("scoring_pts_bias_threshold", 10.0))
@@ -4019,7 +4076,8 @@ def _build_game_lineups(projections, game):
 #   - the_lineup:  25–35
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SLOT_NUMS = {"2.0x": 2.0, "1.8x": 1.8, "1.6x": 1.6, "1.4x": 1.4, "1.2x": 1.2}
+from api.shared import SLOT_LABELS as _SLOT_LABELS_SHARED
+_SLOT_NUMS = {label: mult for label, mult in zip(_SLOT_LABELS_SHARED, _SLOT_MULTS_SHARED)}
 _SCORE_BOUNDS = {
     "chalk":      (70.0, 100.0),
     "upside":     (70.0, 100.0),
@@ -4246,7 +4304,7 @@ def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
     # Fast path: if today's locked slate is already in memory, skip ALL external calls.
     today_str = _et_date().isoformat()
-    _lk_pre = _lg("slate_v5_locked")
+    _lk_pre = _lg(_CK_SLATE_LOCKED)
     if _lk_pre and _lk_pre.get("date") == today_str:
         _lk_pre["locked"] = True
         _lk_pre.setdefault("draftable_count", 0)
@@ -4254,7 +4312,7 @@ def _get_slate_impl():
     # Cold-start fast path: check GitHub backup and fetch games in parallel.
     # The backup is written at lock-promotion time so it exists on most cold starts.
     # Running both concurrently saves 1-2s vs sequential on every cold start.
-    with ThreadPoolExecutor(max_workers=2) as _pre_pool:
+    with ThreadPoolExecutor(max_workers=_W_LIGHT) as _pre_pool:
         _gh_pre_fut = _pre_pool.submit(_slate_restore_from_github)
         _games_fut  = _pre_pool.submit(fetch_games)
         _gh_pre = _gh_pre_fut.result()
@@ -4262,7 +4320,7 @@ def _get_slate_impl():
     if _gh_pre and _gh_pre.get("date") == today_str and _gh_pre.get("locked"):
         _gh_pre["locked"] = True
         _gh_pre.setdefault("draftable_count", 0)
-        _ls("slate_v5_locked", _gh_pre)
+        _ls(_CK_SLATE_LOCKED, _gh_pre)
         return _gh_pre
 
     # Midnight rollover guard: if none of today's games have started yet but
@@ -4283,7 +4341,7 @@ def _get_slate_impl():
         _, remaining_yesterday, _, _ = _all_games_final(games)
         if remaining_yesterday > 0:
             yesterday = (_et_date() - timedelta(days=1)).isoformat()
-            lock_cached = _lg("slate_v5_locked", yesterday)
+            lock_cached = _lg(_CK_SLATE_LOCKED, yesterday)
             if lock_cached:
                 lock_cached["locked"] = True
                 lock_cached.setdefault("all_complete", False)
@@ -4294,7 +4352,7 @@ def _get_slate_impl():
                     gh = json.loads(content)
                     gh["locked"] = True
                     gh.setdefault("all_complete", False)
-                    _ls("slate_v5_locked", gh, yesterday)
+                    _ls(_CK_SLATE_LOCKED, gh, yesterday)
                     return gh
             except Exception:
                 pass
@@ -4326,7 +4384,7 @@ def _get_slate_impl():
         # BUT: always re-check ESPN for all_complete so the frontend can detect
         # game completion and transition to the next-day slate. _all_games_final
         # has its own 60s internal cache, so this is cheap on warm instances.
-        lock_cached = _lg("slate_v5_locked")
+        lock_cached = _lg(_CK_SLATE_LOCKED)
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", 0)
@@ -4336,13 +4394,13 @@ def _get_slate_impl():
                 all_final, _rem, _fin, _lrs = _all_games_final(games)
                 if all_final and _fin > 0:
                     lock_cached["all_complete"] = True
-                    _ls("slate_v5_locked", lock_cached)
+                    _ls(_CK_SLATE_LOCKED, lock_cached)
             return lock_cached
 
         # Cache miss (cold start) — check regular /tmp cache and GitHub backup BEFORE
-        # calling ESPN. _cg("slate_v5") survives longer than the lock cache on partial
+        # calling ESPN. _cg(_CK_SLATE) survives longer than the lock cache on partial
         # warm instances; GitHub backup exists on true cold starts after lock-promotion.
-        reg_cached = _cg("slate_v5")
+        reg_cached = _cg(_CK_SLATE)
         gh_backup = None if reg_cached else _slate_restore_from_github()
         # Now call ESPN once to get all_complete status (only reached on cold start).
         all_final, remaining, finals, _lrs = _all_games_final(games)
@@ -4352,7 +4410,7 @@ def _get_slate_impl():
             reg_cached["locked"] = True
             reg_cached["all_complete"] = all_complete
             reg_cached.setdefault("draftable_count", 0)
-            _ls("slate_v5_locked", reg_cached)
+            _ls(_CK_SLATE_LOCKED, reg_cached)
             _slate_backup_to_github(reg_cached)
             return reg_cached
         if gh_backup is None:
@@ -4361,7 +4419,7 @@ def _get_slate_impl():
             gh_backup["locked"] = True
             gh_backup["all_complete"] = all_complete
             gh_backup.setdefault("draftable_count", 0)
-            _ls("slate_v5_locked", gh_backup)
+            _ls(_CK_SLATE_LOCKED, gh_backup)
             return gh_backup
         # All caches empty — forced regeneration after config bust during a locked slate.
         # (e.g. model config changed post-lock, user hit Refresh to get new picks)
@@ -4398,7 +4456,7 @@ def _get_slate_impl():
                 _clear_local_slate_tmp_caches()
         except Exception as _bust_chk_err:
             print(f"[slate] github bust check err: {_bust_chk_err}")
-        lock_cached = _lg("slate_v5_locked")
+        lock_cached = _lg(_CK_SLATE_LOCKED)
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", len(draftable_games))
@@ -4416,12 +4474,12 @@ def _get_slate_impl():
                     threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
             return lock_cached
         # Check regular cache and promote to lock cache
-        cached = _cg("slate_v5")
+        cached = _cg(_CK_SLATE)
         if cached:
             cached["locked"] = True
             cached.setdefault("draftable_count", len(draftable_games))
             if lock_time: cached.setdefault("lock_time", lock_time)
-            _ls("slate_v5_locked", cached)
+            _ls(_CK_SLATE_LOCKED, cached)
             _slate_backup_to_github(cached)
             # Inline slate prediction save at lock-promotion time.
             # Cold-start Lambdas handling the follow-up /api/save-predictions won't
@@ -4450,7 +4508,7 @@ def _get_slate_impl():
         if gh_backup:
             gh_backup["locked"] = True
             gh_backup.setdefault("draftable_count", len(draftable_games))
-            _ls("slate_v5_locked", gh_backup)
+            _ls(_CK_SLATE_LOCKED, gh_backup)
             return gh_backup
         # Lock file missing or busted (tombstoned by _bust_slate_cache) — fall through
         # to the full pipeline for forced regeneration. This handles the case where an
@@ -4458,7 +4516,7 @@ def _get_slate_impl():
         # filter change). The pipeline runs with draftable games still in progress.
 
     # ── Layer 1: /tmp cache (warm Railway instance) ──
-    cached = _cg("slate_v5")
+    cached = _cg(_CK_SLATE)
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
         has_players = cached.get("lineups", {}).get("chalk") or cached.get("lineups", {}).get("upside")
@@ -4477,13 +4535,13 @@ def _get_slate_impl():
             if lock_time:
                 gh_cached.setdefault("lock_time", lock_time)
             # Warm /tmp cache for subsequent requests on this instance
-            _cs("slate_v5", gh_cached)
+            _cs(_CK_SLATE, gh_cached)
             # Also warm per-game /tmp caches from GitHub
             try:
                 gh_games = _games_cache_from_github()
                 if gh_games:
                     for gid, projs in gh_games.items():
-                        _cs(f"game_proj_{gid}", projs)
+                        _cs(_ck_game_proj(gid), projs)
             except Exception:
                 pass
             return gh_cached
@@ -4505,7 +4563,7 @@ def _get_slate_impl():
         # Poll /tmp cache until the other thread finishes (max ~90s).
         for _ in range(45):
             time.sleep(2)
-            _warm = _cg("slate_v5")
+            _warm = _cg(_CK_SLATE)
             if _warm:
                 _warm["locked"] = locked
                 _warm.setdefault("draftable_count", len(draftable_games))
@@ -4516,7 +4574,7 @@ def _get_slate_impl():
     try:
         all_proj = []
         game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in draftable_games}
             for fut in as_completed(futs):
                 try:
@@ -4580,7 +4638,7 @@ def _get_slate_impl():
                   "score_bounds": _score_bounds_for_lineups(lineups),
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
-            _cs("slate_v5", result)
+            _cs(_CK_SLATE, result)
             # GitHub writes are fire-and-forget: store to /tmp first so any concurrent
             # request is served immediately, then persist to GitHub in the background.
             # This removes 2-3s of blocking I/O from the hot path — the user gets
@@ -4608,7 +4666,7 @@ def _get_slate_impl():
                     print(f"[slate-cache] bg backup err: {_e}")
             threading.Thread(target=_slate_persist_bg, daemon=True).start()
         if locked:
-            _ls("slate_v5_locked", result)
+            _ls(_CK_SLATE_LOCKED, result)
         # Sync-clear bust so other Railway instances stop dropping /tmp on every
         # locked request (bg-only clear races multi-instance).
         if chalk or upside:
@@ -4655,7 +4713,7 @@ def _compute_game_picks(game):
     """Compute game-specific projections and cache under both regular and lock keys.
     Returns the result dict, or None if projections unavailable. Skips if already cached."""
     gid = game["gameId"]
-    existing = _lg(f"picks_locked_{gid}") or _cg(f"picks_{gid}")
+    existing = _lg(_ck_picks_locked(gid)) or _cg(_ck_picks(gid))
     if existing:
         return existing
     try:
@@ -4669,8 +4727,8 @@ def _compute_game_picks(game):
             "lineups": lineups_dict,
             "locked": True, "injuries": _get_injuries(game),
         }
-        _cs(f"picks_{gid}", result)
-        _ls(f"picks_locked_{gid}", result)
+        _cs(_ck_picks(gid), result)
+        _ls(_ck_picks_locked(gid), result)
         return result
     except Exception as e:
         print(f"[auto-lock] game {gid} picks err: {e}")
@@ -4716,7 +4774,7 @@ async def get_picks(gameId: str = Query(...)):
 
     start_time = game.get("startTime")
     locked = _is_locked(start_time) if start_time else False
-    lock_key = f"picks_locked_{gameId}"
+    lock_key = _ck_picks_locked(gameId)
 
     if locked:
         lock_cached = _lg(lock_key)
@@ -4724,7 +4782,7 @@ async def get_picks(gameId: str = Query(...)):
             lock_cached["locked"] = True
             return lock_cached
         # Check regular cache and promote to lock cache
-        reg_key = f"picks_{gameId}"
+        reg_key = _ck_picks(gameId)
         reg_cached = _cg(reg_key)
         if reg_cached:
             reg_cached["locked"] = True
@@ -4761,7 +4819,7 @@ async def get_picks(gameId: str = Query(...)):
                 "locked": True, "injuries": []}
 
     # Try /tmp cache first (populated by /api/slate or previous /api/picks)
-    cache_key = f"game_proj_{gameId}"
+    cache_key = _ck_game_proj(gameId)
     projections = _cg(cache_key)
     if not projections:
         # Try GitHub persistent cache (populated by first slate run of the day)
@@ -4785,7 +4843,7 @@ async def get_picks(gameId: str = Query(...)):
               "injuries": injuries,
               "score_bounds": _score_bounds_for_lineups(lineups_dict)}
     # Cache picks so they survive as lock snapshot if slate locks later
-    _cs(f"picks_{gameId}", result)
+    _cs(_ck_picks(gameId), result)
     return result
 
 @app.post("/api/save-predictions")
@@ -4807,7 +4865,7 @@ async def save_predictions():
 
     # Gather slate predictions — try all cache layers before giving up
     rows = []
-    cached_slate = _cg("slate_v5") or _lg("slate_v5_locked")
+    cached_slate = _cg(_CK_SLATE) or _lg(_CK_SLATE_LOCKED)
     if not cached_slate:
         cached_slate = _slate_restore_from_github()
     if cached_slate and cached_slate.get("lineups"):
@@ -4821,7 +4879,7 @@ async def save_predictions():
     for g in games:
         gid = g["gameId"]
         label = g.get("label", f"game_{gid}")
-        cached_picks = _cg(f"picks_{gid}") or _lg(f"picks_locked_{gid}")
+        cached_picks = _cg(_ck_picks(gid)) or _lg(_ck_picks_locked(gid))
         if cached_picks and cached_picks.get("lineups"):
             rows.extend(_predictions_to_csv(cached_picks["lineups"], label))
         elif _is_locked(g.get("startTime", "")):
@@ -4830,7 +4888,7 @@ async def save_predictions():
     # Auto-compute picks for locked games the user never manually analyzed.
     # Run in parallel so this doesn't add significant latency per game.
     if locked_games_to_compute:
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futures = {pool.submit(_compute_game_picks, g): g for g in locked_games_to_compute}
             for fut in as_completed(futures):
                 g = futures[fut]
@@ -4869,7 +4927,7 @@ async def save_predictions():
 
     # Also write the slate backup now so cold-start instances can recover after lock,
     # even if this Railway instance dies before the lock window promotes the reg cache.
-    cached_slate_for_backup = _cg("slate_v5")
+    cached_slate_for_backup = _cg(_CK_SLATE)
     if cached_slate_for_backup:
         _slate_backup_to_github(cached_slate_for_backup)
 
@@ -4944,7 +5002,7 @@ def _force_regenerate_sync(scope: str):
     # fails we preserve the existing cache so cold-start recovery still works.
     all_proj = []
     game_proj_map = {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         futs = {pool.submit(_run_game, g): g for g in game_pool}
         for fut in as_completed(futs):
             try:
@@ -5011,8 +5069,8 @@ def _force_regenerate_sync(scope: str):
         "pass": 2,
     }
     if chalk or upside:
-        _cs("slate_v5", result)
-        _ls("slate_v5_locked", result)
+        _cs(_CK_SLATE, result)
+        _ls(_CK_SLATE_LOCKED, result)
         _slate_cache_to_github(result)
         _slate_backup_to_github_force(result)
         try:
@@ -5025,8 +5083,8 @@ def _force_regenerate_sync(scope: str):
 
     # Step 6: Cache per-game picks too
     for gid, gdata in per_game_results.items():
-        _cs(f"picks_{gid}", gdata)
-        _ls(f"picks_locked_{gid}", gdata)
+        _cs(_ck_picks(gid), gdata)
+        _ls(_ck_picks_locked(gid), gdata)
 
     # Step 7: Write predictions CSV
     rows = _predictions_to_csv(lineups, "slate")
@@ -5098,7 +5156,7 @@ async def slate_check(request: Request):
                 "reason": "locked"}
 
     # Load Pass 1 cached slate
-    cached_slate = _cg("slate_v5") or _slate_cache_from_github()
+    cached_slate = _cg(_CK_SLATE) or _slate_cache_from_github()
     if not cached_slate or not cached_slate.get("lineups"):
         return {"changed": False, "triggers": [], "recommendation": "hold",
                 "reason": "no_pass1"}
@@ -5324,7 +5382,7 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
                     ]
                 }]
             },
-            timeout=30,
+            timeout=_T_HEAVY,
         )
         r.raise_for_status()
         resp = r.json()
@@ -5391,7 +5449,7 @@ def _compute_audit(date_str):
     # Simulated draft score — measures progress toward 60+ goal.
     # Optimal hindsight: sort actuals by RS, assign slots 2.0x→1.2x to top 5,
     # compute RS × (slot + actual_card_boost) for each. Shows what was achievable.
-    slot_mults = [2.0, 1.8, 1.6, 1.4, 1.2]
+    slot_mults = _SLOT_MULTS_SHARED
     top5_actuals = sorted(
         [a for a in actuals if _safe_float(a.get("actual_rs")) > 0],
         key=lambda a: _safe_float(a.get("actual_rs")),
@@ -5529,12 +5587,12 @@ ACT_FIELDS = ["player_name","actual_rs","actual_card_boost","drafts","avg_finish
 async def log_dates():
     """Return sorted list of dates that have stored prediction or actual data. Never returns 500."""
     try:
-        cached = _cg("log_dates_v1")
+        cached = _cg(_CK_LOG_DATES)
         if cached is not None and isinstance(cached, dict) and "data" in cached:
-            if time.time() - cached.get("ts", 0) < 600:  # 10-min TTL (dates change rarely)
+            if time.time() - cached.get("ts", 0) < _TTL_LOG:  # 10-min TTL (dates change rarely)
                 return cached["data"]
         dates = set()
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=_W_LIGHT) as pool:
             dir_results = list(pool.map(_github_list_dir, ["data/predictions", "data/actuals"]))
         for items in dir_results:
             for item in items:
@@ -5542,7 +5600,7 @@ async def log_dates():
                 if name.endswith(".csv"):
                     dates.add(name[:-4])
         result = sorted(dates, reverse=True)
-        _cs("log_dates_v1", {"data": result, "ts": time.time()})
+        _cs(_CK_LOG_DATES, {"data": result, "ts": time.time()})
         return result
     except Exception as e:
         print(f"[log/dates] error: {e}")
@@ -5560,10 +5618,10 @@ async def log_get(date: str = Query(None)):
     _log_cache_key = f"log_get_{date_str}"
     _log_cached = _cg(_log_cache_key)
     if _log_cached is not None and isinstance(_log_cached, dict) and "ts" in _log_cached:
-        if time.time() - _log_cached["ts"] < 300:
+        if time.time() - _log_cached["ts"] < _TTL_CONFIG:
             return _log_cached["data"]
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=_W_LIGHT) as pool:
         (pred_csv, _), (act_csv, _) = list(pool.map(
             _github_get_file,
             [f"data/predictions/{date_str}.csv", f"data/actuals/{date_str}.csv"]
@@ -5664,7 +5722,7 @@ async def log_actuals_stats(date: str = Query(None)):
                     result[name] = pdata
         return result
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         for game_result in pool.map(_fetch_game_box, games):
             player_stats.update(game_result)
 
@@ -5729,7 +5787,7 @@ async def refresh(request: Request):
     # No auth required — cache clearing is non-destructive and user-facing.
     # Auto-save predictions BEFORE clearing cache, if the slate is currently locked.
     # Cron safety net: ensures predictions persist even if no user visits at lock time.
-    # Must run first — save_predictions() reads from _cg("slate_v5") which gets wiped below.
+    # Must run first — save_predictions() reads from _cg(_CK_SLATE) which gets wiped below.
     auto_saved = False
     try:
         games = fetch_games()
@@ -5883,7 +5941,7 @@ async def injury_check(request: Request):
         return {"status": "no_games", "skipped": True}
 
     # Load current cached slate (try /tmp first, then GitHub)
-    cached_slate = _cg("slate_v5") or _slate_cache_from_github()
+    cached_slate = _cg(_CK_SLATE) or _slate_cache_from_github()
     if not cached_slate or not cached_slate.get("lineups"):
         return {"status": "no_cache", "skipped": True}
 
@@ -5928,14 +5986,14 @@ async def injury_check(request: Request):
             continue
         # Clear per-game /tmp cache to force fresh computation
         try:
-            _cp(f"game_proj_{gid}").unlink()
+            _cp(_ck_game_proj(gid)).unlink()
         except Exception:
             pass
         try:
             projections = _run_game(game)
             if projections:
                 all_game_projs[gid] = projections
-                _cs(f"game_proj_{gid}", projections)
+                _cs(_ck_game_proj(gid), projections)
         except Exception as e:
             print(f"[injury-check] game {gid} regen err: {e}")
 
@@ -5959,7 +6017,7 @@ async def injury_check(request: Request):
     result = {**cached_slate, "lineups": {"chalk": chalk, "upside": upside}}
 
     # Persist updated slate to /tmp + GitHub
-    _cs("slate_v5", result)
+    _cs(_CK_SLATE, result)
     _slate_cache_to_github(result)
     _games_cache_to_github(all_game_projs)
 
@@ -5986,7 +6044,7 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
         ev_r = requests.get(
             f"{ODDS_API_BASE}/sports/basketball_nba/events",
             params={"apiKey": api_key, "dateFormat": "iso"},
-            timeout=10,
+            timeout=_T_DEFAULT,
         )
         if not ev_r.ok:
             return None
@@ -6009,7 +6067,7 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
                 "oddsFormat": "american",
                 "bookmakers": "draftkings,fanduel,betmgm,pointsbet",
             },
-            timeout=10,
+            timeout=_T_DEFAULT,
         )
         if not odds_r.ok:
             return None
@@ -6084,7 +6142,7 @@ def _build_player_odds_map(games):
         ev_r = requests.get(
             f"{ODDS_API_BASE}/sports/basketball_nba/events",
             params={"apiKey": api_key, "dateFormat": "iso"},
-            timeout=10,
+            timeout=_T_DEFAULT,
         )
         if not ev_r.ok:
             print(f"[odds_map] events fetch failed: {ev_r.status_code}")
@@ -6123,13 +6181,13 @@ def _build_player_odds_map(games):
                     "oddsFormat": "american",
                     "bookmakers": "draftkings,fanduel,betmgm,pointsbet",
                 },
-                timeout=10,
+                timeout=_T_DEFAULT,
             )
             return r.json() if r.ok else {}
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         event_results = list(pool.map(_fetch_event_props, game_event_ids))
 
     # Step 3: aggregate lines per (player_name_lower, stat_type)
@@ -6198,13 +6256,13 @@ def _get_projections_for_date(date_obj):
     all_proj = []
     # Layer 1: /tmp per-game cache
     for g in draftable:
-        gp = _cg(f"game_proj_{g['gameId']}")
+        gp = _cg(_ck_game_proj(g['gameId']))
         if gp:
             all_proj.extend(gp)
     # Full pipeline if no /tmp cache (skip GitHub games cache here — it adds
     # latency and the line engine still needs Haiku calls regardless)
     if not all_proj:
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
                 try:
                     all_proj.extend(fut.result())
@@ -6336,18 +6394,18 @@ def _run_line_engine_for_date(date):
     all_proj = []
     # /tmp per-game cache (warm instance — populated by /api/slate or previous calls)
     for g in target_games:
-        gp = _cg(f"game_proj_{g['gameId']}")
+        gp = _cg(_ck_game_proj(g['gameId']))
         if gp:
             all_proj.extend(gp)
     # Full pipeline if no /tmp cache (skip GitHub games cache here — it adds latency
     # and the line engine still needs Haiku calls regardless, so the savings are minimal
     # vs the risk of timing out on cold start)
     if not all_proj:
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
             try:
-                for fut in as_completed(futs, timeout=60):
-                    try: all_proj.extend(fut.result(timeout=10))
+                for fut in as_completed(futs, timeout=_T_EXECUTOR):
+                    try: all_proj.extend(fut.result(timeout=_T_DEFAULT))
                     except Exception as e: print(f"line proj err: {e}")
             except TimeoutError:
                 print(f"[line] game projection pool timed out after 60s, got {len(all_proj)} projections")
@@ -6507,7 +6565,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         # Serve cache only if BOTH directions are still unresolved (no rotation needed).
         # Once any direction resolves, bust cache so rotation logic runs.
         # Skip entirely when nocache=True (frontend post-game-final re-fetch).
-        cached = None if nocache else _cg("line_v1")
+        cached = None if nocache else _cg(_CK_LINE)
         if cached and cached.get("pick"):
             # Strong date guard: never serve line cache across ET-day boundaries.
             # Legacy caches may omit pick.date; treat those as stale.
@@ -6573,7 +6631,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                 print(f"[line-of-the-day] auto-save err: {_save_err}")
             eng_result["_cached_at"] = datetime.utcnow().isoformat()
             eng_result["_cache_date"] = today_str
-            _cs("line_v1", eng_result)
+            _cs(_CK_LINE, eng_result)
             return JSONResponse(eng_result)
 
         # ── Fill missing directions (legacy single-pick) ──
@@ -6622,11 +6680,11 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                     _github_write_file(f"data/lines/{today_str}_pick.json", json.dumps(today_picks),
                                        f"inline-resolve line {today_str}")
                     try:
-                        _lc = _cp("line_v1", today_str)
+                        _lc = _cp(_CK_LINE, today_str)
                         if _lc.exists(): _lc.unlink()
                     except Exception: pass
                     try:
-                        _hc = _cp("line_history_v1")
+                        _hc = _cp(_CK_LINE_HISTORY)
                         if _hc.exists(): _hc.unlink()
                     except Exception: pass
                 except Exception as _ie:
@@ -6671,7 +6729,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         result = _picks_response(combo, from_github=True, slate_summary=None)
         result["_cached_at"] = datetime.utcnow().isoformat()
         result["_cache_date"] = today_str
-        _cs("line_v1", result)
+        _cs(_CK_LINE, result)
         return JSONResponse(result)
     except Exception as e:
         print(f"[line-of-the-day] error: {e}")
@@ -6712,11 +6770,11 @@ async def line_force_regenerate():
     out = _picks_response(saves, from_github=False, slate_summary=eng_result.get("slate_summary"))
     out["_cached_at"] = datetime.utcnow().isoformat()
     out["_cache_date"] = today_str
-    _cs("line_v1", out)
+    _cs(_CK_LINE, out)
 
     # Bust history cache so the fresh pick card is immediately reflected.
     try:
-        _hc = _cp("line_history_v1")
+        _hc = _cp(_CK_LINE_HISTORY)
         if _hc.exists():
             _hc.unlink()
     except Exception:
@@ -6817,7 +6875,7 @@ async def refresh_line_odds():
             return JSONResponse({"status": "error", "message": write_result["error"]}, status_code=500)
         # Clear /tmp line cache so next /api/line-of-the-day reloads from GitHub (fresh odds).
         # Also clear line_history cache — it embeds books_consensus and odds_* fields.
-        for _cache_key in ("line_v1", "line_history_v1"):
+        for _cache_key in (_CK_LINE, _CK_LINE_HISTORY):
             _cf = _cp(_cache_key, today_str)
             if _cf.exists():
                 _cf.unlink()
@@ -6968,7 +7026,7 @@ async def resolve_line(payload: dict = Body(...)):
 
     # Bust the line cache for this date
     try:
-        lc = _cp("line_v1", date_str)
+        lc = _cp(_CK_LINE, date_str)
         if lc.exists():
             lc.unlink()
     except Exception: pass
@@ -7155,13 +7213,13 @@ async def auto_resolve_line(request: Request):
     # Bust both pick_date and today (they differ on midnight rollover).
     for _bust_date in set([pick_date, today]):
         try:
-            line_cache = _cp("line_v1", _bust_date)
+            line_cache = _cp(_CK_LINE, _bust_date)
             if line_cache.exists():
                 line_cache.unlink()
         except Exception: pass
     # Bust history cache so resolved picks appear immediately in /api/line-history
     try:
-        hist_cache = _cp("line_history_v1")
+        hist_cache = _cp(_CK_LINE_HISTORY)
         if hist_cache.exists():
             hist_cache.unlink()
     except Exception: pass
@@ -7193,7 +7251,7 @@ async def auto_resolve_line(request: Request):
                 try:
                     eng_result, err = await asyncio.wait_for(
                         asyncio.to_thread(_run_line_engine_for_date, next_day),
-                        timeout=120.0
+                        timeout=_T_LINE_ENGINE
                     )
                 except asyncio.TimeoutError:
                     err = "timeout"
@@ -7260,7 +7318,7 @@ async def auto_resolve_line(request: Request):
                     _github_write_file(_back_json, json.dumps(_back_data), f"backfill resolve {_back_date}")
                     # Bust history cache so resolved picks appear immediately
                     try:
-                        _hc2 = _cp("line_history_v1")
+                        _hc2 = _cp(_CK_LINE_HISTORY)
                         if _hc2.exists(): _hc2.unlink()
                     except Exception: pass
                 except Exception as _be:
@@ -7294,9 +7352,9 @@ async def line_history():
     """Return recent Line of the Day picks with results."""
     # 10-min cache TTL — history only changes when auto-resolve-line fires (every 30 min cron)
     # or resolve-line is called manually (both clear line_history_v1).
-    _hist_cached = _cg("line_history_v1")
+    _hist_cached = _cg(_CK_LINE_HISTORY)
     if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
-        if time.time() - _hist_cached.get("ts", 0) < 600:
+        if time.time() - _hist_cached.get("ts", 0) < _TTL_LOG:
             return _hist_cached["data"]
 
     items = _github_list_dir("data/lines")
@@ -7315,7 +7373,7 @@ async def line_history():
         return date_str, csv_raw, json_raw
 
     fetched = {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         for date_str, csv_raw, json_raw in pool.map(_fetch_date_files, all_dates):
             fetched[date_str] = (csv_raw, json_raw)
 
@@ -7393,7 +7451,7 @@ async def line_history():
             )
             return p, p_line, p_dir, actual, date_str, jkey, jd
 
-        with ThreadPoolExecutor(max_workers=min(len(espn_queue), 8)) as pool:
+        with ThreadPoolExecutor(max_workers=min(len(espn_queue), _W_STANDARD)) as pool:
             for p, p_line, p_dir, actual, date_str, jkey, jd in pool.map(_backfill_espn, espn_queue):
                 if actual is not None:
                     p["result"]      = "hit" if (actual > p_line if p_dir == "over" else actual < p_line) else "miss"
@@ -7452,7 +7510,7 @@ async def line_history():
         "streak":       streak,
         "streak_type":  streak_type,
     }
-    _cs("line_history_v1", {"data": out, "ts": time.time()})
+    _cs(_CK_LINE_HISTORY, {"data": out, "ts": time.time()})
     return out
 
 
@@ -8183,7 +8241,7 @@ RULES:
                 "max_tokens": 256,
                 "messages": [{"role": "user", "content": haiku_prompt}],
             },
-            timeout=30,
+            timeout=_T_HEAVY,
         )
         haiku_resp.raise_for_status()
         haiku_data = haiku_resp.json()
@@ -8428,7 +8486,7 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
     def event_stream():
         try:
             r = requests.post(f"{ANTHROPIC_API_BASE}/messages",
-                              headers=headers, json=base_body, timeout=45)
+                              headers=headers, json=base_body, timeout=_T_CLAUDE)
             r.raise_for_status()
             resp = r.json()
 
@@ -8459,7 +8517,7 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
                     f"{ANTHROPIC_API_BASE}/messages",
                     headers=headers,
                     json={**base_body, "messages": current_messages},
-                    timeout=45,
+                    timeout=_T_CLAUDE,
                 )
                 r_next.raise_for_status()
                 resp = r_next.json()
@@ -8834,9 +8892,9 @@ def _fetch_gamelogs_batch(player_ids, num_games=15):
     """Fetch gamelogs for multiple players in parallel.
     Returns {player_id: {"points": [...], "rebounds": [...], "assists": [...], "minutes": [...]}}"""
     result = {}
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    with ThreadPoolExecutor(max_workers=_W_L5) as pool:
         futures = {pool.submit(_fetch_gamelog, pid, num_games): pid for pid in player_ids}
-        for fut in as_completed(futures, timeout=30):
+        for fut in as_completed(futures, timeout=_T_HEAVY):
             pid = futures[fut]
             try:
                 log = fut.result(timeout=5)
@@ -8861,16 +8919,16 @@ def _run_parlay_engine_sync(today):
     # Get projections (reuse /tmp per-game cache when warm)
     all_proj = []
     for g in target_games:
-        gp = _cg(f"game_proj_{g['gameId']}")
+        gp = _cg(_ck_game_proj(g['gameId']))
         if gp:
             all_proj.extend(gp)
     if not all_proj:
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
             try:
-                for fut in as_completed(futs, timeout=60):
+                for fut in as_completed(futs, timeout=_T_EXECUTOR):
                     try:
-                        all_proj.extend(fut.result(timeout=10))
+                        all_proj.extend(fut.result(timeout=_T_DEFAULT))
                     except Exception as e:
                         print(f"[parlay] proj err: {e}")
             except TimeoutError:
@@ -8954,7 +9012,7 @@ async def get_parlay(request: Request):
         slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
 
         # Cache check (30-min TTL)
-        cached = _cg("parlay_v1")
+        cached = _cg(_CK_PARLAY)
         if cached and cached.get("_cache_date") == today_str:
             cached_at = cached.get("_cached_at")
             if cached_at:
@@ -8980,7 +9038,7 @@ async def get_parlay(request: Request):
                     gh_parlay["_from_github"] = True
                     gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
                     gh_parlay["_cache_date"] = today_str
-                    _cs("parlay_v1", gh_parlay)
+                    _cs(_CK_PARLAY, gh_parlay)
                     print(f"[parlay] served from GitHub: {parlay_path}")
                     return JSONResponse(gh_parlay)
         except Exception as _ge:
@@ -9013,7 +9071,7 @@ async def get_parlay(request: Request):
 
         result["_cached_at"] = datetime.utcnow().isoformat()
         result["_cache_date"] = today_str
-        _cs("parlay_v1", result)
+        _cs(_CK_PARLAY, result)
 
         # Auto-save to GitHub (non-fatal) — skip if already saved
         try:
@@ -9057,7 +9115,7 @@ async def parlay_force_regenerate():
 
     # Clear /tmp parlay cache so the engine runs fresh
     try:
-        _pc = _cp("parlay_v1")
+        _pc = _cp(_CK_PARLAY)
         if _pc.exists():
             _pc.unlink()
     except Exception:
@@ -9093,11 +9151,11 @@ async def parlay_force_regenerate():
     # Populate /tmp cache
     result["_cached_at"] = datetime.utcnow().isoformat()
     result["_cache_date"] = today_str
-    _cs("parlay_v1", result)
+    _cs(_CK_PARLAY, result)
 
     # Bust history cache
     try:
-        _hc = _cp("parlay_history_v1")
+        _hc = _cp(_CK_PARLAY_HISTORY)
         if _hc.exists():
             _hc.unlink()
     except Exception:
@@ -9112,9 +9170,9 @@ async def parlay_force_regenerate():
 async def parlay_history():
     """Return recent parlays with resolution status (hit/miss per leg)."""
     # 10-min cache
-    _hist_cached = _cg("parlay_history_v1")
+    _hist_cached = _cg(_CK_PARLAY_HISTORY)
     if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
-        if time.time() - _hist_cached.get("ts", 0) < 600:
+        if time.time() - _hist_cached.get("ts", 0) < _TTL_LOG:
             return _hist_cached["data"]
 
     items = _github_list_dir("data/parlays")
@@ -9127,7 +9185,7 @@ async def parlay_history():
 
     if not json_dates:
         out = {"parlays": [], "hit_rate": None, "total": 0, "resolved": 0, "streak": 0, "streak_type": None}
-        _cs("parlay_history_v1", {"data": out, "ts": time.time()})
+        _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
         return out
 
     # Parallel fetch all JSON files
@@ -9136,7 +9194,7 @@ async def parlay_history():
         return date_str, raw
 
     fetched = {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         for ds, raw in pool.map(_fetch_parlay_json, json_dates):
             fetched[ds] = raw
 
@@ -9202,7 +9260,7 @@ async def parlay_history():
             print(f"[parlay-history] write-back failed for {ds}: {e}")
 
     if write_back_queue:
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=_W_LIGHT * 2) as pool:
             list(pool.map(_write_back, write_back_queue))
 
     # Compute stats (only resolved)
@@ -9234,5 +9292,5 @@ async def parlay_history():
         "streak": streak,
         "streak_type": streak_type,
     }
-    _cs("parlay_history_v1", {"data": out, "ts": time.time()})
+    _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
     return out
