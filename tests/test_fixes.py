@@ -937,6 +937,7 @@ class TestClaudeContextLayer:
         from api.index import _claude_context_pass
         players = [self._make_player("Draymond Green", "GSW", rating=2.5, chalk_ev=10.0, ceiling_score=3.0)]
         games = [self._make_game("GSW", "LAL")]
+        games[0]["home_b2b"] = True  # pass skip guard
 
         claude_response = json.dumps({
             "adjustments": [{"player": "Draymond Green", "rs_multiplier": 1.30, "reason": "defensive value"}]
@@ -968,6 +969,7 @@ class TestClaudeContextLayer:
         from api.index import _claude_context_pass
         players = [self._make_player("Player X", "BOS", rating=3.0)]
         games = [self._make_game("BOS", "LAL")]
+        games[0]["home_b2b"] = True  # pass skip guard
 
         claude_response = json.dumps({
             "adjustments": [{"player": "Player X", "rs_multiplier": 2.0, "reason": "extreme"}]
@@ -998,6 +1000,7 @@ class TestClaudeContextLayer:
         from api.index import _claude_context_pass
         players = [self._make_player("Player Y", "LAL", rating=5.0)]
         games = [self._make_game("LAL", "BOS")]
+        games[0]["home_b2b"] = True  # pass skip guard
 
         claude_response = json.dumps({
             "adjustments": [{"player": "Player Y", "rs_multiplier": 0.3, "reason": "blowout"}]
@@ -2824,6 +2827,168 @@ class TestMinHighBoostConstraint:
         )
         assert "min_big_boost_count=_chalk_min_big_boost" in src, (
             "_build_lineups must pass min_big_boost_count to chalk optimize_lineup"
+        )
+
+
+# ─────────────────────────────────────────────────────────
+# TestApiResilience — Claude API rate-limit / overload resilience
+# ─────────────────────────────────────────────────────────
+class TestApiResilience:
+    """Verify the app behaves correctly when Anthropic API is rate-limited or overloaded."""
+
+    def test_context_pass_skips_when_no_fresh_signals(self):
+        """Context pass is a no-op when there's no news, no cascade, and no B2B games."""
+        from api.index import _claude_context_pass
+
+        players = [
+            {"name": "Player A", "team": "LAL", "rating": 4.0, "chalk_ev": 16.0,
+             "ceiling_score": 5.0, "est_mult": 1.5, "season_pts": 10.0,
+             "season_reb": 4.0, "season_ast": 3.0, "season_stl": 0.8, "season_blk": 0.4}
+        ]
+        games = [{"gameId": "g1", "spread": 0, "total": 222,
+                  "home": {"abbr": "LAL", "id": "1"}, "away": {"abbr": "BOS", "id": "2"}}]
+        # No _cascade_bonus on any player, no B2B on any game
+
+        mock_client = Mock()
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-sonnet-4-6-20250514"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("api.index._fetch_nba_news_context", return_value=""), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        # API must NOT be called — no fresh signals means Claude adds no value
+        mock_client.messages.create.assert_not_called()
+        assert players[0]["rating"] == 4.0
+        assert "_context_adj" not in players[0]
+
+    def test_context_pass_runs_when_cascade_present(self):
+        """Context pass calls Claude when a player has cascade bonus, even without news."""
+        from api.index import _claude_context_pass
+
+        players = [
+            {"name": "Backup Guard", "team": "LAL", "rating": 3.0, "chalk_ev": 12.0,
+             "ceiling_score": 4.0, "est_mult": 2.5, "season_pts": 8.0,
+             "season_reb": 3.0, "season_ast": 2.0, "season_stl": 0.5, "season_blk": 0.2,
+             "_cascade_bonus": 8.0}  # starter is out → this player inherits minutes
+        ]
+        games = [{"gameId": "g1", "spread": 0, "total": 222,
+                  "home": {"abbr": "LAL", "id": "1"}, "away": {"abbr": "BOS", "id": "2"}}]
+
+        claude_response = json.dumps({"adjustments": []})
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-sonnet-4-6-20250514"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("api.index._fetch_nba_news_context", return_value=""), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        # Claude MUST be called — cascade is a genuine fresh signal
+        mock_client.messages.create.assert_called_once()
+
+    def test_context_pass_runs_when_news_present(self):
+        """Context pass calls Claude when web search found news, even without cascade/B2B."""
+        from api.index import _claude_context_pass
+
+        players = [
+            {"name": "Role Player", "team": "MEM", "rating": 3.5, "chalk_ev": 14.0,
+             "ceiling_score": 4.5, "est_mult": 1.8, "season_pts": 9.0,
+             "season_reb": 5.0, "season_ast": 2.5, "season_stl": 0.9, "season_blk": 0.3}
+        ]
+        games = [{"gameId": "g1", "spread": -2, "total": 228,
+                  "home": {"abbr": "MEM", "id": "1"}, "away": {"abbr": "OKC", "id": "2"}}]
+
+        claude_response = json.dumps({"adjustments": []})
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-sonnet-4-6-20250514"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        news = "- Ja Morant ruled out tonight — Brandon Clarke expected to start"
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("api.index._fetch_nba_news_context", return_value=news), \
+             patch("anthropic.Anthropic", return_value=mock_client):
+            _claude_context_pass(players, games)
+
+        # Claude MUST be called — news is a genuine fresh signal
+        mock_client.messages.create.assert_called_once()
+
+    def test_context_pass_sdk_uses_no_retries(self):
+        """Anthropic SDK client for context pass is initialized with max_retries=0."""
+        src = open("api/index.py").read()
+        # Verify all three optional-layer SDK instantiations use max_retries=0
+        assert src.count("Anthropic(api_key=anthropic_key, max_retries=0)") >= 2, (
+            "web_search and lineup_review SDK clients must use max_retries=0"
+        )
+        assert "Anthropic(api_key=os.getenv(\"ANTHROPIC_API_KEY\", \"\"), max_retries=0)" in src, (
+            "context_pass SDK client must use max_retries=0"
+        )
+
+    def test_line_engine_http_429_logged_as_rate_limited(self):
+        """HTTP 429 from Claude is logged as 'rate-limited' and falls back cleanly."""
+        import requests as req_lib
+        from api.line_engine import _call_claude
+
+        mock_resp = Mock()
+        mock_resp.status_code = 429
+        http_err = req_lib.exceptions.HTTPError(response=mock_resp)
+
+        with patch("api.line_engine.requests.post") as mock_post:
+            mock_post.return_value.raise_for_status.side_effect = http_err
+            result = _call_claude("dummy prompt", "points")
+
+        assert result is None  # Falls back cleanly
+
+    def test_line_engine_http_529_logged_as_overloaded(self):
+        """HTTP 529 from Claude is logged as 'overloaded' and falls back cleanly."""
+        import requests as req_lib
+        from api.line_engine import _call_claude
+
+        mock_resp = Mock()
+        mock_resp.status_code = 529
+        http_err = req_lib.exceptions.HTTPError(response=mock_resp)
+
+        with patch("api.line_engine.requests.post") as mock_post:
+            mock_post.return_value.raise_for_status.side_effect = http_err
+            result = _call_claude("dummy prompt", "assists")
+
+        assert result is None  # Falls back cleanly
+
+    def test_context_pass_prompt_requires_specific_evidence(self):
+        """Context pass system prompt instructs Claude to require specific evidence, not team membership."""
+        src = open("api/index.py").read()
+        assert "Team membership alone" in src or "team membership alone" in src.lower(), (
+            "System prompt must tell Claude team membership alone is not a reason to adjust"
+        )
+
+    def test_context_pass_team_style_conditional(self):
+        """Context pass prompt marks team style as CONFIRMING only, not standalone."""
+        src = open("api/index.py").read()
+        assert "CONFIRMING" in src, (
+            "Team/style signals section must label signals as CONFIRMING context only"
         )
 
 

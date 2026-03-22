@@ -2623,7 +2623,7 @@ def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> st
 
     try:
         import anthropic as _anthropic
-        client = _anthropic.Anthropic(api_key=anthropic_key)
+        client = _anthropic.Anthropic(api_key=anthropic_key, max_retries=0)
         msg = client.messages.create(
             model=web_search_model,
             max_tokens=1500,
@@ -2885,6 +2885,15 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     except Exception as _news_err:
         print(f"[context_pass] web search error (non-fatal): {_news_err}")
 
+    # Skip guard: if no fresh signal exists, Claude can't add meaningful value
+    # beyond what the algorithmic model already computed. Skip to avoid latency
+    # and API cost when the call would just repack existing filter outputs.
+    has_cascade = any(p.get("_cascade_bonus", 0) > 0 for p in all_proj)
+    has_b2b = any(g.get("home_b2b") or g.get("away_b2b") for g in games)
+    if not news_text and not has_cascade and not has_b2b:
+        print("[context_pass] skipped — no fresh signals (no news, no cascade, no B2B)")
+        return
+
     # Build compact game context map: {team_abbr: {opponent, spread, total}}
     game_ctx = {}
     for g in games:
@@ -2964,18 +2973,19 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "- Stars in blowouts (favored by 10+) consistently UNDERPERFORM. They sit early, "
         "coast, and RS drops 20-40%.\n\n"
 
-        "TEAM/STYLE SIGNALS (adjust UP):\n"
-        "- ATL Hawks: Fast pace, Trae Young drives RS through assists+clutch. Players like "
-        "Ware (RS 5.1 Dec 19, RS 5.7 Dec 21), Young (RS 5.8 Dec 21) consistently beat "
-        "projections. ATL in a competitive game: +10-20% on multi-stat contributors.\n"
-        "- MEM Grizzlies: Development team, tight games, hustle culture. Watson (RS 6.4), "
-        "Bane (RS 6.2), Aldama (RS 6.0) all big winners. MEM role players: +10-20%.\n"
-        "- CHI Bulls: Development era, high-RS outputs from Buzelis (RS 5.6), Carrington "
-        "(RS 3.4 with 4.1x boost), Drummond (physical presence). CHI in close game: +10-15%.\n"
-        "- OKC Thunder: System-generated RS from hustle/defense. Hartenstein (RS 7.3), "
-        "Ware (RS 5.1) overperform. Slight underdog situations amplify this.\n"
-        "- NYK Knicks: Defensive/hustle identity. Robinson (RS 2.7 but in winning lineup Dec 21 "
-        "via rebounds+defense), Brunson in close games (RS 7.3 Dec 21).\n\n"
+        "TEAM/STYLE SIGNALS (use as CONFIRMING context only — not a standalone reason):\n"
+        "These teams have RS-friendly styles, but adjusting purely because a player wears "
+        "their jersey repacks what the algorithm already knows. Only use team style as a "
+        "CONFIRMING signal when COMBINED with today's specific evidence (news, cascade, "
+        "spread, or roto_status). Examples of past high-RS outputs for calibration:\n"
+        "- ATL Hawks: multi-stat contributors thrive in close games (Ware RS 5.1–5.7, "
+        "Young RS 5.8). Confirm with: spread ≤ 5 AND normal rotation confirmed in news.\n"
+        "- MEM Grizzlies: hustle culture yields high RS in tight games (Watson RS 6.4, "
+        "Aldama RS 6.0). Confirm with: spread ≤ 6 AND no blowout projection.\n"
+        "- OKC Thunder: system RS from hustle/defense (Hartenstein RS 7.3). Confirm with: "
+        "OKC as underdog (spread +1 to +6) AND no key-player injury dampening rotations.\n"
+        "- CHI Bulls, NYK Knicks: high RS variance in close games. Only adjust when specific "
+        "news (rotation change, cascade opportunity) justifies it today.\n\n"
 
         "KEY RS SIGNAL TYPES (adjust UP for these):\n"
         "1. Defensive anchor in a close game (spread ≤ 5): +10-25% "
@@ -3011,11 +3021,14 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "rotation and has fragile minute floor; DNP or early hook risk is meaningful.\n\n"
 
         "CALIBRATION: Most players get NO adjustment (omit them). Only adjust when you have "
-        "a clear narrative reason. Typical batch: 4-8 players out of 40. "
+        "a specific reason from TODAY's news, cascade_bonus, roto_status, or game context. "
+        "Team membership alone ('Player X plays for ATL') is NOT a reason — it must combine "
+        "with a specific today-signal (news item, spread ≤ 5, cascade, roto confirmed). "
+        "Typical batch: 2-5 players out of 40 (fewer is better). "
         "Strong signal = 1.2-1.35x up or 0.7-0.85x down. "
         "Weak signal = 1.08-1.15x up or 0.88-0.95x down. "
-        "Reserve 1.35x+ for rare cases: true defensive anchor in a tight rivalry game, or "
-        "a pace/hustle team player in a game projected to stay close all night.\n\n"
+        "Reserve 1.35x+ for rare cases: confirmed starter OUT → backup inherits 30+ min, "
+        "or a blowout star sitting early with projection still inflated.\n\n"
 
         "Return ONLY valid JSON:\n"
         '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "reason": "brief"}]}\n'
@@ -3041,7 +3054,7 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
 
     try:
         import anthropic as _anthropic
-        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), max_retries=0)
         msg = client.messages.create(
             model=model_id,
             max_tokens=1024,
@@ -3159,7 +3172,7 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
 
     try:
         import anthropic as _anthropic
-        client = _anthropic.Anthropic(api_key=anthropic_key)
+        client = _anthropic.Anthropic(api_key=anthropic_key, max_retries=0)
         msg = client.messages.create(
             model=model_id,
             max_tokens=1024,
