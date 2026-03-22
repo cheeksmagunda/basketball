@@ -6133,6 +6133,7 @@ def _build_player_odds_map(games):
     """
     api_key = os.environ.get("ODDS_API_KEY")
     if not api_key:
+        print("[odds_map] ODDS_API_KEY not set — skipping odds fetch")
         return {}
 
     # Degraded mode: if the Odds API is rate-limiting / failing, fall back to the
@@ -6147,6 +6148,7 @@ def _build_player_odds_map(games):
                 obj = json.loads(cp.read_text()) if cp.read_text() else {}
                 if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
                     cached_odds_map = obj.get("data") or {}
+                    print(f"[odds_map] loaded {len(cached_odds_map)} cached entries (age={age:.0f}s)")
     except Exception:
         cached_odds_map = {}
 
@@ -6159,32 +6161,48 @@ def _build_player_odds_map(games):
             params={"apiKey": api_key, "dateFormat": "iso"},
             timeout=_T_DEFAULT,
         )
+        remaining = ev_r.headers.get("x-requests-remaining", "?")
+        used = ev_r.headers.get("x-requests-used", "?")
         if not ev_r.ok:
-            print(f"[odds_map] events fetch failed: {ev_r.status_code}")
+            print(f"[odds_map] events fetch failed: HTTP {ev_r.status_code} (remaining={remaining}, used={used}) — {ev_r.text[:200]}")
             return cached_odds_map or {}
         all_events = ev_r.json()
+        print(f"[odds_map] Odds API returned {len(all_events)} events (remaining={remaining}, used={used})")
     except Exception as e:
         print(f"[odds_map] events fetch error: {e}")
         return cached_odds_map or {}
 
     # Map gameId → Odds API event_id
     game_event_ids = []
+    _unmatched = []
     for g in games:
         home_abbr = g.get("home", {}).get("abbr", "") or g.get("homeTeam", "")
         away_abbr = g.get("away", {}).get("abbr", "") or g.get("awayTeam", "")
+        matched = False
         for ev in all_events:
             ev_home = ev.get("home_team", "")
             ev_away = ev.get("away_team", "")
             if ((_abbr_matches(home_abbr, ev_home) or _abbr_matches(home_abbr, ev_away)) and
                     (_abbr_matches(away_abbr, ev_home) or _abbr_matches(away_abbr, ev_away))):
                 game_event_ids.append(ev["id"])
+                matched = True
                 break
+        if not matched:
+            _unmatched.append(f"{home_abbr}v{away_abbr}")
+
+    if _unmatched:
+        print(f"[odds_map] unmatched games: {', '.join(_unmatched)}")
 
     if not game_event_ids:
-        print("[odds_map] no matching Odds API events for slate games")
+        print(f"[odds_map] no matching events — ESPN games={len(games)}, Odds API events={len(all_events)}")
+        if all_events:
+            sample = [(ev.get("home_team","?"), ev.get("away_team","?")) for ev in all_events[:3]]
+            print(f"[odds_map] sample Odds API events: {sample}")
         return cached_odds_map or {}
 
     # Step 2: fetch props for each game in parallel (1 call per game)
+    print(f"[odds_map] fetching props for {len(game_event_ids)} matched games")
+
     def _fetch_event_props(event_id):
         try:
             r = requests.get(
@@ -6198,8 +6216,16 @@ def _build_player_odds_map(games):
                 },
                 timeout=_T_DEFAULT,
             )
-            return r.json() if r.ok else {}
-        except Exception:
+            if not r.ok:
+                print(f"[odds_map] props fetch failed for event {event_id}: HTTP {r.status_code}")
+                return {}
+            data = r.json()
+            n_books = len(data.get("bookmakers", []))
+            if n_books == 0:
+                print(f"[odds_map] event {event_id}: no bookmakers in response (props may not be published yet)")
+            return data
+        except Exception as e:
+            print(f"[odds_map] props fetch error for event {event_id}: {e}")
             return {}
 
     with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
