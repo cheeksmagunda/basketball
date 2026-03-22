@@ -1241,14 +1241,12 @@
 
     <!-- SUB-PAGE: Game Analysis -->
     <div id="predict-sub-game" class="predict-sub-page" style="display:none">
-      <div class="section-label">Game Analysis</div>
       <div id="errorBanner" class="error-banner"></div>
-      <div class="game-select-wrap">
+      <!-- Hidden: game selector and button kept for JS state, game cards are the UI -->
+      <div style="display:none">
         <select id="gameSel"><option value="">Loading games...</option></select>
+        <button class="analyze-btn" id="analyzeBtn" disabled onclick="runAnalysis()">Analyze Draft</button>
       </div>
-      <button class="analyze-btn" id="analyzeBtn" disabled onclick="runAnalysis()">
-        Analyze Draft
-      </button>
 
       <div id="gameAnalysisEmpty">
         <div id="gameQuickPicks" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px"></div>
