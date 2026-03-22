@@ -8814,8 +8814,10 @@ def _fetch_gamelog(pid, num_games=15):
                             except (ValueError, TypeError):
                                 pass
 
-        # Trim to last N games (most recent)
+        # ESPN returns newest-first within each month category — reverse to
+        # chronological (oldest-first) so [-N:] gives the N most recent games.
         for k in stat_arrays:
+            stat_arrays[k].reverse()
             stat_arrays[k] = stat_arrays[k][-num_games:]
 
         if any(len(v) > 0 for v in stat_arrays.values()):
