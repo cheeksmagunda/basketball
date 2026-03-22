@@ -6828,14 +6828,31 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         final_under = under_pick
 
         if over_resolved:
-            next_over, _ = await _get_or_generate_next_slate_pick(today, "over")
+            try:
+                next_over, _ = await _get_or_generate_next_slate_pick(today, "over")
+            except Exception as _next_err:
+                print(f"[line-of-the-day] next-slate over generation failed (non-fatal): {_next_err}")
+                next_over = None
             if next_over:
                 final_over = next_over
 
         if under_resolved:
-            next_under, _ = await _get_or_generate_next_slate_pick(today, "under")
+            try:
+                next_under, _ = await _get_or_generate_next_slate_pick(today, "under")
+            except Exception as _next_err:
+                print(f"[line-of-the-day] next-slate under generation failed (non-fatal): {_next_err}")
+                next_under = None
             if next_under:
                 final_under = next_under
+
+        # If all available picks are resolved and next-slate isn't ready yet,
+        # return a clean pending response instead of serving stale resolved picks.
+        _has_fresh = (final_over and not _is_pick_resolved(final_over)) or \
+                     (final_under and not _is_pick_resolved(final_under))
+        if not _has_fresh and (final_over or final_under):
+            print(f"[line-of-the-day] all picks resolved, next-slate not ready — returning next_slate_pending")
+            return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
+                                 "error": "next_slate_pending"}, status_code=200)
 
         # ── Enrich if needed ──
         combo = {"over_pick": final_over, "under_pick": final_under}

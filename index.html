@@ -3941,6 +3941,17 @@ function _renderLineLOTDFromState() {
       else LINE_UNDER_PICK = data.pick;
     }
     if (!data.pick && !LINE_OVER_PICK && !LINE_UNDER_PICK) {
+      // Today's picks resolved, tomorrow's not ready yet — show pending card
+      if (data.error === 'next_slate_pending') {
+        linePickWrap.style.display = 'block';
+        if (lineEmptyEl) lineEmptyEl.style.display = 'none';
+        if (linePickCard) {
+          linePickCard.style.display = '';
+          linePickCard.innerHTML = renderNextSlatePending();
+        }
+        LINE_LOADED_DATE = ''; // reset so next tab visit re-fetches fresh picks
+        return;
+      }
       const msgs = {
         no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',
