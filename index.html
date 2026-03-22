@@ -170,18 +170,31 @@
       transform: translateX(-50%);
       width: calc(100% - 48px);
       max-width: 440px;
-      background: rgba(var(--chalk-rgb),0.06);
-      border: 1px solid rgba(var(--chalk-rgb),0.10);
+      background: rgba(10,14,22,0.55);
+      border: 1px solid rgba(var(--chalk-rgb),0.08);
       border-radius: 999px;
       padding: 3px 4px;
-      backdrop-filter: blur(20px) saturate(180%);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.28);
+      backdrop-filter: blur(40px) saturate(200%);
+      -webkit-backdrop-filter: blur(40px) saturate(200%);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(var(--chalk-rgb),0.06) inset;
       z-index: 1000;
     }
     .bnav-icon-row {
       display: flex;
       gap: 2px;
+      position: relative;
+    }
+    /* Sliding pill indicator behind active tab */
+    .bnav-pill {
+      position: absolute;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(135deg, rgba(var(--chalk-rgb),0.18) 0%, rgba(var(--chalk-rgb),0.08) 100%);
+      box-shadow: 0 0 12px rgba(var(--chalk-rgb),0.15), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
+      transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+      pointer-events: none;
+      z-index: 0;
+      top: 0;
     }
     .bnav-icon-btn {
       flex: 1;
@@ -189,13 +202,13 @@
       gap: 3px;
       padding: 6px 6px 5px;
       border: none; background: transparent; border-radius: 999px;
-      cursor: pointer; transition: background 0.22s ease, color 0.22s ease;
-      color: rgba(var(--chalk-rgb),0.50);
+      cursor: pointer; transition: color 0.25s ease;
+      color: rgba(var(--chalk-rgb),0.40);
       position: relative;
+      z-index: 1;
     }
-    .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.70); }
+    .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.65); }
     .bnav-icon-btn.active {
-      background: rgba(var(--chalk-rgb),0.12);
       color: var(--chalk);
     }
     .bnav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
@@ -210,7 +223,7 @@
     .predict-sub-nav {
       display: flex;
       gap: 2px;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
       background: rgba(var(--chalk-rgb),0.04);
       border: 1px solid rgba(var(--chalk-rgb),0.08);
       border-radius: var(--radius-md);
@@ -274,7 +287,7 @@
 
     /* ── CHALK/UPSIDE TABS ── */
     .mode-tabs {
-      display: flex; gap: 2px; margin-bottom: 16px;
+      display: flex; gap: 2px; margin-bottom: 8px;
       background: rgba(var(--chalk-rgb),0.04);
       border: 1px solid rgba(var(--chalk-rgb),0.08);
       border-radius: var(--radius-md);
@@ -1182,6 +1195,7 @@
   <nav class="bottom-nav" id="bottomNav">
     <!-- Primary icon row -->
     <div class="bnav-icon-row">
+      <div class="bnav-pill" id="bnavPill"></div>
       <button class="bnav-icon-btn active" data-tab="predictions" onclick="switchTab('predictions')">
         <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
         <span class="bnav-label">Predict</span>
@@ -1673,7 +1687,16 @@ function switchTab(tab) {
     clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null;
   }
 
-  document.querySelectorAll('.bnav-icon-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.bnav-icon-btn').forEach(b => {
+    const isActive = b.dataset.tab === tab;
+    b.classList.toggle('active', isActive);
+    if (isActive) {
+      const accent = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
+      b.style.color = `rgb(${accent.rgb})`;
+    } else {
+      b.style.color = '';
+    }
+  });
   document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
 
   // Ben tab needs fixed layout — prevent body scroll and snap to top
@@ -1740,7 +1763,16 @@ function switchPredictSub(sub) {
   });
 }
 
-function movePill(tab) { /* no pill in icon-only nav */ }
+function movePill(tab) {
+  const pill = document.getElementById('bnavPill');
+  const btn = document.querySelector(`.bnav-icon-btn[data-tab="${tab}"]`);
+  const row = document.querySelector('.bnav-icon-row');
+  if (!pill || !btn || !row) return;
+  const rowRect = row.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  pill.style.width = btnRect.width + 'px';
+  pill.style.transform = `translateX(${btnRect.left - rowRect.left}px)`;
+}
 
 // Pill accent color per tab
 const TAB_ACCENT = {
@@ -1752,13 +1784,16 @@ const TAB_ACCENT = {
 };
 
 function setPillAccent(tab) {
-  // Simplified: no per-tab glow on nav buttons — active state is a subtle white pill
-  // TAB_ACCENT still used by ambient glow blob (body::after)
+  const pill = document.getElementById('bnavPill');
+  if (!pill) return;
+  const accent = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
+  pill.style.background = `linear-gradient(135deg, rgba(${accent.rgb},0.18) 0%, rgba(${accent.rgb},0.08) 100%)`;
+  pill.style.boxShadow = `0 0 12px rgba(${accent.rgb},0.15), 0 0.5px 0 rgba(${accent.rgb},0.12) inset`;
 }
 
-// Init accent on load
+// Init pill position + accent on load
 window.addEventListener('load', () => {
-  setTimeout(() => setPillAccent('predictions'), 30);
+  setTimeout(() => { movePill('predictions'); setPillAccent('predictions'); }, 30);
 });
 
 // ════════════════════════════════════════════════════════════════════
