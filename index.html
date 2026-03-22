@@ -2888,9 +2888,7 @@ async function fetchParlay() {
 function initParlayPage() {
   const todayET = _etToday();
   if (PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success') {
-    renderParlayTicket(PARLAY_STATE.data);
-    if (PARLAY_HIST_DATA) renderParlayHistory(PARLAY_HIST_DATA);
-    return;
+    return;  // DOM preserved by tab toggle — no re-render needed
   }
   PARLAY_LOADED_DATE = todayET;
   fetchParlay();
@@ -4059,13 +4057,9 @@ async function initLinePage() {
       fetchLineHistory();
       return;
     }
-    // Fresh data — show cached state immediately, then background re-fetch so we get
-    // rotated pick after a hit (first load after bet resolves).
-    _renderLineLOTDFromState();
-    switchLineDir(LINE_DIR);
+    // Fresh data — DOM preserved by tab toggle, no re-render needed.
+    // Live poll restarted by switchTab() (line 1877). Only fetch history if never loaded.
     if (!LINE_HIST_DATA) fetchLineHistory();
-    else _renderLineHistoryFromState();
-    fetchLineOfTheDay(true, true); // nocache + background: no skeleton, update when ready
     return;
   }
   // Date changed — full reload
