@@ -210,9 +210,9 @@
       position: absolute;
       height: 100%;
       border-radius: 14px;
-      background: linear-gradient(135deg, rgba(var(--chalk-rgb),0.14) 0%, rgba(var(--chalk-rgb),0.06) 100%);
-      border: 1px solid rgba(var(--chalk-rgb),0.10);
-      box-shadow: 0 0 10px rgba(var(--chalk-rgb),0.10), inset 0 1px 1px rgba(var(--chalk-rgb),0.08);
+      background: linear-gradient(135deg, rgba(212,166,64,0.14) 0%, rgba(212,166,64,0.06) 100%);
+      border: 1px solid rgba(212,166,64,0.10);
+      box-shadow: 0 0 10px rgba(212,166,64,0.10), inset 0 1px 1px rgba(212,166,64,0.08);
       transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
       pointer-events: none;
       z-index: 0;
@@ -232,7 +232,7 @@
     }
     .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.65); }
     .bnav-icon-btn.active {
-      color: var(--chalk);
+      color: var(--line);
     }
     .bnav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
     .bnav-icon svg { width: 22px; height: 22px; display: block; }
@@ -1799,11 +1799,11 @@ function movePill(tab) {
 
 // Pill accent color per tab
 const TAB_ACCENT = {
-  predictions: { rgb: '20,184,166' },
+  predictions: { rgb: '212,166,64' },
   line:        { rgb: '212,166,64' },
-  parlay:      { rgb: '20,184,166' },
-  lab:         { rgb: '20,184,166' },
-  log:         { rgb: '20,184,166' },
+  parlay:      { rgb: '212,166,64' },
+  lab:         { rgb: '212,166,64' },
+  log:         { rgb: '212,166,64' },
 };
 
 function setPillAccent(tab) {
