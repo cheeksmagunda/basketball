@@ -535,6 +535,7 @@ class TestParlayConfigDefaults:
         assert p["market_match_juice_relaxed"] == -120
         assert p["market_match_min_conf"] == 0.58
         assert p["correlated_pair_max_spread"] == 6.5
+        assert p["parlay_gamelog_pool_cap"] == 100
 
 
 class TestParlayRateLimit:

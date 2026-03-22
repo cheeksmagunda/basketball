@@ -16,11 +16,12 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predict | Line | Ben | Log, vanilla JS)
-api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line)
+index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
+api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
 api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
+api/parlay_engine.py   — Safest 3-leg parlay (Z-score + correlation scoring)
 api/rotowire.py        — RotoWire lineup scraper (availability/injury flags)
 lgbm_model.pkl         — LightGBM model bundle {model, features}
 train_lgbm.py          — Training script (12 features)
@@ -29,6 +30,7 @@ data/predictions/      — Git-tracked daily prediction CSVs
 data/actuals/          — Git-tracked daily actual result CSVs
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
+data/parlays/          — Git-tracked daily parlay JSON (ticket + lazy resolution)
 data/slate/            — GitHub-persisted prediction cache (current slate + games + bust marker)
 data/locks/            — Cold-start lock recovery: {date}_slate.json at lock time (active slate only)
 data/boosts/           — Pre-game boost uploads (Layer 0 ground-truth boosts, {date}.json)
@@ -43,7 +45,8 @@ server.py              — Local dev server (uvicorn)
 | Tab | Purpose |
 |-----|---------|
 | **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
-| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh hourly. Resolved picks only in Recent Picks history |
+| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh on a game-window cron. Resolved picks also in Recent Picks history |
+| **Parlay** | Safest 3-leg player prop parlay (certainty-focused). Ticket + Recent Parlays history with modal resolution |
 | **Ben** | Chat interface (Claude Opus). Always available. End-of-day upload flow (banner shows when pending upload date exists) |
 | **Log** | Historical drill-down — graded cards (Actual RS + ESPN box scores vs projections, hit/miss coloring). Pending state before uploads |
 
@@ -74,18 +77,18 @@ Subsequent visits serve from cache. Injury-triggered regeneration (`/api/injury-
 
 ## Two Lineup Types
 
-When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single 7–10 player core (union of chalk/moonshot-eligible, ranked by core score). **Starting 5** = best 5-of-core for reliability; **Moonshot** = best 5-of-core for ceiling. High overlap is intended. When disabled, legacy behavior: separate pools, each MILP from its own pool.
+When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single shared core (size from `core_pool.size`, often ~15; union of eligible players, ranked by `core_pool.metric`). **Starting 5** = best 5-of-core for reliability; **Moonshot** = best 5-of-core for ceiling. High overlap is intended. When disabled, legacy behavior: separate pools, each MILP from its own pool.
 
-**Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Requires ≥25 season avg minutes. **Star anchor**: one star (season_pts ≥ 20) can bypass the boost floor — MILP `chalk_max_stars=1` limits exposure. Consistent, conservative.
+**Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Minutes floors are **configurable** (`projection.chalk_season_min_floor`, `chalk_recent_min_floor` in `data/model-config.json`). **Star anchor**: a star (e.g. season_pts ≥ `star_anchor_ppg`) can bypass the boost floor — `chalk_max_stars` limits exposure. Consistent, conservative.
 Late-season (`team_motivation.start_date` onward), Starting 5 applies a soft team-incentive reliability tilt so playoff/play-in teams are favored and low-incentive teams are discounted (configurable A/B/C multipliers; no hard bans).
 
-**Moonshot** — Contrarian EV strategy. 5 eligibility pathways: regular, spot-starter, wildcard, role-spike, **star anchor** (same as chalk — season_pts ≥ 20, season_min ≥ 25, rating ≥ 4.0 bypasses `min_card_boost` gate). Ranked by `moonshot_ev = base_rating × team_bonus × boost_leverage × (avg_slot + est_mult)` where `boost_leverage = est_mult^1.6`. MILP `max_low_boost=1` ensures at most 1 star — other 4 slots stay high-boost role players. Dev team bonus from live ESPN standings. Both lineups share the same star anchor logic: high-boost role players PLUS one big scorer who can pop off.
+**Moonshot** — Contrarian EV strategy. Multiple eligibility pathways (regular, spot-starter, wildcard, role-spike, star/scoring anchors — see `moonshot` and `scoring_thresholds` in model-config). Ranked by `moonshot_ev` using `boost_leverage` from `est_mult` raised to **`moonshot.boost_leverage_power`** (configurable; not a fixed 1.6). MILP constraints like `max_low_boost` limit star exposure. Dev team bonus from live ESPN standings when enabled.
 
 ## Line of the Day
 
-Daily player prop pick generated by 6 parallel Claude Haiku calls (points/rebounds/assists × over/under). Best over and best under picks stored separately. The pick card uses a zoned layout: header (matchup, game time), play row, 5-column data row (Baseline, Edge, Target stat, Minutes, L5), and a **Conclusion** box at the bottom that consolidates all model reasoning into one natural-language paragraph (narrative + signals). This "Narrative Conclusion" pattern is the standard for Oracle model explanations app-wide. Line behavior can be tuned via the `line` section of `data/model-config.json` (`min_confidence`, `min_edge_pct`); Ben can propose changes there like other config.
+Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku when the API key is set, plus an algorithmic fallback). Best over and best under are stored separately with per-direction rotation. The pick card uses a zoned layout: header (matchup, game time), play row, 5-column data row (Baseline, Edge, Target stat, Minutes, L5), and a **Conclusion** box at the bottom. Line behavior is tuned via the `line` section of `data/model-config.json` (`min_confidence`, `min_edge_pct`, etc.).
 
-**Hourly odds refresh**: A Railway cron (`55 * * * *`, once per hour at :55) calls `/api/refresh-line-odds` which fetches the current bookmaker consensus line from The Odds API and updates the pick's `line`, `odds_over`, `odds_under`, and `books_consensus` fields without changing the pick direction or reasoning. The odds freeze at slate lock time (5 min before first tip). Pick cards show "Odds · [time] CT" to indicate freshness.
+**Bookmaker odds sync**: Railway runs `/api/refresh-line-odds` on a **game-window schedule** (see [`railway.toml`](railway.toml)), not 24×/day. The endpoint uses a bulk Odds API map + per-pick lookup. Odds freeze once the slate is locked (5 min before first tip). Pick cards show "Odds · [time] CT" when `line_updated_at` is set.
 
 ## Ben (Lab) Interface
 
@@ -112,7 +115,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
 | `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) per player for completed games |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear all caches + config cache (cron; requires CRON_SECRET when set). Manual: `Authorization: Bearer <CRON_SECRET>` or `?key=<CRON_SECRET>` (keep URL private). |
+| `/api/refresh` | GET | Clear `/tmp` caches + config cache + bust GitHub slate cache; optional auto-save if locked. **No auth required** (non-destructive; used by daily cron). |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
 | `/api/force-regenerate?scope=full\|remaining` | GET | Force-regenerate predictions mid-slate. `scope=full`: all games (deploy/model refresh; CRON_SECRET-gated). `scope=remaining`: unlocked games only (Late Draft banner; user-facing). |
 | `/api/slate-check` | GET | Pass 2 trigger monitor: injury changes, watchlist activation, or Vegas total movement; returns `{changed, triggers, recommendation}` |
@@ -120,13 +123,20 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 ### Line of the Day
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/line-of-the-day` | GET | Both over + under picks (6 parallel Haiku calls) |
-| `/api/refresh-line-odds` | GET | Sync current bookmaker line from Odds API (hourly cron) |
+| `/api/line-of-the-day` | GET | Both over + under picks (Claude Haiku + fallback) |
+| `/api/refresh-line-odds` | GET | Bulk Odds API map + lookup; updates book lines on stored picks (game-window cron) |
 | `/api/line-live-stat` | GET | Fetch live stat value for in-game pick tracking |
 | `/api/save-line` | POST | Persist `{over_pick, under_pick}` + primary pick to GitHub |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
 | `/api/auto-resolve-line` | GET | Cron: auto-resolve picks when games end (requires CRON_SECRET when set) |
 | `/api/line-history` | GET | Recent picks with streak + hit rate |
+
+### Parlay
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/parlay` | GET | Safest 3-leg parlay (30 min `/tmp` cache; rate-limited). Auto-saves to `data/parlays/{date}.json` |
+| `/api/parlay-history` | GET | Recent parlays + lazy ESPN resolution |
+| `/api/parlay-force-regenerate` | GET | Cron: pre-lock regeneration (see `railway.toml`) |
 
 ### Ben (Lab)
 | Endpoint | Method | Description |
@@ -145,15 +155,17 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 
 ## Cron Schedule (UTC)
 
-Crons are configured in `railway.toml`. When `CRON_SECRET` is set, cron endpoints require `Authorization: Bearer <CRON_SECRET>` (Railway injects this via cron commands).
+Source of truth: [`railway.toml`](railway.toml). When `CRON_SECRET` is set, protected crons send `Authorization: Bearer <CRON_SECRET>` (Railway injects via cron commands). `/api/refresh` is intentionally unauthenticated.
 
 | Schedule | Endpoint | Purpose |
 |----------|----------|---------|
-| `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
-| `0 9 * * *` | `/api/lab/auto-improve` | Auto-tune model params if ≥3% MAE improvement |
-| `55 * * * *` | `/api/refresh-line-odds` | Hourly odds sync (at :55; hits 6:55 PM ET lock window) |
-| `0 * * * *` | `/api/auto-resolve-line` | Resolve line picks as each game ends (hourly at :00; requires CRON_SECRET when set) |
-| `0 14,16,18,20,22,0 * * *` | `/api/injury-check` | Check RotoWire for injury changes; regenerate affected games only |
+| `0 19 * * *` | `/api/refresh` | Daily cache clear + auto-save locked predictions |
+| `0 9 * * 0,3` | `/api/lab/auto-improve` | Auto-tune model (Wed + Sun only; requires CRON_SECRET when set) |
+| `55 19,20,21,22,23,0,1,2,3,4,5,6 * * *` | `/api/refresh-line-odds` | Odds sync during game-window hours (UTC) |
+| `0 20,21,22,23,0,1,2,3,4,5,6,7 * * *` | `/api/auto-resolve-line` | Resolve line picks (game-window hours; CRON_SECRET when set) |
+| `0 18,22,2 * * *` | `/api/injury-check` | RotoWire injury check (3 windows/day; CRON_SECRET when set) |
+| `0 6 * * 1` | `/api/mae-drift-check` | Weekly MAE drift (Monday; CRON_SECRET when set) |
+| `0 17 * * *` | `/api/parlay-force-regenerate` | Pre-lock parlay generation → GitHub |
 
 ## Responsiveness & Reliability
 
@@ -161,7 +173,7 @@ Crons are configured in `railway.toml`. When `CRON_SECRET` is set, cron endpoint
 
 **Fetch Timeout Protection**: All frontend API calls enforce hard timeouts (10s default, 30s screenshots) via `Promise.race()` and `AbortController`. Prevents indefinite UI hangs on slow backend.
 
-**Worker Pool Optimization**: Backend uses 8 parallel workers (up from 4) for game processing, slate computation, picks analysis, and audit runs. Handles 14-game Saturdays efficiently.
+**Worker pools**: 8 workers for game/slate/picks/audit/line/Odds per-event fetches; 10 workers for parlay ESPN gamelog batch (I/O-bound). See [CLAUDE.md](CLAUDE.md) (Production cache section).
 
 **Polling Intervals**:
 - Lab lock status: 2-minute checks (reduces invocations; Retry for immediate check)
@@ -169,9 +181,9 @@ Crons are configured in `railway.toml`. When `CRON_SECRET` is set, cron endpoint
 
 **GitHub Write Retry**: Exponential backoff (1s, 2s, 4s) on concurrent write conflicts (HTTP 422 SHA mismatch). Fresh SHA fetch on each retry.
 
-**Cache TTLs**: Game final (60s when locked, 180s pre-slate), model config (5 min), RotoWire (30 min), odds (1 hour), slate cache (1 day, GitHub-persisted). Explicit invalidation via `/api/refresh` or `_bust_slate_cache()`.
+**Cache TTLs**: Single source of truth for backend durations is [`api/index.py`](api/index.py) (`_TTL_*` constants) — see **Production: DRY rules and cache inventory** in [CLAUDE.md](CLAUDE.md). Includes: ESPN games list (5 min), model config (5 min), Odds bulk map fresh reuse (10 min) + 1 h degraded snapshot on failure, parlay/line `/tmp` (30 min), game-final polling (60s locked / 180s pre-slate), GitHub-persisted slate. Explicit invalidation via `GET /api/refresh` or `_bust_slate_cache()`.
 
-**Why hitting `/api/refresh` didn't reset picks (and how it's fixed):** (1) **Auth** — When `CRON_SECRET` is set, opening `myurl/api/refresh` in a browser sends no token, so the server returns 401 and does nothing. **Fix:** Call with `Authorization: Bearer <CRON_SECRET>` or use `myurl/api/refresh?key=<CRON_SECRET>` (keep the URL private). (2) **Games cache tombstone** — After a bust we write `{"_busted": true}` to the games file on GitHub; the reader now treats that as "no cache" instead of using it. (3) **Deploy vs. cache** — Picks are built from the deployed code; deploy the fix, then call `/api/refresh` (with auth) to clear caches.
+**If caches look stale after a deploy or config change:** (1) **`/api/refresh` is unauthenticated** — it always runs when hit; it clears `/tmp`, lock files, config cache, busts GitHub slate (and today’s parlay file), and clears RotoWire cache. (2) **Multi-instance** — `/api/refresh` only clears `/tmp` on the container that receives the request; other Railway instances still have their own `/tmp` until they cycle or miss cache. GitHub tombstones from `_bust_slate_cache()` align all instances on the next slate read. (3) **Tombstones** — `data/slate/{date}_games.json` with `_busted` is treated as a miss so picks regenerate.
 
 **Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
 
@@ -200,7 +212,16 @@ All secrets and config live in **environment variables only** — never hardcode
 | `CRON_SECRET` | (optional) Secures cron-only endpoints; Railway injects via cron commands in railway.toml |
 | `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
 
-**Cache refresh:** The `clear-cache-on-deploy` workflow was removed to prevent deploy loops. To reset production caches (e.g. after a config change), call `GET /api/refresh` with `Authorization: Bearer <CRON_SECRET>` or use the refresh cron. Repository secrets `PRODUCTION_URL` and `CRON_SECRET` are only needed if you re-add a post-deploy cache-clear workflow.
+**Cache refresh:** `GET /api/refresh` requires **no secret** (non-destructive). For GitHub slate bust + full regen after model/config changes, use Lab `update-config` (auto-busts) or call refresh then wait for next slate request. Repository secrets like `CRON_SECRET` are for **protected** crons only (auto-improve, injury-check, auto-resolve-line, MAE drift), not for `/api/refresh`.
+
+## Production readiness
+
+- **Health**: `GET /api/health` — Railway `healthcheckPath`; alert on non-200.
+- **Build**: `GET /api/version` — deploy SHA for verifying Railway picked up a push.
+- **Tests**: `python3 -m pytest tests/ -v` before shipping (415+ tests; requires `pip install -r requirements.txt`).
+- **TTLs / caches**: One backend block (`_TTL_*`, `_CK_*`, `_cp`/`_cg`/`_cs`) — document in [CLAUDE.md](CLAUDE.md); avoid duplicating magic numbers in new endpoints.
+- **Deploy**: `watchPatterns` in `railway.toml` — `data/` commits do not rebuild the Docker image.
+- **DRY**: Shared Odds bulk map (`_build_player_odds_map`), GitHub games hydration (`_hydrate_game_projs_from_github`), scoped parlay gamelogs (`select_parlay_gamelog_player_ids`).
 
 ## LightGBM Model
 
@@ -216,8 +237,9 @@ All persistent data stored in the GitHub repo via Contents API:
 - `data/audit/{date}.json` — pre-computed accuracy audit
 - `data/lines/{date}.csv` — primary pick for result tracking/resolve
 - `data/lines/{date}_pick.json` — dual-pick format `{over_pick, under_pick}` with odds fields
+- `data/parlays/{date}.json` — daily parlay ticket + resolution fields
 - `data/slate/{date}_slate.json` — GitHub-persisted full slate cache (Starting 5 + Moonshot lineups)
-- `data/slate/{date}_games.json` — GitHub-persisted per-game projections (keyed by gameId)
+- `data/slate/{date}_games.json` — GitHub-persisted per-game projections (keyed by gameId); also hydrates cold `/tmp` for Line/Parlay
 - `data/locks/{date}_slate.json` — cold-start lock recovery (written at lock-promotion time)
 - `data/model-config.json` — runtime model parameters (5-min cache, fallback to defaults)
 - `data/skipped-uploads.json` — user-selected dates to skip uploading (persists skip decisions)
@@ -236,11 +258,12 @@ uvicorn server:app --reload
 Unit tests cover lock logic, audit computation, GitHub retries, cache TTLs, line cache behavior, and JS syntax (e.g. unescaped apostrophes). Run with:
 
 ```bash
-pytest tests/ -v
+python3 -m pytest tests/ -v
 ```
 
-- **tests/test_fixes.py** — Backend: _safe_float, _is_locked, _compute_audit, _github_write_file retry, save-actuals audit gate, midnight rollover, cache TTLs, polling intervals.
-- **tests/test_core.py** — Helpers, line cache serve/bypass rules, JS string and render-function checks, cache date-boundary regressions.
+- **tests/test_fixes.py** — Backend: `_safe_float`, `_is_locked`, audit, GitHub retries, slate/cache, line, parlay-related guards.
+- **tests/test_core.py** — Helpers, line cache, JS contract checks, date boundaries.
+- **tests/test_parlay.py** — Parlay engine and endpoint contracts.
 
 Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.). Use `pip install -r requirements.txt` first (e.g. in a virtual environment). If pytest reports tests *skipped* with reason "Install dependencies: pip install -r requirements.txt", install the requirements and re-run.
 

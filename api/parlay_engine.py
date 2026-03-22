@@ -121,10 +121,82 @@ def _has_gtd_star_teammate(player_team, rw_statuses, player_name_lower):
     return False
 
 
+def select_parlay_gamelog_player_ids(projections, games, player_odds_map, rw_statuses,
+                                    parlay_config, projection_only):
+    """Choose which ESPN player ids need gamelog fetches before build_candidate_legs.
+
+    When projection_only is False, only players with at least one sportsbook line in
+    player_odds_map can become legs — others need no gamelog. When True (synthetic
+    lines for everyone), cap by projected RS (rating) to limit ESPN fan-out.
+
+    Pool size scales with max_candidates_for_combinations (same spirit as combo cap).
+    """
+    cfg = parlay_config or {}
+    max_spread = cfg.get("max_spread", 8.5)
+    min_season_minutes = float(cfg.get("min_season_minutes", 20.0))
+    max_cand = int(cfg.get("max_candidates_for_combinations", 25))
+    pool_cap = min(max(max_cand * 5, 40), int(cfg.get("parlay_gamelog_pool_cap", 100)))
+
+    game_lookup = {}
+    for g in games:
+        home_abbr = g["home"]["abbr"]
+        away_abbr = g["away"]["abbr"]
+        game_id = g.get("gameId", "")
+        spread = g.get("spread")
+        total = g.get("total", 222)
+        start_time = g.get("startTime", "")
+        for abbr, opp in [(home_abbr, away_abbr), (away_abbr, home_abbr)]:
+            game_lookup[abbr] = {
+                "gameId": game_id, "opponent": opp, "spread": spread,
+                "total": total, "startTime": start_time,
+                "home": home_abbr, "away": away_abbr,
+            }
+
+    scored = []
+    for p in projections:
+        pid = str(p.get("id", ""))
+        name = p.get("name", "")
+        team = p.get("team", "")
+        name_lower = name.lower()
+        if not pid or not name or not team:
+            continue
+        season_min = float(p.get("season_min") or p.get("predMin") or 0)
+        if season_min < min_season_minutes:
+            continue
+        injury = (p.get("injury_status") or "").lower()
+        if injury in ("out", "questionable"):
+            continue
+        gctx = game_lookup.get(team)
+        if not gctx:
+            continue
+        if _is_blowout_game(gctx.get("spread"), max_spread):
+            continue
+        if _has_gtd_star_teammate(team, rw_statuses, name_lower):
+            continue
+        if not projection_only:
+            has_odds = False
+            for st in ("points", "rebounds", "assists"):
+                if player_odds_map and player_odds_map.get((name_lower, st)):
+                    has_odds = True
+                    break
+            if not has_odds and player_odds_map:
+                for (oname, ostat), _ in player_odds_map.items():
+                    if ostat in ("points", "rebounds", "assists") and (name_lower in oname or oname in name_lower):
+                        has_odds = True
+                        break
+            if not has_odds:
+                continue
+        rating = float(p.get("rating") or 0)
+        scored.append((rating, pid))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [pid for _, pid in scored[:pool_cap]]
+
+
 # ── Candidate Leg Builder ────────────────────────────────────────────────────
 
 def build_candidate_legs(projections, games, player_odds_map, gamelogs,
-                         rw_statuses, parlay_config=None):
+                         rw_statuses, parlay_config=None, gamelog_player_ids=None):
     """Build all valid candidate parlay legs from projections + odds.
 
     Args:
@@ -134,6 +206,9 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
         gamelogs: {player_id: {stat_type: [last N values], "minutes": [last N values]}}
         rw_statuses: RotoWire statuses dict.
         parlay_config: Optional config overrides.
+        gamelog_player_ids: Optional set of ESPN player ids that have gamelog rows fetched
+            (from ``select_parlay_gamelog_player_ids``). When None, every projection is
+            evaluated (legacy). When set, other ids are skipped to match scoped fetches.
 
     Returns:
         List of candidate leg dicts, each with hit_prob, blended_conf, etc.
@@ -173,8 +248,9 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
     candidates = []
     # Diagnostic counters for pipeline visibility
     _f = {"total": 0, "no_id": 0, "low_min": 0, "injury": 0, "no_game": 0,
-          "blowout": 0, "gtd": 0, "high_cv": 0, "low_games": 0,
+          "blowout": 0, "gtd": 0, "skipped_pool": 0, "high_cv": 0, "low_games": 0,
           "no_odds": 0, "low_line": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
+    _pool = set(gamelog_player_ids) if gamelog_player_ids is not None else None
 
     for p in projections:
         pid = str(p.get("id", ""))
@@ -213,6 +289,10 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
         # GTD star teammate filter
         if _has_gtd_star_teammate(team, rw_statuses, name_lower):
             _f["gtd"] += 1
+            continue
+
+        if _pool is not None and pid not in _pool:
+            _f["skipped_pool"] += 1
             continue
 
         # Minutes volatility filter
@@ -717,7 +797,7 @@ def _find_best_market_match(pool, pair, cfg=None):
 
 
 def run_parlay_engine(projections, games, player_odds_map, gamelogs,
-                      rw_statuses=None, parlay_config=None):
+                      rw_statuses=None, parlay_config=None, gamelog_player_ids=None):
     """Find the optimal 3-leg parlay from today's slate.
 
     Uses a PRESCRIPTIVE builder that targets the ideal 3-leg structure:
@@ -743,7 +823,7 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
     # Step 1: Build all valid candidate legs
     candidates, filter_funnel = build_candidate_legs(
         projections, games, player_odds_map, gamelogs,
-        rw_statuses, cfg,
+        rw_statuses, cfg, gamelog_player_ids=gamelog_player_ids,
     )
 
     if len(candidates) < 3:

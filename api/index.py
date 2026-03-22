@@ -42,15 +42,15 @@ load_dotenv()
 try:
     from api.real_score import real_score_projection, _make_rng, closeness_coefficient
     from api.asset_optimizer import optimize_lineup
-    from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
+    from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
-    from api.parlay_engine import run_parlay_engine
+    from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
-    from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games
+    from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
-    from .parlay_engine import run_parlay_engine
+    from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -430,6 +430,42 @@ def _games_cache_from_github():
         print(f"[games-cache] read err: {e}")
     return None
 
+
+def _hydrate_game_projs_from_github(target_games):
+    """Load per-game projections from GitHub `data/slate/{today}_games.json` into /tmp.
+
+    Used when /tmp per-game cache is cold (new instance) but slate was already generated
+    elsewhere — avoids re-running _run_game for Line/Parlay paths."""
+    gh = _games_cache_from_github()
+    if not gh or not isinstance(gh, dict) or gh.get("_busted"):
+        return []
+    out = []
+    n_games = 0
+    for g in target_games:
+        gid = g.get("gameId")
+        if not gid:
+            continue
+        projs = gh.get(gid)
+        if not projs or not isinstance(projs, list):
+            continue
+        _cs(_ck_game_proj(gid), projs)
+        out.extend(projs)
+        n_games += 1
+    if out:
+        print(f"[games-cache] hydrated {n_games} games from GitHub into /tmp ({len(out)} players)")
+    return out
+
+
+def _odds_map_fingerprint(games):
+    """Stable id for Odds API bulk map (ESPN game ids + team abbrs)."""
+    parts = []
+    for g in sorted(games or [], key=lambda x: str(x.get("gameId", ""))):
+        h = (g.get("home") or {}).get("abbr") or str(g.get("homeTeam", ""))
+        a = (g.get("away") or {}).get("abbr") or str(g.get("awayTeam", ""))
+        parts.append(f"{g.get('gameId', '')}|{a}|{h}")
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
+
+
 def _bust_slate_cache():
     """Clear today's slate cache from /tmp AND GitHub so next request regenerates.
     Called by /api/refresh and /api/lab/update-config.
@@ -527,13 +563,14 @@ _TTL_GAMES = 300        # 5 min — ESPN game data freshness
 _TTL_LOG = 600          # 10 min — log dates / parlay history
 _TTL_LOCKED = 60        # 1 min — game final check during locked slate
 _TTL_PRE_SLATE = 180    # 3 min — pre-slate polling
-_TTL_L5 = 1800          # 30 min — player last-5 game stats
+_TTL_L5 = 1800          # 30 min — ESPN gamelog cache for parlay volatility (see _fetch_gamelog)
 _TTL_HOUR = 3600        # 1 hour — infrequently changing data
+_TTL_ODDS_FRESH = 600   # 10 min — reuse bulk Odds API map across slate/line/parlay in same instance
 
 # ThreadPoolExecutor worker counts.
 _W_LIGHT = 2            # light parallelism (2-way fetch)
 _W_STANDARD = 8         # standard game/slate/picks processing
-_W_L5 = 10              # L5 enrichment (I/O-bound nba_api calls)
+_W_L5 = 10              # parlay gamelog batch (I/O-bound ESPN athlete gamelog calls)
 
 # GitHub data path builder — replaces 34+ hardcoded "data/..." strings.
 _DATA_PREFIXES = {
@@ -790,6 +827,7 @@ _CONFIG_DEFAULTS = {
         "market_match_juice_relaxed": -120,
         "market_match_min_conf": 0.58,
         "correlated_pair_max_spread": 6.5,
+        "parlay_gamelog_pool_cap": 100,
     },
     "pass2": {
         "vegas_total_threshold": 3.0,
@@ -6138,6 +6176,9 @@ def _build_player_odds_map(games):
     Makes 1 + N calls (events list + one props call per game) instead of
     2 calls per player — far more API-efficient.
 
+    Successful maps are cached for _TTL_ODDS_FRESH seconds (same ET-day fingerprint)
+    so /api/slate, line, and parlay reuse one Odds API round-trip per warm instance.
+
     Returns {(player_name_lower, stat_type): {"line", "odds_over", "odds_under",
     "books_consensus"}} or {} on any failure.
     """
@@ -6145,6 +6186,22 @@ def _build_player_odds_map(games):
     if not api_key:
         print("[odds_map] ODDS_API_KEY not set — skipping odds fetch")
         return {}
+
+    fp = _odds_map_fingerprint(games)
+    fresh_ck = "odds_fresh_map_v1"
+    try:
+        cp_f = _cp(fresh_ck)
+        if cp_f.exists():
+            age = time.time() - cp_f.stat().st_mtime
+            if age < _TTL_ODDS_FRESH:
+                obj = json.loads(cp_f.read_text()) if cp_f.read_text() else {}
+                if isinstance(obj, dict) and obj.get("fingerprint") == fp:
+                    data = obj.get("data")
+                    if isinstance(data, dict) and data:
+                        print(f"[odds_map] fresh cache hit fp={fp[:8]}… age={age:.0f}s entries={len(data)}")
+                        return data
+    except Exception:
+        pass
 
     # Degraded mode: if the Odds API is rate-limiting / failing, fall back to the
     # last successfully built map (previous hour). This keeps lineup generation alive.
@@ -6291,6 +6348,12 @@ def _build_player_odds_map(games):
     except Exception:
         pass
 
+    if result_map:
+        try:
+            _cs(fresh_ck, {"ts": time.time(), "fingerprint": fp, "data": result_map})
+        except Exception:
+            pass
+
     return result_map
 
 
@@ -6309,7 +6372,7 @@ def _line_pick_to_csv(pick: dict, date_str: str) -> str:
 
 def _get_projections_for_date(date_obj):
     """Return (all_proj, draftable_games) for the given date for line-engine enrichment.
-    Checks /tmp cache, then GitHub persistent cache, then runs the full pipeline as a last resort."""
+    Checks /tmp per-game cache, then GitHub `data/slate/{date}_games.json`, then full pipeline."""
     games = fetch_games(date_obj)
     draftable = [g for g in games if not _is_past_lock_window(g.get("startTime", ""))]
     if not draftable:
@@ -6320,8 +6383,10 @@ def _get_projections_for_date(date_obj):
         gp = _cg(_ck_game_proj(g['gameId']))
         if gp:
             all_proj.extend(gp)
-    # Full pipeline if no /tmp cache (skip GitHub games cache here — it adds
-    # latency and the line engine still needs Haiku calls regardless)
+    # Layer 2: GitHub games cache (cold /tmp after deploy)
+    if not all_proj:
+        all_proj = _hydrate_game_projs_from_github(draftable)
+    # Layer 3: full pipeline
     if not all_proj:
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
@@ -6458,9 +6523,9 @@ def _run_line_engine_for_date(date):
         gp = _cg(_ck_game_proj(g['gameId']))
         if gp:
             all_proj.extend(gp)
-    # Full pipeline if no /tmp cache (skip GitHub games cache here — it adds latency
-    # and the line engine still needs Haiku calls regardless, so the savings are minimal
-    # vs the risk of timing out on cold start)
+    # GitHub games cache when /tmp is cold (one read vs N× _run_game)
+    if not all_proj:
+        all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
@@ -6897,6 +6962,9 @@ async def refresh_line_odds():
     if not picks:
         return {"status": "no_pick"}
 
+    player_odds_map = _build_player_odds_map(games)
+    use_bulk = bool(player_odds_map)
+
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     updated = False
 
@@ -6910,7 +6978,10 @@ async def refresh_line_odds():
             continue
         pk = _pick_odds_key(pick)
         if pk not in odds_cache:
-            odds_cache[pk] = _fetch_odds_line(pick.get("player_name", ""), pick.get("stat_type", "points"), pick.get("team", ""), pick.get("opponent", ""))
+            book = _lookup_player_odds(player_odds_map, pick.get("player_name", ""), pick.get("stat_type", "points")) if use_bulk else None
+            if not book:
+                book = _fetch_odds_line(pick.get("player_name", ""), pick.get("stat_type", "points"), pick.get("team", ""), pick.get("opponent", ""))
+            odds_cache[pk] = book
         result = odds_cache[pk]
         if result:
             pick.update(result)
@@ -8981,6 +9052,8 @@ def _run_parlay_engine_sync(today):
         if gp:
             all_proj.extend(gp)
     if not all_proj:
+        all_proj = _hydrate_game_projs_from_github(target_games)
+    if not all_proj:
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
             try:
@@ -9015,34 +9088,42 @@ def _run_parlay_engine_sync(today):
                     }
         print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections")
 
-    # Fetch gamelogs for all projected players
-    player_ids = list(set(str(p.get("id", "")) for p in all_proj if p.get("id")))
-    gamelogs = _fetch_gamelogs_batch(player_ids)
-    print(f"[parlay] gamelogs fetched={len(gamelogs)} / {len(player_ids)} players")
-
-    # RotoWire statuses
     rw_statuses = {}
     try:
         rw_statuses = get_all_statuses()
     except Exception as e:
         print(f"[parlay] RotoWire error (non-fatal): {e}")
 
-    # Parlay config from model-config; relax thresholds for projection-only mode
     parlay_config = dict(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
     if projection_only:
         parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
         parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
 
+    gamelog_id_list = select_parlay_gamelog_player_ids(
+        all_proj, target_games, player_odds_map, rw_statuses, parlay_config, projection_only
+    )
+    if gamelog_id_list:
+        gamelog_player_ids = set(gamelog_id_list)
+        player_ids = list(gamelog_player_ids)
+    else:
+        # Empty pool would skip every player — fall back to legacy full fetch
+        gamelog_player_ids = None
+        player_ids = list(set(str(p.get("id", "")) for p in all_proj if p.get("id")))
+
+    gamelogs = _fetch_gamelogs_batch(player_ids)
+    print(f"[parlay] gamelogs fetched={len(gamelogs)} / pool {len(player_ids)} vs {len(all_proj)} projections (scoped={gamelog_player_ids is not None})")
+
     debug = {
         "projections": len(all_proj),
         "odds_entries": 0 if projection_only else len(player_odds_map),
         "gamelogs": len(gamelogs),
+        "gamelog_pool": len(player_ids),
         "odds_available": not projection_only,
         "projection_only": projection_only,
     }
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
-        rw_statuses, parlay_config,
+        rw_statuses, parlay_config, gamelog_player_ids=gamelog_player_ids,
     )
     if result:
         result["projection_only"] = projection_only

@@ -44,9 +44,9 @@ server.py              — Local dev server (uvicorn)
 5-tab segmented control navigation (Apple glassmorphism pill style): **Predict | Line | Parlay | Ben | Log**
 
 - **Predict**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis ("THE LINE UP" — single 5-player format, no card boost). "Slate-Wide | Game" sub-tabs inline at top of tab. Magic 8-ball loading animation.
-- **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Odds refresh hourly from Odds API; pick cards show "Odds · [time] CT".
+- **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Bookmaker odds sync on a **game-window cron** (see `railway.toml`); pick cards show "Odds · [time] CT".
 - **Parlay**: Safest 3-leg player prop parlay (electric purple accent `--parlay: #d946ef`). Optimizes for **certainty** (floor), not edge. Uses Z-score hit probabilities, Vegas market alignment, anti-fragility filters, and strategic correlation scoring. Displays a stacked "ticket" card with combined probability, correlation multiplier, and narrative explanation. **Recent Parlays** history section below the ticket with scrollable hit/miss rows; tapping a row opens a bottom-sheet modal with the full 3-leg ticket detail and resolution (actual stats, leg-by-leg HIT/MISS). Parlay data persisted to `data/parlays/{date}.json`; lazy resolution via ESPN box scores on `/api/parlay-history`.
-- **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Locked during games, unlocked after final.
+- **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Chat is always available from the UI; upload banner still reflects pending data.
 - **Log**: Historical drill-down — date strip, game grid, graded prediction cards vs actuals (no user input — upload happens through Ben). Cards have two states: **Pending** ("Waiting for results") and **Graded** (actual RS + ESPN box score stats overlaid on projections with hit/miss coloring).
 
 ### Sub-Nav Tabs (inline, not floating)
@@ -91,6 +91,7 @@ grep: NEXT SLATE DATE          — _find_next_slate_date, multi-day gap, All-Sta
 grep: FORCE REGENERATE SYNC    — _force_regenerate_sync, scope=full|remaining
 grep: PARLAY ENGINE            — /api/parlay, _fetch_gamelog, _fetch_gamelogs_batch
 grep: PARLAY HISTORY           — /api/parlay-history, parlay resolution, data/parlays/
+grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, odds_fresh_map_v1, CACHE_DIR
 ```
 
 ## Key Endpoints
@@ -120,7 +121,7 @@ grep: PARLAY HISTORY           — /api/parlay-history, parlay resolution, data/
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/line-of-the-day` | GET | **Both** Over + Under picks with **per-direction independent rotation** — each direction rotates to the next slate when its game finishes, without waiting for the other; returns `{over_pick, under_pick, pick}` |
-| `/api/refresh-line-odds` | GET | **Hourly cron** — fetch current bookmaker line from Odds API and update `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
+| `/api/refresh-line-odds` | GET | **Game-window cron** — bulk Odds API map + lookup; updates `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
 | `/api/auto-resolve-line` | GET | **Cron** — resolves each pick when its game ends; generates next-day picks when both resolve (requires CRON_SECRET when set) |
@@ -206,13 +207,13 @@ Predictions are generated **once per day** and cached. Subsequent requests serve
 - **Injury check** (`/api/injury-check`): regenerates only affected games, updates both layers
 - **Boost upload** (`/api/save-boosts`): busts slate cache so new Layer 0 constants are used on the next slate run
 
-### Where GitHub Cache is NOT Used
-The Line of the Day engine paths (`_run_line_engine_for_date()` and `_get_projections_for_date()`) skip the GitHub cache layer entirely. The extra ~1-2s GitHub API round-trip adds latency without benefit — the line engine still needs to run Haiku calls regardless. These paths go directly from `/tmp` cache to the full pipeline.
+### Line / Parlay projection hydration
+`_run_line_engine_for_date()`, `_get_projections_for_date()`, and the parlay pipeline load per-game projections in order: **Layer 1** `/tmp` (`game_proj_{gameId}`), **Layer 2** GitHub `data/slate/{date}_games.json` (via `_hydrate_game_projs_from_github()`), **Layer 3** full `_run_game()` if still empty. One GitHub read on a cold instance avoids re-running ESPN + LightGBM for every tab.
 
 ### Prediction model boundaries (grep: LINE CONFIG, line_engine config)
 
 - **Draft model:** Config in `data/model-config.json` (card_boost, game_script, real_score, cascade, projection, lineup, moonshot, development_teams); code in `api/index.py`, `api/real_score.py`, `api/asset_optimizer.py`; `lgbm_model.pkl` is trained separately (GitHub Actions). Ben can change draft behavior via Lab (update-config, backtest).
-- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Before running the engine, `api/index.py` enriches projections with **real last-5 game stats** (nba_api) when available (`_enrich_projections_with_l5`), so Claude and the fallback see actual recent form. The line engine also receives **web search news context** (from `_fetch_nba_news_context()`, same Layer 1 cache as the draft model) — Claude Haiku sees injury updates, rotation changes, and rest decisions when making over/under picks. Line knobs in config: `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`, `min_edge_other_over` (over-specific non-points edge floor; defaults to `min_edge_other`), `stat_floors`. Ben can tune via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
+- **Line of the Day model:** `api/line_engine.py` receives projections and games from the draft pipeline plus an optional `line_config` dict passed from `api/index.py` (from the config `line` section). Recent-form sparklines use `recent_form_bars` from the engine (ratio vs season); `recent_form_values` may be present on stored picks when written at generation time. The line engine also receives **web search news context** (from `_fetch_nba_news_context()`, same Layer 1 cache as the draft model) — Claude Haiku sees injury updates, rotation changes, and rest decisions when making over/under picks. Line knobs in config: `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`, `min_edge_other_over` (over-specific non-points edge floor; defaults to `min_edge_other`), `stat_floors`. Ben can tune via the `line` section of model-config; no code in line_engine reads GitHub or `_cfg` — config is passed in by the caller to keep the engine self-contained.
 
 ## Ben (Lab) Interface
 
@@ -546,16 +547,16 @@ The main pick card (`renderLinePickCard`) uses a **zoned layout** and design tok
 
 - **Zone 1 (Header):** Player name; subheader = matchup + game time (e.g. `CLE vs BOS · 1:00 PM ET`) when `game_time` is present, else `Team · vs Opponent`. Odds/timestamp in the top-right of the card (`position: relative` on the card, flex + `margin-left: auto` on the odds block).
 - **Zone 2 (The Play):** One row: bet pill (OVER/UNDER) + target stat line (e.g. `13.0 pts`). Stat label is derived from `pick.stat_type` via a small map (points → PTS, rebounds → REB, assists → AST) — no hardcoded PTS/REB/AST in the UI.
-- **Zone 3 (Data row):** A single full-width flex row (`.line-pick-data-row`, `justify-content: space-between`) with **5 columns:** (1) **Baseline** — sportsbook line + stat label; (2) **Edge** — mathematical edge, semantic colors `edge-plus` / `edge-minus`; (3) **Target stat** — stacked projection / season average; (4) **Minutes** — stacked `proj_min` / `avg_min`; (5) **L5** — text array of last-5 stat values (e.g. `12 • 14 • 9 • 16 • 11`) with hit/miss coloring vs baseline. When `recent_form_values` is present (real last-5 from nba_api), L5 uses those; otherwise it falls back to ratio-based values from `recent_form_bars`.
+- **Zone 3 (Data row):** A single full-width flex row (`.line-pick-data-row`, `justify-content: space-between`) with **5 columns:** (1) **Baseline** — sportsbook line + stat label; (2) **Edge** — mathematical edge, semantic colors `edge-plus` / `edge-minus`; (3) **Target stat** — stacked projection / season average; (4) **Minutes** — stacked `proj_min` / `avg_min`; (5) **L5** — text array of last-5 stat values (e.g. `12 • 14 • 9 • 16 • 11`) with hit/miss coloring vs baseline. When `recent_form_values` is present on the pick payload (saved at generation time), L5 uses those; otherwise it falls back to ratio-based values from `recent_form_bars`.
 - **Conclusion (Oracle Insight):** Model reasoning is consolidated into a single narrative paragraph at the bottom of the card, not standalone pills. `_buildLineConclusion(pick)` merges `pick.narrative` with `pick.signals` (e.g. injury upgrade, B2B) into one natural-language sentence; key reasons are highlighted with `--color-text-primary`. The paragraph sits in `.line-pick-conclusion-wrap` (subtle background, 8px radius, padding). **This "Narrative Conclusion" pattern is the standard for model explanations app-wide** — use one prose block, not reasoning bubbles.
-- **Pick payload fields** (from backend): Core fields plus `season_avg`, `proj_min`, `avg_min`, `game_time`, `recent_form_bars`, `recent_form_values`. `recent_form_bars` is set in `api/line_engine.py`; `recent_form_values` is filled in `api/index.py` via `_get_last5_game_stats()` (nba_api PlayerGameLog, 30-min cache). All passed through `_normalize_line_pick`.
+- **Pick payload fields** (from backend): Core fields plus `season_avg`, `proj_min`, `avg_min`, `game_time`, `recent_form_bars`, `recent_form_values`. `recent_form_bars` is set in `api/line_engine.py`. `recent_form_values` is optional and typically persisted in `data/lines/{date}_pick.json` when picks are first generated; load paths use stored JSON without re-fetching. All passed through `_normalize_line_pick`.
 - **Design tokens:** Line card uses `--radius-card`, `--radius-pill`, `--font-size-micro`, `--color-success`, `--color-danger`, `--color-text-primary`, `--color-text-muted`, `--line`, `--lab`; no hardcoded hex for semantic colors in the card block.
 - **Cache:** `index.html` is served with `Cache-Control: max-age=0, must-revalidate` (railway.toml static headers) so browsers and edge revalidate and users get the latest card (5-column + conclusion) after deploy. If an user still sees an old card, they should hard refresh (e.g. pull-to-refresh on mobile) or close and reopen the tab.
 
 ### Odds Refresh Pipeline
-- **Cron**: `55 * * * *` (once per hour at :55; hits common 6:55 PM ET lock)
-- **Helpers**: `_abbr_matches(abbr, full_name)` maps ESPN abbrs → Odds API team name fragments; `_fetch_odds_line(player, stat, team, opp)` makes 2-step Odds API call (events list → event player props)
-- **Lock freeze**: `/api/refresh-line-odds` checks `_is_locked(earliest)` — no-op if locked
+- **Cron** (source of truth: `railway.toml`): `55 19,20,21,22,23,0,1,2,3,4,5,6 * * *` UTC — odds sync during typical NBA game windows only (reduces cron load vs 24×/day).
+- **Helpers**: `_abbr_matches(abbr, full_name)` maps ESPN abbrs → Odds API team name fragments; `_build_player_odds_map(games)` bulk-fetches props; `/api/refresh-line-odds` uses the bulk map + `_lookup_player_odds` with per-pick fallback to `_fetch_odds_line` when needed
+- **Lock freeze**: `/api/refresh-line-odds` uses `any(_is_locked(...))` on start times — no-op if slate locked
 - **REFRESH button**: calls `/api/refresh-line-odds` then reloads Line page data
 
 ## z-index Hierarchy (fixed elements)
@@ -594,10 +595,11 @@ Crons and frontend poll intervals are tuned to minimize Railway compute and ESPN
 |----------------|----------|---------|
 | `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
 | `0 9 * * 0,3` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement (Wed + Sun only — 2×/week) |
-| `55 19-23,0-6 * * *` | `/api/refresh-line-odds` | Bookmaker odds sync during game-window hours only (2 PM–1 AM ET) |
-| `0 20-23,0-7 * * *` | `/api/auto-resolve-line` | Resolve line picks during game-window hours only (3 PM–2 AM ET) |
+| `55 19,20,21,22,23,0,1,2,3,4,5,6 * * *` | `/api/refresh-line-odds` | Bookmaker odds sync — game-window hours only |
+| `0 20,21,22,23,0,1,2,3,4,5,6,7 * * *` | `/api/auto-resolve-line` | Resolve line picks — game-window hours only |
 | `0 18,22,2 * * *` | `/api/injury-check` | 3 key windows: pre-tip (1 PM ET), mid-evening (5 PM ET), late (9 PM ET) |
 | `0 6 * * 1` | `/api/mae-drift-check` | Weekly MAE drift monitoring (Monday 6am UTC); CRON_SECRET-gated |
+| `0 17 * * *` | `/api/parlay-force-regenerate` | Pre-lock parlay generation → GitHub (before evening tips) |
 
 ## Deployment Pipeline
 
@@ -673,8 +675,8 @@ Affected endpoints: slate load, picks, games, save-predictions, screenshot parse
 
 ### Worker Pool Optimization
 Backend uses Python `ThreadPoolExecutor` for parallel processing:
-- **Standard pool: 8 workers** (game runner, slate processor, picks processor, audit runner, line engine)
-- **L5 enrichment pool: 10 workers** (nba_api per-player stat fetches — more I/O-bound)
+- **Standard pool: 8 workers** (game runner, slate processor, picks processor, audit runner, line engine, Odds API per-event props)
+- **Parlay gamelog pool: 10 workers** (ESPN athlete gamelog HTTP — I/O-bound; scoped batch via `select_parlay_gamelog_player_ids`)
 - Handles 14-game Saturdays efficiently without bottlenecking
 
 ### Polling Interval Tuning
@@ -682,7 +684,7 @@ Backend uses Python `ThreadPoolExecutor` for parallel processing:
   - Unlock detected within ~2 min; user can tap Retry for immediate check
 - **Line live stat polling**: 1 minute; max 5 consecutive failures (300s tolerance) before fallback to cron
   - Prevents indefinite polling on persistent network failures
-  - Falls back to `/api/auto-resolve-line` cron (hourly at :00)
+  - Falls back to `/api/auto-resolve-line` cron (game-window hours; see `railway.toml`)
 
 ### GitHub API Retry Logic
 `_github_write_file()` (api/index.py lines 75-110) implements exponential backoff for concurrent write conflicts:
@@ -702,11 +704,30 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | RotoWire lineups | 30 min | Player availability (OUT, questionable, etc.) | 30 min expiration; manual refresh via app |
 | Lock status per game | 6 hours | 5 min before tip to 6h after (ceiling) | Natural expiration |
 | Line odds (`books_consensus`) | 1 hour | Bookmaker consensus line (refreshed by cron) | Game-window cron runs; slate-lock freeze |
-| L5 game stats (`_get_last5_game_stats`) | 30 min | Real last-5 PTS/REB/AST per player (nba_api) | Stored with ts in cache; TTL checked on read |
+| Parlay ESPN gamelog (`_fetch_gamelog`, `_TTL_L5`) | 30 min | Last games for volatility / Z-score (ESPN `site.api.espn.com` athlete gamelog) | Per-player cache key `gamelog_{pid}` in `/tmp` |
+| Odds bulk map fresh cache (`odds_fresh_map_v1`) | 10 min | Reuse `_build_player_odds_map` across slate / line / parlay | `/api/refresh` clears `/tmp` |
 | Slate cache (`data/slate/`) | 1 day | GitHub-persisted predictions (full slate + per-game) | `_bust_slate_cache()` via refresh, config change, or injury check |
 | Log dates (`log_dates_v1`) | 10 min | Dates with stored prediction/actual data | `/api/refresh` clears all /tmp caches |
 | Log get (`log_get_{date}`) | 5 min | Per-date predictions + actuals from GitHub | `/api/refresh` clears all /tmp caches |
 | Parlay history (`parlay_history_v1`) | 10 min | Recent parlay results from `data/parlays/` | `/api/refresh` clears all /tmp caches |
+| Line `/tmp` (`line_v1`) | 30 min max age (inline check) | Fast path for `/api/line-of-the-day` | Rotation / odds refresh unlinks cache file |
+| Parlay `/tmp` (`parlay_v1`) | 30 min | Today's parlay JSON | `/api/refresh` or next-day |
+| ESPN scoreboard (`fetch_games`) | 5 min (`_TTL_GAMES`) | Schedule + spreads; shared `_GAMES_CACHE_TS` | New fetch resets TS |
+| Odds API degraded snapshot | 1 h | `odds_last_success_map_v1` when live bulk fetch fails | Superseded by next successful fetch |
+
+### Production: DRY rules and cache inventory
+
+**Do not duplicate TTLs** — All backend TTLs live in one block in [`api/index.py`](api/index.py) (`_TTL_CONFIG`, `_TTL_GAMES`, `_TTL_LOG`, `_TTL_LOCKED`, `_TTL_PRE_SLATE`, `_TTL_L5`, `_TTL_HOUR`, `_TTL_ODDS_FRESH`). Endpoint-specific ages (e.g. 30 min for line/parlay `/tmp`) should stay aligned with these constants when changed.
+
+**Cache helpers (single pattern)** — `CACHE_DIR` (`/tmp/nba_cache_v19`) + `_cp(key, date_str?)` → file path; `_cg` read JSON; `_cs` write JSON. Same helpers for slate, line, parlay, log, news, team stats, gamelogs (`gamelog_{pid}`). Avoid ad hoc `Path` writes outside this pattern.
+
+**Named logical keys (`_CK_*`)** — `_CK_SLATE`, `_CK_SLATE_LOCKED`, `_CK_LINE`, `_CK_LINE_HISTORY`, `_CK_LOG_DATES`, `_CK_PARLAY`, `_CK_PARLAY_HISTORY`; per-game `game_proj_{gameId}` via `_ck_game_proj()`. Search `# grep: CONSTANTS & CACHE` in `api/index.py`.
+
+**Odds API (two-tier)** — `_build_player_odds_map`: (1) **Fresh reuse** — `odds_fresh_map_v1` keyed by slate fingerprint, `_TTL_ODDS_FRESH` (10 min). (2) **Failure fallback** — `odds_last_success_map_v1` up to 1 h when the live request fails. **`/api/refresh-line-odds`** uses bulk map + `_lookup_player_odds`, then `_fetch_odds_line` per pick only if needed.
+
+**GitHub vs `/tmp`** — Slate: Layer 1 `/tmp` → Layer 2 `data/slate/*` → Layer 3 pipeline. Line/parlay enrichment: `_hydrate_game_projs_from_github()` before `_run_game()` when `/tmp` is cold. Single read replaces N× ESPN/LGBM for the same ET day when a prior instance already wrote `data/slate/{date}_games.json`.
+
+**Bust / refresh** — `_bust_slate_cache()` tombstones GitHub slate + games + locks and clears local `/tmp` JSON. `GET /api/refresh` clears caches and config reload path; Railway cron runs refresh daily (see `railway.toml`).
 
 ### Midnight Rollover Handling
 `auto_resolve_line()` correctly handles games finishing after midnight ET:
@@ -922,7 +943,7 @@ If slate, line, and/or log all fail to load:
 | `_CONFIG_DEFAULTS` sync | `api/index.py` | Fallback defaults match `data/model-config.json`: `compression_divisor` 5.5, `compression_power` 0.72, `rs_cap` 20.0, `ai_blend_weight` 0.35, `per_player_cap_minutes` 2.0, `big_market_teams` inline fallback removes MIL/DAL/PHX. Prevents silent model behavior change on GitHub outage. |
 | `auto_improve_threshold_pct` externalized | `api/index.py`, `data/model-config.json` | `IMPROVEMENT_THRESHOLD` reads from `_cfg("lab.auto_improve_threshold_pct", 3.0)`. Tunable via Ben without code deploy. |
 | Line engine stat floors externalized | `api/line_engine.py`, `data/model-config.json` | `_STAT_META` and `stat_configs` min_season floors now read from `line_config.get("stat_floors", {})`. Tunable via `line.stat_floors` in model-config. No behavior change — defaults match prior hardcoded values. |
-| Cron schedule restored | `railway.toml` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). Matches documentation and intended behavior. |
+| Cron schedule restored | `railway.toml` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). **Superseded:** now game-window-only — see **Cron Schedule** table. |
 | `line_history` parallel fetch + 3-min cache | `api/index.py` | CSV + JSON files fetched in parallel via `ThreadPoolExecutor(8)`; 3-min result cache (`line_history_v1`) avoids repeated cold-start GitHub round-trips; cache cleared by `/api/refresh` |
 | 3-layer slate cache (generate once per day) | `api/index.py` | `/tmp` → GitHub `data/slate/` → full pipeline. First request generates and persists; all subsequent requests serve from cache. Reduces API calls from N per visit to ~6-8 per day |
 | `/api/injury-check` cron endpoint | `api/index.py`, `railway.toml` | Every 2h: bust RotoWire cache, check cached players, regenerate only affected games. Lock-guarded, CRON_SECRET-protected |
@@ -945,7 +966,7 @@ If slate, line, and/or log all fail to load:
 | Log tab ESPN stats auto-fetch | `index.html` | Removed `has_actuals` gate — ESPN box score stats now auto-fetch for any past date without requiring RS screenshot upload. "Waiting for results" pill only shows when ESPN stats also unavailable. New partial-graded card state: shows actual game stats (PTS/REB/AST/STL/BLK) without hit/miss coloring until RS is uploaded. |
 | Per-game card boost pill removed | `api/index.py` | `_build_game_lineups` now zeroes `est_mult` in returned player data (not just MILP input) so the `+X.Xx card` pill never renders on per-game (THE LINE UP) cards where card boost is irrelevant. |
 | Over model tightening | `api/line_engine.py`, `api/index.py`, `data/model-config.json` | Four over-specific changes (under model untouched): (1) `stat_floors.rebounds` 2.0→5.5 — only legit rotation bigs qualify for rebounds picks. (2) `min_edge_other_over: 2.5` (new config key) — over picks for rebounds/assists need a 2.5+ edge; under picks keep 1.5. (3) `recent_form_over_ratio` 1.08→1.15 — require 15% recent spike to unlock +12 confidence bonus. (4) Claude AVOID clause updated — rebounds/assists overs require a catalyst (cascade, opp-B2B, or 230+ total). Tests added for `min_edge_other_over` asymmetry. |
-| Odds cron schedule fix | `railway.toml` | `/api/refresh-line-odds` cron corrected from `0 */3 * * *` (every 3h — regression from prior edit) to `55 * * * *` (hourly at :55). Matches CLAUDE.md and README documentation. Ensures odds refresh hits the 6:55 PM ET pre-lock window. |
+| Odds cron schedule fix | `railway.toml` | Same as above (3h → hourly). **Superseded:** game-window-only schedule in current `railway.toml`. |
 | `predMin` tolerance band | `api/index.py`, `data/model-config.json` | Chalk pool allows `predMin` up to 2.0 min below `season_min` (`projection.pred_min_tolerance`); moonshot allows 3.0 min (`moonshot.pred_min_tolerance`). Saved 4 missed players from Mar 17 (Carrington 1.5 gap, Jenkins 0.7, Riley 0.8, Champagnie 1.8). |
 | Separate moonshot pts floor | `api/index.py`, `data/model-config.json` | Universal floor in `project_player()` lowered to 4.0 (`min_pts_projection_moonshot`); chalk enforces 7.0 separately. Oso Ighodaro (4 PPG, +2.9x, Value 16.4) now enters moonshot pool. `min_pts_per_minute_moonshot` = 0.20 (chalk keeps 0.28). |
 | `min_chalk_rating` synced | `data/model-config.json` | Config value 4.0 → 3.5 to match code fallback and CLAUDE.md documentation. Mar 17 showed 7/9 missed players filtered by this gate. |
@@ -998,16 +1019,16 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 - Global exception handler active — no stack traces leak to clients
 - Structured request logging (JSON with request_id, path, status, duration_ms)
 - 39 `fetchWithTimeout` calls in frontend; 1 intentional raw `fetch()` (lab/chat SSE with manual AbortController)
-- Thread pools: 8 workers for game/slate/picks/audit/line processing
+- Thread pools: 8 workers (game/slate/picks/audit/line/Odds); 10 workers for parlay ESPN gamelog batch
 - Rate limiting: thread-safe with `_RATE_LIMIT_LOCK` (parse-screenshot 5/min, lab/chat 20/min, line-of-the-day 10/min)
 - 35 endpoints total, all correctly routed with proper CRON_SECRET gating
 
 **Caching audit (all TTLs verified):**
 - 3-layer slate cache: `/tmp/nba_cache_v19/` → GitHub `data/slate/` → full pipeline
-- Game final: 60s locked / 180s pre-slate; Model config: 5 min; ESPN games: 5 min; RotoWire: 30 min; Line history: 10 min; L5 stats: 30 min
+- Game final: 60s locked / 180s pre-slate; Model config: 5 min; ESPN games: 5 min; RotoWire: 30 min; Line history: 10 min; Parlay history: 10 min; Odds fresh map: 10 min; Parlay ESPN gamelog cache: 30 min (`_TTL_L5`)
 - Cache bust tombstone pattern working correctly
 
-**Cron fix applied:** `railway.toml` `/api/refresh-line-odds` schedule corrected from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55) to match documented behavior.
+**Odds cron evolution:** `railway.toml` `/api/refresh-line-odds` went from `0 */3 * * *` → hourly `55 * * * *` → **current:** game-window only (`55 19,20,21,22,23,0,1,2,3,4,5,6 * * *` UTC) to cut cron load; see **Cron Schedule** table above.
 
 **Model audit (Mar 17 leaderboard — "Highest Value" screenshot):**
 - Role players dominate (13/14 top values RS 2.7-5.0) — validates v6 strategy
@@ -1021,7 +1042,7 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 ## Pre-deploy checklist (production finalization)
 
 - **Env**: Required vars set in Railway (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY; optional ODDS_API_KEY, CRON_SECRET, DOCS_SECRET).
-- **Tests**: Run `pytest tests/ -v` locally when changing backend or frontend contract; test_core.py catches JS apostrophe crashes.
+- **Tests**: Run `python3 -m pytest tests/ -v` locally when changing backend or frontend contract; test_core.py catches JS apostrophe crashes.
 - **Docs**: CLAUDE.md and README.md reflect current endpoints, crons, lock/cache behavior, and core-pool architecture; docs/LOADING_AUDIT.md for loading and timeouts.
 - **Health**: Use GET `/api/health` for uptime monitoring; alert on non-200.
 - **Loading**: All blocking fetches use `fetchWithTimeout`; Line tab uses background re-fetch on same-day and live-card update only when data changes (see docs/LOADING_AUDIT.md).

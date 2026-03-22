@@ -883,22 +883,27 @@ class TestPicksServeFromCache:
         bust_content = json.loads(bust_files[0]["content"])
         assert "at" in bust_content
 
-    def test_get_projections_for_date_skips_github_cache(self):
-        """_get_projections_for_date does NOT call GitHub cache (removed for latency)."""
+    def test_get_projections_for_date_hydrates_from_github_when_tmp_empty(self):
+        """_get_projections_for_date reads GitHub games cache when /tmp per-game cache is cold."""
         from api.index import _get_projections_for_date
-        mock_games = [{"gameId": "game1", "startTime": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat()}]
-        mock_player = {"name": "Player", "id": "123", "home": True, "team": "BOS",
-                       "opp": "LAL", "gameId": "game1"}
+        mock_games = [{
+            "gameId": "game1",
+            "startTime": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
+            "home": {"abbr": "BOS"}, "away": {"abbr": "LAL"},
+        }]
+        mock_player = {"name": "Player", "id": "123", "team": "BOS"}
+        gh_data = {"game1": [mock_player]}
 
         with patch("api.index.fetch_games", return_value=mock_games), \
              patch("api.index._is_past_lock_window", return_value=False), \
              patch("api.index._cg", return_value=None), \
-             patch("api.index._run_game", return_value=[mock_player]), \
-             patch("api.index._games_cache_from_github") as mock_gh:
+             patch("api.index._games_cache_from_github", return_value=gh_data) as mock_gh, \
+             patch("api.index._cs"), \
+             patch("api.index._run_game") as mock_run:
             from datetime import date
             projs, games = _get_projections_for_date(date.today())
-            # GitHub cache should NOT be called in this path
-            mock_gh.assert_not_called()
+            mock_gh.assert_called_once()
+            mock_run.assert_not_called()
             assert len(projs) == 1
 
 
