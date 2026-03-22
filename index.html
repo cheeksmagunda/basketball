@@ -1289,7 +1289,7 @@
         </div>
         <div id="gameScriptBadge" style="font-family:'Barlow Condensed',sans-serif;font-size:0.68rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:right;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-pill);white-space:nowrap;visibility:hidden"></div>
       </div>
-      <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-card)"></div>
+
       <div id="picksList"></div>
     </div>
 
@@ -1783,7 +1783,6 @@ function switchPredictSub(sub) {
 
 function _backToGameGrid() {
   document.getElementById('gameHeaderRow').style.display = 'none';
-  document.getElementById('gameLockBadge').style.display = 'none';
   document.getElementById('picksList').innerHTML = '';
   document.getElementById('gameAnalysisEmpty').style.display = 'block';
   document.getElementById('gameSel').value = '';
@@ -2200,15 +2199,6 @@ async function runAnalysis() {
       badge.style.visibility = 'visible';
     } else {
       badge.style.visibility = 'hidden';
-    }
-
-    const lockBadge = document.getElementById('gameLockBadge');
-    if (PICKS_DATA.locked) {
-      lockBadge.innerHTML = 'Picks locked — showing final predictions';
-      lockBadge.style.display = 'block';
-      lockBadge.style.color = 'var(--color-success)';
-    } else {
-      lockBadge.style.display = 'none';
     }
 
     renderCards(PICKS_DATA.lineups.the_lineup, 'picksList', 'the_lineup');
