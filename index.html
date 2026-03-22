@@ -165,55 +165,44 @@
     /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
     .bottom-nav {
       position: fixed;
-      bottom: 8px;
+      bottom: 10px;
       left: 50%;
       transform: translateX(-50%);
-      width: calc(100% - 32px);
-      max-width: 468px;
-      background-color: rgba(10, 14, 24, 0.12);
-      background-image: linear-gradient(to bottom, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 40%, transparent 100%);
-      border: 1px solid rgba(255,255,255,0.26);
-      border-radius: 26px;
-      padding: 4px 6px 6px;
-      backdrop-filter: blur(40px) saturate(200%);
-      -webkit-backdrop-filter: blur(40px) saturate(200%);
-      box-shadow: 0 8px 40px rgba(0,0,0,0.32), 0 1px 0 rgba(255,255,255,0.28) inset, 0 -1px 0 rgba(0,0,0,0.12) inset;
+      width: calc(100% - 48px);
+      max-width: 440px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 999px;
+      padding: 3px 4px;
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.28);
       z-index: 1000;
     }
     .bnav-icon-row {
       display: flex;
-      gap: 3px;
+      gap: 2px;
     }
     .bnav-icon-btn {
       flex: 1;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 4px;
-      padding: 9px 8px 8px;
-      border: 1px solid transparent; background: transparent; border-radius: 20px;
-      cursor: pointer; transition: color 0.22s ease;
-      color: rgba(255,255,255,0.32);
+      gap: 3px;
+      padding: 6px 6px 5px;
+      border: none; background: transparent; border-radius: 999px;
+      cursor: pointer; transition: background 0.22s ease, color 0.22s ease;
+      color: rgba(255,255,255,0.50);
       position: relative;
     }
-    .bnav-icon-btn:hover { color: rgba(255,255,255,0.60); }
+    .bnav-icon-btn:hover { color: rgba(255,255,255,0.70); }
     .bnav-icon-btn.active {
-      background: transparent;
-      border-color: transparent;
-      box-shadow: none;
-      color: var(--chalk);
+      background: rgba(255,255,255,0.10);
+      color: #fff;
     }
-    /* Active dot indicator under icon */
-    .bnav-icon-btn.active::after {
-      content: '';
-      position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
-      width: 4px; height: 4px; border-radius: 50%;
-      background: var(--chalk);
-      box-shadow: 0 0 6px var(--chalk-glow);
-    }
-    .bnav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
-    .bnav-icon svg { width: 22px; height: 22px; display: block; }
+    .bnav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
+    .bnav-icon svg { width: 18px; height: 18px; display: block; }
     .bnav-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em;
+      font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
       text-transform: uppercase; line-height: 1;
     }
 
@@ -1762,14 +1751,8 @@ const TAB_ACCENT = {
 };
 
 function setPillAccent(tab) {
-  const a = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
-  document.querySelectorAll('.bnav-icon-btn').forEach(btn => {
-    if (btn.classList.contains('active')) {
-      btn.style.boxShadow = `0 2px 12px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.09) inset, 0 0 12px rgba(${a.rgb}, 0.18)`;
-    } else {
-      btn.style.boxShadow = ''; // Clear any lingering inline shadow from previous active state
-    }
-  });
+  // Simplified: no per-tab glow on nav buttons — active state is a subtle white pill
+  // TAB_ACCENT still used by ambient glow blob (body::after)
 }
 
 // Init accent on load
