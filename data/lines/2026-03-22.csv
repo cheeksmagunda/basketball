@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-22,Deni Avdija,4683021,POR,DEN,points,24,under,22,-2,80,Model projects 22.0 points (under 24.0). Averaging 13.0 points recently vs 24.2 season; Opponent on second night of B2B.,pending,
