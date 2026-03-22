@@ -1278,21 +1278,18 @@
         <div id="gameQuickPicks" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px"></div>
       </div>
 
-      <!-- Back button + header row: THE LINE UP (left) | GAME SCRIPT (right) -->
-      <div id="gameHeaderRow" style="display:none;margin-bottom:14px;">
-        <button id="gameBackBtn" onclick="_backToGameGrid()" style="display:flex;align-items:center;gap:4px;background:none;border:none;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;padding:0 0 10px;transition:color 0.15s" onmouseover="this.style.color='var(--chalk)'" onmouseout="this.style.color='var(--muted)'">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          All Games
+      <!-- Single-line header: [← Back] [THE LINE UP] [Game Script] -->
+      <div id="gameHeaderRow" style="display:none;display:none;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <button id="gameBackBtn" onclick="_backToGameGrid()" style="display:flex;align-items:center;gap:3px;background:none;border:none;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;padding:0;transition:color 0.15s;white-space:nowrap" onmouseover="this.style.color='var(--chalk)'" onmouseout="this.style.color='var(--muted)'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
         </button>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-          <div id="theLineupHeader" style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;color:var(--chalk);white-space:nowrap;">
-            🎯 The Line Up
-          </div>
-          <div id="gameScriptBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:right;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-pill);white-space:nowrap"></div>
+        <div id="theLineupHeader" style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;color:var(--chalk);white-space:nowrap;">
+          🎯 The Line Up
         </div>
+        <div id="gameScriptBadge" style="font-family:'Barlow Condensed',sans-serif;font-size:0.68rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:right;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-pill);white-space:nowrap;visibility:hidden"></div>
       </div>
       <div id="gameLockBadge" style="display:none;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;padding:6px 12px;margin-bottom:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-card)"></div>
-      <div id="gameInjuryBadge" style="display:none;font-size:0.68rem;color:var(--color-danger);padding:6px 12px;text-align:center;letter-spacing:0.3px;background:var(--color-injury-bg);border:1px solid rgba(255,180,180,0.2);border-radius:var(--radius-card);margin-bottom:14px"></div>
       <div id="picksList"></div>
     </div>
 
@@ -1787,7 +1784,6 @@ function switchPredictSub(sub) {
 function _backToGameGrid() {
   document.getElementById('gameHeaderRow').style.display = 'none';
   document.getElementById('gameLockBadge').style.display = 'none';
-  document.getElementById('gameInjuryBadge').style.display = 'none';
   document.getElementById('picksList').innerHTML = '';
   document.getElementById('gameAnalysisEmpty').style.display = 'block';
   document.getElementById('gameSel').value = '';
@@ -2195,15 +2191,15 @@ async function runAnalysis() {
       PICKS_DATA = picksData;
     }
     // Show the header row (back button + THE LINE UP + game script side-by-side)
-    document.getElementById('gameHeaderRow').style.display = 'block';
+    document.getElementById('gameHeaderRow').style.display = 'flex';
 
     const badge = document.getElementById('gameScriptBadge');
     if (PICKS_DATA.gameScript) {
       const total = PICKS_DATA.game?.total;
-      badge.innerHTML = `Game Script: <b>${PICKS_DATA.gameScript}</b>${total ? ` · O/U ${total}` : ''}`;
-      badge.style.display = 'block';
+      badge.innerHTML = `<b>${PICKS_DATA.gameScript}</b>${total ? ` · O/U ${total}` : ''}`;
+      badge.style.visibility = 'visible';
     } else {
-      badge.style.display = 'none';
+      badge.style.visibility = 'hidden';
     }
 
     const lockBadge = document.getElementById('gameLockBadge');
@@ -2213,16 +2209,6 @@ async function runAnalysis() {
       lockBadge.style.color = 'var(--color-success)';
     } else {
       lockBadge.style.display = 'none';
-    }
-
-    const injBadge = document.getElementById('gameInjuryBadge');
-    const injuries = PICKS_DATA.injuries || [];
-    if (injuries.length > 0) {
-      const names = injuries.map(inj => `${_escapeHtml(inj.name)} (${_escapeHtml(inj.team)})`).join(', ');
-      injBadge.innerHTML = `<b>${injuries.length} OUT</b>: ${names}`;
-      injBadge.style.display = 'block';
-    } else {
-      injBadge.style.display = 'none';
     }
 
     renderCards(PICKS_DATA.lineups.the_lineup, 'picksList', 'the_lineup');
