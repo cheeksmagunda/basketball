@@ -162,7 +162,7 @@
       text-transform: uppercase; color: var(--muted); white-space: nowrap;
     }
     .header-badge.locked { color: var(--green); }
-    /* ── BOTTOM TAB NAVIGATION — Dribbble floating card style ── */
+    /* ── BOTTOM TAB NAVIGATION — 3-layer shaped glass ── */
     .bottom-nav {
       position: fixed;
       bottom: 10px;
@@ -170,27 +170,49 @@
       transform: translateX(-50%);
       width: calc(100% - 48px);
       max-width: 440px;
-      background: rgba(10,14,22,0.55);
-      border: 1px solid rgba(var(--chalk-rgb),0.08);
-      border-radius: 999px;
-      padding: 3px 4px;
-      backdrop-filter: blur(40px) saturate(200%);
-      -webkit-backdrop-filter: blur(40px) saturate(200%);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(var(--chalk-rgb),0.06) inset;
+      /* Layer 1 — glass body */
+      background: rgba(10,14,22,0.42);
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.13);
+      border-radius: 22px;
+      padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+      backdrop-filter: blur(24px) saturate(170%);
+      -webkit-backdrop-filter: blur(24px) saturate(170%);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
       z-index: 1000;
+    }
+    /* Layer 2 — inner depth (inset glow + faint fill) */
+    .bottom-nav::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: rgba(255,255,255,0.02);
+      box-shadow: inset 0 1px 2px rgba(255,255,255,0.07), inset 0 -1px 1px rgba(0,0,0,0.15);
+      pointer-events: none;
+    }
+    /* Layer 3 — surface reflection (top highlight gradient) */
+    .bottom-nav::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(to bottom, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 35%, transparent 60%);
+      pointer-events: none;
     }
     .bnav-icon-row {
       display: flex;
       gap: 2px;
       position: relative;
     }
-    /* Sliding pill indicator behind active tab */
+    /* Sliding pill indicator — tinted glass chip */
     .bnav-pill {
       position: absolute;
       height: 100%;
-      border-radius: 999px;
-      background: linear-gradient(135deg, rgba(var(--chalk-rgb),0.18) 0%, rgba(var(--chalk-rgb),0.08) 100%);
-      box-shadow: 0 0 12px rgba(var(--chalk-rgb),0.15), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(var(--chalk-rgb),0.14) 0%, rgba(var(--chalk-rgb),0.06) 100%);
+      border: 1px solid rgba(var(--chalk-rgb),0.10);
+      box-shadow: 0 0 10px rgba(var(--chalk-rgb),0.10), inset 0 1px 1px rgba(var(--chalk-rgb),0.08);
       transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
       pointer-events: none;
       z-index: 0;
@@ -199,23 +221,24 @@
     .bnav-icon-btn {
       flex: 1;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 3px;
-      padding: 6px 6px 5px;
-      border: none; background: transparent; border-radius: 999px;
+      gap: 4px;
+      padding: 10px 6px 8px;
+      border: none; background: transparent; border-radius: 14px;
       cursor: pointer; transition: color 0.25s ease;
       color: rgba(var(--chalk-rgb),0.40);
       position: relative;
       z-index: 1;
+      -webkit-tap-highlight-color: transparent;
     }
     .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.65); }
     .bnav-icon-btn.active {
       color: var(--chalk);
     }
-    .bnav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
-    .bnav-icon svg { width: 18px; height: 18px; display: block; }
+    .bnav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+    .bnav-icon svg { width: 22px; height: 22px; display: block; }
     .bnav-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
       text-transform: uppercase; line-height: 1;
     }
 
@@ -1787,8 +1810,9 @@ function setPillAccent(tab) {
   const pill = document.getElementById('bnavPill');
   if (!pill) return;
   const accent = TAB_ACCENT[tab] || TAB_ACCENT.predictions;
-  pill.style.background = `linear-gradient(135deg, rgba(${accent.rgb},0.18) 0%, rgba(${accent.rgb},0.08) 100%)`;
-  pill.style.boxShadow = `0 0 12px rgba(${accent.rgb},0.15), 0 0.5px 0 rgba(${accent.rgb},0.12) inset`;
+  pill.style.background = `linear-gradient(135deg, rgba(${accent.rgb},0.14) 0%, rgba(${accent.rgb},0.06) 100%)`;
+  pill.style.border = `1px solid rgba(${accent.rgb},0.10)`;
+  pill.style.boxShadow = `0 0 10px rgba(${accent.rgb},0.10), inset 0 1px 1px rgba(${accent.rgb},0.08)`;
 }
 
 // Init pill position + accent on load
