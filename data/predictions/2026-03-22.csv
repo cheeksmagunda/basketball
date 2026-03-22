@@ -1,0 +1,21 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,RJ Barrett,4395625,TOR,F,9.1,1.0,32.0,19.0,5.4,3.2,0.8,0.3
+slate,chalk,1.8x,Jalen Green,4437244,PHX,G,8.7,1.5,25.3,18.0,3.7,2.7,1.1,0.1
+slate,chalk,1.6x,Malik Monk,4066262,SAC,G,6.5,2.1,29.1,12.4,2.0,2.8,0.6,0.4
+slate,chalk,1.4x,Scoot Henderson,4683678,POR,G,6.3,2.5,27.3,13.5,2.8,4.1,0.6,0.4
+slate,chalk,1.2x,Ziaire Williams,4433137,BKN,F,5.3,3.0,32.5,9.5,2.5,1.0,1.1,0.4
+slate,upside,2.0x,Scoot Henderson,4683678,POR,G,6.3,2.5,27.3,13.5,2.8,4.1,0.6,0.4
+slate,upside,1.8x,Jordan Clarkson,2528426,NY,G,5.8,3.0,23.9,10.3,2.0,1.6,0.5,0.1
+slate,upside,1.6x,Ziaire Williams,4433137,BKN,F,5.3,3.0,32.5,9.5,2.5,1.0,1.1,0.4
+slate,upside,1.4x,Bones Hyland,4592492,MIN,G,4.9,3.0,19.1,8.0,1.7,2.5,0.5,0.2
+slate,upside,1.2x,Nique Clifford,4702384,SAC,G,4.8,3.0,30.4,7.8,3.6,2.1,0.9,0.3
+BKN @ SAC,the_lineup,2.0x,DeMar DeRozan,3978,SAC,G,8.9,0.0,39.2,19.0,3.3,4.0,1.1,0.3
+BKN @ SAC,the_lineup,1.8x,Malik Monk,4066262,SAC,G,5.8,0.0,32.1,12.4,2.0,2.8,0.6,0.4
+BKN @ SAC,the_lineup,1.6x,Ziaire Williams,4433137,BKN,F,5.1,0.0,32.5,9.5,2.5,1.0,1.1,0.4
+BKN @ SAC,the_lineup,1.4x,Maxime Raynaud,4898371,SAC,C,4.4,0.0,35.5,11.7,7.3,1.3,0.5,0.6
+BKN @ SAC,the_lineup,1.2x,Danny Wolf,5107173,BKN,F,4.2,0.0,31.0,8.9,4.9,2.3,0.5,0.6
+POR @ DEN,the_lineup,2.0x,Nikola Jokic,3112335,DEN,C,9.0,0.0,34.2,26.9,12.3,9.9,1.5,0.8
+POR @ DEN,the_lineup,1.8x,Deni Avdija,4683021,POR,F,7.6,0.0,31.4,22.0,6.9,5.9,0.8,0.6
+POR @ DEN,the_lineup,1.6x,Jamal Murray,3936299,DEN,G,7.0,0.0,34.3,23.9,4.3,6.7,0.9,0.3
+POR @ DEN,the_lineup,1.4x,Jrue Holiday,3995,POR,G,6.7,0.0,32.4,16.0,4.4,6.4,1.2,0.2
+POR @ DEN,the_lineup,1.2x,Aaron Gordon,3064290,DEN,F,6.1,0.0,27.8,16.2,6.0,2.5,0.6,0.4
