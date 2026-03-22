@@ -233,10 +233,53 @@
       text-transform: uppercase; line-height: 1;
     }
 
+    /* ── Global sliding pill — reusable across all toggle groups ── */
+    .slide-pill-wrap {
+      display: flex;
+      gap: 2px;
+      position: relative;
+      background: rgba(var(--chalk-rgb),0.04);
+      border: 1px solid rgba(var(--chalk-rgb),0.08);
+      border-radius: var(--radius-md);
+      padding: 3px;
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.20);
+    }
+    .slide-pill {
+      position: absolute;
+      top: 3px; bottom: 3px;
+      border-radius: calc(var(--radius-md) - 3px);
+      background: linear-gradient(135deg, rgba(var(--chalk-rgb),0.14) 0%, rgba(var(--chalk-rgb),0.06) 100%);
+      border: 1px solid rgba(var(--chalk-rgb),0.10);
+      box-shadow: 0 0 10px rgba(var(--chalk-rgb),0.10), inset 0 1px 1px rgba(var(--chalk-rgb),0.08);
+      transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .slide-pill-btn {
+      flex: 1;
+      padding: 8px 12px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+      border-radius: calc(var(--radius-md) - 3px);
+      border: none;
+      background: transparent;
+      color: rgba(var(--chalk-rgb),0.50);
+      cursor: pointer; transition: color 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      z-index: 1;
+    }
+    .slide-pill-btn.active { color: var(--chalk); }
+    .slide-pill-btn:hover:not(.active) { color: rgba(var(--chalk-rgb),0.70); }
+
     /* Contextual sub-nav — Apple segmented control, matches bottom-nav glassmorphism */
     .predict-sub-nav {
       display: flex;
       gap: 2px;
+      position: relative;
       margin-bottom: 8px;
       background: rgba(var(--chalk-rgb),0.04);
       border: 1px solid rgba(var(--chalk-rgb),0.08);
@@ -255,30 +298,23 @@
       border: none;
       background: transparent;
       color: rgba(var(--chalk-rgb),0.50);
-      cursor: pointer; transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+      cursor: pointer; transition: color 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
       white-space: nowrap;
       -webkit-tap-highlight-color: transparent;
+      position: relative;
+      z-index: 1;
     }
     .predict-sub-btn.active {
-      background: rgba(var(--chalk-rgb),0.12);
-      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.10) 0%, transparent 60%);
       color: var(--chalk);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
     .predict-sub-btn.line-dir-btn {
       border-radius: calc(var(--radius-md) - 3px);
     }
     .predict-sub-btn.line-dir-btn.active[data-dir="over"] {
-      background: rgba(212,166,64,0.10);
-      background-image: linear-gradient(160deg, rgba(212,166,64,0.08) 0%, rgba(212,166,64,0.04) 60%, transparent 100%);
       color: var(--line);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(212,166,64,0.12) inset;
     }
     .predict-sub-btn.line-dir-btn.active[data-dir="under"] {
-      background: rgba(var(--chalk-rgb),0.12);
-      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.08) 0%, rgba(var(--chalk-rgb),0.04) 60%, transparent 100%);
       color: var(--lab);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
     .predict-sub-btn:hover:not(.active) { color: rgba(var(--chalk-rgb),0.70); }
 
@@ -302,6 +338,7 @@
     /* ── CHALK/UPSIDE TABS ── */
     .mode-tabs {
       display: flex; gap: 2px; margin-bottom: 8px;
+      position: relative;
       background: rgba(var(--chalk-rgb),0.04);
       border: 1px solid rgba(var(--chalk-rgb),0.08);
       border-radius: var(--radius-md);
@@ -318,21 +355,17 @@
       border: none;
       background: transparent;
       color: rgba(var(--chalk-rgb),0.50);
-      cursor: pointer; transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+      cursor: pointer; transition: color 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
       -webkit-tap-highlight-color: transparent;
+      position: relative;
+      z-index: 1;
     }
     .mode-tab:hover:not(.active) { color: rgba(var(--chalk-rgb),0.70); }
     .mode-tab.active[data-t="chalk"] {
-      background: rgba(var(--chalk-rgb),0.12);
-      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.10) 0%, transparent 60%);
       color: var(--chalk);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
     .mode-tab.active[data-t="upside"] {
-      background: rgba(var(--chalk-rgb),0.12);
-      background-image: linear-gradient(160deg, rgba(var(--chalk-rgb),0.10) 0%, transparent 60%);
       color: var(--upside);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.18), 0 0.5px 0 rgba(var(--chalk-rgb),0.12) inset;
     }
 
     /* ── PLAYER CARD ── */
@@ -952,22 +985,25 @@
     .line-result-pill.miss    { background: rgba(var(--red-rgb),0.1); color: var(--color-danger); border: 1px solid rgba(var(--red-rgb),0.2); }
     .line-result-pill.pending { background: var(--surface-overlay); color: var(--muted); border: 1px solid var(--border); }
     .btn-done { background: rgba(var(--green-rgb),0.2); border: 1px solid var(--green); color: var(--green); }
+    .line-hist-wrap {
+      display: flex; gap: 2px; position: relative;
+      background: rgba(var(--chalk-rgb),0.04);
+      border: 1px solid rgba(var(--chalk-rgb),0.08);
+      border-radius: 9px;
+      padding: 2px;
+    }
     .line-hist-tab {
       font-family: 'Barlow Condensed', sans-serif; font-size: 0.65rem; font-weight: 800;
       letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px;
-      border-radius: 7px; border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 7px; border: none;
       background: transparent; color: var(--muted); cursor: pointer;
-      transition: all 0.18s;
+      transition: color 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+      position: relative; z-index: 1;
+      -webkit-tap-highlight-color: transparent;
     }
-    .line-hist-tab.active {
-      background-color: rgba(255,255,255,0.08);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.12) 0%, transparent 60%);
-      color: var(--text);
-      border-color: rgba(255,255,255,0.18); border-top-color: rgba(255,255,255,0.26);
-      box-shadow: 0 1px 8px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.14) inset;
-    }
-    .line-hist-tab.active.over { background: rgba(212,166,64,0.15); color: var(--line); border-color: rgba(212,166,64,0.4); }
-    .line-hist-tab.active.under{ background: rgba(20,184,166,0.12); color: var(--lab);  border-color: rgba(20,184,166,0.3); }
+    .line-hist-tab.active { color: var(--text); }
+    .line-hist-tab.active.over { color: var(--line); }
+    .line-hist-tab.active.under{ color: var(--lab); }
     .line-hist-dir-pill {
       font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
       text-transform: uppercase; padding: 1px 6px; border-radius: var(--radius-xs); flex-shrink: 0;
@@ -1249,6 +1285,7 @@
 
     <!-- Sub-nav: Slate-Wide | Game — inline at top, matches Starting 5 | Moonshot tabs -->
     <div class="predict-sub-nav" id="predictSubNav">
+      <div class="slide-pill" id="predictSubPill"></div>
       <button class="predict-sub-btn active" data-sub="slate" onclick="switchPredictSub('slate')">Slate-Wide</button>
       <button class="predict-sub-btn" data-sub="game" onclick="switchPredictSub('game')">Game</button>
     </div>
@@ -1256,6 +1293,7 @@
     <!-- SUB-PAGE: Slate-Wide -->
     <div id="predict-sub-slate" class="predict-sub-page active">
       <div class="mode-tabs" id="slateTabs" style="display:none">
+        <div class="slide-pill" id="slateTabsPill"></div>
         <button class="mode-tab active" data-t="chalk" onclick="switchSlate('chalk')">⚡ Starting 5</button>
         <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🚀 Moonshot</button>
       </div>
@@ -1325,6 +1363,7 @@
 
       <!-- Prediction cards (log palette) -->
       <div class="mode-tabs" id="logDrillTabs">
+        <div class="slide-pill" id="logDrillPill"></div>
         <button class="mode-tab active" data-t="chalk" onclick="switchLogTab('chalk')">⚡ Starting 5</button>
         <button class="mode-tab" data-t="upside" onclick="switchLogTab('upside')">🚀 Moonshot</button>
       </div>
@@ -1342,6 +1381,7 @@
     </div>
     <!-- Over | Under direction filter — inline at top, matches Slate-Wide | Game tabs -->
     <div class="predict-sub-nav" id="lineSubNav" style="margin-top:14px">
+      <div class="slide-pill" id="lineDirPill"></div>
       <button class="predict-sub-btn line-dir-btn" data-dir="over" onclick="switchLineDir('over')">Over</button>
       <button class="predict-sub-btn line-dir-btn active" data-dir="under" onclick="switchLineDir('under')">Under</button>
     </div>
@@ -1364,7 +1404,8 @@
       <div id="lineHistoryWrap" style="margin-top:24px;display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div class="section-label" style="margin-top:0;margin-bottom:0">Recent Picks</div>
-          <div style="display:flex;gap:4px">
+          <div class="line-hist-wrap" id="lineHistWrap">
+            <div class="slide-pill" id="lineHistPill"></div>
             <button class="line-hist-tab active" data-dir="all" onclick="filterLineHistory('all')">All</button>
             <button class="line-hist-tab" data-dir="over" onclick="filterLineHistory('over')">Over</button>
             <button class="line-hist-tab" data-dir="under" onclick="filterLineHistory('under')">Under</button>
@@ -1766,6 +1807,8 @@ function switchTab(tab) {
   if (tab === 'line' && (LINE_OVER_PICK || LINE_UNDER_PICK) && !LINE_LIVE_POLL) {
     _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
   }
+  // Re-position toggle pills in newly visible tab (elements may have been hidden)
+  setTimeout(_initAllTogglePills, 30);
 }
 
 // ── Predict sub-page routing ──
@@ -1773,9 +1816,14 @@ let PREDICT_SUB = 'slate'; // 'slate' | 'game'
 
 function switchPredictSub(sub) {
   PREDICT_SUB = sub;
-  document.querySelectorAll('.predict-sub-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.sub === sub)
-  );
+  const nav = document.getElementById('predictSubNav');
+  let activeBtn = null;
+  nav.querySelectorAll('.predict-sub-btn').forEach(b => {
+    const isActive = b.dataset.sub === sub;
+    b.classList.toggle('active', isActive);
+    if (isActive) activeBtn = b;
+  });
+  moveTogglePill(nav, activeBtn, '20,184,166');
   document.querySelectorAll('.predict-sub-page').forEach(p => {
     const isActive = p.id === 'predict-sub-' + sub;
     p.classList.toggle('active', isActive);
@@ -1819,9 +1867,66 @@ function setPillAccent(tab) {
   pill.style.boxShadow = `0 0 10px rgba(${accent.rgb},0.10), inset 0 1px 1px rgba(${accent.rgb},0.08)`;
 }
 
+// ── Global sliding pill — reusable for all toggle groups ──
+// grep: moveTogglePill
+function moveTogglePill(container, activeBtn, accentRgb) {
+  if (!container || !activeBtn) return;
+  const pill = container.querySelector('.slide-pill');
+  if (!pill) return;
+  const containerRect = container.getBoundingClientRect();
+  const btnRect = activeBtn.getBoundingClientRect();
+  const padLeft = parseFloat(getComputedStyle(container).paddingLeft) || 3;
+  pill.style.width = btnRect.width + 'px';
+  pill.style.transform = `translateX(${btnRect.left - containerRect.left - padLeft}px)`;
+  if (accentRgb) {
+    pill.style.background = `linear-gradient(135deg, rgba(${accentRgb},0.14) 0%, rgba(${accentRgb},0.06) 100%)`;
+    pill.style.border = `1px solid rgba(${accentRgb},0.10)`;
+    pill.style.boxShadow = `0 0 10px rgba(${accentRgb},0.10), inset 0 1px 1px rgba(${accentRgb},0.08)`;
+  }
+}
+
+// Init all toggle pills on load + resize
+function _initAllTogglePills() {
+  // Predict sub-nav (Slate-Wide | Game)
+  const predictNav = document.getElementById('predictSubNav');
+  if (predictNav) {
+    const activeBtn = predictNav.querySelector('.predict-sub-btn.active');
+    moveTogglePill(predictNav, activeBtn, '20,184,166');
+  }
+  // Slate tabs (Starting 5 | Moonshot) — only if visible
+  const slateTabs = document.getElementById('slateTabs');
+  if (slateTabs && slateTabs.style.display !== 'none') {
+    const activeBtn = slateTabs.querySelector('.mode-tab.active');
+    moveTogglePill(slateTabs, activeBtn, '20,184,166');
+  }
+  // Line direction (Over | Under)
+  const lineNav = document.getElementById('lineSubNav');
+  if (lineNav) {
+    const activeBtn = lineNav.querySelector('.predict-sub-btn.active');
+    const dir = activeBtn && activeBtn.dataset.dir;
+    const rgb = dir === 'over' ? '212,166,64' : '20,184,166';
+    moveTogglePill(lineNav, activeBtn, rgb);
+  }
+  // Line history (All | Over | Under)
+  const lineHist = document.getElementById('lineHistWrap');
+  if (lineHist) {
+    const activeBtn = lineHist.querySelector('.line-hist-tab.active');
+    const dir = activeBtn && activeBtn.dataset.dir;
+    const rgb = dir === 'over' ? '212,166,64' : dir === 'under' ? '20,184,166' : '255,255,255';
+    moveTogglePill(lineHist, activeBtn, rgb);
+  }
+  // Log drill tabs (Starting 5 | Moonshot)
+  const logTabs = document.getElementById('logDrillTabs');
+  if (logTabs) {
+    const activeBtn = logTabs.querySelector('.mode-tab.active');
+    moveTogglePill(logTabs, activeBtn, '20,184,166');
+  }
+}
+window.addEventListener('resize', _initAllTogglePills);
+
 // Init pill position + accent on load
 window.addEventListener('load', () => {
-  setTimeout(() => { movePill('predictions'); setPillAccent('predictions'); }, 30);
+  setTimeout(() => { movePill('predictions'); setPillAccent('predictions'); _initAllTogglePills(); }, 30);
 });
 
 // ════════════════════════════════════════════════════════════════════
@@ -2037,7 +2142,13 @@ async function loadSlate() {
       }
     }
     const slateTabsEl = _el('slateTabs');
-    if (slateTabsEl) slateTabsEl.style.display = 'flex';
+    if (slateTabsEl) {
+      slateTabsEl.style.display = 'flex';
+      setTimeout(() => {
+        const activeBtn = slateTabsEl.querySelector('.mode-tab.active');
+        moveTogglePill(slateTabsEl, activeBtn, '20,184,166');
+      }, 30);
+    }
     SLATE_LOADED_AT = Date.now();
     LAB.cachedStatus = null; LAB.statusFetchedAt = 0;
 
@@ -2145,7 +2256,14 @@ async function loadSlate() {
 }
 
 function switchSlate(tab) {
-  document.querySelectorAll('#slateTabs .mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === tab));
+  const container = document.getElementById('slateTabs');
+  let activeBtn = null;
+  container.querySelectorAll('.mode-tab').forEach(t => {
+    const isActive = t.dataset.t === tab;
+    t.classList.toggle('active', isActive);
+    if (isActive) activeBtn = t;
+  });
+  moveTogglePill(container, activeBtn, '20,184,166');
   if (SLATE) renderCards((SLATE.lineups && SLATE.lineups[tab]) || [], 'slateList', tab);
   showLateDraftBanner();
 }
@@ -3158,6 +3276,14 @@ function openLogDrilldown(scope, gameLabel) {
   // Show chalk/upside tabs for slate, hide for per-game
   const tabs = document.getElementById('logDrillTabs');
   tabs.style.display = isSlate ? 'flex' : 'none';
+  if (isSlate) {
+    // Reset to chalk tab and init pill
+    tabs.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === 'chalk'));
+    setTimeout(() => {
+      const activeBtn = tabs.querySelector('.mode-tab.active');
+      moveTogglePill(tabs, activeBtn, '20,184,166');
+    }, 30);
+  }
 
   renderLogDrillCards();
 }
@@ -3169,8 +3295,14 @@ function closeLogDrilldown() {
 
 function switchLogTab(tab) {
   LOG.currentTab = tab;
-  document.querySelectorAll('#logDrillTabs .mode-tab').forEach(t =>
-    t.classList.toggle('active', t.dataset.t === tab));
+  const container = document.getElementById('logDrillTabs');
+  let activeBtn = null;
+  container.querySelectorAll('.mode-tab').forEach(t => {
+    const isActive = t.dataset.t === tab;
+    t.classList.toggle('active', isActive);
+    if (isActive) activeBtn = t;
+  });
+  moveTogglePill(container, activeBtn, '20,184,166');
   renderLogDrillCards();
 }
 
@@ -4111,6 +4243,14 @@ function renderLineHistory(hist) {
 
   document.getElementById('lineHistoryStats').innerHTML = statsHtml;
   document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(hist.picks, 'all');
+  // Init history filter pill position after render
+  setTimeout(() => {
+    const histWrap = document.getElementById('lineHistWrap');
+    if (histWrap) {
+      const activeBtn = histWrap.querySelector('.line-hist-tab.active');
+      moveTogglePill(histWrap, activeBtn, '255,255,255');
+    }
+  }, 30);
 }
 
 function renderLineHistoryRows(picks, dirFilter) {
@@ -4171,13 +4311,18 @@ document.addEventListener('keydown', function(e) {
 
 function filterLineHistory(dir) {
   if (!LINE_HIST_DATA) return;
-  // Update active tab styling on the inline All/Over/Under tabs
+  // Update active tab styling on the inline All/Over/Under tabs + slide pill
+  const histWrap = document.getElementById('lineHistWrap');
+  let activeBtn = null;
   document.querySelectorAll('.line-hist-tab').forEach(btn => {
     const isActive = btn.dataset.dir === dir;
     btn.classList.toggle('active', isActive);
     btn.classList.remove('over', 'under');
     if (isActive && dir !== 'all') btn.classList.add(dir);
+    if (isActive) activeBtn = btn;
   });
+  const rgb = dir === 'over' ? '212,166,64' : dir === 'under' ? '20,184,166' : '255,255,255';
+  moveTogglePill(histWrap, activeBtn, rgb);
   document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA?.picks, dir);
 
   // Recompute stats for the filtered subset
@@ -4214,10 +4359,16 @@ function filterLineHistory(dir) {
 
 function switchLineDir(dir) {
   LINE_DIR = dir;
-  // Update sub-nav pill buttons
-  document.querySelectorAll('.line-dir-btn').forEach(btn =>
-    btn.classList.toggle('active', btn.dataset.dir === dir)
-  );
+  // Update sub-nav pill buttons + slide pill
+  const lineNav = document.getElementById('lineSubNav');
+  let activeBtn = null;
+  lineNav.querySelectorAll('.line-dir-btn').forEach(btn => {
+    const isActive = btn.dataset.dir === dir;
+    btn.classList.toggle('active', isActive);
+    if (isActive) activeBtn = btn;
+  });
+  const rgb = dir === 'over' ? '212,166,64' : '20,184,166';
+  moveTogglePill(lineNav, activeBtn, rgb);
   // Render the pick for the selected direction
   const pickCard = document.getElementById('linePickCard');
   const noMsg    = document.getElementById('lineNoPickMsg');
