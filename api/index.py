@@ -3343,7 +3343,7 @@ def _normalize_line_pick(p: dict) -> dict:
         "team":            p.get("team", ""),
         "opponent":        p.get("opponent", ""),
         "direction":       p.get("direction", "over"),
-        "line":            float(p.get("line") or 0),
+        "line":            round(round(float(p.get("line") or 0) * 2) / 2, 1),
         "stat_type":       p.get("stat_type", "points"),
         "projection":      round(float(p.get("projection") or 0), 1),
         "edge":            round(float(p.get("edge") or 0), 1),
@@ -3365,6 +3365,12 @@ def _normalize_line_pick(p: dict) -> dict:
         "recent_form_bars":   p.get("recent_form_bars"),
         "recent_form_values": p.get("recent_form_values"),
     }
+    # Recompute edge from the snapped line so it stays consistent with what's displayed.
+    _dir = base.get("direction", "over")
+    if _dir == "under":
+        base["edge"] = round(base["line"] - base["projection"], 1)
+    else:
+        base["edge"] = round(base["projection"] - base["line"], 1)
     # Pass through any extra fields (e.g. _live tracker, future additions)
     extras = {k: v for k, v in p.items() if k not in _LINE_PICK_CONTRACT_FIELDS}
     return {**base, **extras}
