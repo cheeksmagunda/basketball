@@ -704,9 +704,9 @@ _CONFIG_DEFAULTS = {
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
         # 14-date audit: with 0.0, boost fully drove chalk selection — low-RS high-boost players
-        # crowded out Unicorns (RS 5+ / boost 2+) who win 50% of contests. At 0.5, RS quality
-        # competes fairly with boost signal in MILP player selection.
-        "chalk_milp_rs_focus": 0.5,
+        # crowded out Unicorns (RS 5+ / boost 2+) who win 50% of contests. At 0.85, RS strongly
+        # drives slot assignment — boost is nearly neutralized in MILP, RS is the signal.
+        "chalk_milp_rs_focus": 0.85,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
