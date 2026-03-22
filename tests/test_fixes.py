@@ -8,6 +8,7 @@ Requires backend deps (numpy, lightgbm, etc.). If skipped, run:
 
 import pytest
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, call
@@ -956,7 +957,8 @@ class TestClaudeContextLayer:
         mock_client.messages.create.return_value = mock_msg
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         assert players[0]["rating"] == pytest.approx(2.5 * 1.30, abs=0.1)
@@ -988,7 +990,8 @@ class TestClaudeContextLayer:
         mock_client.messages.create.return_value = mock_msg
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         # 2.0 should be clamped to 1.4 (max)
@@ -1019,7 +1022,8 @@ class TestClaudeContextLayer:
         mock_client.messages.create.return_value = mock_msg
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         # 0.3 should be clamped to 0.6 (min)
@@ -1043,7 +1047,8 @@ class TestClaudeContextLayer:
         mock_client.messages.create.side_effect = Exception("API timeout")
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         # Player rating must be unchanged
@@ -1073,7 +1078,8 @@ class TestClaudeContextLayer:
         mock_client.messages.create.return_value = mock_msg
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         assert players[0]["rating"] == 3.0
@@ -2862,7 +2868,8 @@ class TestApiResilience:
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
              patch("api.index._fetch_nba_news_context", return_value=""), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         # API must NOT be called — no fresh signals means Claude adds no value
@@ -2898,7 +2905,8 @@ class TestApiResilience:
 
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
              patch("api.index._fetch_nba_news_context", return_value=""), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         # Claude MUST be called — cascade is a genuine fresh signal
@@ -2932,7 +2940,8 @@ class TestApiResilience:
         news = "- Ja Morant ruled out tonight — Brandon Clarke expected to start"
         with patch("api.index._cfg", side_effect=cfg_side_effect), \
              patch("api.index._fetch_nba_news_context", return_value=news), \
-             patch("anthropic.Anthropic", return_value=mock_client):
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
             _claude_context_pass(players, games)
 
         # Claude MUST be called — news is a genuine fresh signal
@@ -2945,7 +2954,7 @@ class TestApiResilience:
         assert src.count("Anthropic(api_key=anthropic_key, max_retries=0)") >= 2, (
             "web_search and lineup_review SDK clients must use max_retries=0"
         )
-        assert "Anthropic(api_key=os.getenv(\"ANTHROPIC_API_KEY\", \"\"), max_retries=0)" in src, (
+        assert "Anthropic(api_key=_ctx_api_key, max_retries=0)" in src, (
             "context_pass SDK client must use max_retries=0"
         )
 
