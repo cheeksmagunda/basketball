@@ -2665,23 +2665,24 @@ function renderParlayLeg(leg, index, total) {
   const _thex = tcolor.replace('#', '');
   const _tr = parseInt(_thex.slice(0,2), 16), _tg = parseInt(_thex.slice(2,4), 16), _tb = parseInt(_thex.slice(4,6), 16);
   const tcolorBorder = 'rgba(' + _tr + ',' + _tg + ',' + _tb + ',0.30)';
-  const hitPct = leg.blended_confidence != null ? (leg.blended_confidence * 100).toFixed(1) + '%' : '\u2014';
-  const modelPct = leg.model_hit_prob != null ? (leg.model_hit_prob * 100).toFixed(1) + '%' : '\u2014';
-  const vegasPct = leg.vegas_implied_prob != null ? (leg.vegas_implied_prob * 100).toFixed(1) + '%' : '\u2014';
-  const edge = leg.edge != null ? ((leg.edge > 0 ? '+' : '') + leg.edge) : '\u2014';
-  const edgeClass = (leg.edge ?? 0) > 0 ? 'edge-plus' : (leg.edge ?? 0) < 0 ? 'edge-minus' : '';
-  const cvPct = leg.minutes_cv != null ? (leg.minutes_cv * 100).toFixed(1) + '%' : '\u2014';
   const isLast = index === total - 1;
 
-  return '<div class="line-pick-card" style="--tcolor:' + tcolor + ';--tcolor-border:' + tcolorBorder + ';border-radius:0;margin-bottom:0;' + (isLast ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);') + '">' +
+  // Data columns: Proj, Avg, L5, Minutes
+  const projVal = leg.projection != null ? leg.projection : '\u2014';
+  const seasonAvg = leg.season_avg != null ? leg.season_avg : '\u2014';
+  const avgMin = leg.avg_min != null ? leg.avg_min : '\u2014';
+  const l5 = (leg.recent_values && leg.recent_values.length)
+    ? leg.recent_values.map(function(v) {
+        const hit = dir === 'over' ? v >= (leg.line || 0) : v <= (leg.line || 0);
+        return '<span style="color:' + (hit ? 'var(--color-success)' : 'var(--color-danger)') + '">' + v + '</span>';
+      }).join('<span style="color:var(--color-text-muted)"> \u00b7 </span>')
+    : '\u2014';
+
+  return '<div class="line-pick-card" style="--tcolor:' + tcolor + ';--tcolor-border:' + tcolorBorder + ';border-radius:0;margin-bottom:0;border-color:rgba(255,255,255,0.08);border-top-color:rgba(255,255,255,0.08);' + (isLast ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);') + '">' +
     '<div class="line-pick-header">' +
       '<div class="line-pick-header-left">' +
         '<div class="line-pick-name">' + _escapeHtml(leg.player_name) + '</div>' +
         '<div class="line-pick-team">' + _escapeHtml(leg.team) + ' vs ' + _escapeHtml(leg.opponent) + '</div>' +
-      '</div>' +
-      '<div class="line-pick-header-meta">' +
-        '<div class="line-pick-odds-meta" style="color:var(--parlay);font-weight:800">' + hitPct + '</div>' +
-        '<div class="line-pick-odds-meta">blended</div>' +
       '</div>' +
     '</div>' +
     '<div class="line-direction-row">' +
@@ -2690,21 +2691,21 @@ function renderParlayLeg(leg, index, total) {
     '</div>' +
     '<div class="line-pick-data-row">' +
       '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Model</span>' +
-        '<span class="line-pick-micro-val" style="color:var(--parlay)">' + modelPct + '</span>' +
+        '<span class="line-pick-micro-lbl">Proj</span>' +
+        '<span class="line-pick-micro-val" style="color:var(--parlay)">' + projVal + '</span>' +
       '</div>' +
       '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Vegas</span>' +
-        '<span class="line-pick-micro-val">' + vegasPct + '</span>' +
+        '<span class="line-pick-micro-lbl">Avg</span>' +
+        '<span class="line-pick-micro-val">' + seasonAvg + '</span>' +
       '</div>' +
       '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Edge</span>' +
-        '<span class="line-pick-micro-val ' + edgeClass + '">' + edge + '</span>' +
+        '<span class="line-pick-micro-lbl">Min</span>' +
+        '<span class="line-pick-micro-val">' + avgMin + '</span>' +
       '</div>' +
-      '<div class="line-pick-data-col">' +
-        '<span class="line-pick-micro-lbl">Min CV</span>' +
-        '<span class="line-pick-micro-val">' + cvPct + '</span>' +
-      '</div>' +
+    '</div>' +
+    '<div style="margin-top:8px">' +
+      '<span class="line-pick-micro-lbl">L5</span>' +
+      '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:0.82rem;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums">' + l5 + '</div>' +
     '</div>' +
   '</div>';
 }
@@ -2720,29 +2721,25 @@ function renderParlayTicket(data) {
     return;
   }
 
-  const comboPct = data.combined_probability != null ? (data.combined_probability * 100).toFixed(1) : '\u2014';
   const corrMult = data.correlation_multiplier != null ? data.correlation_multiplier.toFixed(2) : '1.00';
-  const finalScore = data.parlay_score != null ? (data.parlay_score * 100).toFixed(1) : '\u2014';
+  const numGames = [...new Set((data.legs || []).map(function(l) { return l.gameId; }))].length;
 
   let legsHtml = '';
   for (let i = 0; i < legs.length; i++) {
     legsHtml += renderParlayLeg(legs[i], i, legs.length);
   }
 
-  // Narrative removed from main ticket — kept only in history modal detail
-
   const lockBadge = data.locked
     ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(20,184,166,0.12);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">LOCKED</span>'
     : '';
 
   wrap.innerHTML =
-    '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 24px rgba(20,184,166,0.08), 0 2px 12px rgba(0,0,0,0.28)">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(20,184,166,0.05);border-bottom:1px solid rgba(20,184,166,0.10)">' +
+    '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(255,255,255,0.08);box-shadow:0 4px 24px rgba(20,184,166,0.08), 0 2px 12px rgba(0,0,0,0.28)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(20,184,166,0.05);border-bottom:1px solid rgba(255,255,255,0.06)">' +
         '<div style="display:flex;align-items:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket' + lockBadge + '</div>' +
         '<div style="display:flex;gap:12px;align-items:center">' +
-          '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Combined</div><div style="font-weight:800;font-size:0.78rem;color:var(--parlay)">' + comboPct + '%</div></div>' +
+          (numGames > 1 ? '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Games</div><div style="font-weight:800;font-size:0.78rem;color:var(--text)">' + numGames + '</div></div>' : '') +
           (parseFloat(corrMult) !== 1.0 ? '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Corr</div><div style="font-weight:700;font-size:0.72rem;color:var(--color-success)">' + corrMult + 'x</div></div>' : '') +
-          '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Score</div><div style="font-weight:800;font-size:0.78rem;color:var(--text)">' + finalScore + '%</div></div>' +
         '</div>' +
       '</div>' +
       legsHtml +
