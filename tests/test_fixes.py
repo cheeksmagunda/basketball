@@ -2045,11 +2045,11 @@ class TestMoonshotRsBypass:
         assert rb.get("min_rating", 0) >= 4.0, "min_rating should be high enough to filter bench players"
         assert rb.get("min_season_min", 0) >= 20.0, "min_season_min should require proven starters"
 
-    def test_rs_bypass_defaults_disabled_offline(self):
-        """_CONFIG_DEFAULTS should have rs_bypass disabled (safe offline fallback)."""
+    def test_rs_bypass_defaults_enabled(self):
+        """_CONFIG_DEFAULTS should have rs_bypass enabled (14-date audit: Hidden Star wins 29%)."""
         from api.index import _CONFIG_DEFAULTS
         rb = _CONFIG_DEFAULTS.get("moonshot", {}).get("rs_bypass", {})
-        assert rb.get("enabled") is False, "Offline fallback should disable rs_bypass"
+        assert rb.get("enabled") is True, "rs_bypass should be enabled — Hidden Star archetype (RS 5+, boost < 2.0) wins 29% of daily contests"
 
 
 # ─────────────────────────────────────────────────────────
