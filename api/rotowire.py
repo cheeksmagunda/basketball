@@ -25,6 +25,7 @@ import unicodedata
 import requests
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from api.shared import et_date as _shared_et_date
 
 # Cache directory — same pattern as index.py
 ROTOWIRE_CACHE_DIR = Path("/tmp/nba_rotowire_v1")
@@ -53,13 +54,7 @@ STATUS_UNKNOWN = "unknown"        # Not found on RotoWire page
 
 def _et_date():
     """Current date in Eastern Time — mirrors api/index.py logic."""
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo("America/New_York")).date()
-    except ImportError:
-        now_utc = datetime.now(timezone.utc)
-        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
-        return (now_utc + offset).date()
+    return _shared_et_date()
 
 
 def _cache_path():

@@ -707,7 +707,7 @@ class TestFetchGamesTTL:
         from api.index import fetch_games
         source = inspect.getsource(fetch_games)
         assert '_GAMES_CACHE_TS' in source, "fetch_games must use TTL-aware cache"
-        assert '300' in source, "fetch_games TTL should be 300 seconds (5 min)"
+        assert '_TTL_GAMES' in source, "fetch_games TTL should use _TTL_GAMES constant (300s / 5 min)"
 
 
 # ─────────────────────────────────────────────────────────

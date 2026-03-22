@@ -30,9 +30,9 @@ try:
 except ImportError:
     PULP_AVAILABLE = False
 
+from api.shared import SLOT_MULTIPLIERS, SLOT_LABELS
+
 # Slot multipliers: Real Sports App draft slot values
-SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]
-SLOT_LABELS = ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"]
 
 
 def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
