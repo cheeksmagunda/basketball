@@ -2744,7 +2744,8 @@ function renderParlayLeg(leg, index, total) {
   const tcolorBorder = 'rgba(' + _tr + ',' + _tg + ',' + _tb + ',0.30)';
   const isLast = index === total - 1;
 
-  const projVal = leg.projection != null ? leg.projection : '\u2014';
+  function _ceilHalf(v) { return Math.ceil(Number(v) * 2) / 2; }
+  const projVal = leg.projection != null ? _ceilHalf(leg.projection) : '\u2014';
   const seasonAvg = leg.season_avg != null ? leg.season_avg : '\u2014';
   const avgMin = leg.avg_min != null ? leg.avg_min : '\u2014';
 
