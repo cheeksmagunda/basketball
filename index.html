@@ -240,20 +240,21 @@
       padding: 10px 6px 8px;
       border: none; background: transparent; border-radius: 14px;
       cursor: pointer; transition: color 0.25s ease;
-      color: rgba(var(--chalk-rgb),0.40);
+      color: rgba(var(--chalk-rgb),0.55);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.6);
       position: relative;
       z-index: 1;
       -webkit-tap-highlight-color: transparent;
     }
-    .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.65); }
+    .bnav-icon-btn:hover { color: rgba(var(--chalk-rgb),0.75); }
     .bnav-icon-btn.active {
       color: var(--line);
     }
     .bnav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
-    .bnav-icon svg { width: 22px; height: 22px; display: block; }
+    .bnav-icon svg { width: 22px; height: 22px; display: block; stroke-width: 2.2; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
     .bnav-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+      font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em;
       text-transform: uppercase; line-height: 1;
     }
 
