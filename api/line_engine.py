@@ -255,6 +255,11 @@ def _call_claude(prompt, stat_focus="points"):
         if pick and not pick.get("stat_type"):
             pick["stat_type"] = stat_focus
         return pick
+    except requests.exceptions.HTTPError as http_err:
+        status = http_err.response.status_code if http_err.response is not None else "?"
+        label = {429: "rate-limited", 529: "overloaded"}.get(status, "HTTP error")
+        print(f"[LineEngine] Claude {label} ({status}) for {stat_focus} — using fallback")
+        return None
     except Exception as e:
         print(f"[LineEngine] Claude API error ({stat_focus}): {e}")
         return None
