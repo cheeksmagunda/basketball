@@ -162,7 +162,7 @@
       text-transform: uppercase; color: var(--muted); white-space: nowrap;
     }
     .header-badge.locked { color: var(--green); }
-    /* ── BOTTOM TAB NAVIGATION — Apple Liquid Glass lozenge ── */
+    /* ── BOTTOM TAB NAVIGATION — floating pill ── */
     .bottom-nav {
       position: fixed;
       bottom: 10px;
@@ -172,46 +172,19 @@
       max-width: 440px;
       border-radius: 22px;
       padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+      /* Slight transparency — background color bleeds through gently */
+      background: rgba(10,14,22,0.82);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
       z-index: 1000;
-      /* No background/filter/backdrop on the nav itself — glass layer handles it */
     }
-    /* Dedicated glass backdrop — receives filter + backdrop-filter so icons stay crisp */
-    .bottom-nav-glass {
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      /* Nearly-clear glass body */
-      background: rgba(10,14,22,0.18);
-      border-top: 1px solid rgba(255,255,255,0.10);
-      /* Minimal blur — clarity in center, edge refraction does the work */
-      backdrop-filter: blur(4px) saturate(120%);
-      -webkit-backdrop-filter: blur(4px) saturate(120%);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
-      /* Edge refraction — only warps the glass, not icons/text above */
-      filter: url(#glass-refraction);
-      pointer-events: none;
-    }
-    /* Inner depth: curved-glass inset glow (on glass layer) */
-    .bottom-nav-glass::before {
+    /* Subtle inner edge highlight for depth */
+    .bottom-nav::before {
       content: '';
       position: absolute;
       inset: 0;
       border-radius: inherit;
-      background: rgba(255,255,255,0.015);
-      box-shadow:
-        inset 0 1px 3px rgba(255,255,255,0.09),
-        inset 0 -1px 2px rgba(0,0,0,0.18),
-        inset 2px 0 3px rgba(255,255,255,0.03),
-        inset -2px 0 3px rgba(255,255,255,0.03);
-      pointer-events: none;
-    }
-    /* Surface reflection — subtle top highlight (on glass layer) */
-    .bottom-nav-glass::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      background: linear-gradient(to bottom, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.008) 30%, transparent 55%);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.06);
       pointer-events: none;
     }
     .bnav-icon-row {
@@ -1230,37 +1203,8 @@
     <div id="headerMeta" class="header-meta"></div>
   </header>
 
-  <!-- ══ SVG filter for glass edge refraction ══ -->
-  <svg width="0" height="0" style="position:absolute">
-    <defs>
-      <filter id="glass-refraction" x="-5%" y="-5%" width="110%" height="110%">
-        <!-- Fine turbulence for organic glass-like warping -->
-        <feTurbulence type="fractalNoise" baseFrequency="0.015 0.02" numOctaves="3" seed="42" result="noise"/>
-        <!-- Subtle displacement — strongest at edges via composite masking -->
-        <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
-        <!-- Create a center-clear mask: white edges, black center -->
-        <feFlood flood-color="black" result="black"/>
-        <feFlood flood-color="white" result="white"/>
-        <!-- Erode the source alpha to get a smaller inner shape -->
-        <feMorphology in="SourceAlpha" operator="erode" radius="8" result="innerAlpha"/>
-        <!-- Blur the inner mask edge so the transition is smooth -->
-        <feGaussianBlur in="innerAlpha" stdDeviation="6" result="innerBlur"/>
-        <!-- Invert: where inner is opaque, use original; where transparent (edges), use displaced -->
-        <feComposite in="displaced" in2="innerBlur" operator="out" result="edgeOnly"/>
-        <feComposite in="SourceGraphic" in2="innerBlur" operator="in" result="centerOnly"/>
-        <!-- Merge: clear center + refracted edges -->
-        <feMerge>
-          <feMergeNode in="edgeOnly"/>
-          <feMergeNode in="centerOnly"/>
-        </feMerge>
-      </filter>
-    </defs>
-  </svg>
-
-  <!-- ══ BOTTOM TAB NAVIGATION — Apple Liquid Glass lozenge ══ -->
+  <!-- ══ BOTTOM TAB NAVIGATION ══ -->
   <nav class="bottom-nav" id="bottomNav">
-    <!-- Glass backdrop layer — filtered separately so icons/text stay crisp -->
-    <div class="bottom-nav-glass"></div>
     <!-- Primary icon row -->
     <div class="bnav-icon-row">
       <div class="bnav-pill" id="bnavPill"></div>
