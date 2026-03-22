@@ -728,6 +728,7 @@ _CONFIG_DEFAULTS = {
         "max_candidates_for_combinations": 30,
         "positive_correlation_boost": 1.08,
         "shootout_correlation_boost": 1.05,
+        "min_line_floors": {"points": 10.5, "rebounds": 3.5, "assists": 2.5},
     },
 }
 
@@ -8907,6 +8908,11 @@ async def get_parlay(request: Request):
         today = _et_date()
         today_str = today.isoformat()
 
+        # Determine lock status using same logic as predict tab
+        games = fetch_games(today)
+        start_times = [g["startTime"] for g in games if g.get("startTime")]
+        slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
+
         # Cache check (30-min TTL)
         cached = _cg("parlay_v1")
         if cached and cached.get("_cache_date") == today_str:
@@ -8915,6 +8921,7 @@ async def get_parlay(request: Request):
                 try:
                     age_s = (datetime.utcnow() - datetime.fromisoformat(cached_at)).total_seconds()
                     if age_s < 1800:
+                        cached["locked"] = slate_locked
                         return JSONResponse(cached)
                 except Exception:
                     pass
@@ -8927,6 +8934,7 @@ async def get_parlay(request: Request):
             if gh_parlay_raw:
                 gh_parlay = json.loads(gh_parlay_raw)
                 if gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
+                    gh_parlay["locked"] = slate_locked
                     gh_parlay["_from_github"] = True
                     gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
                     gh_parlay["_cache_date"] = today_str
@@ -8948,6 +8956,7 @@ async def get_parlay(request: Request):
             return JSONResponse({
                 "legs": [], "error": err or "no_valid_parlay",
                 "narrative": narrative,
+                "locked": slate_locked,
                 "debug": debug or {},
             }, status_code=200)
 
@@ -8958,6 +8967,7 @@ async def get_parlay(request: Request):
             leg.setdefault("actual_stat", None)
         result.setdefault("result", "pending")
         result["date"] = today_str
+        result["locked"] = slate_locked
 
         result["_cached_at"] = datetime.utcnow().isoformat()
         result["_cache_date"] = today_str
@@ -9066,8 +9076,10 @@ async def parlay_history():
             return _hist_cached["data"]
 
     items = _github_list_dir("data/parlays")
+    _skip_dates = {"2026-03-21"}  # Test dates to exclude from history
     json_dates = sorted(
-        [i["name"][:-5] for i in items if i.get("name", "").endswith(".json")],
+        [i["name"][:-5] for i in items
+         if i.get("name", "").endswith(".json") and i["name"][:-5] not in _skip_dates],
         reverse=True,
     )[:30]
 

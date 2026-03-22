@@ -2655,11 +2655,7 @@ function _parlaySkeletons() {
         <div class="line-pick-data-col"><span class="line-pick-micro-lbl">Line</span><div class="skel-block skel-line" style="height:10px;width:100%"></div></div>
       </div>
     </div>`;
-  return `<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 20px rgba(0,0,0,0.28)">${skel}${skel}${skel}</div>
-    <div class="line-pick-conclusion-wrap" style="margin-top:12px">
-      <div class="skel-block skel-line wide" style="height:12px;margin-bottom:8px"></div>
-      <div class="skel-block skel-line narrow" style="height:12px;width:75%"></div>
-    </div>`;
+  return `<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 20px rgba(0,0,0,0.28)">${skel}${skel}${skel}</div>`;
 }
 
 function renderParlayLeg(leg, index, total) {
@@ -2733,13 +2729,11 @@ function renderParlayTicket(data) {
     legsHtml += renderParlayLeg(legs[i], i, legs.length);
   }
 
-  const narrativeHtml = data.narrative ? '<p class="line-pick-conclusion">' + _escapeHtml(data.narrative) + '</p>' : '';
+  // Narrative removed from main ticket — kept only in history modal detail
 
-  const lockBadge = data._from_github
+  const lockBadge = data.locked
     ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(20,184,166,0.12);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">LOCKED</span>'
-    : data.projection_only
-      ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(255,255,255,0.07);color:var(--color-text-muted);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">MODEL ONLY</span>'
-      : '';
+    : '';
 
   wrap.innerHTML =
     '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 24px rgba(20,184,166,0.08), 0 2px 12px rgba(0,0,0,0.28)">' +
@@ -2752,11 +2746,6 @@ function renderParlayTicket(data) {
         '</div>' +
       '</div>' +
       legsHtml +
-    '</div>' +
-    (narrativeHtml ? '<div class="line-pick-conclusion-wrap" style="margin-top:12px">' + narrativeHtml + '</div>' : '') +
-    '<div style="text-align:center;margin-top:16px;font-size:0.65rem;color:var(--muted)">' +
-      (data.candidates_evaluated ? data.candidates_evaluated + ' candidates evaluated' : '') +
-      (data.combinations_scored ? ' · ' + data.combinations_scored + ' combinations scored' : '') +
     '</div>';
 
   wrap.style.display = 'block';

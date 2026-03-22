@@ -145,6 +145,13 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
     min_games_played = cfg.get("min_games_played", 10)
     juice_threshold = cfg.get("juice_threshold", -105)  # Vegas must juice at least this much
 
+    # Minimum sportsbook line floors — filter out trivially easy props (0.5 ast, 1.5 reb)
+    min_line_floors = cfg.get("min_line_floors", {})
+    _line_floor_pts = float(min_line_floors.get("points", 10.5))
+    _line_floor_reb = float(min_line_floors.get("rebounds", 3.5))
+    _line_floor_ast = float(min_line_floors.get("assists", 2.5))
+    _LINE_FLOORS = {"points": _line_floor_pts, "rebounds": _line_floor_reb, "assists": _line_floor_ast}
+
     # Build game lookup: team_abbr → game info
     game_lookup = {}
     for g in games:
@@ -166,7 +173,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
     # Diagnostic counters for pipeline visibility
     _f = {"total": 0, "no_id": 0, "low_min": 0, "injury": 0, "no_game": 0,
           "blowout": 0, "gtd": 0, "high_cv": 0, "low_games": 0,
-          "no_odds": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
+          "no_odds": 0, "low_line": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
 
     for p in projections:
         pid = str(p.get("id", ""))
@@ -247,6 +254,12 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 _f["no_odds"] += 1
                 continue
 
+            # Minimum line floor — filter trivially easy props (e.g. 0.5 ast, 1.5 reb)
+            line_floor = _LINE_FLOORS.get(stat, 0)
+            if book_line < line_floor:
+                _f["low_line"] = _f.get("low_line", 0) + 1
+                continue
+
             # Determine direction: pick the side where model + Vegas agree
             for direction in ("over", "under"):
                 odds_key = f"odds_{direction}"
@@ -304,6 +317,9 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                     "american_odds": american_odds,
                     "minutes_cv": round(cv, 3),
                     "season_avg": round(float(p.get(f"season_{stat_key}") or proj_val), 1),
+                    "season_pts": float(p.get("season_pts") or p.get("pts") or 0),
+                    "season_ast": float(p.get("season_ast") or p.get("ast") or 0),
+                    "position": (p.get("position") or "").upper(),
                     "game_spread": gctx.get("spread"),
                     "game_total": gctx.get("total"),
                     "game_time": gctx.get("startTime", ""),
@@ -443,9 +459,83 @@ def _build_parlay_narrative(legs, correlation_reasons, combined_prob):
 
 # ── Main Engine ──────────────────────────────────────────────────────────────
 
+def _is_playmaker(leg):
+    """Identify if a player is a playmaker (point guard or high-assist player).
+    Used to find the 'correlated pair' anchor — the PG whose assists feed a teammate."""
+    pos = leg.get("position", "")
+    season_ast = leg.get("season_ast", 0)
+    # PG position or averages 4+ assists per game (playmaker)
+    return "PG" in pos or "G" in pos and season_ast >= 4.0 or season_ast >= 5.0
+
+
+def _score_structure(legs, parlay_config=None):
+    """Score a 3-leg combination for how well it matches the ideal parlay structure.
+
+    Ideal structure:
+      Leg 1 (Market Match): Role player stat OVER with high confidence + Vegas juice
+      Leg 2 (Correlated Pair A): Playmaker assists OVER in tight-spread game
+      Leg 3 (Correlated Pair B): That playmaker's teammate points OVER
+
+    Returns (structure_bonus, structure_reasons) where bonus is a multiplier >= 1.0.
+    """
+    cfg = parlay_config or {}
+    reasons = []
+    bonus = 1.0
+
+    # Check for a correlated pair: same-team assists_over + points_over
+    by_team = {}
+    for leg in legs:
+        by_team.setdefault(leg["team"], []).append(leg)
+
+    has_correlated_pair = False
+    for team, team_legs in by_team.items():
+        ast_overs = [l for l in team_legs if l["stat_type"] == "assists" and l["direction"] == "over"]
+        pts_overs = [l for l in team_legs if l["stat_type"] == "points" and l["direction"] == "over"]
+        if ast_overs and pts_overs:
+            has_correlated_pair = True
+            a_name = ast_overs[0]["player_name"]
+            p_name = pts_overs[0]["player_name"]
+            # Stronger bonus if the assist player is a playmaker
+            if _is_playmaker(ast_overs[0]):
+                bonus *= 1.25
+                reasons.append(f"Ideal structure: {a_name} assists feed {p_name} scoring")
+            else:
+                bonus *= 1.12
+                reasons.append(f"Correlated pair: {a_name} assists + {p_name} scoring (same team)")
+
+    # Reward stat diversity — ideal parlay covers different stat types
+    stat_types = set(l["stat_type"] for l in legs)
+    if len(stat_types) >= 3:
+        bonus *= 1.10
+        reasons.append("Full stat diversification (PTS + REB + AST)")
+    elif len(stat_types) >= 2:
+        bonus *= 1.05
+        reasons.append("Stat diversification across 2 categories")
+
+    # Reward spread diversity — legs from different games reduce correlated risk
+    game_ids = set(l["gameId"] for l in legs)
+    if len(game_ids) >= 2:
+        bonus *= 1.05
+
+    # Penalize all legs from the same team (too correlated)
+    teams = set(l["team"] for l in legs)
+    if len(teams) == 1:
+        bonus *= 0.80
+        reasons.append("Warning: all legs from same team")
+
+    return round(bonus, 4), reasons
+
+
 def run_parlay_engine(projections, games, player_odds_map, gamelogs,
                       rw_statuses=None, parlay_config=None):
     """Find the optimal 3-leg parlay from today's slate.
+
+    Optimizes for the ideal 3-leg structure:
+      Leg 1 (Market Match): Role player stat OVER with Vegas juice + high model confidence
+      Leg 2 (Correlated Pair A): Playmaker assists OVER in tight-spread game
+      Leg 3 (Correlated Pair B): That playmaker's teammate's points OVER
+
+    Scoring = combined_probability × correlation_modifier × structure_bonus
 
     Args:
         projections: Player projections from the pipeline.
@@ -456,17 +546,7 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
         parlay_config: Config overrides.
 
     Returns:
-        {
-            "legs": [leg1, leg2, leg3],
-            "combined_probability": float,
-            "correlation_multiplier": float,
-            "correlation_reasons": [str, ...],
-            "parlay_score": float,
-            "narrative": str,
-            "candidates_evaluated": int,
-            "combinations_scored": int,
-            "timestamp": str,
-        } or None if no valid parlay found.
+        dict with legs, probabilities, correlation, structure info, or None.
     """
     cfg = parlay_config or {}
 
@@ -495,11 +575,13 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
     deduped.sort(key=lambda x: x["blended_confidence"], reverse=True)
     pool = deduped[:max_candidates]
 
-    # Step 2: Evaluate all 3-leg combinations
+    # Step 2: Evaluate all 3-leg combinations with structure-aware scoring
     best_score = -1
     best_combo = None
     best_corr_mult = 1.0
     best_corr_reasons = []
+    best_struct_bonus = 1.0
+    best_struct_reasons = []
     combos_scored = 0
 
     for combo in itertools.combinations(pool, 3):
@@ -515,11 +597,16 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
         if corr_mult <= 0:
             continue  # Vetoed
 
-        # Combined probability = product of individual blended confidences × correlation
+        # Structure bonus — rewards the ideal 3-leg profile
+        struct_bonus, struct_reasons = _score_structure(legs, cfg)
+
+        # Combined probability = product of individual blended confidences
         raw_prob = 1.0
         for l in legs:
             raw_prob *= l["blended_confidence"]
-        score = raw_prob * corr_mult
+
+        # Final score: probability × correlation × structure
+        score = raw_prob * corr_mult * struct_bonus
 
         combos_scored += 1
 
@@ -528,24 +615,37 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
             best_combo = legs
             best_corr_mult = corr_mult
             best_corr_reasons = corr_reasons
+            best_struct_bonus = struct_bonus
+            best_struct_reasons = struct_reasons
 
     if best_combo is None:
         return None
 
-    # Sort legs by blended confidence descending for display
-    best_combo.sort(key=lambda x: x["blended_confidence"], reverse=True)
+    # Sort legs for display: correlated pair together, market match first
+    # Group by team to keep correlated pairs adjacent
+    _team_count = {}
+    for l in best_combo:
+        _team_count[l["team"]] = _team_count.get(l["team"], 0) + 1
+
+    def _leg_sort_key(l):
+        # Legs from teams with multiple entries (correlated pair) go last
+        pair_team = _team_count.get(l["team"], 0) > 1
+        return (pair_team, -l["blended_confidence"])
+
+    best_combo.sort(key=_leg_sort_key)
 
     combined_prob = 1.0
     for l in best_combo:
         combined_prob *= l["blended_confidence"]
 
-    narrative = _build_parlay_narrative(best_combo, best_corr_reasons, combined_prob * best_corr_mult)
+    all_reasons = best_corr_reasons + best_struct_reasons
+    narrative = _build_parlay_narrative(best_combo, all_reasons, combined_prob * best_corr_mult * best_struct_bonus)
 
     return {
         "legs": best_combo,
         "combined_probability": round(combined_prob, 4),
-        "correlation_multiplier": best_corr_mult,
-        "correlation_reasons": best_corr_reasons,
+        "correlation_multiplier": round(best_corr_mult * best_struct_bonus, 4),
+        "correlation_reasons": all_reasons,
         "parlay_score": round(best_score, 6),
         "narrative": narrative,
         "candidates_evaluated": len(candidates),
