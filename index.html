@@ -172,10 +172,10 @@
       max-width: 440px;
       border-radius: 22px;
       padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
-      /* Slight transparency — background color bleeds through gently */
-      background: rgba(10,14,22,0.82);
-      border-top: 1px solid rgba(255,255,255,0.08);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+      /* Opaque gradient — no content bleed-through */
+      background: linear-gradient(135deg, #0f1923 0%, #131c28 50%, #0e1720 100%);
+      border-top: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
       z-index: 1000;
     }
     /* Subtle inner edge highlight for depth */
