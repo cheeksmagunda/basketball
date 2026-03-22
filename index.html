@@ -1858,7 +1858,7 @@ function _populateGameQuickPicks(games, slateLocked) {
   if (!grid || !Array.isArray(games) || !games.length) return;
   grid.innerHTML = games.map(g => {
     const gid = g.gameId || g.id || '';
-    const parts = (g.label || '').split(' vs ');
+    const parts = (g.label || '').split(/ vs | @ /);
     const away = parts[0] || '?';
     const home = parts[1] || '?';
     const locked = slateLocked || (g.locked === true) || (g.startTime && (new Date(g.startTime).getTime() - Date.now()) <= 5 * 60 * 1000);
