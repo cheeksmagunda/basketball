@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Ace Bailey,4873138,UTAH,G,6.8,1.9,35.7,14.1,4.0,1.8,0.9,0.6
+slate,chalk,1.8x,Brice Sensabaugh,5105839,UTAH,F,6.8,2.0,36.2,15.0,3.0,1.7,0.7,0.1
+slate,chalk,1.6x,Kevin Huerter,4066372,DET,G,6.4,2.2,27.8,10.1,3.6,2.5,0.8,0.6
+slate,chalk,1.4x,Klay Thompson,6475,DAL,G,7.8,2.5,30.4,13.2,2.4,1.6,0.6,0.3
+slate,chalk,1.2x,Taylor Hendricks,4684806,MEM,F,4.7,3.0,31.2,7.9,3.7,1.0,0.8,0.5
+slate,upside,2.0x,Klay Thompson,6475,DAL,G,7.8,2.5,30.4,13.2,2.4,1.6,0.6,0.3
+slate,upside,1.8x,Caris LeVert,2991043,DET,G,6.7,3.0,26.2,8.6,2.2,2.9,0.9,0.6
+slate,upside,1.6x,Khris Middleton,6609,DAL,F,6.4,2.4,27.5,11.9,4.0,3.1,0.9,0.2
+slate,upside,1.4x,Justin Edwards,4711297,PHI,F,4.9,3.0,23.9,7.5,1.8,1.4,0.9,0.2
+slate,upside,1.2x,Brook Lopez,3448,LAC,C,4.6,3.0,23.7,9.2,3.7,1.2,0.6,1.2
