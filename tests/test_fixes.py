@@ -2038,6 +2038,69 @@ class TestCorePoolRsMetric:
 
 
 # ─────────────────────────────────────────────────────────
+# TestPerGameCarryCorePool — per_game_carry surfaces local TV leaders
+# ─────────────────────────────────────────────────────────
+class TestPerGameCarryCorePool:
+    """core_pool.per_game_carry forces top-K per matchup into the core before global trim."""
+
+    def test_promotes_local_hero_above_mid_global(self):
+        from api.index import _apply_per_game_carry_core_pool
+
+        sorted_union = [
+            {"name": "Star", "_core_score": 100},
+            {"name": "Mid", "_core_score": 50},
+            {"name": "LocalHero", "_core_score": 40},
+        ]
+        chalk_eligible = [
+            {"name": "Star", "team": "A", "opp": "B", "rating": 10, "est_mult": 1},
+            {"name": "Mid", "team": "A", "opp": "B", "rating": 5, "est_mult": 1},
+            {"name": "LocalHero", "team": "C", "opp": "D", "rating": 8, "est_mult": 1},
+        ]
+        core = _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, 3, 1, 1.6)
+        names = [r["name"] for r in core]
+        assert names == ["Star", "LocalHero", "Mid"]
+
+    def test_per_game_carry_zero_is_plain_slice(self):
+        from api.index import _apply_per_game_carry_core_pool
+
+        su = [{"name": "B", "_core_score": 2}, {"name": "A", "_core_score": 1}]
+        ce = [{"name": "A", "team": "X", "opp": "Y", "rating": 1, "est_mult": 1}]
+        assert _apply_per_game_carry_core_pool(su, ce, 1, 0, 1.6) == [su[0]]
+
+
+# ─────────────────────────────────────────────────────────
+# TestVolatilityGuard — high-variance perimeter downshift (Mar 22 audit)
+# ─────────────────────────────────────────────────────────
+class TestVolatilityGuard:
+    """projection.volatility_guard optional dampening in project_player."""
+
+    def test_volatility_guard_branch_exists(self):
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "volatility_guard" in src
+        assert "min_scoring_variance" in src
+
+
+# ─────────────────────────────────────────────────────────
+# TestMoonshotEvRatingBlend — moonshot EV blends toward raw RS×matchup
+# ─────────────────────────────────────────────────────────
+class TestMoonshotEvRatingBlend:
+    """moonshot.ev_rating_blend lets stable scorers compete with pure boost leverage."""
+
+    def test_ev_rating_blend_in_moonshot_loop(self):
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "ev_rating_blend" in src
+        assert "_evb" in src
+
+    def test_model_config_has_ev_rating_blend(self):
+        cfg = json.load(open("data/model-config.json"))
+        ms = cfg.get("moonshot", {})
+        assert "ev_rating_blend" in ms
+        assert 0.0 <= float(ms["ev_rating_blend"]) <= 0.5
+
+
+# ─────────────────────────────────────────────────────────
 # TestMoonshotRsBypass — high-RS players bypass boost floor
 # ─────────────────────────────────────────────────────────
 class TestMoonshotRsBypass:

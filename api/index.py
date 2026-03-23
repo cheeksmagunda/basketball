@@ -731,6 +731,15 @@ _CONFIG_DEFAULTS = {
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
         "chalk_min_boost_floor": 1.0,   # minimum card boost required for chalk eligibility;
                                         # star anchor (PPG >= 20, boost >= 0.8) handles genuine stars separately
+        # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
+        # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
+        "volatility_guard": {
+            "enabled": False,
+            "min_scoring_variance": 0.18,
+            "min_season_pts": 14.0,
+            "min_pts_per_minute": 0.38,
+            "rating_mult": 0.93,
+        },
     },
     "moonshot": {
         # v57: 14-date audit alignment. Targets 3 archetypes:
@@ -746,6 +755,8 @@ _CONFIG_DEFAULTS = {
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
         # RS-bypass: Hidden Star archetype (RS 5+, boost < 2.0) wins 29% of daily contests.
         "rs_bypass": {"enabled": True, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
+        # Blend moonshot ceiling toward raw RS×matchup so middling-boost stable scorers compete.
+        "ev_rating_blend": 0.0,
     },
     "matchup": {
         "enabled": True,
@@ -797,6 +808,7 @@ _CONFIG_DEFAULTS = {
         "size": 12,       # v57: tighter pool (was 15) — better filtering means fewer needed
         "metric": "tv",   # pure TV formula: rating × (avg_slot + boost)
         "blend_weight": 0.5,
+        "per_game_carry": 0,  # top K per matchup by TV forced into core before global trim (0 = off)
     },
     "line": {
         "min_confidence": 50,
@@ -2601,6 +2613,22 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             if spike_mult > 1.0:
                 raw_score = min(raw_score * spike_mult, rs_cap)
 
+    vg = proj_cfg.get("volatility_guard", {})
+    if isinstance(vg, dict) and vg.get("enabled", False):
+        vmin_var = float(vg.get("min_scoring_variance", 0.18))
+        min_usage_pts = float(vg.get("min_season_pts", 14.0))
+        min_ppm = float(vg.get("min_pts_per_minute", 0.38))
+        vg_mult = float(vg.get("rating_mult", 0.93))
+        pos_u = (pinfo.get("pos") or "").strip().upper()
+        is_perimeter = (
+            pos_u.startswith("G")
+            or pos_u.startswith("F")
+            or pos_u in ("SG", "PG", "SF", "PF")
+        )
+        ppm = pts / max(avg_min, 1e-6)
+        if is_perimeter and season_pts >= min_usage_pts and ppm >= min_ppm and player_variance >= vmin_var:
+            raw_score = min(raw_score * vg_mult, rs_cap)
+
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
     # Card boost is INVERSELY proportional to ownership — the app rewards
@@ -3598,6 +3626,50 @@ def _normalize_line_pick(p: dict) -> dict:
     return {**base, **extras}
 
 
+def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per_carry, avg_slot):
+    """Prefer top per-game TV players into the Starting-5 core pool before global trim.
+
+    Surfaces per-game standouts (e.g. THE LINE UP leaders) that lose to global RS×boost rank.
+    """
+    if per_carry <= 0 or core_size <= 0:
+        return sorted_union[:core_size]
+
+    def _gid(p):
+        return "_vs_".join(sorted([p.get("team", ""), p.get("opp", "")]))
+
+    by_game = {}
+    for p in chalk_eligible:
+        by_game.setdefault(_gid(p), []).append(p)
+    carry_names = set()
+    k = max(0, int(per_carry))
+    for plist in by_game.values():
+
+        def _tv(pl):
+            return float(pl.get("rating", 0) or 0) * (avg_slot + float(pl.get("est_mult", 0.3)))
+
+        for pl in sorted(plist, key=_tv, reverse=True)[:k]:
+            nm = pl.get("name")
+            if nm:
+                carry_names.add(nm)
+    name_to_rec = {r["name"]: r for r in sorted_union}
+    carried_recs = [name_to_rec[n] for n in carry_names if n in name_to_rec]
+    carried_recs.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
+    core_pool = []
+    seen = set()
+    for r in carried_recs:
+        if len(core_pool) >= core_size:
+            break
+        core_pool.append(r)
+        seen.add(r["name"])
+    for r in sorted_union:
+        if len(core_pool) >= core_size:
+            break
+        if r["name"] not in seen:
+            core_pool.append(r)
+            seen.add(r["name"])
+    return core_pool
+
+
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
     chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
@@ -3937,6 +4009,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             if su_ppm >= su_min_ppm and su_season_pts >= su_min_pts:
                 adj_ceiling = round(adj_ceiling * su_mult, 3)
 
+        _evb = max(0.0, min(0.5, float(moon_cfg.get("ev_rating_blend", 0.0))))
+        if _evb > 1e-9:
+            adj_ceiling = round(
+                (1.0 - _evb) * adj_ceiling + _evb * (p["rating"] * matchup_factor),
+                3,
+            )
+
         # Moonshot EV: MILP will optimize slot assignment on top
         moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
 
@@ -3970,6 +4049,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             _pts_scale = float(_moon_cfg.get("scoring_pts_bias_scale", 0.0))
             if _pts_scale > 0 and p.get("pts", 0) > _pts_threshold:
                 _adj = round(_adj * (1.0 + (p["pts"] - _pts_threshold) * _pts_scale), 3)
+            _evb2 = max(0.0, min(0.5, float(_moon_cfg.get("ev_rating_blend", 0.0))))
+            if _evb2 > 1e-9:
+                _adj = round((1.0 - _evb2) * _adj + _evb2 * (p["rating"] * _matchup), 3)
             return round(_adj * (_avg_slot + _est), 2), _adj
 
         moonshot_by_name = {p["name"]: p for p in moonshot_pool}
@@ -4011,7 +4093,14 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             else:
                 r["_core_score"] = blend_w * ce + (1 - blend_w) * me
         eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
-        core_pool = eligible_union[:core_size]
+        _pgc = int(core_pool_cfg.get("per_game_carry", 0) or 0)
+        if _pgc > 0:
+            _avg_slot_cp = float(_cfg("lineup.avg_slot_multiplier", 1.6))
+            core_pool = _apply_per_game_carry_core_pool(
+                eligible_union, chalk_eligible, core_size, _pgc, _avg_slot_cp
+            )
+        else:
+            core_pool = eligible_union[:core_size]
 
         # Core pool is built exclusively from chalk_eligible — all players passed
         # chalk gates (4.0 RS, 22 min, 7 pts, 0.28 ppm). Both MILP runs use core_pool.
