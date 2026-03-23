@@ -6143,12 +6143,12 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
                 if mkt["key"] != market:
                     continue
                 for outcome in mkt.get("outcomes", []):
-                    if pname_lower not in outcome.get("name", "").lower():
+                    if pname_lower not in outcome.get("description", "").lower():  # Odds API: description = player name
                         continue
                     pt = outcome.get("point")
                     if pt is None:
                         continue
-                    if outcome.get("description", "").lower() == "over":
+                    if outcome.get("name", "").lower() == "over":  # Odds API: name = "Over"/"Under"
                         lines_over.append(pt)
                         over_prices.append(outcome.get("price", -110))
                     else:
@@ -6311,8 +6311,8 @@ def _build_player_odds_map(games):
                     pt = outcome.get("point")
                     if pt is None:
                         continue
-                    player_key = outcome.get("name", "").lower()
-                    direction  = outcome.get("description", "").lower()
+                    player_key = outcome.get("description", "").lower()  # Odds API: description = player name
+                    direction  = outcome.get("name", "").lower()          # Odds API: name = "Over"/"Under"
                     price      = outcome.get("price", -110)
                     key = (player_key, stat_type)
                     if key not in raw:
