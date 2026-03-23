@@ -3278,6 +3278,12 @@ class TestParlayHistoryAndConfigHardening:
         assert 'cfg["line"] = sanitize_line_config(cfg.get("line", {}))' in src
         assert 'cfg["parlay"] = sanitize_parlay_config(cfg.get("parlay", {}))' in src
 
+    def test_refresh_does_not_tombstone_parlay_history_files(self):
+        src = open("api/index.py").read()
+        assert 'json.dumps({"_busted": True}), "bust parlay cache"' not in src, (
+            "refresh must not tombstone GitHub parlay files; this can erase history"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

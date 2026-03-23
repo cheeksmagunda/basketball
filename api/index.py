@@ -6267,15 +6267,10 @@ async def refresh(request: Request):
     try:
         _bust_slate_cache()
     except Exception: pass
-    # Bust today's GitHub parlay cache so next request regenerates with latest engine
-    try:
-        _parlay_path = f"data/parlays/{_today_str()}.json"
-        _existing_parlay, _ = _github_get_file(_parlay_path)
-        if _existing_parlay:
-            _github_write_file(_parlay_path, json.dumps({"_busted": True}), "bust parlay cache")
-            print(f"[refresh] busted parlay cache: {_parlay_path}")
-    except Exception as _pe:
-        print(f"[refresh] parlay cache bust failed (non-fatal): {_pe}")
+    # Do not tombstone GitHub parlay files on refresh. Those JSON files are historical
+    # artifacts, not disposable caches; replacing them with {"_busted": true} can erase
+    # parlay history for that date if a regen never occurs.
+    # /tmp parlay cache is already cleared by CACHE_DIR glob unlink above.
     # Clear daily boost cache so next load re-reads from GitHub
     global _DAILY_BOOST_CACHE, _DAILY_BOOST_TS
     _DAILY_BOOST_CACHE = {}
