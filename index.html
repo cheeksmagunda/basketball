@@ -4562,6 +4562,10 @@ async function initLabPage() {
   if (_ub0) _ub0.style.display = 'none';
   await showLabUnlocked({ locked: false, games_final: 0 });
 
+  // Snapshot any messages already visible (e.g. user typed before history loaded)
+  // so we can re-append them after restoring server history without losing them.
+  const _msgsBefore = LAB.messages.filter(m => !m.hidden).map(m => ({role: m.role, content: m.content}));
+
   // Load persisted daily Ben chat history.
   try {
     const r = await fetchWithTimeout('/api/lab/chat-history', {}, 10000);
@@ -4574,6 +4578,13 @@ async function initLabPage() {
         history.forEach(m => {
           if (m && m.role && m.content != null) appendLabMessage(m.role, m.content, false);
         });
+        // Re-append any messages the user sent while history was loading (race condition guard)
+        const _histSet = new Set(history.map(m => m.role + ':' + m.content));
+        for (const msg of _msgsBefore) {
+          if (!_histSet.has(msg.role + ':' + msg.content)) {
+            appendLabMessage(msg.role, msg.content, false);
+          }
+        }
       }
     }
   } catch(e) {

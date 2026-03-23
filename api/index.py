@@ -8524,6 +8524,16 @@ def _ben_chat_maybe_reset_for_today_locked() -> None:
     except Exception:
         last_et = ""
 
+    # If local date file is missing, also check GitHub (cold start after redeploy)
+    if not last_et:
+        try:
+            gh_date_content, _ = _github_get_file("data/ben_chat_history_last_et_date.json")
+            if gh_date_content:
+                obj = json.loads(gh_date_content) if isinstance(gh_date_content, str) else {}
+                last_et = (obj or {}).get("et_date", "") or ""
+        except Exception:
+            pass
+
     if last_et == today:
         return
 
@@ -8537,29 +8547,56 @@ def _ben_chat_maybe_reset_for_today_locked() -> None:
 
 def _ben_chat_read_history_locked() -> list:
     _ben_chat_maybe_reset_for_today_locked()
+    # Layer 1: local file (fast path — survives within a container session)
     try:
-        if not _BEN_CHAT_HISTORY_PATH.exists():
-            return []
-        raw = _BEN_CHAT_HISTORY_PATH.read_text()
-        data = json.loads(raw) if raw else []
-        if not isinstance(data, list):
-            return []
-        # Trim trailing user messages — these are orphaned when a previous API call
-        # failed after the user message was persisted but before the assistant responded.
-        # Sending consecutive user messages causes a 400 from Anthropic on the next call.
-        while data and data[-1].get("role") == "user":
-            data.pop()
-        return data
+        if _BEN_CHAT_HISTORY_PATH.exists():
+            raw = _BEN_CHAT_HISTORY_PATH.read_text()
+            data = json.loads(raw) if raw else []
+            if isinstance(data, list) and data:
+                # Trim trailing user messages — orphans from a failed API call
+                while data and data[-1].get("role") == "user":
+                    data.pop()
+                return data
     except Exception:
-        return []
+        pass
+    # Layer 2: GitHub (cold start after Railway redeploy wipes /tmp + local data/)
+    try:
+        gh_content, _ = _github_get_file("data/ben_chat_history.json")
+        if gh_content:
+            data = json.loads(gh_content) if isinstance(gh_content, str) else []
+        else:
+            data = []
+        if isinstance(data, list) and data:
+            # Write back to local for subsequent fast-path reads this session
+            _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _BEN_CHAT_HISTORY_PATH.write_text(json.dumps(data, indent=2))
+            while data and data[-1].get("role") == "user":
+                data.pop()
+            return data
+    except Exception as e:
+        print(f"[ben-chat] github read failed (non-fatal): {e}")
+    return []
 
 
 def _ben_chat_write_history_locked(messages: list) -> None:
+    # Always write to local file immediately (fast path for reads in same session)
     try:
         _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         _BEN_CHAT_HISTORY_PATH.write_text(json.dumps(messages, indent=2))
     except Exception as e:
-        print(f"[ben-chat] write failed: {e}")
+        print(f"[ben-chat] local write failed: {e}")
+    # Background GitHub write — survives Railway redeploys (non-blocking, non-fatal)
+    _msgs_snapshot = list(messages)
+    def _bg_github_write():
+        try:
+            _github_write_file(
+                "data/ben_chat_history.json",
+                json.dumps(_msgs_snapshot, indent=2),
+                f"Ben chat: {len(_msgs_snapshot)} messages",
+            )
+        except Exception as e:
+            print(f"[ben-chat] github write failed (non-fatal): {e}")
+    threading.Thread(target=_bg_github_write, daemon=True).start()
 
 
 def _ben_chat_append_message(role: str, content: str) -> None:
