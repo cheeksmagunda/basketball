@@ -249,7 +249,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
     # Diagnostic counters for pipeline visibility
     _f = {"total": 0, "no_id": 0, "low_min": 0, "injury": 0, "no_game": 0,
           "blowout": 0, "gtd": 0, "skipped_pool": 0, "high_cv": 0, "low_games": 0,
-          "no_odds": 0, "low_line": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
+          "no_odds": 0, "low_line": 0, "bad_line": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
     _pool = set(gamelog_player_ids) if gamelog_player_ids is not None else None
 
     for p in projections:
@@ -339,6 +339,17 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
             line_floor = _LINE_FLOORS.get(stat, 0)
             if book_line < line_floor:
                 _f["low_line"] = _f.get("low_line", 0) + 1
+                continue
+
+            # Sanity check: reject lines that deviate >40% from projection.
+            # A line far below projection (e.g. 12.5 pts when projecting 21) is almost
+            # certainly bad odds data (alternate line, early placeholder, mismatched market).
+            # These produce near-100% model confidence — inflating ranking artificially.
+            if proj_val > 0 and book_line < proj_val * 0.60:
+                _f["bad_line"] += 1
+                continue
+            if proj_val > 0 and book_line > proj_val * 1.80:
+                _f["bad_line"] += 1
                 continue
 
             # Determine direction: pick the side where model + Vegas agree
