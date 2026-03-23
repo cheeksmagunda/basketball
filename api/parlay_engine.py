@@ -196,7 +196,7 @@ def select_parlay_gamelog_player_ids(projections, games, player_odds_map, rw_sta
 # ── Candidate Leg Builder ────────────────────────────────────────────────────
 
 def build_candidate_legs(projections, games, player_odds_map, gamelogs,
-                         rw_statuses, parlay_config=None, gamelog_player_ids=None):
+                         rw_statuses, parlay_config=None, gamelog_player_ids=None, dvp_data=None):
     """Build all valid candidate parlay legs from projections + odds.
 
     Args:
@@ -382,7 +382,29 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
 
                 # Blended confidence
                 blended = _compute_blended_confidence(model_prob, vegas_prob)
-                if blended is None or blended < min_blended_conf:
+                if blended is None:
+                    _f["low_conf"] += 1
+                    continue
+
+                # DvP confidence nudge: position-specific defensive quality
+                if dvp_data:
+                    _opp = gctx.get("opponent", "")
+                    _raw_pos = (p.get("pos") or p.get("position") or "").upper()
+                    _pos_group = "G" if _raw_pos in ("PG", "SG", "G") else ("C" if _raw_pos == "C" else "F")
+                    _DVP_AVG = {"G": 26.0, "F": 23.0, "C": 20.0}
+                    if _opp and _opp in dvp_data and _pos_group in dvp_data[_opp]:
+                        _dvp_pts = dvp_data[_opp][_pos_group]
+                        _dvp_avg = _DVP_AVG.get(_pos_group, 23.0)
+                        # Weak defense (+10% above avg) → +0.02 confidence for overs, -0.02 for unders
+                        # Elite defense (-10% below avg) → reverse
+                        _dvp_delta = (_dvp_pts - _dvp_avg) / _dvp_avg  # fraction above/below avg
+                        _nudge = round(min(0.03, max(-0.03, _dvp_delta * 0.15)), 3)
+                        if direction == "over":
+                            blended = round(blended + _nudge, 4)
+                        else:
+                            blended = round(blended - _nudge, 4)
+
+                if blended < min_blended_conf:
                     _f["low_conf"] += 1
                     continue
 
@@ -808,7 +830,7 @@ def _find_best_market_match(pool, pair, cfg=None):
 
 
 def run_parlay_engine(projections, games, player_odds_map, gamelogs,
-                      rw_statuses=None, parlay_config=None, gamelog_player_ids=None):
+                      rw_statuses=None, parlay_config=None, gamelog_player_ids=None, dvp_data=None):
     """Find the optimal 3-leg parlay from today's slate.
 
     Uses a PRESCRIPTIVE builder that targets the ideal 3-leg structure:
@@ -834,7 +856,7 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
     # Step 1: Build all valid candidate legs
     candidates, filter_funnel = build_candidate_legs(
         projections, games, player_odds_map, gamelogs,
-        rw_statuses, cfg, gamelog_player_ids=gamelog_player_ids,
+        rw_statuses, cfg, gamelog_player_ids=gamelog_player_ids, dvp_data=dvp_data,
     )
 
     if len(candidates) < 3:

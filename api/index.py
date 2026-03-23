@@ -1178,6 +1178,104 @@ def _fetch_team_def_stats() -> dict:
     return result
 
 
+def _fetch_dvp_data() -> dict:
+    """Fetch defense-vs-position (DvP) data from NBA.com stats API.
+
+    Returns {team_abbr: {"G": ppg_allowed, "F": ppg_allowed, "C": ppg_allowed}}
+    where abbrs match ESPN conventions (e.g. "GSW", "PHX").
+    Cached daily (ET). Returns {} on any failure — callers fall back to
+    team-level _fetch_team_def_stats().
+    """
+    cache_key = f"dvp_data_{_et_date().strftime('%Y%m%d')}"
+    cached = _cg(cache_key)
+    if cached is not None:
+        return cached
+
+    # NBA.com team abbr → ESPN abbr for mismatches
+    _NBA_TO_ESPN = {
+        "GSW": "GS", "SAS": "SA", "NYK": "NY", "NOP": "NO",
+        "OKC": "OKC", "UTA": "UTAH", "PHX": "PHX",
+    }
+
+    # NBA.com anti-bot headers (required)
+    _NBA_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nba.com/",
+        "x-nba-stats-origin": "stats",
+        "x-nba-stats-token": "true",
+    }
+
+    _NBA_BASE = "https://stats.nba.com/stats/leaguedashteamstats"
+    _SEASON = "2025-26"
+
+    result: dict = {}
+    try:
+        for pos_group in ("G", "F", "C"):
+            r = requests.get(
+                _NBA_BASE,
+                headers=_NBA_HEADERS,
+                params={
+                    "MeasureType": "Opponent",
+                    "PerMode": "PerGame",
+                    "Season": _SEASON,
+                    "SeasonType": "Regular Season",
+                    "PlayerPosition": pos_group,
+                    "PaceAdjust": "N",
+                    "Rank": "N",
+                    "Outcome": "",
+                    "Location": "",
+                    "Month": "0",
+                    "SeasonSegment": "",
+                    "DateFrom": "",
+                    "DateTo": "",
+                    "OpponentTeamID": "0",
+                    "VsConference": "",
+                    "VsDivision": "",
+                    "GameSegment": "",
+                    "Period": "0",
+                    "ShotClockRange": "",
+                    "LastNGames": "0",
+                },
+                timeout=_T_DEFAULT,
+            )
+            if not r.ok:
+                continue
+            data = r.json()
+            rs = (data.get("resultSets") or [{}])[0]
+            headers = rs.get("headers", [])
+            rows = rs.get("rowSet", [])
+            if not headers or not rows:
+                continue
+            try:
+                abbr_idx = headers.index("TEAM_ABBREVIATION")
+                pts_idx = headers.index("OPP_PTS")
+            except ValueError:
+                continue
+            for row in rows:
+                abbr = row[abbr_idx]
+                opp_pts = row[pts_idx]
+                if not abbr or opp_pts is None:
+                    continue
+                # Normalise to ESPN abbreviation
+                abbr = _NBA_TO_ESPN.get(abbr, abbr)
+                try:
+                    pts_f = float(opp_pts)
+                except (TypeError, ValueError):
+                    continue
+                if abbr not in result:
+                    result[abbr] = {}
+                result[abbr][pos_group] = pts_f
+    except Exception:
+        pass
+
+    if result:
+        _cs(cache_key, result)
+        print(f"[dvp] fetched DvP data for {len(result)} teams")
+    return result
+
+
 def _to_float(val, default=None):
     try:
         return float(val)
@@ -2791,15 +2889,19 @@ def _build_game_opp_map(games: list) -> dict:
     return opp_map
 
 
-def _compute_matchup_factor(player: dict, opp_abbr: str, def_stats: dict) -> float:
+def _compute_matchup_factor(player: dict, opp_abbr: str, def_stats: dict,
+                            dvp_data: dict = None) -> float:
     """Compute a matchup quality multiplier [0.80, 1.25] based on opponent defense.
 
     Components:
     - def_factor: opponent pts_allowed vs league avg 115 → scaled by matchup.def_scale
     - pos_scale: position-specific weighting (guards see more of the signal, centers less)
+    - dvp_data: when available, blends position-specific pts_allowed (60% DvP / 40% team-level)
+      League averages by position group: G ≈ 26 PPG, F ≈ 23 PPG, C ≈ 20 PPG
 
     Falls back to 1.0 (neutral) when def_stats is empty or opponent unknown.
-    Config keys: matchup.def_scale (0.35), matchup.pos_scale_g/f/c (1.05/1.00/0.90)
+    Config keys: matchup.def_scale (0.35), matchup.pos_scale_g/f/c (1.05/1.00/0.90),
+                 matchup.dvp_enabled (True), matchup.dvp_blend_weight (0.6)
     """
     if not _cfg("matchup.enabled", True):
         return 1.0
@@ -2815,7 +2917,7 @@ def _compute_matchup_factor(player: dict, opp_abbr: str, def_stats: dict) -> flo
     def_scale = float(_cfg("matchup.def_scale", 0.35))
     # Weak defense (allows 120) → +1.6% ×0.35 = ~+12% at 30pts above avg
     # Elite defense (allows 108) → -7pts ×0.35 = ~-8% below avg
-    def_factor = 1.0 + (pts_allowed - league_avg) / 30.0 * def_scale
+    team_def_factor = 1.0 + (pts_allowed - league_avg) / 30.0 * def_scale
 
     # Position scaling: guards score more pts → benefit more from a weak defense
     pos = _pos_group(player.get("pos", ""))
@@ -2825,7 +2927,21 @@ def _compute_matchup_factor(player: dict, opp_abbr: str, def_stats: dict) -> flo
         "C": float(_cfg("matchup.pos_scale_c", 0.90)),
     }
     pos_scale = pos_scales.get(pos, 1.0)
-    adjusted = 1.0 + (def_factor - 1.0) * pos_scale
+    team_adjusted = 1.0 + (team_def_factor - 1.0) * pos_scale
+
+    # ── DvP blend: position-specific pts allowed replaces team-level when available ──
+    dvp_enabled = _cfg("matchup.dvp_enabled", True)
+    if dvp_enabled and dvp_data and opp_abbr in dvp_data and pos in dvp_data[opp_abbr]:
+        dvp_pts = dvp_data[opp_abbr][pos]
+        # Position-specific league averages (pts per game by opposing pos group)
+        _DVP_LEAGUE_AVG = {"G": 26.0, "F": 23.0, "C": 20.0}
+        pos_league_avg = _DVP_LEAGUE_AVG.get(pos, 23.0)
+        dvp_def_factor = 1.0 + (dvp_pts - pos_league_avg) / pos_league_avg * def_scale
+        dvp_adjusted = max(0.80, min(1.25, dvp_def_factor))
+        blend = float(_cfg("matchup.dvp_blend_weight", 0.6))
+        adjusted = blend * dvp_adjusted + (1.0 - blend) * team_adjusted
+    else:
+        adjusted = team_adjusted
 
     return max(0.80, min(1.25, round(adjusted, 3)))
 
@@ -3482,7 +3598,7 @@ def _normalize_line_pick(p: dict) -> dict:
     return {**base, **extras}
 
 
-def _build_lineups(projections, def_stats=None, matchup_intel=None):
+def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
     chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
@@ -3596,7 +3712,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         p["_is_star_anchor"] = is_star_anchor
         # Light matchup adjustment for chalk (narrower range than moonshot — reliability first)
         opp = p.get("opp", "")
-        chalk_matchup = _compute_matchup_factor(p, opp, def_stats or {})
+        chalk_matchup = _compute_matchup_factor(p, opp, def_stats or {}, dvp_data=dvp_data)
         chalk_matchup = max(
             float(_cfg("matchup.chalk_adj_min", 0.92)),
             min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
@@ -3785,7 +3901,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
         # Boost dominance audit (Mar 19): removed variance penalty (moonshot IS variance),
         # removed Claude matchup factor (noise). Light math matchup kept.
         opp_abbr = p.get("opp", "")
-        matchup_factor = _compute_matchup_factor(p, opp_abbr, def_stats or {})
+        matchup_factor = _compute_matchup_factor(p, opp_abbr, def_stats or {}, dvp_data=dvp_data)
         matchup_factor = max(
             float(_cfg("matchup.moonshot_adj_min", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_min"])),
             min(float(_cfg("matchup.moonshot_adj_max", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_max"])), matchup_factor)
@@ -3844,7 +3960,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None):
             _boost_leverage = max(_est, 0.2) ** _boost_power
             # Simplified: rating × matchup × boost_leverage (no variance, no Claude)
             _opp = p.get("opp", "")
-            _matchup = _compute_matchup_factor(p, _opp, _def_stats or {})
+            _matchup = _compute_matchup_factor(p, _opp, _def_stats or {}, dvp_data=dvp_data)
             _matchup = max(
                 float(_cfg("matchup.moonshot_adj_min", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_min"])),
                 min(float(_cfg("matchup.moonshot_adj_max", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_max"])), _matchup)
@@ -4655,6 +4771,11 @@ def _get_slate_impl():
             _def_stats = _fetch_team_def_stats()
         except Exception as _def_err:
             print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+        _dvp_data = {}
+        try:
+            _dvp_data = _fetch_dvp_data()
+        except Exception as _dvp_err:
+            print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
         _game_opp_map = _build_game_opp_map(draftable_games)
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
@@ -4673,7 +4794,7 @@ def _get_slate_impl():
         except Exception as _ctx_err:
             print(f"[context_pass] call-site error: {_ctx_err}")
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
-        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel)
+        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data)
         try:
             chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool, news_context=_slate_news_text)
         except Exception as _rev_err:
@@ -6550,7 +6671,12 @@ def _run_line_engine_for_date(date):
         news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
     except Exception as _news_err:
         print(f"[line] web search for news context failed (non-fatal): {_news_err}")
-    result = run_line_engine(all_proj, target_games, line_config, player_odds_map, news_context=news_context)
+    dvp_data = {}
+    try:
+        dvp_data = _fetch_dvp_data()
+    except Exception as _dvp_err:
+        print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
+    result = run_line_engine(all_proj, target_games, line_config, player_odds_map, news_context=news_context, dvp_data=dvp_data)
     return result, None
 
 
@@ -6870,6 +6996,51 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                     _tmp = {_dir_key: _p}
                     _enrich_loaded_line_picks(_tmp, _p_date)
                     combo[_dir_key] = _tmp[_dir_key]
+
+        # ── Inline odds enrichment: fill missing odds on cached picks ──
+        _needs_odds = any(
+            combo.get(_dk) and (combo[_dk].get("model_only") or not combo[_dk].get("books_consensus"))
+            for _dk in ("over_pick", "under_pick")
+        )
+        if _needs_odds and os.environ.get("ODDS_API_KEY"):
+            try:
+                _games_for_odds = fetch_games(today)
+                _odds_map = _build_player_odds_map(_games_for_odds) if _games_for_odds else {}
+                if _odds_map:
+                    _odds_updated = False
+                    for _dk in ("over_pick", "under_pick"):
+                        _pk = combo.get(_dk)
+                        if not _pk:
+                            continue
+                        if not _pk.get("model_only") and _pk.get("books_consensus"):
+                            continue  # already has real odds
+                        _od = _lookup_player_odds(_odds_map, _pk.get("player_name", ""), _pk.get("stat_type", "points"))
+                        if _od:
+                            _pk["line"] = _od["line"]
+                            _pk["odds_over"] = _od["odds_over"]
+                            _pk["odds_under"] = _od["odds_under"]
+                            _pk["books_consensus"] = _od["books_consensus"]
+                            _pk["model_only"] = False
+                            _proj = _pk.get("projection", 0) or 0
+                            _line = _od["line"] or 0
+                            if _pk.get("direction") == "over":
+                                _pk["edge"] = round(_proj - _line, 1)
+                            else:
+                                _pk["edge"] = round(_line - _proj, 1)
+                            _pk["line_updated_at"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                            _odds_updated = True
+                    if _odds_updated:
+                        try:
+                            _github_write_file(
+                                f"data/lines/{today_str}_pick.json",
+                                json.dumps(combo),
+                                f"inline odds enrich {today_str}",
+                            )
+                        except Exception:
+                            pass
+                        print(f"[line-of-the-day] inline odds enrichment applied for {today_str}")
+            except Exception as _oe:
+                print(f"[line-of-the-day] inline odds enrichment failed (non-fatal): {_oe}")
 
         result = _picks_response(combo, from_github=True, slate_summary=None)
         result["_cached_at"] = datetime.utcnow().isoformat()
@@ -9150,6 +9321,12 @@ def _run_parlay_engine_sync(today):
     except Exception as e:
         print(f"[parlay] RotoWire error (non-fatal): {e}")
 
+    _parlay_dvp_data = {}
+    try:
+        _parlay_dvp_data = _fetch_dvp_data()
+    except Exception as _pdvp_err:
+        print(f"[parlay] DvP fetch error (non-fatal): {_pdvp_err}")
+
     parlay_config = dict(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
     if projection_only:
         parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
@@ -9179,7 +9356,7 @@ def _run_parlay_engine_sync(today):
     }
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
-        rw_statuses, parlay_config, gamelog_player_ids=gamelog_player_ids,
+        rw_statuses, parlay_config, gamelog_player_ids=gamelog_player_ids, dvp_data=_parlay_dvp_data,
     )
     if result:
         result["projection_only"] = projection_only
