@@ -88,7 +88,7 @@ _STAT_META = {
 }
 
 
-def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None, news_context=""):
+def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None):
     """Format ESPN projection data into a structured prompt for Claude for a given stat type."""
     meta = dict(_STAT_META[stat_focus])  # copy so we can override min_season without mutating module-level dict
     if stat_floors and stat_focus in stat_floors:
@@ -169,6 +169,34 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
     )
     direction_value = force_direction or "over"
 
+    # DvP section — position-specific defensive weaknesses for today's matchups
+    dvp_section = ""
+    if dvp_data:
+        dvp_lines = []
+        for g in games:
+            home = g.get("home", {}).get("abbr", "")
+            away = g.get("away", {}).get("abbr", "")
+            for team, opp in ((home, away), (away, home)):
+                if opp and opp in dvp_data:
+                    opp_dvp = dvp_data[opp]
+                    # Show worst position (most PPG allowed) as the key exploit signal
+                    if opp_dvp:
+                        sorted_pos = sorted(opp_dvp.items(), key=lambda x: x[1], reverse=True)
+                        worst_pos, worst_ppg = sorted_pos[0]
+                        best_pos, best_ppg = sorted_pos[-1]
+                        dvp_lines.append(
+                            f"  {opp} defense: allows most to {worst_pos}s ({worst_ppg:.1f} PPG), "
+                            f"least to {best_pos}s ({best_ppg:.1f} PPG) — "
+                            f"target {team} {worst_pos}s"
+                        )
+        if dvp_lines:
+            dvp_section = (
+                "\n\nDEFENSE-VS-POSITION DATA (from NBA.com — use to refine pick):\n"
+                + "\n".join(dvp_lines)
+                + "\nFavor overs for players whose position faces a weak defense (high PPG allowed). "
+                "Favor unders for players whose position faces an elite defense (low PPG allowed)."
+            )
+
     # Web search news section — late-breaking injuries, rotation changes, rest decisions
     news_section = ""
     if news_context:
@@ -182,7 +210,7 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
     return f"""You are The Oracle's line engine. Analyze today's NBA slate and identify the single best player prop bet for {stat_focus.upper()}.
 
 TODAY'S GAMES:
-{chr(10).join(game_lines)}
+{chr(10).join(game_lines)}{dvp_section}
 
 TOP PLAYER PROJECTIONS FOR {stat_focus.upper()} (sorted by edge vs season baseline):
 {chr(10).join(player_lines)}
@@ -268,9 +296,9 @@ def _call_claude(prompt, stat_focus="points"):
         return None
 
 
-def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None, news_context=""):
+def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None):
     """Build prompt and call Claude for a single stat type + direction. Returns (confidence, pick) or None."""
-    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map, news_context)
+    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map, news_context, dvp_data=dvp_data)
     pick   = _call_claude(prompt, stat_focus)
     if pick and pick.get("player_name") and pick.get("confidence", 0) > 0:
         # Enforce direction if forced (Claude occasionally ignores instruction)
@@ -280,7 +308,7 @@ def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, 
     return None
 
 
-def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None, news_context=""):
+def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None):
     """
     Run Claude in parallel for points/rebounds/assists × over/under (6 calls).
     Returns (best_over_pick, best_under_pick) independently.
@@ -292,7 +320,7 @@ def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=N
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map, news_context): (s, d)
+            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map, news_context, dvp_data): (s, d)
             for s in stat_types for d in directions
         }
         for future in as_completed(futures):
@@ -620,7 +648,7 @@ def _enrich_pick_from_projections(pick, projections, game_ctx_map):
 # MAIN ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_line_engine(projections, games, line_config=None, player_odds_map=None, news_context=""):
+def run_line_engine(projections, games, line_config=None, player_odds_map=None, news_context="", dvp_data=None):
     """
     Main entry point. Uses Claude Haiku to reason about ESPN projection data
     and pick today's best player prop edge. Falls back to algorithmic model
@@ -649,7 +677,7 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None, 
     if not ANTHROPIC_API_KEY:
         return run_model_fallback(projections, games, line_config, player_odds_map)
 
-    over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map, news_context)
+    over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map, news_context, dvp_data=dvp_data)
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")
