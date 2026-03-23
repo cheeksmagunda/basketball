@@ -9,3 +9,48 @@ slate,upside,1.8x,Caris LeVert,2991043,DET,G,6.7,3.0,26.2,8.6,2.2,2.9,0.9,0.6
 slate,upside,1.6x,Khris Middleton,6609,DAL,F,6.4,2.4,27.5,11.9,4.0,3.1,0.9,0.2
 slate,upside,1.4x,Justin Edwards,4711297,PHI,F,4.9,3.0,23.9,7.5,1.8,1.4,0.9,0.2
 slate,upside,1.2x,Brook Lopez,3448,LAC,C,4.6,3.0,23.7,9.2,3.7,1.2,0.6,1.2
+LAL @ DET,the_lineup,2.0x,Luka Doncic,3945274,LAL,G,14.5,0.0,36.7,32.6,8.0,8.4,1.5,0.6
+LAL @ DET,the_lineup,1.8x,LeBron James,1966,LAL,F,8.9,0.0,35.3,22.2,6.1,6.9,1.3,0.6
+LAL @ DET,the_lineup,1.6x,Austin Reaves,4066457,LAL,G,8.6,0.0,32.6,21.9,4.6,5.3,1.0,0.4
+LAL @ DET,the_lineup,1.4x,Jalen Duren,4433621,DET,C,7.9,0.0,29.0,18.0,10.5,1.8,0.9,0.8
+LAL @ DET,the_lineup,1.2x,Caris LeVert,2991043,DET,G,6.8,0.0,26.2,8.6,2.2,2.9,0.9,0.6
+IND @ ORL,the_lineup,2.0x,T.J. McConnell,2530530,IND,G,5.7,0.0,22.0,8.9,2.4,5.1,1.0,0.2
+IND @ ORL,the_lineup,1.8x,Desmond Bane,4066320,ORL,G,5.2,0.0,35.2,20.0,4.3,4.1,1.0,0.4
+IND @ ORL,the_lineup,1.6x,Wendell Carter Jr.,4277847,ORL,C,4.9,0.0,31.6,11.8,7.7,2.1,0.8,0.6
+IND @ ORL,the_lineup,1.4x,Quenton Jackson,4592829,IND,G,4.8,0.0,20.3,8.3,2.1,2.3,0.6,0.2
+IND @ ORL,the_lineup,1.2x,Tristan da Silva,4702382,ORL,F,4.7,0.0,27.0,9.3,3.7,1.4,0.9,0.4
+OKC @ PHI,the_lineup,2.0x,Ajay Mitchell,4900671,OKC,G,4.6,0.0,22.9,13.5,3.4,3.4,1.3,0.3
+OKC @ PHI,the_lineup,1.8x,VJ Edgecombe,5124612,PHI,G,4.2,0.0,40.8,15.6,5.6,4.0,1.4,0.6
+OKC @ PHI,the_lineup,1.6x,Shai Gilgeous-Alexander,4278073,OKC,G,4.2,0.0,33.4,30.3,4.5,6.3,1.4,0.8
+OKC @ PHI,the_lineup,1.4x,Cason Wallace,4683692,OKC,G,4.1,0.0,26.6,8.4,3.1,2.6,1.9,0.4
+OKC @ PHI,the_lineup,1.2x,Paul George,4251,PHI,F,3.5,0.0,33.3,16.9,5.3,3.7,1.5,0.5
+SA @ MIA,the_lineup,2.0x,Victor Wembanyama,5104157,SA,F,12.4,0.0,29.7,24.1,11.1,3.1,1.0,3.1
+SA @ MIA,the_lineup,1.8x,Norman Powell,2595516,MIA,G,11.1,0.0,26.8,20.6,3.4,2.4,1.1,0.3
+SA @ MIA,the_lineup,1.6x,De'Aaron Fox,4066259,SA,G,11.0,0.0,31.7,19.4,3.8,6.3,1.2,0.3
+SA @ MIA,the_lineup,1.4x,Tyler Herro,4395725,MIA,G,10.1,0.0,32.2,21.1,5.0,3.9,0.8,0.3
+SA @ MIA,the_lineup,1.2x,Stephon Castle,4845367,SA,G,9.7,0.0,29.4,16.3,4.8,6.8,1.2,0.3
+HOU @ CHI,the_lineup,2.0x,Tre Jones,4395626,CHI,G,7.1,0.0,27.9,12.1,2.9,5.3,1.1,0.2
+HOU @ CHI,the_lineup,1.8x,Kevin Durant,3202,HOU,F,6.9,0.0,37.6,26.0,5.7,4.4,0.9,0.9
+HOU @ CHI,the_lineup,1.6x,Matas Buzelis,4711294,CHI,F,6.7,0.0,29.4,15.3,5.4,1.9,0.7,1.4
+HOU @ CHI,the_lineup,1.4x,Josh Giddey,4871145,CHI,G,6.5,0.0,34.8,17.0,8.2,8.5,1.1,0.4
+HOU @ CHI,the_lineup,1.2x,Alperen Sengun,4871144,HOU,C,6.2,0.0,31.4,19.5,8.8,5.8,1.2,1.0
+TOR @ UTAH,the_lineup,2.0x,Brice Sensabaugh,5105839,UTAH,F,6.8,0.0,32.3,13.4,3.0,1.7,0.7,0.1
+TOR @ UTAH,the_lineup,1.8x,Ace Bailey,4873138,UTAH,G,6.8,0.0,32.9,13.0,4.0,1.8,0.9,0.6
+TOR @ UTAH,the_lineup,1.6x,RJ Barrett,4395625,TOR,F,5.2,0.0,29.7,18.9,5.4,3.2,0.8,0.3
+TOR @ UTAH,the_lineup,1.4x,Kyle Filipowski,4684793,UTAH,F,5.0,0.0,32.7,10.5,6.8,2.4,1.0,0.5
+TOR @ UTAH,the_lineup,1.2x,Scottie Barnes,4433134,TOR,F,4.9,0.0,32.5,18.4,7.7,5.3,1.4,1.4
+GS @ DAL,the_lineup,2.0x,Cooper Flagg,5041939,DAL,F,10.8,0.0,35.4,20.1,6.7,4.5,1.1,0.9
+GS @ DAL,the_lineup,1.8x,Klay Thompson,6475,DAL,G,7.8,0.0,30.4,13.2,2.4,1.6,0.6,0.3
+GS @ DAL,the_lineup,1.6x,P.J. Washington,4278078,DAL,F,7.2,0.0,32.8,14.1,6.8,1.9,1.0,1.1
+GS @ DAL,the_lineup,1.4x,Brandin Podziemski,4709138,GS,G,6.9,0.0,32.8,12.5,5.2,3.7,1.1,0.2
+GS @ DAL,the_lineup,1.2x,Draymond Green,6589,GS,F,5.9,0.0,35.2,8.5,5.8,5.4,0.9,0.7
+BKN @ POR,the_lineup,2.0x,Ziaire Williams,4433137,BKN,F,4.5,0.0,26.0,9.6,2.5,1.0,1.1,0.4
+BKN @ POR,the_lineup,1.8x,Scoot Henderson,4683678,POR,G,4.4,0.0,24.3,13.5,2.8,4.1,0.6,0.4
+BKN @ POR,the_lineup,1.6x,Caleb Love,4433144,POR,G,4.1,0.0,22.8,11.3,2.5,2.7,0.6,0.1
+BKN @ POR,the_lineup,1.4x,Donovan Clingan,5105565,POR,C,4.0,0.0,21.3,11.8,11.3,2.1,0.6,1.6
+BKN @ POR,the_lineup,1.0x,Nolan Traore,5279130,BKN,G,3.2,0.0,21.7,8.5,1.6,3.7,0.7,0.4
+MIL @ LAC,the_lineup,2.0x,Cam Thomas,4432174,MIL,G,5.2,0.0,23.6,13.8,1.8,2.5,0.3,0.1
+MIL @ LAC,the_lineup,1.8x,Myles Turner,3133628,MIL,C,5.1,0.0,28.8,12.4,5.6,1.5,0.7,1.6
+MIL @ LAC,the_lineup,1.6x,Bogdan Bogdanovic,3037789,LAC,G,4.9,0.0,25.5,9.0,2.9,2.6,0.6,0.1
+MIL @ LAC,the_lineup,1.4x,Bobby Portis,3064482,MIL,F,4.6,0.0,25.5,13.4,6.5,1.5,0.6,0.2
+MIL @ LAC,the_lineup,1.2x,Brook Lopez,3448,LAC,C,4.6,0.0,23.7,9.2,3.7,1.2,0.6,1.2
