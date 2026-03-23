@@ -6827,14 +6827,15 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         final_over  = over_pick
         final_under = under_pick
 
+        _had_resolved = over_resolved or under_resolved
+
         if over_resolved:
             try:
                 next_over, _ = await _get_or_generate_next_slate_pick(today, "over")
             except Exception as _next_err:
                 print(f"[line-of-the-day] next-slate over generation failed (non-fatal): {_next_err}")
                 next_over = None
-            if next_over:
-                final_over = next_over
+            final_over = next_over  # Always update — resolved picks must never show as active
 
         if under_resolved:
             try:
@@ -6842,14 +6843,14 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             except Exception as _next_err:
                 print(f"[line-of-the-day] next-slate under generation failed (non-fatal): {_next_err}")
                 next_under = None
-            if next_under:
-                final_under = next_under
+            final_under = next_under  # Always update — resolved picks must never show as active
 
-        # If all available picks are resolved and next-slate isn't ready yet,
-        # return a clean pending response instead of serving stale resolved picks.
+        # If no fresh picks remain, return next_slate_pending.
+        # Use _had_resolved to catch the case where both directions were resolved
+        # but both next-slate generations failed (final_over and final_under are both None).
         _has_fresh = (final_over and not _is_pick_resolved(final_over)) or \
                      (final_under and not _is_pick_resolved(final_under))
-        if not _has_fresh and (final_over or final_under):
+        if not _has_fresh and (_had_resolved or final_over or final_under):
             print(f"[line-of-the-day] all picks resolved, next-slate not ready — returning next_slate_pending")
             return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                  "error": "next_slate_pending"}, status_code=200)
@@ -9101,7 +9102,7 @@ def _run_parlay_engine_sync(today):
                 proj_val = float(p.get(stat_key) or 0)
                 if proj_val > 0:
                     player_odds_map[(name_lower, stat)] = {
-                        "line": math.floor(proj_val * 2) / 2,  # Snap to nearest 0.5 below projection
+                        "line": round(proj_val * 2) / 2,  # Snap to nearest 0.5
                         "odds_over": None, "odds_under": None, "books_consensus": 0,
                     }
         print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections")
