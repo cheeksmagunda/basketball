@@ -2087,7 +2087,6 @@ function hideLoader() {
   // the slate request arrives (or at worst, by a retry).
   fetchWithTimeout('/api/health', {}, 5000).catch(function() {});
   loadSlate(); // non-blocking: slate and game dropdown populate when /api/slate returns (loadSlate calls populateGameSelector on success)
-  initGameSelector(); // parallel fallback: fills game dropdown from /api/games independently
 })();
 
 // ════════════════════════════════════════════════════════════════════
@@ -2179,6 +2178,37 @@ async function initGameSelector() {
 // SLATE — grep: loadSlate, /api/slate, slateList, Starting 5, Moonshot
 // ════════════════════════════════════════════════════════════════════
 let _slateRetryCount = 0;
+let _LINE_PREWARMED_DATE = '';
+let _PARLAY_PREWARMED_DATE = '';
+
+function _prewarmLineAndParlay(todayET) {
+  // Run at most once per ET date to avoid repeated background churn.
+  if (!todayET) return;
+  if (_LINE_PREWARMED_DATE !== todayET) {
+    _LINE_PREWARMED_DATE = todayET;
+    _fetchJson('/api/line-of-the-day', 90000)
+      .then(function(data) {
+        LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
+      })
+      .catch(function() {});
+    _fetchJson('/api/line-history', 25000)
+      .then(function(hist) {
+        LINE_HIST_DATA = hist;
+        LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
+      })
+      .catch(function() {});
+  }
+  if (_PARLAY_PREWARMED_DATE !== todayET) {
+    _PARLAY_PREWARMED_DATE = todayET;
+    _fetchJson('/api/parlay-history', 15000)
+      .then(function(hist) {
+        PARLAY_HIST_DATA = hist;
+        PARLAY_HIST_LOADED_DATE = todayET;
+      })
+      .catch(function() {});
+  }
+}
+
 async function loadSlate() {
   SLATE_STATE = asyncStateLoading(SLATE_STATE);
   showLoader();
@@ -2257,6 +2287,7 @@ async function loadSlate() {
     LAB.cachedStatus = null; LAB.statusFetchedAt = 0;
 
     if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
+    _prewarmLineAndParlay(SLATE.date || _etToday());
 
     // When today's slate is fully done, poll every 5 min until next-day games appear.
     if (SLATE.all_complete && !_slateNextDayPoll) {
@@ -2733,6 +2764,7 @@ async function triggerLateDraft() {
 let PARLAY_STATE = asyncStateInitial();
 let PARLAY_LOADED_DATE = '';
 let PARLAY_HIST_DATA = null;
+let PARLAY_HIST_LOADED_DATE = '';
 
 function _parlaySkeletons() {
   const skel = `
@@ -2785,6 +2817,7 @@ function renderParlayLeg(leg, index, total) {
       }).join('')
     : '';
 
+  const lineDisplay = (leg.line != null && leg.line !== '') ? Number(leg.line).toFixed(1) : '—';
   return '<div class="line-pick-card" style="--tcolor:' + tcolor +
     ';--tcolor-border:' + tcolorBorder +
     ';border-radius:0;margin-bottom:0;padding:10px 14px;border-color:rgba(255,255,255,0.08);border-top-color:rgba(255,255,255,0.08);' +
@@ -2796,7 +2829,7 @@ function renderParlayLeg(leg, index, total) {
       '</div>' +
       '<div class="parlay-leg-play">' +
         '<span class="parlay-leg-pill ' + dir + '">' + dir.toUpperCase() + '</span>' +
-        '<span class="parlay-leg-line">' + (leg.line ?? '\u2014') + ' ' + statLabel.toLowerCase() + '</span>' +
+        '<span class="parlay-leg-line">' + lineDisplay + ' ' + statLabel.toLowerCase() + '</span>' +
       '</div>' +
     '</div>' +
     '<div class="parlay-leg-meta">' +
@@ -2832,11 +2865,14 @@ function renderParlayTicket(data) {
   const lockBadge = data.locked
     ? '<span style="font-size:0.60rem;padding:2px 7px;border-radius:99px;background:rgba(20,184,166,0.12);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">LOCKED</span>'
     : '';
+  const sourceBadge = data.projection_only
+    ? '<span style="font-size:0.58rem;padding:2px 7px;border-radius:99px;background:rgba(255,255,255,0.08);color:var(--color-text-muted);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">MODEL</span>'
+    : '<span style="font-size:0.58rem;padding:2px 7px;border-radius:99px;background:rgba(20,184,166,0.10);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">BOOK</span>';
 
   wrap.innerHTML =
     '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(255,255,255,0.08);box-shadow:0 4px 24px rgba(20,184,166,0.08), 0 2px 12px rgba(0,0,0,0.28)">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(20,184,166,0.05);border-bottom:1px solid rgba(255,255,255,0.06)">' +
-        '<div style="display:flex;align-items:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket' + lockBadge + '</div>' +
+        '<div style="display:flex;align-items:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket' + sourceBadge + lockBadge + '</div>' +
         '<div style="display:flex;gap:12px;align-items:center">' +
           (numGames > 1 ? '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Games</div><div style="font-weight:800;font-size:0.78rem;color:var(--text)">' + numGames + '</div></div>' : '') +
           (parseFloat(corrMult) !== 1.0 ? '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Corr</div><div style="font-weight:700;font-size:0.72rem;color:var(--color-success)">' + corrMult + 'x</div></div>' : '') +
@@ -2916,22 +2952,27 @@ async function fetchParlay() {
 
 function initParlayPage() {
   const todayET = _etToday();
-  if (PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success') {
-    return;  // DOM preserved by tab toggle — no re-render needed
-  }
+  const sameDayLoaded = PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success';
+  const isStale = PARLAY_STATE.loadedAt ? (Date.now() - PARLAY_STATE.loadedAt) > 15 * 60 * 1000 : true;
   PARLAY_LOADED_DATE = todayET;
-  fetchParlay();
-  fetchParlayHistory(); // fire-and-forget
+  if (!sameDayLoaded || isStale) {
+    fetchParlay();
+  }
+  // Always refresh history on open so same-day finals resolve promptly.
+  fetchParlayHistory(!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET);
 }
 
 // ── Parlay History ──────────────────────────────────────────────────────
 
-async function fetchParlayHistory() {
+async function fetchParlayHistory(nocache = false) {
   try {
-    const r = await fetchWithTimeout('/api/parlay-history', {}, 15000);
+    const todayET = _etToday();
+    const url = nocache ? '/api/parlay-history?nocache=1' : '/api/parlay-history';
+    const r = await fetchWithTimeout(url, {}, 15000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     PARLAY_HIST_DATA = data;
+    PARLAY_HIST_LOADED_DATE = todayET;
     renderParlayHistory(data);
   } catch (err) {
     console.warn('[parlay] history fetch error:', err);
