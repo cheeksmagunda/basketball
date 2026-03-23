@@ -305,7 +305,14 @@
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
     "chalk_hbr_min_recent_min": 16.0,
-    "chalk_hbr_min_pred_min": 16.0
+    "chalk_hbr_min_pred_min": 16.0,
+    "volatility_guard": {
+      "enabled": true,
+      "min_scoring_variance": 0.18,
+      "min_season_pts": 14.0,
+      "min_pts_per_minute": 0.38,
+      "rating_mult": 0.93
+    }
   },
   "star_anchor": {
     "enabled": true,
@@ -333,7 +340,8 @@
     "enabled": true,
     "size": 12,
     "metric": "tv",
-    "blend_weight": 0.5
+    "blend_weight": 0.5,
+    "per_game_carry": 2
   },
   "odds_enrichment": {
     "enabled": true,
@@ -418,7 +426,8 @@
       "min_boost": 0.3
     },
     "roto_confirmed_min_rating": 2.2,
-    "roto_confirmed_min_boost": 2.5
+    "roto_confirmed_min_boost": 2.5,
+    "ev_rating_blend": 0.12
   },
   "matchup": {
     "enabled": true,
