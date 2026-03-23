@@ -1617,7 +1617,7 @@ def fetch_roster(team_id, team_abbr):
         try:
             inj = a.get("injuries", [])
             inj_status = inj[0].get("status", "").lower() if inj else ""
-            is_out = inj_status in ["out", "injured"]
+            is_out = inj_status in ["out", "injured", "suspended", "suspension"]
             # Capture injury status for UI badge (Questionable, Day-To-Day, Doubtful)
             injury_label = ""
             if inj and not is_out:
