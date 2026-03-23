@@ -3152,5 +3152,49 @@ class TestOddsApiFieldMapping:
         )
 
 
+class TestParlayHistoryAndConfigHardening:
+    """Regression guards for parlay-history same-day resolution and config sanitization."""
+
+    def test_parlay_history_supports_nocache(self):
+        src = open("api/index.py").read()
+        assert "async def parlay_history(request: Request):" in src
+        assert 'request.query_params.get("nocache"' in src
+        assert "if not nocache:" in src
+
+    def test_parlay_history_resolves_today_when_final(self):
+        src = open("api/index.py").read()
+        assert "today_games_final = _all_games_final(_today_games)" in src
+        assert '_can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)' in src
+
+    def test_projection_only_persisted_and_labeled(self):
+        src_api = open("api/index.py").read()
+        src_ui = open("index.html").read()
+        assert '"projection_only": result.get("projection_only", False)' in src_api
+        assert "sourceBadge = data.projection_only" in src_ui
+        assert "MODEL</span>'" in src_ui and "BOOK</span>'" in src_ui
+
+    def test_projection_only_cache_bypass_while_open(self):
+        src = open("api/index.py").read()
+        assert "bypassing projection-only /tmp cache while slate is open" in src
+        assert "projection-only GitHub ticket found; rebuilding once while slate is open" in src
+
+    def test_line_and_parlay_sanitizers_enabled(self):
+        from api.index import sanitize_line_config, sanitize_parlay_config
+        line = sanitize_line_config({"min_confidence": "120", "stat_floors": {"points": "-5"}})
+        assert line["min_confidence"] == 100
+        assert line["stat_floors"]["points"] == 0.0
+
+        parlay = sanitize_parlay_config({"min_blended_conf": "2.0", "min_games_played": "1"})
+        assert parlay["min_blended_conf"] == 1.0
+        assert parlay["min_games_played"] == 3
+
+    def test_update_config_line_parlay_allowlist(self):
+        src = open("api/index.py").read()
+        assert 'if key.startswith("line.") and key not in _LINE_CONFIG_EDITABLE_KEYS:' in src
+        assert 'if key.startswith("parlay.") and key not in _PARLAY_CONFIG_EDITABLE_KEYS:' in src
+        assert 'cfg["line"] = sanitize_line_config(cfg.get("line", {}))' in src
+        assert 'cfg["parlay"] = sanitize_parlay_config(cfg.get("parlay", {}))' in src
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -1302,6 +1302,123 @@ def _to_int(val, default=None):
         return default
 
 
+def _coerce_float(val, default: float) -> float:
+    try:
+        if val is None:
+            return float(default)
+        if isinstance(val, str):
+            val = val.strip()
+            if not val:
+                return float(default)
+        return float(val)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _clamp_float(val, default: float, mn: float, mx: float) -> float:
+    return max(mn, min(mx, _coerce_float(val, default)))
+
+
+def sanitize_line_config(raw_cfg: Any) -> dict:
+    """Return a safe, bounded line config merged with defaults."""
+    base = copy.deepcopy(_CONFIG_DEFAULTS.get("line", {}))
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    out = copy.deepcopy(base)
+    out["min_confidence"] = int(round(_clamp_float(cfg.get("min_confidence"), base["min_confidence"], 0.0, 100.0)))
+    out["min_edge_pct"] = _clamp_float(cfg.get("min_edge_pct"), base["min_edge_pct"], 0.0, 40.0)
+    out["recent_form_over_ratio"] = _clamp_float(cfg.get("recent_form_over_ratio"), base["recent_form_over_ratio"], 0.5, 2.0)
+    out["recent_form_under_ratio"] = _clamp_float(cfg.get("recent_form_under_ratio"), base["recent_form_under_ratio"], 0.3, 1.2)
+    out["min_edge_pts"] = _clamp_float(cfg.get("min_edge_pts"), base["min_edge_pts"], 0.0, 8.0)
+    out["min_edge_other"] = _clamp_float(cfg.get("min_edge_other"), base["min_edge_other"], 0.0, 8.0)
+    out["min_edge_other_over"] = _clamp_float(cfg.get("min_edge_other_over"), base["min_edge_other_over"], 0.0, 8.0)
+    out["min_season_minutes"] = _clamp_float(cfg.get("min_season_minutes"), base["min_season_minutes"], 0.0, 48.0)
+    sf_in = cfg.get("stat_floors") if isinstance(cfg.get("stat_floors"), dict) else {}
+    out["stat_floors"] = {
+        "points": _clamp_float(sf_in.get("points"), base["stat_floors"]["points"], 0.0, 50.0),
+        "rebounds": _clamp_float(sf_in.get("rebounds"), base["stat_floors"]["rebounds"], 0.0, 25.0),
+        "assists": _clamp_float(sf_in.get("assists"), base["stat_floors"]["assists"], 0.0, 20.0),
+    }
+    return out
+
+
+def sanitize_parlay_config(raw_cfg: Any) -> dict:
+    """Return a safe, bounded parlay config merged with defaults."""
+    base = copy.deepcopy(_CONFIG_DEFAULTS.get("parlay", {}))
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    out = copy.deepcopy(base)
+    out["max_spread"] = _clamp_float(cfg.get("max_spread"), base["max_spread"], 0.0, 25.0)
+    out["max_minutes_cv"] = _clamp_float(cfg.get("max_minutes_cv"), base["max_minutes_cv"], 0.05, 1.0)
+    out["min_blended_conf"] = _clamp_float(cfg.get("min_blended_conf"), base["min_blended_conf"], 0.0, 1.0)
+    out["min_season_minutes"] = _clamp_float(cfg.get("min_season_minutes"), base["min_season_minutes"], 0.0, 48.0)
+    out["min_games_played"] = int(round(_clamp_float(cfg.get("min_games_played"), base["min_games_played"], 3.0, 82.0)))
+    out["juice_threshold"] = int(round(_clamp_float(cfg.get("juice_threshold"), base["juice_threshold"], -300.0, 300.0)))
+    out["max_candidates_for_combinations"] = int(round(_clamp_float(
+        cfg.get("max_candidates_for_combinations"), base["max_candidates_for_combinations"], 3.0, 80.0
+    )))
+    out["positive_correlation_boost"] = _clamp_float(
+        cfg.get("positive_correlation_boost"), base["positive_correlation_boost"], 0.8, 1.5
+    )
+    out["shootout_correlation_boost"] = _clamp_float(
+        cfg.get("shootout_correlation_boost"), base["shootout_correlation_boost"], 0.8, 1.5
+    )
+    out["market_match_juice_threshold"] = int(round(_clamp_float(
+        cfg.get("market_match_juice_threshold"), base["market_match_juice_threshold"], -300.0, 300.0
+    )))
+    out["market_match_juice_relaxed"] = int(round(_clamp_float(
+        cfg.get("market_match_juice_relaxed"), base["market_match_juice_relaxed"], -300.0, 300.0
+    )))
+    out["market_match_min_conf"] = _clamp_float(
+        cfg.get("market_match_min_conf"), base["market_match_min_conf"], 0.0, 1.0
+    )
+    out["correlated_pair_max_spread"] = _clamp_float(
+        cfg.get("correlated_pair_max_spread"), base["correlated_pair_max_spread"], 0.0, 25.0
+    )
+    out["parlay_gamelog_pool_cap"] = int(round(_clamp_float(
+        cfg.get("parlay_gamelog_pool_cap"), base["parlay_gamelog_pool_cap"], 10.0, 500.0
+    )))
+    floors_in = cfg.get("min_line_floors") if isinstance(cfg.get("min_line_floors"), dict) else {}
+    out["min_line_floors"] = {
+        "points": _clamp_float(floors_in.get("points"), base["min_line_floors"]["points"], 0.0, 60.0),
+        "rebounds": _clamp_float(floors_in.get("rebounds"), base["min_line_floors"]["rebounds"], 0.0, 30.0),
+        "assists": _clamp_float(floors_in.get("assists"), base["min_line_floors"]["assists"], 0.0, 25.0),
+    }
+    return out
+
+
+_LINE_CONFIG_EDITABLE_KEYS = {
+    "line.min_confidence",
+    "line.min_edge_pct",
+    "line.recent_form_over_ratio",
+    "line.recent_form_under_ratio",
+    "line.min_edge_pts",
+    "line.min_edge_other",
+    "line.min_edge_other_over",
+    "line.min_season_minutes",
+    "line.stat_floors.points",
+    "line.stat_floors.rebounds",
+    "line.stat_floors.assists",
+}
+_PARLAY_CONFIG_EDITABLE_KEYS = {
+    "parlay.max_spread",
+    "parlay.max_minutes_cv",
+    "parlay.min_blended_conf",
+    "parlay.min_season_minutes",
+    "parlay.min_games_played",
+    "parlay.juice_threshold",
+    "parlay.max_candidates_for_combinations",
+    "parlay.positive_correlation_boost",
+    "parlay.shootout_correlation_boost",
+    "parlay.market_match_juice_threshold",
+    "parlay.market_match_juice_relaxed",
+    "parlay.market_match_min_conf",
+    "parlay.correlated_pair_max_spread",
+    "parlay.parlay_gamelog_pool_cap",
+    "parlay.min_line_floors.points",
+    "parlay.min_line_floors.rebounds",
+    "parlay.min_line_floors.assists",
+}
+
+
 def _team_tier_from_standings(stats_dict: dict, mot_cfg: dict) -> str:
     """Infer team motivation tier from standings stats.
     A: meaningful seeding/play-in pressure
@@ -6748,7 +6865,7 @@ def _run_line_engine_for_date(date):
                 print(f"[line] game projection pool timed out after 60s, got {len(all_proj)} projections")
     if not all_proj:
         return None, "no_projections"
-    line_config = _cfg("line", _CONFIG_DEFAULTS.get("line", {}))
+    line_config = sanitize_line_config(_cfg("line", _CONFIG_DEFAULTS.get("line", {})))
     # Fetch bookmaker lines from Odds API for all slate games — used as the
     # primary "line" value in picks instead of ESPN season averages.
     # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
@@ -8267,6 +8384,10 @@ async def lab_update_config(payload: dict = Body(...)):
     for key in changes:
         if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*([.][a-zA-Z_][a-zA-Z0-9_]*)*$', str(key)):
             return _err(f"Invalid key format: {key!r}", 400)
+        if key.startswith("line.") and key not in _LINE_CONFIG_EDITABLE_KEYS:
+            return _err(f"Unsupported line config key: {key}", 400)
+        if key.startswith("parlay.") and key not in _PARLAY_CONFIG_EDITABLE_KEYS:
+            return _err(f"Unsupported parlay config key: {key}", 400)
 
     cfg = _load_config()
     old_version = cfg.get("version", 1)
@@ -8275,6 +8396,10 @@ async def lab_update_config(payload: dict = Body(...)):
     for dot_path, value in changes.items():
         keys = dot_path.split(".")
         _deep_set(cfg, keys, value)
+
+    # Sanitize line/parlay configs after applying deltas so invalid values never persist.
+    cfg["line"] = sanitize_line_config(cfg.get("line", {}))
+    cfg["parlay"] = sanitize_parlay_config(cfg.get("parlay", {}))
 
     cfg["version"]    = new_version
     cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -9416,7 +9541,7 @@ def _run_parlay_engine_sync(today):
     except Exception as _pdvp_err:
         print(f"[parlay] DvP fetch error (non-fatal): {_pdvp_err}")
 
-    parlay_config = dict(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
+    parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
     if projection_only:
         parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
         parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
@@ -9480,8 +9605,11 @@ async def get_parlay(request: Request):
                 try:
                     age_s = (datetime.utcnow() - datetime.fromisoformat(cached_at)).total_seconds()
                     if age_s < 1800:
-                        cached["locked"] = slate_locked
-                        return JSONResponse(cached)
+                        if cached.get("projection_only") and not slate_locked:
+                            print("[parlay] bypassing projection-only /tmp cache while slate is open")
+                        else:
+                            cached["locked"] = slate_locked
+                            return JSONResponse(cached)
                 except Exception:
                     pass
 
@@ -9495,13 +9623,16 @@ async def get_parlay(request: Request):
                 if gh_parlay.get("_busted"):
                     print(f"[parlay] GitHub cache busted — regenerating")
                 elif gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
-                    gh_parlay["locked"] = slate_locked
-                    gh_parlay["_from_github"] = True
-                    gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
-                    gh_parlay["_cache_date"] = today_str
-                    _cs(_CK_PARLAY, gh_parlay)
-                    print(f"[parlay] served from GitHub: {parlay_path}")
-                    return JSONResponse(gh_parlay)
+                    if gh_parlay.get("projection_only") and not slate_locked:
+                        print("[parlay] projection-only GitHub ticket found; rebuilding once while slate is open")
+                    else:
+                        gh_parlay["locked"] = slate_locked
+                        gh_parlay["_from_github"] = True
+                        gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
+                        gh_parlay["_cache_date"] = today_str
+                        _cs(_CK_PARLAY, gh_parlay)
+                        print(f"[parlay] served from GitHub: {parlay_path}")
+                        return JSONResponse(gh_parlay)
         except Exception as _ge:
             print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
 
@@ -9548,6 +9679,7 @@ async def get_parlay(request: Request):
                     "correlation_reasons": result.get("correlation_reasons", []),
                     "parlay_score": result.get("parlay_score"),
                     "narrative": result.get("narrative", ""),
+                    "projection_only": result.get("projection_only", False),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                 }
                 _github_write_file(_parlay_path, json.dumps(_save_payload), f"parlay {today_str}")
@@ -9628,13 +9760,15 @@ async def parlay_force_regenerate():
 
 # grep: PARLAY HISTORY — /api/parlay-history
 @app.get("/api/parlay-history")
-async def parlay_history():
+async def parlay_history(request: Request):
     """Return recent parlays with resolution status (hit/miss per leg)."""
+    nocache = str(request.query_params.get("nocache", "")).strip().lower() in ("1", "true", "yes")
     # 10-min cache
-    _hist_cached = _cg(_CK_PARLAY_HISTORY)
-    if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
-        if time.time() - _hist_cached.get("ts", 0) < _TTL_LOG:
-            return _hist_cached["data"]
+    if not nocache:
+        _hist_cached = _cg(_CK_PARLAY_HISTORY)
+        if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
+            if time.time() - _hist_cached.get("ts", 0) < _TTL_LOG:
+                return _hist_cached["data"]
 
     items = _github_list_dir("data/parlays")
     _skip_dates = {"2026-03-21"}  # Test dates to exclude from history
@@ -9659,7 +9793,15 @@ async def parlay_history():
         for ds, raw in pool.map(_fetch_parlay_json, json_dates):
             fetched[ds] = raw
 
-    today_str = _today_str()
+    today = _et_date()
+    today_str = today.isoformat()
+    today_games_final = False
+    try:
+        _today_games = fetch_games(today)
+        if _today_games:
+            today_games_final = _all_games_final(_today_games)
+    except Exception:
+        today_games_final = False
     results = []
     write_back_queue = []  # (date_str, parlay_dict) for resolved entries that need saving
 
@@ -9676,9 +9818,10 @@ async def parlay_history():
         if not legs:
             continue
 
-        # Resolve pending legs for historical dates
+        # Resolve pending legs for historical dates and for same-day when all games are final.
         needs_write = False
-        if parlay.get("result") == "pending" and date_str < today_str:
+        _can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)
+        if parlay.get("result") == "pending" and _can_resolve:
             espn_date = date_str.replace("-", "")
             for leg in legs:
                 if leg.get("result") not in (None, "pending", ""):
@@ -9691,7 +9834,7 @@ async def parlay_history():
                 )
                 if actual is not None:
                     leg["actual_stat"] = actual
-                    line_val = float(leg.get("line", 0))
+                    line_val = _safe_float(leg.get("line"), 0.0)
                     if leg.get("direction") == "over":
                         leg["result"] = "hit" if actual > line_val else "miss"
                     else:
