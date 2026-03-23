@@ -1,0 +1,43 @@
+{
+  "date": "2026-03-23",
+  "saved_at": "2026-03-23T18:00:00Z",
+  "player_count": 9,
+  "players": [
+    {
+      "player_name": "Ace Bailey",
+      "boost": 1.9
+    },
+    {
+      "player_name": "Brice Sensabaugh",
+      "boost": 2.0
+    },
+    {
+      "player_name": "Kevin Huerter",
+      "boost": 2.2
+    },
+    {
+      "player_name": "Klay Thompson",
+      "boost": 2.5
+    },
+    {
+      "player_name": "Cameron Payne",
+      "boost": 2.6
+    },
+    {
+      "player_name": "Caris LeVert",
+      "boost": 3.0
+    },
+    {
+      "player_name": "Khris Middleton",
+      "boost": 2.4
+    },
+    {
+      "player_name": "Justin Edwards",
+      "boost": 3.0
+    },
+    {
+      "player_name": "Brook Lopez",
+      "boost": 3.0
+    }
+  ]
+}

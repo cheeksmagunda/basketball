@@ -35,7 +35,7 @@
     "big_market_discount": 0.15,
     "player_overrides": {
       "Aaron Nesmith": 1.9,
-      "Ace Bailey": 2.0,
+      "Ace Bailey": 1.9,
       "Al Horford": 2.0,
       "Alex Caruso": 3.0,
       "Amen Thompson": 0.6,
@@ -49,12 +49,12 @@
       "Bobby Portis": 1.6,
       "Brandon Ingram": 0.7,
       "Brandin Podziemski": 1.3,
-      "Brice Sensabaugh": 2.1,
+      "Brice Sensabaugh": 2.0,
       "Brook Lopez": 3.0,
       "Bryce McGowens": 3.0,
       "Bub Carrington": 2.4,
       "Cade Cunningham": 0.2,
-      "Cameron Payne": 3.0,
+      "Cameron Payne": 2.6,
       "Caris LeVert": 3.0,
       "Christian Braun": 3.0,
       "Clint Capela": 3.0,
@@ -109,7 +109,9 @@
       "Kevin Durant": 0.5,
       "Killian Hayes": 3.0,
       "Kyle Anderson": 2.5,
-      "Klay Thompson": 2.6,
+      "Khris Middleton": 2.4,
+      "Klay Thompson": 2.5,
+      "Kevin Huerter": 2.2,
       "Kon Knueppel": 0.8,
       "Kristaps Porzingis": 1.0,
       "Kyle Filipowski": 2.0,
@@ -368,7 +370,7 @@
     "chalk_min_high_boost_count": 3,
     "chalk_high_boost_threshold": 1.5,
     "chalk_min_big_boost_count": 1,
-    "chalk_big_boost_threshold": 2.8
+    "chalk_big_boost_threshold": 2.5
   },
   "line": {
     "min_confidence": 50,

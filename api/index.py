@@ -2154,6 +2154,26 @@ def _load_daily_boosts(date_str=None):
             return result
     except Exception as e:
         print(f"[boosts] load failed for {date_str}: {e}")
+    # Fallback: local boosts file (dev/offline mode or GitHub outage)
+    try:
+        local_path = os.path.join(os.path.dirname(__file__), "..", "data", "boosts", f"{date_str}.json")
+        if os.path.exists(local_path):
+            with open(local_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            players = data.get("players", [])
+            result = {}
+            for p in players:
+                name = p.get("player_name") or p.get("name", "")
+                boost = p.get("boost")
+                if name and boost is not None:
+                    nk = _normalize_boost_name(name)
+                    result[nk] = float(boost)
+            _DAILY_BOOST_CACHE = result
+            _DAILY_BOOST_DATE = date_str
+            _DAILY_BOOST_TS = now
+            return result
+    except Exception as e:
+        print(f"[boosts] local load failed for {date_str}: {e}")
     # No boosts file for today — return empty (pipeline falls through to estimation)
     _DAILY_BOOST_CACHE = {}
     _DAILY_BOOST_DATE = date_str
@@ -2221,24 +2241,46 @@ def _load_ownership_boosts():
                 continue
 
     result = {}
+    try:
+        _today_dt = datetime.strptime(_today_str(), "%Y-%m-%d").date()
+    except Exception:
+        _today_dt = None
     for nkey, date_map in raw_obs.items():
         # Build deduplicated, date-sorted observation list
         obs_list = sorted(date_map.items())  # [(date_str, (bval, name)), ...]
         latest_date, (latest_boost, _name) = obs_list[-1]
+        stale_days = 0
+        if _today_dt is not None:
+            try:
+                stale_days = max(
+                    0,
+                    (_today_dt - datetime.strptime(latest_date, "%Y-%m-%d").date()).days,
+                )
+            except Exception:
+                stale_days = 0
 
         # Trend extrapolation: if 3+ observations with consistent decline ≥ 0.3 total,
-        # apply 50% of average per-step decay as a forward estimate.
+        # apply a bounded forward adjustment. For stale observations, allow smaller
+        # monotonic moves (>=0.2) to correct drift faster.
         if len(obs_list) >= 3:
             boosts = [bval for _, (bval, _) in obs_list[-3:]]  # last 3
             diffs = [boosts[i] - boosts[i+1] for i in range(len(boosts)-1)]
-            # Consistent decline: all diffs positive (each step lower) and total ≥ 0.3
-            if all(d > 0 for d in diffs) and sum(diffs) >= 0.3:
-                avg_decay = sum(diffs) / len(diffs)
-                # Apply 50% of avg decay as forward extrapolation
-                extrapolated = latest_boost - (avg_decay * 0.5)
-                # Never drop more than 0.3 below last observed, never inflate
+            total_move = abs(sum(diffs))
+            monotonic = all(d > 0 for d in diffs) or all(d < 0 for d in diffs)
+            min_required_move = 0.2 if stale_days >= 3 else 0.3
+            if monotonic and (total_move + 1e-9) >= min_required_move:
+                avg_step = sum(diffs) / len(diffs)
+                # Stale values get a stronger correction than fresh observations.
+                step_mult = 1.0 if stale_days >= 3 else 0.5
+                extrapolated = latest_boost - (avg_step * step_mult)
+                # Keep adjustment bounded to +/-0.3 from latest observation.
                 extrapolated = max(extrapolated, latest_boost - 0.3)
-                extrapolated = min(extrapolated, latest_boost)
+                extrapolated = min(extrapolated, latest_boost + 0.3)
+                # Preserve monotonic direction.
+                if avg_step > 0:
+                    extrapolated = min(extrapolated, latest_boost)
+                elif avg_step < 0:
+                    extrapolated = max(extrapolated, latest_boost)
                 result[nkey] = round(extrapolated, 1)
                 continue
 

@@ -1919,6 +1919,31 @@ class TestDailyBoostIngestion:
         assert result.get("gary payton ii") == 3.0
         assert result.get("jared mccain") == 2.8
 
+    def test_load_daily_boosts_local_fallback_when_github_missing(self):
+        """_load_daily_boosts should fall back to local data/boosts when GitHub is unavailable."""
+        from api.index import _load_daily_boosts
+        import api.index as idx
+        import io
+
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_DATE = ""
+        idx._DAILY_BOOST_TS = 0
+        mock_data = json.dumps({
+            "date": "2026-03-23",
+            "players": [
+                {"player_name": "Klay Thompson", "boost": 2.5},
+                {"player_name": "Cameron Payne", "boost": 2.6},
+            ],
+        })
+
+        with patch.object(idx, "_github_get_file", return_value=(None, None)), \
+             patch("os.path.exists", side_effect=lambda p: p.endswith("data/boosts/2026-03-23.json")), \
+             patch("builtins.open", return_value=io.StringIO(mock_data)):
+            result = _load_daily_boosts("2026-03-23")
+
+        assert result.get("klay thompson") == 2.5
+        assert result.get("cameron payne") == 2.6
+
     def test_est_card_boost_uses_daily_boost_first(self):
         """_est_card_boost Layer 0 (daily ingestion) overrides all other layers."""
         from api.index import _est_card_boost
@@ -1934,6 +1959,64 @@ class TestDailyBoostIngestion:
         # Cleanup
         idx._DAILY_BOOST_CACHE = {}
         idx._DAILY_BOOST_TS = 0
+
+
+class TestOwnershipBoostTrendAdjustment:
+    def test_stale_monotonic_trend_applies_small_nudge(self):
+        """Stale, monotonic 0.2 total move should get a bounded forward nudge."""
+        from api.index import _load_ownership_boosts
+        import api.index as idx
+        import io
+
+        csv_map = {
+            "2026-03-11.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.3,,,ts\n",
+            "2026-03-13.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.2,,,ts\n",
+            "2026-03-18.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.1,,,ts\n",
+        }
+
+        def _open_side_effect(path, *args, **kwargs):
+            fname = os.path.basename(path)
+            if fname in csv_map:
+                return io.StringIO(csv_map[fname])
+            raise FileNotFoundError(path)
+
+        idx._OWNERSHIP_BOOST_CACHE = {}
+        idx._OWNERSHIP_BOOST_TS = 0
+        with patch.object(idx, "_today_str", return_value="2026-03-23"), \
+             patch("os.path.isdir", return_value=True), \
+             patch("os.listdir", side_effect=lambda p: sorted(csv_map.keys()) if p.endswith("ownership") else []), \
+             patch("builtins.open", side_effect=_open_side_effect):
+            result = _load_ownership_boosts()
+
+        assert result.get("trend guy") == 2.0
+
+    def test_recent_small_monotonic_move_does_not_nudge(self):
+        """Fresh observations keep latest value when total move is only 0.2."""
+        from api.index import _load_ownership_boosts
+        import api.index as idx
+        import io
+
+        csv_map = {
+            "2026-03-18.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.3,,,ts\n",
+            "2026-03-20.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.2,,,ts\n",
+            "2026-03-22.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.1,,,ts\n",
+        }
+
+        def _open_side_effect(path, *args, **kwargs):
+            fname = os.path.basename(path)
+            if fname in csv_map:
+                return io.StringIO(csv_map[fname])
+            raise FileNotFoundError(path)
+
+        idx._OWNERSHIP_BOOST_CACHE = {}
+        idx._OWNERSHIP_BOOST_TS = 0
+        with patch.object(idx, "_today_str", return_value="2026-03-23"), \
+             patch("os.path.isdir", return_value=True), \
+             patch("os.listdir", side_effect=lambda p: sorted(csv_map.keys()) if p.endswith("ownership") else []), \
+             patch("builtins.open", side_effect=_open_side_effect):
+            result = _load_ownership_boosts()
+
+        assert result.get("trend guy") == 2.1
 
 
 # ---------------------------------------------------------------------------
