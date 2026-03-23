@@ -330,7 +330,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 _f["no_odds"] += 1
                 continue  # No sportsbook line → can't build a parlay leg
 
-            book_line = float(odds_data.get("line", 0))  # Use Odds API value as-is
+            book_line = round(float(odds_data.get("line", 0)) * 2) / 2  # Snap to nearest 0.5
             if book_line <= 0:
                 _f["no_odds"] += 1
                 continue
