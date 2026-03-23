@@ -3008,5 +3008,86 @@ class TestApiResilience:
         )
 
 
+# ─────────────────────────────────────────────────────────
+# TestOddsApiFieldMapping — regression guard for name/description swap fix
+# ─────────────────────────────────────────────────────────
+class TestOddsApiFieldMapping:
+    """Odds API returns {name: 'Over'/'Under', description: 'Player Name'}.
+    _build_player_odds_map and _fetch_odds_line must read description as
+    player key and name as direction — not the other way around."""
+
+    def test_build_player_odds_map_field_assignment(self):
+        """Source code reads description (not name) as player_key."""
+        src = open("api/index.py").read()
+        assert "def _build_player_odds_map(" in src, "_build_player_odds_map not found"
+        # After the fix: player_key reads from description; search full source as
+        # the outcome parsing is inside a nested _fetch_event_props closure
+        assert 'player_key = outcome.get("description", "").lower()' in src, (
+            "_build_player_odds_map must read description as player_key "
+            "(Odds API: description = player name, name = direction)"
+        )
+        # After the fix: direction reads from name
+        assert 'direction  = outcome.get("name", "").lower()' in src, (
+            "_build_player_odds_map must read name as direction "
+            "(Odds API: name = 'Over'/'Under')"
+        )
+
+    def test_fetch_odds_line_field_assignment(self):
+        """_fetch_odds_line checks player name in description, not name."""
+        src = open("api/index.py").read()
+        assert "def _fetch_odds_line(" in src, "_fetch_odds_line not found"
+        # After the fix: player name matched against description
+        assert 'outcome.get("description", "").lower()' in src, (
+            "_fetch_odds_line must check player name against description field"
+        )
+        # After the fix: direction read from name field
+        assert 'outcome.get("name", "").lower() == "over"' in src, (
+            "_fetch_odds_line must read direction from name field"
+        )
+
+    def test_synthetic_parlay_line_snapping(self):
+        """Synthetic parlay fallback uses round() not floor() — avoids whole-number lines."""
+        src = open("api/index.py").read()
+        # Verify round is used (not floor) in the synthetic fallback block
+        assert '"line": round(proj_val * 2) / 2' in src, (
+            "Synthetic parlay fallback must use round(proj_val * 2) / 2 "
+            "to produce 0.5-snapped lines (e.g. 5.3 → 5.5, not 5.3 → 5.0)"
+        )
+        # Verify floor is NOT used in the parlay synthetic path
+        assert '"line": math.floor(proj_val * 2) / 2' not in src, (
+            "math.floor in synthetic fallback produces whole-number lines — must use round()"
+        )
+
+    def test_parlay_engine_snaps_odds_api_line(self):
+        """parlay_engine.py snaps real Odds API lines to nearest 0.5 (defensive float guard)."""
+        src = open("api/parlay_engine.py").read()
+        # Real Odds API always gives 0.5 values; snap is a defensive float guard
+        assert 'round(float(odds_data.get("line", 0)) * 2) / 2' in src, (
+            "parlay_engine must snap book_line to nearest 0.5 "
+            "(Odds API gives 0.5 values; snap is a defensive guard against float edge cases)"
+        )
+
+    def test_resolved_pick_never_set_as_final(self):
+        """Line rotation: when a direction resolves, final_pick is set to next_slate or None — never the resolved pick."""
+        src = open("api/index.py").read()
+        # After fix: unconditional assignment (not gated on 'if next_over:')
+        assert "final_over = next_over  # Always update" in src, (
+            "Resolved over pick must always be replaced by next_over (even if None)"
+        )
+        assert "final_under = next_under  # Always update" in src, (
+            "Resolved under pick must always be replaced by next_under (even if None)"
+        )
+
+    def test_had_resolved_flag_present(self):
+        """_had_resolved flag used so next_slate_pending fires when both directions resolved but next fails."""
+        src = open("api/index.py").read()
+        assert "_had_resolved = over_resolved or under_resolved" in src, (
+            "_had_resolved must be set before rotation so pending check fires correctly"
+        )
+        assert "_had_resolved or final_over or final_under" in src, (
+            "_has_fresh check must include _had_resolved for correct next_slate_pending return"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
