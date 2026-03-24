@@ -2167,7 +2167,157 @@ async function _hydrateApp() {
   console.log(`[hydrate] complete in ${duration_ms}ms:`, _HydrationState);
 
   hideLoader();
+
+  // ── Post-hydration rendering (all the work loadSlate() normally does) ──
+  _postHydrateRender();
+
   return results;
+}
+
+/**
+ * After hydration, run all post-load rendering that loadSlate() normally handles.
+ * This is the critical piece: hydration fetches data into globals, but without
+ * rendering calls the UI stays blank.
+ */
+function _postHydrateRender() {
+  // ── Slate / Predict tab rendering ──
+  if (SLATE) {
+    if (SLATE.error === 'slate_failed') {
+      const tabs = _el('slateTabs');
+      const list = _el('slateList');
+      if (tabs) tabs.style.display = 'none';
+      if (list) list.innerHTML =
+        '<div class="empty-state">' +
+          '<span class="icon">📡</span>' +
+          '<p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>' +
+          '<button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>' +
+        '</div>';
+      return;
+    }
+
+    // Persist valid slate to localStorage for cold-start recovery
+    if (SLATE.lineups?.chalk?.length || SLATE.lineups?.upside?.length) {
+      try {
+        const lsKey = 'slate_' + (SLATE.date || '');
+        localStorage.setItem(lsKey, JSON.stringify(SLATE));
+        const todayET = _etToday();
+        for (const k of Object.keys(localStorage)) {
+          if (k.startsWith('slate_') && k !== lsKey && k !== 'slate_' + todayET) {
+            localStorage.removeItem(k);
+          }
+        }
+      } catch(e) {}
+    }
+
+    // Show slate tabs and position the active pill
+    const slateTabsEl = _el('slateTabs');
+    if (slateTabsEl) {
+      slateTabsEl.style.display = 'flex';
+      setTimeout(function() {
+        const activeBtn = slateTabsEl.querySelector('.mode-tab.active');
+        moveTogglePill(slateTabsEl, activeBtn, '20,184,166');
+      }, 30);
+    }
+
+    LAB.cachedStatus = null; LAB.statusFetchedAt = 0;
+
+    // Populate game selector from slate games
+    if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
+
+    // Pre-warm Line and Parlay (background fetches for tabs not yet visited)
+    _prewarmLineAndParlay(SLATE.date || _etToday());
+
+    // Header meta badges
+    const headerMeta = _el('headerMeta');
+    if (headerMeta) {
+      const isLocked = SLATE.locked === true;
+      const totalGames = (SLATE.games || []).length;
+      const draftable = (SLATE.games || []).filter(function(g) { return !g.locked; }).length;
+      const gameCount = isLocked ? totalGames : draftable;
+      const slateDate = SLATE.date || _etToday();
+      const d = new Date(slateDate + 'T12:00:00');
+      const dateStr = _fmtDateShort(d);
+      const timeNow = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+      let lockLabel = 'Locked';
+      if (isLocked && SLATE.lock_time) {
+        try {
+          const raw = SLATE.lock_time;
+          const utcStr = raw.endsWith('Z') ? raw : raw.replace(/([+-]\d{2}:\d{2})?$/, 'Z');
+          const lt = new Date(utcStr);
+          const ltStr = lt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+          lockLabel = 'Locked ' + ltStr + ' CT';
+        } catch(e) {}
+      }
+      const statusBadge = isLocked
+        ? '<div class="header-badge locked">' + lockLabel + '</div>'
+        : '<div class="header-badge">Updated ' + timeNow + ' CT</div>';
+      const countBadge = '<div class="header-badge">' + gameCount + ' Game' + (gameCount !== 1 ? 's' : '') + ' &middot; ' + dateStr + '</div>';
+      headerMeta.innerHTML = countBadge + statusBadge;
+    }
+
+    // Render the default slate view (Starting 5)
+    switchSlate('chalk');
+    savePredictions();
+    showLateDraftBanner();
+
+    // Pre-warm Lab status
+    _fetchJson('/api/lab/status', 10000).then(function(s) {
+      LAB.cachedStatus = s;
+      LAB.statusFetchedAt = Date.now();
+    }).catch(function(e) { console.warn('[lab/status] pre-warm failed:', e); });
+
+    // Next-day polling when slate is complete
+    if (SLATE.all_complete && !_slateNextDayPoll) {
+      _slateNextDayPoll = setInterval(function() {
+        const prevDate = SLATE.date;
+        loadSlate().then(function() {
+          if (SLATE.date !== prevDate || !SLATE.all_complete) {
+            clearInterval(_slateNextDayPoll);
+            _slateNextDayPoll = null;
+          }
+        }).catch(function() {});
+      }, 5 * 60 * 1000);
+    }
+
+    // Auto-refresh when lock window opens
+    if (!SLATE.locked && !SLATE.all_complete) {
+      const now = Date.now();
+      const startMs = (SLATE.games || [])
+        .map(function(g) { return g.startTime ? new Date(g.startTime).getTime() : Infinity; })
+        .filter(function(t) { return isFinite(t); });
+      if (startMs.length) {
+        const lockAt = Math.min.apply(null, startMs) - 5 * 60 * 1000;
+        const delay = lockAt - now;
+        if (delay > 0 && delay < 4 * 60 * 60 * 1000) {
+          clearTimeout(_slateAutoRefreshTimer);
+          _slateAutoRefreshTimer = setTimeout(function() { _slateAutoRefreshTimer = null; if (!SLATE.locked) loadSlate(); }, delay + 2000);
+        } else if (delay <= 0 && _slateAutoRefreshCount < 3) {
+          _slateAutoRefreshCount++;
+          clearTimeout(_slateAutoRefreshTimer);
+          _slateAutoRefreshTimer = setTimeout(function() { _slateAutoRefreshTimer = null; if (!SLATE.locked && !SLATE.all_complete) loadSlate(); }, 5000);
+        }
+      }
+    }
+    if (SLATE.locked) _slateAutoRefreshCount = 0;
+  } else {
+    // Slate hydration failed — show retry
+    const list = _el('slateList');
+    if (list) list.innerHTML =
+      '<div class="empty-state">' +
+        '<span class="icon">📡</span>' +
+        '<p>Could not load slate.<br>Tap Retry to try again.</p>' +
+        '<button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>' +
+      '</div>';
+  }
+
+  // ── Parlay: render ticket if hydrated ──
+  if (PARLAY_STATE && PARLAY_STATE.status === 'success' && PARLAY_STATE.data) {
+    const data = PARLAY_STATE.data;
+    if (data.legs && data.legs.length > 0) {
+      PARLAY_LOADED_DATE = _etToday();
+      renderParlayTicket(data);
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2297,6 +2447,10 @@ function _prewarmLineAndParlay(todayET) {
       .then(function(hist) {
         PARLAY_HIST_DATA = hist;
         PARLAY_HIST_LOADED_DATE = todayET;
+        // Render immediately so history is visible even if user opens Parlay tab
+        // after prewarm completes (fixes race where initParlayPage skips fetch
+        // because PARLAY_HIST_LOADED_DATE is already set but DOM is empty)
+        renderParlayHistory(hist);
       })
       .catch(function() {});
   }
@@ -3051,25 +3205,33 @@ function initParlayPage() {
   const sameDayLoaded = PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success';
   const isStale = PARLAY_STATE.loadedAt ? (Date.now() - PARLAY_STATE.loadedAt) > 15 * 60 * 1000 : true;
 
-  // Hydration check: if data freshly loaded (< 30s), skip fetch
+  // Hydration check: if data freshly loaded (< 30s), skip fetch but still render
   const _parlayAge = PARLAY_STATE && PARLAY_STATE.loadedAt ? (Date.now() - PARLAY_STATE.loadedAt) : Infinity;
   const _isHydrated = _parlayAge < 30000; // < 30s: freshly hydrated
 
   PARLAY_LOADED_DATE = todayET;
 
   if (sameDayLoaded && !isStale) {
-    // Same day, fresh data — don't fetch
+    // Same day, fresh data — don't fetch, but ensure ticket is rendered
     console.log('[parlay] data still fresh, skipping fetch');
+    if (PARLAY_STATE.data) renderParlayTicket(PARLAY_STATE.data);
   } else if (_isHydrated) {
-    // Freshly hydrated — skip fetch
-    console.log('[parlay] using hydrated data, skipping fetch');
+    // Freshly hydrated — skip fetch, render from hydrated data
+    console.log('[parlay] using hydrated data, rendering');
+    if (PARLAY_STATE.data) renderParlayTicket(PARLAY_STATE.data);
   } else {
     // Stale or missing — fetch
     fetchParlay();
   }
 
-  // Refresh history unless freshly loaded and same-day
-  if (!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET) {
+  // Always render history if data is available but DOM is empty;
+  // otherwise fetch if not yet loaded for today
+  const _histWrap = _el('parlayHistoryWrap');
+  const _histDomEmpty = !_histWrap || _histWrap.style.display === 'none' || !_histWrap.innerHTML.trim();
+  if (PARLAY_HIST_DATA && PARLAY_HIST_LOADED_DATE === todayET && _histDomEmpty) {
+    // Data prewarmed but DOM never rendered — render now
+    renderParlayHistory(PARLAY_HIST_DATA);
+  } else if (!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET) {
     fetchParlayHistory(!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET);
   }
 

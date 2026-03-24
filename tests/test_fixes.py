@@ -3190,17 +3190,16 @@ class TestOddsApiFieldMapping:
             "_fetch_odds_line must read direction from name field"
         )
 
-    def test_synthetic_parlay_line_snapping(self):
-        """Synthetic parlay fallback uses round() not floor() — avoids whole-number lines."""
+    def test_no_synthetic_parlay_fallback(self):
+        """Parlay must NOT use synthetic fallback lines — require real Odds API data."""
         src = open("api/index.py").read()
-        # Verify round is used (not floor) in the synthetic fallback block
-        assert '"line": round(proj_val * 2) / 2' in src, (
-            "Synthetic parlay fallback must use round(proj_val * 2) / 2 "
-            "to produce 0.5-snapped lines (e.g. 5.3 → 5.5, not 5.3 → 5.0)"
+        # Synthetic fallback was removed — verify it's gone
+        assert "built {len(player_odds_map)} synthetic lines from projections" not in src, (
+            "Synthetic parlay fallback must be removed — parlay requires real sportsbook lines"
         )
-        # Verify floor is NOT used in the parlay synthetic path
-        assert '"line": math.floor(proj_val * 2) / 2' not in src, (
-            "math.floor in synthetic fallback produces whole-number lines — must use round()"
+        # Verify the no-odds early return exists
+        assert 'return None, "no_odds_data"' in src, (
+            "Parlay must return error when Odds API data is unavailable"
         )
 
     def test_parlay_engine_snaps_odds_api_line(self):
@@ -3255,10 +3254,11 @@ class TestParlayHistoryAndConfigHardening:
         assert "sourceBadge = data.projection_only" in src_ui
         assert "MODEL</span>'" in src_ui and "BOOK</span>'" in src_ui
 
-    def test_projection_only_cache_bypass_while_open(self):
+    def test_projection_only_cache_bypass(self):
         src = open("api/index.py").read()
-        assert "bypassing projection-only /tmp cache while slate is open" in src
-        assert "projection-only GitHub ticket found; rebuilding once while slate is open" in src
+        # projection-only caches are always bypassed now (synthetic fallback removed)
+        assert "bypassing projection-only /tmp cache" in src
+        assert "projection-only GitHub ticket found" in src
 
     def test_line_and_parlay_sanitizers_enabled(self):
         from api.index import sanitize_line_config, sanitize_parlay_config
