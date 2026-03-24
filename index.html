@@ -1786,6 +1786,8 @@ const LOG = {
   dateCache: {},        // { [dateStr]: { data, loadedAt } }
   _refetchedToday: false, // guard against re-fetch loops in renderLogGrid
   _maxCacheSize: 15,      // LRU eviction: keep last N dates in memory
+  _datesLoadedAt: 0,     // timestamp when /api/log/dates last succeeded (for hydration check)
+  _dataLoadedAt: 0,      // timestamp when /api/log/get last succeeded (for hydration check)
 };
 // Restore datesWithData from localStorage (instant date strip on reload)
 try {
@@ -2082,16 +2084,102 @@ function hideLoader() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// APP-LEVEL EAGER HYDRATION — grep: _hydrateApp, _HydrationState
+// Fetches all critical endpoints in parallel on startup, caches results in globals.
+// Eliminates tab-switch loading spinners by pre-loading all data at app init time.
+// ════════════════════════════════════════════════════════════════════
+
+let _HydrationState = {
+  phase: 0,
+  progress: '0/7',
+  loaded: {},
+  startedAt: 0,
+  completedAt: 0,
+};
+
+// Define all endpoints to hydrate in parallel.
+// Each has: name (cache key), url, timeout (ms), optional init function.
+const _HYDRATION_ENDPOINTS = [
+  { name: 'slate', url: '/api/slate', timeout: 30000, init: null },
+  { name: 'games', url: '/api/games', timeout: 10000, init: function(data) { populateGameSelector(data.data || data); } },
+  { name: 'line', url: '/api/line-of-the-day', timeout: 60000, init: null },
+  { name: 'line_history', url: '/api/line-history', timeout: 10000, init: null },
+  { name: 'log_dates', url: '/api/log/dates', timeout: 10000, init: null },
+  { name: 'log_get', url: '/api/log/get?date=' + _etToday(), timeout: 10000, init: null },
+  { name: 'parlay', url: '/api/parlay', timeout: 90000, init: null, optional: true },
+];
+
+/**
+ * Eager hydration: fetch all critical endpoints in parallel, store in globals.
+ * Shows progress on magic 8-ball loader. Falls back gracefully on per-endpoint failures.
+ */
+async function _hydrateApp() {
+  _HydrationState.startedAt = Date.now();
+  showLoader('HYDRATING...');
+
+  const promises = _HYDRATION_ENDPOINTS.map(async (ep) => {
+    try {
+      const r = await fetchWithTimeout(ep.url, {}, ep.timeout);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+
+      // Store in appropriate global
+      if (ep.name === 'slate') {
+        SLATE = data;
+        SLATE_LOADED_AT = Date.now();
+      } else if (ep.name === 'games') {
+        if (ep.init) ep.init(data);
+      } else if (ep.name === 'line') {
+        LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE || {}, data);
+        LINE_LOTD_STATE.loadedAt = Date.now();
+      } else if (ep.name === 'line_history') {
+        LINE_HISTORY_DATA = data;
+      } else if (ep.name === 'log_dates') {
+        if (Array.isArray(data)) {
+          data.forEach(d => LOG.datesWithData.add(d));
+          LOG._datesLoadedAt = Date.now();
+        }
+      } else if (ep.name === 'log_get') {
+        LOG.data = data;
+        LOG._dataLoadedAt = Date.now();
+      } else if (ep.name === 'parlay') {
+        PARLAY_STATE = asyncStateSuccess(PARLAY_STATE || {}, data);
+        PARLAY_STATE.loadedAt = Date.now();
+      }
+
+      _HydrationState.loaded[ep.name] = true;
+      _HydrationState.phase++;
+      _HydrationState.progress = `${_HydrationState.phase}/${_HYDRATION_ENDPOINTS.length}`;
+      console.log(`[hydrate] ${ep.name} loaded (${_HydrationState.progress})`);
+      return { name: ep.name, ok: true };
+    } catch(e) {
+      console.warn(`[hydrate] ${ep.name} failed:`, e.message);
+      _HydrationState.loaded[ep.name] = ep.optional ? 'skipped' : false;
+      if (!ep.optional) _HydrationState.phase++;
+      return { name: ep.name, ok: false, error: e.message };
+    }
+  });
+
+  // Wait for all (including optional/failed ones) to settle
+  const results = await Promise.allSettled(promises);
+  _HydrationState.completedAt = Date.now();
+  const duration_ms = _HydrationState.completedAt - _HydrationState.startedAt;
+  console.log(`[hydrate] complete in ${duration_ms}ms:`, _HydrationState);
+
+  hideLoader();
+  return results;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // APP INIT — grep: DOMContentLoaded, initGameSelector, loadSlate, startup
 // ════════════════════════════════════════════════════════════════════
 (function init() {
   // Show predict sub-nav on initial load (Predict is the default tab)
   document.getElementById('predictSubNav').style.display = 'flex';
-  // Fire a lightweight health ping to wake the Railway container (cold start).
-  // This runs in parallel with loadSlate so the backend is warm by the time
-  // the slate request arrives (or at worst, by a retry).
-  fetchWithTimeout('/api/health', {}, 5000).catch(function() {});
-  loadSlate(); // non-blocking: slate and game dropdown populate when /api/slate returns (loadSlate calls populateGameSelector on success)
+
+  // NEW: Eager hydration replaces lazy loadSlate + initGameSelector
+  // This fetches all critical endpoints in parallel before showing the app.
+  _hydrateApp();
 })();
 
 // ════════════════════════════════════════════════════════════════════
@@ -2962,12 +3050,28 @@ function initParlayPage() {
   const todayET = _etToday();
   const sameDayLoaded = PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success';
   const isStale = PARLAY_STATE.loadedAt ? (Date.now() - PARLAY_STATE.loadedAt) > 15 * 60 * 1000 : true;
+
+  // Hydration check: if data freshly loaded (< 30s), skip fetch
+  const _parlayAge = PARLAY_STATE && PARLAY_STATE.loadedAt ? (Date.now() - PARLAY_STATE.loadedAt) : Infinity;
+  const _isHydrated = _parlayAge < 30000; // < 30s: freshly hydrated
+
   PARLAY_LOADED_DATE = todayET;
-  if (!sameDayLoaded || isStale) {
+
+  if (sameDayLoaded && !isStale) {
+    // Same day, fresh data — don't fetch
+    console.log('[parlay] data still fresh, skipping fetch');
+  } else if (_isHydrated) {
+    // Freshly hydrated — skip fetch
+    console.log('[parlay] using hydrated data, skipping fetch');
+  } else {
+    // Stale or missing — fetch
     fetchParlay();
   }
-  // Always refresh history on open so same-day finals resolve promptly.
-  fetchParlayHistory(!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET);
+
+  // Refresh history unless freshly loaded and same-day
+  if (!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET) {
+    fetchParlayHistory(!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET);
+  }
 
   // Start lock polling: when locked and slate has pending games, poll for unlock/resolution
   if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data && PARLAY_STATE.data.locked) {
@@ -3217,18 +3321,33 @@ async function initLogPage() {
   LOG._refetchedToday = false;
   closeLogDrilldown();
   buildLogDateStrip();
-  LOG.data = null;
   LOG_STATE = asyncStateLoading(LOG_STATE);
   _renderLogGridFromState(todayStr);
 
+  LOG_LOADED_AT = Date.now();
+
+  // Hydration check: if dates and today's data already loaded (< 30s), skip fetches
+  const _datesAge = LOG._datesLoadedAt ? (Date.now() - LOG._datesLoadedAt) : Infinity;
+  const _dataAge = LOG._dataLoadedAt ? (Date.now() - LOG._dataLoadedAt) : Infinity;
+  const _isHydrated = _datesAge < 30000 && _dataAge < 30000;
+
+  if (_isHydrated && LOG.datesWithData.size > 0 && LOG.data) {
+    // Freshly hydrated data — render immediately, skip fetches
+    console.log('[log] using hydrated data, skipping fetches');
+    LOG_STATE = asyncStateSuccess(LOG_STATE, LOG.data);
+    renderLogGrid(todayStr);
+    return;
+  }
+
+  // Not hydrated or stale — fetch both in parallel
   const datesPromise = _fetchJson('/api/log/dates', 15000);
   const getPromise = _fetchJson(`/api/log/get?date=${todayStr}`, 15000);
 
   const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
 
-  LOG_LOADED_AT = Date.now();
   if (datesRes.status === 'fulfilled') {
     datesRes.value.forEach(d => LOG.datesWithData.add(d));
+    LOG._datesLoadedAt = Date.now();
     try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
     buildLogDateStrip();
   }
@@ -3237,6 +3356,7 @@ async function initLogPage() {
     const data = getRes.value;
     LOG.dateCache[todayStr] = { data, loadedAt: Date.now() }; _evictLogCache();
     LOG.data = data;
+    LOG._dataLoadedAt = Date.now();
     LOG_STATE = asyncStateSuccess(LOG_STATE, data);
     // Smart default: if today has no predictions, jump to most recent date with data
     if (!data.has_predictions && LOG.datesWithData.size > 0) {
@@ -4177,10 +4297,20 @@ async function fetchLineHistory() {
 async function initLinePage() {
   const todayET = _etToday();
   const dateChanged = LINE_LOADED_DATE !== todayET;
+
+  // Hydration check: if data freshly loaded (< 30s old), skip fetch entirely
+  const _lotdAge = LINE_LOTD_STATE && LINE_LOTD_STATE.loadedAt ? (Date.now() - LINE_LOTD_STATE.loadedAt) : Infinity;
+  const _isHydrated = _lotdAge < 30000; // < 30s: freshly hydrated
+
+  if (!dateChanged && _isHydrated) {
+    // Freshly hydrated data — render immediately, skip all fetches
+    console.log('[line] using hydrated data, skipping fetch');
+    return;
+  }
+
   if (!dateChanged) {
     // Same day — check if data is stale (>15 min since last success).
     // If stale, do a foreground fetch with skeleton; otherwise background re-fetch.
-    const _lotdAge = LINE_LOTD_STATE.loadedAt ? (Date.now() - LINE_LOTD_STATE.loadedAt) : Infinity;
     const _isStale = _lotdAge > 15 * 60 * 1000; // 15 min staleness threshold
     if (_isStale) {
       // Data too old — foreground fetch with skeleton so user sees loading indicator
