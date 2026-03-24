@@ -568,7 +568,7 @@ _TTL_LOCKED = 60        # 1 min — game final check during locked slate
 _TTL_PRE_SLATE = 180    # 3 min — pre-slate polling
 _TTL_L5 = 1800          # 30 min — ESPN gamelog cache for parlay volatility (see _fetch_gamelog)
 _TTL_HOUR = 3600        # 1 hour — infrequently changing data
-_TTL_ODDS_FRESH = 600   # 10 min — reuse bulk Odds API map across slate/line/parlay in same instance
+_TTL_ODDS_FRESH = 1800   # 30 min — reuse bulk Odds API map across slate/line/parlay (conserve 500/day quota)
 
 # ThreadPoolExecutor worker counts.
 _W_LIGHT = 2            # light parallelism (2-way fetch)
@@ -6882,6 +6882,21 @@ def _build_player_odds_map(games):
         print("[odds_map] no games provided — skipping odds fetch")
         return {}
 
+    # Track daily quota usage to prevent waste (500 requests/day = ~30 full slates)
+    # Each call: 1 event fetch + N props fetches (N = # of games, typically 10-14)
+    quota_key = f"odds_quota_{_today_str()}"
+    quota_file = _cp(quota_key)
+    quota_data = {"calls": 0, "reset_at": datetime.utcnow().isoformat()}
+    if quota_file.exists():
+        try:
+            quota_data = json.loads(quota_file.read_text())
+        except:
+            pass
+    est_calls = 1 + len(games)  # 1 events + N props calls
+    quota_data["calls"] = quota_data.get("calls", 0) + est_calls
+    quota_data["estimated_total"] = quota_data.get("calls", 0)
+    print(f"[odds_map] estimated quota usage: +{est_calls} calls (total today: {quota_data.get('calls', 0)}/500)")
+
     fp = _odds_map_fingerprint(games)
     fresh_ck = "odds_fresh_map_v1"
     try:
@@ -7778,8 +7793,11 @@ async def refresh_line_odds():
     # Uses any() pattern (not min()) to match /api/slate and /api/save-predictions:
     # on split-window days, once the first game locks, odds freeze for the whole slate.
     games = fetch_games()
+    # Slate locked → no point refreshing odds (props frozen, API won't return new data)
+    # Save quota: skip expensive fetch during locked period
     all_start_times = [g["startTime"] for g in games if g.get("startTime")]
     if any(_is_locked(st) for st in all_start_times):
+        print("[refresh-line-odds] slate locked, skipping odds fetch (quota conservation)")
         return {"status": "locked", "message": "Slate locked — odds frozen"}
 
     picks = _load_line_pick_for_date(today_str)
