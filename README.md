@@ -1,6 +1,6 @@
 # The Oracle — NBA Draft Optimizer for Real Sports
 
-AI-powered daily NBA draft optimizer for the **Real Sports App**. Projects player Real Scores via Monte Carlo simulation, ingests pre-game card boosts when available (with fallback estimation), and builds MILP-optimized lineups. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+AI-powered daily NBA draft optimizer for the **Real Sports App**. Uses a unified deterministic fair-value engine (rolling windows, DvP normalization, closed-form closeness, and bookmaker EV) to drive Draft, Line, and Parlay surfaces, then applies Real Sports card boosts and MILP lineup optimization. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## What Real Sports Scores
 
@@ -18,6 +18,8 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 ```
 index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
+api/fair_value.py      — Unified deterministic fair-value projection engine (pure functions)
+api/odds_math.py       — Shared American-odds implied-prob helpers
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
 api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
@@ -53,14 +55,15 @@ server.py              — Local dev server (uvicorn)
 ## Scoring Pipeline
 
 ```
-ESPN API (games, rosters, injuries, spreads)
-  → Injury Cascade (redistribute OUT minutes; per-player cap 2 min, configurable)
-  → Configurable season/recent stat blend (default 50/50)
-  → LightGBM model (12 features, blended with heuristic via `real_score.ai_blend_weight`, default 0.35)
-  → Contextual adjustments (pace, spread, home/away)
-  → Monte Carlo Real Score (closeness Cc, clutch Ck, momentum Mm)
+ESPN API (games, rosters, injuries, spreads, gamelogs)
+  → Rolling L10/L15 fair-value projection (`api/fair_value.py`)
+  → Opponent-quality adjustment (binary Guards vs Forwards DvP mapping)
+  → Closed-form game closeness (deterministic; no Monte Carlo when fair value is enabled)
+  → Odds-aware fair value + EV classification (including bidirectional line movement)
   → Card Boost resolution (Layer 0 ingested boosts → overrides/ownership/sigmoid fallback)
   → MILP slot optimizer → Starting 5 + Moonshot lineups
+
+`fair_value.enabled` in `data/model-config.json` gates rollout. It is now enabled by default for production parity across Draft, Line, and Parlay.
 ```
 
 ## 3-Layer Prediction Cache

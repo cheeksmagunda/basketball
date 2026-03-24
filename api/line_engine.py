@@ -425,12 +425,13 @@ def _generate_signals(p, gctx, direction, stat_type, season_val, recent_val, pro
 # ALGORITHMIC FALLBACK — pure ESPN model, no external API calls
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_model_fallback(projections, games, line_config=None, player_odds_map=None):
+def run_model_fallback(projections, games, line_config=None, player_odds_map=None, edge_map=None):
     """
     Algorithmic pick when Claude API is unavailable.
     Scores edges across points, rebounds, and assists; picks the highest-confidence one.
     line_config: optional dict with min_confidence, min_edge_pct (from model-config line section).
     player_odds_map: optional pre-fetched Odds API lines {(name_lower, stat_type): {...}}.
+    edge_map: optional {player_id: {stat_type: {ev, hit_prob, edge_class, ...}}} from fair_value.
     """
     if not projections:
         return {"pick": None, "error": "no_projections"}
@@ -491,7 +492,17 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             over_penalty = 0
             if direction == "over" and signal_bonus == 0:
                 over_penalty = 12  # 12-point confidence penalty for unsupported overs
-            confidence = round(min(52 + edge_score + signal_bonus - over_penalty, 80))
+            fv_boost = 0
+            if edge_map:
+                em = edge_map.get(p.get("id"))
+                if isinstance(em, dict):
+                    row = em.get(stat_type)
+                    if isinstance(row, dict):
+                        try:
+                            fv_boost = int(min(15, float(row.get("ev", 0) or 0) * 120.0))
+                        except (TypeError, ValueError):
+                            fv_boost = 0
+            confidence = round(min(52 + edge_score + signal_bonus - over_penalty + fv_boost, 80))
             # Driver-aware narrative: cite top signals when available
             if signals:
                 driver_summary = "; ".join(s["detail"] for s in signals[:2])
@@ -648,7 +659,7 @@ def _enrich_pick_from_projections(pick, projections, game_ctx_map):
 # MAIN ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_line_engine(projections, games, line_config=None, player_odds_map=None, news_context="", dvp_data=None):
+def run_line_engine(projections, games, line_config=None, player_odds_map=None, news_context="", dvp_data=None, edge_map=None):
     """
     Main entry point. Uses Claude Haiku to reason about ESPN projection data
     and pick today's best player prop edge. Falls back to algorithmic model
@@ -656,6 +667,7 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None, 
     line_config: optional dict (e.g. from model-config "line" section) with min_confidence, min_edge_pct.
     player_odds_map: optional pre-fetched Odds API lines {(name_lower, stat_type): {...}}.
     news_context: optional string of recent NBA news from web search (Layer 1).
+    edge_map: optional fair_value edge payloads keyed by player id.
     """
     if not games:
         return {"pick": None, "error": "no_games"}
@@ -675,13 +687,13 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None, 
     stat_floors = (line_config or {}).get("stat_floors", {})
 
     if not ANTHROPIC_API_KEY:
-        return run_model_fallback(projections, games, line_config, player_odds_map)
+        return run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
 
     over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map, news_context, dvp_data=dvp_data)
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")
-        return run_model_fallback(projections, games, line_config, player_odds_map)
+        return run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
 
     def _build_pick(pd):
         if not pd:
@@ -732,7 +744,7 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None, 
 
     # Fill missing direction from algorithmic fallback
     if not over_pick or not under_pick:
-        fallback = run_model_fallback(projections, games, line_config, player_odds_map)
+        fallback = run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
         if not over_pick:
             over_pick = fallback.get("over_pick")
         if not under_pick:

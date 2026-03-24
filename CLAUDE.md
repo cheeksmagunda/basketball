@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A daily NBA draft optimizer for the **Real Sports** app. It projects player Real Scores, ingests pre-game card boosts when available (with fallback estimation), and builds optimized 5-player lineups using MILP (mixed-integer linear programming). Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+A daily NBA draft optimizer for the **Real Sports** app. It uses a unified fair-value projection engine (rolling windows + DvP normalization + deterministic closeness + odds EV) across Draft, Line, and Parlay, then applies card boosts and MILP lineup optimization. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## How Real Sports Works
 
@@ -18,6 +18,8 @@ A daily NBA draft optimizer for the **Real Sports** app. It projects player Real
 ```
 index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
+api/fair_value.py      — Unified deterministic fair-value engine (pure functions)
+api/odds_math.py       — Shared American-odds implied probability helpers
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
 api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
@@ -75,6 +77,8 @@ grep: INJURY CASCADE           — _cascade_minutes, _pos_group
 grep: CARD BOOST               — _est_card_boost, _dfs_score
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
+grep: FAIR VALUE ENGINE        — project_player_fv, _project_player_fair_value_body, _fv_edge_map
+grep: FAIR VALUE PREFETCH      — _fair_value_prefetch_for_games shared batch inputs
 grep: ODDS ENRICHMENT          — _enrich_projections_with_odds, odds_map, blend_weight
 grep: WEB INTELLIGENCE         — _fetch_nba_news_context, Claude web_search, news_text
 grep: LINEUP REVIEW            — _lineup_review_opus, post-lineup Opus, lineup_review

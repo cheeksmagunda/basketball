@@ -46,12 +46,14 @@ try:
     from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
+    from api.fair_value import project_player_fv, dvp_binary_from_nba_com, should_cascade as _fv_should_cascade
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
+    from .fair_value import project_player_fv, dvp_binary_from_nba_com, should_cascade as _fv_should_cascade
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -710,6 +712,36 @@ _CONFIG_DEFAULTS = {
         },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
+    "fair_value": {
+        "enabled": False,
+        "primary_window": 15,
+        "short_window": 10,
+        "ai_blend_weight": 0.15,
+        "cascade_policy": "elite_only",
+        "elite_cascade_ppg": 27.0,
+        "elite_players": [
+            "Nikola Jokic", "Shai Gilgeous-Alexander", "Luka Doncic",
+            "Giannis Antetokounmpo", "Jayson Tatum",
+        ],
+        "ats_regression_strength": 0.5,
+        "closeness_strength": 0.4,
+        "closeness_max": 1.5,
+        "default_total": 222.0,
+        "book_weights": {
+            "pinnacle": 1.5, "draftkings": 1.0, "fanduel": 1.0,
+            "betmgm": 0.9, "pointsbetus": 0.8,
+        },
+        "stat_types": ["points", "rebounds", "assists", "steals", "blocks", "threes"],
+        "edge_thresholds": {"min_edge_pct": 5.0, "min_ev": 0.03, "sharp_aligned_bonus": 1.15},
+        "compression": {"compression_divisor": 5.5, "compression_power": 0.72, "rs_cap": 20.0},
+    },
+    "odds_enrichment": {
+        "enabled": True,
+        "blend_weight": 0.2,
+        "min_divergence_pct": 0.15,
+        "upward_only": True,
+        "bidirectional": False,
+    },
     "projection": {
         "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
         "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
@@ -1045,6 +1077,10 @@ _STAT_MARKET = {
     "points":   "player_points",
     "rebounds": "player_rebounds",
     "assists":  "player_assists",
+    "steals":   "player_steals",
+    "blocks":   "player_blocks",
+    "threes":   "player_threes",
+    "points_rebounds_assists": "player_points_rebounds_assists",
 }
 
 def _cp(k, date_str=None):
@@ -2018,6 +2054,9 @@ def _pos_group(pos):
 def _cascade_minutes(roster, stats_map):
     """Redistribute minutes from OUT players to eligible teammates."""
     cascade_flags = {}
+    fv_cfg = _cfg("fair_value", _CONFIG_DEFAULTS.get("fair_value", {}))
+    if fv_cfg.get("enabled") and str(fv_cfg.get("cascade_policy", "")).lower() == "disabled":
+        return {}
 
     # Group players by team
     teams = {}
@@ -2045,6 +2084,10 @@ def _cascade_minutes(roster, stats_map):
         # Calculate total minutes freed per position group
         freed_by_group = {}
         for op, os in out_players:
+            if fv_cfg.get("enabled") and str(fv_cfg.get("cascade_policy", "")).lower() == "elite_only":
+                ppg = float(os.get("season_pts") or os.get("pts") or 0.0)
+                if not _fv_should_cascade(op.get("name", ""), ppg, config=fv_cfg):
+                    continue
             pg = _pos_group(op["pos"])
             freed_by_group[pg] = freed_by_group.get(pg, 0) + os.get("min", 0)
             # Centers also share with forwards
@@ -2484,11 +2527,227 @@ def _apply_post_lock_rs_calibration(projections: list, *, slate_locked: bool) ->
 # ─────────────────────────────────────────────────────────────────────────────
 # PLAYER PROJECTION ENGINE
 # grep: project_player, pinfo, stats, spread, total, rating, est_mult, blk, stl
+# grep: FAIR VALUE ENGINE — project_player_fv, _project_player_fair_value_body, _fv_edge_map
 # Returns projection dict: {name, team, pos, rating (RS), est_mult (card boost),
 #   predMin, pts, reb, ast, stl, blk, season_*/recent_* raw stats, signals}
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _opp_def_for_fair_value(opp_abbr, dvp_data):
+    row = (dvp_data or {}).get(opp_abbr) if opp_abbr else None
+    g, f = dvp_binary_from_nba_com(row)
+    return {
+        "pts_allowed_guards": g,
+        "pts_allowed_forwards": f,
+        "league_avg_guards": 26.0,
+        "league_avg_forwards": 21.5,
+    }
+
+
+def _book_lines_for_player(name, player_odds_map):
+    """Slice Odds API map to {stat_type: {line, odds_over, ...}} for one player."""
+    if not player_odds_map or not name:
+        return {}
+    nl = (name or "").lower().strip()
+    out = {}
+    for key, val in player_odds_map.items():
+        if isinstance(key, tuple) and len(key) == 2 and key[0] == nl:
+            out[key[1]] = val
+    return out
+
+
+def _project_player_fair_value_body(
+    pinfo, stats, spread, total, side, team_abbr,
+    cascade_bonus, is_b2b,
+    prefetched_gamelog, opp_abbr, dvp_data, player_odds_map,
+    proj_min, avg_min, pts, reb, ast, stl, blk, tov, fv_cfg,
+):
+    """Fair value path: rolling gamelog + DvP + books → rating; LightGBM secondary blend."""
+    athlete = dict(stats)
+    athlete["min"] = proj_min
+    opp_def = _opp_def_for_fair_value(opp_abbr, dvp_data)
+    book = _book_lines_for_player(pinfo.get("name", ""), player_odds_map or {})
+    cfg = dict(fv_cfg)
+    cfg.setdefault("compression", _CONFIG_DEFAULTS.get("fair_value", {}).get("compression", {}))
+    dfs_w = _cfg("real_score.dfs_weights", _CONFIG_DEFAULTS["real_score"]["dfs_weights"])
+    fv_out = project_player_fv(
+        prefetched_gamelog,
+        athlete,
+        pinfo.get("pos") or "G",
+        opp_def,
+        spread or 0,
+        total or DEFAULT_TOTAL,
+        side,
+        book if book else None,
+        cfg,
+        dfs_weights=dfs_w,
+    )
+    raw_rating = float(fv_out["rating"])
+    rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
+    _rs_defaults = _CONFIG_DEFAULTS["real_score"]
+    rs_cap = float(rs_cfg.get("rs_cap", _rs_defaults.get("rs_cap", 20.0)))
+    ai_weight = float(fv_cfg.get("ai_blend_weight", 0.15))
+
+    _ensure_lgbm_loaded()
+    ai_pred = None
+    if AI_MODEL is not None or AI_MODEL_BASELINE is not None:
+        try:
+            season_pts_ = stats.get("season_pts", pts)
+            recent_pts_ = stats.get("recent_pts", pts)
+            season_min_ = stats.get("season_min", avg_min)
+            recent_min_ = stats.get("recent_min", avg_min)
+            _gp = stats.get("gp", stats.get("games_played"))
+            feat_vec = _lgbm_feature_vector(
+                avg_min=avg_min,
+                pts=pts,
+                reb=reb,
+                ast=ast,
+                stl=stl,
+                blk=blk,
+                spread=spread,
+                side=side,
+                season_pts=season_pts_,
+                recent_pts=recent_pts_,
+                season_min=season_min_,
+                recent_min=recent_min_,
+                cascade_bonus=cascade_bonus,
+                games_played=float(_gp) if _gp is not None else None,
+            )
+            ai_pred = _lgbm_predict_rs(feat_vec)
+        except Exception as _lgbm_e:
+            print(f"[WARN] LightGBM inference failed (fair_value), using FV rating: {_lgbm_e}")
+
+    if ai_pred is not None:
+        raw_score = min(float(ai_pred) * ai_weight + raw_rating * (1.0 - ai_weight), rs_cap)
+    else:
+        raw_score = min(raw_rating, rs_cap)
+
+    p_pts = float((fv_out.get("pts") or {}).get("mean", pts))
+    p_reb = float((fv_out.get("reb") or {}).get("mean", reb))
+    p_ast = float((fv_out.get("ast") or {}).get("mean", ast))
+    p_stl = float((fv_out.get("stl") or {}).get("mean", stl))
+    p_blk = float((fv_out.get("blk") or {}).get("mean", blk))
+
+    arch_cfg = rs_cfg.get("archetype_calibration", {})
+    if arch_cfg.get("enabled", False):
+        arch = _infer_player_archetype(p_pts, avg_min, p_reb, stats)
+        mults = arch_cfg.get("archetypes", {}) or {}
+        m = float(mults.get(arch, 1.0))
+        if m != 1.0:
+            raw_score = min(raw_score * m, rs_cap)
+
+    # No Monte Carlo closeness when fair_value.enabled — closed-form is inside project_player_fv
+
+    cascade_cfg = rs_cfg.get("cascade_rs", {})
+    if cascade_cfg.get("enabled", False) and cascade_bonus > 0:
+        cascade_str = float(cascade_cfg.get("strength", 0.6))
+        cascade_rs_mult = 1.0 + min(cascade_bonus / 15.0, 0.30) * cascade_str
+        raw_score = min(raw_score * cascade_rs_mult, rs_cap)
+
+    season_pts = stats.get("season_pts", p_pts)
+    recent_pts = stats.get("recent_pts", p_pts)
+    season_min = stats.get("season_min", avg_min)
+    recent_min = stats.get("recent_min", avg_min)
+    player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
+
+    spike_cfg = rs_cfg.get("role_spike_rs", {})
+    if spike_cfg.get("enabled", False):
+        _spike_ratio = float(spike_cfg.get("min_ratio", 1.2))
+        if season_min > 0 and recent_min >= season_min * _spike_ratio and recent_pts > 0:
+            pts_surge = recent_pts / max(season_pts, 1)
+            spike_str = float(spike_cfg.get("strength", 0.4))
+            spike_mult = 1.0 + min(pts_surge - 1.0, 0.30) * spike_str
+            if spike_mult > 1.0:
+                raw_score = min(raw_score * spike_mult, rs_cap)
+
+    proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
+    vg = proj_cfg.get("volatility_guard", {})
+    if isinstance(vg, dict) and vg.get("enabled", False):
+        vmin_var = float(vg.get("min_scoring_variance", 0.18))
+        min_usage_pts = float(vg.get("min_season_pts", 14.0))
+        min_ppm = float(vg.get("min_pts_per_minute", 0.38))
+        vg_mult = float(vg.get("rating_mult", 0.93))
+        pos_u = (pinfo.get("pos") or "").strip().upper()
+        is_perimeter = (
+            pos_u.startswith("G")
+            or pos_u.startswith("F")
+            or pos_u in ("SG", "PG", "SF", "PF")
+        )
+        ppm = p_pts / max(avg_min, 1e-6)
+        if is_perimeter and season_pts >= min_usage_pts and ppm >= min_ppm and player_variance >= vmin_var:
+            raw_score = min(raw_score * vg_mult, rs_cap)
+
+    decline_factor = 1.0
+    if season_min > 0 and recent_min < season_min * 0.80:
+        decline_factor = max(recent_min / season_min, 0.85)
+        raw_score = min(raw_score * decline_factor, rs_cap)
+
+    card_boost = _est_card_boost(proj_min, p_pts, team_abbr, player_name=pinfo["name"])
+    avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
+    chalk_ev = round(raw_score * (avg_slot + card_boost), 2)
+    ceiling_score = raw_score * (1.0 + (player_variance * 0.5))
+    ceiling_ev = round(ceiling_score * (avg_slot + card_boost), 2)
+    ceiling_score = round(ceiling_score, 1)
+
+    return {
+        "id": pinfo["id"],
+        "name": pinfo["name"],
+        "player_variance": round(player_variance, 3),
+        "pos": pinfo["pos"],
+        "team": team_abbr,
+        "rating": round(raw_score, 1),
+        "chalk_ev": chalk_ev,
+        "ceiling_score": ceiling_score,
+        "ceiling_ev": ceiling_ev,
+        "predMin": round(proj_min, 1),
+        "pts": round(p_pts, 1),
+        "reb": round(p_reb, 1),
+        "ast": round(p_ast, 1),
+        "stl": round(p_stl, 1),
+        "blk": round(p_blk, 1),
+        "tov": round(tov, 1),
+        "est_mult": card_boost,
+        "slot": "1.0x",
+        "_decline": round(decline_factor, 2),
+        "_cascade_bonus": round(cascade_bonus, 1),
+        "season_min": round(stats.get("season_min", avg_min), 1),
+        "recent_min": round(recent_min, 1),
+        "season_pts": round(stats.get("season_pts", p_pts), 1),
+        "recent_pts": round(stats.get("recent_pts", p_pts), 1),
+        "season_reb": round(stats.get("season_reb", p_reb), 1),
+        "recent_reb": round(stats.get("recent_reb", p_reb), 1),
+        "season_ast": round(stats.get("season_ast", p_ast), 1),
+        "recent_ast": round(stats.get("recent_ast", p_ast), 1),
+        "season_stl": round(stats.get("season_stl", p_stl), 1),
+        "recent_stl": round(stats.get("recent_stl", p_stl), 1),
+        "season_blk": round(stats.get("season_blk", p_blk), 1),
+        "recent_blk": round(stats.get("recent_blk", p_blk), 1),
+        "injury_status": pinfo.get("injury_status", ""),
+        "_hot_streak": bool(
+            season_pts > 0
+            and recent_pts / season_pts >= float(_cfg("signals.hot_streak_ratio", 1.15))
+        ),
+        "_fv_edge_map": fv_out.get("edge_map") or {},
+        "fv_confidence": float(fv_out.get("confidence") or 0.0),
+        "_fv_hit_probs": {
+            "points": {
+                "over": float((fv_out.get("pts") or {}).get("hit_prob_over") or 0),
+                "under": float((fv_out.get("pts") or {}).get("hit_prob_under") or 0),
+            },
+            "rebounds": {
+                "over": float((fv_out.get("reb") or {}).get("hit_prob_over") or 0),
+                "under": float((fv_out.get("reb") or {}).get("hit_prob_under") or 0),
+            },
+            "assists": {
+                "over": float((fv_out.get("ast") or {}).get("hit_prob_over") or 0),
+                "under": float((fv_out.get("ast") or {}).get("hit_prob_under") or 0),
+            },
+        },
+    }
+
+
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
-                   cascade_bonus=0.0, is_b2b=False):
+                   cascade_bonus=0.0, is_b2b=False,
+                   prefetched_gamelog=None, dvp_data=None, player_odds_map=None, opp_abbr=None):
     if pinfo.get("is_out"): return None
     # Skip day-to-day and doubtful players — high scratch risk
     if pinfo.get("injury_status") in ("DTD", "DOUBT"): return None
@@ -2563,6 +2822,15 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     base = pts + reb + ast
     if base <= 0:
         return None
+
+    fv_cfg = _cfg("fair_value", _CONFIG_DEFAULTS.get("fair_value", {}))
+    if fv_cfg.get("enabled") and prefetched_gamelog and len(prefetched_gamelog.get("points") or []) >= 3:
+        return _project_player_fair_value_body(
+            pinfo, stats, spread, total, side, team_abbr,
+            cascade_bonus, is_b2b, prefetched_gamelog,
+            opp_abbr, dvp_data, player_odds_map,
+            proj_min, avg_min, pts, reb, ast, stl, blk, tov, fv_cfg,
+        )
 
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
@@ -2883,6 +3151,7 @@ def _enrich_projections_with_odds(all_proj: list, games: list) -> None:
     blend_weight = float(_cfg("odds_enrichment.blend_weight", 0.2))
     min_div_pct = float(_cfg("odds_enrichment.min_divergence_pct", 0.15))
     upward_only = _cfg("odds_enrichment.upward_only", True)
+    bidirectional = bool(_cfg("odds_enrichment.bidirectional", False)) or not upward_only
 
     # Reuse existing bulk odds fetcher (1 + N API calls, already parallelized)
     odds_map = _build_player_odds_map(games)
@@ -2904,19 +3173,24 @@ def _enrich_projections_with_odds(all_proj: list, games: list) -> None:
         if ast_odds:
             p["odds_ast_line"] = ast_odds.get("line", 0)
 
-        # Scoring signal: blend if books diverge upward from our projection
+        # Scoring signal: blend when books diverge materially from our projection
         odds_pts = pts_odds.get("line", 0)
         model_pts = p.get("pts", 0)
         if odds_pts > 0 and model_pts > 0:
             divergence = (odds_pts - model_pts) / model_pts
-            if divergence > min_div_pct:
-                if not upward_only or odds_pts > model_pts:
+            should_blend = abs(divergence) > min_div_pct and (
+                bidirectional or (upward_only and odds_pts > model_pts)
+            )
+            if should_blend:
+                if bidirectional or odds_pts > model_pts:
                     new_pts = model_pts * (1 - blend_weight) + odds_pts * blend_weight
-                    # Nudge predMin proportionally (higher pts → more usage/minutes)
                     pts_ratio = new_pts / max(model_pts, 0.1)
                     pred_min = p.get("predMin", 0)
                     if pred_min > 0:
-                        p["predMin"] = round(pred_min * min(pts_ratio, 1.15), 1)  # cap 15% nudge
+                        if new_pts >= model_pts:
+                            p["predMin"] = round(pred_min * min(pts_ratio, 1.15), 1)
+                        else:
+                            p["predMin"] = round(pred_min * max(pts_ratio, 0.88), 1)
                     p["pts"] = round(new_pts, 1)
                     p["_odds_adjusted"] = True
                     enriched += 1
@@ -3644,7 +3918,7 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
 # _run_game: fetches rosters, runs cascade, projects all players for one game
 # _build_lineups: top-5 chalk (MILP) + moonshot (ranks 6-10 same EV)
 # ─────────────────────────────────────────────────────────────────────────────
-def _run_game(game):
+def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
     cache_key = _ck_game_proj(game['gameId'])
     cached = _cg(cache_key)
     if cached: return cached
@@ -3685,8 +3959,17 @@ def _run_game(game):
         b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
         # Determine opponent for matchup analysis
         opp_abbr = game["away"]["abbr"] if sd == "home" else game["home"]["abbr"]
-        proj = project_player(p, stats, game["spread"], game["total"], sd, ab,
-                              cascade_bonus=cascade_bonus, is_b2b=bool(b2b))
+        prefetched = None
+        if gamelog_map is not None:
+            prefetched = gamelog_map.get(str(p["id"])) or gamelog_map.get(p["id"])
+        proj = project_player(
+            p, stats, game["spread"], game["total"], sd, ab,
+            cascade_bonus=cascade_bonus, is_b2b=bool(b2b),
+            prefetched_gamelog=prefetched,
+            dvp_data=dvp_data,
+            player_odds_map=player_odds_map,
+            opp_abbr=opp_abbr,
+        )
         if proj:
             proj["opp"] = opp_abbr  # store opponent for matchup factor in _build_lineups
             out.append(proj)
@@ -4997,8 +5280,18 @@ def _get_slate_impl():
     try:
         all_proj = []
         game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
+        fv_on = _cfg("fair_value.enabled", False)
+        gm, dvp_p, pom_p, dst_p = _fair_value_prefetch_for_games(draftable_games)
+        if gm is None:
+            gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
+        else:
+            gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = gm, dvp_p, pom_p, dst_p
+
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            futs = {pool.submit(_run_game, g): g for g in draftable_games}
+            futs = {
+                pool.submit(_run_game, g, gamelog_map, _dvp_data, player_odds_prefetch): g
+                for g in draftable_games
+            }
             for fut in as_completed(futs):
                 try:
                     game = futs[fut]
@@ -5014,16 +5307,17 @@ def _get_slate_impl():
         except Exception as _odds_err:
             print(f"[odds_enrich] call-site error: {_odds_err}")
         # Matchup data: opponent defensive stats + game opponent map (used by Layer 1.5 and _build_lineups)
-        _def_stats = {}
-        try:
-            _def_stats = _fetch_team_def_stats()
-        except Exception as _def_err:
-            print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
-        _dvp_data = {}
-        try:
-            _dvp_data = _fetch_dvp_data()
-        except Exception as _dvp_err:
-            print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
+        if not fv_on:
+            _def_stats = {}
+            try:
+                _def_stats = _fetch_team_def_stats()
+            except Exception as _def_err:
+                print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+            _dvp_data = {}
+            try:
+                _dvp_data = _fetch_dvp_data()
+            except Exception as _dvp_err:
+                print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
         _game_opp_map = _build_game_opp_map(draftable_games)
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
@@ -5430,8 +5724,12 @@ def _force_regenerate_sync(scope: str):
     # fails we preserve the existing cache so cold-start recovery still works.
     all_proj = []
     game_proj_map = {}
+    gm, dvp_p, pom_p, dst_p = _fair_value_prefetch_for_games(game_pool)
     with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-        futs = {pool.submit(_run_game, g): g for g in game_pool}
+        if gm is None:
+            futs = {pool.submit(_run_game, g): g for g in game_pool}
+        else:
+            futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in game_pool}
         for fut in as_completed(futs):
             try:
                 game = futs[fut]
@@ -5446,14 +5744,23 @@ def _force_regenerate_sync(scope: str):
 
     # Step 2: Build slate-wide lineups (Starting 5 + Moonshot) with matchup data
     _fr_def_stats = {}
-    try:
-        _fr_def_stats = _fetch_team_def_stats()
-    except Exception:
-        pass
+    _fr_dvp_data = None
+    if gm is not None:
+        _fr_def_stats = dst_p or {}
+        _fr_dvp_data = dvp_p
+    else:
+        try:
+            _fr_def_stats = _fetch_team_def_stats()
+        except Exception:
+            pass
+        try:
+            _fr_dvp_data = _fetch_dvp_data()
+        except Exception:
+            pass
     _fr_starts = [g["startTime"] for g in games if g.get("startTime")]
     _fr_any_locked = bool(_fr_starts) and any(_is_locked(st) for st in _fr_starts)
     _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
-    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats)
+    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data)
     try:
         chalk, upside = _lineup_review_opus(chalk, upside, all_proj, game_pool, core_pool=core_pool)
     except Exception as _rev_err:
@@ -6408,6 +6715,8 @@ async def injury_check(request: Request):
 
     # Regenerate only affected games
     games_map = {g["gameId"]: g for g in games}
+    affected_games = [games_map[gid] for gid in injured_games if gid in games_map]
+    gm_prefetch, dvp_prefetch, odds_prefetch, _dst_prefetch = _fair_value_prefetch_for_games(affected_games)
     for gid in injured_games:
         game = games_map.get(gid)
         if not game:
@@ -6418,7 +6727,10 @@ async def injury_check(request: Request):
         except Exception:
             pass
         try:
-            projections = _run_game(game)
+            if gm_prefetch is None:
+                projections = _run_game(game)
+            else:
+                projections = _run_game(game, gm_prefetch, dvp_prefetch, odds_prefetch)
             if projections:
                 all_game_projs[gid] = projections
                 _cs(_ck_game_proj(gid), projections)
@@ -6641,10 +6953,10 @@ def _build_player_odds_map(games):
                 f"{ODDS_API_BASE}/sports/basketball_nba/events/{event_id}/odds",
                 params={
                     "apiKey":     api_key,
-                    "regions":    "us",
+                    "regions":    "us,eu",
                     "markets":    markets_param,
                     "oddsFormat": "american",
-                    "bookmakers": "draftkings,fanduel,betmgm,pointsbet",
+                    "bookmakers": "pinnacle,draftkings,fanduel,betmgm,pointsbet",
                 },
                 timeout=_T_DEFAULT,
             )
@@ -6663,10 +6975,15 @@ def _build_player_odds_map(games):
     with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         event_results = list(pool.map(_fetch_event_props, game_event_ids))
 
+    _book_weights = _cfg("fair_value.book_weights", _CONFIG_DEFAULTS.get("fair_value", {}).get("book_weights", {}))
+    _book_weights = {str(k).lower(): float(v) for k, v in (_book_weights or {}).items()}
+
     # Step 3: aggregate lines per (player_name_lower, stat_type)
-    raw = {}  # (player_key, stat_type) -> {over_lines, under_lines, over_prices, under_prices}
+    raw = {}  # (player_key, stat_type) -> weighted lists
     for data in event_results:
         for book in data.get("bookmakers", []):
+            bk = str(book.get("key", "")).lower()
+            bw = float(_book_weights.get(bk, 1.0))
             for mkt in book.get("markets", []):
                 stat_type = _market_to_stat.get(mkt["key"])
                 if not stat_type:
@@ -6680,15 +6997,26 @@ def _build_player_odds_map(games):
                     price      = outcome.get("price", -110)
                     key = (player_key, stat_type)
                     if key not in raw:
-                        raw[key] = {"over_lines": [], "under_lines": [], "over_prices": [], "under_prices": []}
+                        raw[key] = {
+                            "over_lines": [], "under_lines": [], "over_prices": [], "under_prices": [],
+                            "over_w": [], "under_w": [],
+                        }
                     if direction == "over":
                         raw[key]["over_lines"].append(pt)
                         raw[key]["over_prices"].append(price)
+                        raw[key]["over_w"].append(bw)
                     else:
                         raw[key]["under_lines"].append(pt)
                         raw[key]["under_prices"].append(price)
+                        raw[key]["under_w"].append(bw)
 
-    # Step 4: compute consensus line per player+stat
+    def _wmean(vals, wts):
+        if not vals:
+            return 0.0
+        ws = sum(wts) if wts and len(wts) == len(vals) else float(len(vals))
+        return sum(v * (wts[i] if wts and i < len(wts) else 1.0) for i, v in enumerate(vals)) / max(ws, 1e-9)
+
+    # Step 4: compute consensus line per player+stat (book-weighted; fallback mode)
     result_map = {}
     for (player_key, stat_type), d in raw.items():
         if not d["over_lines"]:
@@ -6696,17 +7024,41 @@ def _build_player_odds_map(games):
         try:
             consensus = mode(d["over_lines"])
         except StatisticsError:
-            consensus = round(round(mean(d["over_lines"]) * 2) / 2, 1)
+            consensus = round(round(_wmean(d["over_lines"], d.get("over_w")) * 2) / 2, 1)
+        o_over = int(round(_wmean(d["over_prices"], d.get("over_w"))))
+        o_under = int(round(_wmean(d["under_prices"], d.get("under_w")))) if d["under_prices"] else -110
         result_map[(player_key, stat_type)] = {
             "line":            consensus,
-            "odds_over":       int(mean(d["over_prices"])) if d["over_prices"] else -110,
-            "odds_under":      int(mean(d["under_prices"])) if d["under_prices"] else -110,
+            "odds_over":       o_over if d["over_prices"] else -110,
+            "odds_under":      o_under,
             "books_consensus": len(d["over_lines"]),
         }
 
     print(f"[odds_map] fetched {len(result_map)} player+stat lines from Odds API")
     if not result_map and cached_odds_map:
         return cached_odds_map
+
+    if result_map:
+        try:
+            _ock = f"opening_odds_v1_{_today_str()}"
+            ocp = _cp(_ock)
+            if not ocp.exists():
+                serial = {f"{a}||{b}": dict(v) for (a, b), v in result_map.items()}
+                _cs(_ock, {"data": serial, "fingerprint": fp})
+            else:
+                prev = _cg(_ock)
+                if isinstance(prev, dict) and isinstance(prev.get("data"), dict):
+                    for (a, b), v in result_map.items():
+                        sk = f"{a}||{b}"
+                        old = prev["data"].get(sk)
+                        if isinstance(old, dict) and "line" in old:
+                            v["line_opening"] = old.get("line")
+                            try:
+                                v["line_movement"] = round(float(v["line"]) - float(old["line"]), 2)
+                            except (TypeError, ValueError):
+                                pass
+        except Exception as _op_err:
+            print(f"[odds_map] opening line cache: {_op_err}")
 
     try:
         _cs(cache_key, {"ts": time.time(), "data": result_map})
@@ -6753,8 +7105,13 @@ def _get_projections_for_date(date_obj):
         all_proj = _hydrate_game_projs_from_github(draftable)
     # Layer 3: full pipeline
     if not all_proj:
+        gm, dvp_p, pom_p, _dst = _fair_value_prefetch_for_games(draftable)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            for fut in as_completed({pool.submit(_run_game, g): g for g in draftable}):
+            if gm is None:
+                futs = {pool.submit(_run_game, g): g for g in draftable}
+            else:
+                futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in draftable}
+            for fut in as_completed(futs):
                 try:
                     all_proj.extend(fut.result())
                 except Exception as e:
@@ -6892,8 +7249,12 @@ def _run_line_engine_for_date(date):
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
+        gm, dvp_p, pom_p, _dst = _fair_value_prefetch_for_games(target_games)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            futs = {pool.submit(_run_game, g): g for g in target_games}
+            if gm is None:
+                futs = {pool.submit(_run_game, g): g for g in target_games}
+            else:
+                futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in target_games}
             try:
                 for fut in as_completed(futs, timeout=_T_EXECUTOR):
                     try: all_proj.extend(fut.result(timeout=_T_DEFAULT))
@@ -6919,7 +7280,16 @@ def _run_line_engine_for_date(date):
         dvp_data = _fetch_dvp_data()
     except Exception as _dvp_err:
         print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
-    result = run_line_engine(all_proj, target_games, line_config, player_odds_map, news_context=news_context, dvp_data=dvp_data)
+    _fv_edge_map = None
+    if _cfg("fair_value.enabled", False):
+        _fv_edge_map = {}
+        for _p in all_proj:
+            if _p.get("id") and _p.get("_fv_edge_map"):
+                _fv_edge_map[_p["id"]] = _p["_fv_edge_map"]
+    result = run_line_engine(
+        all_proj, target_games, line_config, player_odds_map,
+        news_context=news_context, dvp_data=dvp_data, edge_map=_fv_edge_map,
+    )
     return result, None
 
 
@@ -8023,12 +8393,17 @@ async def line_history():
                 if p.get("result") and p["result"] not in ("pending", ""):
                     results.append(_normalize_line_pick(p))
 
-    # Deduplicate by (player_name, direction): allow same player to appear as both
-    # over and under on the same day, but prevent duplicates of the exact same pick.
+    # Deduplicate by date + player + direction + stat type so we keep legitimate
+    # historical repeats across different dates while still dropping accidental dup rows.
     seen: set = set()
     deduped = []
     for r in results:
-        dedup_key = (r.get("player_name", ""), r.get("direction", ""))
+        dedup_key = (
+            r.get("date", ""),
+            r.get("player_name", ""),
+            r.get("direction", ""),
+            r.get("stat_type", ""),
+        )
         if dedup_key not in seen:
             seen.add(dedup_key)
             deduped.append(r)
@@ -9418,16 +9793,44 @@ async def lab_calibrate_boost():
 # Safest 3-leg player prop parlay optimizer (certainty over edge).
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _gamelog_parse_stat_val(raw):
+    try:
+        if raw is None:
+            return None
+        s = str(raw)
+        if ":" in s:
+            return float(s.split(":")[0])
+        return float(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def _gamelog_opponent_abbr(event: dict) -> str:
+    """Best-effort opponent abbreviation from ESPN gamelog event."""
+    if not event:
+        return ""
+    opp = event.get("opponent")
+    if isinstance(opp, dict):
+        return (opp.get("abbreviation") or opp.get("abbr") or "") or ""
+    for c in event.get("competitions", []) or []:
+        for comp in c.get("competitors", []) or []:
+            ab = (comp.get("team") or {}).get("abbreviation") or comp.get("abbreviation")
+            if ab:
+                return str(ab)
+    return ""
+
+
 def _fetch_gamelog(pid, num_games=15):
     """Fetch a player's game log from ESPN and return structured stat arrays.
 
     Hits https://site.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{pid}/gamelog
     Caches in /tmp per player per date.
 
-    Returns: {"points": [float, ...], "rebounds": [float, ...], "assists": [float, ...], "minutes": [float, ...]}
+    Returns: points/rebounds/assists/minutes plus steals/blocks/threes/tov/fga when labels exist,
+             and opponent_abbr[] parallel to games (best-effort).
              or {} on failure.
     """
-    cache_key = f"gamelog_{pid}"
+    cache_key = f"gamelog_v2_{pid}"
     cached = _cg(cache_key)
     if cached:
         return cached
@@ -9443,7 +9846,12 @@ def _fetch_gamelog(pid, num_games=15):
         #   Top-level: labels[] (display: "MIN","PTS","REB","AST",...) and
         #              names[] (machine: "minutes","points","totalRebounds","assists",...)
         #   Data:      seasonTypes[] -> categories[] -> events[] (each event has stats[] aligned to labels/names)
-        stat_arrays = {"points": [], "rebounds": [], "assists": [], "minutes": []}
+        stat_arrays = {
+            "points": [], "rebounds": [], "assists": [], "minutes": [],
+            "steals": [], "blocks": [], "turnovers": [], "threes": [],
+            "field_goals_attempted": [],
+        }
+        opponent_abbr = []
 
         # Build index map from top-level labels (display names)
         top_labels = [lbl.lower() for lbl in data.get("labels", [])]
@@ -9453,13 +9861,18 @@ def _fetch_gamelog(pid, num_games=15):
             ("rebounds", ["reb"]),
             ("assists", ["ast"]),
             ("minutes", ["min"]),
+            ("steals", ["stl"]),
+            ("blocks", ["blk"]),
+            ("turnovers", ["to", "tov"]),
+            ("threes", ["3pm", "3pt", "3fgm"]),
+            ("field_goals_attempted", ["fga", "fg att"]),
         ]:
             for lbl in lbl_options:
                 if lbl in top_labels:
                     idx_map[stat_name] = top_labels.index(lbl)
                     break
 
-        if not idx_map:
+        if not idx_map or "points" not in idx_map:
             return {}
 
         # Collect game rows from seasonTypes -> categories -> events
@@ -9469,23 +9882,30 @@ def _fetch_gamelog(pid, num_games=15):
                     stats = event.get("stats", [])
                     if not stats:
                         continue
-                    for stat_name, idx in idx_map.items():
-                        if idx < len(stats):
-                            try:
-                                raw = stats[idx]
-                                # ESPN returns minutes as "MM:SS" — take integer part
-                                val = float(str(raw).split(":")[0]) if ":" in str(raw) else float(raw)
+                    opponent_abbr.append(_gamelog_opponent_abbr(event))
+                    for stat_name in stat_arrays.keys():
+                        idx = idx_map.get(stat_name)
+                        if idx is not None and idx < len(stats):
+                            val = _gamelog_parse_stat_val(stats[idx])
+                            if val is not None:
                                 stat_arrays[stat_name].append(val)
-                            except (ValueError, TypeError):
-                                pass
+                            else:
+                                stat_arrays[stat_name].append(0.0)
+                        else:
+                            stat_arrays[stat_name].append(0.0)
 
         # ESPN returns newest-first within each month category — reverse to
         # chronological (oldest-first) so [-N:] gives the N most recent games.
         for k in stat_arrays:
             stat_arrays[k].reverse()
             stat_arrays[k] = stat_arrays[k][-num_games:]
+        opponent_abbr.reverse()
+        opponent_abbr = opponent_abbr[-num_games:]
 
-        if any(len(v) > 0 for v in stat_arrays.values()):
+        if opponent_abbr:
+            stat_arrays["opponent_abbr"] = opponent_abbr
+
+        if any(len(v) > 0 for k, v in stat_arrays.items() if k != "opponent_abbr"):
             _cs(cache_key, stat_arrays)
             return stat_arrays
         return {}
@@ -9495,9 +9915,60 @@ def _fetch_gamelog(pid, num_games=15):
         return {}
 
 
+def _fetch_gamelogs_for_slate(player_ids, num_games=15):
+    """Batch-fetch gamelogs for many player IDs (slate-wide). Same as batch helper."""
+    return _fetch_gamelogs_batch(player_ids, num_games=num_games)
+
+
+def _slate_prefetch_gamelogs(draftable_games, num_games=15):
+    """Union rosters across draftable games and batch-fetch gamelogs (fair_value / cache warm)."""
+    ids = []
+    for g in draftable_games:
+        try:
+            hr = fetch_roster(g["home"]["id"], g["home"]["abbr"])
+            ar = fetch_roster(g["away"]["id"], g["away"]["abbr"])
+            for p in hr + ar:
+                ids.append(str(p["id"]))
+        except Exception as e:
+            print(f"[gamelog-slate] roster err {g.get('gameId')}: {e}")
+    if not ids:
+        return {}
+    return _fetch_gamelogs_for_slate(list(set(ids)), num_games=num_games)
+
+
+def _fair_value_prefetch_for_games(games):
+    """When fair_value.enabled: def stats, DvP, gamelogs, odds map for _run_game. Else (None,None,None,None).
+    grep: FAIR VALUE PREFETCH — shared batch inputs for slate/line/parlay/injury-check.
+    """
+    if not _cfg("fair_value.enabled", False):
+        return None, None, None, None
+    _def_stats = {}
+    try:
+        _def_stats = _fetch_team_def_stats()
+    except Exception as e:
+        print(f"[fair_value prefetch] def {e}")
+    _dvp_data = {}
+    try:
+        _dvp_data = _fetch_dvp_data()
+    except Exception as e:
+        print(f"[fair_value prefetch] dvp {e}")
+    try:
+        n_g = int(_cfg("fair_value.primary_window", 15) or 15)
+        gamelog_map = _slate_prefetch_gamelogs(games, num_games=n_g)
+    except Exception as e:
+        print(f"[fair_value prefetch] gamelog {e}")
+        gamelog_map = {}
+    try:
+        player_odds_prefetch = _build_player_odds_map(games)
+    except Exception as e:
+        print(f"[fair_value prefetch] odds {e}")
+        player_odds_prefetch = {}
+    return gamelog_map, _dvp_data, player_odds_prefetch, _def_stats
+
+
 def _fetch_gamelogs_batch(player_ids, num_games=15):
     """Fetch gamelogs for multiple players in parallel.
-    Returns {player_id: {"points": [...], "rebounds": [...], "assists": [...], "minutes": [...]}}"""
+    Returns {player_id: gamelog dict}"""
     result = {}
     with ThreadPoolExecutor(max_workers=_W_L5) as pool:
         futures = {pool.submit(_fetch_gamelog, pid, num_games): pid for pid in player_ids}
@@ -9532,8 +10003,12 @@ def _run_parlay_engine_sync(today):
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
+        gm, dvp_p, pom_p, _dst = _fair_value_prefetch_for_games(target_games)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            futs = {pool.submit(_run_game, g): g for g in target_games}
+            if gm is None:
+                futs = {pool.submit(_run_game, g): g for g in target_games}
+            else:
+                futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in target_games}
             try:
                 for fut in as_completed(futs, timeout=_T_EXECUTOR):
                     try:
@@ -9605,9 +10080,16 @@ def _run_parlay_engine_sync(today):
         "odds_available": not projection_only,
         "projection_only": projection_only,
     }
+    fv_parlay = {}
+    if _cfg("fair_value.enabled", False):
+        for _p in all_proj:
+            if _p.get("id") and _p.get("_fv_hit_probs"):
+                fv_parlay[str(_p["id"])] = _p
+
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
         rw_statuses, parlay_config, gamelog_player_ids=gamelog_player_ids, dvp_data=_parlay_dvp_data,
+        fair_value_data=fv_parlay if fv_parlay else None,
     )
     if result:
         result["projection_only"] = projection_only
@@ -9629,10 +10111,21 @@ async def get_parlay(request: Request):
         today = _et_date()
         today_str = today.isoformat()
 
-        # Determine lock status using same logic as predict tab
+        # Determine lock status using same logic as predict tab.
+        # Midnight rollover guard: if ET date advanced but late games from
+        # yesterday are still in lock window, keep parlay locked.
         games = fetch_games(today)
         start_times = [g["startTime"] for g in games if g.get("startTime")]
         slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
+        if not slate_locked:
+            try:
+                yday = today - timedelta(days=1)
+                y_games = fetch_games(yday)
+                y_starts = [g["startTime"] for g in y_games if g.get("startTime")]
+                if y_starts and any(_is_locked(st) for st in y_starts):
+                    slate_locked = True
+            except Exception:
+                pass
 
         # Cache check (30-min TTL)
         cached = _cg(_CK_PARLAY)
@@ -9742,6 +10235,19 @@ async def parlay_force_regenerate():
     No CRON_SECRET required — user-facing from the Parlay tab."""
     today = _et_date()
     today_str = today.isoformat()
+    slate_locked = False
+    try:
+        games = fetch_games(today)
+        starts = [g["startTime"] for g in games if g.get("startTime")]
+        slate_locked = bool(starts) and any(_is_locked(st) for st in starts)
+        if not slate_locked:
+            yday = today - timedelta(days=1)
+            y_games = fetch_games(yday)
+            y_starts = [g["startTime"] for g in y_games if g.get("startTime")]
+            if y_starts and any(_is_locked(st) for st in y_starts):
+                slate_locked = True
+    except Exception:
+        slate_locked = False
 
     # Clear /tmp parlay cache so the engine runs fresh
     try:
@@ -9771,6 +10277,7 @@ async def parlay_force_regenerate():
             "parlay_score": result.get("parlay_score"),
             "narrative": result.get("narrative", ""),
             "projection_only": result.get("projection_only", False),
+            "locked": slate_locked,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         _github_write_file(f"data/parlays/{today_str}.json", json.dumps(_save_payload),
@@ -9779,6 +10286,7 @@ async def parlay_force_regenerate():
         print(f"[parlay-force-regen] GitHub save failed (non-fatal): {_pe}")
 
     # Populate /tmp cache
+    result["locked"] = slate_locked
     result["_cached_at"] = datetime.utcnow().isoformat()
     result["_cache_date"] = today_str
     _cs(_CK_PARLAY, result)
@@ -9808,10 +10316,9 @@ async def parlay_history(request: Request):
                 return _hist_cached["data"]
 
     items = _github_list_dir("data/parlays")
-    _skip_dates = {"2026-03-21"}  # Test dates to exclude from history
     json_dates = sorted(
         [i["name"][:-5] for i in items
-         if i.get("name", "").endswith(".json") and i["name"][:-5] not in _skip_dates],
+         if i.get("name", "").endswith(".json")],
         reverse=True,
     )[:30]
 

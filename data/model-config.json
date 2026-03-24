@@ -345,11 +345,56 @@
     "blend_weight": 0.5,
     "per_game_carry": 2
   },
+  "fair_value": {
+    "enabled": true,
+    "primary_window": 15,
+    "short_window": 10,
+    "ai_blend_weight": 0.15,
+    "cascade_policy": "elite_only",
+    "elite_cascade_ppg": 27.0,
+    "elite_players": [
+      "Nikola Jokic",
+      "Shai Gilgeous-Alexander",
+      "Luka Doncic",
+      "Giannis Antetokounmpo",
+      "Jayson Tatum"
+    ],
+    "ats_regression_strength": 0.5,
+    "closeness_strength": 0.4,
+    "closeness_max": 1.5,
+    "default_total": 222.0,
+    "book_weights": {
+      "pinnacle": 1.5,
+      "draftkings": 1.0,
+      "fanduel": 1.0,
+      "betmgm": 0.9,
+      "pointsbetus": 0.8
+    },
+    "stat_types": [
+      "points",
+      "rebounds",
+      "assists",
+      "steals",
+      "blocks",
+      "threes"
+    ],
+    "edge_thresholds": {
+      "min_edge_pct": 5.0,
+      "min_ev": 0.03,
+      "sharp_aligned_bonus": 1.15
+    },
+    "compression": {
+      "compression_divisor": 5.5,
+      "compression_power": 0.72,
+      "rs_cap": 20.0
+    }
+  },
   "odds_enrichment": {
     "enabled": true,
     "blend_weight": 0.2,
     "min_divergence_pct": 0.15,
-    "upward_only": true
+    "upward_only": true,
+    "bidirectional": true
   },
   "lineup": {
     "chalk_rating_floor": 2.0,

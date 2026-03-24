@@ -14,25 +14,11 @@ import math
 import itertools
 from datetime import datetime, timezone
 from api.shared import STAT_ABBR
+from api.odds_math import american_to_implied as _american_to_implied
 
 # ── Statistical helpers ──────────────────────────────────────────────────────
 
 _STAT_LABEL = STAT_ABBR
-
-def _american_to_implied(american_odds):
-    """Convert American odds (e.g. -140, +120) to implied probability [0, 1]."""
-    if american_odds is None:
-        return None
-    try:
-        odds = float(american_odds)
-    except (TypeError, ValueError):
-        return None
-    if odds == 0:
-        return None
-    if odds < 0:
-        return abs(odds) / (abs(odds) + 100.0)
-    else:
-        return 100.0 / (odds + 100.0)
 
 
 def _z_to_probability(z):
@@ -196,7 +182,8 @@ def select_parlay_gamelog_player_ids(projections, games, player_odds_map, rw_sta
 # ── Candidate Leg Builder ────────────────────────────────────────────────────
 
 def build_candidate_legs(projections, games, player_odds_map, gamelogs,
-                         rw_statuses, parlay_config=None, gamelog_player_ids=None, dvp_data=None):
+                         rw_statuses, parlay_config=None, gamelog_player_ids=None, dvp_data=None,
+                         fair_value_data=None):
     """Build all valid candidate parlay legs from projections + odds.
 
     Args:
@@ -376,6 +363,17 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                     continue
                 std_dev = _std_dev(log_values)
                 model_prob = _compute_hit_probability(proj_val, book_line, std_dev, direction)
+                if fair_value_data:
+                    fp = fair_value_data.get(pid) or fair_value_data.get(str(pid))
+                    if fp and isinstance(fp, dict):
+                        hp = (fp.get("_fv_hit_probs") or {}).get(stat) or {}
+                        try:
+                            if direction == "over" and hp.get("over") is not None:
+                                model_prob = float(hp["over"])
+                            elif direction == "under" and hp.get("under") is not None:
+                                model_prob = float(hp["under"])
+                        except (TypeError, ValueError):
+                            pass
                 if model_prob is None:
                     _f["no_log"] += 1
                     continue
@@ -830,7 +828,8 @@ def _find_best_market_match(pool, pair, cfg=None):
 
 
 def run_parlay_engine(projections, games, player_odds_map, gamelogs,
-                      rw_statuses=None, parlay_config=None, gamelog_player_ids=None, dvp_data=None):
+                      rw_statuses=None, parlay_config=None, gamelog_player_ids=None, dvp_data=None,
+                      fair_value_data=None):
     """Find the optimal 3-leg parlay from today's slate.
 
     Uses a PRESCRIPTIVE builder that targets the ideal 3-leg structure:
@@ -857,6 +856,7 @@ def run_parlay_engine(projections, games, player_odds_map, gamelogs,
     candidates, filter_funnel = build_candidate_legs(
         projections, games, player_odds_map, gamelogs,
         rw_statuses, cfg, gamelog_player_ids=gamelog_player_ids, dvp_data=dvp_data,
+        fair_value_data=fair_value_data,
     )
 
     if len(candidates) < 3:
