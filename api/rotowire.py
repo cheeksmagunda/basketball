@@ -328,7 +328,7 @@ def _map_status(raw):
     if not raw:
         return STATUS_EXPECTED
     r = raw.lower().strip()
-    if r in ("out", "ruled out", "o", "injured", "inj"):
+    if r in ("out", "ruled out", "o", "injured", "inj", "suspended", "suspension"):
         return STATUS_OUT
     if r in ("questionable", "gtd", "game-time", "game time", "doubtful"):
         return STATUS_QUESTIONABLE

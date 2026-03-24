@@ -3285,5 +3285,34 @@ class TestParlayHistoryAndConfigHardening:
         )
 
 
+class TestSuspendedPlayersFiltered:
+    """Suspended players must be treated as OUT — never appear in lineups."""
+
+    def test_suspended_in_is_out_check(self):
+        """ESPN 'suspended' status must set is_out=True in fetch_roster."""
+        src = open("api/index.py").read()
+        assert '"suspended"' in src, "suspended must be in is_out status list"
+        assert '"suspension"' in src, "suspension must be in is_out status list"
+        # Verify both are in the same is_out line
+        for line in src.splitlines():
+            if "is_out" in line and "inj_status" in line:
+                assert "suspended" in line, "suspended missing from is_out check"
+                assert "suspension" in line, "suspension missing from is_out check"
+                break
+
+    def test_rotowire_maps_suspended_to_out(self):
+        """RotoWire _map_status must map suspended to STATUS_OUT."""
+        from api.rotowire import _map_status, STATUS_OUT
+        assert _map_status("suspended") == STATUS_OUT
+        assert _map_status("suspension") == STATUS_OUT
+        assert _map_status("Suspended") == STATUS_OUT
+
+    def test_project_player_filters_is_out(self):
+        """project_player returns None for is_out players (including suspended)."""
+        src = open("api/index.py").read()
+        # Verify the is_out guard exists early in project_player
+        assert 'if pinfo.get("is_out"): return None' in src
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
