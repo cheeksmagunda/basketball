@@ -1803,33 +1803,32 @@ class TestMinGateOverrideAware:
         assert "card_boost.player_overrides" in src, \
             "project_player gate must look up card_boost.player_overrides"
 
-    def test_christian_braun_in_config_overrides(self):
-        """Christian Braun must be in player_overrides with boost 3.0."""
+    def test_star_player_in_config_overrides(self):
+        """Stars with consistently low boost must be in player_overrides."""
         import json, pathlib
         from api.index import _normalize_boost_name
         cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
         overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
-        norm_braun = _normalize_boost_name("Christian Braun")
+        # Kevin Durant consistently 0.5 boost — sigmoid would give ~0.5 for 27 PPG but
+        # override ensures exact value regardless of sigmoid param drift
+        norm_kd = _normalize_boost_name("Kevin Durant")
         match = next(
-            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm_braun),
+            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm_kd),
             None
         )
-        assert match is not None, "Christian Braun must be in card_boost.player_overrides"
-        assert match == pytest.approx(3.0), f"Braun override should be 3.0, got {match}"
+        assert match is not None, "Kevin Durant must be in card_boost.player_overrides"
+        assert match == pytest.approx(0.5), f"KD override should be 0.5, got {match}"
 
-    def test_jared_mccain_in_config_overrides(self):
-        """Jared McCain must be in player_overrides with boost 2.9."""
+    def test_overrides_are_stars_only(self):
+        """Player overrides should be limited to stars (low boost, high PPG).
+        Role players use sigmoid fallback or Layer 0 daily ingestion."""
         import json, pathlib
-        from api.index import _normalize_boost_name
         cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
         overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
-        norm = _normalize_boost_name("Jared McCain")
-        match = next(
-            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm),
-            None
-        )
-        assert match is not None, "Jared McCain must be in card_boost.player_overrides"
-        assert match == pytest.approx(2.9), f"McCain override should be 2.9, got {match}"
+        # All override values should be <= 0.7 (stars only)
+        for name, boost in overrides.items():
+            assert float(boost) <= 0.7, \
+                f"Override for {name} is {boost} — only stars (boost<=0.7) should be in overrides"
 
 
 class TestPerGameFloor:

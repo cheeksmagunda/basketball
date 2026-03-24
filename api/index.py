@@ -618,28 +618,19 @@ _CONFIG_DEFAULTS = {
         # Sigmoid tier estimation: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
         "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
         "big_market_discount": 0.15,
-        # Player overrides from real ownership/actuals data (boost is stable per-player ±0.1x)
+        # Player overrides — stars only (sigmoid fallback gets them wrong because
+        # high PPG → low sigmoid boost, but these are heavily drafted → truly low boost).
+        # Role players use sigmoid fallback or Layer 0 daily ingestion (preferred).
         "player_overrides": {
-            "Aaron Nesmith": 1.9, "Ace Bailey": 2.1, "Al Horford": 2.0,
-            "Amen Thompson": 0.6, "Andre Drummond": 2.3, "Anthony Edwards": 0.2,
-            "Bam Adebayo": 0.6, "Brook Lopez": 3.0, "Bryce McGowens": 3.0,
-            "Cade Cunningham": 0.2, "Cameron Payne": 3.0, "Clint Capela": 3.0,
-            "Cody Williams": 3.0, "Collin Sexton": 2.0, "Cooper Flagg": 0.7,
-            "De'Aaron Fox": 0.6, "De'Anthony Melton": 1.9, "Derik Queen": 1.4,
-            "Derrick White": 0.7, "Devin Carter": 3.0, "Donovan Clingan": 1.0,
-            "Grant Williams": 2.8, "Gui Santos": 2.6, "Isaiah Collier": 1.5,
-            "Jalen Johnson": 0.3, "Jarace Walker": 2.3, "Jaylen Brown": 0.3,
-            "Jordan Miller": 2.5, "Julian Reese": 3.0, "Julius Randle": 0.6,
-            "Kam Jones": 3.0, "Kel'el Ware": 1.4, "Kevin Durant": 0.5,
-            "Klay Thompson": 2.6, "Kon Knueppel": 0.8, "Kyle Filipowski": 2.1,
-            "Kyle Kuzma": 1.7, "LaMelo Ball": 0.6, "Leonard Miller": 3.0,
-            "Luka Dončić": 0.0, "Luke Kennard": 3.0, "Matas Buzelis": 1.4,
-            "Maxime Raynaud": 2.1, "Myles Turner": 1.6, "Noah Clowney": 2.0,
-            "OG Anunoby": 1.1, "Ousmane Dieng": 3.0, "Pat Spencer": 3.0,
-            "Precious Achiuwa": 2.2, "Reed Sheppard": 1.5, "Robert Williams III": 2.3,
-            "Ron Harper Jr.": 3.0, "Royce O'Neale": 2.0, "Rudy Gobert": 1.1,
-            "Russell Westbrook": 1.1, "Scottie Barnes": 0.5, "Simone Fontecchio": 3.0,
-            "Tristan da Silva": 2.8, "Tyler Herro": 0.8, "Victor Wembanyama": 0.3,
+            "Anthony Edwards": 0.3, "Bam Adebayo": 0.6,
+            "Cade Cunningham": 0.2, "Cooper Flagg": 0.7,
+            "De'Aaron Fox": 0.6,
+            "Donovan Mitchell": 0.2, "Jaylen Brown": 0.3,
+            "Jalen Johnson": 0.3, "James Harden": 0.3,
+            "Karl-Anthony Towns": 0.6, "Kevin Durant": 0.5,
+            "LaMelo Ball": 0.6, "Luka Dončić": 0.0,
+            "Paolo Banchero": 0.6, "Scottie Barnes": 0.5,
+            "Shai Gilgeous-Alexander": 0.0, "Victor Wembanyama": 0.3,
         },
     },
     "game_script": {
