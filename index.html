@@ -1407,6 +1407,8 @@
         <div id="gameScriptBadge" style="font-family:'Barlow Condensed',sans-serif;font-size:0.68rem;font-weight:700;color:var(--text-dim);letter-spacing:0.06em;text-transform:uppercase;text-align:right;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-pill);white-space:nowrap;visibility:hidden;margin-left:auto"></div>
       </div>
 
+      <div id="strategyInsight" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);font-family:'Barlow Condensed',sans-serif;font-size:0.78rem;color:var(--color-text-muted);line-height:1.45;letter-spacing:0.02em"></div>
+
       <div id="picksList"></div>
     </div>
 
@@ -1945,6 +1947,8 @@ function switchPredictSub(sub) {
 function _backToGameGrid() {
   document.getElementById('gameHeaderRow').style.display = 'none';
   document.getElementById('picksList').innerHTML = '';
+  const si = document.getElementById('strategyInsight');
+  if (si) si.style.display = 'none';
   document.getElementById('gameAnalysisEmpty').style.display = 'block';
   document.getElementById('gameSel').value = '';
 }
@@ -2695,13 +2699,32 @@ async function runAnalysis() {
     document.getElementById('gameHeaderRow').style.display = 'flex';
 
     const badge = document.getElementById('gameScriptBadge');
-    if (PICKS_DATA.gameScript) {
+    const strat = PICKS_DATA.strategy;
+    if (strat && strat.label) {
+      const total = PICKS_DATA.game?.total;
+      const spread = PICKS_DATA.game?.spread ? Math.abs(PICKS_DATA.game.spread) : null;
+      let badgeText = `<b>${_escapeHtml(strat.label)}</b>`;
+      const parts = [];
+      if (total) parts.push(`O/U ${total}`);
+      if (spread) parts.push(`Spread ${spread}`);
+      if (parts.length) badgeText += ` · ${parts.join(' · ')}`;
+      badge.innerHTML = badgeText;
+      badge.style.visibility = 'visible';
+      // Strategy color based on type
+      if (strat.type === 'balanced') badge.style.borderColor = 'var(--color-success)';
+      else if (strat.type === 'top_heavy') badge.style.borderColor = 'var(--color-danger)';
+      else badge.style.borderColor = 'var(--border)';
+    } else if (PICKS_DATA.gameScript) {
       const total = PICKS_DATA.game?.total;
       badge.innerHTML = `<b>${PICKS_DATA.gameScript}</b>${total ? ` · O/U ${total}` : ''}`;
       badge.style.visibility = 'visible';
+      badge.style.borderColor = 'var(--border)';
     } else {
       badge.style.visibility = 'hidden';
     }
+
+    // Strategy insight bar (below header, above cards)
+    _renderStrategyInsight(PICKS_DATA.strategy);
 
     renderCards(PICKS_DATA.lineups.the_lineup, 'picksList', 'the_lineup');
     savePredictions();
@@ -2716,6 +2739,23 @@ async function runAnalysis() {
     btn.disabled = false;
     btn.innerHTML = 'Analyze Draft';
   }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PER-GAME STRATEGY INSIGHT — grep: _renderStrategyInsight, strategyInsight
+// ════════════════════════════════════════════════════════════════════
+function _renderStrategyInsight(strategy) {
+  const el = document.getElementById('strategyInsight');
+  if (!el) return;
+  if (!strategy || !strategy.description) {
+    el.style.display = 'none';
+    return;
+  }
+  const typeIcon = strategy.type === 'balanced' ? '⚖' : strategy.type === 'top_heavy' ? '🎯' : '📊';
+  const totalMult = strategy.total_mult ? ` · Ceiling mult ${strategy.total_mult}x` : '';
+  const favored = strategy.favored_team ? ` · Favored: <b>${_escapeHtml(strategy.favored_team)}</b>` : '';
+  el.innerHTML = `${typeIcon} <span style="color:var(--color-text-primary);font-weight:700">${_escapeHtml(strategy.label)}</span> — ${_escapeHtml(strategy.description)}${totalMult}${favored}`;
+  el.style.display = 'block';
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2800,6 +2840,9 @@ function renderCards(picks, containerId, mode, opts = {}) {
       p._hot_streak && `<span class="stat-context-pill overperform-hot">🔥 HOT</span>`,
       p._odds_adjusted && `<span class="stat-context-pill overperform-odds">📈 ODDS EDGE</span>`,
       (p._context_adj && p._context_adj > 1.05) && `<span class="stat-context-pill overperform-ai">🧠 +${Math.round((p._context_adj - 1) * 100)}%</span>`,
+      // Per-game strategy pills (value anchor + favored team indicator)
+      (mode === 'the_lineup' && p._is_value_anchor) && `<span class="stat-context-pill" style="color:#f0c040;border-color:rgba(240,192,64,0.25)">⚓ ANCHOR</span>`,
+      (mode === 'the_lineup' && p._favored_team) && `<span class="stat-context-pill" style="color:var(--color-success);border-color:rgba(74,222,128,0.2)">★ FAV</span>`,
       (isLog && !hasActuals && !playerStats) ? '<span class="pending-results">Waiting for results</span>' : '',
     ].filter(Boolean);
 

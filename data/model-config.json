@@ -1,7 +1,7 @@
 {
-  "version": 59,
-  "updated_at": "2026-03-24T12:00:00Z",
-  "updated_by": "v59-sweet-spot-targeting-strip-inflation-layers",
+  "version": 60,
+  "updated_at": "2026-03-24T18:00:00Z",
+  "updated_by": "v60-per-game-draft-strategy-redesign",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -403,7 +403,34 @@
   "lab": {
     "auto_improve_threshold_pct": 3.0
   },
+  "per_game": {
+    "enabled": true,
+    "total_baseline": 222,
+    "total_mult_strength": 0.003,
+    "total_mult_floor": 0.92,
+    "total_mult_ceiling": 1.12,
+    "close_spread_threshold": 5,
+    "blowout_spread_threshold": 13,
+    "close_game_floor_bonus": 0.06,
+    "blowout_favored_role_bonus": 1.12,
+    "blowout_favored_star_bonus": 1.05,
+    "blowout_underdog_role_penalty": 0.88,
+    "blowout_underdog_star_penalty": 0.95,
+    "blowout_min_per_team": 1,
+    "role_player_pts_ceiling": 18,
+    "value_anchor_min_rating": 3.8,
+    "value_anchor_pts_ceiling": 16,
+    "value_anchor_bonus": 0.08,
+    "close_game_variance_dampen": 0.08,
+    "blowout_variance_uplift": 0.04,
+    "neutral_favored_lean": 1.02
+  },
   "changelog": [
+    {
+      "version": 60,
+      "date": "2026-03-24",
+      "change": "PER-GAME DRAFT STRATEGY REDESIGN (v60) — 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23). Six findings implemented: (F1) 2x slot is conviction slot — 61% of winners had highest scorer NOT at 2.0x; variance shaping now adjusts which player rises to 2.0x based on game context. (F2) Value anchor pattern — winning lineups have 3.5+ RS players at 1.2x-1.4x (Spencer 5.5, Gafford 4.5, Champagnie 4.2); value_anchor_bonus=0.08 lifts these candidates. (F3) Game total ceiling correlation — 250+ games avg 32.1 winning score vs 25.7 for <210; total_mult scales projections ±12% based on O/U. (F4) Spread-based composition — close games (≤5pt) reward balanced builds (floor_bonus for low-variance); blowouts (13+pt) reward top-heavy (favored team lean). (F5) Razor-thin margins (<1.5pt 1st-4th gap in 8/18 games) — added 5! permutation validation on slot assignment. (F6) Favored team role player effect — blowout_favored_role_bonus=1.12, underdog_role_penalty=0.88; blowout_min_per_team=1 allows 4-1 team split. New per_game config section with 20 tunable parameters. Strategy label displayed on frontend (Balanced Build / Blowout Lean / Shootout). Does NOT touch full-slate, line, or parlay."
+    },
     {
       "version": 59,
       "date": "2026-03-24",

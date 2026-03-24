@@ -991,6 +991,42 @@ _CONFIG_DEFAULTS = {
     "pass2": {
         "vegas_total_threshold": 3.0,
     },
+    # ── Per-Game Draft Strategy (Findings 1-6, 18-game 76-lineup analysis) ──
+    # grep: PER_GAME_CONFIG
+    "per_game": {
+        "enabled": True,
+        # Finding 3: Game total ceiling multiplier
+        # 250+ → avg winning score 32.1; <210 → 25.7
+        # Scale projections proportionally to game total
+        "total_baseline": 222,
+        "total_mult_strength": 0.003,   # per-point above/below baseline
+        "total_mult_floor": 0.92,
+        "total_mult_ceiling": 1.12,
+        # Finding 4: Spread-based composition toggle
+        # Close (≤5): balanced build — reward floor/consistency
+        # Moderate (6-12): neutral
+        # Blowout (13+): top-heavy — lean favored team
+        "close_spread_threshold": 5,
+        "blowout_spread_threshold": 13,
+        "close_game_floor_bonus": 0.06,  # max bonus for low-variance players in close games
+        # Finding 6: Favored team role player tilt (blowout-specific)
+        "blowout_favored_role_bonus": 1.12,
+        "blowout_favored_star_bonus": 1.05,
+        "blowout_underdog_role_penalty": 0.88,
+        "blowout_underdog_star_penalty": 0.95,
+        "blowout_min_per_team": 1,      # relax team balance in blowouts (allow 4-1)
+        "role_player_pts_ceiling": 18,   # season_pts <= this = role player
+        # Finding 2: Value anchor (high-floor player at low slot)
+        "value_anchor_min_rating": 3.8,  # RS floor for value anchor candidates
+        "value_anchor_pts_ceiling": 16,  # season_pts ceiling — non-star
+        "value_anchor_bonus": 0.08,      # RS bonus for value anchor candidates
+        # Finding 1: Conviction slot strategy
+        # Close game: dampen variance → consistent players rise to 2.0x
+        # Blowout: reward upside → high-ceiling players rise to 2.0x
+        "close_game_variance_dampen": 0.08,  # penalize variance in close games
+        "blowout_variance_uplift": 0.04,     # reward variance in blowouts
+        "neutral_favored_lean": 1.02,        # mild favored-team lean in moderate spreads
+    },
 }
 
 def _load_config():
@@ -4817,12 +4853,16 @@ def _build_watchlist(chalk, upside, all_proj, games):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PER-GAME LINEUP BUILDER
+# grep: PER-GAME, _build_game_lineups, _per_game_strategy, _per_game_adjust
 #
-# Single-game drafts are fundamentally different from full-slate:
-# - Only 2 teams, so everyone is picking from the same pool
-# - Must diversify across both teams (min 2 per side)
-# - Stars are MORE important in single-game (smaller pool = stars stand out)
-# - Ownership is more concentrated, so contrarian plays matter more
+# Redesigned from 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23).
+# Six findings drive the strategy:
+#   F1: 2x slot = conviction slot (not always best player)
+#   F2: Value anchor pattern — 3.5+ RS in 1.2x–1.4x lifts floor
+#   F3: Game total correlates with winning ceiling (250+ → 32.1 avg)
+#   F4: Blowouts reward top-heavy; close games reward balance
+#   F5: Margins are razor-thin (<1.5 pts) — slot optimization matters
+#   F6: Favored team role players benefit in blowouts
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _apply_game_script(projections, game):
@@ -4848,46 +4888,223 @@ def _apply_game_script(projections, game):
     return rescored
 
 
+def _per_game_strategy(game):
+    """Determine per-game draft strategy based on spread and game total.
+
+    Returns dict with strategy type, label, and parameters used for
+    _per_game_adjust_projections and frontend display.
+    """
+    cfg = _cfg("per_game", _CONFIG_DEFAULTS["per_game"])
+    spread = abs(game.get("spread") or 0)
+    total = game.get("total") or DEFAULT_TOTAL
+    raw_spread = game.get("spread") or 0
+
+    close_thr = cfg.get("close_spread_threshold", 5)
+    blow_thr = cfg.get("blowout_spread_threshold", 13)
+
+    home_abbr = game.get("home", {}).get("abbr", "")
+    away_abbr = game.get("away", {}).get("abbr", "")
+    # Negative spread = home favored in most ESPN formats
+    favored_team = home_abbr if raw_spread < 0 else away_abbr
+    underdog_team = away_abbr if raw_spread < 0 else home_abbr
+
+    # Game total multiplier (Finding 3)
+    baseline = cfg.get("total_baseline", 222)
+    t_str = cfg.get("total_mult_strength", 0.003)
+    t_floor = cfg.get("total_mult_floor", 0.92)
+    t_ceil = cfg.get("total_mult_ceiling", 1.12)
+    total_mult = max(t_floor, min(t_ceil, 1.0 + (total - baseline) * t_str))
+
+    # Determine composition type (Finding 4)
+    if spread <= close_thr:
+        comp = "balanced"
+        label = "Balanced Build"
+        description = "Close game — all starters play full minutes. Prioritizing consistent producers across all 5 slots."
+    elif spread >= blow_thr:
+        comp = "top_heavy"
+        label = "Blowout Lean"
+        description = f"Large spread ({spread:.0f} pts) — leaning toward {favored_team} role players who benefit from extended run."
+    else:
+        comp = "neutral"
+        label = "Standard Build"
+        description = "Moderate spread — balanced approach with slight edge to favored side."
+
+    # Overlay game total context
+    if total >= 245:
+        label = f"Shootout · {label}" if comp != "neutral" else "Shootout"
+        description = f"High total ({total}) — aggressive ceiling play. " + description
+    elif total < 215:
+        label = f"Grind · {label}" if comp != "neutral" else "Defensive Grind"
+        description = f"Low total ({total}) — floor and efficiency matter. " + description
+
+    return {
+        "type": comp,
+        "label": label,
+        "description": description,
+        "total_mult": round(total_mult, 3),
+        "spread": spread,
+        "total": total,
+        "favored_team": favored_team,
+        "underdog_team": underdog_team,
+    }
+
+
+def _per_game_adjust_projections(projections, game, strategy):
+    """Apply per-game draft strategy adjustments to projections (Findings 1-6).
+
+    Operates on already game-script-rescored projections. Adjustments:
+    - Game total ceiling multiplier (F3)
+    - Spread-based composition: balanced vs top-heavy (F4)
+    - Favored team role player tilt in blowouts (F6)
+    - Value anchor bonus for high-floor mid-tier players (F2)
+    - Conviction slot variance shaping (F1)
+
+    Returns new list of adjusted projection dicts (deep copies).
+    """
+    cfg = _cfg("per_game", _CONFIG_DEFAULTS["per_game"])
+    if not cfg.get("enabled", True):
+        return projections
+
+    comp = strategy["type"]
+    total_mult = strategy["total_mult"]
+    favored = strategy["favored_team"]
+    spread = strategy["spread"]
+
+    close_thr = cfg.get("close_spread_threshold", 5)
+    blow_thr = cfg.get("blowout_spread_threshold", 13)
+    role_ceil = cfg.get("role_player_pts_ceiling", 18)
+    anchor_min = cfg.get("value_anchor_min_rating", 3.8)
+    anchor_pts = cfg.get("value_anchor_pts_ceiling", 16)
+    anchor_bonus = cfg.get("value_anchor_bonus", 0.08)
+
+    adjusted = []
+    for p in projections:
+        ap = copy.deepcopy(p)
+        rating = float(ap.get("rating") or 0)
+        team = ap.get("team", "")
+        season_pts = float(ap.get("season_pts") or ap.get("pts") or 0)
+        variance = float(ap.get("player_variance") or 0.3)
+        is_role = season_pts <= role_ceil
+
+        # ── F3: Game total multiplier ──
+        # Higher game totals raise the scoring ceiling for everyone
+        rating *= total_mult
+
+        # ── F4 + F6: Spread-based composition ──
+        if comp == "balanced":
+            # Close game: starters on both teams play full minutes.
+            # Reward consistency (low variance) — the winning margin is thin (avg 2.52 range).
+            floor_bonus = cfg.get("close_game_floor_bonus", 0.06)
+            var_dampen = cfg.get("close_game_variance_dampen", 0.08)
+            # Consistent players get a floor bonus; volatile players get dampened
+            rating *= (1.0 + floor_bonus * (1.0 - variance))
+            rating *= (1.0 - var_dampen * variance)
+
+        elif comp == "top_heavy":
+            # Blowout: favored team runs away; role players get extended run.
+            # Underdog role players get buried.
+            if team == favored:
+                if is_role:
+                    # F6: Favored team's 3rd-5th options get garbage-time production
+                    rating *= cfg.get("blowout_favored_role_bonus", 1.12)
+                else:
+                    # Stars on favored team still produce but game may end early
+                    rating *= cfg.get("blowout_favored_star_bonus", 1.05)
+            else:
+                if is_role:
+                    # Underdog role players get pulled in blowouts
+                    rating *= cfg.get("blowout_underdog_role_penalty", 0.88)
+                else:
+                    # Underdog stars play through but game script unfavorable
+                    rating *= cfg.get("blowout_underdog_star_penalty", 0.95)
+
+            # F1: Blowout variance uplift — high-upside players rise to 2.0x
+            var_up = cfg.get("blowout_variance_uplift", 0.04)
+            rating *= (1.0 + var_up * variance)
+
+        else:
+            # Neutral (moderate spread 6-12): mild favored-team lean
+            if team == favored:
+                rating *= cfg.get("neutral_favored_lean", 1.02)
+            # F1: neutral variance treatment — no shaping
+
+        # ── F2: Value anchor bonus ──
+        # Players with solid RS floor + not a superstar → silently lift lineup floor.
+        # Spencer 5.5 at 1.4x, Gafford 4.5 at 1.4x, Champagnie 4.2 at 1.2x
+        is_anchor = rating >= anchor_min and season_pts <= anchor_pts
+        if is_anchor:
+            rating *= (1.0 + anchor_bonus)
+        ap["_is_value_anchor"] = is_anchor
+        ap["_favored_team"] = (team == favored)
+
+        ap["rating"] = round(rating, 2)
+        ap["_pg_total_mult"] = strategy["total_mult"]
+        ap["_pg_strategy"] = comp
+        adjusted.append(ap)
+
+    return adjusted
+
+
 def _build_game_lineups(projections, game):
     """Build exactly ONE lineup ('THE LINE UP') for a single-game draft.
 
     Per-game drafts restrict to a single 5-player format. No Starting 5 / Moonshot
     split — both users draft from the same 2-team pool, so card boost is irrelevant.
-    Optimized purely by projected Real Score × slot multiplier.
+
+    Pipeline (post-redesign):
+    1. Game script re-scoring (stat-weight tiers by game total)
+    2. Per-game strategy adjustments (F1-F6: total mult, spread comp, team tilt, anchors)
+    3. Eligibility gating (minutes, rating, pts floors)
+    4. MILP optimization (RS × slot_mult, value anchor-aware)
+    5. 5! permutation validation (120 combos — computationally trivial)
+    6. Strategy metadata for frontend
     """
-    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
+    # Step 1: Game script (existing — adjusts stat category weights by game pace)
     rescored = _apply_game_script(projections, game)
 
-    # PER-GAME: Requires min recent minutes — configurable via lineup.game_recent_min_floor
-    # (default 15; was 20 which excluded role players like Braun/GPII who pop in single-game).
-    # Also enforces pts floor: a player projecting < 8 pts is a ceiling liability
-    # in single-game format where card boost is irrelevant.
+    # Step 2: Per-game strategy analysis + projection adjustments (NEW)
+    strategy = _per_game_strategy(game)
+    adjusted = _per_game_adjust_projections(rescored, game, strategy)
+
+    # Step 3: Eligibility gating
+    game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
     game_min_floor = _cfg("lineup.game_recent_min_floor", 15.0)
     min_game_pts = _cfg("scoring_thresholds.min_game_pts", 8.0)
     eligible_pool = [
-        p for p in rescored
+        p for p in adjusted
         if p.get("recent_min", 0) >= game_min_floor
         and p["rating"] >= game_chalk_floor
         and p.get("pts", 0) >= min_game_pts
         and p.get("name") not in BLACKLISTED_PLAYERS
     ]
 
-    # Per-game: card boost is irrelevant (everyone drafts from the same pool).
-    # Optimize purely by RS × slot multiplier — zero out est_mult for MILP.
-    no_boost = [{**p, "est_mult": 0} for p in eligible_pool]
-    the_lineup = optimize_lineup(no_boost, n=5, min_per_team=2, sort_key="rating",
-                                 rating_key="rating", card_boost_key="est_mult")
+    # Step 4: MILP optimization
+    # Per-game: card boost is irrelevant — zero out est_mult.
+    # In blowouts, relax team balance to allow 4-1 from favored team (Finding 6).
+    cfg = _cfg("per_game", _CONFIG_DEFAULTS["per_game"])
+    if strategy["type"] == "top_heavy":
+        min_per_team = cfg.get("blowout_min_per_team", 1)
+    else:
+        min_per_team = 2
 
-    # Fill to 5 if the pool was smaller than 5 after floor filtering
+    no_boost = [{**p, "est_mult": 0} for p in eligible_pool]
+    the_lineup = optimize_lineup(no_boost, n=5, min_per_team=min_per_team,
+                                 sort_key="rating", rating_key="rating",
+                                 card_boost_key="est_mult")
+
+    # Step 5: Brute-force 5! permutation validation (Finding 5)
+    # MILP handles this, but 120 combos is trivial — verify optimality.
+    if len(the_lineup) == 5:
+        the_lineup = _validate_slot_assignment(the_lineup)
+
+    # Fill to 5 if pool was too small after gating
     if len(the_lineup) < 5:
         lineup_names = {p["name"] for p in the_lineup}
         fill_pool = sorted(
-            [
-                p for p in rescored
-                if p["name"] not in lineup_names
-                and p.get("recent_min", 0) >= 20.0
-                and p.get("name") not in BLACKLISTED_PLAYERS
-            ],
+            [p for p in adjusted
+             if p["name"] not in lineup_names
+             and p.get("recent_min", 0) >= 12.0
+             and p.get("name") not in BLACKLISTED_PLAYERS],
             key=lambda p: p.get("rating", 0), reverse=True
         )
         for p in fill_pool:
@@ -4895,9 +5112,46 @@ def _build_game_lineups(projections, game):
                 break
             the_lineup.append(p)
 
-    # Per-game: zero out est_mult in returned data too (not just MILP input)
-    # so the frontend never renders a misleading card boost pill.
-    return {"the_lineup": [_normalize_player({**p, "est_mult": 0}) for p in the_lineup]}
+    # Step 6: Normalize — zero est_mult, attach strategy metadata
+    normalized = [_normalize_player({**p, "est_mult": 0}) for p in the_lineup]
+    return {
+        "the_lineup": normalized,
+        "strategy": strategy,
+    }
+
+
+def _validate_slot_assignment(lineup):
+    """Brute-force 5! = 120 permutation check for optimal slot assignment (Finding 5).
+
+    Given 5 selected players, tries every permutation of slot assignment and returns
+    the one that maximizes total score = Σ rating_i × slot_mult_i.
+    With card boost zeroed, this is purely RS × slot ordering.
+
+    The MILP should already produce the optimal assignment (highest RS → 2.0x),
+    but this is a zero-cost safety net for razor-thin margins (<1.5 pts).
+    """
+    from itertools import permutations
+    slot_mults = _SLOT_MULTS_SHARED[:5]  # [2.0, 1.8, 1.6, 1.4, 1.2]
+
+    ratings = [float(p.get("rating") or 0) for p in lineup]
+    best_score = -1
+    best_perm = None
+
+    for perm in permutations(range(5)):
+        score = sum(ratings[perm[j]] * slot_mults[j] for j in range(5))
+        if score > best_score:
+            best_score = score
+            best_perm = perm
+
+    if best_perm is None:
+        return lineup
+
+    result = []
+    for j in range(5):
+        p = copy.deepcopy(lineup[best_perm[j]])
+        p["slot"] = _SLOT_LABELS_SHARED[j]
+        result.append(p)
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4919,7 +5173,7 @@ _SLOT_NUMS = {label: mult for label, mult in zip(_SLOT_LABELS_SHARED, _SLOT_MULT
 _SCORE_BOUNDS = {
     "chalk":      (70.0, 100.0),
     "upside":     (70.0, 100.0),
-    "the_lineup": (25.0, 35.0),
+    "the_lineup": (20.0, 42.0),
 }
 
 def _lineup_ev_total(lineup: list, mode: str) -> float:
@@ -5598,10 +5852,12 @@ def _compute_game_picks(game):
         if not projections:
             return None
         lineups_dict = _build_game_lineups(projections, game)
+        pg_strategy = lineups_dict.pop("strategy", None)
         result = {
             "date": _today_str(), "game": game,
             "gameScript": _game_script_label(game.get("total")),
             "lineups": lineups_dict,
+            "strategy": pg_strategy,
             "locked": True, "injuries": _get_injuries(game),
         }
         _cs(_ck_picks(gid), result)
@@ -5643,6 +5899,9 @@ async def get_picks(gameId: str = Query(...)):
         lineups = {"the_lineup": the_lineup}
         return {"date": _today_str(), "game": game_meta, "mock": True,
                 "gameScript": "balanced", "lineups": lineups, "locked": False,
+                "strategy": {"type": "neutral", "label": "Standard Build",
+                             "description": "Mock game — standard build.", "total_mult": 1.0,
+                             "spread": 0, "total": 222, "favored_team": "", "underdog_team": ""},
                 "injuries": [], "score_bounds": _score_bounds_for_lineups(lineups)}
 
     game = next((g for g in fetch_games() if g["gameId"] == gameId), None)
@@ -5712,12 +5971,15 @@ async def get_picks(gameId: str = Query(...)):
     lineups_dict = _build_game_lineups(projections, game)
     script = _game_script_label(game.get("total"))
     injuries = _get_injuries(game)
+    # Extract strategy from lineup builder (per-game v2)
+    pg_strategy = lineups_dict.pop("strategy", None)
 
     result = {"date": _today_str(), "game": game,
               "gameScript": script,
               "lineups": lineups_dict,
               "locked": locked,
               "injuries": injuries,
+              "strategy": pg_strategy,
               "score_bounds": _score_bounds_for_lineups(lineups_dict)}
     # Cache picks so they survive as lock snapshot if slate locks later
     _cs(_ck_picks(gameId), result)
@@ -5936,6 +6198,7 @@ def _force_regenerate_sync(scope: str):
         if game_projs:
             try:
                 game_lineups = _build_game_lineups(game_projs, g)
+                game_lineups.pop("strategy", None)  # strategy is response-level, not lineups-level
                 per_game_results[gid] = {
                     "game": g,
                     "lineups": game_lineups,
