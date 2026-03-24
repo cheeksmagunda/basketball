@@ -235,8 +235,6 @@ UNDER-SPECIFIC: Unders are more reliable. Stars on heavy favorites (spread >8) s
 Set "line" to the [book: X.X] value when shown — that is the real bookmaker number and is more accurate than the season average. Only fall back to season average rounded to nearest 0.5 if no [book: X.X] is present. Recalculate "edge" as projection minus the line you use.
 Confidence range: 60-85.
 
-NARRATIVE REQUIREMENT: Your narrative MUST explain WHY the projection differs from the baseline — not just restate the numbers. Cite at least one concrete driver: game pace/total, opponent defense quality, recent form trend, injury cascade, opponent B2B fatigue, spread/blowout risk, minutes projection change, or bookmaker line alignment. Bad: "Model projects 9.2 points vs 7.5 baseline." Good: "High-total game (235) and weak Wizards defense create extra scoring opportunities; Lopez has seen 28+ minutes in 3 of last 5."
-
 Respond with ONLY valid JSON, no markdown fences:
 {{
   "player_name": "Full Name",
@@ -248,7 +246,6 @@ Respond with ONLY valid JSON, no markdown fences:
   "projection": 26.8,
   "edge": 4.3,
   "confidence": 74,
-  "narrative": "2-3 sentences explaining WHY with specific data points and drivers",
   "signals": ["High-total game (234.5) — more possessions expected", "Favorable matchup vs weak defense", "Opponent on B2B"]
 }}"""
 
@@ -503,18 +500,6 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                         except (TypeError, ValueError):
                             fv_boost = 0
             confidence = round(min(52 + edge_score + signal_bonus - over_penalty + fv_boost, 80))
-            # Driver-aware narrative: cite top signals when available
-            if signals:
-                driver_summary = "; ".join(s["detail"] for s in signals[:2])
-                narrative = (
-                    f"Model projects {proj_val:.1f} {stat_type} ({direction} {line:.1f}). "
-                    f"{driver_summary}."
-                )
-            else:
-                narrative = (
-                    f"Model projects {proj_val:.1f} {stat_type} — a {abs(edge):.1f} edge "
-                    f"vs the {line:.1f} season baseline."
-                )
             edge_pct = (abs(edge) / line * 100.0) if line and line > 0 else 0.0
             if confidence < min_confidence or (min_edge_pct > 0 and edge_pct < min_edge_pct):
                 continue
@@ -530,7 +515,7 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                 "odds_over": book_odds["odds_over"] if book_odds else None,
                 "odds_under": book_odds["odds_under"] if book_odds else None,
                 "books_consensus": book_odds["books_consensus"] if book_odds else 0,
-                "model_only": not bool(book_odds), "signals": signals, "narrative": narrative,
+                "model_only": not bool(book_odds), "signals": signals,
                 "season_avg": round(season_val, 1),
                 "proj_min": round(pred_min, 1),
                 "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
@@ -574,14 +559,6 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                 lr_signals, _ = _generate_signals(
                     p, gctx, direction, stat_type, season_val, recent_val, proj_val, line, cfg
                 )
-                if lr_signals:
-                    driver_summary = "; ".join(s["detail"] for s in lr_signals[:2])
-                    lr_narrative = (
-                        f"Model projects {proj_val:.1f} {stat_type} ({direction} {line:.1f}). "
-                        f"{driver_summary}."
-                    )
-                else:
-                    lr_narrative = f"Model projects {proj_val:.1f} {stat_type} vs the {line:.1f} baseline."
                 avg_min = p.get("season_min", p.get("min", 0))
                 last_resort.append({
                     "player_name": p["name"], "player_id": p.get("id", ""),
@@ -592,7 +569,6 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                     "odds_under": lr_book["odds_under"] if lr_book else None,
                     "books_consensus": lr_book["books_consensus"] if lr_book else 0,
                     "model_only": not bool(lr_book), "signals": lr_signals,
-                    "narrative": lr_narrative,
                     "season_avg": round(season_val, 1),
                     "proj_min": round(pred_min, 1),
                     "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
@@ -718,7 +694,6 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None, 
             "books_consensus": 0,
             "model_only":      True,
             "signals":         signals,
-            "narrative":       pd.get("narrative", ""),
         }
         # Override line/edge with authoritative bookmaker data when available.
         # Claude is already instructed to use the [book: X.X] annotation, but
