@@ -10125,21 +10125,13 @@ async def get_parlay(request: Request):
         today = _et_date()
         today_str = today.isoformat()
 
-        # Determine lock status using same logic as predict tab.
-        # Midnight rollover guard: if ET date advanced but late games from
-        # yesterday are still in lock window, keep parlay locked.
+        # Determine lock status from TODAY's games only.
+        # No midnight rollover guard — today's parlay should show as unlocked
+        # until today's games actually start, even if yesterday's late games
+        # are still in their 6h lock window.
         games = fetch_games(today)
         start_times = [g["startTime"] for g in games if g.get("startTime")]
         slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
-        if not slate_locked:
-            try:
-                yday = today - timedelta(days=1)
-                y_games = fetch_games(yday)
-                y_starts = [g["startTime"] for g in y_games if g.get("startTime")]
-                if y_starts and any(_is_locked(st) for st in y_starts):
-                    slate_locked = True
-            except Exception:
-                pass
 
         # Cache check (30-min TTL)
         cached = _cg(_CK_PARLAY)
@@ -10209,11 +10201,17 @@ async def get_parlay(request: Request):
         result["_cache_date"] = today_str
         _cs(_CK_PARLAY, result)
 
-        # Auto-save to GitHub (non-fatal) — skip if already saved
+        # Auto-save to GitHub (non-fatal) — skip if already saved (but overwrite busted tombstones)
         try:
             _parlay_path = f"data/parlays/{today_str}.json"
             _existing, _ = _github_get_file(_parlay_path)
-            if not _existing:
+            _is_busted = False
+            if _existing:
+                try:
+                    _is_busted = json.loads(_existing).get("_busted", False)
+                except Exception:
+                    pass
+            if not _existing or _is_busted:
                 _save_payload = {
                     "date": today_str,
                     "result": "pending",
@@ -10242,48 +10240,55 @@ async def get_parlay(request: Request):
 
 
 @app.get("/api/parlay-force-regenerate")
-async def parlay_force_regenerate():
-    """Force-generate (or re-generate) today's parlay, overwriting any cached/saved version.
-    Uses real Odds API props when available; falls back to synthetic projection-based lines
-    when the slate is locked and sportsbook props are no longer served (post-lock mode).
+async def parlay_force_regenerate(request: Request):
+    """Force-generate (or re-generate) a parlay, overwriting any cached/saved version.
+    Accepts optional ?date=YYYY-MM-DD for historical regeneration (defaults to today).
+    Uses real Odds API props when available; falls back to synthetic projection-based lines.
     No CRON_SECRET required — user-facing from the Parlay tab."""
-    today = _et_date()
-    today_str = today.isoformat()
+    date_param = str(request.query_params.get("date", "")).strip()
+    if date_param:
+        try:
+            target_date = date.fromisoformat(date_param)
+        except ValueError:
+            return JSONResponse({"error": "invalid_date", "narrative": f"Invalid date: {date_param}"}, status_code=400)
+    else:
+        target_date = _et_date()
+    target_str = target_date.isoformat()
+    is_today = target_date == _et_date()
+
     slate_locked = False
     try:
-        games = fetch_games(today)
+        games = fetch_games(target_date)
         starts = [g["startTime"] for g in games if g.get("startTime")]
         slate_locked = bool(starts) and any(_is_locked(st) for st in starts)
-        if not slate_locked:
-            yday = today - timedelta(days=1)
-            y_games = fetch_games(yday)
-            y_starts = [g["startTime"] for g in y_games if g.get("startTime")]
-            if y_starts and any(_is_locked(st) for st in y_starts):
-                slate_locked = True
     except Exception:
         slate_locked = False
 
-    # Clear /tmp parlay cache so the engine runs fresh
-    try:
-        _pc = _cp(_CK_PARLAY)
-        if _pc.exists():
-            _pc.unlink()
-    except Exception:
-        pass
+    # Clear /tmp parlay cache so the engine runs fresh (only for today)
+    if is_today:
+        try:
+            _pc = _cp(_CK_PARLAY)
+            if _pc.exists():
+                _pc.unlink()
+        except Exception:
+            pass
 
-    result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
+    result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, target_date)
 
     if err or not result:
         return JSONResponse({
             "error": err or "no_valid_parlay",
-            "narrative": "Could not generate a parlay for today's slate.",
+            "narrative": f"Could not generate a parlay for {target_str}.",
             "debug": debug or {},
         }, status_code=503)
 
-    # Overwrite GitHub parlay for today
+    # For historical dates, mark as pending — parlay-history will resolve via ESPN
+    result_status = "pending"
+
+    # Overwrite GitHub parlay
     try:
         _save_payload = {
-            "date": today_str, "result": "pending",
+            "date": target_str, "result": result_status,
             "legs": result.get("legs", []),
             "combined_probability": result.get("combined_probability"),
             "correlation_multiplier": result.get("correlation_multiplier"),
@@ -10291,21 +10296,21 @@ async def parlay_force_regenerate():
             "parlay_score": result.get("parlay_score"),
             "narrative": result.get("narrative", ""),
             "projection_only": result.get("projection_only", False),
-            "locked": slate_locked,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        _github_write_file(f"data/parlays/{today_str}.json", json.dumps(_save_payload),
-                           f"force regen parlay {today_str}")
+        _github_write_file(f"data/parlays/{target_str}.json", json.dumps(_save_payload),
+                           f"force regen parlay {target_str}")
     except Exception as _pe:
         print(f"[parlay-force-regen] GitHub save failed (non-fatal): {_pe}")
 
-    # Populate /tmp cache
-    result["locked"] = slate_locked
-    result["_cached_at"] = datetime.utcnow().isoformat()
-    result["_cache_date"] = today_str
-    _cs(_CK_PARLAY, result)
+    # Populate /tmp cache (only for today)
+    if is_today:
+        result["locked"] = slate_locked
+        result["_cached_at"] = datetime.utcnow().isoformat()
+        result["_cache_date"] = target_str
+        _cs(_CK_PARLAY, result)
 
-    # Bust history cache
+    # Bust history cache so the new entry shows up
     try:
         _hc = _cp(_CK_PARLAY_HISTORY)
         if _hc.exists():
@@ -10313,8 +10318,8 @@ async def parlay_force_regenerate():
     except Exception:
         pass
 
-    print(f"[parlay-force-regen] done — projection_only={result.get('projection_only')} legs={len(result.get('legs',[]))}")
-    return JSONResponse({"status": "ok", "forced": True, "date": today_str, **result})
+    print(f"[parlay-force-regen] done date={target_str} projection_only={result.get('projection_only')} legs={len(result.get('legs',[]))}")
+    return JSONResponse({"status": "ok", "forced": True, "date": target_str, **result})
 
 
 # grep: PARLAY HISTORY — /api/parlay-history
