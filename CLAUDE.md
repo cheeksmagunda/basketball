@@ -84,6 +84,8 @@ grep: WEB INTELLIGENCE         — _fetch_nba_news_context, Claude web_search, n
 grep: LINEUP REVIEW            — _lineup_review_opus, post-lineup Opus, lineup_review
 grep: CORE POOL                — core_pool, eligible_union, _build_lineups 3-tuple
 grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
+grep: PER-GAME                 — _build_game_lineups, _per_game_strategy, _per_game_adjust
+grep: PER_GAME_CONFIG          — per_game config defaults in _CONFIG_DEFAULTS
 grep: INJURY CHECK             — /api/injury-check, RotoWire re-check, affected game regeneration
 grep: CORE API ENDPOINTS       — /api/games, /api/slate, /api/picks, /api/health, /api/version
 grep: LINE OF THE DAY ENGINE   — /api/line-of-the-day, run_line_engine
@@ -475,6 +477,14 @@ default 0.25), `min_blended_conf` (minimum blended hit probability, default 0.55
 default 25), `positive_correlation_boost` (PG assists + teammate points, default 1.08),
 `shootout_correlation_boost` (opposing scorers in tight game, default 1.05).
 
+Per-game in `per_game`: `enabled`, `total_baseline` (222), `total_mult_strength` (0.003 per pt),
+`total_mult_floor` (0.92), `total_mult_ceiling` (1.12), `close_spread_threshold` (5),
+`blowout_spread_threshold` (13), `close_game_floor_bonus` (0.06), `close_game_variance_dampen` (0.08),
+`blowout_favored_role_bonus` (1.12), `blowout_favored_star_bonus` (1.05),
+`blowout_underdog_role_penalty` (0.88), `blowout_underdog_star_penalty` (0.95),
+`blowout_min_per_team` (1), `role_player_pts_ceiling` (18), `value_anchor_min_rating` (3.8),
+`value_anchor_pts_ceiling` (16), `value_anchor_bonus` (0.08), `blowout_variance_uplift` (0.04).
+
 ---
 
 ## Two Draft Strategies (Core Pool Architecture)
@@ -487,8 +497,27 @@ MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`
 ### Slate-Wide: Moonshot (v8 — RS-first)
 RS-first strategy: **top projected RS scorers drive selection**, with boost as a secondary signal. Formula: `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)` where `boost_leverage = est_mult^0.6` (reduced from 1.2 — halves boost dominance so RS quality is the primary signal). **Season/recent min >= 20**. **Minimum 3.5 rating**. **Minimum 6 PPG and 0.22 pts/min** at projection level. **No center penalty**. Wildcard gate: boost >= 2.0, min 15 min, min 7 PPG. Matchup factor from opponent defensive quality. **RS-bypass pathway**: high-RS players (rating >= 5.0, season_min >= 25) bypass the boost floor (`min_card_boost`) even with low boost (>= 0.3), ensuring top scorers always compete for moonshot slots. Config: `moonshot.rs_bypass.enabled`, `moonshot.rs_bypass.min_rating`, `moonshot.rs_bypass.min_season_min`, `moonshot.rs_bypass.min_boost`. **Star anchor pathway** (same as Starting 5): stars with season_pts >= 20, season_min >= 25, rating >= 4.0 bypass the `min_card_boost` gate. Up to 3 stars allowed (`star_anchor.max_count`). Philosophy: projected RS is the foundation; boost amplifies but cannot substitute for real production.
 
-### Per-Game: THE LINE UP
-Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant. Optimized purely by projected Real Score × slot multiplier (`est_mult` zeroed out for MILP). **Requires 20-minute recent minutes floor.** Min 2 players per team enforced. Game script adjustments applied.
+### Per-Game: THE LINE UP (v60 — Strategy-Aware Draft Model)
+Redesigned from 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23, 2026). Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant.
+
+**Pipeline** (6-step):
+1. **Game script re-scoring** — stat-weight tiers by game pace (existing)
+2. **Per-game strategy adjustments** (NEW) — `_per_game_adjust_projections()` applies:
+   - **F3: Game total multiplier** — scales all projections ±12% based on O/U vs 222 baseline (250+ → 32.1 avg winning score; <210 → 25.7)
+   - **F4: Spread-based composition** — close games (≤5pt spread) reward balanced/consistent producers; blowouts (13+pt) lean toward favored team
+   - **F6: Favored team role player tilt** — in blowouts, favored team's 3rd-5th options get +12% (extended garbage-time run); underdog role players get -12%
+   - **F2: Value anchor bonus** — mid-tier players (RS ≥3.8, season_pts ≤16) get +8% rating boost for their floor-lifting effect at 1.2x-1.4x slots
+   - **F1: Conviction slot variance shaping** — close games dampen variance (consistent players rise to 2.0x); blowouts uplift variance (high-ceiling players rise)
+3. **Eligibility gating** — `recent_min ≥ 15`, `rating ≥ 3.5`, `pts ≥ 8`, not blacklisted
+4. **MILP optimization** — RS × slot_mult (card boost zeroed). In blowouts, `min_per_team` relaxes from 2 to 1 (allows 4-1 team split)
+5. **5! permutation validation** (F5) — brute-force 120 combos confirms optimal slot assignment (razor-thin margins: <1.5 pts in 8/18 games)
+6. **Strategy metadata** — `strategy` object returned with type, label, description for frontend display
+
+**Strategy Types:** Balanced Build (spread ≤5), Standard Build (6-12), Blowout Lean (13+); overlays: Shootout (total ≥245), Defensive Grind (total <215).
+
+**Config:** `per_game.*` section in model-config.json (20 tunable parameters). All adjustable via Ben.
+
+**Frontend:** Strategy badge (color-coded by type), strategy insight bar with description, per-player ANCHOR/FAV pills on cards.
 
 ### Matchup Intelligence (replaced dev team bonus)
 Opponent defensive quality drives matchup adjustments. `_compute_matchup_factor()` uses ESPN pts_allowed vs league average, position-scaled (guards benefit most). Range: chalk [0.92, 1.10], moonshot [0.75, 1.30]. Claude DvP web intelligence (Layer 1.5) disabled by default (`matchup.claude_enabled: false`) — ESPN def stats provide equivalent signal at zero API cost. Re-enable via config if needed.
@@ -856,6 +885,11 @@ TestCascadeCapFix           — per_player_cap_minutes raised to 10.0 for meanin
 TestRotoConfirmedRatingException — confirmed rotation players with high boost bypass min_rating_floor
 TestMaxPerGameConstraint    — MILP max_per_game limits players from same game matchup
 TestMinHighBoostConstraint  — MILP min_big_boost ensures minimum high-boost players in lineup
+TestPerGameStrategy         — _per_game_strategy() returns correct type/label based on spread+total (6 tests)
+TestPerGameAdjustProjections — F1-F6 adjustments: total mult, close game consistency, blowout tilt, value anchors (8 tests)
+TestPerGameBuildLineups     — _build_game_lineups() returns strategy, 5 players, valid slots, blowout 4-1 split (6 tests)
+TestPerGameConfig           — per_game section in _CONFIG_DEFAULTS, all 20 keys present, score bounds widened (3 tests)
+TestPerGameFrontend         — strategyInsight element, render function, ANCHOR/FAV pills, back hides insight (5 tests)
 ```
 
 **tests/test_core.py** — Helpers, line cache logic, JS syntax, date-boundary regressions, and contract guards:
@@ -1011,6 +1045,8 @@ If slate, line, and/or log all fail to load:
 | Resolved line pick rotation fix | `api/index.py` | When a direction's game resolved (e.g., Deni Avdija Under HIT) and next-slate pick generation returned `None`, the endpoint only updated `final_under` when `next_under` was non-None — leaving the resolved pick as the "active" pick card. Fixed: always set `final_under = next_under` (unconditional). Added `_had_resolved` flag so `next_slate_pending` is correctly returned when both directions resolved but next-slate fails. |
 | Parlay synthetic line snapping | `api/index.py`, `api/parlay_engine.py` | Synthetic fallback used `math.floor(proj_val * 2) / 2` which produced whole-number lines (5.3 → 5.0, 21.3 → 21.0). Changed to `round(proj_val * 2) / 2` for nearest-0.5 snap (5.3 → 5.5, 21.3 → 21.5). Also removed unnecessary `round(*2)/2` snap on real Odds API values in `parlay_engine.py` — Odds API lines are already properly formatted. |
 | Parlay engine + tab | `api/parlay_engine.py`, `api/index.py`, `index.html` | New "Parlay" tab (5th nav icon, electric purple accent `#d946ef`). Backend: `_fetch_gamelog()` ESPN gamelog helper (cached), `_fetch_gamelogs_batch()` parallel fetcher, `_run_parlay_engine_sync()` full pipeline, `GET /api/parlay` endpoint (30-min cache, rate-limited, auto-saves to `data/parlays/{date}.json`), `GET /api/parlay-history` (lazy ESPN resolution, 10-min cache). Engine: Z-score hit probability, American odds → implied probability, blended confidence (55% model / 45% Vegas), anti-fragility filters (blowout >8.5 spread, minutes CV >0.30, GTD star teammate, injury), correlation scoring (VETO same-team rebounds/assists over, boost PG assists + teammate points, shootout opposing scorers), diagnostic filter funnel logging. Frontend: `PARLAY_STATE`, `PARLAY_HIST_DATA`, `initParlayPage()`, `fetchParlay()` (90s timeout), stacked ticket card with 3 legs + combined probability + narrative. Recent Parlays history section (scrollable, hit/miss pills, hit rate + streak stats). Bottom-sheet `parlayModal` with full ticket detail + leg-by-leg resolution (actual stats, HIT/MISS coloring). ARIA accessibility (`aria-live`, `aria-modal`, `aria-label`, `role`). Config: `parlay.*` in model-config.json. Tests: 81 tests in `tests/test_parlay.py`. |
+
+| Per-game draft strategy redesign (v60) | `api/index.py`, `data/model-config.json`, `index.html` | 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23). 6-step pipeline: game script → per-game strategy adjustments (F1-F6) → eligibility gating → MILP → 5! permutation validation → strategy metadata. New functions: `_per_game_strategy()`, `_per_game_adjust_projections()`, `_validate_slot_assignment()`. Config: `per_game.*` (20 params). Frontend: strategy insight bar, ANCHOR/FAV pills, color-coded strategy badge. Strategy types: Balanced Build / Standard Build / Blowout Lean + Shootout/Grind overlays. Score bounds widened to (20, 42). 38 new tests. |
 
 ## Loading audit
 

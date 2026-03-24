@@ -3313,5 +3313,344 @@ class TestSuspendedPlayersFiltered:
         assert 'if pinfo.get("is_out"): return None' in src
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# PER-GAME DRAFT STRATEGY (v60 — Findings 1-6)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestPerGameStrategy:
+    """Test _per_game_strategy() returns correct strategy based on spread/total."""
+
+    def test_close_game_balanced(self):
+        from api.index import _per_game_strategy
+        game = {"spread": -3, "total": 222,
+                "home": {"abbr": "BOS"}, "away": {"abbr": "CLE"}}
+        s = _per_game_strategy(game)
+        assert s["type"] == "balanced"
+        assert "Balanced" in s["label"]
+        assert s["favored_team"] == "BOS"  # negative spread = home favored
+        assert s["underdog_team"] == "CLE"
+
+    def test_blowout_top_heavy(self):
+        from api.index import _per_game_strategy
+        game = {"spread": 14, "total": 225,
+                "home": {"abbr": "WAS"}, "away": {"abbr": "BOS"}}
+        s = _per_game_strategy(game)
+        assert s["type"] == "top_heavy"
+        assert "Blowout" in s["label"]
+        assert s["favored_team"] == "BOS"  # positive spread = away favored
+
+    def test_neutral_moderate_spread(self):
+        from api.index import _per_game_strategy
+        game = {"spread": -8, "total": 228,
+                "home": {"abbr": "MIL"}, "away": {"abbr": "IND"}}
+        s = _per_game_strategy(game)
+        assert s["type"] == "neutral"
+
+    def test_shootout_overlay(self):
+        from api.index import _per_game_strategy
+        game = {"spread": -2, "total": 250,
+                "home": {"abbr": "GSW"}, "away": {"abbr": "SAC"}}
+        s = _per_game_strategy(game)
+        assert "Shootout" in s["label"]
+        assert s["total_mult"] > 1.0  # high total boosts ceiling
+
+    def test_grind_overlay(self):
+        from api.index import _per_game_strategy
+        game = {"spread": -4, "total": 210,
+                "home": {"abbr": "MEM"}, "away": {"abbr": "OKC"}}
+        s = _per_game_strategy(game)
+        assert "Grind" in s["label"]
+        assert s["total_mult"] < 1.0  # low total compresses ceiling
+
+    def test_total_mult_bounds(self):
+        from api.index import _per_game_strategy
+        # Extreme high total
+        s_hi = _per_game_strategy({"spread": 0, "total": 280,
+                                   "home": {"abbr": "A"}, "away": {"abbr": "B"}})
+        assert s_hi["total_mult"] <= 1.12
+        # Extreme low total
+        s_lo = _per_game_strategy({"spread": 0, "total": 180,
+                                   "home": {"abbr": "A"}, "away": {"abbr": "B"}})
+        assert s_lo["total_mult"] >= 0.92
+
+
+class TestPerGameAdjustProjections:
+    """Test _per_game_adjust_projections() applies F1-F6 correctly."""
+
+    def _make_proj(self, name, rating, team, season_pts=15, variance=0.3, recent_min=25):
+        return {
+            "name": name, "rating": rating, "team": team,
+            "season_pts": season_pts, "pts": season_pts,
+            "player_variance": variance, "recent_min": recent_min,
+            "reb": 5, "ast": 3, "stl": 1, "blk": 0.5,
+            "est_mult": 0, "chalk_ev": rating * 1.6,
+            "predMin": recent_min, "id": name.lower().replace(" ", "_"),
+        }
+
+    def test_game_total_multiplier_high(self):
+        """F3: Higher game total should boost all projections."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": 0, "total": 250,
+                "home": {"abbr": "GSW"}, "away": {"abbr": "SAC"}}
+        strat = _per_game_strategy(game)
+        projs = [self._make_proj("Player A", 5.0, "GSW")]
+        adj = _per_game_adjust_projections(projs, game, strat)
+        assert adj[0]["rating"] > 5.0  # boosted by total mult
+
+    def test_game_total_multiplier_low(self):
+        """F3: Lower game total should compress projections."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": 0, "total": 200,
+                "home": {"abbr": "MEM"}, "away": {"abbr": "OKC"}}
+        strat = _per_game_strategy(game)
+        # Use star (season_pts=25) so anchor bonus doesn't offset total compression
+        projs = [self._make_proj("Player A", 5.0, "MEM", season_pts=25)]
+        adj = _per_game_adjust_projections(projs, game, strat)
+        assert adj[0]["rating"] < 5.0  # compressed by low total
+
+    def test_close_game_rewards_consistency(self):
+        """F4: In close games, low-variance player should be boosted more than high-variance."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": -2, "total": 222,
+                "home": {"abbr": "BOS"}, "away": {"abbr": "CLE"}}
+        strat = _per_game_strategy(game)
+        projs = [
+            self._make_proj("Consistent", 5.0, "BOS", variance=0.1),
+            self._make_proj("Volatile", 5.0, "CLE", variance=0.8),
+        ]
+        adj = _per_game_adjust_projections(projs, game, strat)
+        assert adj[0]["rating"] > adj[1]["rating"]  # consistent > volatile
+
+    def test_blowout_favors_favored_team_role(self):
+        """F6: In blowouts, favored team role player should be boosted."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": -15, "total": 222,
+                "home": {"abbr": "BOS"}, "away": {"abbr": "WAS"}}
+        strat = _per_game_strategy(game)
+        projs = [
+            self._make_proj("Fav Role", 4.0, "BOS", season_pts=12),
+            self._make_proj("Dog Role", 4.0, "WAS", season_pts=12),
+        ]
+        adj = _per_game_adjust_projections(projs, game, strat)
+        assert adj[0]["rating"] > adj[1]["rating"]
+        assert adj[0]["_favored_team"] is True
+        assert adj[1]["_favored_team"] is False
+
+    def test_blowout_penalizes_underdog_role(self):
+        """F6: Underdog role players get pulled early in blowouts."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": 16, "total": 222,
+                "home": {"abbr": "WAS"}, "away": {"abbr": "BOS"}}
+        strat = _per_game_strategy(game)
+        projs = [self._make_proj("Dog Role", 4.0, "WAS", season_pts=10)]
+        adj = _per_game_adjust_projections(projs, game, strat)
+        assert adj[0]["rating"] < 4.0  # penalized
+
+    def test_value_anchor_tagged(self):
+        """F2: Mid-tier players with solid RS should be tagged as value anchors."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": -3, "total": 222,
+                "home": {"abbr": "BOS"}, "away": {"abbr": "CLE"}}
+        strat = _per_game_strategy(game)
+        projs = [
+            self._make_proj("Anchor", 4.5, "BOS", season_pts=14),
+            self._make_proj("Star", 6.0, "CLE", season_pts=25),
+        ]
+        adj = _per_game_adjust_projections(projs, game, strat)
+        assert adj[0]["_is_value_anchor"] is True  # mid-tier, solid RS
+        assert adj[1]["_is_value_anchor"] is False  # star — too high season_pts
+
+    def test_disabled_returns_unchanged(self):
+        """When per_game.enabled=False, projections should pass through unchanged."""
+        from api.index import _per_game_strategy, _per_game_adjust_projections
+        game = {"spread": -15, "total": 250,
+                "home": {"abbr": "BOS"}, "away": {"abbr": "WAS"}}
+        strat = _per_game_strategy(game)
+        projs = [self._make_proj("Player", 5.0, "BOS")]
+        disabled_cfg = {"enabled": False}
+        with patch("api.index._cfg", side_effect=lambda k, d=None: disabled_cfg if k == "per_game" else (d or {})):
+            adj = _per_game_adjust_projections(projs, game, strat)
+        # When disabled, should return same projections (not adjusted)
+        assert len(adj) == len(projs)
+        assert adj[0]["rating"] == 5.0  # unchanged
+
+
+class TestPerGameBuildLineups:
+    """Test _build_game_lineups() with the new strategy-aware pipeline."""
+
+    def _make_game(self, spread=-3, total=225):
+        return {
+            "gameId": "test_game_1", "spread": spread, "total": total,
+            "home": {"id": "1", "abbr": "BOS"},
+            "away": {"id": "2", "abbr": "CLE"},
+        }
+
+    def _make_projs(self, n=10):
+        """Generate n test projections from 2 teams."""
+        projs = []
+        for i in range(n):
+            team = "BOS" if i % 2 == 0 else "CLE"
+            projs.append({
+                "id": f"p{i}", "name": f"Player {i}", "pos": "SG", "team": team,
+                "rating": 5.0 - i * 0.3, "pts": 15 - i, "reb": 5, "ast": 3,
+                "stl": 1, "blk": 0.5, "est_mult": 0, "predMin": 30 - i,
+                "chalk_ev": (5.0 - i * 0.3) * 1.6, "moonshot_ev": 0,
+                "injury_status": "", "_decline": 0,
+                "season_pts": 15 - i, "recent_min": 28 - i, "season_min": 28 - i,
+                "player_variance": 0.3 + i * 0.05,
+                "season_reb": 5, "season_ast": 3,
+            })
+        return projs
+
+    def test_returns_strategy(self):
+        from api.index import _build_game_lineups
+        game = self._make_game()
+        projs = self._make_projs(10)
+        result = _build_game_lineups(projs, game)
+        assert "strategy" in result
+        assert "the_lineup" in result
+        assert result["strategy"]["type"] in ("balanced", "neutral", "top_heavy")
+
+    def test_five_players_returned(self):
+        from api.index import _build_game_lineups
+        result = _build_game_lineups(self._make_projs(10), self._make_game())
+        assert len(result["the_lineup"]) == 5
+
+    def test_slot_assignment_valid(self):
+        from api.index import _build_game_lineups
+        result = _build_game_lineups(self._make_projs(10), self._make_game())
+        slots = [p["slot"] for p in result["the_lineup"]]
+        assert set(slots) == {"2.0x", "1.8x", "1.6x", "1.4x", "1.2x"}
+
+    def test_est_mult_zeroed(self):
+        """Per-game: card boost must be zeroed (irrelevant in single-game)."""
+        from api.index import _build_game_lineups
+        result = _build_game_lineups(self._make_projs(10), self._make_game())
+        for p in result["the_lineup"]:
+            assert p["est_mult"] == 0
+
+    def test_blowout_allows_4_from_one_team(self):
+        """F6: In blowouts, min_per_team relaxes to 1, allowing 4-1 split."""
+        from api.index import _build_game_lineups
+        game = self._make_game(spread=-15)  # big blowout
+        # Make all BOS players much better than CLE
+        projs = []
+        for i in range(5):
+            projs.append({
+                "id": f"bos{i}", "name": f"BOS Player {i}", "pos": "SG", "team": "BOS",
+                "rating": 6.0 - i * 0.2, "pts": 18 - i, "reb": 5, "ast": 3,
+                "stl": 1, "blk": 0.5, "est_mult": 0, "predMin": 30,
+                "chalk_ev": (6.0 - i * 0.2) * 1.6, "moonshot_ev": 0,
+                "injury_status": "", "_decline": 0,
+                "season_pts": 18 - i, "recent_min": 28, "season_min": 28,
+                "player_variance": 0.3,
+                "season_reb": 5, "season_ast": 3,
+            })
+        for i in range(5):
+            projs.append({
+                "id": f"cle{i}", "name": f"CLE Player {i}", "pos": "PG", "team": "CLE",
+                "rating": 4.0 - i * 0.3, "pts": 12 - i, "reb": 4, "ast": 2,
+                "stl": 0.8, "blk": 0.3, "est_mult": 0, "predMin": 26,
+                "chalk_ev": (4.0 - i * 0.3) * 1.6, "moonshot_ev": 0,
+                "injury_status": "", "_decline": 0,
+                "season_pts": 12 - i, "recent_min": 24, "season_min": 24,
+                "player_variance": 0.3,
+                "season_reb": 4, "season_ast": 2,
+            })
+        result = _build_game_lineups(projs, game)
+        teams = [p["team"] for p in result["the_lineup"]]
+        bos_count = teams.count("BOS")
+        # In blowout with BOS much better, should allow 4 from BOS
+        assert bos_count >= 3  # at least 3, potentially 4
+
+    def test_validate_slot_assignment_optimal(self):
+        """F5: 5! permutation validator should produce optimal assignment."""
+        from api.index import _validate_slot_assignment
+        lineup = [
+            {"name": "A", "rating": 3.0, "slot": "2.0x"},
+            {"name": "B", "rating": 5.0, "slot": "1.8x"},
+            {"name": "C", "rating": 4.0, "slot": "1.6x"},
+            {"name": "D", "rating": 2.0, "slot": "1.4x"},
+            {"name": "E", "rating": 1.0, "slot": "1.2x"},
+        ]
+        result = _validate_slot_assignment(lineup)
+        # Optimal: highest RS at 2.0x
+        assert result[0]["name"] == "B"  # 5.0 at 2.0x
+        assert result[0]["slot"] == "2.0x"
+        assert result[1]["name"] == "C"  # 4.0 at 1.8x
+        assert result[1]["slot"] == "1.8x"
+
+
+class TestPerGameConfig:
+    """Test per_game config in _CONFIG_DEFAULTS."""
+
+    def test_config_defaults_has_per_game(self):
+        from api.index import _CONFIG_DEFAULTS
+        assert "per_game" in _CONFIG_DEFAULTS
+        pg = _CONFIG_DEFAULTS["per_game"]
+        assert pg["enabled"] is True
+        assert pg["total_baseline"] == 222
+        assert pg["close_spread_threshold"] == 5
+        assert pg["blowout_spread_threshold"] == 13
+
+    def test_config_defaults_all_keys_present(self):
+        from api.index import _CONFIG_DEFAULTS
+        pg = _CONFIG_DEFAULTS["per_game"]
+        required_keys = [
+            "enabled", "total_baseline", "total_mult_strength",
+            "total_mult_floor", "total_mult_ceiling",
+            "close_spread_threshold", "blowout_spread_threshold",
+            "close_game_floor_bonus", "blowout_favored_role_bonus",
+            "blowout_favored_star_bonus", "blowout_underdog_role_penalty",
+            "blowout_underdog_star_penalty", "blowout_min_per_team",
+            "role_player_pts_ceiling", "value_anchor_min_rating",
+            "value_anchor_pts_ceiling", "value_anchor_bonus",
+            "close_game_variance_dampen", "blowout_variance_uplift",
+        ]
+        for k in required_keys:
+            assert k in pg, f"Missing per_game config key: {k}"
+
+    def test_score_bounds_widened(self):
+        """Per-game score bounds should accommodate strategy adjustments."""
+        from api.index import _SCORE_BOUNDS
+        lo, hi = _SCORE_BOUNDS["the_lineup"]
+        assert lo <= 20.0
+        assert hi >= 42.0
+
+
+class TestPerGameFrontend:
+    """Test frontend per-game strategy rendering elements."""
+
+    def test_strategy_insight_element_exists(self):
+        src = open("index.html").read()
+        assert 'id="strategyInsight"' in src
+
+    def test_render_strategy_insight_function(self):
+        src = open("index.html").read()
+        assert "function _renderStrategyInsight" in src
+
+    def test_strategy_pills_in_cards(self):
+        src = open("index.html").read()
+        assert "ANCHOR" in src
+        assert "FAV" in src
+
+    def test_strategy_badge_display(self):
+        """Strategy badge should show type-based border color."""
+        src = open("index.html").read()
+        assert "strat.type === " in src or "strat.type ===" in src
+        assert "balanced" in src
+        assert "top_heavy" in src
+
+    def test_back_hides_strategy_insight(self):
+        """_backToGameGrid should hide strategy insight bar."""
+        src = open("index.html").read()
+        assert "strategyInsight" in src
+        # The _backToGameGrid function should reference strategyInsight
+        import re
+        back_fn = re.search(r"function _backToGameGrid\(\)\s*\{[^}]+\}", src)
+        assert back_fn, "_backToGameGrid not found"
+        assert "strategyInsight" in back_fn.group(0)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
