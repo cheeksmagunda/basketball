@@ -168,6 +168,125 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
   - **Parlay:** `initParlayPage()` → `GET /api/parlay` (90s timeout) + fire-and-forget `GET /api/parlay-history` (15s). Skeleton loading. Same-day cache guard (`PARLAY_LOADED_DATE`). Renders stacked 3-leg ticket card with combined probability + correlation multiplier + narrative. History section shows Recent Parlays with hit/miss pills; tapping a row opens bottom-sheet modal with full ticket detail.
   - **Lab:** `initLabPage()` → pre-warm `GET /api/health`, then `GET /api/lab/status`; on unlock, loads briefing + config-history + line-of-the-day + slate + log for context; lock poll every 120s when locked.
 
+## Unified Result Service — Global Pick Resolution (Atomic, Streaming)
+
+The **Unified Result Service** is a global infrastructure for atomic pick resolution across POTD (Line of the Day) and Parlay picks. It ensures that:
+
+1. **Every pick exists in EXACTLY one bucket**: Current (awaiting resolution) or Recent (hit/miss/void)
+2. **Atomic state transitions**: When a game finalizes, all associated picks resolve atomically
+3. **Global void handling**: DNP players automatically void their picks system-wide
+4. **No duplicate states**: Frontend filters ensure picks never appear in both Current + Recent
+
+### Key Concepts
+
+**Binary State Model:**
+- `is_resolved = false` → pick is Current (unresolved, awaiting games)
+- `is_resolved = true` AND `is_pending = false` → pick is Recent (binary outcome only: hit, miss, or void)
+
+**Void/DNP Handling:**
+- When a player is marked DNP/OUT by RotoWire, their pick is automatically marked `result="void"`
+- Void picks are handled globally: they clear from Current view instantly
+- For Parlays: one void leg voids the entire parlay (marked as push/refund)
+
+### Backend Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/result-service/resolve` | POST | Atomic resolution when game becomes final. Body: `{game_id, date, pick_type: "potd\|parlay\|both"}`. Returns resolved count + updates. |
+| `/api/result-service/status` | GET | Query current resolution status for a date. Returns `{potd: {over, under}, parlay, global_status: "all_current\|mixed\|all_resolved"}`. |
+
+### Data Schema
+
+All picks (POTD and Parlay legs) now include:
+
+```json
+{
+  "player_name": "string",
+  "stat_type": "points|rebounds|assists",
+  "line": 20.5,
+  "direction": "over|under",
+  "result": "pending|hit|miss|void",
+  "actual_stat": 22.3,
+  "player_status": "playing|dnp|gtd|out|unknown",
+
+  // Unified result service fields
+  "is_resolved": false,     // Current: false, Recent: true
+  "is_pending": true,       // Resolving state (false = binary outcome)
+  "resolved_at": "ISO timestamp" // Set when is_resolved transitions to true
+}
+```
+
+### Frontend Integration
+
+**Global Utilities** (grep: UNIFIED RESULT SERVICE):
+- `filterCurrentPicks(picks)` — Returns only unresolved picks (is_resolved=false)
+- `filterRecentPicks(picks)` — Returns only resolved picks (is_resolved=true, is_pending=false)
+- `getGlobalPickStatus(potdPicks, parlayPick)` — Compute overall status (all_current|mixed|all_resolved)
+- `pollResultServiceStatus(date)` — Poll backend for resolution status
+- `triggerResultServiceResolution(gameId, date, pickType)` — Trigger atomic resolution
+- `startResultServicePolling()` / `stopResultServicePolling()` — Background polling when locked
+
+**Normalization:**
+- `_normalizeLinePick(pick)` — Add unified fields to Line picks (called on load)
+- `_normalizeParlay(parlay)` — Add unified fields to Parlay tickets (called on load)
+
+**State Management:**
+- Picks are normalized on load (fetchLineOfTheDay, fetchParlay, history fetches)
+- Polling starts when Parlay is locked (_startParlayLockPoll integrates startResultServicePolling)
+- Polling stops when all picks resolved (global_status="all_resolved")
+
+### Backwards Compatibility
+
+Existing pick data **without** unified fields is automatically upgraded:
+- `is_resolved` defaults to `false` (pick is Current)
+- `is_pending` defaults to `true` (pick is resolving)
+- `player_status` defaults to `"playing"` (until RotoWire confirms DNP)
+
+No data migration needed — fields are added on-the-fly at load time.
+
+### Resolution Flow
+
+1. **Game Final Event** (ESPN detection):
+   - Frontend detects game status = "final" (Line live poll or cron)
+   - Calls `triggerResultServiceResolution(gameId, date, "both")`
+
+2. **Atomic Resolution** (backend):
+   - POST `/api/result-service/resolve` loads POTD + Parlay picks
+   - Resolves each leg/pick (checks RotoWire for DNP, fetches actual stats)
+   - Updates `is_resolved` = true when all legs finalize or void
+   - Writes back to GitHub atomically
+
+3. **Global State Transition** (frontend):
+   - Polling detects `is_resolved` change via `/api/result-service/status`
+   - Pick auto-migrates from Current to Recent sections
+   - UI updates immediately (no page reload needed)
+
+4. **Binary Outcomes Only** (Recent sections):
+   - Recent Parlays show only: hit, miss, or void (never "pending")
+   - Recent Line picks show only: hit, miss, or void (never "pending")
+   - Prevents stale "unresolved" cards in history
+
+### Example: Void on DNP
+
+```
+Shai Gilgeous-Alexander over 30.5 pts (tonight's pick):
+  1. Game starts, live poll running
+  2. RotoWire marks "OUT" (injury reported)
+  3. Next poll calls triggerResultServiceResolution()
+  4. Backend: _get_player_dnp_status() → "out"
+  5. Backend: pick.result = "void", is_resolved = true
+  6. Frontend: pick moves from Current → Recent (void)
+  7. User sees "Shai OUT (void)" in Recent Picks instantly
+```
+
+### Cache Invalidation
+
+When resolution updates a pick:
+- `/tmp/nba_cache_v19/line_v1` cleared (Line picks cache)
+- `/tmp/nba_cache_v19/parlay_v1` cleared (Parlay cache)
+- GitHub `data/lines/{date}_pick.json` updated (POTD)
+- GitHub `data/parlays/{date}.json` updated (Parlay)
+
 ## Environment Variables (Railway)
 
 - `GITHUB_TOKEN` — GitHub PAT with repo scope (for CSV + config read/write via Contents API)
