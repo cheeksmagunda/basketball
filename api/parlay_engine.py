@@ -313,6 +313,10 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                         if ostat == stat and (name_lower in oname or oname in name_lower):
                             odds_data = odata
                             break
+                # Diagnostic: first time we see a player without odds, log it
+                if not odds_data and _f.get("no_odds", 0) < 2:
+                    available_for_stat = [k for k, v in player_odds_map.items() if k[1] == stat]
+                    print(f"[parlay] debug: {name_lower} ({stat}) not found. Available keys for {stat}: {len(available_for_stat)}")
             if not odds_data:
                 _f["no_odds"] += 1
                 continue  # No sportsbook line → can't build a parlay leg
@@ -443,6 +447,10 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 })
 
     print(f"[parlay] filter funnel: {_f}")
+    # Diagnostic: show which players made it through and why some didn't
+    if candidates:
+        sample_cands = candidates[:2]
+        print(f"[parlay] sample candidates: {[(c.get('player_name'), c.get('stat_type'), c.get('direction')) for c in sample_cands]}")
     return candidates, _f
 
 
