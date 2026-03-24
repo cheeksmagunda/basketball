@@ -713,7 +713,7 @@ _CONFIG_DEFAULTS = {
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
     "fair_value": {
-        "enabled": False,
+        "enabled": True,
         "primary_window": 15,
         "short_window": 10,
         "ai_blend_weight": 0.15,
@@ -726,6 +726,7 @@ _CONFIG_DEFAULTS = {
         "ats_regression_strength": 0.5,
         "closeness_strength": 0.4,
         "closeness_max": 1.5,
+        "momentum_strength": 0.15,
         "default_total": 222.0,
         "book_weights": {
             "pinnacle": 1.5, "draftkings": 1.0, "fanduel": 1.0,
@@ -733,7 +734,7 @@ _CONFIG_DEFAULTS = {
         },
         "stat_types": ["points", "rebounds", "assists", "steals", "blocks", "threes"],
         "edge_thresholds": {"min_edge_pct": 5.0, "min_ev": 0.03, "sharp_aligned_bonus": 1.15},
-        "compression": {"compression_divisor": 5.5, "compression_power": 0.72, "rs_cap": 20.0},
+        "compression": {"compression_divisor": 4.5, "compression_power": 0.78, "rs_cap": 20.0},
     },
     "odds_enrichment": {
         "enabled": True,
@@ -2569,6 +2570,7 @@ def _project_player_fair_value_body(
     cfg = dict(fv_cfg)
     cfg.setdefault("compression", _CONFIG_DEFAULTS.get("fair_value", {}).get("compression", {}))
     dfs_w = _cfg("real_score.dfs_weights", _CONFIG_DEFAULTS["real_score"]["dfs_weights"])
+    gs_cfg = _cfg("game_script", _CONFIG_DEFAULTS["game_script"])
     fv_out = project_player_fv(
         prefetched_gamelog,
         athlete,
@@ -2580,6 +2582,7 @@ def _project_player_fair_value_body(
         book if book else None,
         cfg,
         dfs_weights=dfs_w,
+        gs_config=gs_cfg,
     )
     raw_rating = float(fv_out["rating"])
     rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])

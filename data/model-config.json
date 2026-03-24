@@ -362,6 +362,7 @@
     "ats_regression_strength": 0.5,
     "closeness_strength": 0.4,
     "closeness_max": 1.5,
+    "momentum_strength": 0.15,
     "default_total": 222.0,
     "book_weights": {
       "pinnacle": 1.5,
@@ -384,8 +385,8 @@
       "sharp_aligned_bonus": 1.15
     },
     "compression": {
-      "compression_divisor": 5.5,
-      "compression_power": 0.72,
+      "compression_divisor": 4.5,
+      "compression_power": 0.78,
       "rs_cap": 20.0
     }
   },

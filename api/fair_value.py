@@ -28,6 +28,120 @@ _STAT_KEYS = (
     "minutes",
 )
 
+# ── Game Script Tiers (mirrors _game_script_weights in index.py) ──────────
+# Per-stat multipliers based on expected game pace/style.
+# These defaults match _CONFIG_DEFAULTS["game_script"] in index.py.
+_GAME_SCRIPT_DEFAULTS = {
+    "defensive_grind_ceiling": 220,
+    "balanced_ceiling": 235,
+    "fast_paced_ceiling": 245,
+    "blowout_spread_threshold": 8,
+    "blowout_pts_penalty": 0.90,
+    "blowout_ast_penalty": 0.90,
+    "blowout_reb_penalty": 0.94,
+    "defensive_grind": {"pts": 0.85, "reb": 0.90, "ast": 0.85, "stl": 1.40, "blk": 1.35, "tov": 1.15},
+    "balanced":        {"pts": 1.0,  "reb": 1.0,  "ast": 1.0,  "stl": 1.05, "blk": 1.05, "tov": 1.0},
+    "fast_paced":      {"pts": 1.15, "reb": 1.10, "ast": 1.15, "stl": 0.95, "blk": 0.95, "tov": 0.90},
+    "track_meet":      {"pts": 1.25, "reb": 1.05, "ast": 1.20, "stl": 0.90, "blk": 0.90, "tov": 0.85},
+}
+
+
+def game_script_weights(
+    total: float,
+    spread: float,
+    gs_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, float]:
+    """Per-stat multipliers based on game total/spread (game script tier).
+
+    Pure function version of _game_script_weights in index.py.
+    Returns dict with keys: pts, reb, ast, stl, blk, tov.
+    """
+    gs = gs_config or _GAME_SCRIPT_DEFAULTS
+    t = total or _DEFAULT_TOTAL
+
+    dg_ceil = float(gs.get("defensive_grind_ceiling", 220))
+    bal_ceil = float(gs.get("balanced_ceiling", 235))
+    fp_ceil = float(gs.get("fast_paced_ceiling", 245))
+    blow_thr = float(gs.get("blowout_spread_threshold", 8))
+
+    if t < dg_ceil:
+        tier = "defensive_grind"
+    elif t <= bal_ceil:
+        tier = "balanced"
+    elif t <= fp_ceil:
+        tier = "fast_paced"
+    else:
+        tier = "track_meet"
+
+    defaults = _GAME_SCRIPT_DEFAULTS[tier]
+    tier_cfg = gs.get(tier, defaults)
+    w = {k: float(tier_cfg.get(k, defaults.get(k, 1.0))) for k in ["pts", "reb", "ast", "stl", "blk", "tov"]}
+
+    if tier == "track_meet" and abs(spread or 0) > blow_thr:
+        w["pts"] *= float(gs.get("blowout_pts_penalty", 0.90))
+        w["ast"] *= float(gs.get("blowout_ast_penalty", 0.90))
+        w["reb"] *= float(gs.get("blowout_reb_penalty", 0.94))
+
+    return w
+
+
+def spread_adjustment(
+    spread: float,
+    total: float,
+    pts: float,
+    avg_min: float,
+    bench_pts_threshold: float = 14.0,
+    bench_min_threshold: float = 30.0,
+) -> float:
+    """RS-clutch-aligned spread adjustment (mirrors heuristic path in index.py).
+
+    RS algorithm heavily weights game closeness: tight games → every play matters.
+    Stars get big bonus in tight games, penalty in blowouts.
+    Bench players get bonus in blowouts (garbage time minutes).
+    Returns multiplier typically in [0.55, 1.35].
+    """
+    abs_spread = abs(spread or 0)
+    is_bench = pts <= bench_pts_threshold and avg_min <= bench_min_threshold
+
+    if is_bench:
+        if abs_spread <= 4:
+            s_adj = 1.0
+        else:
+            s_adj = min(1.15, 1.0 + (abs_spread - 4) * 0.02)
+    else:
+        if abs_spread <= 3:
+            s_adj = 1.25 - (abs_spread * 0.03)
+        elif abs_spread <= 7:
+            s_adj = 1.16 - ((abs_spread - 3) * 0.04)
+        else:
+            s_adj = max(0.55, 1.0 - (abs_spread - 7) * 0.09)
+
+    # Total interaction: high total + tight spread = shootout bonus
+    _total = total or _DEFAULT_TOTAL
+    if not is_bench and _total >= 230 and abs_spread <= 5:
+        s_adj *= 1.0 + min(0.10, (_total - 230) * 0.005)
+
+    return s_adj
+
+
+def momentum_adjustment(
+    rolling_stats: Dict[str, Any],
+    strength: float = 0.15,
+) -> float:
+    """Scoring momentum from L3 vs L10 trend.
+
+    Players on a hot streak (L3 >> L10) get a mild RS uplift.
+    Players cooling off (L3 << L10) get a mild downgrade.
+    Returns multiplier in [0.92, 1.12].
+    """
+    pts_d = rolling_stats.get("points") or {}
+    momentum = float(pts_d.get("L3_vs_L10_momentum", 1.0))
+    # Clamp momentum ratio to reasonable range
+    momentum = max(0.5, min(2.0, momentum))
+    # Convert to mild adjustment: (1.2 - 1.0) * 0.15 = +0.03 for 20% hot streak
+    adj = 1.0 + (momentum - 1.0) * strength
+    return max(0.92, min(1.12, adj))
+
 
 def _pos_binary_bucket(pos: str) -> str:
     """Map roster position to guards vs forwards bucket (binary DvP split)."""
@@ -363,25 +477,22 @@ def project_player_fv(
     book_lines: Optional[Dict[str, Dict[str, Any]]],
     config: Dict[str, Any],
     dfs_weights: Optional[Dict[str, float]] = None,
+    gs_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Unified projection: rolling stats → adjustments → RS-like rating + per-stat FV."""
+    """Unified projection: rolling stats → DvP → game script → spread adj → momentum → RS rating + per-stat FV."""
     cfg = config or {}
     primary_window = int(cfg.get("primary_window", 15))
     short_w = int(cfg.get("short_window", 10))
-    closeness_max = float(cfg.get("closeness_max", 1.5))
-    closeness_strength = float(cfg.get("closeness_strength", 0.4))
     default_total = float(cfg.get("default_total", _DEFAULT_TOTAL))
 
     roll = compute_rolling_stats(gamelog, window=primary_window, short_window=short_w)
     roll_adj = adjust_for_opponent(roll, opp_def, position)
-    c_close = closeness_factor(spread, total, closeness_max=closeness_max, default_total=default_total)
-    # Blend closeness toward 1.0 by (1-strength) to avoid double-counting with spread_adj in legacy
-    close_mult = 1.0 + (c_close - 1.0) * closeness_strength
-    ats_m = ats_regression_factor(cfg.get("team_recent_ats"), strength=float(cfg.get("ats_regression_strength", 0.5)))
-    game_mult = close_mult * float(ats_m)
     home_adj = 1.02 if (side or "").lower() == "home" else 1.0
 
-    # Base per-stat projections from mean_L15 (adjusted)
+    # ── Game script weights (pace-tier stat multipliers) ──────────────────
+    gs_w = game_script_weights(total, spread, gs_config=gs_config)
+
+    # Base per-stat projections from mean_L15 (DvP-adjusted)
     def _gv(key: str) -> float:
         d = roll_adj.get(key) or {}
         return float(d.get("mean_L15", 0.0))
@@ -399,12 +510,40 @@ def project_player_fv(
     if avg_min <= 0:
         avg_min = float(roll.get("_mean_minutes_L15") or 22.0)
 
-    pts *= game_mult * home_adj
-    reb *= game_mult * home_adj
-    ast *= game_mult * home_adj
-    stl *= game_mult * home_adj
-    blk *= game_mult * home_adj
-    threes *= game_mult * home_adj
+    # Apply game script per-stat weights + home adjustment
+    pts *= gs_w.get("pts", 1.0) * home_adj
+    reb *= gs_w.get("reb", 1.0) * home_adj
+    ast *= gs_w.get("ast", 1.0) * home_adj
+    stl *= gs_w.get("stl", 1.0) * home_adj
+    blk *= gs_w.get("blk", 1.0) * home_adj
+    threes *= home_adj  # threes not in game_script weights
+    tov *= gs_w.get("tov", 1.0)
+
+    # ── Spread adjustment (RS-clutch-aligned, bench vs starter) ───────────
+    s_adj = spread_adjustment(
+        spread, total, pts, avg_min,
+        bench_pts_threshold=float(cfg.get("bench_pts_threshold", 14.0)),
+        bench_min_threshold=float(cfg.get("bench_min_threshold", 30.0)),
+    )
+
+    # ── Pace adjustment ───────────────────────────────────────────────────
+    _total = total or default_total
+    pace_adj = 1.0 + (0.06 * (_total - default_total) / 20.0)
+
+    # ── Momentum (L3 vs L10 scoring trend) ────────────────────────────────
+    momentum_str = float(cfg.get("momentum_strength", 0.15))
+    mom_adj = momentum_adjustment(roll_adj, strength=momentum_str)
+
+    # Combined game-context multiplier
+    game_mult = s_adj * pace_adj * mom_adj
+
+    # Apply game-context multiplier to stat projections
+    pts *= game_mult
+    reb *= game_mult
+    ast *= game_mult
+    stl *= game_mult
+    blk *= game_mult
+    threes *= game_mult
 
     s_base = _dfs_from_stats(pts, reb, ast, stl, blk, tov, dfs_weights=dfs_weights)
     rs_cfg = cfg.get("compression") or {}
