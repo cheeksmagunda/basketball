@@ -10204,25 +10204,20 @@ def _run_parlay_engine_sync(today):
     player_odds_map = _build_player_odds_map(target_games)
     print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
 
-    # Synthetic odds fallback: when no Odds API data (post-lock or key absent),
-    # build model-only candidate legs using projection as the sportsbook line.
-    # Line is set 0.5 below projection so the over direction gets ~55-60% model hit prob.
+    # No synthetic fallback — parlay requires real sportsbook lines.
+    # If Odds API returns nothing, fail explicitly so the user knows.
     projection_only = False
-    if not player_odds_map and all_proj:
-        projection_only = True
-        for p in all_proj:
-            name_lower = (p.get("name") or "").lower()
-            for stat, stat_key in [("points", "pts"), ("rebounds", "reb"), ("assists", "ast")]:
-                proj_val = float(p.get(stat_key) or 0)
-                if proj_val > 0:
-                    # Snap to nearest 0.5: ensure float preservation (6.3→6.5, 21.4→21.5)
-                    snapped_line = round(proj_val * 2) / 2
-                    player_odds_map[(name_lower, stat)] = {
-                        "line": float(snapped_line),  # Explicit float to preserve in JSON
-                        "odds_over": None, "odds_under": None, "books_consensus": 0,
-                    }
-        print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections"
-              f" (ODDS_API_KEY={'set' if os.environ.get('ODDS_API_KEY') else 'not set'})")
+    if not player_odds_map:
+        has_key = bool(os.environ.get("ODDS_API_KEY"))
+        print(f"[parlay] no Odds API data — ODDS_API_KEY={'set' if has_key else 'NOT SET'}, "
+              f"games={len(target_games)}, projections={len(all_proj)}. "
+              f"Returning error (no synthetic fallback).")
+        return None, "no_odds_data", {
+            "projections": len(all_proj),
+            "odds_entries": 0,
+            "odds_available": False,
+            "projection_only": True,
+        }
 
     rw_statuses = {}
     try:
@@ -10237,9 +10232,6 @@ def _run_parlay_engine_sync(today):
         print(f"[parlay] DvP fetch error (non-fatal): {_pdvp_err}")
 
     parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
-    if projection_only:
-        parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
-        parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
 
     gamelog_id_list = select_parlay_gamelog_player_ids(
         all_proj, target_games, player_odds_map, rw_statuses, parlay_config, projection_only
@@ -10310,8 +10302,8 @@ async def get_parlay(request: Request):
                 try:
                     age_s = (datetime.utcnow() - datetime.fromisoformat(cached_at)).total_seconds()
                     if age_s < 1800:
-                        if cached.get("projection_only") and not slate_locked:
-                            print("[parlay] bypassing projection-only /tmp cache while slate is open")
+                        if cached.get("projection_only"):
+                            print("[parlay] bypassing projection-only /tmp cache (synthetic fallback removed)")
                         else:
                             cached["locked"] = slate_locked
                             return JSONResponse(cached)
@@ -10328,8 +10320,8 @@ async def get_parlay(request: Request):
                 if gh_parlay.get("_busted"):
                     print(f"[parlay] GitHub cache busted — regenerating")
                 elif gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
-                    if gh_parlay.get("projection_only") and not slate_locked:
-                        print("[parlay] projection-only GitHub ticket found; rebuilding once while slate is open")
+                    if gh_parlay.get("projection_only"):
+                        print("[parlay] projection-only GitHub ticket found — skipping (synthetic fallback removed)")
                     else:
                         gh_parlay["locked"] = slate_locked
                         gh_parlay["_from_github"] = True
@@ -10344,9 +10336,9 @@ async def get_parlay(request: Request):
         result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
 
         if err or not result:
-            no_odds = debug and not debug.get("odds_available")
+            no_odds = err == "no_odds_data" or (debug and not debug.get("odds_available"))
             narrative = (
-                "Parlay requires sportsbook odds data (ODDS_API_KEY). No player prop lines available for today's slate."
+                "Sportsbook odds unavailable. Parlay requires real player prop lines from bookmakers — check that ODDS_API_KEY is set and games have published props."
                 if no_odds else
                 "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks."
             )
