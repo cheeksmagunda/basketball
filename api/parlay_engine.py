@@ -317,7 +317,8 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 _f["no_odds"] += 1
                 continue  # No sportsbook line → can't build a parlay leg
 
-            book_line = round(float(odds_data.get("line", 0)) * 2) / 2  # Snap to nearest 0.5
+            # Ensure float preservation throughout pipeline (6.5, 21.5, 8.5 must not become 6, 21, 8)
+            book_line = float(round(float(odds_data.get("line", 0)) * 2) / 2)  # Snap to nearest 0.5
             if book_line <= 0:
                 _f["no_odds"] += 1
                 continue
@@ -418,7 +419,7 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                     "gameId": gctx.get("gameId", ""),
                     "stat_type": stat,
                     "direction": direction,
-                    "line": book_line,
+                    "line": float(book_line),  # Explicit float to prevent JSON truncation (6.5 not 6)
                     "projection": round(proj_val, 1),
                     "edge": round(edge, 1),
                     "std_dev": round(std_dev, 2),

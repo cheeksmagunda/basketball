@@ -10049,11 +10049,14 @@ def _run_parlay_engine_sync(today):
             for stat, stat_key in [("points", "pts"), ("rebounds", "reb"), ("assists", "ast")]:
                 proj_val = float(p.get(stat_key) or 0)
                 if proj_val > 0:
+                    # Snap to nearest 0.5: ensure float preservation (6.3→6.5, 21.4→21.5)
+                    snapped_line = round(proj_val * 2) / 2
                     player_odds_map[(name_lower, stat)] = {
-                        "line": round(proj_val * 2) / 2,  # Snap to nearest 0.5
+                        "line": float(snapped_line),  # Explicit float to preserve in JSON
                         "odds_over": None, "odds_under": None, "books_consensus": 0,
                     }
-        print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections")
+        print(f"[parlay] no Odds API data — built {len(player_odds_map)} synthetic lines from projections"
+              f" (ODDS_API_KEY={'set' if os.environ.get('ODDS_API_KEY') else 'not set'})")
 
     rw_statuses = {}
     try:
@@ -10188,11 +10191,14 @@ async def get_parlay(request: Request):
                 "debug": debug or {},
             }, status_code=200)
 
-        # Normalize legs for frontend
+        # Normalize legs for frontend + ensure float preservation for line values
         for leg in result.get("legs", []):
             leg["date"] = today_str
             leg.setdefault("result", "pending")
             leg.setdefault("actual_stat", None)
+            # Ensure line value is explicitly float to prevent JSON truncation (6.5 not 6)
+            if "line" in leg:
+                leg["line"] = float(leg["line"])
         result.setdefault("result", "pending")
         result["date"] = today_str
         result["locked"] = slate_locked
