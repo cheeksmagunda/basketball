@@ -92,13 +92,15 @@ def spread_adjustment(
     avg_min: float,
     bench_pts_threshold: float = 14.0,
     bench_min_threshold: float = 30.0,
+    starter_blowout_floor: float = 0.70,
 ) -> float:
     """RS-clutch-aligned spread adjustment (mirrors heuristic path in index.py).
 
     RS algorithm heavily weights game closeness: tight games → every play matters.
     Stars get big bonus in tight games, penalty in blowouts.
     Bench players get bonus in blowouts (garbage time minutes).
-    Returns multiplier typically in [0.55, 1.35].
+    Returns multiplier typically in [starter_blowout_floor, 1.35].
+    starter_blowout_floor: minimum multiplier for starters in heavy-spread games (default 0.70).
     """
     abs_spread = abs(spread or 0)
     is_bench = pts <= bench_pts_threshold and avg_min <= bench_min_threshold
@@ -114,7 +116,7 @@ def spread_adjustment(
         elif abs_spread <= 7:
             s_adj = 1.16 - ((abs_spread - 3) * 0.04)
         else:
-            s_adj = max(0.55, 1.0 - (abs_spread - 7) * 0.09)
+            s_adj = max(starter_blowout_floor, 1.0 - (abs_spread - 7) * 0.09)
 
     # Total interaction: high total + tight spread = shootout bonus
     _total = total or _DEFAULT_TOTAL
@@ -524,6 +526,7 @@ def project_player_fv(
         spread, total, pts, avg_min,
         bench_pts_threshold=float(cfg.get("bench_pts_threshold", 14.0)),
         bench_min_threshold=float(cfg.get("bench_min_threshold", 30.0)),
+        starter_blowout_floor=float((cfg.get("game_script") or {}).get("starter_blowout_floor", 0.70)),
     )
 
     # ── Pace adjustment ───────────────────────────────────────────────────

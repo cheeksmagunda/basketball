@@ -1,7 +1,7 @@
 {
-  "version": 57,
-  "updated_at": "2026-03-22T00:00:00Z",
-  "updated_by": "14-date-leaderboard-audit-v57",
+  "version": 58,
+  "updated_at": "2026-03-24T00:00:00Z",
+  "updated_by": "18-date-audit-v58-draft-score-optimization",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -92,14 +92,15 @@
     "blowout_spread_threshold": 8,
     "blowout_pts_penalty": 0.9,
     "blowout_ast_penalty": 0.9,
-    "blowout_reb_penalty": 0.94
+    "blowout_reb_penalty": 0.94,
+    "starter_blowout_floor": 0.70
   },
   "real_score": {
     "dfs_weights": {
       "pts": 1.5,
       "reb": 0.5,
-      "ast": 1.0,
-      "stl": 3.0,
+      "ast": 1.2,
+      "stl": 2.5,
       "blk": 1.5,
       "tov": -1.0
     },
@@ -116,7 +117,7 @@
     "compression_divisor": 4.5,
     "compression_power": 0.78,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.5,
+    "ai_blend_weight": 0.35,
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -130,19 +131,19 @@
       "archetypes": {
         "star": 0.95,
         "starter": 1.0,
-        "wing_role": 1.02,
+        "wing_role": 1.05,
         "bench_microwave": 1.10,
-        "big": 0.88,
-        "pure_rebounder": 0.78,
+        "big": 0.95,
+        "pure_rebounder": 0.88,
         "scorer": 1.12
       }
     },
     "post_lock_calibration": {
       "enabled": true,
       "require_locked_slate": true,
-      "recency_strength": 0.12,
-      "max_nudge": 0.12,
-      "cascade_weight": 0.06
+      "recency_strength": 0.20,
+      "max_nudge": 0.20,
+      "cascade_weight": 0.10
     },
     "closeness": {
       "enabled": true,
@@ -190,7 +191,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.0,
+    "chalk_min_boost_floor": 0.7,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
@@ -208,10 +209,10 @@
     "enabled": true,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
-    "min_boost": 0.8,
-    "min_rating": 4.0,
+    "min_boost": 0.5,
+    "min_rating": 4.5,
     "require_count": 0,
-    "max_count": 2
+    "max_count": 1
   },
   "context_layer": {
     "enabled": true,
@@ -228,8 +229,9 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 12,
-    "metric": "tv",
+    "size": 14,
+    "metric": "tv_floor",
+    "tv_floor_min_rs": 3.8,
     "blend_weight": 0.5,
     "per_game_carry": 2
   },
@@ -237,7 +239,7 @@
     "enabled": true,
     "primary_window": 15,
     "short_window": 10,
-    "ai_blend_weight": 0.15,
+    "ai_blend_weight": 0.12,
     "cascade_policy": "elite_only",
     "elite_cascade_ppg": 27.0,
     "elite_players": [
@@ -302,7 +304,7 @@
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
     "chalk_min_high_boost_count": 3,
-    "chalk_high_boost_threshold": 1.5,
+    "chalk_high_boost_threshold": 1.8,
     "chalk_min_big_boost_count": 1,
     "chalk_big_boost_threshold": 2.5
   },
@@ -324,14 +326,14 @@
   "moonshot": {
     "min_minutes_floor": 20,
     "min_recent_minutes_floor": 20,
-    "min_card_boost": 1.2,
+    "min_card_boost": 1.0,
     "min_rating_floor": 3.5,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.65,
+    "boost_leverage_power": 0.75,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -351,8 +353,8 @@
     "scoring_pts_bias_scale": 0.015,
     "scorer_upside": {
       "enabled": true,
-      "min_pts_per_min": 0.55,
-      "min_season_pts": 15.0,
+      "min_pts_per_min": 0.48,
+      "min_season_pts": 12.0,
       "multiplier": 1.10
     },
     "rs_bypass": {
@@ -402,6 +404,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 58,
+      "date": "2026-03-24",
+      "change": "18-date audit (v58) — draft score optimization targeting 60-70+ total. Root causes: (1) Archetype penalties too harsh on bigs: big 0.88→0.95, pure_rebounder 0.78→0.88. Actual winners (Achiuwa RS 5.4, Kel'el Ware RS 5.3, Clingan RS 5.2) were being dropped below gating floors by 12-22% penalty. (2) core_pool.metric tv→tv_floor (size 12→14): new metric gates on RS >= 3.8 before TV ranking — prevents RS 2.5/boost 3.0x ghosts from crowding out RS 5.0/boost 1.5x actual winners. (3) ai_blend_weight 0.5→0.35: LightGBM clusters 2.5-4.5, compressing RS distribution; lower weight lets heuristic path spread RS wider. (4) fair_value.ai_blend_weight 0.15→0.12: same reason. (5) game_script.starter_blowout_floor 0.70 (new): soften blowout penalty for starters from 0.55x floor to 0.70x — RS includes impact metrics, stars still produce in blowouts. (6) chalk_min_boost_floor 1.0→0.7: let Josh Hart (1.1x)/Reed Sheppard (1.5x) compete; MILP still prefers higher TV. (7) chalk_high_boost_threshold 1.5→1.8: require 3 players with real boost value (1.8x+). (8) moonshot min_card_boost 1.2→1.0, boost_leverage_power 0.65→0.75: wider moonshot net with slightly more boost reward. (9) star_anchor max_count 2→1, min_rating 4.0→4.5, min_boost 0.8→0.5: max 1 star only when RS >= 4.5. (10) post_lock_calibration recency_strength/max_nudge 0.12→0.20, cascade_weight 0.06→0.10. (11) DFS ast 1.0→1.2, stl 3.0→2.5: playmakers (Payne RS 7.7, Hart RS 7.6) drive RS through assists. (12) scorer_upside: min_pts_per_min 0.55→0.48, min_season_pts 15→12."
+    },
     {
       "version": 57,
       "date": "2026-03-22",
