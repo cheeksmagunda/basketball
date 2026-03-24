@@ -2200,7 +2200,7 @@ class TestMoonshotRsBypass:
         """model-config.json must have moonshot.rs_bypass block."""
         cfg = json.load(open("data/model-config.json"))
         rb = cfg.get("moonshot", {}).get("rs_bypass", {})
-        assert rb.get("enabled") is True, "rs_bypass should be enabled in production config"
+        assert rb.get("enabled") is False, "rs_bypass should be disabled in production config (v59)"
         assert rb.get("min_rating", 0) >= 4.0, "min_rating should be high enough to filter bench players"
         assert rb.get("min_season_min", 0) >= 20.0, "min_season_min should require proven starters"
 
@@ -2208,14 +2208,14 @@ class TestMoonshotRsBypass:
         """_CONFIG_DEFAULTS should have rs_bypass enabled (14-date audit: Hidden Star wins 29%)."""
         from api.index import _CONFIG_DEFAULTS
         rb = _CONFIG_DEFAULTS.get("moonshot", {}).get("rs_bypass", {})
-        assert rb.get("enabled") is True, "rs_bypass should be enabled — Hidden Star archetype (RS 5+, boost < 2.0) wins 29% of daily contests"
+        assert rb.get("enabled") is False, "rs_bypass should be disabled in _CONFIG_DEFAULTS (v59)"
 
 
 # ─────────────────────────────────────────────────────────
 # TestChalkMilpRsFocusBalanced — chalk_milp_rs_focus balances RS and boost
 # ─────────────────────────────────────────────────────────
 class TestChalkMilpRsFocusHigh:
-    """At chalk_milp_rs_focus=0.40, MILP uses 60% real boost + 40% neutral."""
+    """At chalk_milp_rs_focus=0.20, MILP uses 80% real boost + 20% neutral."""
 
     def test_rs_focus_calculation(self):
         """At rs_focus=0.40, effective boost is 60% real + 40% neutral."""
@@ -2246,7 +2246,7 @@ class TestChalkMilpRsFocusHigh:
         """Production config should have balanced rs_focus (0.3-0.5)."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.3 <= val <= 0.5, f"chalk_milp_rs_focus should be 0.3-0.5 for balanced; got {val}"
+        assert 0.1 <= val <= 0.3, f"chalk_milp_rs_focus should be 0.1-0.3 (v59); got {val}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -2276,7 +2276,7 @@ class TestStatStufferBonus:
         """Production config should have stat_stuffer enabled."""
         cfg = json.load(open("data/model-config.json"))
         ss = cfg.get("real_score", {}).get("stat_stuffer", {})
-        assert ss.get("enabled") is True, "stat_stuffer should be enabled in production"
+        assert ss.get("enabled") is False, "stat_stuffer should be disabled in production (v59)"
 
 
 # ─────────────────────────────────────────────────────────
@@ -2359,7 +2359,7 @@ class TestClosenessCoefficient:
         """Production config should have closeness enabled."""
         cfg = json.load(open("data/model-config.json"))
         cc = cfg.get("real_score", {}).get("closeness", {})
-        assert cc.get("enabled") is True
+        assert cc.get("enabled") is False, "closeness should be disabled in production (v59)"
 
     def test_closeness_defaults_disabled_offline(self):
         """_CONFIG_DEFAULTS should have closeness disabled (safe fallback)."""
@@ -2381,11 +2381,11 @@ class TestCascadeRsBoost:
         assert "cascade_rs" in src
         assert "cascade_rs_mult" in src
 
-    def test_cascade_rs_config_enabled(self):
-        """Production config should have cascade_rs enabled."""
+    def test_cascade_rs_config_disabled(self):
+        """Production config should have cascade_rs disabled (v59)."""
         cfg = json.load(open("data/model-config.json"))
         cr = cfg.get("real_score", {}).get("cascade_rs", {})
-        assert cr.get("enabled") is True
+        assert cr.get("enabled") is False
 
     def test_cascade_rs_defaults_disabled(self):
         """_CONFIG_DEFAULTS should have cascade_rs disabled."""
@@ -2408,11 +2408,11 @@ class TestRoleSpikeRs:
         assert "spike_mult" in src
         assert "pts_surge" in src
 
-    def test_role_spike_config_enabled(self):
-        """Production config should have role_spike_rs enabled."""
+    def test_role_spike_config_disabled(self):
+        """Production config should have role_spike_rs disabled (v59)."""
         cfg = json.load(open("data/model-config.json"))
         rs = cfg.get("real_score", {}).get("role_spike_rs", {})
-        assert rs.get("enabled") is True
+        assert rs.get("enabled") is False
 
     def test_role_spike_defaults_disabled(self):
         """_CONFIG_DEFAULTS should have role_spike_rs disabled."""
@@ -2739,7 +2739,7 @@ class TestRsCalibrationWeights:
         cfg = json.load(open("data/model-config.json"))
         su = cfg.get("moonshot", {}).get("scorer_upside", {})
         assert su, "moonshot.scorer_upside block must exist in model-config.json"
-        assert su.get("enabled") is True, "scorer_upside must be enabled"
+        assert su.get("enabled") is False, "scorer_upside must be disabled (v59)"
         assert su.get("min_pts_per_min", 0) >= 0.40, "min_pts_per_min should be >= 0.40 (v58: 0.48)"
         assert su.get("min_season_pts", 0) >= 12.0, "min_season_pts should be >= 12.0"
         assert 1.0 < su.get("multiplier", 1.0) <= 1.25, (
@@ -2786,7 +2786,7 @@ class TestCascadeCapFix:
         """Production config must have cascade_rs enabled so cascade players get RS uplift."""
         cfg = json.load(open("data/model-config.json"))
         cr = cfg.get("real_score", {}).get("cascade_rs", {})
-        assert cr.get("enabled") is True, "cascade_rs.enabled must be True in production config"
+        assert cr.get("enabled") is False, "cascade_rs.enabled must be False in production config (v59)"
 
 
 # ─────────────────────────────────────────────────────────
