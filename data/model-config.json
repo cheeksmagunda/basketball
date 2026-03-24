@@ -1,7 +1,7 @@
 {
-  "version": 57,
-  "updated_at": "2026-03-22T00:00:00Z",
-  "updated_by": "14-date-leaderboard-audit-v57",
+  "version": 58,
+  "updated_at": "2026-03-24T00:00:00Z",
+  "updated_by": "mar24-draft-review-rs-first-v58",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -228,8 +228,8 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 12,
-    "metric": "tv",
+    "size": 15,
+    "metric": "rs",
     "blend_weight": 0.5,
     "per_game_carry": 2
   },
@@ -297,7 +297,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.40,
+    "chalk_milp_rs_focus": 0.55,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
@@ -331,7 +331,7 @@
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.65,
+    "boost_leverage_power": 0.50,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -402,6 +402,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 58,
+      "date": "2026-03-24",
+      "change": "Mar 24 draft post-mortem (v58). Moonshot ranked 20,064th/21.5k — all 5 picks were boost traps (4.0-4.8x boost, RS 0.6-2.1). Winners: Jenkins RS 5.1+2.6x, Walter RS 4.0+3.0x, Bailey RS 5.1+1.9x — real RS production with moderate boost. Root cause: core_pool.metric='tv' let boost dominate pool selection (Thompson 4.5x boost → tv=24.4 beat Jenkins 2.6x → tv=18.9 despite weaker RS). Fixes: (1) core_pool.metric 'tv'→'rs' — raw projected RS drives core pool selection, boost still matters through MILP/EV but can't override weak RS. (2) core_pool.size 12→15 — wider pool for more diversity, reduces concentration risk. (3) boost_leverage_power 0.65→0.50 — moderate reduction in moonshot boost dominance (v57 raised from 0.4→0.65, overcorrected). (4) chalk_milp_rs_focus 0.40→0.55 — MILP gives more weight to RS in Starting 5 slot assignment. Net effect: high-boost aging vets (Thompson, LeVert, Middleton, Lopez) no longer dominate the core pool just because boost × RS is high; actual RS quality drives selection."
+    },
     {
       "version": 57,
       "date": "2026-03-22",

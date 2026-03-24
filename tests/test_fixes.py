@@ -2243,10 +2243,10 @@ class TestChalkMilpRsFocusHigh:
         assert "chalk_milp_boost_neutral" in src
 
     def test_config_value(self):
-        """Production config should have balanced rs_focus (0.3-0.5)."""
+        """Production config should have RS-leaning rs_focus (0.3-0.6)."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.3 <= val <= 0.5, f"chalk_milp_rs_focus should be 0.3-0.5 for balanced; got {val}"
+        assert 0.3 <= val <= 0.6, f"chalk_milp_rs_focus should be 0.3-0.6 for RS-leaning; got {val}"
 
 
 # ─────────────────────────────────────────────────────────
