@@ -1832,6 +1832,156 @@ function asyncStateError(prev, err) {
   return s;
 }
 
+// ════════════════════════════════════════════════════════════════════
+// UNIFIED RESULT SERVICE — Global Pick State Resolver
+// grep: UNIFIED RESULT SERVICE, filterCurrentPicks, filterRecentPicks, getGlobalPickStatus
+// Unified is_resolved/is_pending state filtering for both POTD and Parlay.
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Global Pick Resolution Utilities
+ * Ensures every pick exists in EXACTLY one bucket: Current (is_resolved=false) or Recent (is_resolved=true)
+ */
+
+function filterCurrentPicks(picks) {
+  /**
+   * Returns only "Current" picks — picks that are still waiting for resolution.
+   * Current = is_resolved === false
+   */
+  if (!picks) return [];
+  if (Array.isArray(picks)) {
+    return picks.filter(p => p && p.is_resolved === false);
+  }
+  return Object.entries(picks)
+    .filter(([k, v]) => v && v.is_resolved === false)
+    .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+}
+
+function filterRecentPicks(picks) {
+  /**
+   * Returns only "Recent" picks — picks that have been resolved.
+   * Recent = is_resolved === true AND is_pending === false (binary outcome only)
+   */
+  if (!picks) return [];
+  if (Array.isArray(picks)) {
+    return picks.filter(p => p && p.is_resolved === true && p.is_pending === false);
+  }
+  return Object.entries(picks)
+    .filter(([k, v]) => v && v.is_resolved === true && v.is_pending === false)
+    .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+}
+
+function getGlobalPickStatus(potdPicks, parlayPick) {
+  /**
+   * Compute overall resolution status across POTD and Parlay.
+   * Returns: 'all_current' | 'mixed' | 'all_resolved'
+   */
+  const potdArray = Array.isArray(potdPicks) ? potdPicks : Object.values(potdPicks || {});
+  const allPotdCurrent = potdArray.length === 0 || potdArray.every(p => p && p.is_resolved === false);
+  const allPotdResolved = potdArray.length > 0 && potdArray.every(p => p && p.is_resolved === true);
+
+  const parlayIsCurrent = !parlayPick || parlayPick.is_resolved === false;
+  const parlayIsResolved = parlayPick && parlayPick.is_resolved === true;
+
+  if ((allPotdCurrent || potdArray.length === 0) && parlayIsCurrent) return 'all_current';
+  if (allPotdResolved && parlayIsResolved) return 'all_resolved';
+  return 'mixed';
+}
+
+async function pollResultServiceStatus(date = null) {
+  /**
+   * Poll the backend for current resolution status across both POTD and Parlay.
+   * Call this when:
+   * 1. A game becomes final (ESPN event)
+   * 2. User manually refreshes Line/Parlay tabs
+   * 3. On periodic checks (cron-like)
+   *
+   * Returns: { potd: {over, under}, parlay: {}, global_status: 'all_current|mixed|all_resolved' }
+   */
+  try {
+    const dateParam = date || _etToday();
+    const url = `/api/result-service/status?date=${dateParam}`;
+    const r = await fetchWithTimeout(url, {}, 10000);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (err) {
+    console.warn('[result-service] Status poll failed:', err);
+    return null;
+  }
+}
+
+async function triggerResultServiceResolution(gameId, date = null, pickType = 'both') {
+  /**
+   * Trigger atomic resolution when a game becomes final.
+   * Call from ESPN game-final detection or Line/Parlay resolution handlers.
+   *
+   * Returns: { status, resolved_count, potd_updates, parlay_updates }
+   */
+  try {
+    const dateParam = date || _etToday();
+    const r = await fetchWithTimeout('/api/result-service/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game_id: gameId, date: dateParam, pick_type: pickType })
+    }, 15000);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (err) {
+    console.warn('[result-service] Resolution trigger failed:', err);
+    return { status: 'error', message: err.message };
+  }
+}
+
+let _resultServicePollId = null;
+
+function startResultServicePolling(dateOverride = null) {
+  /**
+   * Poll the result service for resolution status updates.
+   * Call this when Line or Parlay tabs are active and slate is locked.
+   */
+  if (_resultServicePollId) return; // Already polling
+
+  _resultServicePollId = setInterval(async function() {
+    try {
+      const date = dateOverride || _etToday();
+      const status = await pollResultServiceStatus(date);
+      if (!status) return;
+
+      // Update LINE picks if loaded
+      if (LINE_OVER_PICK || LINE_UNDER_PICK) {
+        const potdStatus = status.potd || {};
+        if (potdStatus.over) Object.assign(LINE_OVER_PICK || {}, potdStatus.over);
+        if (potdStatus.under) Object.assign(LINE_UNDER_PICK || {}, potdStatus.under);
+      }
+
+      // Update Parlay if loaded
+      if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data) {
+        const parlayStatus = status.parlay || {};
+        if (parlayStatus.is_resolved !== undefined) {
+          PARLAY_STATE.data.is_resolved = parlayStatus.is_resolved;
+          PARLAY_STATE.data.is_pending = parlayStatus.is_pending;
+          PARLAY_STATE.data.result = parlayStatus.result || 'pending';
+        }
+      }
+
+      // If all resolved, stop polling
+      if (status.global_status === 'all_resolved') {
+        stopResultServicePolling();
+        console.log('[result-service] All picks resolved, stopping poll');
+      }
+    } catch (err) {
+      console.warn('[result-service] Polling error:', err);
+    }
+  }, 30000); // Poll every 30s
+}
+
+function stopResultServicePolling() {
+  if (_resultServicePollId) {
+    clearInterval(_resultServicePollId);
+    _resultServicePollId = null;
+  }
+}
+
 let SLATE_STATE = asyncStateInitial();  // Predict slate AsyncState
 let PICKS_STATE = asyncStateInitial();  // Per-game picks AsyncState
 
@@ -3010,6 +3160,23 @@ async function forceRegenerateParlay() {
   }
 }
 
+/** Normalize a Parlay ticket to include unified result service fields. */
+function _normalizeParlay(parlay) {
+  if (!parlay || typeof parlay !== 'object') return parlay;
+  // Add unified result service fields if missing
+  if (!('is_resolved' in parlay)) parlay.is_resolved = false;
+  if (!('is_pending' in parlay)) parlay.is_pending = true;
+  // Normalize each leg as well
+  if (Array.isArray(parlay.legs)) {
+    parlay.legs.forEach(leg => {
+      if (!('result' in leg)) leg.result = 'pending';
+      if (!('is_resolved' in leg)) leg.is_resolved = false;
+      if (!('is_pending' in leg)) leg.is_pending = true;
+    });
+  }
+  return parlay;
+}
+
 async function fetchParlay() {
   const empty = _el('parlayEmpty');
   const loading = _el('parlayLoading');
@@ -3031,6 +3198,9 @@ async function fetchParlay() {
       if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = data.narrative || 'No valid parlay found.'; }
       return;
     }
+
+    // Normalize parlay to include unified result service fields
+    _normalizeParlay(data);
 
     PARLAY_STATE = asyncStateSuccess(PARLAY_STATE, data);
     PARLAY_STATE.loadedAt = Date.now();
@@ -3082,6 +3252,8 @@ function initParlayPage() {
 function _startParlayLockPoll() {
   if (_parlayLockPollId) clearInterval(_parlayLockPollId);
   _parlayPendingGames = true;
+  // Also start result service polling when parlay is locked
+  startResultServicePolling();
   _parlayLockPollId = setInterval(function() {
     fetchWithTimeout('/api/lab/status', {}, 10000)
       .then(r => r.ok ? r.json() : Promise.reject('not ok'))
@@ -3089,6 +3261,7 @@ function _startParlayLockPoll() {
         if (!data.locked) {
           // Slate is now unlocked — games are final. Re-fetch parlay + history immediately
           console.log('[parlay] Slate unlocked detected, refreshing parlay data');
+          stopResultServicePolling();
           fetchParlay();
           fetchParlayHistory(true);
           // Stop polling once games are done
@@ -3120,6 +3293,10 @@ async function fetchParlayHistory(nocache = false) {
     const r = await fetchWithTimeout(url, {}, 15000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
+    // Normalize all parlays in history to include unified result service fields
+    if (Array.isArray(data.parlays)) {
+      data.parlays.forEach(p => _normalizeParlay(p));
+    }
     PARLAY_HIST_DATA = data;
     PARLAY_HIST_LOADED_DATE = todayET;
     renderParlayHistory(data);
@@ -4115,6 +4292,15 @@ async function _startLineLivePoll(overPick, underPick) {
   }
 }
 
+/** Normalize a Line pick to include unified result service fields. */
+function _normalizeLinePick(pick) {
+  if (!pick || typeof pick !== 'object') return pick;
+  // Add unified result service fields if missing
+  if (!('is_resolved' in pick)) pick.is_resolved = false;
+  if (!('is_pending' in pick)) pick.is_pending = true;
+  return pick;
+}
+
 function _renderLineLOTDFromState() {
   const st = LINE_LOTD_STATE;
   const loading = st.status === 'initial' || st.status === 'loading';
@@ -4148,11 +4334,14 @@ function _renderLineLOTDFromState() {
     // Extract directional picks first — they may exist even when primary pick is null
     LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
     LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
+    // Normalize picks to include unified result service fields
+    if (LINE_OVER_PICK) LINE_OVER_PICK = _normalizeLinePick(LINE_OVER_PICK);
+    if (LINE_UNDER_PICK) LINE_UNDER_PICK = _normalizeLinePick(LINE_UNDER_PICK);
     _lineLastLiveKey = ''; // so next live poll can update card (avoids stale "no update" after rotation)
     // If pick exists but no directional picks, populate from primary
     if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick) {
-      if (data.pick.direction === 'over') LINE_OVER_PICK = data.pick;
-      else LINE_UNDER_PICK = data.pick;
+      if (data.pick.direction === 'over') LINE_OVER_PICK = _normalizeLinePick(data.pick);
+      else LINE_UNDER_PICK = _normalizeLinePick(data.pick);
     }
     if (!data.pick && !LINE_OVER_PICK && !LINE_UNDER_PICK) {
       // Today's picks resolved, tomorrow's not ready yet — show pending card
@@ -4286,6 +4475,10 @@ async function fetchLineHistory() {
     const hr = await fetchWithTimeout('/api/line-history', {}, 25000);
     if (!hr.ok) throw new Error('line-history HTTP ' + hr.status);
     const hist = await hr.json();
+    // Normalize all line picks in history to include unified result service fields
+    if (Array.isArray(hist.picks)) {
+      hist.picks.forEach(p => _normalizeLinePick(p));
+    }
     LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
     _renderLineHistoryFromState();
   } catch(e) {

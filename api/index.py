@@ -10633,3 +10633,389 @@ async def parlay_history(request: Request):
     }
     _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
     return out
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# UNIFIED RESULT SERVICE — Global Pick Resolution Engine
+# grep: /api/result-service/resolve, /api/result-service/status, _resolve_pick
+# Atomic resolution for POTD and Parlay picks. Handles Hit/Miss/Void globally.
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _normalize_pick_for_result_service(pick: dict) -> dict:
+    """Ensure a pick has all required unified result service fields.
+    Backwards compatibility: older picks may lack is_resolved/is_pending.
+    """
+    if not pick or not isinstance(pick, dict):
+        return pick
+
+    # Initialize unified result service fields if missing
+    if "is_resolved" not in pick:
+        pick["is_resolved"] = False
+    if "is_pending" not in pick:
+        pick["is_pending"] = True
+    if "player_status" not in pick:
+        pick["player_status"] = "playing"
+
+    return pick
+
+
+def _get_player_dnp_status(player_name: str, date_str: str, team: str = "") -> str:
+    """Check if a player is DNP for a given date via RotoWire cache or ESPN.
+    Returns: 'playing', 'dnp', 'gtd', 'out', 'unknown'
+    """
+    try:
+        statuses = get_all_statuses()  # RotoWire cache
+        if not statuses:
+            return "unknown"
+
+        for s in statuses:
+            if (s.get("name", "").lower() == player_name.lower() or
+                s.get("player", "").lower() == player_name.lower()):
+                status = s.get("status", "").lower()
+                if status in ("out", "doubtful", "d"):
+                    return "out"
+                elif status in ("questionable", "q", "gtd"):
+                    return "gtd"
+                elif status in ("probable", "p"):
+                    return "playing"
+                else:
+                    return "unknown"
+
+        return "unknown"
+    except Exception as e:
+        print(f"[result-service] DNP status check failed for {player_name}: {e}")
+        return "unknown"
+
+
+def _resolve_single_pick(pick: dict, date_str: str, pick_type: str = "potd") -> dict:
+    """Atomically resolve a single pick (POTD or Parlay leg).
+    Returns updated pick dict with result='hit|miss|void' and actual_stat.
+    """
+    if not pick or not isinstance(pick, dict):
+        return pick
+
+    # Normalize pick to ensure it has all required fields
+    _normalize_pick_for_result_service(pick)
+
+    # Already resolved — skip
+    if pick.get("result") and pick["result"] not in ("pending", ""):
+        return pick
+
+    player_name = pick.get("player_name", "")
+    stat_type = pick.get("stat_type", "points")
+    direction = pick.get("direction", "over")
+    line = _safe_float(pick.get("line", 0))
+
+    if not player_name:
+        return pick
+
+    # Check DNP status first
+    dnp_status = _get_player_dnp_status(player_name, date_str, pick.get("team", ""))
+    if dnp_status == "out":
+        pick["result"] = "void"
+        pick["actual_stat"] = None
+        pick["player_status"] = "dnp"
+        return pick
+
+    # Fetch actual stat from ESPN
+    espn_date = date_str.replace("-", "")  # YYYYMMDD
+    actual = _fetch_player_final_stat(player_name, stat_type, date_str=espn_date, team=pick.get("team"))
+
+    if actual is None:
+        # Game not final yet — keep pending
+        pick["player_status"] = dnp_status if dnp_status != "unknown" else "playing"
+        return pick
+
+    # Determine hit/miss based on direction
+    if direction == "over":
+        result = "hit" if actual > line else "miss"
+    else:
+        result = "hit" if actual < line else "miss"
+
+    pick["result"] = result
+    pick["actual_stat"] = actual
+    pick["player_status"] = "playing"
+
+    return pick
+
+
+def _resolve_parlay_atomic(parlay: dict, date_str: str) -> dict:
+    """Atomically resolve all legs in a parlay and update overall result.
+    Returns: updated parlay dict with is_resolved and is_pending fields.
+    """
+    if not parlay or not isinstance(parlay, dict):
+        return parlay
+
+    # Normalize parlay to ensure it has all required fields
+    if "is_resolved" not in parlay:
+        parlay["is_resolved"] = False
+    if "is_pending" not in parlay:
+        parlay["is_pending"] = True
+
+    legs = parlay.get("legs", [])
+    if not legs:
+        return parlay
+
+    # Resolve each leg
+    all_results = []
+    has_pending = False
+    has_void = False
+
+    for leg in legs:
+        _resolve_single_pick(leg, date_str, pick_type="parlay_leg")
+        result = leg.get("result", "pending")
+        all_results.append(result)
+
+        if result == "pending":
+            has_pending = True
+        elif result == "void":
+            has_void = True
+
+    # Determine parlay overall result
+    if has_pending:
+        # Still waiting on at least one leg
+        parlay["is_resolved"] = False
+        parlay["is_pending"] = True
+    elif has_void:
+        # At least one leg is void (DNP) — entire parlay is void/push
+        parlay["parlay_result"] = "void"
+        parlay["is_resolved"] = True
+        parlay["is_pending"] = False
+        parlay["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    elif all(r == "hit" for r in all_results):
+        # All legs hit
+        parlay["parlay_result"] = "hit"
+        parlay["is_resolved"] = True
+        parlay["is_pending"] = False
+        parlay["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    elif any(r == "miss" for r in all_results):
+        # At least one leg missed
+        parlay["parlay_result"] = "miss"
+        parlay["is_resolved"] = True
+        parlay["is_pending"] = False
+        parlay["resolved_at"] = datetime.now(timezone.utc).isoformat()
+
+    return parlay
+
+
+def _resolve_potd_atomic(pick: dict, date_str: str) -> dict:
+    """Atomically resolve a POTD (Line) pick.
+    Returns: updated pick dict with is_resolved and is_pending fields.
+    """
+    if not pick or not isinstance(pick, dict):
+        return pick
+
+    # Resolve the pick
+    _resolve_single_pick(pick, date_str, pick_type="potd")
+
+    result = pick.get("result", "pending")
+
+    if result == "pending":
+        pick["is_resolved"] = False
+        pick["is_pending"] = True
+    else:
+        pick["is_resolved"] = True
+        pick["is_pending"] = False
+        pick["resolved_at"] = datetime.now(timezone.utc).isoformat()
+
+    return pick
+
+
+@app.post("/api/result-service/resolve")
+async def result_service_resolve(request: Request):
+    """Unified Result Service: atomically resolve picks when games finalize.
+
+    Handles both POTD and Parlay picks. When a game becomes final:
+    1. Resolve all player props in that game
+    2. Update associated POTD and Parlay tickets
+    3. Transition is_resolved from false → true when all legs finalize
+    4. Handle DNP/Void globally (mark as void, clear from Current view instantly)
+
+    Request body:
+    {
+        "game_id": "espn_game_id",
+        "date": "YYYY-MM-DD",
+        "pick_type": "potd|parlay|both" (default: both)
+    }
+
+    Returns:
+    {
+        "status": "ok|no_picks|error",
+        "resolved_count": int,
+        "potd_updates": [...],
+        "parlay_updates": [...]
+    }
+    """
+    try:
+        body = await request.json()
+    except:
+        return JSONResponse({"status": "error", "message": "Invalid JSON"}, status_code=400)
+
+    game_id = body.get("game_id", "")
+    date_str = body.get("date", _today_str())
+    pick_types = body.get("pick_type", "both")
+
+    # Validate date
+    if not _validate_date(date_str):
+        return JSONResponse({"status": "error", "message": f"Invalid date: {date_str}"}, status_code=400)
+
+    potd_updates = []
+    parlay_updates = []
+    resolved_count = 0
+
+    # Resolve POTD picks
+    if pick_types in ("potd", "both"):
+        try:
+            # Load POTD picks from GitHub
+            json_path = f"data/lines/{date_str}_pick.json"
+            pick_data_raw, _ = _github_get_file(json_path)
+
+            if pick_data_raw:
+                pick_data = json.loads(pick_data_raw)
+                updated = False
+
+                for direction in ("over", "under"):
+                    dir_key = f"{direction}_pick"
+                    pick = pick_data.get(dir_key)
+                    if pick and isinstance(pick, dict):
+                        before_result = pick.get("result")
+                        _resolve_potd_atomic(pick, date_str)
+                        after_result = pick.get("result")
+
+                        if before_result != after_result:
+                            updated = True
+                            potd_updates.append({
+                                "direction": direction,
+                                "result": after_result,
+                                "is_resolved": pick.get("is_resolved"),
+                                "player": pick.get("player_name")
+                            })
+                            resolved_count += 1
+
+                # Write back to GitHub if changed
+                if updated:
+                    _github_write_file(json_path, json.dumps(pick_data),
+                                     f"result-service resolve {date_str}")
+                    # Bust cache so frontend reloads
+                    _cf = _cp(_CK_LINE, date_str)
+                    try:
+                        Path(_cf).unlink(missing_ok=True)
+                    except:
+                        pass
+        except Exception as e:
+            print(f"[result-service] POTD resolution failed: {e}")
+
+    # Resolve Parlay picks
+    if pick_types in ("parlay", "both"):
+        try:
+            json_path = f"data/parlays/{date_str}.json"
+            parlay_raw, _ = _github_get_file(json_path)
+
+            if parlay_raw:
+                parlay = json.loads(parlay_raw)
+                before_resolved = parlay.get("is_resolved", False)
+                _resolve_parlay_atomic(parlay, date_str)
+                after_resolved = parlay.get("is_resolved", False)
+
+                if before_resolved != after_resolved:
+                    parlay_updates.append({
+                        "result": parlay.get("parlay_result"),
+                        "is_resolved": after_resolved,
+                        "leg_count": len(parlay.get("legs", []))
+                    })
+                    resolved_count += 1
+
+                # Write back to GitHub if changed
+                _github_write_file(json_path, json.dumps(parlay),
+                                 f"result-service resolve {date_str}")
+                # Bust cache
+                _cf = _cp(_CK_PARLAY, date_str)
+                try:
+                    Path(_cf).unlink(missing_ok=True)
+                except:
+                    pass
+        except Exception as e:
+            print(f"[result-service] Parlay resolution failed: {e}")
+
+    return {
+        "status": "ok" if resolved_count > 0 else "no_picks",
+        "resolved_count": resolved_count,
+        "potd_updates": potd_updates,
+        "parlay_updates": parlay_updates
+    }
+
+
+@app.get("/api/result-service/status")
+async def result_service_status(request: Request):
+    """Get current resolution status for a date's picks (both POTD and Parlay).
+
+    Query params:
+    ?date=YYYY-MM-DD (default: today)
+
+    Returns:
+    {
+        "potd": {
+            "over": { is_resolved, is_pending, result, ... },
+            "under": { is_resolved, is_pending, result, ... }
+        },
+        "parlay": { is_resolved, is_pending, result, ... },
+        "global_status": "all_current|mixed|all_resolved"
+    }
+    """
+    date_str = request.query_params.get("date", _today_str())
+
+    if not _validate_date(date_str):
+        return JSONResponse({"status": "error"}, status_code=400)
+
+    potd_status = {}
+    parlay_status = {}
+
+    # Load POTD
+    try:
+        json_path = f"data/lines/{date_str}_pick.json"
+        pick_data_raw, _ = _github_get_file(json_path)
+        if pick_data_raw:
+            pick_data = json.loads(pick_data_raw)
+            for direction in ("over", "under"):
+                dir_key = f"{direction}_pick"
+                pick = pick_data.get(dir_key, {})
+                if pick:
+                    potd_status[direction] = {
+                        "is_resolved": pick.get("is_resolved", False),
+                        "is_pending": pick.get("is_pending", True),
+                        "result": pick.get("result", "pending")
+                    }
+    except Exception as e:
+        print(f"[result-service] POTD status load failed: {e}")
+
+    # Load Parlay
+    try:
+        json_path = f"data/parlays/{date_str}.json"
+        parlay_raw, _ = _github_get_file(json_path)
+        if parlay_raw:
+            parlay = json.loads(parlay_raw)
+            parlay_status = {
+                "is_resolved": parlay.get("is_resolved", False),
+                "is_pending": parlay.get("is_pending", True),
+                "result": parlay.get("parlay_result", "pending")
+            }
+    except Exception as e:
+        print(f"[result-service] Parlay status load failed: {e}")
+
+    # Compute global status
+    all_resolved = (
+        all(p.get("is_resolved", False) for p in potd_status.values() if p) and
+        parlay_status.get("is_resolved", True)
+    )
+    all_current = (
+        all(not p.get("is_resolved", False) for p in potd_status.values() if p) and
+        not parlay_status.get("is_resolved", False)
+    )
+    global_status = "all_resolved" if all_resolved else ("all_current" if all_current else "mixed")
+
+    return {
+        "date": date_str,
+        "potd": potd_status,
+        "parlay": parlay_status,
+        "global_status": global_status
+    }
