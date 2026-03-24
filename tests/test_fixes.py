@@ -2543,8 +2543,8 @@ class TestLineSignals:
         types = [s["type"] for s in signals]
         assert "close_game" in types
 
-    def test_narrative_includes_driver(self):
-        """run_model_fallback narrative should cite signals when present."""
+    def test_signals_include_driver(self):
+        """run_model_fallback should produce signals when game context is favorable."""
         from api.line_engine import run_model_fallback
         proj = [self._make_player(name="Test Star", pts=15, season_pts=10, recent_pts=12,
                                   reb=5, season_reb=4, recent_reb=4, ast=3, season_ast=2,
@@ -2556,8 +2556,8 @@ class TestLineSignals:
         if over:
             # With total=235 and spread=-2, should have high_total and/or close_game signals
             assert over["signals"], "Over pick should have signals with high total + tight spread"
-            # Narrative should not be bare "Model projects X — a Y edge vs Z baseline"
-            assert "baseline" not in over["narrative"] or len(over["signals"]) == 0
+            # No narrative field — write-up removed from Line of the Day
+            assert "narrative" not in over
 
 
 # ─────────────────────────────────────────────────────────

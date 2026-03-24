@@ -4184,48 +4184,6 @@ function renderLinePickCardSkeleton() {
     </div>`;
 }
 
-/** Build a single "Conclusion" paragraph from narrative + signals (Oracle Insight). Returns HTML. Always shows at least one line when we have projection + edge so the card never looks like the old version. */
-function _buildLineConclusion(pick) {
-  const proj = pick.projection != null && pick.projection !== '' ? Number(pick.projection).toFixed(1) : null;
-  const edge = pick.edge != null ? Number(pick.edge) : null;
-  const base = pick.season_avg != null && pick.season_avg !== '' ? pick.season_avg : (pick.line != null && pick.line !== '' ? Number(pick.line) : null);
-  const stat = (pick.stat_type || 'points').toLowerCase();
-  const hasBase = proj != null && edge != null && base != null;
-  const signals = (pick.signals && Array.isArray(pick.signals)) ? pick.signals : [];
-  const details = signals
-    .map(s => typeof s === 'string' ? s : (s && (s.detail || s.type || '')))
-    .filter(Boolean)
-    .map(d => {
-      // Sync cascade signal with the actual proj_min/avg_min shown in the MIN column
-      if (/injury upgrade|cascade/i.test(d) && pick.proj_min != null && pick.avg_min != null) {
-        const diff = (Number(pick.proj_min) - Number(pick.avg_min)).toFixed(1);
-        const sign = Number(diff) >= 0 ? '+' : '';
-        const label = Number(diff) >= 0 ? 'Injury upgrade' : 'Injury downgrade';
-        return `${label} — ${sign}${diff} projected minutes`;
-      }
-      return d;
-    });
-
-  let intro = '';
-  if (pick.narrative && pick.narrative.trim()) {
-    intro = pick.narrative.trim().replace(/ at \d+% confidence\.?/i, '').trim();
-    if (intro && !intro.endsWith('.')) intro += '.';
-  } else if (hasBase) {
-    const edgeStr = (edge > 0 ? '+' : '') + Number(edge).toFixed(1);
-    const baseStr = typeof base === 'number' ? base.toFixed(1) : String(base);
-    intro = `Model projects ${proj} ${stat} — a ${edgeStr} edge vs the ${baseStr} season baseline.`;
-  }
-  if (!intro && !details.length) return '';
-
-  let driven = '';
-  if (details.length) {
-    const text = details.map(d => _escapeHtml(String(d).trim())).join(', ');
-    driven = ` <span class="line-conclusion-highlight">This is driven by ${text}.</span>`;
-  }
-  const full = _escapeHtml(intro) + driven;
-  return full.trim() ? `<p class="line-pick-conclusion">${full}</p>` : '';
-}
-
 function renderLinePickCard(pick, isPrimary) {
   const dir = pick.direction || 'over';
   const statLabel = _lineStatLabel(pick.stat_type);
@@ -4282,8 +4240,6 @@ function renderLinePickCard(pick, isPrimary) {
   const seasonStat = pick.season_avg != null && pick.season_avg !== '' ? (typeof pick.season_avg === 'number' ? pick.season_avg.toFixed(1) : String(pick.season_avg)) : '—';
   const projMin = pick.proj_min != null && pick.proj_min !== '' ? (typeof pick.proj_min === 'number' ? pick.proj_min.toFixed(1) : String(pick.proj_min)) : '—';
   const avgMin = pick.avg_min != null && pick.avg_min !== '' ? (typeof pick.avg_min === 'number' ? pick.avg_min.toFixed(1) : String(pick.avg_min)) : '—';
-  const conclusionHtml = _buildLineConclusion(pick);
-
   const tcolor = TEAM_COLORS[pick.team] || '#d4a640';
   const tcolorBorder = _hexToRgba(tcolor, 0.30);
   const tcolorGlow   = _hexToRgba(tcolor, 0.22);
@@ -4322,7 +4278,6 @@ function renderLinePickCard(pick, isPrimary) {
         </div>
       </div>
       ${liveSection}
-      ${conclusionHtml ? `<div class="line-pick-conclusion-wrap">${conclusionHtml}</div>` : ''}
       ${pick.result && pick.result !== 'pending' ? `
       <div class="line-result-row">
         <span class="line-result-lbl">Result</span>
@@ -4734,7 +4689,7 @@ async function showLabUnlocked(status) {
 function buildLabSystemPrompt() {
   const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
-  const fmtLinePick = p => !p ? null : `${p.player_name} (${p.team}) — ${p.direction?.toUpperCase()} ${p.line} ${p.stat_type} | proj ${p.projection} | edge ${p.edge > 0 ? '+' : ''}${p.edge} | conf ${p.confidence}/100${p.narrative ? ' | ' + p.narrative : ''}`;
+  const fmtLinePick = p => !p ? null : `${p.player_name} (${p.team}) — ${p.direction?.toUpperCase()} ${p.line} ${p.stat_type} | proj ${p.projection} | edge ${p.edge > 0 ? '+' : ''}${p.edge} | conf ${p.confidence}/100`;
   const lineStr = LAB.lineData
     ? (() => {
         const over  = LAB.lineData.over_pick;

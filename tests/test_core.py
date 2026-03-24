@@ -646,7 +646,7 @@ class TestNormalizeLinePick:
         required = {
             "player_name", "player_id", "team", "opponent",
             "direction", "line", "stat_type", "projection",
-            "edge", "confidence", "narrative", "signals",
+            "edge", "confidence", "signals",
             "result", "actual_stat", "line_updated_at",
             "odds_over", "odds_under", "books_consensus", "date",
         }

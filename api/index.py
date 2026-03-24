@@ -4011,7 +4011,7 @@ def _normalize_player(p: dict) -> dict:
 
 _LINE_PICK_CONTRACT_FIELDS = {
     "player_name", "player_id", "team", "opponent", "direction", "line",
-    "stat_type", "projection", "edge", "confidence", "narrative", "signals",
+    "stat_type", "projection", "edge", "confidence", "signals",
     "result", "actual_stat", "line_updated_at", "odds_over", "odds_under",
     "books_consensus", "date",
     "season_avg", "proj_min", "avg_min", "game_time", "game_start_iso",
@@ -4034,7 +4034,6 @@ def _normalize_line_pick(p: dict) -> dict:
         "projection":      round(float(p.get("projection") or 0), 1),
         "edge":            round(float(p.get("edge") or 0), 1),
         "confidence":      int(p.get("confidence") or 0),
-        "narrative":       p.get("narrative", ""),
         "signals":         p.get("signals") or [],
         "result":          p.get("result") or "pending",
         "actual_stat":     p.get("actual_stat"),
