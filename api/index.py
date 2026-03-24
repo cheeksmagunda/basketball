@@ -6878,6 +6878,10 @@ def _build_player_odds_map(games):
         print("[odds_map] ODDS_API_KEY not set — skipping odds fetch")
         return {}
 
+    if not games:
+        print("[odds_map] no games provided — skipping odds fetch")
+        return {}
+
     fp = _odds_map_fingerprint(games)
     fresh_ck = "odds_fresh_map_v1"
     try:
@@ -6994,6 +6998,7 @@ def _build_player_odds_map(games):
 
     # Step 3: aggregate lines per (player_name_lower, stat_type)
     raw = {}  # (player_key, stat_type) -> weighted lists
+    outcomes_count = 0
     for data in event_results:
         for book in data.get("bookmakers", []):
             bk = str(book.get("key", "")).lower()
@@ -7003,6 +7008,7 @@ def _build_player_odds_map(games):
                 if not stat_type:
                     continue
                 for outcome in mkt.get("outcomes", []):
+                    outcomes_count += 1
                     pt = outcome.get("point")
                     if pt is None:
                         continue
@@ -7023,6 +7029,7 @@ def _build_player_odds_map(games):
                         raw[key]["under_lines"].append(pt)
                         raw[key]["under_prices"].append(price)
                         raw[key]["under_w"].append(bw)
+    print(f"[odds_map] aggregated {outcomes_count} outcomes into {len(raw)} (player, stat) keys")
 
     def _wmean(vals, wts):
         if not vals:
