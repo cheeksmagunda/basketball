@@ -1,13 +1,13 @@
 {
-  "version": 58,
-  "updated_at": "2026-03-24T00:00:00Z",
-  "updated_by": "18-date-audit-v58-draft-score-optimization",
+  "version": 59,
+  "updated_at": "2026-03-24T12:00:00Z",
+  "updated_by": "v59-sweet-spot-targeting-strip-inflation-layers",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
     "min_pts_per_minute": 0.25,
     "min_pts_per_minute_moonshot": 0.22,
-    "min_chalk_rating": 3.5,
+    "min_chalk_rating": 3.0,
     "min_moonshot_rating": 3.5,
     "min_moonshot_pts": 6.0,
     "chalk_boost_cap": 3.0,
@@ -105,7 +105,7 @@
       "tov": -1.0
     },
     "stat_stuffer": {
-      "enabled": true,
+      "enabled": false,
       "pts_threshold": 15,
       "reb_threshold": 7,
       "ast_threshold": 5,
@@ -114,10 +114,10 @@
       "bonus_3cat": 1.08,
       "bonus_td": 1.15
     },
-    "compression_divisor": 4.5,
-    "compression_power": 0.78,
+    "compression_divisor": 5.5,
+    "compression_power": 0.70,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.35,
+    "ai_blend_weight": 0.30,
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -127,7 +127,7 @@
       "low_mult": 1.0813
     },
     "archetype_calibration": {
-      "enabled": true,
+      "enabled": false,
       "archetypes": {
         "star": 0.95,
         "starter": 1.0,
@@ -146,16 +146,16 @@
       "cascade_weight": 0.10
     },
     "closeness": {
-      "enabled": true,
+      "enabled": false,
       "strength": 0.5,
       "max_mult": 1.40
     },
     "cascade_rs": {
-      "enabled": true,
+      "enabled": false,
       "strength": 0.6
     },
     "role_spike_rs": {
-      "enabled": true,
+      "enabled": false,
       "min_ratio": 1.2,
       "strength": 0.4
     }
@@ -191,14 +191,14 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 0.7,
+    "chalk_min_boost_floor": 1.0,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
     "chalk_hbr_min_recent_min": 16.0,
     "chalk_hbr_min_pred_min": 16.0,
     "volatility_guard": {
-      "enabled": true,
+      "enabled": false,
       "min_scoring_variance": 0.18,
       "min_season_pts": 14.0,
       "min_pts_per_minute": 0.38,
@@ -206,16 +206,16 @@
     }
   },
   "star_anchor": {
-    "enabled": true,
+    "enabled": false,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
     "min_boost": 0.5,
     "min_rating": 4.5,
     "require_count": 0,
-    "max_count": 1
+    "max_count": 0
   },
   "context_layer": {
-    "enabled": true,
+    "enabled": false,
     "model": "claude-sonnet-4-6-20250514",
     "web_search_model": "claude-sonnet-4-6-20250514",
     "max_adjustment": 0.4,
@@ -229,11 +229,11 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 14,
-    "metric": "tv_floor",
+    "size": 15,
+    "metric": "rs_x_boost",
     "tv_floor_min_rs": 3.8,
     "blend_weight": 0.5,
-    "per_game_carry": 2
+    "per_game_carry": 0
   },
   "fair_value": {
     "enabled": true,
@@ -281,7 +281,7 @@
     }
   },
   "odds_enrichment": {
-    "enabled": true,
+    "enabled": false,
     "blend_weight": 0.2,
     "min_divergence_pct": 0.15,
     "upward_only": true,
@@ -299,7 +299,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.40,
+    "chalk_milp_rs_focus": 0.20,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
@@ -324,16 +324,16 @@
     }
   },
   "moonshot": {
-    "min_minutes_floor": 20,
-    "min_recent_minutes_floor": 20,
-    "min_card_boost": 1.0,
-    "min_rating_floor": 3.5,
+    "min_minutes_floor": 18,
+    "min_recent_minutes_floor": 18,
+    "min_card_boost": 1.5,
+    "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.75,
+    "boost_leverage_power": 1.0,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -350,15 +350,15 @@
       "min_pred_min": 14.0
     },
     "scoring_pts_bias_threshold": 10.0,
-    "scoring_pts_bias_scale": 0.015,
+    "scoring_pts_bias_scale": 0.0,
     "scorer_upside": {
-      "enabled": true,
+      "enabled": false,
       "min_pts_per_min": 0.48,
       "min_season_pts": 12.0,
       "multiplier": 1.10
     },
     "rs_bypass": {
-      "enabled": true,
+      "enabled": false,
       "min_rating": 5.0,
       "min_season_min": 25.0,
       "min_boost": 0.3
@@ -376,8 +376,8 @@
     "pos_scale_c": 0.9,
     "chalk_adj_min": 0.92,
     "chalk_adj_max": 1.1,
-    "moonshot_adj_min": 0.9,
-    "moonshot_adj_max": 1.15,
+    "moonshot_adj_min": 0.92,
+    "moonshot_adj_max": 1.10,
     "claude_timeout_seconds": 25
   },
   "team_motivation": {
@@ -404,6 +404,11 @@
     "auto_improve_threshold_pct": 3.0
   },
   "changelog": [
+    {
+      "version": 59,
+      "date": "2026-03-24",
+      "change": "SWEET SPOT TARGETING (v59) — 229-entry leaderboard analysis proves RS × (1+boost) is optimal ranking (avg 87.7, floor 74.5). Model was failing at 13.3% hit rate due to (A) star obsession (Jokic/Harden 0.0-0.3x boost = TV cap 16-18) and (B) deep bench trap (Missi/Jordan/Plumlee projected RS 5-6, deliver 1.5). Root cause: 7+ stacked inflation layers compounding RS over-projection. Changes: (1) NEW core_pool.metric='rs_x_boost' — RS × (1+boost) ranking, weights boost more than TV formula (1.6 base). Example: RS 4.0 + boost 3.0 = 16.0 beats RS 8.0 + boost 0.3 = 10.4. (2) DISABLED 7 inflation layers: archetype_calibration (scorers 1.12x), context_layer (±40% Claude RS), odds_enrichment (upward-only blend), stat_stuffer (1.08-1.15x), closeness (up to 1.40x), cascade_rs, role_spike_rs, scorer_upside (1.10x), scoring_pts_bias. (3) RS compression increased: divisor 4.5→5.5, power 0.78→0.70, ai_blend 0.35→0.30 — deflates over-projected bench players. (4) star_anchor DISABLED — stars with 0.0-0.3x boost are a trap; no more forcing them. (5) rs_bypass DISABLED — same reason. (6) Boost floors: chalk 0.7→1.0, moonshot 1.0→1.5 — sweet spot is boost 1.5-3.0. (7) boost_leverage_power 0.75→1.0 — stronger boost signal in moonshot (boost is 47% of total value). (8) chalk_milp_rs_focus 0.40→0.20 — let boost drive MILP selection. (9) min_rating_floor 3.5→3.0 (moonshot), min_chalk_rating 3.5→3.0 — lower RS gate since RS compression deflates all projections. (10) min_minutes_floor 20→18 — recurring winners (Cody Williams, GP2, Sensabaugh) average 18-28 min. (11) matchup range tightened [0.92, 1.10] for moonshot — less noise. (12) core_pool.size 14→15, per_game_carry 2→0. Target: sweet spot rotation players (RS 3-6, boost 1.5-3.0) that make up 50% of all daily winners."
+    },
     {
       "version": 58,
       "date": "2026-03-24",

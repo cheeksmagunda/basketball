@@ -645,10 +645,10 @@ _CONFIG_DEFAULTS = {
     },
     "real_score": {
         "dfs_weights":{"pts":1.5,"reb":0.5,"ast":1.2,"stl":2.5,"blk":1.5,"tov":-1.0},
-        "compression_divisor": 4.5,
-        "compression_power": 0.78,
+        "compression_divisor": 5.5,
+        "compression_power": 0.70,
         "rs_cap": 20.0,
-        "ai_blend_weight": 0.35,
+        "ai_blend_weight": 0.30,
         # Optional RS bucket calibration (disabled by default).
         # Use to correct systematic bias by scoring tier without touching base model.
         "bucket_calibration": {
@@ -660,7 +660,7 @@ _CONFIG_DEFAULTS = {
             "low_mult": 1.0813,
         },
         "archetype_calibration": {
-            "enabled": True,
+            "enabled": False,
             "archetypes": {
                 "star": 0.95,
                 "starter": 1.0,
@@ -729,7 +729,7 @@ _CONFIG_DEFAULTS = {
         "compression": {"compression_divisor": 4.5, "compression_power": 0.78, "rs_cap": 20.0},
     },
     "odds_enrichment": {
-        "enabled": True,
+        "enabled": False,
         "blend_weight": 0.2,
         "min_divergence_pct": 0.15,
         "upward_only": True,
@@ -754,8 +754,8 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
-        "chalk_min_boost_floor": 0.7,   # minimum card boost required for chalk eligibility;
-                                        # star anchor (PPG >= 20, boost >= 0.8) handles genuine stars separately
+        "chalk_min_boost_floor": 1.0,   # v59: require meaningful boost for chalk (was 0.7);
+                                        # stars with 0.0-0.3x boost are filtered — sweet spot is boost 1.0+
         # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
         # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
         "volatility_guard": {
@@ -767,18 +767,21 @@ _CONFIG_DEFAULTS = {
         },
     },
     "moonshot": {
-        # v58: 18-date audit. Wider net (min_card_boost 1.2→1.0), more boost reward (power 0.65→0.75).
-        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":3.5,
+        # v59: Sweet spot targeting. Boost is 47% of total value — reward it strongly.
+        # Sweet spot: RS 3-6, boost 1.5-3.0. Kill star bypass, raise boost floor.
+        "min_minutes_floor":18, "min_recent_minutes_floor":18, "min_card_boost":1.5, "min_rating_floor":3.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":99, "boost_leverage_power":0.75,
+        "max_centers":99, "boost_leverage_power":1.0,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
-        "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
+        "variance_penalty": 0.0,       # zero damping — moonshot wants maximum upside
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
-        # RS-bypass: Hidden Star archetype (RS 5+, boost < 2.0) wins 29% of daily contests.
-        "rs_bypass": {"enabled": True, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
-        # scorer_upside: v58 widened to catch mid-tier scorers (12-15 PPG) on upside nights.
-        "scorer_upside": {"enabled": True, "min_pts_per_min": 0.48, "min_season_pts": 12.0, "multiplier": 1.10},
+        # RS-bypass DISABLED: stars with 0.0-0.3x boost are a trap (Jokic TV 16-18 vs rotation TV 20+)
+        "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
+        # scorer_upside DISABLED: another RS inflation layer — v59 strips all inflation
+        "scorer_upside": {"enabled": False, "min_pts_per_min": 0.48, "min_season_pts": 12.0, "multiplier": 1.10},
+        # scoring_pts_bias disabled (0.0 scale)
+        "scoring_pts_bias_threshold": 10.0, "scoring_pts_bias_scale": 0.0,
         # Blend moonshot ceiling toward raw RS×matchup so middling-boost stable scorers compete.
         "ev_rating_blend": 0.0,
     },
@@ -822,16 +825,16 @@ _CONFIG_DEFAULTS = {
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": _SLOT_MULTS_SHARED,
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
-        # v57: 0.40 lets boost matter (was 0.85 which nearly neutralized boost).
-        # At 0.40, a 3.0x boost player gets milp_boost = 0.6*3.0 + 0.4*1.0 = 2.2.
-        "chalk_milp_rs_focus": 0.40,
+        # v59: 0.20 lets boost dominate (boost is 47% of total value in winner data).
+        # At 0.20, a 3.0x boost player gets milp_boost = 0.8*3.0 + 0.2*1.0 = 2.6.
+        "chalk_milp_rs_focus": 0.20,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
         "enabled": True,
-        "size": 14,          # v58: wider net (was 12)
-        "metric": "tv_floor", # v58: RS floor gate before TV ranking (was "tv")
-        "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric
+        "size": 15,          # v59: wider net for sweet spot targeting
+        "metric": "rs_x_boost", # v59: RS × (1 + boost) — proven best ranking (87.7 avg, 74.5 floor)
+        "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric (unused with rs_x_boost)
         "blend_weight": 0.5,
         "per_game_carry": 0,  # top K per matchup by TV forced into core before global trim (0 = off)
     },
@@ -4526,6 +4529,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 _rs = r.get("rating", 0)
                 r["_core_score"] = (_rs * (avg_slot + r.get("est_mult", 0.3))
                                     if _rs >= _tv_floor else -1.0)
+            elif core_metric == "rs_x_boost":
+                # RS × (1 + boost) — proven best ranking metric from 18-date leaderboard
+                # simulation (avg score 87.7, floor 74.5, never below 70). Weights boost
+                # more heavily than "tv" (which uses avg_slot 1.6 as base). This correctly
+                # prioritizes the sweet spot: RS 3-6, boost 1.5-3.0 rotation players.
+                # Example: RS 4.0 + boost 3.0 = 16.0 beats RS 8.0 + boost 0.3 = 10.4.
+                r["_core_score"] = r.get("rating", 0) * (1.0 + r.get("est_mult", 0.3))
             elif core_metric == "tv":
                 # Pure Total Value formula: RS × (avg_slot + boost). No double-counting,
                 # no exponential leverage — ranks players by actual expected draft value.
