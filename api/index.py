@@ -641,13 +641,14 @@ _CONFIG_DEFAULTS = {
         "track_meet":      {"pts":1.25,"reb":1.05,"ast":1.20,"stl":0.90,"blk":0.90,"tov":0.85},
         "blowout_spread_threshold":8,"blowout_pts_penalty":0.90,
         "blowout_ast_penalty":0.90,"blowout_reb_penalty":0.94,
+        "starter_blowout_floor": 0.70,
     },
     "real_score": {
-        "dfs_weights":{"pts":1.5,"reb":0.5,"ast":1.0,"stl":3.0,"blk":1.5,"tov":-1.0},
+        "dfs_weights":{"pts":1.5,"reb":0.5,"ast":1.2,"stl":2.5,"blk":1.5,"tov":-1.0},
         "compression_divisor": 4.5,
         "compression_power": 0.78,
         "rs_cap": 20.0,
-        "ai_blend_weight": 0.25,
+        "ai_blend_weight": 0.35,
         # Optional RS bucket calibration (disabled by default).
         # Use to correct systematic bias by scoring tier without touching base model.
         "bucket_calibration": {
@@ -663,19 +664,19 @@ _CONFIG_DEFAULTS = {
             "archetypes": {
                 "star": 0.95,
                 "starter": 1.0,
-                "wing_role": 1.02,
+                "wing_role": 1.05,
                 "bench_microwave": 1.10,
-                "big": 0.88,
-                "pure_rebounder": 0.78,
+                "big": 0.95,
+                "pure_rebounder": 0.88,
                 "scorer": 1.12,
             },
         },
         "post_lock_calibration": {
             "enabled": True,
             "require_locked_slate": True,
-            "recency_strength": 0.12,
-            "max_nudge": 0.12,
-            "cascade_weight": 0.06,
+            "recency_strength": 0.20,
+            "max_nudge": 0.20,
+            "cascade_weight": 0.10,
         },
         "stat_stuffer": {
             "enabled": False,
@@ -707,7 +708,7 @@ _CONFIG_DEFAULTS = {
         "enabled": True,
         "primary_window": 15,
         "short_window": 10,
-        "ai_blend_weight": 0.15,
+        "ai_blend_weight": 0.12,
         "cascade_policy": "elite_only",
         "elite_cascade_ppg": 27.0,
         "elite_players": [
@@ -753,7 +754,7 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
-        "chalk_min_boost_floor": 1.0,   # minimum card boost required for chalk eligibility;
+        "chalk_min_boost_floor": 0.7,   # minimum card boost required for chalk eligibility;
                                         # star anchor (PPG >= 20, boost >= 0.8) handles genuine stars separately
         # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
         # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
@@ -766,19 +767,18 @@ _CONFIG_DEFAULTS = {
         },
     },
     "moonshot": {
-        # v57: 14-date audit alignment. Targets 3 archetypes:
-        # Unicorn (RS 5+, boost 2+), Hidden Star (RS 5+, low boost), Ghost (RS <5, boost 3.0x)
-        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.2, "min_rating_floor":3.5,
+        # v58: 18-date audit. Wider net (min_card_boost 1.2→1.0), more boost reward (power 0.65→0.75).
+        "min_minutes_floor":20, "min_recent_minutes_floor":20, "min_card_boost":1.0, "min_rating_floor":3.5,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":99, "boost_leverage_power":0.65,
-        # boost_leverage_power 0.65: balanced — Unicorn > Ghost > Hidden Star ordering verified.
-        # At 0.65, 3.0x boost gives 2.04x leverage (vs 1.55x at 0.4, 3.74x at 1.2).
+        "max_centers":99, "boost_leverage_power":0.75,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.15,      # light damping — moonshot wants upside volatility
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
         # RS-bypass: Hidden Star archetype (RS 5+, boost < 2.0) wins 29% of daily contests.
         "rs_bypass": {"enabled": True, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
+        # scorer_upside: v58 widened to catch mid-tier scorers (12-15 PPG) on upside nights.
+        "scorer_upside": {"enabled": True, "min_pts_per_min": 0.48, "min_season_pts": 12.0, "multiplier": 1.10},
         # Blend moonshot ceiling toward raw RS×matchup so middling-boost stable scorers compete.
         "ev_rating_blend": 0.0,
     },
@@ -829,8 +829,9 @@ _CONFIG_DEFAULTS = {
     },
     "core_pool": {
         "enabled": True,
-        "size": 12,       # v57: tighter pool (was 15) — better filtering means fewer needed
-        "metric": "tv",   # pure TV formula: rating × (avg_slot + boost)
+        "size": 14,          # v58: wider net (was 12)
+        "metric": "tv_floor", # v58: RS floor gate before TV ranking (was "tv")
+        "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric
         "blend_weight": 0.5,
         "per_game_carry": 0,  # top K per matchup by TV forced into core before global trim (0 = off)
     },
@@ -2920,7 +2921,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         elif abs_spread <= 7:
             spread_adj = 1.16 - ((abs_spread - 3) * 0.04)  # 1.16 at 3 → 1.0 at 7
         else:
-            spread_adj = max(0.55, 1.0 - (abs_spread - 7) * 0.09)  # steep: 1.0 at 7 → 0.55 at 12
+            _starter_floor = float(_cfg("game_script.starter_blowout_floor", 0.70))
+            spread_adj = max(_starter_floor, 1.0 - (abs_spread - 7) * 0.09)  # 1.0 at 7 → floor at spread ~10
 
     # Total interaction: high total + tight spread = shootout bonus
     _total = total or DEFAULT_TOTAL
@@ -4436,8 +4438,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         # Only applies when season_min data is present (not inferred projections).
         scorer_upside_cfg = moon_cfg.get("scorer_upside", {})
         if scorer_upside_cfg.get("enabled", True):
-            su_min_ppm = float(scorer_upside_cfg.get("min_pts_per_min", 0.55))
-            su_min_pts = float(scorer_upside_cfg.get("min_season_pts", 15.0))
+            su_min_ppm = float(scorer_upside_cfg.get("min_pts_per_min", 0.48))
+            su_min_pts = float(scorer_upside_cfg.get("min_season_pts", 12.0))
             su_mult = float(scorer_upside_cfg.get("multiplier", 1.10))
             su_ppm = p.get("pts", 0) / max(p.get("season_min", 1) or 1, 1)
             su_season_pts = p.get("season_pts", p.get("pts", 0)) or 0
@@ -4515,7 +4517,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
         for r in eligible_union:
             ce, me = r.get("chalk_ev_capped", 0), r.get("moonshot_ev", 0)
-            if core_metric == "tv":
+            if core_metric == "tv_floor":
+                # TV with RS floor gate — 18-date audit fix: RS 2.5/boost 3.0x ghosts beat
+                # RS 5.0/boost 1.5x actual winners under pure TV. Floor at 3.8 ensures only
+                # legit producers enter pool, then rank by TV. Every daily winner since Feb 19
+                # had RS >= 3.5; 3.8 floor adds small tolerance while blocking deep bench.
+                _tv_floor = float(core_pool_cfg.get("tv_floor_min_rs", 3.8))
+                _rs = r.get("rating", 0)
+                r["_core_score"] = (_rs * (avg_slot + r.get("est_mult", 0.3))
+                                    if _rs >= _tv_floor else -1.0)
+            elif core_metric == "tv":
                 # Pure Total Value formula: RS × (avg_slot + boost). No double-counting,
                 # no exponential leverage — ranks players by actual expected draft value.
                 # 14-date audit: this correctly ranks Unicorn > Ghost > Hidden Star,

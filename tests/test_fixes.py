@@ -2660,11 +2660,11 @@ class TestRsCalibrationWeights:
         )
 
     def test_pts_weight_stable_and_stl_reduced(self):
-        """pts weight should be stable at 1.5; stl reduced from 8.0 to 3.0 (v57 audit)."""
+        """pts weight should be stable at 1.5; stl reduced from 8.0 (v57: 3.0, v58: 2.5)."""
         cfg = json.load(open("data/model-config.json"))
         w = cfg["real_score"]["dfs_weights"]
         assert w["pts"] == 1.5, f"pts weight changed unexpectedly: {w['pts']}"
-        assert w["stl"] == 3.0, f"stl weight should be 3.0 (v57); got {w['stl']}"
+        assert w["stl"] <= 3.0, f"stl weight should be <= 3.0 (v58 reduced to 2.5); got {w['stl']}"
 
     def test_pure_rebounder_archetype_detected(self):
         """_infer_player_archetype must return 'pure_rebounder' for high-reb/low-scoring player."""
@@ -2740,7 +2740,7 @@ class TestRsCalibrationWeights:
         su = cfg.get("moonshot", {}).get("scorer_upside", {})
         assert su, "moonshot.scorer_upside block must exist in model-config.json"
         assert su.get("enabled") is True, "scorer_upside must be enabled"
-        assert su.get("min_pts_per_min", 0) >= 0.50, "min_pts_per_min should be >= 0.50"
+        assert su.get("min_pts_per_min", 0) >= 0.40, "min_pts_per_min should be >= 0.40 (v58: 0.48)"
         assert su.get("min_season_pts", 0) >= 12.0, "min_season_pts should be >= 12.0"
         assert 1.0 < su.get("multiplier", 1.0) <= 1.25, (
             "scorer_upside multiplier should be > 1.0 and <= 1.25 (modest boost, not a distortion)"
