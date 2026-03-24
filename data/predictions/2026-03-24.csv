@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Jalen Green,4437244,PHX,G,3.8,1.4,27.3,18.1,3.6,2.9,1.0,0.1
+slate,chalk,1.8x,Derik Queen,4869780,NO,C,3.3,1.7,24.6,11.4,6.8,3.8,1.0,0.9
+slate,chalk,1.6x,Maxime Raynaud,4898371,SAC,C,3.2,1.9,25.7,11.9,7.3,1.3,0.5,0.6
+slate,chalk,1.4x,Malik Monk,4066262,SAC,G,3.2,2.0,22.2,12.7,2.0,2.9,0.6,0.4
+slate,chalk,1.2x,Tim Hardaway Jr.,2528210,DEN,G,3.0,1.9,27.1,13.8,2.7,1.5,0.5,0.1
+slate,upside,2.0x,Dennis Schroder,3032979,CLE,G,3.3,1.6,25.4,11.7,2.7,4.9,0.8,0.2
+slate,upside,1.8x,Derik Queen,4869780,NO,C,3.3,1.7,24.6,11.4,6.8,3.8,1.0,0.9
+slate,upside,1.6x,Malik Monk,4066262,SAC,G,3.2,2.0,22.2,12.7,2.0,2.9,0.6,0.4
+slate,upside,1.4x,Maxime Raynaud,4898371,SAC,C,3.2,1.9,25.7,11.9,7.3,1.3,0.5,0.6
+slate,upside,1.2x,Tim Hardaway Jr.,2528210,DEN,G,3.0,1.9,27.1,13.8,2.7,1.5,0.5,0.1
