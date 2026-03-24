@@ -1852,6 +1852,11 @@ function switchTab(tab) {
     clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null;
   }
 
+  // Parlay lock polling: stop when leaving Parlay tab
+  if (tab !== 'parlay' && _parlayLockPollId) {
+    stopParlayLockPoll();
+  }
+
   document.querySelectorAll('.bnav-icon-btn').forEach(b => {
     const isActive = b.dataset.tab === tab;
     b.classList.toggle('active', isActive);
@@ -2950,6 +2955,9 @@ async function fetchParlay() {
   }
 }
 
+let _parlayLockPollId = null;
+let _parlayPendingGames = false;
+
 function initParlayPage() {
   const todayET = _etToday();
   const sameDayLoaded = PARLAY_LOADED_DATE === todayET && PARLAY_STATE.status === 'success';
@@ -2960,6 +2968,43 @@ function initParlayPage() {
   }
   // Always refresh history on open so same-day finals resolve promptly.
   fetchParlayHistory(!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET);
+
+  // Start lock polling: when locked and slate has pending games, poll for unlock/resolution
+  if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data && PARLAY_STATE.data.locked) {
+    _startParlayLockPoll();
+  }
+}
+
+function _startParlayLockPoll() {
+  if (_parlayLockPollId) clearInterval(_parlayLockPollId);
+  _parlayPendingGames = true;
+  _parlayLockPollId = setInterval(function() {
+    fetchWithTimeout('/api/lab/status', {}, 10000)
+      .then(r => r.ok ? r.json() : Promise.reject('not ok'))
+      .then(data => {
+        if (!data.locked) {
+          // Slate is now unlocked — games are final. Re-fetch parlay + history immediately
+          console.log('[parlay] Slate unlocked detected, refreshing parlay data');
+          fetchParlay();
+          fetchParlayHistory(true);
+          // Stop polling once games are done
+          if (_parlayLockPollId) {
+            clearInterval(_parlayLockPollId);
+            _parlayLockPollId = null;
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('[parlay] lock poll check error (will retry):', err);
+      });
+  }, 120000); // Poll every 2 min while locked
+}
+
+function stopParlayLockPoll() {
+  if (_parlayLockPollId) {
+    clearInterval(_parlayLockPollId);
+    _parlayLockPollId = null;
+  }
 }
 
 // ── Parlay History ──────────────────────────────────────────────────────
@@ -2983,9 +3028,15 @@ function renderParlayHistory(hist) {
   const wrap = _el('parlayHistoryWrap');
   if (!wrap) return;
   const parlays = hist.parlays || [];
-  if (!parlays.length) { wrap.style.display = 'none'; return; }
 
-  // Stats chips (hit rate + streak)
+  // Filter: only show RESOLVED parlays in history (hit/miss result, not pending)
+  const resolvedParlays = parlays.filter(function(p) {
+    return (p.result === 'hit' || p.result === 'miss');
+  });
+
+  if (!resolvedParlays.length) { wrap.style.display = 'none'; return; }
+
+  // Stats chips (hit rate + streak) — only from resolved parlays
   const statsEl = _el('parlayHistoryStats');
   if (statsEl) {
     const hitRate = hist.hit_rate;
@@ -3008,12 +3059,12 @@ function renderParlayHistory(hist) {
     statsEl.innerHTML = statsHtml;
   }
 
-  // History rows
+  // History rows — only RESOLVED parlays
   const listEl = _el('parlayHistoryList');
   if (!listEl) return;
   let rowsHtml = '';
-  for (let i = 0; i < parlays.length; i++) {
-    const p = parlays[i];
+  for (let i = 0; i < resolvedParlays.length; i++) {
+    const p = resolvedParlays[i];
     const result = p.result || 'pending';
     const legs = p.legs || [];
     const legSummary = legs.map(function(l) {
@@ -3026,7 +3077,9 @@ function renderParlayHistory(hist) {
     const legsHit = legs.filter(function(l) { return l.result === 'hit'; }).length;
     const legsPill = legsResolved > 0 ? ' <span style="font-size:0.6rem;color:var(--muted);margin-left:4px">' + legsHit + '/' + legs.length + '</span>' : '';
 
-    rowsHtml += '<div class="line-history-row" style="cursor:pointer" data-parlay-idx="' + i + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
+    // Use original parlays array index for modal lookup
+    const origIdx = parlays.indexOf(p);
+    rowsHtml += '<div class="line-history-row" style="cursor:pointer" data-parlay-idx="' + origIdx + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
       '<div style="display:flex;align-items:center;gap:7px;min-width:0">' +
         '<span class="line-hist-dir-pill" style="background:rgba(20,184,166,0.10);color:var(--parlay);border:1px solid rgba(20,184,166,0.20);font-size:0.55rem">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
         '<div style="min-width:0">' +
