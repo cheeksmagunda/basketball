@@ -1,0 +1,2 @@
+date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
+2026-03-24,Max Strus,4065778,CLE,ORL,points,9,over,11.7,2.7,80,Model projects 11.7 points (over 9.0). Averaging 10.4 points recently vs 8.8 season.,pending,
