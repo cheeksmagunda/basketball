@@ -570,6 +570,124 @@ _TTL_L5 = 1800          # 30 min — ESPN gamelog cache for parlay volatility (s
 _TTL_HOUR = 3600        # 1 hour — infrequently changing data
 _TTL_ODDS_FRESH = 1800   # 30 min — reuse bulk Odds API map across slate/line/parlay (conserve 500/day quota)
 
+# ── Response Cache for App-Level Hydration ──
+# Level 0: In-memory response cache — serves cached JSON to frontend hydration.
+# Reduces pipeline execution from 7 per session to 1 per day (at midnight or refresh).
+# Cache keys: endpoint + date (where applicable) + hash of params.
+# TTLs override per-endpoint defaults. Cache invalidated by /api/refresh, injury checks, config changes.
+
+class ResponseCache:
+    """In-memory response cache with TTL, hit tracking, and thread-safe invalidation."""
+    def __init__(self):
+        self.store = {}  # {key: (data, timestamp, ttl_sec)}
+        self.hits = 0
+        self.misses = 0
+        self._lock = threading.RLock()
+
+    def get(self, key):
+        """Return (data, is_hit) where is_hit=True if cache valid, False if miss/expired."""
+        with self._lock:
+            if key in self.store:
+                data, ts, ttl = self.store[key]
+                age = time.time() - ts
+                if age < ttl:
+                    self.hits += 1
+                    return data, True
+            self.misses += 1
+            return None, False
+
+    def set(self, key, data, ttl_sec):
+        """Store response in cache with TTL (seconds)."""
+        with self._lock:
+            self.store[key] = (data, time.time(), ttl_sec)
+
+    def invalidate(self, pattern=None):
+        """Clear cache. pattern=None clears all; pattern='slate' clears keys containing 'slate'."""
+        with self._lock:
+            if pattern is None:
+                self.store.clear()
+                self.hits = 0
+                self.misses = 0
+            else:
+                self.store = {k: v for k, v in self.store.items() if pattern not in k}
+
+    def stats(self):
+        """Return cache hit rate and counts."""
+        with self._lock:
+            total = self.hits + self.misses
+            hit_rate = (self.hits / total * 100) if total > 0 else 0
+            return {
+                "hits": self.hits,
+                "misses": self.misses,
+                "hit_rate": f"{hit_rate:.1f}%",
+                "size": len(self.store),
+            }
+
+_RESPONSE_CACHE = ResponseCache()
+
+# Response cache key templates (single source of truth for cache keys).
+_CACHE_KEYS = {
+    "slate": "slate:{}",
+    "games": "games:{}",
+    "line": "line:{}",
+    "line_history": "line_history:{}",
+    "parlay": "parlay:{}",
+    "parlay_history": "parlay_history:{}",
+    "log_dates": "log_dates",
+    "log_get": "log_get:{}",
+}
+
+# Response cache TTLs per endpoint (seconds). Override defaults here.
+_CACHE_TTLS = {
+    "slate": 3600,          # 1h — slate changes only at new day or refresh
+    "games": 300,           # 5min — ESPN updates periodically
+    "line": 1800,           # 30min — line picks are static after generation
+    "line_history": 600,    # 10min — historical picks rarely change
+    "parlay": 1800,         # 30min — odds refresh cron updates it once-per-slate
+    "parlay_history": 600,  # 10min — resolved legs update via cron
+    "log_dates": 600,       # 10min — dates rarely change mid-day
+    "log_get": 300,         # 5min — per-date, static once day is final
+}
+
+def _with_response_cache(cache_key, ttl_key, fn, *args, **kwargs):
+    """Execute fn() if cache miss, store result, return (data, is_hit).
+
+    cache_key: str key for cache lookup
+    ttl_key: str key in _CACHE_TTLS for TTL lookup
+    fn: callable returning response dict
+    *args, **kwargs: passed to fn
+
+    Returns: (response_dict, is_hit)
+    """
+    cached, is_hit = _RESPONSE_CACHE.get(cache_key)
+    if is_hit:
+        return cached, True
+
+    # Cache miss: execute function and store result
+    result = fn(*args, **kwargs)
+    ttl_sec = _CACHE_TTLS.get(ttl_key, 3600)
+    _RESPONSE_CACHE.set(cache_key, result, ttl_sec)
+    return result, False
+
+def _add_cache_metadata(response_dict, is_hit, cache_key=None):
+    """Add cache_status and metadata fields to response."""
+    response_dict["cache_status"] = "hit" if is_hit else "miss"
+    response_dict["cached_at"] = datetime.utcnow().isoformat() + "Z"
+    if cache_key:
+        response_dict["_cache_key"] = cache_key
+    return response_dict
+
+def _invalidate_response_cache(pattern=None):
+    """Clear response cache. pattern=None clears all; pattern='slate' clears 'slate:*'."""
+    _RESPONSE_CACHE.invalidate(pattern)
+    # Also bust file caches (Levels 1-2) as before
+    for f in CACHE_DIR.glob("*.json"):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
+    print(f"[cache] response cache invalidated (pattern={pattern})", flush=True)
+
 # ThreadPoolExecutor worker counts.
 _W_LIGHT = 2            # light parallelism (2-way fetch)
 _W_STANDARD = 8         # standard game/slate/picks processing
@@ -4989,17 +5107,34 @@ async def version() -> dict:
 
 @app.get("/api/games")
 async def get_games():
-    """Never returns 500; on exception returns 200 with empty list."""
+    """Never returns 500; on exception returns 200 with empty list.
+    Uses Level 0 response cache to avoid ESPN API calls on repeated fetches."""
     try:
-        games = fetch_games()
-        for g in games:
-            st = g.get("startTime", "")
-            g["locked"] = _is_locked(st) if st else False
-            g["draftable"] = not _is_past_lock_window(st) if st else False
-        return games
+        today = _today_str()
+        cache_key = _CACHE_KEYS["games"].format(today)
+
+        def _get_games_impl():
+            games = fetch_games()
+            for g in games:
+                st = g.get("startTime", "")
+                g["locked"] = _is_locked(st) if st else False
+                g["draftable"] = not _is_past_lock_window(st) if st else False
+            return games
+
+        games, is_hit = _with_response_cache(cache_key, "games", _get_games_impl)
+        # Add cache metadata
+        return {
+            "data": games,
+            "cache_status": "hit" if is_hit else "miss",
+            "cached_at": datetime.utcnow().isoformat() + "Z",
+        }
     except Exception as e:
         print(f"[games] error: {e}")
-        return []
+        return {
+            "data": [],
+            "cache_status": "miss",
+            "error": str(e)
+        }
 
 def _force_regenerate_bg(*_args):
     """Sentinel function used as attribute namespace for _in_flight flag."""
@@ -5425,11 +5560,16 @@ def _get_slate_impl():
 @app.get("/api/slate")
 async def get_slate(mock: bool = Query(False, description="Return deterministic mock data for testing (no ESPN/model calls)")) -> dict:
     """Slate endpoint: never returns 500; on exception returns 200 with error key for graceful frontend handling.
-    Pass ?mock=true to get static test data suitable for UI/audit validation without hitting live systems."""
+    Pass ?mock=true to get static test data suitable for UI/audit validation without hitting live systems.
+    Uses Level 0 response cache to avoid re-running pipeline on repeated calls same day."""
     if mock:
         return _get_mock_slate()
     try:
-        return _get_slate_impl()
+        today = _today_str()
+        cache_key = _CACHE_KEYS["slate"].format(today)
+        result, is_hit = _with_response_cache(cache_key, "slate", _get_slate_impl)
+        result = _add_cache_metadata(result, is_hit, cache_key)
+        return result
     except Exception as e:
         print(f"[slate] error: {e}")
         return JSONResponse(
@@ -5440,6 +5580,7 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
                 "lineups": {"chalk": [], "upside": []},
                 "locked": False,
                 "draftable_count": 0,
+                "cache_status": "miss",
             },
             status_code=200,
         )
