@@ -422,7 +422,8 @@
     "value_anchor_pts_ceiling": 16,
     "value_anchor_bonus": 0.08,
     "close_game_variance_dampen": 0.08,
-    "blowout_variance_uplift": 0.04
+    "blowout_variance_uplift": 0.04,
+    "neutral_favored_lean": 1.02
   },
   "changelog": [
     {

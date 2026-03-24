@@ -1025,6 +1025,7 @@ _CONFIG_DEFAULTS = {
         # Blowout: reward upside → high-ceiling players rise to 2.0x
         "close_game_variance_dampen": 0.08,  # penalize variance in close games
         "blowout_variance_uplift": 0.04,     # reward variance in blowouts
+        "neutral_favored_lean": 1.02,        # mild favored-team lean in moderate spreads
     },
 }
 
@@ -5024,7 +5025,7 @@ def _per_game_adjust_projections(projections, game, strategy):
         else:
             # Neutral (moderate spread 6-12): mild favored-team lean
             if team == favored:
-                rating *= 1.02
+                rating *= cfg.get("neutral_favored_lean", 1.02)
             # F1: neutral variance treatment — no shaping
 
         # ── F2: Value anchor bonus ──
@@ -6197,6 +6198,7 @@ def _force_regenerate_sync(scope: str):
         if game_projs:
             try:
                 game_lineups = _build_game_lineups(game_projs, g)
+                game_lineups.pop("strategy", None)  # strategy is response-level, not lineups-level
                 per_game_results[gid] = {
                     "game": g,
                     "lineups": game_lineups,
