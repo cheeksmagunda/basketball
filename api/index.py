@@ -921,13 +921,13 @@ _CONFIG_DEFAULTS = {
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
         # v59: 0.20 lets boost dominate (boost is 47% of total value in winner data).
         # At 0.20, a 3.0x boost player gets milp_boost = 0.8*3.0 + 0.2*1.0 = 2.6.
-        "chalk_milp_rs_focus": 0.20,
+        "chalk_milp_rs_focus": 0.0,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
         "enabled": True,
         "size": 15,          # v59: wider net for sweet spot targeting
-        "metric": "rs_x_boost", # v59: RS × (1 + boost) — proven best ranking (87.7 avg, 74.5 floor)
+        "metric": "rs_x_boost", # v61: RS × (2 + boost) — matches confirmed Value = RS × (SlotMult + Boost)
         "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric (unused with rs_x_boost)
         "blend_weight": 0.5,
         "per_game_carry": 0,  # top K per matchup by TV forced into core before global trim (0 = off)
@@ -4445,12 +4445,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 r["_core_score"] = (_rs * (avg_slot + r.get("est_mult", 0.3))
                                     if _rs >= _tv_floor else -1.0)
             elif core_metric == "rs_x_boost":
-                # RS × (1 + boost) — proven best ranking metric from 18-date leaderboard
-                # simulation (avg score 87.7, floor 74.5, never below 70). Weights boost
-                # more heavily than "tv" (which uses avg_slot 1.6 as base). This correctly
-                # prioritizes the sweet spot: RS 3-6, boost 1.5-3.0 rotation players.
-                # Example: RS 4.0 + boost 3.0 = 16.0 beats RS 8.0 + boost 0.3 = 10.4.
-                r["_core_score"] = r.get("rating", 0) * (1.0 + r.get("est_mult", 0.3))
+                # RS × (2.0 + boost) — matches confirmed leaderboard formula
+                # (Value = RS × (SlotMult + Boost), top slot = 2.0x).
+                # Using 1.0 as base massively over-weights boost: RS 3/boost 3 = 12
+                # beats RS 5/boost 1 = 10, but real values are 15 vs 15 (equal).
+                # 2.0 base correctly balances RS and boost contribution.
+                r["_core_score"] = r.get("rating", 0) * (2.0 + r.get("est_mult", 0.3))
             elif core_metric == "tv":
                 # Pure Total Value formula: RS × (avg_slot + boost). No double-counting,
                 # no exponential leverage — ranks players by actual expected draft value.
