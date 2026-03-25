@@ -3366,7 +3366,15 @@ async function fetchParlay(background = false) {
     if (loading) loading.style.display = 'none';
     PARLAY_STATE = asyncStateError(PARLAY_STATE, err);
     _labSyncParlayContext(null);
-    if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = 'Could not reach the server. Please try again.'; }
+    const hasTicketData = !!(PARLAY_STATE && PARLAY_STATE.data && (PARLAY_STATE.data.legs || []).length);
+    // If we already have a rendered ticket, keep it visible and avoid contradictory giant error state.
+    if (!hasTicketData && empty) {
+      empty.style.display = 'block';
+      const msg = _el('parlayEmptyMsg');
+      if (msg) msg.textContent = 'Could not reach the server. Please try again.';
+    } else if (empty) {
+      empty.style.display = 'none';
+    }
     console.warn('[parlay] fetch error:', err);
   }
 }

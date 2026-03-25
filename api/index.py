@@ -8089,11 +8089,42 @@ def _parlay_leg_result_preview(snap_status: str, stat_current, line, direction: 
     return "miss" if sc > lv else "pending"
 
 
+def _parlay_active_date():
+    """Choose the currently active parlay date.
+
+    After midnight ET, yesterday's ticket can still be live while games are in progress.
+    Prefer yesterday when it has an unresolved ticket and those games are not all final.
+    """
+    today = _et_date()
+    yesterday = today - timedelta(days=1)
+    y_str = yesterday.isoformat()
+    try:
+        raw, _ = _github_get_file(f"data/parlays/{y_str}.json")
+        if raw:
+            y_ticket = json.loads(raw)
+            if (
+                isinstance(y_ticket, dict)
+                and y_ticket.get("legs")
+                and not y_ticket.get("_busted")
+                and not _parlay_fully_concluded(y_ticket)
+            ):
+                y_games = fetch_games(yesterday)
+                y_all_final = bool(y_games) and _all_games_final(y_games)
+                if not y_all_final:
+                    return yesterday
+    except Exception:
+        pass
+    return today
+
+
 def _parlay_live_tick_payload() -> dict:
-    """One SSE tick: today's saved parlay legs + ESPN snapshots (run in thread)."""
-    today_str = _et_date().isoformat()
+    """One SSE tick: active parlay legs + ESPN snapshots (run in thread)."""
+    target_date = _parlay_active_date()
+    today_str = target_date.isoformat()
     ticket = _cg(_CK_PARLAY)
     if not isinstance(ticket, dict) or ticket.get("_busted"):
+        ticket = None
+    if ticket and ticket.get("date") != today_str:
         ticket = None
     if not ticket or not ticket.get("legs"):
         try:
@@ -8105,7 +8136,7 @@ def _parlay_live_tick_payload() -> dict:
         if isinstance(ticket, dict) and ticket.get("_busted"):
             ticket = None
 
-    games = fetch_games()
+    games = fetch_games(target_date)
     all_final = bool(games) and _all_games_final(games)
 
     if not ticket or not ticket.get("legs"):
@@ -10508,7 +10539,7 @@ async def get_parlay(request: Request):
     if rl is not None:
         return rl
     try:
-        today = _et_date()
+        today = _parlay_active_date()
         today_str = today.isoformat()
 
         # Determine lock status from TODAY's games only.
