@@ -7448,13 +7448,15 @@ def _run_line_engine_for_date(date):
         print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
     # Fair Value enrichment — deterministic edge maps for prop betting confidence
     fv_edge_map = {}
+    fv_full_data = {}
     try:
-        fv_edge_map, _ = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
+        fv_edge_map, fv_full_data = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
     except Exception as _fv_err:
         print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
     result = run_line_engine(
         all_proj, target_games, line_config, player_odds_map,
         news_context=news_context, dvp_data=dvp_data, edge_map=fv_edge_map or None,
+        fair_value_data=fv_full_data or None,
     )
     return result, None
 
@@ -10123,7 +10125,7 @@ def _compute_betting_fair_value(all_proj, games, player_odds_map):
 
     Returns:
         edge_map:        {player_id_str: {stat_type: {ev, hit_prob, edge_class, direction, edge_pct}}}
-        fair_value_data: {player_id_str: {_fv_hit_probs: {stat: {over, under}}, edge_map, rating, confidence}}
+        fair_value_data: {player_id_str: {_fv_hit_probs, _rolling (_minutes_cv), edge_map, rating, confidence}}
 
     grep: FAIR VALUE BETTING — betting-only fair value enrichment
     """
@@ -10226,6 +10228,7 @@ def _compute_betting_fair_value(all_proj, games, player_odds_map):
             "edge_map": fv.get("edge_map", {}),
             "rating": fv.get("rating"),
             "confidence": fv.get("confidence"),
+            "_rolling": fv.get("_rolling") or {},
         }
 
     print(f"[fair-value] computed {len(edge_map)} edge maps, "
