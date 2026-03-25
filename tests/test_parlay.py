@@ -694,6 +694,7 @@ class TestParlayHistoryEndpoint:
         from api.index import app
         routes = [r.path for r in app.routes]
         assert "/api/parlay-history" in routes
+        assert "/api/parlay-live-stream" in routes
 
     def test_parlay_auto_save_fields(self):
         """Verify the /api/parlay endpoint adds result and actual_stat fields."""

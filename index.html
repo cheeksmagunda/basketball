@@ -1047,6 +1047,51 @@
     .parlay-leg-tile.miss {
       background: rgba(255,138,128,0.12); color: var(--color-danger);
     }
+    .parlay-leg-l5-col {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0;
+    }
+    .parlay-leg-l5-lbl {
+      font-size: 0.58rem; font-weight: 700; color: var(--color-text-muted);
+      text-transform: uppercase; letter-spacing: var(--tracking-caps);
+    }
+    .parlay-leg-live-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--color-success);
+      box-shadow: 0 0 0 0 rgba(0,230,118,0.35);
+      animation: parlayLivePulse 1.6s ease-out infinite;
+      flex-shrink: 0;
+    }
+    @keyframes parlayLivePulse {
+      0% { box-shadow: 0 0 0 0 rgba(0,230,118,0.35); opacity: 1; }
+      70% { box-shadow: 0 0 0 6px rgba(0,230,118,0); opacity: 0.85; }
+      100% { box-shadow: 0 0 0 0 rgba(0,230,118,0); opacity: 1; }
+    }
+    .parlay-leg-live-row {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      margin-top: 8px; font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.82rem; font-weight: 800; color: var(--text);
+    }
+    .parlay-leg-live-meta {
+      font-size: 0.62rem; font-weight: 600; color: var(--color-text-muted);
+    }
+    .parlay-leg-progress-wrap {
+      height: 2px; border-radius: 2px; background: rgba(255,255,255,0.08);
+      margin-top: 10px; overflow: hidden;
+    }
+    .parlay-leg-progress-fill {
+      height: 100%; width: 0%; border-radius: 2px;
+      background: linear-gradient(90deg, rgba(20,184,166,0.5), var(--color-success));
+      transition: width 0.35s ease, background 0.25s ease;
+    }
+    .parlay-leg-progress-fill.hit-locked {
+      width: 100% !important;
+      background: var(--color-success);
+    }
+    .parlay-hist-chevron {
+      font-size: 1.1rem; font-weight: 300; color: var(--color-text-muted);
+      margin-left: 6px; line-height: 1;
+    }
+    .parlay-section-label { margin-bottom: 12px !important; }
+    .parlay-history-section { margin-top: 28px; }
 
     .line-history-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -1508,8 +1553,8 @@
 
   <!-- ══ TAB: PARLAY ══ -->
   <div id="tab-parlay" class="tab-page" role="tabpanel" aria-label="Parlay picks">
-    <div style="margin-bottom:10px">
-      <div class="section-label" style="margin-top:0;margin-bottom:0">Safest Parlay</div>
+    <div>
+      <div class="section-label parlay-section-label" style="margin-top:0">Safest Parlay</div>
     </div>
     <div id="parlayContent" aria-live="polite">
       <div id="parlayEmpty" style="display:none" role="status">
@@ -1523,9 +1568,9 @@
       <div id="parlayTicket" style="display:none"></div>
     </div>
     <!-- Parlay History -->
-    <div id="parlayHistoryWrap" style="display:none;margin-top:20px" role="region" aria-label="Parlay history">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div class="section-label" style="margin-top:0;margin-bottom:0">Recent Parlays</div>
+    <div id="parlayHistoryWrap" class="parlay-history-section" style="display:none" role="region" aria-label="Parlay history">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="section-label parlay-section-label" style="margin-top:0">Recent Parlays</div>
       </div>
       <div id="parlayHistoryStats"></div>
       <div id="parlayHistoryMessage" style="display:none;margin-bottom:12px" role="status" aria-live="polite"></div>
@@ -1867,9 +1912,8 @@ function switchTab(tab) {
     clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null;
   }
 
-  // Parlay lock polling: stop when leaving Parlay tab
-  if (tab !== 'parlay' && _parlayLockPollId) {
-    stopParlayLockPoll();
+  if (tab !== 'parlay') {
+    _stopParlayLiveSse();
   }
 
   document.querySelectorAll('.bnav-icon-btn').forEach(b => {
@@ -1921,7 +1965,7 @@ function switchTab(tab) {
     if (stale) loadSlate();
   }
   if (tab === 'line') {
-    // Keep Line cache ownership in initLinePage() only.
+    // Keep Line cache ownership in the Line page initializer only.
     // Do not bust LINE_LOADED_DATE from unrelated SLATE staleness, or hydrated
     // picks can briefly render and then regress to skeleton loading.
     initLinePage();  // has its own cache guard (LINE_LOADED_DATE === todayET)
@@ -3139,9 +3183,11 @@ function _parlaySkeletons() {
   return `<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);box-shadow:0 4px 20px rgba(0,0,0,0.28)">${skel}${skel}${skel}</div>`;
 }
 
-function renderParlayLeg(leg, index, total) {
+function renderParlayLeg(leg, index, total, forTicket) {
+  forTicket = !!forTicket;
   const dir = leg.direction || 'over';
   const statLabel = {'points':'PTS','rebounds':'REB','assists':'AST'}[leg.stat_type] || leg.stat_type.toUpperCase();
+  const statShort = statLabel;
   const tcolor = TEAM_COLORS[leg.team] || '#14b8a6';
   const tcolorBorder = _hexToRgba(tcolor, 0.30);
   const isLast = index === total - 1;
@@ -3151,7 +3197,6 @@ function renderParlayLeg(leg, index, total) {
   const seasonAvg = leg.season_avg != null ? leg.season_avg : '\u2014';
   const avgMin = leg.avg_min != null ? leg.avg_min : '\u2014';
 
-  // L5 as color-coded mini tiles
   const l5Tiles = (leg.recent_values && leg.recent_values.length)
     ? leg.recent_values.map(function(v) {
         const hit = dir === 'over' ? v >= (leg.line || 0) : v <= (leg.line || 0);
@@ -3159,28 +3204,46 @@ function renderParlayLeg(leg, index, total) {
       }).join('')
     : '';
 
-  const lineDisplay = (leg.line != null && leg.line !== '') ? Number(leg.line).toFixed(1) : '—';
-  return '<div class="line-pick-card" style="--tcolor:' + tcolor +
+  const lineDisplay = (leg.line != null && leg.line !== '') ? Number(leg.line).toFixed(1) : '\u2014';
+  const liveDot = forTicket
+    ? '<span class="parlay-leg-live-dot" id="parlayLegLiveDot-' + index + '" style="display:none" aria-hidden="true"></span>'
+    : '';
+  const liveRow = forTicket
+    ? '<div class="parlay-leg-live-row" id="parlayLegLiveRow-' + index + '" style="display:none" aria-live="polite">' +
+        '<span id="parlayLegLiveStat-' + index + '"></span>' +
+        '<span class="parlay-leg-live-meta" id="parlayLegLiveMeta-' + index + '"></span>' +
+      '</div>' +
+      '<div class="parlay-leg-progress-wrap" id="parlayLegProgressWrap-' + index + '" style="display:none">' +
+        '<div class="parlay-leg-progress-fill" id="parlayLegProgress-' + index + '"></div>' +
+      '</div>'
+    : '';
+  const l5Block = l5Tiles
+    ? '<div class="parlay-leg-l5-col"><span class="parlay-leg-l5-lbl">L5</span><div class="parlay-leg-l5">' + l5Tiles + '</div></div>'
+    : '';
+
+  return '<div class="line-pick-card parlay-leg-card" id="parlayLegBlock-' + index + '" style="--tcolor:' + tcolor +
     ';--tcolor-border:' + tcolorBorder +
-    ';border-radius:0;margin-bottom:0;padding:10px 14px;border-color:rgba(255,255,255,0.08);border-top-color:rgba(255,255,255,0.08);' +
+    ';border-radius:0;margin-bottom:0;padding:12px 16px;border-color:rgba(255,255,255,0.08);border-top-color:rgba(255,255,255,0.08);' +
     (isLast ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);') + '">' +
     '<div class="parlay-leg-header">' +
-      '<div class="parlay-leg-who">' +
+      '<div class="parlay-leg-who" style="align-items:center">' +
+        liveDot +
         '<span class="parlay-leg-name">' + _escapeHtml(leg.player_name) + '</span>' +
         '<span class="parlay-leg-matchup">' + _escapeHtml(leg.team) + ' vs ' + _escapeHtml(leg.opponent) + '</span>' +
       '</div>' +
       '<div class="parlay-leg-play">' +
-        '<span class="parlay-leg-pill ' + dir + '">' + dir.toUpperCase() + '</span>' +
-        '<span class="parlay-leg-line">' + lineDisplay + ' ' + statLabel.toLowerCase() + '</span>' +
+        '<span class="parlay-leg-pill ' + dir + '" id="parlayLegPlayPill-' + index + '">' + dir.toUpperCase() + '</span>' +
+        '<span class="parlay-leg-line" id="parlayLegPlayLine-' + index + '">' + lineDisplay + ' ' + statShort + '</span>' +
       '</div>' +
     '</div>' +
+    liveRow +
     '<div class="parlay-leg-meta">' +
       '<div class="parlay-leg-chips">' +
         '<span class="parlay-leg-chip accent">PROJ ' + projVal + '</span>' +
         '<span class="parlay-leg-chip">AVG ' + seasonAvg + '</span>' +
         '<span class="parlay-leg-chip">MIN ' + avgMin + '</span>' +
       '</div>' +
-      (l5Tiles ? '<div class="parlay-leg-l5">' + l5Tiles + '</div>' : '') +
+      l5Block +
     '</div>' +
   '</div>';
 }
@@ -3201,7 +3264,7 @@ function renderParlayTicket(data) {
 
   let legsHtml = '';
   for (let i = 0; i < legs.length; i++) {
-    legsHtml += renderParlayLeg(legs[i], i, legs.length);
+    legsHtml += renderParlayLeg(legs[i], i, legs.length, true);
   }
 
   const lockBadge = data.locked
@@ -3209,11 +3272,11 @@ function renderParlayTicket(data) {
     : '';
   const sourceBadge = data.projection_only
     ? '<span style="font-size:0.58rem;padding:2px 7px;border-radius:99px;background:rgba(255,255,255,0.08);color:var(--color-text-muted);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">MODEL</span>'
-    : '<span style="font-size:0.58rem;padding:2px 7px;border-radius:99px;background:rgba(20,184,166,0.10);color:var(--parlay);font-weight:800;letter-spacing:0.06em;margin-left:6px;vertical-align:middle">BOOK</span>';
+    : '';
 
   wrap.innerHTML =
     '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(255,255,255,0.08);box-shadow:0 4px 24px rgba(20,184,166,0.08), 0 2px 12px rgba(0,0,0,0.28)">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;background:rgba(20,184,166,0.05);border-bottom:1px solid rgba(255,255,255,0.06)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;background:rgba(20,184,166,0.05);border-bottom:1px solid rgba(255,255,255,0.06)">' +
         '<div style="display:flex;align-items:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--parlay)">3-Leg Parlay Ticket' + sourceBadge + lockBadge + '</div>' +
         '<div style="display:flex;gap:12px;align-items:center">' +
           (numGames > 1 ? '<div style="text-align:center"><div class="line-pick-micro-lbl" style="margin-bottom:1px">Games</div><div style="font-weight:800;font-size:0.78rem;color:var(--text)">' + numGames + '</div></div>' : '') +
@@ -3246,6 +3309,10 @@ async function forceRegenerateParlay() {
       PARLAY_LOADED_DATE = _etToday();
       renderParlayTicket(data);
       _labSyncParlayContext(data);
+      if (data.legs && data.legs.length) {
+        _stopParlayLiveSse();
+        _startParlayLiveSse();
+      }
     } else {
       PARLAY_STATE = asyncStateError(PARLAY_STATE, data.error || 'no_valid_parlay');
       _labSyncParlayContext(data);
@@ -3291,6 +3358,10 @@ async function fetchParlay(background = false) {
     PARLAY_STATE.loadedAt = Date.now();
     renderParlayTicket(data);
     _labSyncParlayContext(data);
+    if (data.legs && data.legs.length) {
+      _stopParlayLiveSse();
+      _startParlayLiveSse();
+    }
   } catch (err) {
     if (loading) loading.style.display = 'none';
     PARLAY_STATE = asyncStateError(PARLAY_STATE, err);
@@ -3300,8 +3371,123 @@ async function fetchParlay(background = false) {
   }
 }
 
-let _parlayLockPollId = null;
-let _parlayPendingGames = false;
+let _parlayLiveES = null;
+
+function _stopParlayLiveSse() {
+  if (_parlayLiveES) {
+    try { _parlayLiveES.close(); } catch (e) {}
+    _parlayLiveES = null;
+  }
+}
+
+function _statLabelParlay(st) {
+  const m = {'points':'PTS','rebounds':'REB','assists':'AST'};
+  return m[(st || '').toLowerCase()] || String(st || 'PTS').toUpperCase();
+}
+
+function _applyParlayLiveUpdate(payload) {
+  if (!payload || !payload.legs || !payload.legs.length) return;
+  const legs = payload.legs;
+  for (let i = 0; i < legs.length; i++) {
+    const L = legs[i];
+    const dot = _el('parlayLegLiveDot-' + i);
+    const row = _el('parlayLegLiveRow-' + i);
+    const statEl = _el('parlayLegLiveStat-' + i);
+    const metaEl = _el('parlayLegLiveMeta-' + i);
+    const wrap = _el('parlayLegProgressWrap-' + i);
+    const bar = _el('parlayLegProgress-' + i);
+    const playLine = _el('parlayLegPlayLine-' + i);
+    if (!row || !statEl) continue;
+
+    const st = L.status;
+    const line = L.line;
+    const sc = L.stat_current;
+    const sl = _statLabelParlay(L.stat_type);
+    const dir = (L.direction || 'over').toLowerCase();
+
+    if (st === 'live') {
+      row.style.display = '';
+      if (dot) dot.style.display = '';
+      if (wrap) wrap.style.display = '';
+      if (sc != null && line != null) {
+        statEl.textContent = sc + ' / ' + Number(line).toFixed(1) + ' ' + sl;
+      } else {
+        statEl.textContent = 'Live';
+      }
+      if (metaEl) {
+        metaEl.textContent = (L.period != null && L.clock) ? ('Q' + L.period + ' · ' + L.clock) : '';
+      }
+      if (bar) {
+        const prevHit = bar.classList.contains('hit-locked');
+        if (L.hit_threshold_met || L.leg_result_preview === 'hit') {
+          bar.classList.add('hit-locked');
+          bar.style.width = '100%';
+        } else if (!prevHit && L.progress != null) {
+          bar.classList.remove('hit-locked');
+          bar.style.width = Math.round(Math.min(100, Math.max(0, L.progress * 100))) + '%';
+        }
+      }
+      if (playLine && sc != null && line != null) {
+        playLine.textContent = Number(line).toFixed(1) + ' ' + sl + ' · live ' + sc;
+      }
+    } else if (st === 'final') {
+      row.style.display = '';
+      if (dot) dot.style.display = 'none';
+      if (wrap) wrap.style.display = '';
+      if (metaEl) metaEl.textContent = 'Final';
+      if (sc != null && line != null) {
+        statEl.textContent = sc + ' / ' + Number(line).toFixed(1) + ' ' + sl;
+      } else {
+        statEl.textContent = 'Final';
+      }
+      if (bar) {
+        if (L.leg_result_preview === 'hit' || L.hit_threshold_met) {
+          bar.classList.add('hit-locked');
+          bar.style.width = '100%';
+        } else {
+          bar.classList.remove('hit-locked');
+          bar.style.width = L.progress != null ? Math.round(Math.min(100, Math.max(0, L.progress * 100))) + '%' : '0%';
+        }
+      }
+      if (playLine && sc != null && line != null) {
+        playLine.textContent = Number(line).toFixed(1) + ' ' + sl;
+      }
+    } else {
+      row.style.display = 'none';
+      if (dot) dot.style.display = 'none';
+      if (wrap) wrap.style.display = 'none';
+      if (bar) {
+        bar.classList.remove('hit-locked');
+        bar.style.width = '0%';
+      }
+    }
+  }
+}
+
+function _startParlayLiveSse() {
+  if (_parlayLiveES || typeof EventSource === 'undefined') return;
+  try {
+    _parlayLiveES = new EventSource('/api/parlay-live-stream');
+    _parlayLiveES.onmessage = function(ev) {
+      try {
+        const d = JSON.parse(ev.data);
+        if (d.legs && d.legs.length && !d.no_ticket) {
+          _applyParlayLiveUpdate(d);
+        }
+        if (d.all_games_final) {
+          _stopParlayLiveSse();
+          fetchParlay(true);
+          fetchParlayHistory(true);
+        }
+      } catch (err) { console.warn('[parlay-sse]', err); }
+    };
+    _parlayLiveES.onerror = function() {
+      /* Browser may auto-reconnect; closing avoids duplicate streams when tab is idle */
+    };
+  } catch (e) {
+    console.warn('[parlay-sse] init', e);
+  }
+}
 
 function initParlayPage() {
   const todayET = _etToday();
@@ -3338,47 +3524,24 @@ function initParlayPage() {
     fetchParlayHistory(!sameDayLoaded || PARLAY_HIST_LOADED_DATE !== todayET);
   }
 
-  // Start lock polling: when locked and slate has pending games, poll for unlock/resolution
-  if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data && PARLAY_STATE.data.locked) {
-    _startParlayLockPoll();
+  if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data && (PARLAY_STATE.data.legs || []).length) {
+    _startParlayLiveSse();
   }
 
   if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data) _labSyncParlayContext(PARLAY_STATE.data);
 }
 
-function _startParlayLockPoll() {
-  if (_parlayLockPollId) clearInterval(_parlayLockPollId);
-  _parlayPendingGames = true;
-  _parlayLockPollId = setInterval(function() {
-    fetchWithTimeout('/api/lab/status', {}, 10000)
-      .then(r => r.ok ? r.json() : Promise.reject('not ok'))
-      .then(data => {
-        if (!data.locked) {
-          // Slate is now unlocked — games are final. Re-fetch parlay + history immediately
-          console.log('[parlay] Slate unlocked detected, refreshing parlay data');
-          fetchParlay();
-          fetchParlayHistory(true);
-          // Stop polling once games are done
-          if (_parlayLockPollId) {
-            clearInterval(_parlayLockPollId);
-            _parlayLockPollId = null;
-          }
-        }
-      })
-      .catch(err => {
-        console.warn('[parlay] lock poll check error (will retry):', err);
-      });
-  }, 120000); // Poll every 2 min while locked
-}
-
-function stopParlayLockPoll() {
-  if (_parlayLockPollId) {
-    clearInterval(_parlayLockPollId);
-    _parlayLockPollId = null;
-  }
-}
-
 // ── Parlay History ──────────────────────────────────────────────────────
+
+function _parlayHistoryRowSummary(legs) {
+  if (!legs || !legs.length) return '';
+  const leg = legs[0];
+  const sl = {'points':'PTS','rebounds':'REB','assists':'AST'}[leg.stat_type] || (leg.stat_type || '').toString().toUpperCase();
+  const dirCh = (leg.direction || 'o').charAt(0).toUpperCase();
+  const first = _escapeHtml(leg.player_name || '') + ' ' + dirCh + ' ' + (leg.line != null ? leg.line : '') + ' ' + sl;
+  if (legs.length === 1) return first;
+  return first + ' +' + (legs.length - 1) + ' others';
+}
 
 function renderParlayHistoryError(msg) {
   const wrap = _el('parlayHistoryWrap');
@@ -3430,42 +3593,24 @@ function renderParlayHistory(hist) {
 
   const parlays = hist.parlays || [];
   const displayParlays = parlays.filter(function(p) {
-    return (p.legs || []).length > 0;
+    return (p.legs || []).length > 0 && (p.result === 'hit' || p.result === 'miss');
   });
-  const resolvedParlays = displayParlays.filter(function(p) {
-    return (p.result === 'hit' || p.result === 'miss');
-  });
-  const pendingOnly = displayParlays.length > 0 && resolvedParlays.length === 0;
 
-  if (msgEl) {
-    if (!displayParlays.length) {
-      msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">No saved parlay tickets yet. After today\'s ticket is generated it shows here. HIT/MISS labels appear once every game on that slate is final.</p>';
-      msgEl.style.display = 'block';
-    } else if (pendingOnly) {
-      msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">Tickets below are waiting on box scores. HIT/MISS updates after every game on that slate is final (or open a ticket to see legs).</p>';
-      msgEl.style.display = 'block';
-    } else {
-      const pendingMixed = displayParlays.some(function(p) {
-        return p.result !== 'hit' && p.result !== 'miss';
-      });
-      if (pendingMixed) {
-        msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">Pending tickets resolve when every game on that slate is final.</p>';
-        msgEl.style.display = 'block';
-      }
-    }
+  if (msgEl && !displayParlays.length) {
+    msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">No concluded parlays yet. Finished tickets appear here after every leg is final. The Safest Parlay card above shows today\'s active ticket.</p>';
+    msgEl.style.display = 'block';
   }
 
-  // Stats chips (hit rate + streak) — only when we have resolved parlays
   const statsEl = _el('parlayHistoryStats');
   if (statsEl) {
     let statsHtml = '';
-    if (resolvedParlays.length) {
+    if (displayParlays.length) {
       const hitRate = hist.hit_rate;
       const streak = hist.streak || 0;
       const streakType = hist.streak_type;
       if (hitRate !== null || streak) {
         const streakColor = streakType === 'hit' ? 'var(--color-success)' : 'var(--color-danger)';
-        statsHtml = '<div style="display:flex;gap:12px;margin-bottom:14px">' +
+        statsHtml = '<div style="display:flex;gap:12px;margin-bottom:16px">' +
           '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
             '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:var(--parlay)">' + (hitRate != null ? hitRate + '%' : '\u2014') + '</div>' +
             '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>' +
@@ -3491,30 +3636,24 @@ function renderParlayHistory(hist) {
   let rowsHtml = '';
   for (let i = 0; i < displayParlays.length; i++) {
     const p = displayParlays[i];
-    const result = (p.result === 'hit' || p.result === 'miss') ? p.result : 'pending';
+    const result = p.result === 'hit' ? 'hit' : 'miss';
     const legs = p.legs || [];
-    const legSummary = legs.map(function(l) {
-      const sl = {'points':'PTS','rebounds':'REB','assists':'AST'}[l.stat_type] || (l.stat_type || '').toUpperCase();
-      return _escapeHtml(l.player_name) + ' ' + (l.direction || 'O').charAt(0).toUpperCase() + ' ' + (l.line || '') + ' ' + sl;
-    }).join(' + ');
+    const legSummary = _parlayHistoryRowSummary(legs);
     const dateLabel = p.date || '';
-    const resultClass = result === 'hit' ? 'hit' : result === 'miss' ? 'miss' : 'pending';
-    const legsResolved = legs.filter(function(l) { return l.result === 'hit' || l.result === 'miss'; }).length;
     const legsHit = legs.filter(function(l) { return l.result === 'hit'; }).length;
-    const legsPill = legsResolved > 0 ? ' <span style="font-size:0.6rem;color:var(--muted);margin-left:4px">' + legsHit + '/' + legs.length + '</span>' : '';
+    const legsPill = ' <span style="font-size:0.6rem;color:var(--muted);margin-left:4px">' + legsHit + '/' + legs.length + '</span>';
 
-    const origIdx = parlays.indexOf(p);
-    const rowMuted = result === 'pending' ? 'opacity:0.92' : '';
-    rowsHtml += '<div class="line-history-row" style="cursor:pointer;' + rowMuted + '" data-parlay-idx="' + origIdx + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
-      '<div style="display:flex;align-items:center;gap:7px;min-width:0">' +
-        '<span class="line-hist-dir-pill" style="background:rgba(20,184,166,0.10);color:var(--parlay);border:1px solid rgba(20,184,166,0.20);font-size:0.55rem">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
-        '<div style="min-width:0">' +
-          '<div class="line-history-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">' + legSummary + '</div>' +
+    rowsHtml += '<div class="line-history-row" style="cursor:pointer;align-items:flex-start;padding-top:12px;padding-bottom:12px" data-parlay-idx="' + i + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
+      '<div style="display:flex;align-items:flex-start;gap:7px;min-width:0;flex:1">' +
+        '<span class="line-hist-dir-pill" style="background:rgba(20,184,166,0.10);color:var(--parlay);border:1px solid rgba(20,184,166,0.20);font-size:0.55rem;flex-shrink:0;margin-top:2px">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
+        '<div style="min-width:0;flex:1">' +
+          '<div class="line-history-name" style="font-size:0.78rem;font-weight:600;color:var(--text);line-height:1.35;word-break:break-word">' + legSummary + '</div>' +
         '</div>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;flex-shrink:0">' +
-        '<span class="line-result-pill ' + resultClass + '">' + result.toUpperCase() + '</span>' +
+      '<div style="display:flex;align-items:center;flex-shrink:0;gap:4px">' +
+        '<span class="line-result-pill ' + result + '">' + result.toUpperCase() + '</span>' +
         legsPill +
+        '<span class="parlay-hist-chevron" aria-hidden="true">\u203a</span>' +
       '</div>' +
     '</div>';
   }
@@ -3543,7 +3682,7 @@ function openParlayModal(parlay) {
   html += '<div style="border-radius:var(--radius-card);overflow:hidden;border:1px solid rgba(20,184,166,0.16);margin-bottom:12px">';
   for (let i = 0; i < legs.length; i++) {
     const leg = legs[i];
-    html += renderParlayLeg(leg, i, legs.length);
+    html += renderParlayLeg(leg, i, legs.length, false);
     // Result overlay row for resolved legs
     if (leg.result && leg.result !== 'pending') {
       const actualVal = leg.actual_stat != null ? leg.actual_stat : '\u2014';

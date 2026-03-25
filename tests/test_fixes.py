@@ -3287,6 +3287,14 @@ class TestParlayHistoryAndConfigHardening:
         src = open("api/index.py").read()
         assert "today_games_final = _all_games_final(_today_games)" in src
         assert '_can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)' in src
+        assert "def _parlay_fully_concluded(" in src
+        assert "history_parlays" in src and "date_str > today_str" in src
+
+    def test_parlay_live_stream_endpoint(self):
+        src = open("api/index.py").read()
+        assert "/api/parlay-live-stream" in src
+        assert "async def parlay_live_stream" in src
+        assert "def _line_live_stat_dict(" in src
 
     def test_parlay_history_try_except_returns_safe_payload(self):
         src = open("api/index.py").read()
@@ -3300,7 +3308,8 @@ class TestParlayHistoryAndConfigHardening:
         src_ui = open("index.html").read()
         assert '"projection_only": result.get("projection_only", False)' in src_api
         assert "sourceBadge = data.projection_only" in src_ui
-        assert "MODEL</span>'" in src_ui and "BOOK</span>'" in src_ui
+        assert "MODEL</span>'" in src_ui
+        assert "BOOK</span>'" not in src_ui
 
     def test_projection_only_cache_bypass(self):
         src = open("api/index.py").read()

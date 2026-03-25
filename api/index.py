@@ -7978,12 +7978,13 @@ async def refresh_line_odds():
     return {"status": "ok", "updated": updated, "timestamp": now_utc}
 
 
-@app.get("/api/line-live-stat")
-async def get_line_live_stat(
-    player_id: str = Query(""), player_name: str = Query(""),
-    team: str = Query(""), stat_type: str = Query("points")
-):
-    """Live in-game stat for a Line pick. No cache — must be fresh for 30s frontend polling."""
+def _line_live_stat_dict(
+    player_id: str = "",
+    player_name: str = "",
+    team: str = "",
+    stat_type: str = "points",
+) -> dict:
+    """ESPN box score snapshot for Line + Parlay live tracking (sync)."""
     games = fetch_games()
     game = next(
         (g for g in games if team and (
@@ -8008,12 +8009,6 @@ async def get_line_live_stat(
     period = game_status.get("period", 0)
     clock = game_status.get("displayClock", "")
 
-    if completed:
-        return {"status": "final", "game_id": game["gameId"]}
-    if not period:
-        return {"status": "pregame", "game_id": game["gameId"]}
-
-    # Find the player's current stat in the live box score
     _STAT_BOX_LABEL = {"points": "PTS", "rebounds": "REB", "assists": "AST"}
     label = _STAT_BOX_LABEL.get(stat_type.lower(), "PTS")
     stat_current = None
@@ -8026,15 +8021,30 @@ async def get_line_live_stat(
             for ath in stat_block.get("athletes", []):
                 pid = ath.get("athlete", {}).get("id", "")
                 name = ath.get("athlete", {}).get("displayName", "")
-                if (player_id and pid == player_id) or \
-                   (player_name and player_name.lower() in name.lower()):
+                if (player_id and pid == player_id) or (
+                    player_name and player_name.lower() in name.lower()
+                ):
                     stats = ath.get("stats", [])
                     if idx < len(stats):
-                        try: stat_current = float(stats[idx])
-                        except (ValueError, TypeError): pass
+                        try:
+                            stat_current = float(stats[idx])
+                        except (ValueError, TypeError):
+                            pass
                     break
 
-    # Pace: project current stat rate to a full 48-minute game baseline
+    if completed:
+        return {
+            "status": "final",
+            "game_id": game["gameId"],
+            "stat_current": stat_current,
+            "stat_type": stat_type,
+            "period": period,
+            "clock": clock,
+        }
+
+    if not period:
+        return {"status": "pregame", "game_id": game["gameId"]}
+
     pace = None
     try:
         parts = clock.split(":")
@@ -8050,6 +8060,132 @@ async def get_line_live_stat(
         "status": "live", "stat_current": stat_current, "stat_type": stat_type,
         "period": period, "clock": clock, "pace": pace, "game_id": game["gameId"],
     }
+
+
+@app.get("/api/line-live-stat")
+async def get_line_live_stat(
+    player_id: str = Query(""), player_name: str = Query(""),
+    team: str = Query(""), stat_type: str = Query("points")
+):
+    """Live in-game stat for a Line pick. No cache — must be fresh for frontend polling."""
+    return _line_live_stat_dict(player_id, player_name, team, stat_type)
+
+
+def _parlay_leg_result_preview(snap_status: str, stat_current, line, direction: str) -> str:
+    if stat_current is None or line is None:
+        return "pending"
+    try:
+        lv = float(line)
+        sc = float(stat_current)
+    except (TypeError, ValueError):
+        return "pending"
+    d = (direction or "over").lower()
+    if snap_status == "final":
+        if d == "over":
+            return "hit" if sc > lv else "miss"
+        return "hit" if sc < lv else "miss"
+    if d == "over":
+        return "hit" if sc > lv else "pending"
+    return "miss" if sc > lv else "pending"
+
+
+def _parlay_live_tick_payload() -> dict:
+    """One SSE tick: today's saved parlay legs + ESPN snapshots (run in thread)."""
+    today_str = _et_date().isoformat()
+    ticket = _cg(_CK_PARLAY)
+    if not isinstance(ticket, dict) or ticket.get("_busted"):
+        ticket = None
+    if not ticket or not ticket.get("legs"):
+        try:
+            gh_raw, _ = _github_get_file(f"data/parlays/{today_str}.json")
+            if gh_raw:
+                ticket = json.loads(gh_raw)
+        except Exception:
+            ticket = None
+        if isinstance(ticket, dict) and ticket.get("_busted"):
+            ticket = None
+
+    games = fetch_games()
+    all_final = bool(games) and _all_games_final(games)
+
+    if not ticket or not ticket.get("legs"):
+        return {"date": today_str, "legs": [], "all_games_final": all_final, "no_ticket": True}
+
+    legs_out = []
+    for i, leg in enumerate(ticket.get("legs") or []):
+        snap = _line_live_stat_dict(
+            str(leg.get("player_id") or ""),
+            str(leg.get("player_name") or ""),
+            str(leg.get("team") or ""),
+            str(leg.get("stat_type") or "points"),
+        )
+        snap["leg_index"] = i
+        line = leg.get("line")
+        direction = leg.get("direction") or "over"
+        snap["line"] = line
+        snap["direction"] = direction
+        snap["player_name"] = leg.get("player_name")
+        st = snap.get("status")
+        sc = snap.get("stat_current")
+        snap["leg_result_preview"] = _parlay_leg_result_preview(st, sc, line, direction)
+        try:
+            lv = float(line)
+            if lv > 0 and sc is not None:
+                sf = float(sc)
+                if (direction or "over").lower() == "over":
+                    snap["progress"] = min(1.0, max(0.0, sf / lv))
+                    snap["hit_threshold_met"] = sf > lv
+                else:
+                    snap["progress"] = min(1.0, max(0.0, (lv - sf) / lv))
+                    snap["hit_threshold_met"] = sf < lv
+                if st == "final":
+                    prev = snap.get("leg_result_preview")
+                    snap["progress"] = 1.0 if prev == "hit" else 0.0
+        except (TypeError, ValueError):
+            pass
+        legs_out.append(snap)
+    return {
+        "date": today_str,
+        "legs": legs_out,
+        "all_games_final": all_final,
+        "no_ticket": False,
+    }
+
+
+@app.get("/api/parlay-live-stream")
+async def parlay_live_stream(request: Request):
+    """SSE push of live box-score stats for today's parlay legs (server-paced intervals)."""
+
+    async def event_gen():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                payload = await asyncio.to_thread(_parlay_live_tick_payload)
+            except Exception as e:
+                print(f"[parlay-live-stream] tick error: {e}")
+                payload = {"error": "tick_failed", "legs": [], "all_games_final": False}
+            yield f"data: {json.dumps(payload)}\n\n"
+            any_live = any(
+                isinstance(x, dict) and x.get("status") == "live"
+                for x in (payload.get("legs") or [])
+            )
+            if payload.get("all_games_final"):
+                await asyncio.sleep(10)
+            elif any_live:
+                await asyncio.sleep(22)
+            else:
+                await asyncio.sleep(50)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/resolve-line")
@@ -10575,6 +10711,16 @@ async def parlay_force_regenerate(request: Request):
     return JSONResponse({"status": "ok", "forced": True, "date": target_str, **result})
 
 
+def _parlay_fully_concluded(parlay: dict) -> bool:
+    """True when overall + every leg is resolved to hit or miss."""
+    if parlay.get("result") not in ("hit", "miss"):
+        return False
+    for leg in parlay.get("legs") or []:
+        if leg.get("result") not in ("hit", "miss"):
+            return False
+    return True
+
+
 # grep: PARLAY HISTORY — /api/parlay-history
 @app.get("/api/parlay-history")
 async def parlay_history(request: Request):
@@ -10619,7 +10765,7 @@ async def parlay_history(request: Request):
                 today_games_final = _all_games_final(_today_games)
         except Exception:
             today_games_final = False
-        results = []
+        results_with_dates = []
         write_back_queue = []  # (date_str, parlay_dict) for resolved entries that need saving
 
         for date_str in json_dates:
@@ -10670,7 +10816,7 @@ async def parlay_history(request: Request):
             if needs_write:
                 write_back_queue.append((date_str, parlay))
 
-            results.append(parlay)
+            results_with_dates.append((date_str, parlay))
 
         # Write back resolved parlays to GitHub (parallel, non-fatal)
         def _write_back(item):
@@ -10684,16 +10830,26 @@ async def parlay_history(request: Request):
             with ThreadPoolExecutor(max_workers=_W_LIGHT * 2) as pool:
                 list(pool.map(_write_back, write_back_queue))
 
-        # Compute stats (only resolved)
-        resolved = [p for p in results if p.get("result") in ("hit", "miss")]
+        # Recent history: concluded tickets only (no live/future; backend is source of truth).
+        history_parlays = []
+        for date_str, parlay in results_with_dates:
+            if date_str > today_str:
+                continue
+            if not _parlay_fully_concluded(parlay):
+                continue
+            ent = dict(parlay)
+            if not ent.get("date"):
+                ent["date"] = date_str
+            history_parlays.append(ent)
+
+        resolved = history_parlays
         hits = [p for p in resolved if p["result"] == "hit"]
         total_resolved = len(resolved)
         hit_rate = round(len(hits) / total_resolved * 100) if total_resolved else None
 
-        # Streak
         streak = 0
         streak_type = None
-        for p in results:
+        for p in history_parlays:
             r = p.get("result")
             if r not in ("hit", "miss"):
                 continue
@@ -10706,9 +10862,9 @@ async def parlay_history(request: Request):
                 break
 
         out = {
-            "parlays": results,
+            "parlays": history_parlays,
             "hit_rate": hit_rate,
-            "total": len(results),
+            "total": len(history_parlays),
             "resolved": total_resolved,
             "streak": streak,
             "streak_type": streak_type,
