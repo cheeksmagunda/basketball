@@ -2093,7 +2093,8 @@ class TestBoostModelInference:
     """Card boost Layer 1: LightGBM path (ownership CSV scanning removed)."""
 
     def test_est_card_boost_uses_ml_when_model_returns_value(self):
-        """When _lgbm_predict_boost returns a float, result is clamped/rounded."""
+        """When _lgbm_predict_boost returns a float, result is clamped/rounded.
+        v63: model uses single feature (projected_rs / perf_score)."""
         from api.index import _est_card_boost
         import api.index as idx
 
@@ -2111,11 +2112,12 @@ class TestBoostModelInference:
             b = _est_card_boost(
                 28.0, 15.0, "MEM", "Bench Player",
                 season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
+                projected_rs=4.5,
             )
 
         assert b == 2.4
-        assert len(captured["vec"]) == 8
-        assert captured["vec"][6] == 2.0  # cascade_bonus aligns with training role_change_min proxy
+        assert len(captured["vec"]) == 1  # v63: single feature (perf_score)
+        assert captured["vec"][0] == 4.5  # projected_rs passed as perf_score
 
         idx._DAILY_BOOST_CACHE = {}
         idx._DAILY_BOOST_TS = 0
@@ -2133,11 +2135,12 @@ class TestBoostModelInference:
             b = _est_card_boost(
                 30.0, 25.0, "MIN", "Anthony Edwards",
                 season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
+                projected_rs=7.0,
             )
         assert b == 0.3
 
-    def test_override_precedes_log_linear_when_ml_none(self):
-        """Known player overrides must still apply when log-linear fallback is enabled."""
+    def test_override_precedes_sigmoid_when_ml_none(self):
+        """Known player overrides must still apply when ML returns None (v63)."""
         from api.index import _est_card_boost
         import api.index as idx
 
@@ -2153,7 +2156,6 @@ class TestBoostModelInference:
                             "ceiling": 3.0,
                             "floor": 0.2,
                             "big_market_teams": ["MIN"],
-                            "log_linear": {"enabled": True, "intercept": 3.2, "slope": -0.75},
                             "player_overrides": {"Anthony Edwards": 0.3},
                         }
                     return default
@@ -2162,6 +2164,7 @@ class TestBoostModelInference:
                 b = _est_card_boost(
                     35.0, 26.0, "MIN", "Anthony Edwards",
                     season_pts=26.0, recent_pts=25.0, cascade_bonus=0.0, is_home=False,
+                    projected_rs=7.5,
                 )
         assert b == 0.3
 

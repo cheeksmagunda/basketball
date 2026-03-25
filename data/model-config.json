@@ -35,7 +35,7 @@
     "sig_scale": 4.0,
     "big_market_discount": 0.15,
     "log_linear": {
-      "enabled": true,
+      "enabled": false,
       "intercept": 3.2,
       "slope": -0.75
     },

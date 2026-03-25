@@ -1,56 +1,35 @@
 #!/usr/bin/env python3
 """
-Train LightGBM card boost model from historical actuals.
+Train LightGBM card boost model from top_performers.csv.
 
-This script builds an 8-feature training set from data/actuals/*.csv
-and pre-game NBA logs (date_to = target_date - 1 day), then writes
-boost_model.pkl as {"model": ..., "features": [...]}.
+Uses 14-day trailing average RS as the primary performance signal,
+matching the user insight that boosts correlate with recent (not season)
+performance. High performers get low boosts; low performers get high boosts.
+
+Feature: perf_score (14-day trailing avg RS from top_performers.csv)
+Target:  actual_card_boost (0.0 to 3.0)
+
+At inference time, perf_score = projected_rs from the RS projection model.
+Both are on the same RS scale (0-10), making the mapping direct.
+
+Writes boost_model.pkl as {"model": ..., "features": [...]}.
 """
 
 import csv
 import pickle
-import time
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
 
 import lightgbm as lgb
 import numpy as np
-import pandas as pd
-from nba_api.stats.endpoints import playergamelogs
-from nba_api.stats.static import players
 
+TOP_PERFORMERS = Path("data/top_performers.csv")
 ACTUALS_DIR = Path("data/actuals")
 MODEL_OUT = Path("boost_model.pkl")
-BIG_MARKETS = {"LAL", "GSW", "BOS", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"}
 
-FEATURES = [
-    "season_pts",
-    "recent_pts",
-    "season_min",
-    "recent_min",
-    "pts_ratio",
-    "is_big_market",
-    "role_change_min",
-    "is_home",
-]
-
-
-def _normalize_name(name: str) -> str:
-    s = (name or "").strip().lower()
-    for tok in (" jr.", " sr.", " ii", " iii", " iv", ".", "'"):
-        s = s.replace(tok, "")
-    return " ".join(s.split())
-
-
-def _player_index() -> Dict[str, int]:
-    idx: Dict[str, int] = {}
-    for p in players.get_players():
-        full = (p.get("full_name") or "").strip()
-        pid = p.get("id")
-        if full and pid:
-            idx[_normalize_name(full)] = int(pid)
-    return idx
+FEATURES = ["perf_score"]
+LOOKBACK_DAYS = 14
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -60,125 +39,128 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
-def _guess_season(target_date: datetime) -> str:
-    # NBA season rolls in October. Jan-Sep belong to prior year start.
-    y = target_date.year if target_date.month >= 10 else target_date.year - 1
-    return f"{y}-{str((y + 1) % 100).zfill(2)}"
-
-
-def _extract_market_and_home(matchup: str) -> tuple[float, float]:
-    text = (matchup or "").strip()
-    if not text:
-        return 0.0, 0.0
-    team_abbr = text.split(" ")[0].strip().upper()
-    is_big_market = 1.0 if team_abbr in BIG_MARKETS else 0.0
-    is_home = 0.0 if "@" in text else 1.0
-    return is_big_market, is_home
-
-
-def _fetch_logs_before_date(player_id: int, target_date: datetime) -> Optional[pd.DataFrame]:
-    season_str = _guess_season(target_date)
-    date_to = (target_date - timedelta(days=1)).strftime("%m/%d/%Y")
-    logs = playergamelogs.PlayerGameLogs(
-        player_id_nullable=player_id,
-        season_nullable=season_str,
-        date_to_nullable=date_to,
-        timeout=45,
-    ).get_data_frames()[0]
-    if logs is None or logs.empty:
-        return None
-    return logs
-
-
-def build_training_data() -> pd.DataFrame:
-    if not ACTUALS_DIR.exists():
-        print(f"[ERROR] Missing directory: {ACTUALS_DIR}")
-        return pd.DataFrame()
-
-    pidx = _player_index()
+def _load_top_performers() -> list[dict]:
+    """Load labeled examples from top_performers.csv."""
+    if not TOP_PERFORMERS.exists():
+        print(f"[ERROR] Missing {TOP_PERFORMERS}")
+        return []
     rows = []
+    with TOP_PERFORMERS.open("r", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            boost = _safe_float(r.get("actual_card_boost"), 0.0)
+            rs = _safe_float(r.get("actual_rs"), 0.0)
+            if boost > 0 and rs > 0:
+                rows.append({
+                    "date": r.get("date", ""),
+                    "player_name": (r.get("player_name") or "").strip(),
+                    "actual_rs": rs,
+                    "actual_card_boost": boost,
+                })
+    return rows
 
+
+def _load_actuals() -> list[dict]:
+    """Load additional labeled examples from data/actuals/*.csv."""
+    if not ACTUALS_DIR.exists():
+        return []
+    rows = []
     for csv_path in sorted(ACTUALS_DIR.glob("*.csv")):
         date_str = csv_path.stem
-        try:
-            target_date = datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
-            continue
-
         with csv_path.open("r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                player_name = (row.get("player_name") or "").strip()
-                if not player_name:
-                    continue
-                actual_boost = _safe_float(row.get("actual_card_boost"), 0.0)
-                if actual_boost <= 0:
-                    continue
+            for r in csv.DictReader(f):
+                boost = _safe_float(r.get("actual_card_boost"), 0.0)
+                rs = _safe_float(r.get("actual_rs"), 0.0)
+                name = (r.get("player_name") or "").strip()
+                if boost > 0 and rs > 0 and name:
+                    rows.append({
+                        "date": date_str,
+                        "player_name": name,
+                        "actual_rs": rs,
+                        "actual_card_boost": boost,
+                    })
+    return rows
 
-                pid = pidx.get(_normalize_name(player_name))
-                if not pid:
-                    continue
 
-                try:
-                    logs = _fetch_logs_before_date(pid, target_date)
-                    # Conservative client-side rate-limiting.
-                    time.sleep(0.6)
-                except Exception as e:
-                    print(f"[WARN] log fetch failed for {player_name} ({date_str}): {e}")
-                    time.sleep(1.0)
-                    continue
+def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build (X, y, weights) from top_performers + actuals with 14-day lookback."""
+    # Combine data sources, deduplicate by (player, date)
+    all_rows = _load_top_performers() + _load_actuals()
+    seen = set()
+    unique = []
+    for r in all_rows:
+        key = (r["player_name"], r["date"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
 
-                if logs is None or len(logs) < 3:
-                    continue
+    if not unique:
+        return np.array([]), np.array([]), np.array([])
 
-                season_pts = _safe_float(logs["PTS"].mean(), 0.0)
-                season_min = _safe_float(logs["MIN"].mean(), 0.0)
-                recent_logs = logs.head(5)
-                recent_pts = _safe_float(recent_logs["PTS"].mean(), 0.0)
-                recent_min = _safe_float(recent_logs["MIN"].mean(), 0.0)
-                pts_ratio = recent_pts / max(season_pts, 1.0)
-                role_change_min = recent_min - season_min
+    print(f"Combined data: {len(unique)} unique (player, date) entries")
 
-                latest = logs.iloc[0]
-                is_big_market, is_home = _extract_market_and_home(str(latest.get("MATCHUP", "")))
+    # Build per-player time series
+    by_player: dict[str, list[dict]] = defaultdict(list)
+    for r in unique:
+        by_player[r["player_name"]].append(r)
 
-                rows.append(
-                    {
-                        "player_name": player_name,
-                        "season_pts": season_pts,
-                        "recent_pts": recent_pts,
-                        "season_min": season_min,
-                        "recent_min": recent_min,
-                        "pts_ratio": pts_ratio,
-                        "is_big_market": is_big_market,
-                        "role_change_min": role_change_min,
-                        "is_home": is_home,
-                        "actual_card_boost": actual_boost,
-                    }
-                )
+    # Generate training samples with 14-day lookback
+    X_list, y_list, w_list = [], [], []
+    for name, entries in by_player.items():
+        entries.sort(key=lambda x: x["date"])
+        for i, entry in enumerate(entries):
+            try:
+                dt = datetime.strptime(entry["date"], "%Y-%m-%d")
+            except ValueError:
+                continue
 
-    return pd.DataFrame(rows)
+            # 14-day trailing average RS (recent performance signal)
+            prior_14d = [
+                e for e in entries[:i]
+                if (dt - datetime.strptime(e["date"], "%Y-%m-%d")).days <= LOOKBACK_DAYS
+            ]
+            prior_all = entries[:i]
+
+            if prior_14d:
+                perf_score = float(np.mean([e["actual_rs"] for e in prior_14d]))
+                weight = 3.0  # 14-day history = highest confidence
+            elif prior_all:
+                perf_score = float(np.mean([e["actual_rs"] for e in prior_all]))
+                weight = 2.0  # older history
+            else:
+                perf_score = entry["actual_rs"]
+                weight = 1.0  # single appearance
+
+            X_list.append([perf_score])
+            y_list.append(entry["actual_card_boost"])
+            w_list.append(weight)
+
+    return np.array(X_list), np.array(y_list), np.array(w_list)
 
 
 def train_model() -> None:
-    print("Building training data from actuals...")
-    df = build_training_data()
-    if df.empty:
+    print("Building training data from top_performers.csv + actuals...")
+    X, y, weights = build_training_data()
+    if len(X) == 0:
         print("[ERROR] No valid rows. Aborting.")
         return
 
-    X = df[FEATURES]
-    y = df["actual_card_boost"]
-    weights = np.where(y >= 2.0, 3.0, np.where(y >= 1.0, 1.5, 1.0))
+    print(f"Training boost model on {len(X)} samples (features: {FEATURES})")
+    print(f"  Target range: {y.min():.1f} - {y.max():.1f}")
+    print(f"  Weighted: {sum(weights >= 3.0)} gold (14d), "
+          f"{sum((weights >= 2.0) & (weights < 3.0))} silver, "
+          f"{sum(weights < 2.0)} bronze")
 
-    print(f"Training boost model on {len(df)} samples...")
     model = lgb.LGBMRegressor(
-        n_estimators=150,
-        learning_rate=0.05,
-        max_depth=5,
-        num_leaves=31,
+        n_estimators=300,
+        learning_rate=0.02,
+        max_depth=4,
+        num_leaves=15,
+        min_child_samples=5,
+        subsample=0.8,
+        colsample_bytree=1.0,
         objective="regression",
         random_state=42,
+        verbose=-1,
     )
     model.fit(X, y, sample_weight=weights)
 
@@ -186,6 +168,12 @@ def train_model() -> None:
     with MODEL_OUT.open("wb") as f:
         pickle.dump(bundle, f)
     print(f"Saved {MODEL_OUT}")
+
+    # Print learned mapping for verification
+    print("\nLearned RS → Boost mapping:")
+    for rs in [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 8.0]:
+        pred = model.predict([[rs]])[0]
+        print(f"  RS {rs:.1f} → boost {pred:.2f}")
 
 
 if __name__ == "__main__":

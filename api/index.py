@@ -2739,14 +2739,18 @@ def _est_card_boost(
     recent_pts=0.0,
     cascade_bonus=0.0,
     is_home=False,
+    projected_rs=None,
 ):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Five-layer approach (v62):
+    Four-layer approach (v63 — RS-driven):
     0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
-    1. BOOST MODEL — LightGBM inference from pre-game hype features.
+    1. BOOST MODEL — LightGBM trained on top_performers.csv, maps projected RS → boost.
+       The model learned from 775 labeled examples that boost is inversely proportional
+       to player performance (r=-0.75). Uses 14-day trailing RS at training time;
+       at inference uses the projected RS from the RS model.
     2. CONFIG OVERRIDES — player_overrides from model-config.json.
-    3. SIGMOID TIER FALLBACK — for completely unknown players.
+    3. SIGMOID TIER FALLBACK — for completely unknown players when model unavailable.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -2761,55 +2765,23 @@ def _est_card_boost(
         if norm_name in daily_boosts:
             return _clamp_round_boost(daily_boosts[norm_name], floor_val, ceiling)
 
-    # Layer 1: ML inference from dedicated boost model.
-    big_markets = set(
-        cb.get(
-            "big_market_teams",
-            ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
-        )
-    )
-    is_big_market = 1.0 if team_abbr in big_markets else 0.0
-    season_min_proxy = max(0.0, proj_min - cascade_bonus)
-    recent_min_proxy = proj_min
-    pts_ratio = float(recent_pts) / max(float(season_pts), 1.0)
-    is_home_val = 1.0 if is_home else 0.0
-    feat_vec = [
-        float(season_pts),
-        float(recent_pts),
-        float(season_min_proxy),
-        float(recent_min_proxy),
-        float(pts_ratio),
-        float(is_big_market),
-        float(cascade_bonus),
-        float(is_home_val),
-    ]
-    ml_pred = _lgbm_predict_boost(feat_vec)
-    if ml_pred is not None:
-        return _clamp_round_boost(ml_pred, floor_val, ceiling)
+    # Layer 1: ML inference from boost_model.pkl (v63 — single feature: perf_score).
+    # perf_score = projected RS from the RS model (same 0-10 scale as training data).
+    # Trained on 775 top_performers.csv entries with 14-day trailing RS lookback.
+    if projected_rs is not None and projected_rs > 0:
+        feat_vec = [float(projected_rs)]
+        ml_pred = _lgbm_predict_boost(feat_vec)
+        if ml_pred is not None:
+            return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
     # Layer 2: Config overrides (fallback when ML unavailable/missing).
-    # Keep this ahead of log-linear so known star/brand-name priors are not
-    # accidentally overwritten when the ML model is unavailable.
     overrides = cb.get("player_overrides", {})
     if norm_name:
         for k, v in overrides.items():
             if _normalize_boost_name(k) == norm_name:
                 return _clamp_round_boost(v, floor_val, ceiling)
 
-    # Layer 1.5: Log-linear estimation from predicted draft count.
-    # Data: log10(drafts) vs boost = -0.660 correlation (578 top-performer entries).
-    # Drafts 1-3: avg boost 2.78; Drafts 300-1000: avg boost 1.05.
-    ll_cfg = cb.get("log_linear", {})
-    if ll_cfg.get("enabled", False):
-        log_drafts = _estimate_log_drafts(
-            float(season_pts), team_abbr in big_markets, float(recent_pts), float(season_pts)
-        )
-        ll_intercept = float(ll_cfg.get("intercept", 3.2))
-        ll_slope = float(ll_cfg.get("slope", -0.75))
-        ll_boost = max(floor_val, min(ceiling, ll_intercept + ll_slope * log_drafts))
-        return _clamp_round_boost(ll_boost, floor_val, ceiling)
-
-    # Layer 3: Sigmoid tier estimation from hype-adjusted scoring signal.
+    # Layer 3: Sigmoid tier estimation from PPG (fallback when model unavailable).
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
     effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
     sig_ceiling  = cb.get("sig_ceiling", 3.0)
@@ -2820,7 +2792,13 @@ def _est_card_boost(
     sigmoid_val = 1.0 / (1.0 + np.exp(-(effective_hype_ppg - sig_midpoint) / sig_scale))
     boost = sig_ceiling - sig_range * sigmoid_val
 
-    # Big market players are more recognizable → slightly lower boost
+    big_markets = set(
+        cb.get(
+            "big_market_teams",
+            ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
+        )
+    )
+    is_big_market = 1.0 if team_abbr in big_markets else 0.0
     if is_big_market > 0.5:
         boost -= bm_discount
 
@@ -3323,6 +3301,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         recent_pts=recent_pts,
         cascade_bonus=cascade_bonus,
         is_home=is_home,
+        projected_rs=raw_score,
     )
 
     # EV score — card-adjusted expected value using additive formula
