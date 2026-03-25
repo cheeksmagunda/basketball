@@ -506,11 +506,26 @@ Context layer in `context_layer`: `enabled`, `web_search_enabled`, `model`, `max
 `timeout_seconds`.
 
 Parlay in `parlay`: `max_spread` (blowout filter, default 8.5), `max_minutes_cv` (volatility filter,
-default 0.25), `min_blended_conf` (minimum blended hit probability, default 0.55),
-`min_season_minutes` (floor, default 24.0), `min_games_played` (gamelog depth, default 15),
-`juice_threshold` (Vegas juice floor, default -125), `max_candidates_for_combinations` (pool cap,
-default 25), `positive_correlation_boost` (PG assists + teammate points, default 1.08),
-`shootout_correlation_boost` (opposing scorers in tight game, default 1.05).
+default 0.30), `min_blended_conf` (minimum blended hit probability, default 0.52),
+`min_season_minutes` (floor, default 20.0), `min_games_played` (gamelog depth, default 10),
+`juice_threshold` (Vegas juice floor, default -105), `max_candidates_for_combinations` (pool cap,
+default 30), `positive_correlation_boost` (PG assists + teammate points, default 1.08),
+`shootout_correlation_boost` (opposing scorers in tight game, default 1.05),
+`correlated_pair_max_spread` (tightened from 6.5 to 5.0 — blowout mirage protection),
+`min_game_total` (possession floor for correlated pairs, default 225.5),
+`market_match_max_cv` (CV gate on heavily juiced Market Match legs, default 0.25),
+`pnr_rim_boost` (PnR-to-rim interior finisher synergy, default 1.20),
+`pace_boost_total_threshold` (game total for pace boost, default 232.0),
+`pace_boost` (multiplier for high-pace games, default 1.06),
+`rest_advantage_boost` (team rested vs opponent on B2B, default 1.08).
+
+Parlay auto-fade matrix in `parlay.auto_fade`: `switch_heavy_teams` (center reb over faded vs these
+teams, default `["BOS", "CLE", "MIN", "OKC"]`), `rebound_fade_teams` (dynamic Leg 1 substitution —
+rebounds deprioritized vs these defenses, default `["OKC", "CLE", "MIN", "HOU", "BOS"]`),
+`b2b_correlated_pair_penalty` (B2B fatigue penalty on correlated pairs, default 0.75),
+`perimeter_scorer_reb_floor` (scorer must avg this many reb to not be "perimeter-only", default 4.0),
+`fake_juice_recent_threshold` (L5-L10 hit rate ceiling for fake juice detection, default 0.80),
+`fake_juice_season_ceiling` (season model_prob ceiling for fake juice, default 0.55).
 
 Per-game in `per_game`: `enabled`, `total_baseline` (222), `total_mult_strength` (0.003 per pt),
 `total_mult_floor` (0.92), `total_mult_ceiling` (1.12), `close_spread_threshold` (5),
@@ -970,8 +985,20 @@ TestPerGameFrontend         — strategyInsight element, render function, ANCHOR
 - **TestParlayEndpointExists** — /api/parlay in app routes
 - **TestParlayFrontend** — tab-parlay, nav button, CSS variable, state, ticket container, rendering functions, history section (wrap/list/stats), modal (parlayModal/content), accessibility (aria-modal, aria-live, aria-label), PARLAY_HIST_DATA global, escape key
 - **TestParlayHistoryEndpoint** — /api/parlay-history in app routes, auto-save fields in /api/parlay
+- **TestAutoFadeSwitchHeavy** — center reb over vs switch-heavy defense filtered; guards pass; non-switch-heavy passes
+- **TestAutoFadeFakeJuice** — high recent hit rate + low season prob triggers fade; confident model passes
+- **TestAutoFadeB2BPenalty** — B2B correlated pair penalized in structure scoring and pair search
+- **TestGameTotalFloor** — low-total pair excluded from correlated pair search; penalized in structure
+- **TestCVBasedMarketMatch** — high-CV candidate loses market match bonus; low-CV gets it
+- **TestPnrRimBoost** — interior finisher (C/PF, 7+ reb) gets 1.20x; generic scorer gets 1.08x
+- **TestPerimeterToPerimeterFade** — perimeter-only scorer (SG, <4 reb) gets correlation penalty
+- **TestPaceBoost** — high-total game (≥232) gets pace multiplier; below threshold does not
+- **TestRestAdvantageBoost** — team rested vs opponent on B2B gets 1.08x; both rested does not
+- **TestTightenedSpread** — correlated_pair_max_spread defaults to 5.0 (6.0 excluded, 4.0 passes)
+- **TestDynamicLeg1Substitution** — rebounds deprioritized vs elite defense; preferred vs normal
+- **TestCandidateLegB2BFields** — candidate legs carry is_b2b, opp_b2b, season_reb from game data
 
-Run all: `pytest tests/ -v`  
+Run all: `pytest tests/ -v`
 Run fast subset only: `pytest tests/test_fixes.py -v`  
 Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm). Use `pip install -r requirements.txt` before running.
 
@@ -1087,6 +1114,7 @@ If slate, line, and/or log all fail to load:
 | Parlay engine + tab | `api/parlay_engine.py`, `api/index.py`, `index.html` | New "Parlay" tab (5th nav icon, electric purple accent `#d946ef`). Backend: `_fetch_gamelog()` ESPN gamelog helper (cached), `_fetch_gamelogs_batch()` parallel fetcher, `_run_parlay_engine_sync()` full pipeline, `GET /api/parlay` endpoint (30-min cache, rate-limited, auto-saves to `data/parlays/{date}.json`), `GET /api/parlay-history` (lazy ESPN resolution, 10-min cache). Engine: Z-score hit probability, American odds → implied probability, blended confidence (55% model / 45% Vegas), anti-fragility filters (blowout >8.5 spread, minutes CV >0.30, GTD star teammate, injury), correlation scoring (VETO same-team rebounds/assists over, boost PG assists + teammate points, shootout opposing scorers), diagnostic filter funnel logging. Frontend: `PARLAY_STATE`, `PARLAY_HIST_DATA`, `initParlayPage()`, `fetchParlay()` (90s timeout), stacked ticket card with 3 legs + combined probability + narrative. Recent Parlays history section (scrollable, hit/miss pills, hit rate + streak stats). Bottom-sheet `parlayModal` with full ticket detail + leg-by-leg resolution (actual stats, HIT/MISS coloring). ARIA accessibility (`aria-live`, `aria-modal`, `aria-label`, `role`). Config: `parlay.*` in model-config.json. Tests: 81 tests in `tests/test_parlay.py`. |
 
 | Per-game draft strategy redesign (v60) | `api/index.py`, `data/model-config.json`, `index.html` | 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23). 6-step pipeline: game script → per-game strategy adjustments (F1-F6) → eligibility gating → MILP → 5! permutation validation → strategy metadata. New functions: `_per_game_strategy()`, `_per_game_adjust_projections()`, `_validate_slot_assignment()`. Config: `per_game.*` (20 params). Frontend: strategy insight bar, ANCHOR/FAV pills, color-coded strategy badge. Strategy types: Balanced Build / Standard Build / Blowout Lean + Shootout/Grind overlays. Score bounds widened to (20, 42). 38 new tests. |
+| Parlay post-mortem v2 optimization | `api/parlay_engine.py`, `api/index.py`, `data/model-config.json` | Quantitative post-mortem of 2024-2026 NBA parlay architectures. **Auto-fade matrix**: (1) Centers rebounds over vs switch-heavy defenses (BOS/CLE/MIN/OKC) auto-faded — paint positioning neutralized by perimeter switching. (2) B2B correlated pair penalty (0.75x) — cognitive/physical fatigue breaks assists→points chain; 57% spread-failure rate on B2B. (3) Perimeter-to-perimeter correlation fade (0.95x penalty) — 3PT-dependent scoring chain is fragile. (4) Fake juice trap — high L5-L10 hit rate (>80%) + low season model_prob (<55%) = regression trap at peak valuation. **Threshold recalibrations**: Spread tightened 6.5→5.0 (blowout mirage — 51.4% of games decided by 10+ pts). Game total floor 225.5 (possession guarantee for correlated pairs). CV-based market match validation (volatile ≠ reliable). Dynamic Leg 1 substitution (rebounds→pts/ast vs elite defense). **Tiered correlation enhancers**: PnR-to-rim (1.20x for C/PF with 7+ reb — most stable conversion), pace asymmetry (1.06x for 232+ total games), rest advantage (1.08x team rested vs opponent B2B). Config: `parlay.auto_fade.*`, `parlay.min_game_total`, `parlay.market_match_max_cv`, `parlay.pnr_rim_boost`, `parlay.pace_boost*`, `parlay.rest_advantage_boost`. 25 new tests (101 total in test_parlay.py). |
 
 ## Loading audit
 

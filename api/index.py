@@ -985,8 +985,25 @@ _CONFIG_DEFAULTS = {
         "market_match_juice_threshold": -140,
         "market_match_juice_relaxed": -120,
         "market_match_min_conf": 0.58,
-        "correlated_pair_max_spread": 6.5,
+        "correlated_pair_max_spread": 5.0,
         "parlay_gamelog_pool_cap": 100,
+        # ── Post-mortem recalibrations (v2) ──
+        "min_game_total": 225.5,
+        "market_match_max_cv": 0.25,
+        # ── Auto-fade matrix ──
+        "auto_fade": {
+            "switch_heavy_teams": ["BOS", "CLE", "MIN", "OKC"],
+            "rebound_fade_teams": ["OKC", "CLE", "MIN", "HOU", "BOS"],
+            "b2b_correlated_pair_penalty": 0.75,
+            "perimeter_scorer_reb_floor": 4.0,
+            "fake_juice_recent_threshold": 0.80,
+            "fake_juice_season_ceiling": 0.55,
+        },
+        # ── Tiered correlation enhancers ──
+        "pnr_rim_boost": 1.20,
+        "pace_boost_total_threshold": 232.0,
+        "pace_boost": 1.06,
+        "rest_advantage_boost": 1.08,
     },
     "pass2": {
         "vegas_total_threshold": 3.0,
@@ -1619,6 +1636,37 @@ def sanitize_parlay_config(raw_cfg: Any) -> dict:
         "rebounds": _clamp_float(floors_in.get("rebounds"), base["min_line_floors"]["rebounds"], 0.0, 30.0),
         "assists": _clamp_float(floors_in.get("assists"), base["min_line_floors"]["assists"], 0.0, 25.0),
     }
+    # ── Post-mortem v2 thresholds ──
+    out["min_game_total"] = _clamp_float(cfg.get("min_game_total"), base.get("min_game_total", 225.5), 180.0, 280.0)
+    out["market_match_max_cv"] = _clamp_float(cfg.get("market_match_max_cv"), base.get("market_match_max_cv", 0.25), 0.05, 1.0)
+    # ── Auto-fade matrix ──
+    af_base = base.get("auto_fade", {})
+    af_in = cfg.get("auto_fade") if isinstance(cfg.get("auto_fade"), dict) else {}
+    out["auto_fade"] = {
+        "switch_heavy_teams": af_in.get("switch_heavy_teams", af_base.get("switch_heavy_teams", [])),
+        "rebound_fade_teams": af_in.get("rebound_fade_teams", af_base.get("rebound_fade_teams", [])),
+        "b2b_correlated_pair_penalty": _clamp_float(
+            af_in.get("b2b_correlated_pair_penalty"), af_base.get("b2b_correlated_pair_penalty", 0.75), 0.3, 1.0
+        ),
+        "perimeter_scorer_reb_floor": _clamp_float(
+            af_in.get("perimeter_scorer_reb_floor"), af_base.get("perimeter_scorer_reb_floor", 4.0), 0.0, 15.0
+        ),
+        "fake_juice_recent_threshold": _clamp_float(
+            af_in.get("fake_juice_recent_threshold"), af_base.get("fake_juice_recent_threshold", 0.80), 0.5, 1.0
+        ),
+        "fake_juice_season_ceiling": _clamp_float(
+            af_in.get("fake_juice_season_ceiling"), af_base.get("fake_juice_season_ceiling", 0.55), 0.3, 0.8
+        ),
+    }
+    # ── Tiered correlation enhancers ──
+    out["pnr_rim_boost"] = _clamp_float(cfg.get("pnr_rim_boost"), base.get("pnr_rim_boost", 1.20), 0.8, 1.5)
+    out["pace_boost_total_threshold"] = _clamp_float(
+        cfg.get("pace_boost_total_threshold"), base.get("pace_boost_total_threshold", 232.0), 200.0, 280.0
+    )
+    out["pace_boost"] = _clamp_float(cfg.get("pace_boost"), base.get("pace_boost", 1.06), 0.8, 1.3)
+    out["rest_advantage_boost"] = _clamp_float(
+        cfg.get("rest_advantage_boost"), base.get("rest_advantage_boost", 1.08), 0.8, 1.3
+    )
     return out
 
 
