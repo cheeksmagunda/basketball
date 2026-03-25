@@ -171,36 +171,6 @@ def train_model() -> None:
         pred = model.predict([[rs]])[0]
         print(f"  RS {rs:.1f} → boost {pred:.2f}")
 
-    # Simulate blended inference (ML + sigmoid, 50/50)
-    import math
-
-    def _sigmoid_boost(ppg):
-        # Optimized params from fitting 10 known PPG-boost pairs
-        sig_ceil, sig_range, sig_mid, sig_scale = 35.45, 35.89, -18.96, 11.52
-        sv = 1.0 / (1.0 + math.exp(-(ppg - sig_mid) / sig_scale))
-        return max(0.0, min(3.0, sig_ceil - sig_range * sv))
-
-    print("\nBlended inference simulation (RS model + PPG sigmoid, 50/50):")
-    tests = [
-        ("CJ McCollum",    5.6, 18.8, 0.9),
-        ("Jalen Williams", 5.5, 17.6, 0.8),
-        ("Sam Merrill",    5.0, 12.0, 1.7),
-        ("Ace Bailey",     4.9, 13.4, 1.8),
-        ("TJ McConnell",   4.0,  9.0, 2.5),
-        ("Wembanyama",     6.5, 24.0, 0.3),
-        ("Ant Edwards",    6.5, 25.0, 0.3),
-        ("Deep bench",     3.0,  5.0, 3.0),
-        ("Desmond Bane",   6.0, 22.0, 0.8),
-    ]
-    for name, proj_rs, ppg, actual in tests:
-        ml = float(model.predict([[proj_rs]])[0])
-        sig = _sigmoid_boost(ppg)
-        blended = 0.5 * ml + 0.5 * sig
-        pred = max(0.0, min(3.0, round(blended, 1)))
-        err = pred - actual
-        marker = "✓" if abs(err) <= 0.2 else "✗"
-        print(f"  {marker} {name:20s}: ml={ml:.1f} sig={sig:.1f} → blend={pred:.1f}, actual={actual}, err={err:+.1f}")
-
 
 if __name__ == "__main__":
     train_model()
