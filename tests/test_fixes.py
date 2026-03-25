@@ -195,6 +195,17 @@ class TestComputeAudit:
         assert result['over_projected'] == 2
         assert result['under_projected'] == 1
 
+    def test_boost_drift_metrics_present(self):
+        """Audit payload includes card boost drift summary fields."""
+        from api.index import _compute_audit
+        with patch('api.index._github_get_file', side_effect=self._mock_github(self.PRED_CSV, self.ACT_CSV)):
+            result = _compute_audit('2026-03-08')
+        assert result["boost_mae"] == pytest.approx(0.2, abs=0.01)
+        assert result["boost_bias"] == pytest.approx(0.2, abs=0.01)
+        assert result["boost_under_predicted"] == 2
+        assert result["boost_over_predicted"] == 0
+        assert result["boost_under_rate"] == pytest.approx(0.667, abs=0.01)
+
     def test_simulated_draft_score_present(self):
         """simulated_draft_score field exists and is a positive float when ≥3 actuals available"""
         from api.index import _compute_audit
@@ -2079,6 +2090,35 @@ class TestBoostModelInference:
                 30.0, 25.0, "MIN", "Anthony Edwards",
                 season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
             )
+        assert b == 0.3
+
+    def test_override_precedes_log_linear_when_ml_none(self):
+        """Known player overrides must still apply when log-linear fallback is enabled."""
+        from api.index import _est_card_boost
+        import api.index as idx
+
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_DATE = ""
+        idx._DAILY_BOOST_TS = 0
+
+        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
+            with patch.object(idx, "_cfg") as mock_cfg:
+                def _mocked_cfg(key, default=None):
+                    if key == "card_boost":
+                        return {
+                            "ceiling": 3.0,
+                            "floor": 0.2,
+                            "big_market_teams": ["MIN"],
+                            "log_linear": {"enabled": True, "intercept": 3.2, "slope": -0.75},
+                            "player_overrides": {"Anthony Edwards": 0.3},
+                        }
+                    return default
+
+                mock_cfg.side_effect = _mocked_cfg
+                b = _est_card_boost(
+                    35.0, 26.0, "MIN", "Anthony Edwards",
+                    season_pts=26.0, recent_pts=25.0, cascade_bonus=0.0, is_home=False,
+                )
         assert b == 0.3
 
     def test_boost_players_dict_matches_save_boosts_shape(self):

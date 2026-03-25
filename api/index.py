@@ -2786,6 +2786,15 @@ def _est_card_boost(
     if ml_pred is not None:
         return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
+    # Layer 2: Config overrides (fallback when ML unavailable/missing).
+    # Keep this ahead of log-linear so known star/brand-name priors are not
+    # accidentally overwritten when the ML model is unavailable.
+    overrides = cb.get("player_overrides", {})
+    if norm_name:
+        for k, v in overrides.items():
+            if _normalize_boost_name(k) == norm_name:
+                return _clamp_round_boost(v, floor_val, ceiling)
+
     # Layer 1.5: Log-linear estimation from predicted draft count.
     # Data: log10(drafts) vs boost = -0.660 correlation (578 top-performer entries).
     # Drafts 1-3: avg boost 2.78; Drafts 300-1000: avg boost 1.05.
@@ -2798,13 +2807,6 @@ def _est_card_boost(
         ll_slope = float(ll_cfg.get("slope", -0.75))
         ll_boost = max(floor_val, min(ceiling, ll_intercept + ll_slope * log_drafts))
         return _clamp_round_boost(ll_boost, floor_val, ceiling)
-
-    # Layer 2: Config overrides (fallback when ML unavailable/missing).
-    overrides = cb.get("player_overrides", {})
-    if norm_name:
-        for k, v in overrides.items():
-            if _normalize_boost_name(k) == norm_name:
-                return float(v)
 
     # Layer 3: Sigmoid tier estimation from hype-adjusted scoring signal.
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
@@ -6701,6 +6703,8 @@ def _compute_audit(date_str):
     act_map = {r["player_name"].lower(): r for r in actuals}
 
     errors, dir_hits, misses = [], [], []
+    boost_abs_errors, boost_signed_errors = [], []
+    boost_under, boost_over = 0, 0
     for row in preds:
         pname    = row.get("player_name", "").lower()
         pred_rs  = _safe_float(row.get("predicted_rs"))
@@ -6722,6 +6726,15 @@ def _compute_audit(date_str):
             "drafts":       a.get("drafts", ""),
             "actual_card_boost": a.get("actual_card_boost", ""),
         })
+        pred_boost = _safe_float(row.get("est_card_boost"))
+        actual_boost = _safe_float(a.get("actual_card_boost"))
+        boost_err = actual_boost - pred_boost
+        boost_abs_errors.append(abs(boost_err))
+        boost_signed_errors.append(boost_err)
+        if boost_err > 0:
+            boost_under += 1
+        elif boost_err < 0:
+            boost_over += 1
 
     if not errors:
         return None
@@ -6729,6 +6742,9 @@ def _compute_audit(date_str):
     misses.sort(key=lambda x: abs(x["error"]), reverse=True)
     mae = round(sum(errors) / len(errors), 3)
     dir_acc = round(sum(dir_hits) / len(dir_hits), 3) if dir_hits else None
+    boost_mae = round(sum(boost_abs_errors) / len(boost_abs_errors), 3) if boost_abs_errors else None
+    boost_bias = round(sum(boost_signed_errors) / len(boost_signed_errors), 3) if boost_signed_errors else None
+    boost_under_rate = round(boost_under / len(boost_signed_errors), 3) if boost_signed_errors else None
 
     # Over- vs under-projection breakdown
     over  = [e for e in misses if e["error"] < 0]
@@ -6759,6 +6775,11 @@ def _compute_audit(date_str):
         "under_projected":    len(under),
         "biggest_misses":     misses[:8],
         "simulated_draft_score": simulated_draft_score,
+        "boost_mae":          boost_mae,
+        "boost_bias":         boost_bias,
+        "boost_under_predicted": boost_under,
+        "boost_over_predicted":  boost_over,
+        "boost_under_rate":   boost_under_rate,
         "generated_at":       datetime.now(timezone.utc).isoformat(),
     }
 
