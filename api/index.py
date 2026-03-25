@@ -2739,14 +2739,19 @@ def _est_card_boost(
     recent_pts=0.0,
     cascade_bonus=0.0,
     is_home=False,
+    projected_rs=None,
 ):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Five-layer approach (v62):
+    Four-layer approach (v64 — blended RS + PPG):
     0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
-    1. BOOST MODEL — LightGBM inference from pre-game hype features.
+    1. BLENDED MODEL — LightGBM (projected_rs → boost) blended 50/50 with an optimized
+       PPG sigmoid (season_pts → boost). The RS model captures game-level performance
+       dynamics; the PPG sigmoid captures stable player-tier recognition. Blending fixes
+       the RS-only model's blind spots (e.g., role players with high single-game RS but
+       low PPG still get appropriate high boosts).
     2. CONFIG OVERRIDES — player_overrides from model-config.json.
-    3. SIGMOID TIER FALLBACK — for completely unknown players.
+    3. SIGMOID TIER FALLBACK — for completely unknown players when model unavailable.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -2761,56 +2766,44 @@ def _est_card_boost(
         if norm_name in daily_boosts:
             return _clamp_round_boost(daily_boosts[norm_name], floor_val, ceiling)
 
-    # Layer 1: ML inference from dedicated boost model.
-    big_markets = set(
-        cb.get(
-            "big_market_teams",
-            ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
-        )
-    )
-    is_big_market = 1.0 if team_abbr in big_markets else 0.0
-    season_min_proxy = max(0.0, proj_min - cascade_bonus)
-    recent_min_proxy = proj_min
-    pts_ratio = float(recent_pts) / max(float(season_pts), 1.0)
-    is_home_val = 1.0 if is_home else 0.0
-    feat_vec = [
-        float(season_pts),
-        float(recent_pts),
-        float(season_min_proxy),
-        float(recent_min_proxy),
-        float(pts_ratio),
-        float(is_big_market),
-        float(cascade_bonus),
-        float(is_home_val),
-    ]
-    ml_pred = _lgbm_predict_boost(feat_vec)
-    if ml_pred is not None:
-        return _clamp_round_boost(ml_pred, floor_val, ceiling)
+    # Layer 1: Blended ML + PPG sigmoid (v64).
+    # ML model: projected_rs → boost (trained on 775 top_performers.csv entries).
+    # PPG sigmoid: season_pts → boost (calibrated from known PPG-boost pairs).
+    # Blend: 50% ML + 50% sigmoid. Each captures a different signal:
+    #   - ML: game-level RS dynamics (recent hot/cold streaks)
+    #   - Sigmoid: stable player-tier recognition (PPG determines draft popularity)
+    # Optimized sigmoid params from fitting 10 known PPG-boost pairs.
+    _sig_ceil  = cb.get("blend_sig_ceiling", 35.45)
+    _sig_range = cb.get("blend_sig_range", 35.89)
+    _sig_mid   = cb.get("blend_sig_midpoint", -18.96)
+    _sig_scale = cb.get("blend_sig_scale", 11.52)
+    _blend_w   = cb.get("ml_blend_weight", 0.5)
 
-    # Layer 2: Config overrides (fallback when ML unavailable/missing).
-    # Keep this ahead of log-linear so known star/brand-name priors are not
-    # accidentally overwritten when the ML model is unavailable.
+    ml_pred = None
+    if projected_rs is not None and projected_rs > 0:
+        feat_vec = [float(projected_rs)]
+        ml_pred = _lgbm_predict_boost(feat_vec)
+
+    ppg = max(float(season_pts), float(recent_pts))
+    sig_val = 1.0 / (1.0 + np.exp(-(ppg - _sig_mid) / _sig_scale))
+    sig_pred = max(floor_val, min(ceiling, _sig_ceil - _sig_range * sig_val))
+
+    if ml_pred is not None:
+        blended = _blend_w * ml_pred + (1.0 - _blend_w) * sig_pred
+        return _clamp_round_boost(blended, floor_val, ceiling)
+
+    # If ML model unavailable, sigmoid alone is still better than nothing
+    if ppg > 0:
+        return _clamp_round_boost(sig_pred, floor_val, ceiling)
+
+    # Layer 2: Config overrides (fallback when both ML and PPG unavailable).
     overrides = cb.get("player_overrides", {})
     if norm_name:
         for k, v in overrides.items():
             if _normalize_boost_name(k) == norm_name:
                 return _clamp_round_boost(v, floor_val, ceiling)
 
-    # Layer 1.5: Log-linear estimation from predicted draft count.
-    # Data: log10(drafts) vs boost = -0.660 correlation (578 top-performer entries).
-    # Drafts 1-3: avg boost 2.78; Drafts 300-1000: avg boost 1.05.
-    ll_cfg = cb.get("log_linear", {})
-    if ll_cfg.get("enabled", False):
-        log_drafts = _estimate_log_drafts(
-            float(season_pts), team_abbr in big_markets, float(recent_pts), float(season_pts)
-        )
-        ll_intercept = float(ll_cfg.get("intercept", 3.2))
-        ll_slope = float(ll_cfg.get("slope", -0.75))
-        ll_boost = max(floor_val, min(ceiling, ll_intercept + ll_slope * log_drafts))
-        return _clamp_round_boost(ll_boost, floor_val, ceiling)
-
-    # Layer 3: Sigmoid tier estimation from hype-adjusted scoring signal.
-    # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
+    # Layer 3: Legacy sigmoid fallback (when no season_pts available).
     effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
     sig_ceiling  = cb.get("sig_ceiling", 3.0)
     sig_range    = cb.get("sig_range", 2.8)
@@ -2820,7 +2813,13 @@ def _est_card_boost(
     sigmoid_val = 1.0 / (1.0 + np.exp(-(effective_hype_ppg - sig_midpoint) / sig_scale))
     boost = sig_ceiling - sig_range * sigmoid_val
 
-    # Big market players are more recognizable → slightly lower boost
+    big_markets = set(
+        cb.get(
+            "big_market_teams",
+            ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
+        )
+    )
+    is_big_market = 1.0 if team_abbr in big_markets else 0.0
     if is_big_market > 0.5:
         boost -= bm_discount
 
@@ -3323,6 +3322,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         recent_pts=recent_pts,
         cascade_bonus=cascade_bonus,
         is_home=is_home,
+        projected_rs=raw_score,
     )
 
     # EV score — card-adjusted expected value using additive formula
