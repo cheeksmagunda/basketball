@@ -14,7 +14,6 @@
     "min_game_pts": 8.0
   },
   "card_boost": {
-    "use_daily_ingestion": false,
     "ceiling": 3.0,
     "floor": 0.2,
     "big_market_teams": [
@@ -38,25 +37,6 @@
       "enabled": false,
       "intercept": 3.2,
       "slope": -0.75
-    },
-    "player_overrides": {
-      "Anthony Edwards": 0.3,
-      "Bam Adebayo": 0.6,
-      "Cade Cunningham": 0.2,
-      "Cooper Flagg": 0.7,
-      "De'Aaron Fox": 0.6,
-      "Donovan Mitchell": 0.2,
-      "Jalen Johnson": 0.3,
-      "James Harden": 0.3,
-      "Jaylen Brown": 0.3,
-      "Karl-Anthony Towns": 0.6,
-      "Kevin Durant": 0.5,
-      "LaMelo Ball": 0.6,
-      "Luka Don\u010di\u0107": 0.0,
-      "Paolo Banchero": 0.6,
-      "Scottie Barnes": 0.5,
-      "Shai Gilgeous-Alexander": 0.0,
-      "Victor Wembanyama": 0.3
     }
   },
   "game_script": {

@@ -137,27 +137,6 @@ def _prediction_lookup_by_date(date_str: str) -> dict[str, dict]:
     return best
 
 
-def _daily_boost_map(date_str: str) -> dict[str, float]:
-    path = os.path.join(BOOSTS_DIR, f"{date_str}.json")
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return {}
-    players = data.get("players", []) if isinstance(data, dict) else []
-    out: dict[str, float] = {}
-    for p in players:
-        name = _normalize_name(p.get("player_name") or p.get("name") or "")
-        if not name:
-            continue
-        boost = _safe_float(p.get("boost"))
-        if boost > 0:
-            out[name] = boost
-    return out
-
-
 def _band(actual_boost: float) -> str:
     if actual_boost < 1.0:
         return "<1.0"
@@ -180,9 +159,7 @@ def main() -> None:
     parser.add_argument("--disable-actuals-fallback", action="store_true")
     args = parser.parse_args()
 
-    cfg = _load_model_config()
-    overrides = cfg.get("card_boost", {}).get("player_overrides", {}) if isinstance(cfg, dict) else {}
-    overrides_norm = {_normalize_name(k) for k in overrides.keys()}
+    _ = _load_model_config()
     boost_model_available = os.path.exists(BOOST_MODEL_PKL)
 
     top_rows = _load_top_performers(args.top_performers_csv, args.start_date, args.end_date)
@@ -194,7 +171,6 @@ def main() -> None:
             if key not in existing:
                 top_rows.append(row)
     pred_cache: dict[str, dict[str, dict]] = {}
-    daily_cache: dict[str, dict[str, float]] = {}
 
     comparisons = []
     missing_preds = 0
@@ -204,8 +180,6 @@ def main() -> None:
         n = _normalize_name(row.get("player_name", ""))
         if d not in pred_cache:
             pred_cache[d] = _prediction_lookup_by_date(d)
-        if d not in daily_cache:
-            daily_cache[d] = _daily_boost_map(d)
 
         pred_row = pred_cache[d].get(n)
         if not pred_row:
@@ -217,14 +191,10 @@ def main() -> None:
         if pred_boost <= 0 and actual_boost <= 0:
             continue
 
-        if n in daily_cache[d]:
-            layer = "layer0_daily_ingestion"
-        elif boost_model_available:
-            layer = "layer1_ml_model"
-        elif n in overrides_norm:
-            layer = "layer2_config_override"
+        if boost_model_available:
+            layer = "ml_or_sigmoid_runtime"
         else:
-            layer = "layer3_sigmoid_or_loglinear"
+            layer = "sigmoid_fallback_only"
 
         err = actual_boost - pred_boost
         comparisons.append(

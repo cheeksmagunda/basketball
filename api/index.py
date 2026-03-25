@@ -734,26 +734,11 @@ BLACKLISTED_PLAYERS = {
 _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
-        "use_daily_ingestion": False,
         "ceiling": 3.0, "floor": 0.2,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
-        # Sigmoid tier estimation: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
+        # Sigmoid fallback: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
         "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
         "big_market_discount": 0.15,
-        # Player overrides — stars only (sigmoid fallback gets them wrong because
-        # high PPG → low sigmoid boost, but these are heavily drafted → truly low boost).
-        # Role players use sigmoid fallback or Layer 0 daily ingestion (preferred).
-        "player_overrides": {
-            "Anthony Edwards": 0.3, "Bam Adebayo": 0.6,
-            "Cade Cunningham": 0.2, "Cooper Flagg": 0.7,
-            "De'Aaron Fox": 0.6,
-            "Donovan Mitchell": 0.2, "Jaylen Brown": 0.3,
-            "Jalen Johnson": 0.3, "James Harden": 0.3,
-            "Karl-Anthony Towns": 0.6, "Kevin Durant": 0.5,
-            "LaMelo Ball": 0.6, "Luka Dončić": 0.0,
-            "Paolo Banchero": 0.6, "Scottie Barnes": 0.5,
-            "Shai Gilgeous-Alexander": 0.0, "Victor Wembanyama": 0.3,
-        },
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1141,11 +1126,17 @@ def _repo_pickle_paths(filename: str) -> list:
 
 _LGBM_PATHS = _repo_pickle_paths("lgbm_model.pkl")
 _BOOST_PATHS = _repo_pickle_paths("boost_model.pkl")
+_DRAFTS_PATHS = _repo_pickle_paths("drafts_model.pkl")
 
 BOOST_MODEL = None
 BOOST_FEATURES = None
 _BOOST_LOAD_ATTEMPTED = False
 _BOOST_LOAD_LOCK = threading.Lock()
+
+DRAFTS_MODEL = None
+DRAFTS_FEATURES = None
+_DRAFTS_LOAD_ATTEMPTED = False
+_DRAFTS_LOAD_LOCK = threading.Lock()
 
 def _ensure_lgbm_loaded():
     """Lazy-load the LightGBM model bundle on first use.
@@ -1236,6 +1227,60 @@ def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
         return float(BOOST_MODEL.predict(arr)[0])
     except Exception as e:
         print(f"[boost_model] inference failed: {e}")
+        return None
+
+
+def _ensure_drafts_model_loaded():
+    """Lazy-load estimated draft-count (popularity) model."""
+    global DRAFTS_MODEL, DRAFTS_FEATURES, _DRAFTS_LOAD_ATTEMPTED
+    if _DRAFTS_LOAD_ATTEMPTED:
+        return
+    with _DRAFTS_LOAD_LOCK:
+        if _DRAFTS_LOAD_ATTEMPTED:
+            return
+        for _p in _DRAFTS_PATHS:
+            if _p.exists():
+                try:
+                    with open(_p, "rb") as _f:
+                        _bundle = pickle.load(_f)
+                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
+                        DRAFTS_MODEL = _bundle["model"]
+                        DRAFTS_FEATURES = _bundle["features"]
+                        break
+                except Exception as e:
+                    print(f"[drafts_model] load failed from {_p}: {e}")
+        _DRAFTS_LOAD_ATTEMPTED = True
+        if DRAFTS_MODEL is None:
+            print("[drafts_model] not found — card boost uses minutes-derived min_proxy fallback")
+
+
+def _draft_pos_bucket(pos: str) -> int:
+    """Coarse position bucket for drafts model (must match train_drafts_lgbm.py)."""
+    p = (pos or "").strip().upper()
+    if not p:
+        return 3
+    if p.startswith("C"):
+        return 2
+    if p[0] in ("G", "P") or p.startswith("PG") or p.startswith("SG"):
+        return 0
+    return 1
+
+
+def _lgbm_predict_log1p_drafts(feat_vec: list) -> Optional[float]:
+    """Predict log1p(drafts) from drafts_model.pkl, or None if unavailable."""
+    _ensure_drafts_model_loaded()
+    if DRAFTS_MODEL is None or DRAFTS_FEATURES is None:
+        return None
+    if len(feat_vec) != len(DRAFTS_FEATURES):
+        print(
+            f"[drafts_model] feature mismatch: expected {len(DRAFTS_FEATURES)}, got {len(feat_vec)}"
+        )
+        return None
+    try:
+        arr = np.array([feat_vec])
+        return float(DRAFTS_MODEL.predict(arr)[0])
+    except Exception as e:
+        print(f"[drafts_model] inference failed: {e}")
         return None
 
 
@@ -2535,69 +2580,6 @@ def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
     return round(min(max(float(x), floor_val), ceiling), 1)
 
 
-def _boost_players_dict_from_json_data(data: dict) -> dict:
-    """Parse save-boosts JSON body into {normalized_name: boost float}."""
-    result = {}
-    for p in data.get("players", []):
-        name = p.get("player_name") or p.get("name", "")
-        boost = p.get("boost")
-        if name and boost is not None:
-            result[_normalize_boost_name(name)] = float(boost)
-    return result
-
-
-# ── Pre-game boost ingestion (Layer 0) ─────────────────────────────────────
-# Boosts are fixed daily constants published by Real Sports before drafts open.
-# When ingested via /api/save-boosts, they become the ground truth for today's
-# pipeline — no estimation needed. Stored in data/boosts/{date}.json on GitHub.
-# grep: BOOST INGESTION, _load_daily_boosts, save-boosts
-_DAILY_BOOST_CACHE = {}   # {normalized_name: boost_value}
-_DAILY_BOOST_DATE = ""    # ET date string for cache validity
-_DAILY_BOOST_TS = 0       # timestamp of last load
-
-def _load_daily_boosts(date_str=None):
-    """Load pre-game boosts for today from data/boosts/{date}.json.
-    Returns {normalized_name: boost_value} dict. Cached 5 min."""
-    global _DAILY_BOOST_CACHE, _DAILY_BOOST_DATE, _DAILY_BOOST_TS
-    import time
-    now = time.time()
-    if date_str is None:
-        date_str = _today_str()
-    if (_DAILY_BOOST_CACHE and _DAILY_BOOST_DATE == date_str
-            and (now - _DAILY_BOOST_TS) < _TTL_CONFIG):
-        return _DAILY_BOOST_CACHE
-    # Try GitHub
-    try:
-        content, _ = _github_get_file(f"data/boosts/{date_str}.json")
-        if content:
-            data = json.loads(content)
-            result = _boost_players_dict_from_json_data(data)
-            _DAILY_BOOST_CACHE = result
-            _DAILY_BOOST_DATE = date_str
-            _DAILY_BOOST_TS = now
-            return result
-    except Exception as e:
-        print(f"[boosts] load failed for {date_str}: {e}")
-    # Fallback: local boosts file (dev/offline mode or GitHub outage)
-    try:
-        local_path = os.path.join(os.path.dirname(__file__), "..", "data", "boosts", f"{date_str}.json")
-        if os.path.exists(local_path):
-            with open(local_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            result = _boost_players_dict_from_json_data(data)
-            _DAILY_BOOST_CACHE = result
-            _DAILY_BOOST_DATE = date_str
-            _DAILY_BOOST_TS = now
-            return result
-    except Exception as e:
-        print(f"[boosts] local load failed for {date_str}: {e}")
-    # No boosts file for today — return empty (pipeline falls through to estimation)
-    _DAILY_BOOST_CACHE = {}
-    _DAILY_BOOST_DATE = date_str
-    _DAILY_BOOST_TS = now
-    return {}
-
-
 # grep: BREAKOUT DETECTOR
 def _compute_breakout_probability(player_info, game_info=None):
     """Compute probability of a breakout performance (0.0-1.0).
@@ -2740,66 +2722,51 @@ def _est_card_boost(
     cascade_bonus=0.0,
     is_home=False,
     projected_rs=None,
+    season_avg_min=0.0,
+    player_pos="",
 ):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Three-layer approach (v65 — 2-feature RS + Minutes):
-    0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
-    1. 2-FEATURE LIGHTGBM MODEL — features [projected_rs, min_proxy] where min_proxy is
-       derived from projected_minutes. Model trained on 775 labeled examples from
-       top_performers.csv + actuals. Separates performance (RS) from rotation level (minutes),
-       allowing the model to distinguish high-RS stars (low boost) from high-RS role players
-       (high boost). When model unavailable, falls through to layers 2-3.
-    2. CONFIG OVERRIDES — player_overrides from model-config.json.
-    3. SIGMOID TIER FALLBACK — legacy sigmoid for completely unknown players.
+    Two-step approach (no manual uploads, no per-player config overrides):
+    1. 2-feature LightGBM — [projected_rs, min_proxy]. min_proxy = 12 + 5*log1p(drafts),
+       where drafts come from drafts_model.pkl when present (stable role + market + pos),
+       else legacy inverse-map from projected minutes.
+    2. Sigmoid fallback — when RS/minutes are unavailable for ML; uses PPG tier + big-market discount.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
     floor_val = cb.get("floor", 0.2)
 
-    norm_name = _normalize_boost_name(player_name) if player_name else None
-
-    # Layer 0: Optional daily boost ingestion (disabled by default).
-    # Standard mode uses dynamic prediction boosts and skips daily constants.
-    if cb.get("use_daily_ingestion", False) and norm_name:
-        daily_boosts = _load_daily_boosts()
-        if norm_name in daily_boosts:
-            return _clamp_round_boost(daily_boosts[norm_name], floor_val, ceiling)
-
-    # Layer 1: 2-feature LightGBM model (v65).
-    # Features:
-    #   1. perf_score: projected_rs (0-10 scale)
-    #   2. min_proxy: 12 + 5*log1p(draft_count) ≈ projected minutes
-    # Model trained on 775 labeled examples from top_performers.csv + actuals.
-    # Captures the key insight: same RS can have different boosts depending on rotation level
-    # (high-RS stars get low boosts; high-RS role players with low minutes get high boosts).
-    # All prediction happens in the model — no separate PPG sigmoid blend.
-
     ml_pred = None
     if projected_rs is not None and projected_rs > 0 and proj_min is not None and proj_min > 0:
-        # Convert proj_min to estimated draft count, then to min_proxy
-        # min_proxy = 12 + 5*log1p(drafts)
-        # Solving: proj_min = 12 + 5*log1p(drafts) → drafts = exp((proj_min - 12)/5) - 1
-        # But we don't need the draft count; we can directly use proj_min as min_proxy since
-        # the relationship is 1:1 at inference time (proj_min is already in the right scale)
-        estimated_drafts = np.expm1((float(proj_min) - 12.0) / 5.0)
-        estimated_drafts = max(0.0, estimated_drafts)
-        min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
+        big_markets = set(
+            cb.get(
+                "big_market_teams",
+                ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
+            )
+        )
+        is_bm = 1.0 if team_abbr in big_markets else 0.0
+        _spts = float(season_pts or pts or 0.0)
+        _smin = float(season_avg_min or proj_min or 0.0)
+        log1p_drafts = _lgbm_predict_log1p_drafts(
+            [_spts, _smin, is_bm, float(_draft_pos_bucket(player_pos))]
+        )
+        if log1p_drafts is not None and log1p_drafts > 0:
+            min_m = float(cb.get("drafts_log1p_min", 0.5))
+            max_m = float(cb.get("drafts_log1p_max", 9.0))
+            z = float(np.clip(log1p_drafts, min_m, max_m))
+            min_proxy = 12.0 + 5.0 * z
+        else:
+            estimated_drafts = np.expm1((float(proj_min) - 12.0) / 5.0)
+            estimated_drafts = max(0.0, estimated_drafts)
+            min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
         feat_vec = [float(projected_rs), min_proxy]
         ml_pred = _lgbm_predict_boost(feat_vec)
 
-    # When 2-feature model is available, use it directly (no blending needed)
     if ml_pred is not None:
         return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
-    # Layer 2: Config overrides (fallback when both ML and PPG unavailable).
-    overrides = cb.get("player_overrides", {})
-    if norm_name:
-        for k, v in overrides.items():
-            if _normalize_boost_name(k) == norm_name:
-                return _clamp_round_boost(v, floor_val, ceiling)
-
-    # Layer 3: Legacy sigmoid fallback (when no season_pts available).
+    # Sigmoid fallback (ML unavailable or missing projected_rs/proj_min).
     effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
     sig_ceiling  = cb.get("sig_ceiling", 3.0)
     sig_range    = cb.get("sig_range", 2.8)
@@ -2993,22 +2960,12 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if pinfo.get("injury_status") == "GTD":
         proj_min *= proj_cfg.get("gtd_minute_penalty", 0.75)
 
-    # Minutes gate — boost-aware: low-PPG contrarians get a lower threshold
-    # because high card boost EV compensates for DNP risk.
+    # Minutes gate — boost-aware: low-PPG players get a lower rough_boost from the
+    # PPG proxy, raising the minutes bar (high-PPG stars assumed low boost).
     # Formula: effective_gate = max(8, min_gate - (rough_boost - 1.5) * 3)
-    # Check player_overrides FIRST so override boosts (e.g. GPII 3.0, Sensabaugh 2.1,
-    # Christian Braun 3.0) are reflected in the gate — otherwise those overrides are
-    # unreachable for low-minute players who fail the PPG proxy threshold.
     min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
     _pts_for_gate = stats.get("pts", 0)
-    _override_boost_gate = None
-    _norm_for_gate = _normalize_boost_name(pinfo.get("name", ""))
-    if _norm_for_gate:
-        for _k, _v in _cfg("card_boost.player_overrides", {}).items():
-            if _normalize_boost_name(_k) == _norm_for_gate:
-                _override_boost_gate = float(_v)
-                break
-    _rough_boost = _override_boost_gate if _override_boost_gate is not None else max(0.2, 3.0 - _pts_for_gate * 0.12)
+    _rough_boost = max(0.2, 3.0 - _pts_for_gate * 0.12)
     effective_gate = max(8, min_gate - max(0, (_rough_boost - 1.5) * 3))
     if proj_min < effective_gate: return None
 
@@ -3319,6 +3276,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         cascade_bonus=cascade_bonus,
         is_home=is_home,
         projected_rs=raw_score,
+        season_avg_min=float(avg_min or 0.0),
+        player_pos=str(pinfo.get("pos") or ""),
     )
 
     # EV score — card-adjusted expected value using additive formula
@@ -5888,13 +5847,11 @@ def _get_slate_impl():
         except Exception as _wl_err:
             print(f"[watchlist] build error: {_wl_err}")
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
-        _boosts_ingested = bool(_load_daily_boosts())
         result = {"date": _today_str(), "games": games,
                   "lineups": lineups, "locked": locked,
                   "all_complete": False, "draftable_count": len(draftable_games),
                   "lock_time": lock_time,
                   "watchlist": _watchlist,
-                  "boosts_ingested": _boosts_ingested,
                   "pass": 1,
                   "score_bounds": _score_bounds_for_lineups(lineups),
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
@@ -6347,7 +6304,6 @@ def _force_regenerate_sync(scope: str):
         "score_bounds": _score_bounds_for_lineups(lineups),
         "deploy_sha": deploy_sha[:7] if deploy_sha else "",
         "watchlist": _fr_watchlist,
-        "boosts_ingested": bool(_load_daily_boosts()),
         "pass": 2,
     }
     if chalk or upside:
@@ -6521,7 +6477,6 @@ async def slate_check(request: Request):
         "trigger_count": len(triggers),
         "recommendation": recommendation,
         "date": today,
-        "boosts_ingested": bool(_load_daily_boosts()),
     }
 
 
@@ -6576,7 +6531,6 @@ async def parse_screenshot(
     screenshot_type:
       "actuals"      — default; extracts My Draft / Highest Value player RS data
       "most_drafted" — extracts ownership leaderboard (player + draft_pct)
-      "boosts"       — extracts pre-game player list with boosts (fixed daily constants)
     """
     rl = _check_rate_limit(request, "parse-screenshot")
     if rl is not None:
@@ -6596,19 +6550,11 @@ async def parse_screenshot(
         return _err(f"Unsupported image type: {ct or 'unknown'}. Allowed: png, jpeg, gif, webp", 415)
 
     if screenshot_type == "boosts":
-        prompt = """Extract player boost data from this Real Sports pre-game screenshot.
-
-This shows available players for today's draft with their boosts displayed.
-Boosts appear as "+X.Xx" (e.g. "+3.0x", "+0.5x", "+2.1x") next to each player.
-
-For EACH player listed, extract:
-- player_name: full player name exactly as shown
-- boost: the card boost number (e.g. "+3.0x" → 3.0, "+0.5x" → 0.5). If no boost shown, set to null
-- team: team abbreviation if visible (e.g. LAL, GSW, BOS), otherwise null
-- rax_cost: the Rax cost if shown as a number with triangle symbol (e.g. "▽5.4" → 5.4), otherwise null
-
-Return ONLY a JSON array of objects. No markdown, no explanation."""
-    elif screenshot_type == "most_drafted":
+        return _err(
+            "screenshot_type 'boosts' is removed — card boosts are model-estimated only.",
+            400,
+        )
+    if screenshot_type == "most_drafted":
         prompt = """Extract player ownership data from this Real Sports 'Most popular' or 'Most drafted' screenshot.
 
 For EACH player listed, extract:
@@ -7137,10 +7083,6 @@ async def refresh(request: Request):
     # artifacts, not disposable caches; replacing them with {"_busted": true} can erase
     # parlay history for that date if a regen never occurs.
     # /tmp parlay cache is already cleared by CACHE_DIR glob unlink above.
-    # Clear daily boost cache so next load re-reads from GitHub
-    global _DAILY_BOOST_CACHE, _DAILY_BOOST_TS
-    _DAILY_BOOST_CACHE = {}
-    _DAILY_BOOST_TS = 0
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
@@ -10324,74 +10266,12 @@ async def lab_skip_uploads(payload: dict = Body(...)):
         return {"status": "recorded_locally", "date": date_str}
 
 
-# grep: BOOST INGESTION ENDPOINT
-@app.post("/api/save-boosts")
-async def save_boosts(payload: dict = Body(...)):
-    """Save pre-game player boosts for today's slate.
-
-    Boosts are fixed daily constants published by Real Sports before drafts open.
-    This endpoint stores them as ground truth — the pipeline uses these directly
-    instead of estimating. Busts the slate cache so the next /api/slate call
-    regenerates with real boosts.
-
-    Body: { date: str (optional), players: [{player_name, boost, team?, rax_cost?}] }
-    """
-    global _DAILY_BOOST_CACHE, _DAILY_BOOST_DATE, _DAILY_BOOST_TS
-    date_str = payload.get("date", _today_str())
-    bad = _validate_date(date_str)
-    if bad: return bad
-
-    players = payload.get("players", [])
-    if not players:
-        return {"saved": 0, "date": date_str}
-
-    ts = datetime.now(timezone.utc).isoformat()
-    clean_players = []
-    for p in players:
-        name = str(p.get("player_name") or p.get("name", "")).strip()
-        boost = _safe_float(p.get("boost") or p.get("actual_card_boost"))
-        if not name or boost is None:
-            continue
-        entry = {"player_name": name, "boost": round(float(boost), 1)}
-        if p.get("team"):
-            entry["team"] = str(p["team"]).upper()
-        if p.get("rax_cost") is not None:
-            entry["rax_cost"] = _safe_float(p["rax_cost"])
-        clean_players.append(entry)
-
-    if not clean_players:
-        return {"saved": 0, "date": date_str}
-
-    data = {
-        "date": date_str,
-        "saved_at": ts,
-        "player_count": len(clean_players),
-        "players": clean_players,
-    }
-    content = json.dumps(data, indent=2)
-    path = f"data/boosts/{date_str}.json"
-    try:
-        _github_write_file(path, content, f"pre-game boosts {date_str} ({len(clean_players)} players)")
-    except Exception as e:
-        print(f"[save-boosts] GitHub write failed: {e}")
-        return _err(f"Failed to save boosts: {str(e)}", 500)
-
-    # Bust caches so next slate request uses real boosts
-    _DAILY_BOOST_CACHE = _boost_players_dict_from_json_data({"players": clean_players})
-    _DAILY_BOOST_DATE = date_str
-    _DAILY_BOOST_TS = time.time()
-    _bust_slate_cache()
-
-    return {"saved": len(clean_players), "date": date_str, "cache_busted": True}
-
-
 @app.post("/api/save-ownership")
 async def save_ownership(payload: dict = Body(...)):
     """Save parsed Most Drafted / ownership data to GitHub as CSV.
 
     Stores actual draft counts and card boosts per player for a given date.
-    Used by the calibrate-boost endpoint to build the player_overrides lookup
-    against real ownership data.
+    Used by calibrate-boost for historical aggregates (research / retraining), not live projections.
 
     Body: { date: str, players: [{player_name|name, team, draft_count, actual_rs,
                                    actual_card_boost, avg_finish, rank}] }
@@ -10442,20 +10322,16 @@ async def save_ownership(payload: dict = Body(...)):
 
 @app.get("/api/lab/calibrate-boost")
 async def lab_calibrate_boost():
-    """Build player_overrides lookup from real ownership + actuals data.
+    """Aggregate historical actual_card_boost by player from ownership + actuals CSVs.
 
-    Reads data/ownership/ and data/actuals/ CSVs to collect per-player boost
-    values. Averages across dates (boost is stable per-player +-0.1x).
-
-    Returns proposed player_overrides dict. Does NOT auto-apply.
-    To apply: POST /api/lab/update-config with card_boost.player_overrides dict.
+    For analysis and offline boost-model retraining only — live slate uses LightGBM + sigmoid,
+    not this map.
     """
     try:
         from collections import defaultdict
 
         ceiling = _cfg("card_boost.ceiling", 3.0)
         floor_  = _cfg("card_boost.floor", 0.2)
-        current_overrides = _cfg("card_boost.player_overrides", {})
 
         player_boosts = defaultdict(list)
         dates_used = []
@@ -10522,20 +10398,15 @@ async def lab_calibrate_boost():
         for name, boosts in sorted(player_boosts.items()):
             proposed[name] = round(sum(boosts) / len(boosts), 1)
 
-        # Count new/changed players vs current overrides
-        new_players = [n for n in proposed if n not in current_overrides]
-        changed_players = [n for n in proposed if n in current_overrides
-                           and abs(proposed[n] - current_overrides[n]) >= 0.1]
-
         return {
-            "current_count":   len(current_overrides),
-            "proposed_count":  n_players,
-            "proposed":        proposed,
-            "n_samples":       n_samples,
-            "dates_used":      dates_used,
-            "new_players":     new_players,
-            "changed_players": changed_players,
-            "note": "To apply: POST /api/lab/update-config with card_boost.player_overrides dict",
+            "proposed_count": n_players,
+            "proposed":       proposed,
+            "n_samples":      n_samples,
+            "dates_used":     dates_used,
+            "note": (
+                "Historical average boost per player — use for train_boost_lgbm / drift analysis. "
+                "Runtime card boost has no config overrides or upload path."
+            ),
         }
 
     except Exception as e:

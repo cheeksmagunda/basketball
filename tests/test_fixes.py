@@ -642,19 +642,31 @@ class TestLgbmFeatureAlignment:
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
         n = len(AI_FEATURES)
-        assert n in (12, 16), f"Expected 12 (legacy) or 16 (bundle v2) features, got {n}: {AI_FEATURES}"
+        assert n in (12, 16, 22), (
+            f"Expected 12 (legacy), 16 (v2), or 22 (v62) features, got {n}: {AI_FEATURES}"
+        )
         assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
             f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
         )
         assert AI_FEATURES[11] == "reb_per_min", (
             f"12th feature (index 11) must be reb_per_min, got {AI_FEATURES[11]!r}"
         )
-        if n == 16:
+        if n in (16, 22):
             assert AI_FEATURES[2] == "usage_trend", f"index 2 must be usage_trend, got {AI_FEATURES[2]!r}"
             assert AI_FEATURES[12] == "l3_vs_l5_pts", f"index 12 must be l3_vs_l5_pts, got {AI_FEATURES[12]!r}"
             assert AI_FEATURES[13] == "min_volatility", f"index 13 must be min_volatility, got {AI_FEATURES[13]!r}"
             assert AI_FEATURES[14] == "starter_proxy", f"index 14 must be starter_proxy, got {AI_FEATURES[14]!r}"
             assert AI_FEATURES[15] == "cascade_signal", f"index 15 must be cascade_signal, got {AI_FEATURES[15]!r}"
+        if n == 22:
+            assert AI_FEATURES[16:22] == [
+                "opp_pts_allowed",
+                "team_pace_proxy",
+                "usage_share",
+                "teammate_out_count",
+                "game_total",
+                "spread_abs",
+            ], f"v62 tail mismatch: {AI_FEATURES[16:22]!r}"
+        if n in (16, 22):
             vec = idx._lgbm_feature_vector(
                 avg_min=24.0,
                 pts=14.0,
@@ -671,7 +683,7 @@ class TestLgbmFeatureAlignment:
                 cascade_bonus=0.0,
                 games_played=40.0,
             )
-            assert len(vec) == 16, f"_lgbm_feature_vector must return 16 values, got {len(vec)}"
+            assert len(vec) == n, f"_lgbm_feature_vector must return {n} values, got {len(vec)}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -1833,87 +1845,38 @@ class TestBriefingSimulatedDraftScore:
         assert latest.get("simulated_draft_score") is None
 
 
-class TestMinGateOverrideAware:
-    """min_gate_minutes gate uses player boost overrides, not just PPG proxy.
+class TestMinGatePpgProxy:
+    """min_gate_minutes uses PPG-derived rough_boost only (no card_boost overrides)."""
 
-    This ensures players with high override boosts (GPII +3.0, Braun +3.0, Sensabaugh +2.1)
-    receive a lower min_gate so they can enter the projection pipeline and be evaluated
-    for the core pool — previously these overrides were unreachable for low-minute players.
-    """
-
-    def _effective_gate(self, pts, override_boost=None, min_gate=12):
-        """Replicate the gate formula from project_player()."""
-        rough_boost = override_boost if override_boost is not None else max(0.2, 3.0 - pts * 0.12)
+    def _effective_gate(self, pts, rough_boost_override=None, min_gate=12):
+        rough_boost = rough_boost_override if rough_boost_override is not None else max(0.2, 3.0 - pts * 0.12)
         return max(8, min_gate - max(0, (rough_boost - 1.5) * 3))
 
-    def test_gpii_override_3_0_lowers_gate_to_8(self):
-        """GPII has override 3.0 → effective_gate = max(8, 12-(3.0-1.5)*3) = 8."""
-        gate = self._effective_gate(pts=8.0, override_boost=3.0)
-        assert gate == 8, f"GPII with 3.0 override should get gate=8, got {gate}"
+    def test_high_rough_boost_lowers_gate_to_8(self):
+        gate = self._effective_gate(pts=8.0, rough_boost_override=3.0)
+        assert gate == 8
 
-    def test_gpii_without_override_gate_higher(self):
-        """Without override, 8 PPG → rough_boost≈2.04 → gate≈10.7 (blocks ~13-min players)."""
-        gate = self._effective_gate(pts=8.0, override_boost=None)
-        assert gate > 10, f"8 PPG without override should give gate>10, got {gate}"
+    def test_low_rough_boost_raises_gate(self):
+        gate = self._effective_gate(pts=8.0, rough_boost_override=None)
+        assert gate > 10
 
-    def test_override_enables_10_min_player_that_ppg_proxy_blocks(self):
-        """A player projecting 10 min with 8 PPG: PPG proxy gives gate≈10.7 (fails), 3.0 override gives gate=8 (passes).
-
-        This is the GPII scenario: on a short-minute night (~10 predMin) with 8 PPG,
-        the PPG proxy underestimates his real boost and incorrectly blocks him.
-        The 3.0 override makes him eligible for the projection pipeline.
-        """
+    def test_10_min_fails_default_proxy_at_8_ppg(self):
         proj_min = 10
-        gate_with_override = self._effective_gate(pts=8.0, override_boost=3.0)
-        gate_without_override = self._effective_gate(pts=8.0, override_boost=None)
-        # With 3.0 override: gate = 8, 10 >= 8 → passes
-        assert proj_min >= gate_with_override, \
-            f"10-min player must pass gate with 3.0 override (gate={gate_with_override})"
-        # Without override at 8 PPG: gate ≈ 10.7, 10 < 10.7 → fails
-        assert proj_min < gate_without_override, \
-            f"10-min player must fail gate without override at 8 PPG (gate={gate_without_override})"
+        gate_high = self._effective_gate(pts=8.0, rough_boost_override=3.0)
+        gate_low = self._effective_gate(pts=8.0, rough_boost_override=None)
+        assert proj_min >= gate_high
+        assert proj_min < gate_low
 
-    def test_sensabaugh_override_2_1_lowers_gate(self):
-        """Sensabaugh override 2.1 → gate = max(8, 12-(2.1-1.5)*3) = 10.2."""
-        gate = self._effective_gate(pts=10.0, override_boost=2.1)
+    def test_rough_boost_2_1_gate(self):
+        gate = self._effective_gate(pts=10.0, rough_boost_override=2.1)
         assert gate == pytest.approx(10.2, abs=0.1)
 
-    def test_override_gate_in_project_player_source(self):
-        """project_player() must check player overrides before computing rough_boost."""
+    def test_project_player_gate_no_config_overrides(self):
         import inspect
         from api import index
         src = inspect.getsource(index.project_player)
-        assert "_override_boost_gate" in src, \
-            "project_player must use _override_boost_gate variable (override-aware gate)"
-        assert "card_boost.player_overrides" in src, \
-            "project_player gate must look up card_boost.player_overrides"
-
-    def test_star_player_in_config_overrides(self):
-        """Stars with consistently low boost must be in player_overrides."""
-        import json, pathlib
-        from api.index import _normalize_boost_name
-        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
-        overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
-        # Kevin Durant consistently 0.5 boost — sigmoid would give ~0.5 for 27 PPG but
-        # override ensures exact value regardless of sigmoid param drift
-        norm_kd = _normalize_boost_name("Kevin Durant")
-        match = next(
-            (float(v) for k, v in overrides.items() if _normalize_boost_name(k) == norm_kd),
-            None
-        )
-        assert match is not None, "Kevin Durant must be in card_boost.player_overrides"
-        assert match == pytest.approx(0.5), f"KD override should be 0.5, got {match}"
-
-    def test_overrides_are_stars_only(self):
-        """Player overrides should be limited to stars (low boost, high PPG).
-        Role players use sigmoid fallback or Layer 0 daily ingestion."""
-        import json, pathlib
-        cfg_path = pathlib.Path(__file__).parent.parent / "data" / "model-config.json"
-        overrides = json.loads(cfg_path.read_text()).get("card_boost", {}).get("player_overrides", {})
-        # All override values should be <= 0.7 (stars only)
-        for name, boost in overrides.items():
-            assert float(boost) <= 0.7, \
-                f"Override for {name} is {boost} — only stars (boost<=0.7) should be in overrides"
+        assert "player_overrides" not in src
+        assert "3.0 - _pts_for_gate * 0.12" in src
 
 
 class TestPerGameFloor:
@@ -1965,229 +1928,64 @@ class TestPerGameFloor:
 
 
 # ---------------------------------------------------------------------------
-# BOOST INGESTION — Layer 0 (optional pre-game daily boosts)
+# TWO-PASS PIPELINE — watchlist and pass metadata
 # ---------------------------------------------------------------------------
-class TestDailyBoostIngestion:
-    """Verify daily boost ingestion behavior and config gate."""
-
-    def test_load_daily_boosts_returns_empty_when_no_file(self):
-        """_load_daily_boosts returns {} when no boosts file exists for today."""
-        from api.index import _load_daily_boosts, _DAILY_BOOST_CACHE
-        import api.index as idx
-        # Reset cache
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_DATE = ""
-        idx._DAILY_BOOST_TS = 0
-        with patch.object(idx, "_github_get_file", return_value=(None, None)):
-            result = _load_daily_boosts("2099-01-01")
-        assert result == {}
-
-    def test_load_daily_boosts_parses_json(self):
-        """_load_daily_boosts parses a valid boosts JSON from GitHub."""
-        from api.index import _load_daily_boosts
-        import api.index as idx
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_DATE = ""
-        idx._DAILY_BOOST_TS = 0
-        mock_data = json.dumps({
-            "date": "2026-03-19",
-            "players": [
-                {"player_name": "Gary Payton II", "boost": 3.0},
-                {"player_name": "Jared McCain", "boost": 2.8},
-            ]
-        })
-        with patch.object(idx, "_github_get_file", return_value=(mock_data, "sha123")):
-            result = _load_daily_boosts("2026-03-19")
-        assert len(result) == 2
-        assert result.get("gary payton ii") == 3.0
-        assert result.get("jared mccain") == 2.8
-
-    def test_load_daily_boosts_local_fallback_when_github_missing(self):
-        """_load_daily_boosts should fall back to local data/boosts when GitHub is unavailable."""
-        from api.index import _load_daily_boosts
-        import api.index as idx
-        import io
-
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_DATE = ""
-        idx._DAILY_BOOST_TS = 0
-        mock_data = json.dumps({
-            "date": "2026-03-23",
-            "players": [
-                {"player_name": "Klay Thompson", "boost": 2.5},
-                {"player_name": "Cameron Payne", "boost": 2.6},
-            ],
-        })
-
-        with patch.object(idx, "_github_get_file", return_value=(None, None)), \
-             patch("os.path.exists", side_effect=lambda p: p.endswith("data/boosts/2026-03-23.json")), \
-             patch("builtins.open", return_value=io.StringIO(mock_data)):
-            result = _load_daily_boosts("2026-03-23")
-
-        assert result.get("klay thompson") == 2.5
-        assert result.get("cameron payne") == 2.6
-
-    def test_est_card_boost_uses_daily_boost_when_enabled(self):
-        """_est_card_boost uses Layer 0 only when use_daily_ingestion=True."""
-        from api.index import _est_card_boost
-        import api.index as idx
-        # Inject a daily boost for a player who also has a config override
-        idx._DAILY_BOOST_CACHE = {"shai gilgeous-alexander": 0.5}
-        idx._DAILY_BOOST_DATE = idx._et_date().isoformat()
-        import time
-        idx._DAILY_BOOST_TS = time.time()
-        # SGA has 0.0 in config overrides, but daily boost says 0.5
-        with patch.object(idx, "_cfg") as mock_cfg:
-            def _mocked_cfg(key, default=None):
-                if key == "card_boost":
-                    return {
-                        "use_daily_ingestion": True,
-                        "ceiling": 3.0,
-                        "floor": 0.2,
-                        "big_market_teams": ["OKC"],
-                        "log_linear": {"enabled": False},
-                        "player_overrides": {"Shai Gilgeous-Alexander": 0.0},
-                    }
-                return default
-            mock_cfg.side_effect = _mocked_cfg
-            boost = _est_card_boost(30, 25.0, "OKC", "Shai Gilgeous-Alexander")
-        assert boost == 0.5, f"Layer 0 should override config override, got {boost}"
-        # Cleanup
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_TS = 0
-
-    def test_est_card_boost_ignores_daily_boost_when_disabled(self):
-        """Dynamic model standard: Layer 0 ignored when use_daily_ingestion=False."""
-        from api.index import _est_card_boost
-        import api.index as idx
-        import time
-
-        idx._DAILY_BOOST_CACHE = {"shai gilgeous-alexander": 0.5}
-        idx._DAILY_BOOST_DATE = idx._et_date().isoformat()
-        idx._DAILY_BOOST_TS = time.time()
-
-        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
-            with patch.object(idx, "_cfg") as mock_cfg:
-                def _mocked_cfg(key, default=None):
-                    if key == "card_boost":
-                        return {
-                            "use_daily_ingestion": False,
-                            "ceiling": 3.0,
-                            "floor": 0.2,
-                            "big_market_teams": ["OKC"],
-                            "log_linear": {"enabled": False},
-                            "player_overrides": {"Shai Gilgeous-Alexander": 0.0},
-                            "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
-                            "big_market_discount": 0.15,
-                        }
-                    return default
-                mock_cfg.side_effect = _mocked_cfg
-                boost = _est_card_boost(30, 25.0, "OKC", "Shai Gilgeous-Alexander")
-
-        assert boost == 0.2
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_TS = 0
-
-
 class TestBoostModelInference:
-    """Card boost Layer 1: LightGBM path (ownership CSV scanning removed)."""
+    """Card boost: boost_model LightGBM uses [projected_rs, min_proxy]."""
 
     def test_est_card_boost_uses_ml_when_model_returns_value(self):
-        """When _lgbm_predict_boost returns a float, result is blended with PPG sigmoid.
-        v64: ML (projected_rs) blended 50/50 with PPG sigmoid (season_pts)."""
+        """When boost LightGBM returns a float, that value is clamped and returned."""
         from api.index import _est_card_boost
         import api.index as idx
-
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_DATE = ""
-        idx._DAILY_BOOST_TS = 0
 
         captured = {}
 
         def _fake_predict(vec):
             captured["vec"] = list(vec)
-            return 2.0  # ML prediction
+            return 2.0
 
-        with patch.object(idx, "_lgbm_predict_boost", side_effect=_fake_predict):
-            b = _est_card_boost(
-                28.0, 15.0, "MEM", "Bench Player",
-                season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
-                projected_rs=4.5,
-            )
+        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
+            with patch.object(idx, "_lgbm_predict_boost", side_effect=_fake_predict):
+                b = _est_card_boost(
+                    28.0, 15.0, "MEM", "Bench Player",
+                    season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
+                    projected_rs=4.5,
+                    season_avg_min=28.0,
+                    player_pos="G",
+                )
 
-        assert len(captured["vec"]) == 1  # single feature (perf_score)
-        assert captured["vec"][0] == 4.5  # projected_rs passed as perf_score
-        # Result is blended: 50% ML (2.0) + 50% PPG sigmoid (~1.5) → ~1.7-1.8
-        assert 1.0 <= b <= 2.5  # blended range, not pure ML
-
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_TS = 0
+        assert len(captured["vec"]) == 2
+        assert captured["vec"][0] == 4.5
+        assert abs(captured["vec"][1] - 28.0) < 1e-6
+        assert b == 2.0
 
     def test_est_card_boost_uses_sigmoid_when_ml_none(self):
-        """When ML returns None, PPG sigmoid alone is used (v64)."""
+        """When boost model returns None, fall back to PPG sigmoid."""
         from api.index import _est_card_boost
         import api.index as idx
 
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_DATE = ""
-        idx._DAILY_BOOST_TS = 0
-
-        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
-            b = _est_card_boost(
-                30.0, 25.0, "MIN", "Anthony Edwards",
-                season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
-                projected_rs=7.0,
-            )
-        # PPG 25.0 → optimized sigmoid → ~0.3-0.4 (superstar tier)
+        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
+            with patch.object(idx, "_lgbm_predict_boost", return_value=None):
+                b = _est_card_boost(
+                    30.0, 25.0, "MIN", "Anthony Edwards",
+                    season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
+                    projected_rs=7.0,
+                    season_avg_min=30.0,
+                    player_pos="G",
+                )
         assert b <= 0.5
 
-    def test_override_precedes_sigmoid_when_ml_none(self):
-        """Known player overrides must still apply when ML returns None (v63)."""
+    def test_est_card_boost_sigmoid_when_no_projected_rs(self):
+        """Without projected_rs, boost model is skipped — sigmoid from season PPG."""
         from api.index import _est_card_boost
         import api.index as idx
 
-        idx._DAILY_BOOST_CACHE = {}
-        idx._DAILY_BOOST_DATE = ""
-        idx._DAILY_BOOST_TS = 0
-
-        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
-            with patch.object(idx, "_cfg") as mock_cfg:
-                def _mocked_cfg(key, default=None):
-                    if key == "card_boost":
-                        return {
-                            "ceiling": 3.0,
-                            "floor": 0.2,
-                            "big_market_teams": ["MIN"],
-                            "player_overrides": {"Anthony Edwards": 0.3},
-                        }
-                    return default
-
-                mock_cfg.side_effect = _mocked_cfg
-                b = _est_card_boost(
-                    35.0, 26.0, "MIN", "Anthony Edwards",
-                    season_pts=26.0, recent_pts=25.0, cascade_bonus=0.0, is_home=False,
-                    projected_rs=7.5,
-                )
-        assert b == 0.3
-
-    def test_boost_players_dict_matches_save_boosts_shape(self):
-        """_boost_players_dict_from_json_data matches save-boosts player entries."""
-        from api.index import _boost_players_dict_from_json_data
-
-        data = {
-            "players": [
-                {"player_name": "Klay Thompson", "boost": 2.5},
-                {"name": "Cameron Payne", "boost": 2.6},
-            ]
-        }
-        d = _boost_players_dict_from_json_data(data)
-        assert d.get("klay thompson") == 2.5
-        assert d.get("cameron payne") == 2.6
+        with patch.object(idx, "_lgbm_predict_boost") as mock_boost:
+            b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
+            mock_boost.assert_not_called()
+        assert b <= 0.5
 
 
-# ---------------------------------------------------------------------------
-# TWO-PASS PIPELINE — watchlist and pass metadata
-# ---------------------------------------------------------------------------
 class TestWatchlist:
     """Verify watchlist generation identifies cascade-sensitive players."""
 
@@ -2235,16 +2033,13 @@ class TestWatchlist:
 # PARSE-SCREENSHOT — "boosts" type
 # ---------------------------------------------------------------------------
 class TestBoostsScreenshotType:
-    """Verify parse-screenshot accepts 'boosts' screenshot_type."""
+    """screenshot_type 'boosts' is rejected (model-only card boosts)."""
 
-    def test_boosts_type_in_parse_screenshot(self):
-        """The 'boosts' screenshot type should produce a valid prompt."""
+    def test_boosts_type_returns_400(self):
         import api.index as idx
         src = open(idx.__file__).read()
-        assert 'screenshot_type == "boosts"' in src, \
-            "parse-screenshot must handle 'boosts' screenshot_type"
-        assert "pre-game" in src.lower() or "pre_game" in src.lower() or "boost data" in src.lower(), \
-            "boosts prompt should reference pre-game context"
+        assert 'screenshot_type == "boosts"' in src
+        assert "removed" in src.lower() or "model-estimated" in src.lower()
 
 
 # ─────────────────────────────────────────────────────────
@@ -3411,7 +3206,8 @@ class TestParlayHistoryAndConfigHardening:
 
     def test_parlay_history_resolves_today_when_final(self):
         src = open("api/index.py").read()
-        assert "today_games_final = _all_games_final(_today_games)" in src
+        assert "today_all_final, _tr, _tf, _tlrs = _all_games_final(_today_games)" in src
+        assert "today_games_final = bool(today_all_final)" in src
         assert '_can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)' in src
         assert "def _parlay_fully_concluded(" in src
         assert "history_parlays" in src and "date_str > today_str" in src
@@ -3491,7 +3287,7 @@ class TestParlayMidnightHandoff:
         with patch("api.index._et_date", return_value=today), \
              patch("api.index._github_get_file", return_value=(y_json, "sha")), \
              patch("api.index.fetch_games", return_value=[{"gameId": "1"}]), \
-             patch("api.index._all_games_final", return_value=False):
+             patch("api.index._all_games_final", return_value=(False, 0, 0, None)):
             picked = _parlay_active_date()
 
         assert picked == yesterday
@@ -3510,7 +3306,7 @@ class TestParlayMidnightHandoff:
         with patch("api.index._et_date", return_value=today), \
              patch("api.index._github_get_file", return_value=(y_json, "sha")), \
              patch("api.index.fetch_games", return_value=[{"gameId": "1"}]), \
-             patch("api.index._all_games_final", return_value=True):
+             patch("api.index._all_games_final", return_value=(True, 0, 0, None)):
             picked = _parlay_active_date()
 
         assert picked == today

@@ -8,13 +8,14 @@ Uses two features to predict card boost:
 
 Target: actual_card_boost (0.0 to 3.0)
 
-At inference:
-  - perf_score = projected_rs from the RS projection model
-  - min_proxy = 12 + 5*log1p(estimated_draft_count) ≈ projected_minutes
+At inference (api/index.py):
+  - perf_score = projected_rs from the RS projection pipeline
+  - min_proxy = 12 + 5 * log1p(drafts_est) where drafts_est comes from drafts_model.pkl
+    when present (trained on top_performers + predictions — stable role + market + pos),
+    else legacy mapping from projected minutes.
 
-This 2-feature model separates performance (RS) from rotation level (minutes),
-allowing the model to distinguish between high-RS stars with low boosts vs
-high-RS role players with high boosts.
+RS (game performance) and draft popularity (name/market/role) are separated: popularity
+is not assumed to track tonight's RS spike.
 
 Writes boost_model.pkl as {"model": ..., "features": [...]}.
 """
