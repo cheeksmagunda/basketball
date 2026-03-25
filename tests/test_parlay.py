@@ -631,6 +631,14 @@ class TestParlayFrontend:
         html = open("index.html").read()
         assert 'id="parlayHistoryStats"' in html
 
+    def test_parlay_history_message_exists(self):
+        html = open("index.html").read()
+        assert 'id="parlayHistoryMessage"' in html
+
+    def test_render_parlay_history_error_exists(self):
+        html = open("index.html").read()
+        assert "function renderParlayHistoryError(" in html
+
     def test_parlay_modal_exists(self):
         html = open("index.html").read()
         assert 'id="parlayModal"' in html
@@ -655,6 +663,7 @@ class TestParlayFrontend:
     def test_parlay_hist_data_global(self):
         html = open("index.html").read()
         assert "PARLAY_HIST_DATA" in html
+        assert "PARLAY_HIST_ERROR" in html
 
     def test_parlay_modal_escape_key(self):
         html = open("index.html").read()

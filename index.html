@@ -1528,6 +1528,7 @@
         <div class="section-label" style="margin-top:0;margin-bottom:0">Recent Parlays</div>
       </div>
       <div id="parlayHistoryStats"></div>
+      <div id="parlayHistoryMessage" style="display:none;margin-bottom:12px" role="status" aria-live="polite"></div>
       <div id="parlayHistoryList" style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
     </div>
   </div>
@@ -2483,6 +2484,15 @@ function _prewarmLineAndParlay(todayET) {
     _PARLAY_PREWARMED_DATE = todayET;
     _fetchJson('/api/parlay-history', 15000)
       .then(function(hist) {
+        if (hist && hist.error) {
+          PARLAY_HIST_ERROR = hist.narrative || hist.error;
+          var tabPw = _el('tab-parlay');
+          if (tabPw && tabPw.classList.contains('active')) {
+            renderParlayHistoryError(PARLAY_HIST_ERROR);
+          }
+          return;
+        }
+        PARLAY_HIST_ERROR = null;
         PARLAY_HIST_DATA = hist;
         PARLAY_HIST_LOADED_DATE = todayET;
         // Render immediately so history is visible even if user opens Parlay tab
@@ -2490,7 +2500,14 @@ function _prewarmLineAndParlay(todayET) {
         // because PARLAY_HIST_LOADED_DATE is already set but DOM is empty)
         renderParlayHistory(hist);
       })
-      .catch(function() {});
+      .catch(function(err) {
+        console.warn('[parlay] history prewarm failed:', err);
+        PARLAY_HIST_ERROR = 'Could not load parlay history.';
+        var tabPe = _el('tab-parlay');
+        if (tabPe && tabPe.classList.contains('active')) {
+          renderParlayHistoryError(PARLAY_HIST_ERROR);
+        }
+      });
   }
 }
 
@@ -3089,6 +3106,7 @@ let PARLAY_STATE = asyncStateInitial();
 let PARLAY_LOADED_DATE = '';
 let PARLAY_HIST_DATA = null;
 let PARLAY_HIST_LOADED_DATE = '';
+let PARLAY_HIST_ERROR = null;
 
 function _parlaySkeletons() {
   const skel = `
@@ -3362,63 +3380,118 @@ function stopParlayLockPoll() {
 
 // ── Parlay History ──────────────────────────────────────────────────────
 
+function renderParlayHistoryError(msg) {
+  const wrap = _el('parlayHistoryWrap');
+  const statsEl = _el('parlayHistoryStats');
+  const listEl = _el('parlayHistoryList');
+  const msgEl = _el('parlayHistoryMessage');
+  if (!wrap || !msgEl) return;
+  if (statsEl) statsEl.innerHTML = '';
+  if (listEl) listEl.innerHTML = '';
+  const text = msg || 'Could not load parlay history.';
+  msgEl.innerHTML = '<div class="empty-state" style="padding:14px;margin:0"><span class="icon" aria-hidden="true">📡</span><p style="margin:8px 0 0">' + _escapeHtml(text) + '</p>' +
+    '<button type="button" class="secondary-btn" style="margin-top:12px;font-size:0.72rem" onclick="fetchParlayHistory(true)" aria-label="Retry loading parlay history">Retry</button></div>';
+  msgEl.style.display = 'block';
+  wrap.style.display = 'block';
+}
+
 async function fetchParlayHistory(nocache = false) {
   try {
+    PARLAY_HIST_ERROR = null;
     const todayET = _etToday();
     const url = nocache ? '/api/parlay-history?nocache=1' : '/api/parlay-history';
     const r = await fetchWithTimeout(url, {}, 15000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
+    if (data.error) {
+      PARLAY_HIST_ERROR = data.narrative || data.error;
+      renderParlayHistoryError(PARLAY_HIST_ERROR);
+      return;
+    }
     PARLAY_HIST_DATA = data;
     PARLAY_HIST_LOADED_DATE = todayET;
     renderParlayHistory(data);
   } catch (err) {
     console.warn('[parlay] history fetch error:', err);
+    PARLAY_HIST_ERROR = 'Could not load parlay history. Check your connection and try again.';
+    renderParlayHistoryError(PARLAY_HIST_ERROR);
   }
 }
 
 function renderParlayHistory(hist) {
   const wrap = _el('parlayHistoryWrap');
+  const msgEl = _el('parlayHistoryMessage');
   if (!wrap) return;
-  const parlays = hist.parlays || [];
+  PARLAY_HIST_ERROR = null;
+  if (msgEl) {
+    msgEl.innerHTML = '';
+    msgEl.style.display = 'none';
+  }
 
-  // Filter: only show RESOLVED parlays in history (hit/miss result, not pending)
-  const resolvedParlays = parlays.filter(function(p) {
+  const parlays = hist.parlays || [];
+  const displayParlays = parlays.filter(function(p) {
+    return (p.legs || []).length > 0;
+  });
+  const resolvedParlays = displayParlays.filter(function(p) {
     return (p.result === 'hit' || p.result === 'miss');
   });
+  const pendingOnly = displayParlays.length > 0 && resolvedParlays.length === 0;
 
-  if (!resolvedParlays.length) { wrap.style.display = 'none'; return; }
+  if (msgEl) {
+    if (!displayParlays.length) {
+      msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">No saved parlay tickets yet. After today\'s ticket is generated it shows here. HIT/MISS labels appear once every game on that slate is final.</p>';
+      msgEl.style.display = 'block';
+    } else if (pendingOnly) {
+      msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">Tickets below are waiting on box scores. HIT/MISS updates after every game on that slate is final (or open a ticket to see legs).</p>';
+      msgEl.style.display = 'block';
+    } else {
+      const pendingMixed = displayParlays.some(function(p) {
+        return p.result !== 'hit' && p.result !== 'miss';
+      });
+      if (pendingMixed) {
+        msgEl.innerHTML = '<p style="margin:0;font-size:0.72rem;color:var(--muted);line-height:1.45">Pending tickets resolve when every game on that slate is final.</p>';
+        msgEl.style.display = 'block';
+      }
+    }
+  }
 
-  // Stats chips (hit rate + streak) — only from resolved parlays
+  // Stats chips (hit rate + streak) — only when we have resolved parlays
   const statsEl = _el('parlayHistoryStats');
   if (statsEl) {
-    const hitRate = hist.hit_rate;
-    const streak = hist.streak || 0;
-    const streakType = hist.streak_type;
     let statsHtml = '';
-    if (hitRate !== null || streak) {
-      const streakColor = streakType === 'hit' ? 'var(--color-success)' : 'var(--color-danger)';
-      statsHtml = '<div style="display:flex;gap:12px;margin-bottom:14px">' +
-        '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
-          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:var(--parlay)">' + (hitRate != null ? hitRate + '%' : '\u2014') + '</div>' +
-          '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>' +
-        '</div>' +
-        (streak ? '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
-          '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:' + streakColor + ';line-height:1">' + streak + '\u00d7 ' + streakType.toUpperCase() + '</div>' +
-          '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>' +
-        '</div>' : '') +
-      '</div>';
+    if (resolvedParlays.length) {
+      const hitRate = hist.hit_rate;
+      const streak = hist.streak || 0;
+      const streakType = hist.streak_type;
+      if (hitRate !== null || streak) {
+        const streakColor = streakType === 'hit' ? 'var(--color-success)' : 'var(--color-danger)';
+        statsHtml = '<div style="display:flex;gap:12px;margin-bottom:14px">' +
+          '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
+            '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:var(--parlay)">' + (hitRate != null ? hitRate + '%' : '\u2014') + '</div>' +
+            '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Hit Rate</div>' +
+          '</div>' +
+          (streak ? '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-card);padding:10px 16px;flex:1;text-align:center">' +
+            '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:1.3rem;font-weight:900;color:' + streakColor + ';line-height:1">' + streak + '\u00d7 ' + streakType.toUpperCase() + '</div>' +
+            '<div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Streak</div>' +
+          '</div>' : '') +
+        '</div>';
+      }
     }
     statsEl.innerHTML = statsHtml;
   }
 
-  // History rows — only RESOLVED parlays
   const listEl = _el('parlayHistoryList');
   if (!listEl) return;
+  if (!displayParlays.length) {
+    listEl.innerHTML = '';
+    wrap.style.display = 'block';
+    return;
+  }
+
   let rowsHtml = '';
-  for (let i = 0; i < resolvedParlays.length; i++) {
-    const p = resolvedParlays[i];
-    const result = p.result || 'pending';
+  for (let i = 0; i < displayParlays.length; i++) {
+    const p = displayParlays[i];
+    const result = (p.result === 'hit' || p.result === 'miss') ? p.result : 'pending';
     const legs = p.legs || [];
     const legSummary = legs.map(function(l) {
       const sl = {'points':'PTS','rebounds':'REB','assists':'AST'}[l.stat_type] || (l.stat_type || '').toUpperCase();
@@ -3430,9 +3503,9 @@ function renderParlayHistory(hist) {
     const legsHit = legs.filter(function(l) { return l.result === 'hit'; }).length;
     const legsPill = legsResolved > 0 ? ' <span style="font-size:0.6rem;color:var(--muted);margin-left:4px">' + legsHit + '/' + legs.length + '</span>' : '';
 
-    // Use original parlays array index for modal lookup
     const origIdx = parlays.indexOf(p);
-    rowsHtml += '<div class="line-history-row" style="cursor:pointer" data-parlay-idx="' + origIdx + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
+    const rowMuted = result === 'pending' ? 'opacity:0.92' : '';
+    rowsHtml += '<div class="line-history-row" style="cursor:pointer;' + rowMuted + '" data-parlay-idx="' + origIdx + '" onclick="openParlayModalByIdx(this)" role="button" aria-label="View parlay detail for ' + _escapeHtml(dateLabel) + '">' +
       '<div style="display:flex;align-items:center;gap:7px;min-width:0">' +
         '<span class="line-hist-dir-pill" style="background:rgba(20,184,166,0.10);color:var(--parlay);border:1px solid rgba(20,184,166,0.20);font-size:0.55rem">' + _escapeHtml(dateLabel.slice(5)) + '</span>' +
         '<div style="min-width:0">' +
@@ -3859,6 +3932,7 @@ function closeLogDrilldown() {
 function switchLogTab(tab) {
   LOG.currentTab = tab;
   const container = document.getElementById('logDrillTabs');
+  if (!container) return;
   let activeBtn = null;
   container.querySelectorAll('.mode-tab').forEach(t => {
     const isActive = t.dataset.t === tab;
@@ -3870,12 +3944,14 @@ function switchLogTab(tab) {
 }
 
 async function renderLogDrillCards() {
+  const predCards = _el('logPredCards');
+  if (!predCards) return;
   const data = LOG.data;
   const scope = LOG.scope;
   const tab = LOG.currentTab;
 
   if (!data || !data.scopes || !data.scopes[scope]) {
-    document.getElementById('logPredCards').innerHTML = `<div class="empty-state"><span class="icon">📭</span><p>No predictions saved for this scope.</p></div>`;
+    predCards.innerHTML = `<div class="empty-state"><span class="icon">📭</span><p>No predictions saved for this scope.</p></div>`;
     return;
   }
 
@@ -4103,15 +4179,15 @@ async function _handleBenUpload(file, type, source) {
     const today = LAB.briefing?.pending_upload_date || _etToday();
     // _markDone: permanent green (used for chat buttons)
     const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.classList.add('btn-done'); b.disabled = true; } };
-    // _markBannerDone: flash green → update X/4 counter → hide after 1.5s
+    // _markBannerDone: flash green → update X/5 counter → hide after 1.5s
     const _markBannerDone = (id, label, date) => {
       const b = document.getElementById(id);
       if (!b) return;
       b.textContent = label; b.classList.add('btn-done'); b.disabled = true;
       const _uf = _safeParseLocalStorage('benUploads_' + date, {});
-      const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot].filter(Boolean).length;
+      const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot, _uf.most_drafted].filter(Boolean).length;
       const _t = document.getElementById('benBannerTitle');
-      if (_t) { const d = new Date(date + 'T12:00:00'); const ds = _fmtDateShort(d); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/4' : ''); }
+      if (_t) { const d = new Date(date + 'T12:00:00'); const ds = _fmtDateShort(d); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/5' : ''); }
       setTimeout(() => { b.style.display = 'none'; }, 1500);
     };
 
@@ -5497,8 +5573,9 @@ async function executeLabAction(action) {
     msgEl.querySelector('div b').textContent = descText;
     msgEl.querySelector('.lab-apply-btn').addEventListener('click', () => applyLabConfig(action.changes, action.description || '', msgEl));
     msgEl.querySelector('.lab-decline-btn').addEventListener('click', () => {
-      msgEl.querySelector('div').textContent = 'Change declined.';
-      msgEl.querySelector('div + div').remove();
+      const st = msgEl.querySelector('[data-config-status]');
+      if (st) st.textContent = 'Change declined.';
+      msgEl.querySelector('.lab-apply-btn')?.closest('div')?.remove();
     });
     const _lm = document.getElementById('labMessages');
     if (_lm) { _lm.classList.add('lab-has-messages'); _lm.appendChild(msgEl); }

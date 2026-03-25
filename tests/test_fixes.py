@@ -3251,6 +3251,13 @@ class TestParlayHistoryAndConfigHardening:
         assert "today_games_final = _all_games_final(_today_games)" in src
         assert '_can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)' in src
 
+    def test_parlay_history_try_except_returns_safe_payload(self):
+        src = open("api/index.py").read()
+        assert "async def parlay_history(request: Request):" in src
+        assert 'print(f"[parlay-history] error:' in src
+        assert '"error": "parlay_history_failed"' in src
+        assert "Could not load parlay history" in src
+
     def test_projection_only_persisted_and_labeled(self):
         src_api = open("api/index.py").read()
         src_ui = open("index.html").read()

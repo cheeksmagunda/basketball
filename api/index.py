@@ -10576,138 +10576,152 @@ async def parlay_force_regenerate(request: Request):
 @app.get("/api/parlay-history")
 async def parlay_history(request: Request):
     """Return recent parlays with resolution status (hit/miss per leg)."""
-    nocache = str(request.query_params.get("nocache", "")).strip().lower() in ("1", "true", "yes")
-    # 10-min cache
-    if not nocache:
-        _hist_cached = _cg(_CK_PARLAY_HISTORY)
-        if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
-            if time.time() - _hist_cached.get("ts", 0) < _TTL_LOG:
-                return _hist_cached["data"]
-
-    items = _github_list_dir("data/parlays")
-    json_dates = sorted(
-        [i["name"][:-5] for i in items
-         if i.get("name", "").endswith(".json")],
-        reverse=True,
-    )[:30]
-
-    if not json_dates:
-        out = {"parlays": [], "hit_rate": None, "total": 0, "resolved": 0, "streak": 0, "streak_type": None}
-        _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
-        return out
-
-    # Parallel fetch all JSON files
-    def _fetch_parlay_json(date_str):
-        raw, _ = _github_get_file(f"data/parlays/{date_str}.json")
-        return date_str, raw
-
-    fetched = {}
-    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-        for ds, raw in pool.map(_fetch_parlay_json, json_dates):
-            fetched[ds] = raw
-
-    today = _et_date()
-    today_str = today.isoformat()
-    today_games_final = False
     try:
-        _today_games = fetch_games(today)
-        if _today_games:
-            today_games_final = _all_games_final(_today_games)
-    except Exception:
+        nocache = str(request.query_params.get("nocache", "")).strip().lower() in ("1", "true", "yes")
+        # 10-min cache
+        if not nocache:
+            _hist_cached = _cg(_CK_PARLAY_HISTORY)
+            if _hist_cached and isinstance(_hist_cached, dict) and "data" in _hist_cached:
+                if time.time() - _hist_cached.get("ts", 0) < _TTL_LOG:
+                    return _hist_cached["data"]
+
+        items = _github_list_dir("data/parlays")
+        json_dates = sorted(
+            [i["name"][:-5] for i in items
+             if i.get("name", "").endswith(".json")],
+            reverse=True,
+        )[:30]
+
+        if not json_dates:
+            out = {"parlays": [], "hit_rate": None, "total": 0, "resolved": 0, "streak": 0, "streak_type": None}
+            _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
+            return out
+
+        # Parallel fetch all JSON files
+        def _fetch_parlay_json(date_str):
+            raw, _ = _github_get_file(f"data/parlays/{date_str}.json")
+            return date_str, raw
+
+        fetched = {}
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
+            for ds, raw in pool.map(_fetch_parlay_json, json_dates):
+                fetched[ds] = raw
+
+        today = _et_date()
+        today_str = today.isoformat()
         today_games_final = False
-    results = []
-    write_back_queue = []  # (date_str, parlay_dict) for resolved entries that need saving
-
-    for date_str in json_dates:
-        raw = fetched.get(date_str)
-        if not raw:
-            continue
         try:
-            parlay = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            continue
+            _today_games = fetch_games(today)
+            if _today_games:
+                today_games_final = _all_games_final(_today_games)
+        except Exception:
+            today_games_final = False
+        results = []
+        write_back_queue = []  # (date_str, parlay_dict) for resolved entries that need saving
 
-        legs = parlay.get("legs", [])
-        if not legs:
-            continue
+        for date_str in json_dates:
+            raw = fetched.get(date_str)
+            if not raw:
+                continue
+            try:
+                parlay = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
 
-        # Resolve pending legs for historical dates and for same-day when all games are final.
-        needs_write = False
-        _can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)
-        if parlay.get("result") == "pending" and _can_resolve:
-            espn_date = date_str.replace("-", "")
-            for leg in legs:
-                if leg.get("result") not in (None, "pending", ""):
-                    continue
-                actual = _fetch_player_final_stat(
-                    leg.get("player_name", ""),
-                    leg.get("stat_type", "points"),
-                    date_str=espn_date,
-                    team=leg.get("team"),
-                )
-                if actual is not None:
-                    leg["actual_stat"] = actual
-                    line_val = _safe_float(leg.get("line"), 0.0)
-                    if leg.get("direction") == "over":
-                        leg["result"] = "hit" if actual > line_val else "miss"
-                    else:
-                        leg["result"] = "hit" if actual < line_val else "miss"
+            legs = parlay.get("legs", [])
+            if not legs:
+                continue
+
+            # Resolve pending legs for historical dates and for same-day when all games are final.
+            needs_write = False
+            _can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)
+            if parlay.get("result") == "pending" and _can_resolve:
+                espn_date = date_str.replace("-", "")
+                for leg in legs:
+                    if leg.get("result") not in (None, "pending", ""):
+                        continue
+                    actual = _fetch_player_final_stat(
+                        leg.get("player_name", ""),
+                        leg.get("stat_type", "points"),
+                        date_str=espn_date,
+                        team=leg.get("team"),
+                    )
+                    if actual is not None:
+                        leg["actual_stat"] = actual
+                        line_val = _safe_float(leg.get("line"), 0.0)
+                        if leg.get("direction") == "over":
+                            leg["result"] = "hit" if actual > line_val else "miss"
+                        else:
+                            leg["result"] = "hit" if actual < line_val else "miss"
+                        needs_write = True
+
+                # Compute overall result
+                leg_results = [l.get("result") for l in legs]
+                if all(r == "hit" for r in leg_results):
+                    parlay["result"] = "hit"
+                    needs_write = True
+                elif any(r == "miss" for r in leg_results):
+                    parlay["result"] = "miss"
                     needs_write = True
 
-            # Compute overall result
-            leg_results = [l.get("result") for l in legs]
-            if all(r == "hit" for r in leg_results):
-                parlay["result"] = "hit"
-                needs_write = True
-            elif any(r == "miss" for r in leg_results):
-                parlay["result"] = "miss"
-                needs_write = True
+            if needs_write:
+                write_back_queue.append((date_str, parlay))
 
-        if needs_write:
-            write_back_queue.append((date_str, parlay))
+            results.append(parlay)
 
-        results.append(parlay)
+        # Write back resolved parlays to GitHub (parallel, non-fatal)
+        def _write_back(item):
+            ds, pd = item
+            try:
+                _github_write_file(f"data/parlays/{ds}.json", json.dumps(pd), f"resolve parlay {ds}")
+            except Exception as e:
+                print(f"[parlay-history] write-back failed for {ds}: {e}")
 
-    # Write back resolved parlays to GitHub (parallel, non-fatal)
-    def _write_back(item):
-        ds, pd = item
-        try:
-            _github_write_file(f"data/parlays/{ds}.json", json.dumps(pd), f"resolve parlay {ds}")
-        except Exception as e:
-            print(f"[parlay-history] write-back failed for {ds}: {e}")
+        if write_back_queue:
+            with ThreadPoolExecutor(max_workers=_W_LIGHT * 2) as pool:
+                list(pool.map(_write_back, write_back_queue))
 
-    if write_back_queue:
-        with ThreadPoolExecutor(max_workers=_W_LIGHT * 2) as pool:
-            list(pool.map(_write_back, write_back_queue))
+        # Compute stats (only resolved)
+        resolved = [p for p in results if p.get("result") in ("hit", "miss")]
+        hits = [p for p in resolved if p["result"] == "hit"]
+        total_resolved = len(resolved)
+        hit_rate = round(len(hits) / total_resolved * 100) if total_resolved else None
 
-    # Compute stats (only resolved)
-    resolved = [p for p in results if p.get("result") in ("hit", "miss")]
-    hits = [p for p in resolved if p["result"] == "hit"]
-    total_resolved = len(resolved)
-    hit_rate = round(len(hits) / total_resolved * 100) if total_resolved else None
+        # Streak
+        streak = 0
+        streak_type = None
+        for p in results:
+            r = p.get("result")
+            if r not in ("hit", "miss"):
+                continue
+            if streak_type is None:
+                streak_type = r
+                streak = 1
+            elif r == streak_type:
+                streak += 1
+            else:
+                break
 
-    # Streak
-    streak = 0
-    streak_type = None
-    for p in results:
-        r = p.get("result")
-        if r not in ("hit", "miss"):
-            continue
-        if streak_type is None:
-            streak_type = r
-            streak = 1
-        elif r == streak_type:
-            streak += 1
-        else:
-            break
-
-    out = {
-        "parlays": results,
-        "hit_rate": hit_rate,
-        "total": len(results),
-        "resolved": total_resolved,
-        "streak": streak,
-        "streak_type": streak_type,
-    }
-    _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
-    return out
+        out = {
+            "parlays": results,
+            "hit_rate": hit_rate,
+            "total": len(results),
+            "resolved": total_resolved,
+            "streak": streak,
+            "streak_type": streak_type,
+        }
+        _cs(_CK_PARLAY_HISTORY, {"data": out, "ts": time.time()})
+        return out
+    except Exception as e:
+        print(f"[parlay-history] error: {e}")
+        traceback.print_exc()
+        return {
+            "parlays": [],
+            "hit_rate": None,
+            "total": 0,
+            "resolved": 0,
+            "streak": 0,
+            "streak_type": None,
+            "error": "parlay_history_failed",
+            "narrative": "Could not load parlay history. Please try again.",
+        }
