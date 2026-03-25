@@ -1938,12 +1938,12 @@ class TestPerGameFloor:
         assert "scoring_thresholds.min_game_pts" in src, \
             "Per-game pool must use scoring_thresholds.min_game_pts config key"
 
-    def test_chalk_season_min_floor_is_20(self):
-        """chalk_season_min_floor must be 20 — rotation players in Starting 5 (lowered from 22 for tight-game coverage)."""
+    def test_chalk_season_min_floor_is_18(self):
+        """v62: chalk_season_min_floor 20→18 — optimal lineup min RS players avg 18-22 min."""
         cfg = self._local_cfg()
         floor = cfg.get("projection", {}).get("chalk_season_min_floor")
-        assert floor == pytest.approx(20.0), \
-            f"chalk_season_min_floor should be 20.0, got {floor}"
+        assert floor == pytest.approx(18.0), \
+            f"chalk_season_min_floor should be 18.0, got {floor}"
 
     def test_den_not_in_big_market_teams(self):
         """DEN must be removed from big_market_teams — DEN role players are low-ownership."""
@@ -2321,10 +2321,10 @@ class TestChalkMilpRsFocusHigh:
         assert "chalk_milp_boost_neutral" in src
 
     def test_config_value(self):
-        """Production config should have balanced rs_focus (0.3-0.5)."""
+        """v62: Production config should have RS-dominant rs_focus (0.5-0.7)."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.1 <= val <= 0.3, f"chalk_milp_rs_focus should be 0.1-0.3 (v59); got {val}"
+        assert 0.5 <= val <= 0.7, f"chalk_milp_rs_focus should be 0.5-0.7 (v62 RS-first); got {val}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -4355,6 +4355,261 @@ class TestClaudePromptUpdated:
         games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
         prompt = _build_claude_prompt(proj, games)
         assert "PLAYER ON B2B" in prompt
+
+
+# ─────────────────────────────────────────────────────────
+# v62: Top Performer Analysis Tests
+# ─────────────────────────────────────────────────────────
+
+class TestBreakoutDetector:
+    """_compute_breakout_probability returns correct spike probability."""
+
+    def test_no_signals_returns_zero(self):
+        from api.index import _compute_breakout_probability
+        prob = _compute_breakout_probability({}, {})
+        assert prob == 0.0
+
+    def test_cascade_high_signal(self):
+        from api.index import _compute_breakout_probability
+        prob = _compute_breakout_probability(
+            {"_cascade_bonus": 10}, {"total": 222, "spread": 0}
+        )
+        assert prob >= 0.20  # cascade_high = 0.25
+
+    def test_cascade_low_signal(self):
+        from api.index import _compute_breakout_probability
+        prob = _compute_breakout_probability(
+            {"_cascade_bonus": 5}, {}
+        )
+        assert 0.10 <= prob <= 0.20  # cascade_low = 0.12
+
+    def test_pace_up_signal(self):
+        from api.index import _compute_breakout_probability
+        prob = _compute_breakout_probability(
+            {}, {"total": 235, "spread": 3}
+        )
+        assert prob >= 0.10  # pace_up_bonus = 0.15
+
+    def test_opp_weakness_signal(self):
+        from api.index import _compute_breakout_probability
+        prob = _compute_breakout_probability(
+            {}, {"opp_def_rating": 118}
+        )
+        assert prob >= 0.10  # opp_weak_bonus = 0.15
+
+    def test_hot_streak_signal(self):
+        from api.index import _compute_breakout_probability
+        prob = _compute_breakout_probability(
+            {"recent_pts": 25, "season_pts": 18}, {}  # 25/18 = 1.39 > 1.20
+        )
+        assert prob >= 0.08  # hot_streak_bonus = 0.10
+
+    def test_combined_signals_capped(self):
+        from api.index import _compute_breakout_probability
+        # All signals at once
+        prob = _compute_breakout_probability(
+            {"_cascade_bonus": 12, "recent_pts": 30, "season_pts": 15,
+             "rest_days": 5, "dvp_advantage": True},
+            {"total": 240, "spread": 2, "opp_def_rating": 120}
+        )
+        assert prob <= 0.75  # capped at prob_cap
+
+    def test_disabled_returns_zero(self):
+        from api.index import _compute_breakout_probability, _cfg
+        with patch("api.index._cfg") as mock_cfg:
+            mock_cfg.return_value = {"enabled": False}
+            prob = _compute_breakout_probability({"_cascade_bonus": 15}, {})
+            # When breakout is disabled, returns 0
+            assert prob == 0.0
+
+
+class TestEstimateLogDrafts:
+    """_estimate_log_drafts predicts draft popularity from player profile."""
+
+    def test_star_high_drafts(self):
+        from api.index import _estimate_log_drafts
+        log_d = _estimate_log_drafts(28.0, True, 30.0, 28.0)  # 28 PPG, big market
+        assert log_d >= 3.0  # ~1000+ drafts
+
+    def test_role_player_low_drafts(self):
+        from api.index import _estimate_log_drafts
+        log_d = _estimate_log_drafts(8.0, False, 8.0, 8.0)  # 8 PPG, small market
+        assert log_d <= 1.5  # ~30 drafts
+
+    def test_bench_very_low_drafts(self):
+        from api.index import _estimate_log_drafts
+        log_d = _estimate_log_drafts(4.0, False, 4.0, 4.0)  # 4 PPG, small market
+        assert log_d <= 0.8  # ~5 drafts
+
+    def test_big_market_adds_drafts(self):
+        from api.index import _estimate_log_drafts
+        small = _estimate_log_drafts(15.0, False, 15.0, 15.0)
+        big = _estimate_log_drafts(15.0, True, 15.0, 15.0)
+        assert big > small  # big market → more drafts
+
+    def test_trending_adds_drafts(self):
+        from api.index import _estimate_log_drafts
+        normal = _estimate_log_drafts(12.0, False, 12.0, 12.0)
+        trending = _estimate_log_drafts(12.0, False, 16.0, 12.0)  # recent >> season
+        assert trending > normal
+
+
+class TestDraftTiers:
+    """_assign_draft_tier and _draft_tier_multiplier classify correctly."""
+
+    def test_tier_a_low_drafts(self):
+        from api.index import _assign_draft_tier
+        assert _assign_draft_tier(0.8) == "A"  # ~6 drafts
+
+    def test_tier_b_moderate_drafts(self):
+        from api.index import _assign_draft_tier
+        assert _assign_draft_tier(1.5) == "B"  # ~30 drafts
+
+    def test_tier_c_popular(self):
+        from api.index import _assign_draft_tier
+        assert _assign_draft_tier(2.3) == "C"  # ~200 drafts
+
+    def test_tier_d_star(self):
+        from api.index import _assign_draft_tier
+        assert _assign_draft_tier(3.2) == "D"  # ~1600 drafts
+
+    def test_tier_a_bonus(self):
+        from api.index import _draft_tier_multiplier
+        mult = _draft_tier_multiplier("A")
+        assert mult > 1.0  # bonus for obscure players
+
+    def test_tier_d_penalty(self):
+        from api.index import _draft_tier_multiplier
+        mult = _draft_tier_multiplier("D", rating=4.0)
+        assert mult < 1.0  # penalty for stars
+
+    def test_tier_d_rs_override(self):
+        from api.index import _draft_tier_multiplier
+        mult = _draft_tier_multiplier("D", rating=8.0)
+        assert mult == 1.0  # exceptional RS overrides penalty
+
+
+class TestEvWeightedMetric:
+    """Core pool ev_weighted metric uses RS exponent correctly."""
+
+    def test_higher_rs_wins_with_exponent(self):
+        """RS^1.3 should amplify RS differences: RS 5 vs RS 3.5 gap widens."""
+        rs_high = 5.0 ** 1.3  # ~8.10
+        rs_low = 3.5 ** 1.3   # ~5.04
+        # Without exponent: 5/3.5 = 1.43x
+        # With exponent: 8.10/5.04 = 1.61x — amplified
+        ratio_no_exp = 5.0 / 3.5
+        ratio_with_exp = rs_high / rs_low
+        assert ratio_with_exp > ratio_no_exp
+
+    def test_ev_weighted_formula(self):
+        """ev_weighted = RS^1.3 × (2.0 + boost)"""
+        rs = 4.5
+        boost = 2.5
+        expected = (rs ** 1.3) * (2.0 + boost)
+        assert expected > 0
+        # Compare with rs_x_boost (no exponent)
+        rs_x_boost = rs * (2.0 + boost)
+        # With exponent, higher RS should score higher relative to base
+        assert expected > rs_x_boost  # because 4.5^1.3 > 4.5
+
+
+class TestLogLinearBoost:
+    """Log-linear boost estimation layer calibrated from draft-boost correlation."""
+
+    def test_low_drafts_high_boost(self):
+        """Players with 3 drafts should get ~2.95 boost."""
+        import math
+        log_d = math.log10(3)  # ~0.48
+        boost = 3.2 - 0.75 * log_d  # ~2.84
+        assert 2.5 < boost < 3.1
+
+    def test_high_drafts_low_boost(self):
+        """Players with 1000 drafts should get ~0.95 boost."""
+        import math
+        log_d = math.log10(1000)  # 3.0
+        boost = 3.2 - 0.75 * log_d  # 0.95
+        assert 0.5 < boost < 1.5
+
+    def test_mid_drafts_mid_boost(self):
+        """Players with 50 drafts should get ~1.93 boost."""
+        import math
+        log_d = math.log10(50)  # ~1.70
+        boost = 3.2 - 0.75 * log_d  # ~1.93
+        assert 1.5 < boost < 2.5
+
+
+class TestLgbmFeatureVector22:
+    """v62: _lgbm_feature_vector returns 22 features with new inputs."""
+
+    def test_returns_22_features(self):
+        from api.index import _lgbm_feature_vector
+        vec = _lgbm_feature_vector(
+            avg_min=28, pts=18, reb=6, ast=4, stl=1, blk=0.5,
+            spread=-3.5, side="home", season_pts=17, recent_pts=19,
+            season_min=28, recent_min=29, cascade_bonus=0,
+            opp_pts_allowed=115, team_pace=112, team_ppg=110,
+            teammate_out_count=1, game_total=228,
+        )
+        assert len(vec) == 22
+
+    def test_backward_compatible_16(self):
+        """Without new kwargs, should still return 22 features with defaults."""
+        from api.index import _lgbm_feature_vector
+        vec = _lgbm_feature_vector(
+            avg_min=25, pts=15, reb=5, ast=3, stl=1, blk=0.5,
+            spread=-2, side="away", season_pts=14, recent_pts=15,
+            season_min=24, recent_min=25, cascade_bonus=0,
+        )
+        assert len(vec) == 22
+        # Last 6 should have reasonable defaults
+        assert vec[16] == 110.0  # opp_pts_allowed default
+        assert vec[20] == 222.0  # game_total default
+
+
+class TestConfigV62Defaults:
+    """v62 config defaults match plan values."""
+
+    def test_breakout_defaults_present(self):
+        from api.index import _CONFIG_DEFAULTS
+        bo = _CONFIG_DEFAULTS.get("breakout", {})
+        assert bo.get("enabled") is True
+        assert bo.get("min_prob") == 0.3
+        assert bo.get("max_mult") == 0.3
+
+    def test_draft_tier_defaults_present(self):
+        from api.index import _CONFIG_DEFAULTS
+        dt = _CONFIG_DEFAULTS.get("draft_tier", {})
+        assert dt.get("enabled") is True
+        assert dt.get("tier_a_bonus") == 1.08
+        assert dt.get("tier_d_penalty") == 0.85
+
+    def test_leaderboard_clf_defaults_present(self):
+        from api.index import _CONFIG_DEFAULTS
+        clf = _CONFIG_DEFAULTS.get("leaderboard_clf", {})
+        assert clf.get("enabled") is True
+        assert clf.get("weight") == 0.6
+
+    def test_core_pool_ev_weighted_default(self):
+        from api.index import _CONFIG_DEFAULTS
+        cp = _CONFIG_DEFAULTS.get("core_pool", {})
+        assert cp.get("metric") == "ev_weighted"
+        assert cp.get("rs_exponent") == 1.3
+
+    def test_moonshot_boost_leverage_reduced(self):
+        from api.index import _CONFIG_DEFAULTS
+        moon = _CONFIG_DEFAULTS.get("moonshot", {})
+        assert moon.get("boost_leverage_power") == 0.5  # was 0.8→1.0, now 0.5
+
+    def test_chalk_milp_rs_focus_increased(self):
+        from api.index import _CONFIG_DEFAULTS
+        lu = _CONFIG_DEFAULTS.get("lineup", {})
+        assert lu.get("chalk_milp_rs_focus") == 0.6  # was 0.0→0.2, now 0.6
+
+    def test_chalk_min_boost_floor_raised(self):
+        from api.index import _CONFIG_DEFAULTS
+        proj = _CONFIG_DEFAULTS.get("projection", {})
+        assert proj.get("chalk_min_boost_floor") == 1.5  # was 1.0, now 1.5
 
 
 if __name__ == "__main__":

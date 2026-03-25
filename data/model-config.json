@@ -1,7 +1,7 @@
 {
-  "version": 61,
-  "updated_at": "2026-03-25T12:00:00Z",
-  "updated_by": "v61-fair-value-excision-barbell-optimizer",
+  "version": 62,
+  "updated_at": "2026-03-25T18:00:00Z",
+  "updated_by": "v62-top-performer-analysis-overhaul",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -33,6 +33,11 @@
     "sig_midpoint": 12.0,
     "sig_scale": 4.0,
     "big_market_discount": 0.15,
+    "log_linear": {
+      "enabled": true,
+      "intercept": 3.2,
+      "slope": -0.75
+    },
     "player_overrides": {
       "Anthony Edwards": 0.3,
       "Bam Adebayo": 0.6,
@@ -178,10 +183,10 @@
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 3.0,
-    "chalk_season_min_floor": 20.0,
+    "chalk_season_min_floor": 18.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
-    "chalk_recent_min_floor": 20.0,
+    "chalk_recent_min_floor": 18.0,
     "leverage_top_slots": 1,
     "leverage_boost_threshold": 1.5,
     "big_man_calibration": {
@@ -192,7 +197,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.0,
+    "chalk_min_boost_floor": 1.5,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
@@ -231,10 +236,52 @@
   "core_pool": {
     "enabled": true,
     "size": 15,
-    "metric": "rs_x_boost",
+    "metric": "ev_weighted",
     "tv_floor_min_rs": 3.8,
     "blend_weight": 0.5,
-    "per_game_carry": 0
+    "per_game_carry": 0,
+    "rs_exponent": 1.3
+  },
+  "breakout": {
+    "enabled": true,
+    "min_prob": 0.3,
+    "max_mult": 0.3,
+    "cascade_high": 0.25,
+    "cascade_low": 0.12,
+    "cascade_high_threshold": 8,
+    "cascade_low_threshold": 4,
+    "pace_up_bonus": 0.15,
+    "pace_up_total": 230,
+    "pace_up_spread": 5,
+    "pace_moderate_bonus": 0.08,
+    "pace_moderate_total": 225,
+    "opp_weak_bonus": 0.15,
+    "opp_weak_threshold": 115,
+    "opp_moderate_bonus": 0.08,
+    "opp_moderate_threshold": 113,
+    "hot_streak_bonus": 0.10,
+    "hot_streak_ratio": 1.20,
+    "rest_bonus": 0.10,
+    "rest_days_threshold": 3,
+    "dvp_bonus": 0.10,
+    "prob_cap": 0.75
+  },
+  "draft_tier": {
+    "enabled": true,
+    "tier_a_max_log_drafts": 1.3,
+    "tier_b_max_log_drafts": 2.0,
+    "tier_c_max_log_drafts": 2.7,
+    "tier_a_bonus": 1.08,
+    "tier_b_mult": 1.00,
+    "tier_c_penalty": 0.95,
+    "tier_d_penalty": 0.85,
+    "tier_d_rs_override": 7.0
+  },
+  "leaderboard_clf": {
+    "enabled": true,
+    "weight": 0.6,
+    "min_score": 0.7,
+    "max_score": 1.3
   },
   "odds_enrichment": {
     "enabled": false,
@@ -255,7 +302,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.2,
+    "chalk_milp_rs_focus": 0.6,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
@@ -296,16 +343,16 @@
     }
   },
   "moonshot": {
-    "min_minutes_floor": 18,
-    "min_recent_minutes_floor": 18,
-    "min_card_boost": 1.5,
+    "min_minutes_floor": 16,
+    "min_recent_minutes_floor": 16,
+    "min_card_boost": 1.8,
     "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.8,
+    "boost_leverage_power": 0.5,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
@@ -398,6 +445,16 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 62,
+      "date": "2026-03-25",
+      "change": "TOP PERFORMER ANALYSIS OVERHAUL (v62) — 578-entry leaderboard analysis (44 dates, Jan 17–Mar 22). R²=0.9951 regression: value = 2.0×RS + 1.0×RS×Boost. RS has 5x the correlation with total_value vs boost (0.542 vs 0.102). 8 changes: (1) GATE RECALIBRATION: chalk_min_boost_floor 1.0→1.5, chalk_season/recent_min 20→18, moonshot min_minutes 18→16, moonshot min_card_boost 1.5→1.8. (2) EV FORMULA: boost_leverage_power 0.8→0.5, chalk_milp_rs_focus 0.2→0.6, new core_pool.metric='ev_weighted' with rs_exponent=1.3 — RS^1.3 × (2.0 + boost) amplifies RS dominance. (3) BREAKOUT DETECTOR: _compute_breakout_probability() — 6 signals (cascade, pace-up, opp weakness, hot streak, rest, DvP) → spike_prob → RS multiplier. (4) LOG-LINEAR BOOST: card_boost.log_linear layer — estimated_boost = 3.2 - 0.75×log10(predicted_drafts) from r=-0.660 drafts-boost relationship. (5) LGBM FEATURES: 6 new features (opp_pts_allowed, team_pace, usage_share, teammate_out, game_total, spread_abs), sample weighting from top_performers.csv. (6) LEADERBOARD CLASSIFIER: binary P(leaderboard) model trained on top_performers.csv as positive, non-leaderboard as negative. (7) DRAFT TIERS: A(1-20 drafts)=1.08x, B(21-100)=neutral, C(101-500)=0.95x, D(500+)=0.85x penalty. (8) DFS WEIGHT CALIBRATION from actuals regression."
+    },
+    {
+      "version": 61,
+      "date": "2026-03-25",
+      "change": "FAIR VALUE EXCISION + BARBELL OPTIMIZER — see v61 changelog in previous version."
+    },
     {
       "version": 60,
       "date": "2026-03-24",
