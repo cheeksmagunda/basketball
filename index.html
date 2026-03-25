@@ -1920,6 +1920,9 @@ function switchTab(tab) {
     if (stale) loadSlate();
   }
   if (tab === 'line') {
+    // Keep Line cache ownership in initLinePage() only.
+    // Do not bust LINE_LOADED_DATE from unrelated SLATE staleness, or hydrated
+    // picks can briefly render and then regress to skeleton loading.
     initLinePage();  // has its own cache guard (LINE_LOADED_DATE === todayET)
   }
   if (tab === 'parlay') initParlayPage();  // has its own staleness guard
@@ -3241,13 +3244,15 @@ async function forceRegenerateParlay() {
   }
 }
 
-async function fetchParlay() {
+async function fetchParlay(background = false) {
   const empty = _el('parlayEmpty');
   const loading = _el('parlayLoading');
   const ticket = _el('parlayTicket');
   if (empty) empty.style.display = 'none';
-  if (ticket) ticket.style.display = 'none';
-  if (loading) { loading.innerHTML = _parlaySkeletons(); loading.style.display = 'block'; }
+  if (!background) {
+    if (ticket) ticket.style.display = 'none';
+    if (loading) { loading.innerHTML = _parlaySkeletons(); loading.style.display = 'block'; }
+  }
 
   PARLAY_STATE = asyncStateLoading(PARLAY_STATE);
 
@@ -3300,8 +3305,8 @@ function initParlayPage() {
     console.log('[parlay] using hydrated data, rendering');
     if (PARLAY_STATE.data) renderParlayTicket(PARLAY_STATE.data);
   } else {
-    // Stale or missing — fetch
-    fetchParlay();
+    // Stale or missing — preserve existing ticket during refresh when available.
+    fetchParlay(!!PARLAY_STATE.data);
   }
 
   // Always render history if data is available but DOM is empty;
