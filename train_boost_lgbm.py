@@ -2,15 +2,15 @@
 """
 Train LightGBM card boost model from top_performers.csv.
 
-Uses 14-day trailing average RS as the primary performance signal,
-matching the user insight that boosts correlate with recent (not season)
-performance. High performers get low boosts; low performers get high boosts.
+Uses projected RS as the primary performance signal. At inference, this is
+blended with a PPG-based sigmoid in _est_card_boost() to capture both
+game-level RS dynamics and stable player-tier recognition.
 
 Feature: perf_score (14-day trailing avg RS from top_performers.csv)
 Target:  actual_card_boost (0.0 to 3.0)
 
-At inference time, perf_score = projected_rs from the RS projection model.
-Both are on the same RS scale (0-10), making the mapping direct.
+At inference: perf_score = projected_rs from the RS projection model.
+The sigmoid blend uses season_pts (PPG) from ESPN for the recognition signal.
 
 Writes boost_model.pkl as {"model": ..., "features": [...]}.
 """
@@ -83,9 +83,8 @@ def _load_actuals() -> list[dict]:
 
 def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build (X, y, weights) from top_performers + actuals with 14-day lookback."""
-    # Combine data sources, deduplicate by (player, date)
     all_rows = _load_top_performers() + _load_actuals()
-    seen = set()
+    seen: set[tuple[str, str]] = set()
     unique = []
     for r in all_rows:
         key = (r["player_name"], r["date"])
@@ -98,12 +97,10 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     print(f"Combined data: {len(unique)} unique (player, date) entries")
 
-    # Build per-player time series
     by_player: dict[str, list[dict]] = defaultdict(list)
     for r in unique:
         by_player[r["player_name"]].append(r)
 
-    # Generate training samples with 14-day lookback
     X_list, y_list, w_list = [], [], []
     for name, entries in by_player.items():
         entries.sort(key=lambda x: x["date"])
@@ -113,7 +110,6 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             except ValueError:
                 continue
 
-            # 14-day trailing average RS (recent performance signal)
             prior_14d = [
                 e for e in entries[:i]
                 if (dt - datetime.strptime(e["date"], "%Y-%m-%d")).days <= LOOKBACK_DAYS
@@ -122,13 +118,13 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
             if prior_14d:
                 perf_score = float(np.mean([e["actual_rs"] for e in prior_14d]))
-                weight = 3.0  # 14-day history = highest confidence
+                weight = 3.0
             elif prior_all:
                 perf_score = float(np.mean([e["actual_rs"] for e in prior_all]))
-                weight = 2.0  # older history
+                weight = 2.0
             else:
                 perf_score = entry["actual_rs"]
-                weight = 1.0  # single appearance
+                weight = 1.0
 
             X_list.append([perf_score])
             y_list.append(entry["actual_card_boost"])
@@ -146,9 +142,9 @@ def train_model() -> None:
 
     print(f"Training boost model on {len(X)} samples (features: {FEATURES})")
     print(f"  Target range: {y.min():.1f} - {y.max():.1f}")
-    print(f"  Weighted: {sum(weights >= 3.0)} gold (14d), "
-          f"{sum((weights >= 2.0) & (weights < 3.0))} silver, "
-          f"{sum(weights < 2.0)} bronze")
+    print(f"  Weighted: {int(sum(weights >= 3.0))} gold (14d), "
+          f"{int(sum((weights >= 2.0) & (weights < 3.0)))} silver, "
+          f"{int(sum(weights < 2.0))} bronze")
 
     model = lgb.LGBMRegressor(
         n_estimators=300,
@@ -169,11 +165,41 @@ def train_model() -> None:
         pickle.dump(bundle, f)
     print(f"Saved {MODEL_OUT}")
 
-    # Print learned mapping for verification
+    # Print learned RS → Boost mapping
     print("\nLearned RS → Boost mapping:")
     for rs in [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 8.0]:
         pred = model.predict([[rs]])[0]
         print(f"  RS {rs:.1f} → boost {pred:.2f}")
+
+    # Simulate blended inference (ML + sigmoid, 50/50)
+    import math
+
+    def _sigmoid_boost(ppg):
+        # Optimized params from fitting 10 known PPG-boost pairs
+        sig_ceil, sig_range, sig_mid, sig_scale = 35.45, 35.89, -18.96, 11.52
+        sv = 1.0 / (1.0 + math.exp(-(ppg - sig_mid) / sig_scale))
+        return max(0.0, min(3.0, sig_ceil - sig_range * sv))
+
+    print("\nBlended inference simulation (RS model + PPG sigmoid, 50/50):")
+    tests = [
+        ("CJ McCollum",    5.6, 18.8, 0.9),
+        ("Jalen Williams", 5.5, 17.6, 0.8),
+        ("Sam Merrill",    5.0, 12.0, 1.7),
+        ("Ace Bailey",     4.9, 13.4, 1.8),
+        ("TJ McConnell",   4.0,  9.0, 2.5),
+        ("Wembanyama",     6.5, 24.0, 0.3),
+        ("Ant Edwards",    6.5, 25.0, 0.3),
+        ("Deep bench",     3.0,  5.0, 3.0),
+        ("Desmond Bane",   6.0, 22.0, 0.8),
+    ]
+    for name, proj_rs, ppg, actual in tests:
+        ml = float(model.predict([[proj_rs]])[0])
+        sig = _sigmoid_boost(ppg)
+        blended = 0.5 * ml + 0.5 * sig
+        pred = max(0.0, min(3.0, round(blended, 1)))
+        err = pred - actual
+        marker = "✓" if abs(err) <= 0.2 else "✗"
+        print(f"  {marker} {name:20s}: ml={ml:.1f} sig={sig:.1f} → blend={pred:.1f}, actual={actual}, err={err:+.1f}")
 
 
 if __name__ == "__main__":

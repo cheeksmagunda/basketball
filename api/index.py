@@ -2743,12 +2743,13 @@ def _est_card_boost(
 ):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Four-layer approach (v63 — RS-driven):
+    Four-layer approach (v64 — blended RS + PPG):
     0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
-    1. BOOST MODEL — LightGBM trained on top_performers.csv, maps projected RS → boost.
-       The model learned from 775 labeled examples that boost is inversely proportional
-       to player performance (r=-0.75). Uses 14-day trailing RS at training time;
-       at inference uses the projected RS from the RS model.
+    1. BLENDED MODEL — LightGBM (projected_rs → boost) blended 50/50 with an optimized
+       PPG sigmoid (season_pts → boost). The RS model captures game-level performance
+       dynamics; the PPG sigmoid captures stable player-tier recognition. Blending fixes
+       the RS-only model's blind spots (e.g., role players with high single-game RS but
+       low PPG still get appropriate high boosts).
     2. CONFIG OVERRIDES — player_overrides from model-config.json.
     3. SIGMOID TIER FALLBACK — for completely unknown players when model unavailable.
     """
@@ -2765,24 +2766,44 @@ def _est_card_boost(
         if norm_name in daily_boosts:
             return _clamp_round_boost(daily_boosts[norm_name], floor_val, ceiling)
 
-    # Layer 1: ML inference from boost_model.pkl (v63 — single feature: perf_score).
-    # perf_score = projected RS from the RS model (same 0-10 scale as training data).
-    # Trained on 775 top_performers.csv entries with 14-day trailing RS lookback.
+    # Layer 1: Blended ML + PPG sigmoid (v64).
+    # ML model: projected_rs → boost (trained on 775 top_performers.csv entries).
+    # PPG sigmoid: season_pts → boost (calibrated from known PPG-boost pairs).
+    # Blend: 50% ML + 50% sigmoid. Each captures a different signal:
+    #   - ML: game-level RS dynamics (recent hot/cold streaks)
+    #   - Sigmoid: stable player-tier recognition (PPG determines draft popularity)
+    # Optimized sigmoid params from fitting 10 known PPG-boost pairs.
+    _sig_ceil  = cb.get("blend_sig_ceiling", 35.45)
+    _sig_range = cb.get("blend_sig_range", 35.89)
+    _sig_mid   = cb.get("blend_sig_midpoint", -18.96)
+    _sig_scale = cb.get("blend_sig_scale", 11.52)
+    _blend_w   = cb.get("ml_blend_weight", 0.5)
+
+    ml_pred = None
     if projected_rs is not None and projected_rs > 0:
         feat_vec = [float(projected_rs)]
         ml_pred = _lgbm_predict_boost(feat_vec)
-        if ml_pred is not None:
-            return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
-    # Layer 2: Config overrides (fallback when ML unavailable/missing).
+    ppg = max(float(season_pts), float(recent_pts))
+    sig_val = 1.0 / (1.0 + np.exp(-(ppg - _sig_mid) / _sig_scale))
+    sig_pred = max(floor_val, min(ceiling, _sig_ceil - _sig_range * sig_val))
+
+    if ml_pred is not None:
+        blended = _blend_w * ml_pred + (1.0 - _blend_w) * sig_pred
+        return _clamp_round_boost(blended, floor_val, ceiling)
+
+    # If ML model unavailable, sigmoid alone is still better than nothing
+    if ppg > 0:
+        return _clamp_round_boost(sig_pred, floor_val, ceiling)
+
+    # Layer 2: Config overrides (fallback when both ML and PPG unavailable).
     overrides = cb.get("player_overrides", {})
     if norm_name:
         for k, v in overrides.items():
             if _normalize_boost_name(k) == norm_name:
                 return _clamp_round_boost(v, floor_val, ceiling)
 
-    # Layer 3: Sigmoid tier estimation from PPG (fallback when model unavailable).
-    # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
+    # Layer 3: Legacy sigmoid fallback (when no season_pts available).
     effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
     sig_ceiling  = cb.get("sig_ceiling", 3.0)
     sig_range    = cb.get("sig_range", 2.8)
