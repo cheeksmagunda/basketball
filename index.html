@@ -93,6 +93,10 @@
       --color-oracle-label: #5eead4;
       --color-date-chip-bg: #1E2633;
       --color-date-chip-hover: #243040;
+      --lab-vh: 100dvh;
+      --keyboard-height: 0px;
+      --lab-header-offset: 80px;
+      --lab-nav-offset: 120px;
     }
 
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -1206,13 +1210,13 @@
     /* Ben tab: fixed-height flex column — messages scroll, input always visible */
     #tab-lab.active {
       display: flex; flex-direction: column;
-      height: calc(100dvh - 80px - 120px);
+      height: calc(var(--lab-vh, 100dvh) - var(--lab-header-offset) - var(--lab-nav-offset));
       transition: height 0.15s ease;
       padding-top: 0; padding-bottom: 0; overflow: hidden;
     }
-    /* When keyboard opens (labInput focused): nav hidden, JS sets exact height via visualViewport */
+    /* Keyboard-open state: nav hidden; remove nav offset from lab viewport height. */
     #tab-lab.active.lab-kb-open {
-      height: calc(100dvh - 80px);
+      height: calc(var(--lab-vh, 100dvh) - var(--lab-header-offset));
     }
     #labUnlocked {
       display: flex; flex-direction: column;
@@ -1931,21 +1935,8 @@ function switchTab(tab) {
   // Ben tab needs fixed layout — prevent body scroll and snap to top
   // Other tabs: restore body scroll
   if (tab === 'lab') {
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo(0, 0);
     document.body.style.overflow = 'hidden';
-    // Fix initial height — CSS calc leaves a gap vs the nav bar. Run the same
-    // visualViewport-based calculation as _applyKbHeight so the input sits
-    // correctly above the nav before the user ever touches the keyboard.
-    requestAnimationFrame(() => {
-      const vv = window.visualViewport;
-      const tabEl = document.getElementById('tab-lab');
-      const navEl = document.getElementById('bottomNav');
-      if (vv && tabEl) {
-        const tabTop = tabEl.getBoundingClientRect().top;
-        const navTop = navEl ? navEl.getBoundingClientRect().top : vv.height - 100;
-        tabEl.style.height = Math.max(200, navTop - tabTop - 8) + 'px';
-      }
-    });
   } else {
     document.body.style.overflow = '';
   }
@@ -5825,12 +5816,13 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
 }
 
 // ── Ben scroll helper ──
-// Uses a dummy anchor element + scrollIntoView inside a timeout so the browser
-// has time to recalculate dvh after the keyboard finishes animating in.
+// Uses a dummy anchor element and rAF so viewport reflow settles first.
 function _labScrollToBottom() {
   const anchor = document.getElementById('labScrollAnchor');
   if (!anchor) return;
-  setTimeout(() => anchor.scrollIntoView({ behavior: 'smooth', block: 'end' }), 80);
+  requestAnimationFrame(() => {
+    anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
 }
 
 // ── Ben keyboard / nav management ──
@@ -5842,24 +5834,30 @@ function _labScrollToBottom() {
   const input  = document.getElementById('labInput');
   const nav    = document.getElementById('bottomNav');
   const tabLab = document.getElementById('tab-lab');
-  // Use visualViewport to precisely track keyboard height on iOS.
-  // Also counter-scroll: iOS auto-scrolls the page up when input is focused,
-  // which hides the header. window.scrollTo(0,0) pins the page back to top
-  // before we measure tabTop so the header stays visible.
-  const _applyKbHeight = () => {
-    if (!tabLab.classList.contains('lab-kb-open')) return;
+  if (!input || !nav || !tabLab) return;
+  const root = document.documentElement;
+
+  // Keep layout CSS-driven: write viewport vars, avoid direct element height math.
+  const _syncLabViewportVars = () => {
     const vv = window.visualViewport;
-    if (!vv) return;
-    window.scrollTo(0, 0); // prevent iOS from hiding the header
-    requestAnimationFrame(() => {
-      const tabTop = tabLab.getBoundingClientRect().top;
-      tabLab.style.height = Math.max(200, vv.height - tabTop) + 'px';
-      _labScrollToBottom();
-    });
+    const vhPx = vv ? Math.round(vv.height) : window.innerHeight;
+    root.style.setProperty('--lab-vh', `${vhPx}px`);
+    const kbHeight = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+    root.style.setProperty('--keyboard-height', `${kbHeight}px`);
   };
+  _syncLabViewportVars();
+
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', _applyKbHeight);
-    window.visualViewport.addEventListener('scroll', _applyKbHeight);
+    window.visualViewport.addEventListener('resize', _syncLabViewportVars);
+    window.visualViewport.addEventListener('scroll', _syncLabViewportVars);
+  }
+  if (navigator.virtualKeyboard) {
+    try { navigator.virtualKeyboard.overlaysContent = false; } catch (_) {}
+    navigator.virtualKeyboard.addEventListener('geometrychange', () => {
+      const rect = navigator.virtualKeyboard.boundingRect;
+      root.style.setProperty('--keyboard-height', `${Math.max(0, Math.round(rect?.height || 0))}px`);
+      _syncLabViewportVars();
+    });
   }
 
   // P4: MutationObserver — auto-scroll #labMessages whenever new content is added
@@ -5883,29 +5881,19 @@ function _labScrollToBottom() {
     nav.style.opacity = '0';
     nav.style.transform = 'translateX(-50%) translateY(16px)';
     nav.style.pointerEvents = 'none';
-    // Counter iOS auto-scroll immediately and after keyboard settles
     window.scrollTo(0, 0);
-    setTimeout(() => window.scrollTo(0, 0), 100);
+    _syncLabViewportVars();
     _labScrollToBottom(); // pin to bottom as keyboard slides up
   });
   input.addEventListener('blur', () => {
     if (!isMobile()) return;
     tabLab.classList.remove('lab-kb-open');
-    tabLab.style.height = '';
     nav.style.opacity = '';
     nav.style.transform = '';
     nav.style.pointerEvents = '';
-    // Reset any viewport offset iOS leaves behind after keyboard dismissal
-    setTimeout(() => window.scrollTo(0, 0), 50);
-    // Re-measure after iOS fully settles the keyboard out (dvh can lag a frame)
-    // to prevent a brief clip where the input bar slips under the nav
-    setTimeout(() => {
-      if (tabLab.classList.contains('lab-kb-open')) return; // focus re-gained
-      const tabTop = tabLab.getBoundingClientRect().top;
-      const navTop = nav.getBoundingClientRect().top;
-      tabLab.style.height = Math.max(300, navTop - tabTop - 12) + 'px';
-      _labScrollToBottom();
-    }, 350);
+    window.scrollTo(0, 0);
+    _syncLabViewportVars();
+    _labScrollToBottom();
   });
 })();
 

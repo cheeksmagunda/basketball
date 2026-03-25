@@ -2640,7 +2640,8 @@ def _apply_post_lock_rs_calibration(projections: list, *, slate_locked: bool) ->
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
                    cascade_bonus=0.0, is_b2b=False,
-                   prefetched_gamelog=None, dvp_data=None, player_odds_map=None, opp_abbr=None):
+                   prefetched_gamelog=None, dvp_data=None, player_odds_map=None, opp_abbr=None,
+                   game_id=None):
     if pinfo.get("is_out"): return None
     # Skip day-to-day and doubtful players — high scratch risk
     if pinfo.get("injury_status") in ("DTD", "DOUBT"): return None
@@ -2840,9 +2841,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # bench inflation that caused the original removal).
     try:
         usage_rate = min(pts / max(avg_min, 1) / 0.5, 2.0)  # normalize to ~1.0 for avg player
+        rs_rng = _make_rng(spread or 0, total or DEFAULT_TOTAL, game_id=game_id)
         mc_rs, mc_meta = real_score_projection(
             s_base, spread or 0, total or DEFAULT_TOTAL,
-            usage_rate, player_variance,
+            usage_rate, player_variance, rng=rs_rng,
         )
         # Usage-scale the MC bonus: bench players (usage <0.6) get <30% of the bonus
         mc_bonus = mc_rs - s_base
@@ -2897,7 +2899,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     close_cfg = rs_cfg.get("closeness", {})
     if close_cfg.get("enabled", False):
         try:
-            c_c = closeness_coefficient(spread, total)
+            c_c = closeness_coefficient(spread, total, game_id=game_id)
             # Usage proxy: pts_per_min normalized (league avg ~0.5 pts/min)
             ppm = pts / max(avg_min, 1)
             usage_scale = min(ppm / 0.5, 1.5)  # caps at 1.5 for elite scorers
@@ -3878,6 +3880,7 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
             dvp_data=dvp_data,
             player_odds_map=player_odds_map,
             opp_abbr=opp_abbr,
+            game_id=game.get("gameId"),
         )
         if proj:
             proj["opp"] = opp_abbr  # store opponent for matchup factor in _build_lineups

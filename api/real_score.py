@@ -30,15 +30,15 @@ def _et_today():
         return (now_utc + offset).date().isoformat()
 
 
-def _make_rng(spread, total, seed_date=None):
+def _make_rng(spread, total, seed_date=None, game_id=None):
     """Deterministic RNG seeded by game parameters + ET date for cache stability.
     Uses ET date (not UTC) so the seed stays consistent for the full NBA evening."""
     d = seed_date or _et_today()
-    seed = hash((d, round(spread, 1), round(total, 1))) % (2**31)
+    seed = hash((d, round(spread, 1), round(total, 1), game_id)) % (2**31)
     return np.random.default_rng(seed)
 
 
-def closeness_coefficient(spread, total, rng=None, n_sims=2000):
+def closeness_coefficient(spread, total, rng=None, n_sims=2000, game_id=None):
     """Simulate final score differential to estimate probability of a close game.
 
     Models the final margin as Normal(|spread|, sigma) where sigma scales with
@@ -50,7 +50,7 @@ def closeness_coefficient(spread, total, rng=None, n_sims=2000):
         - Heavy favorite (spread ~12+): C_c ≈ 1.05–1.15
     """
     if rng is None:
-        rng = _make_rng(spread, total)
+        rng = _make_rng(spread, total, game_id=game_id)
 
     abs_spread = abs(spread or 0)
     t = total or 222
@@ -70,7 +70,7 @@ def closeness_coefficient(spread, total, rng=None, n_sims=2000):
 
 
 def clutch_coefficient(spread, total, usage_rate, player_variance,
-                       rng=None, n_sims=2000):
+                       rng=None, n_sims=2000, game_id=None):
     """Simulate 4th quarter scoring trajectory to estimate clutch opportunity.
 
     Models Q4 as a random walk over ~12 possessions per team. Lead changes
@@ -83,7 +83,7 @@ def clutch_coefficient(spread, total, usage_rate, player_variance,
         - Overtime-bound thriller + streaky scorer: C_k ≈ 1.60–1.80
     """
     if rng is None:
-        rng = _make_rng(spread, total)
+        rng = _make_rng(spread, total, game_id=game_id)
 
     abs_spread = abs(spread or 0)
     t = total or 222
