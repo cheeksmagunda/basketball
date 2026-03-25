@@ -8,6 +8,7 @@
 #   3. Market alignment (model + Vegas blended confidence)
 #   4. Strategic correlation scoring (same-game synergy, negative veto)
 #   5. Return the single highest-scoring 3-leg combination + narrative
+# grep: PARLAY ENGINE MODULE — run_parlay_engine, Z-score legs (see also api/index grep: PARLAY ENGINE)
 # ─────────────────────────────────────────────────────────────────────────────
 
 import math

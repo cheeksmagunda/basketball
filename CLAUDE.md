@@ -98,9 +98,10 @@ Both `predictSubNav` (Slate-Wide | Game) and `lineSubNav` (Over | Under) are inl
 
 ## Codebase Navigation (grep tags)
 
-All major sections in `api/index.py` and `index.html` are tagged for fast searching. In `api/index.py` search for `# grep:`; in `index.html` grep for the section name (e.g. `LOG PAGE`) or function name (e.g. `initLogPage`).
+All major sections in `api/index.py` and `index.html` are tagged for fast searching. In `api/index.py` search for `# grep:`; in `index.html` search for `grep:` (HTML/JS comments) or section banners like `LINE PAGE`. **`api/line_engine.py`** / **`api/parlay_engine.py`** use `# grep: LINE|PARLAY ENGINE MODULE` at file top. **`server.py`** documents the dev entrypoint via `grep: DEV SERVER` in its docstring.
 
 ```
+grep: PREDICT TAB              — index.html DOM: tab-predictions, slateList, oracleLoader (logic: SLATE + PER-GAME below)
 grep: TEAM_COLORS              — team color hex map in index.html
 grep: GLOBAL STATE             — SLATE, PICKS_DATA, LOG, LAB state objects
 grep: TAB NAVIGATION           — switchTab, movePill, setPillAccent
@@ -109,8 +110,16 @@ grep: PER-GAME ANALYSIS        — runAnalysis, /api/picks
 grep: CARD RENDERING           — renderCards, player-card, tcolor
 grep: PREDICTION PERSISTENCE   — savePredictions, dedup guard
 grep: LOG PAGE                 — initLogPage, selectLogDate, renderLogGrid, openLogDrilldown, drill-down
+grep: LINE TAB DOM             — index.html tab-line, linePickModal (logic: LINE PAGE)
 grep: LINE PAGE                — initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
+grep: LINE ENGINE MODULE       — api/line_engine.py (run_line_engine; HTTP in api/index grep: LINE OF THE DAY)
+grep: PARLAY TAB DOM           — index.html tab-parlay, parlayModal (logic: PARLAY PAGE)
+grep: PARLAY PAGE              — initParlayPage, fetchParlay, renderParlayTicket, PARLAY_STATE
+grep: PARLAY LIVE SSE          — /api/parlay-live-stream, _parlay_live_tick_payload, EventSource
+grep: PARLAY ENGINE MODULE     — api/parlay_engine.py (run_parlay_engine; HTTP grep: PARLAY ENGINE in index)
 grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt, _handleBenUpload
+grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
+grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, sync_actuals_from_top_performers, rebuild_top_performers_mega
 grep: github_storage           — _github_get_file, _github_write_file
 grep: SLATE CACHE GITHUB       — _slate_cache_to_github, _games_cache_from_github, _bust_slate_cache
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE

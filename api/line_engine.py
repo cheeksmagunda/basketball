@@ -7,6 +7,7 @@
 #   3. Ask Claude Haiku to identify the single best player prop edge
 #   4. Claude returns structured JSON pick + narrative reasoning
 #   5. Falls back to algorithmic model pick if Claude API unavailable
+# grep: LINE ENGINE MODULE — run_line_engine, _STAT_META, Haiku (see also api/index grep: LINE OF THE DAY)
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os

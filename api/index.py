@@ -8534,6 +8534,7 @@ def _parlay_live_tick_payload() -> dict:
     }
 
 
+# grep: PARLAY LIVE SSE — /api/parlay-live-stream, EventSource, _parlay_live_tick_payload
 @app.get("/api/parlay-live-stream")
 async def parlay_live_stream(request: Request):
     """SSE push of live box-score stats for today's parlay legs (server-paced intervals)."""

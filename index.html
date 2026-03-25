@@ -1405,6 +1405,7 @@
     </div>
   </nav>
 
+  <!-- grep: PREDICT TAB — tab-predictions, predictSubNav, switchPredictSub, loadSlate, slateList, oracleLoader, lateDraft -->
   <!-- ══ TAB: PREDICTIONS ══ -->
   <div id="tab-predictions" class="tab-page active">
 
@@ -1455,7 +1456,7 @@
       </div>
 
       <!-- Single-line header: [← Back] [THE LINE UP] [Game Script] -->
-      <div id="gameHeaderRow" style="display:none;display:none;align-items:center;gap:10px;margin-bottom:14px;">
+      <div id="gameHeaderRow" style="display:none;align-items:center;gap:10px;margin-bottom:14px;">
         <button id="gameBackBtn" onclick="_backToGameGrid()" style="display:flex;align-items:center;gap:3px;background:none;border:none;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;padding:0;transition:color 0.15s;white-space:nowrap" onmouseover="this.style.color='var(--chalk)'" onmouseout="this.style.color='var(--muted)'">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           Back
@@ -1511,6 +1512,7 @@
 
   </div>
 
+  <!-- grep: LINE TAB DOM — tab-line, lineSubNav, lineContent, linePickModal, lineHistoryWrap (JS: grep: LINE PAGE) -->
   <!-- ══ TAB: LINE ══ -->
   <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
   <div id="tab-line" class="tab-page">
@@ -1555,6 +1557,7 @@
     </div>
   </div>
 
+  <!-- grep: PARLAY TAB DOM — tab-parlay, parlayContent, parlayTicket, parlayHistoryWrap, parlayModal (JS: grep: PARLAY PAGE) -->
   <!-- ══ TAB: PARLAY ══ -->
   <div id="tab-parlay" class="tab-page" role="tabpanel" aria-label="Parlay picks">
     <div>

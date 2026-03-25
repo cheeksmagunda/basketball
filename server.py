@@ -6,6 +6,8 @@ Production + local dev server.
 
 Railway / any host: python server.py   (reads PORT env var automatically)
 Local dev:          uvicorn server:app --reload
+
+grep: DEV SERVER — PORT, static routes (manifest/favicon/svg), SPA index.html catch-all
 """
 from pathlib import Path
 

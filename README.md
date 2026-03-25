@@ -291,6 +291,8 @@ uvicorn server:app --reload
 # open http://localhost:8000
 ```
 
+**Find code fast:** [CLAUDE.md — Codebase Navigation (grep tags)](CLAUDE.md#codebase-navigation-grep-tags) lists search anchors for Predict / Line / Parlay (DOM + JS + API), backend modules, dev server, and training scripts.
+
 ## Testing
 
 Unit tests cover lock logic, audit computation, GitHub retries, cache TTLs, line cache behavior, and JS syntax (e.g. unescaped apostrophes). Run with:
