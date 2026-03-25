@@ -480,6 +480,9 @@ def _bust_slate_cache():
     treat slate cache as miss and regenerate. (3) If the app is still on an old deploy,
     merge and deploy the fix, then trigger /api/refresh or wait for next slate load."""
     today = _today_str()
+    # Clear in-memory response cache (Level 0) — ensures /api/slate and /api/games
+    # serve fresh data after a bust instead of the stale in-memory copy.
+    _RESPONSE_CACHE.invalidate()
     # Clear /tmp caches
     for key in [_CK_SLATE]:
         try:
@@ -639,7 +642,7 @@ _CACHE_KEYS = {
 
 # Response cache TTLs per endpoint (seconds). Override defaults here.
 _CACHE_TTLS = {
-    "slate": 3600,          # 1h — slate changes only at new day or refresh
+    "slate": 60,            # 60s — burst protection; short TTL ensures lock state propagates promptly
     "games": 300,           # 5min — ESPN updates periodically
     "line": 1800,           # 30min — line picks are static after generation
     "line_history": 600,    # 10min — historical picks rarely change
@@ -5933,18 +5936,14 @@ def _force_regenerate_sync(scope: str):
     # Step 2: Build slate-wide lineups (Starting 5 + Moonshot) with matchup data
     _fr_def_stats = {}
     _fr_dvp_data = None
-    if gm is not None:
-        _fr_def_stats = dst_p or {}
-        _fr_dvp_data = dvp_p
-    else:
-        try:
-            _fr_def_stats = _fetch_team_def_stats()
-        except Exception:
-            pass
-        try:
-            _fr_dvp_data = _fetch_dvp_data()
-        except Exception:
-            pass
+    try:
+        _fr_def_stats = _fetch_team_def_stats()
+    except Exception:
+        pass
+    try:
+        _fr_dvp_data = _fetch_dvp_data()
+    except Exception:
+        pass
     _fr_starts = [g["startTime"] for g in games if g.get("startTime")]
     _fr_any_locked = bool(_fr_starts) and any(_is_locked(st) for st in _fr_starts)
     _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
@@ -6729,6 +6728,9 @@ async def refresh(request: Request):
         print(f"[refresh] auto-save skipped: {e}")
 
     cleared = 0
+    # Clear in-memory response cache first (Level 0) — must happen before file cache clears
+    # so that _bust_slate_cache() called below doesn't double-count the invalidation.
+    _RESPONSE_CACHE.invalidate()
     try:
         for f in CACHE_DIR.glob("*.json"):
             f.unlink(); cleared += 1
@@ -6936,6 +6938,8 @@ async def injury_check(request: Request):
     _cs(_CK_SLATE, result)
     _slate_cache_to_github(result)
     _games_cache_to_github(all_game_projs)
+    # Clear in-memory response cache so next /api/slate serves the updated lineups
+    _RESPONSE_CACHE.invalidate("slate")
 
     return {"status": "ok", "injuries_found": len(injured_games),
             "affected_players": affected_players,
