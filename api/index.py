@@ -6954,16 +6954,6 @@ async def refresh(request: Request):
         if start_times and any(_is_locked(st) for st in start_times):
             await save_predictions()
             auto_saved = True
-            # End-of-slate: wipe daily Ben chat history so next cycle starts fresh.
-            try:
-                with _BEN_CHAT_HISTORY_LOCK:
-                    _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-                    _BEN_CHAT_HISTORY_PATH.write_text("[]")
-                    _BEN_CHAT_HISTORY_DATE_PATH.write_text(
-                        json.dumps({"et_date": _today_str()}, indent=2)
-                    )
-            except Exception as e:
-                print(f"[ben-chat] reset on refresh failed: {e}")
     except Exception as e:
         print(f"[refresh] auto-save skipped: {e}")
 
@@ -9720,6 +9710,17 @@ _BEN_CHAT_HISTORY_DATE_PATH = Path("data/ben_chat_history_last_et_date.json")
 _BEN_CHAT_HISTORY_LOCK = threading.Lock()
 
 
+def _ben_chat_trim_trailing_user_orphan(data: list) -> None:
+    """Drop at most one trailing user turn after prior messages (assistant failed before reply).
+
+    Does not remove the only message in the thread — preserves a lone user turn on reload.
+    """
+    if not isinstance(data, list) or len(data) < 2:
+        return
+    if data[-1].get("role") == "user":
+        data.pop()
+
+
 def _ben_chat_extract_last_user_text(msgs: list) -> str:
     """Extract the latest user message text (ignoring any attached image blocks)."""
     if not msgs or not isinstance(msgs, list):
@@ -9793,9 +9794,7 @@ def _ben_chat_read_history_locked() -> list:
             raw = _BEN_CHAT_HISTORY_PATH.read_text()
             data = json.loads(raw) if raw else []
             if isinstance(data, list) and data:
-                # Trim trailing user messages — orphans from a failed API call
-                while data and data[-1].get("role") == "user":
-                    data.pop()
+                _ben_chat_trim_trailing_user_orphan(data)
                 return data
     except Exception:
         pass
@@ -9810,8 +9809,7 @@ def _ben_chat_read_history_locked() -> list:
             # Write back to local for subsequent fast-path reads this session
             _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
             _BEN_CHAT_HISTORY_PATH.write_text(json.dumps(data, indent=2))
-            while data and data[-1].get("role") == "user":
-                data.pop()
+            _ben_chat_trim_trailing_user_orphan(data)
             return data
     except Exception as e:
         print(f"[ben-chat] github read failed (non-fatal): {e}")

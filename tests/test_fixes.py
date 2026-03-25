@@ -3652,5 +3652,42 @@ class TestPerGameFrontend:
         assert "strategyInsight" in back_fn.group(0)
 
 
+class TestBenChatTrimTrailingUser:
+    """_ben_chat_trim_trailing_user_orphan — keep single-user threads; drop at most one orphan user tail."""
+
+    def test_single_user_message_preserved(self):
+        from api.index import _ben_chat_trim_trailing_user_orphan
+
+        data = [{"role": "user", "content": "hello"}]
+        _ben_chat_trim_trailing_user_orphan(data)
+        assert len(data) == 1
+        assert data[0]["role"] == "user"
+
+    def test_trailing_user_after_assistant_trimmed_once(self):
+        from api.index import _ben_chat_trim_trailing_user_orphan
+
+        data = [
+            {"role": "user", "content": "a"},
+            {"role": "assistant", "content": "b"},
+            {"role": "user", "content": "orphan"},
+        ]
+        _ben_chat_trim_trailing_user_orphan(data)
+        assert len(data) == 2
+        assert data[-1]["role"] == "assistant"
+
+    def test_two_trailing_users_only_one_popped(self):
+        from api.index import _ben_chat_trim_trailing_user_orphan
+
+        data = [
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "u1"},
+            {"role": "user", "content": "u2"},
+        ]
+        _ben_chat_trim_trailing_user_orphan(data)
+        assert len(data) == 2
+        assert data[-1]["role"] == "user"
+        assert data[-1]["content"] == "u1"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

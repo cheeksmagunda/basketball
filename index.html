@@ -1196,6 +1196,8 @@
       font-size: 0.78rem; color: var(--muted); line-height: 1.5; max-width: 220px;
     }
     #labMessages:has(.lab-msg) #labEmptyState { display: none; }
+    /* Fallback when :has is unsupported — toggled from JS */
+    #labMessages.lab-has-messages #labEmptyState { display: none; }
     #labInputWrap { flex-shrink: 0; padding: 10px 0 max(8px, env(safe-area-inset-bottom, 8px)); }
 
     /* ── MAGIC 8-BALL LOADER ── */
@@ -2149,6 +2151,7 @@ async function _hydrateApp() {
       } else if (ep.name === 'parlay') {
         PARLAY_STATE = asyncStateSuccess(PARLAY_STATE || {}, data);
         PARLAY_STATE.loadedAt = Date.now();
+        _labSyncParlayContext(data);
       }
 
       _HydrationState.loaded[ep.name] = true;
@@ -3193,14 +3196,17 @@ async function forceRegenerateParlay() {
       PARLAY_STATE = asyncStateSuccess(PARLAY_STATE, data);
       PARLAY_LOADED_DATE = _etToday();
       renderParlayTicket(data);
+      _labSyncParlayContext(data);
     } else {
       PARLAY_STATE = asyncStateError(PARLAY_STATE, data.error || 'no_valid_parlay');
+      _labSyncParlayContext(data);
       if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = data.narrative || 'Could not generate a parlay for today.'; }
       if (btn) { btn.disabled = false; btn.textContent = 'Generate Parlay'; }
     }
   } catch (err) {
     if (loading) loading.style.display = 'none';
     PARLAY_STATE = asyncStateError(PARLAY_STATE, err);
+    _labSyncParlayContext(null);
     if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = 'Could not reach the server. Please try again.'; }
     if (btn) { btn.disabled = false; btn.textContent = 'Generate Parlay'; }
     console.warn('[parlay] force-regen error:', err);
@@ -3225,6 +3231,7 @@ async function fetchParlay() {
 
     if (data.error && (!data.legs || data.legs.length === 0)) {
       PARLAY_STATE = asyncStateError(PARLAY_STATE, data.error);
+      _labSyncParlayContext(data);
       if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = data.narrative || 'No valid parlay found.'; }
       return;
     }
@@ -3232,9 +3239,11 @@ async function fetchParlay() {
     PARLAY_STATE = asyncStateSuccess(PARLAY_STATE, data);
     PARLAY_STATE.loadedAt = Date.now();
     renderParlayTicket(data);
+    _labSyncParlayContext(data);
   } catch (err) {
     if (loading) loading.style.display = 'none';
     PARLAY_STATE = asyncStateError(PARLAY_STATE, err);
+    _labSyncParlayContext(null);
     if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = 'Could not reach the server. Please try again.'; }
     console.warn('[parlay] fetch error:', err);
   }
@@ -3282,6 +3291,8 @@ function initParlayPage() {
   if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data && PARLAY_STATE.data.locked) {
     _startParlayLockPoll();
   }
+
+  if (PARLAY_STATE.status === 'success' && PARLAY_STATE.data) _labSyncParlayContext(PARLAY_STATE.data);
 }
 
 function _startParlayLockPoll() {
@@ -4877,6 +4888,7 @@ const LAB = {
   config: null,
   lineData: null,
   slateData: null,
+  parlayData: null,
   initialized: false,
   initAt: 0,
   initDate: '',       // ET date string when Lab was opened (clears messages on rollover)
@@ -4886,6 +4898,14 @@ const LAB = {
   statusFetchedAt: 0,   // timestamp; invalidate on Retry or after 10 min or when loadSlate completes
   locked: false,        // mirrors last known lock state; used by line poll event-trigger
 };
+
+function _benPersistChatMirror() {
+  try {
+    const today = _etToday();
+    const rows = LAB.messages.filter(m => !m.hidden).map(m => ({ role: m.role, content: m.content }));
+    localStorage.setItem('ben_chat_mirror_' + today, JSON.stringify(rows));
+  } catch (e) {}
+}
 
 function _isLabStatusErrorFallback(status) {
   // Backend returns locked=true with this reason when it hits an exception (ESPN timeout, etc.).
@@ -4927,6 +4947,7 @@ async function initLabPage() {
     if (labMsg) {
       // Remove only rendered chat bubbles (keep empty state + anchor).
       labMsg.querySelectorAll('.lab-msg').forEach(el => el.remove());
+      labMsg.classList.remove('lab-has-messages');
       // If an older code path removed the anchor/empty-state markup, restore it.
       if (!document.getElementById('labEmptyState') || !document.getElementById('labScrollAnchor')) {
         labMsg.innerHTML =
@@ -4946,31 +4967,51 @@ async function initLabPage() {
   if (_ub0) _ub0.style.display = 'none';
   await showLabUnlocked({ locked: false, games_final: 0 });
 
-  // Snapshot any messages already visible (e.g. user typed before history loaded)
-  // so we can re-append them after restoring server history without losing them.
-  const _msgsBefore = LAB.messages.filter(m => !m.hidden).map(m => ({role: m.role, content: m.content}));
-
-  // Load persisted daily Ben chat history.
+  // Load persisted daily Ben chat history (server + localStorage mirror if API fails or returns partial data).
   try {
     const r = await fetchWithTimeout('/api/lab/chat-history', {}, 10000);
+    let history = [];
     if (r.ok) {
-      const history = await r.json();
-      if (Array.isArray(history)) {
-        const labMsg = _el('labMessages');
-        if (labMsg) labMsg.querySelectorAll('.lab-msg').forEach(el => el.remove());
-        LAB.messages = [];
-        history.forEach(m => {
-          if (m && m.role && m.content != null) appendLabMessage(m.role, m.content, false);
-        });
-        // Re-append any messages the user sent while history was loading (race condition guard)
-        const _histSet = new Set(history.map(m => m.role + ':' + m.content));
-        for (const msg of _msgsBefore) {
-          if (!_histSet.has(msg.role + ':' + msg.content)) {
-            appendLabMessage(msg.role, msg.content, false);
-          }
+      const j = await r.json();
+      if (Array.isArray(j)) history = j;
+    }
+    // After await: messages sent while fetch was in flight; mirror supplements gaps/offline.
+    const _localSnap = LAB.messages.filter(m => !m.hidden).map(m => ({ role: m.role, content: m.content }));
+    const _mirror = _safeParseLocalStorage('ben_chat_mirror_' + today, []);
+    const labMsg = _el('labMessages');
+    if (labMsg) {
+      labMsg.querySelectorAll('.lab-msg').forEach(el => el.remove());
+      labMsg.classList.remove('lab-has-messages');
+    }
+    LAB.messages = [];
+    const _histKey = (role, content) => role + ':' + String(content);
+    const _histSet = new Set();
+    const _replayOne = (m) => {
+      if (!m || !m.role || m.content == null) return;
+      const k = _histKey(m.role, m.content);
+      if (_histSet.has(k)) return;
+      _histSet.add(k);
+      appendLabMessage(m.role, m.content, false);
+    };
+    history.forEach(_replayOne);
+    if (Array.isArray(_mirror)) {
+      for (const msg of _mirror) {
+        if (!msg || !msg.role || msg.content == null) continue;
+        const k = _histKey(msg.role, msg.content);
+        if (!_histSet.has(k)) {
+          _histSet.add(k);
+          appendLabMessage(msg.role, msg.content, false);
         }
       }
     }
+    for (const msg of _localSnap) {
+      const k = _histKey(msg.role, msg.content);
+      if (!_histSet.has(k)) {
+        _histSet.add(k);
+        appendLabMessage(msg.role, msg.content, false);
+      }
+    }
+    _benPersistChatMirror();
   } catch(e) {
     console.warn('[lab] chat-history load failed:', e && e.message ? e.message : e);
   }
@@ -5056,17 +5097,28 @@ async function showLabUnlocked(status) {
     ? Promise.resolve(LINE_LOTD_STATE.data) : _fetchJson('/api/line-of-the-day', 30000);
   let _cachedSlate = SLATE
     ? Promise.resolve(SLATE) : _fetchJson('/api/slate', 10000);
+  const _labEt = _etToday();
+  let _cachedParlay =
+    (PARLAY_STATE && PARLAY_STATE.status === 'success' && PARLAY_STATE.data &&
+      (PARLAY_STATE.data.date === _labEt || PARLAY_LOADED_DATE === _labEt))
+      ? Promise.resolve(PARLAY_STATE.data)
+      : _fetchJson('/api/parlay', 90000).catch(function(e) {
+        console.warn('[lab] parlay context:', e && e.message ? e.message : e);
+        return null;
+      });
   Promise.allSettled([
     _fetchJson('/api/lab/briefing', 30000),
     _fetchJson('/api/lab/config-history', 10000),
     _cachedLine,
     _cachedSlate,
     _fetchJson(`/api/log/get?date=${_etToday()}`, 15000),
-  ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes]) {
+    _cachedParlay,
+  ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes, parlayRes]) {
     if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
     if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
     if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
     if (slateRes.status === 'fulfilled')    LAB.slateData = slateRes.value;
+    LAB.parlayData = (parlayRes.status === 'fulfilled' && parlayRes.value) ? parlayRes.value : null;
     // Rebuild system prompt with full context
     LAB.system = buildLabSystemPrompt();
     // Upload banner (needs briefing data)
@@ -5090,6 +5142,37 @@ function buildLabSystemPrompt() {
         return lines.length ? lines.join('\n') : 'No line picks available today.';
       })()
     : 'Line data unavailable.';
+
+  const parlayStr = LAB.parlayData
+    ? (() => {
+        const p = LAB.parlayData;
+        const legs = p.legs || [];
+        if (!legs.length) {
+          const hint = (p.narrative && String(p.narrative).trim()) || p.error || '';
+          return hint ? `No active 3-leg ticket. ${hint}` : 'No active 3-leg ticket (odds or filters).';
+        }
+        const statShort = t => ({ points: 'PTS', rebounds: 'REB', assists: 'AST' }[t] || (t || '').toString().toUpperCase());
+        const fmtLeg = (leg, i) => {
+          const dir = (leg.direction || 'over').toUpperCase();
+          const st = statShort(leg.stat_type);
+          const line = leg.line != null ? Number(leg.line).toFixed(1) : '—';
+          const proj = leg.projection != null ? Number(leg.projection).toFixed(1) : '—';
+          const bc = leg.blended_confidence != null ? (Math.round(leg.blended_confidence * 1000) / 10) : null;
+          const ju = leg.american_odds != null ? leg.american_odds : (leg.odds != null ? leg.odds : '');
+          return `  ${i + 1}. ${leg.player_name} (${leg.team} vs ${leg.opponent}) — ${dir} ${line} ${st} | proj ${proj}${bc != null ? ` | blended ${bc}%` : ''}${ju !== '' ? ` | odds ${ju}` : ''}`;
+        };
+        const comb = p.combined_probability != null ? (Math.round(p.combined_probability * 1000) / 10) : null;
+        const cm = p.correlation_multiplier != null ? Number(p.correlation_multiplier).toFixed(3) : null;
+        const reasons = (p.correlation_reasons || []).filter(Boolean).join('; ');
+        const narr = (p.narrative && String(p.narrative).trim()) || '';
+        return `Date: ${p.date || ''}${p.projection_only ? ' (projection-only lines)' : ''}
+Combined hit probability (independent product): ${comb != null ? comb + '%' : 'n/a'}
+Correlation multiplier: ${cm != null ? cm : 'n/a'}${reasons ? '\nCorrelation notes: ' + reasons : ''}
+Legs:
+${legs.map(fmtLeg).join('\n')}
+${narr ? 'Narrative: ' + narr : ''}`.trim();
+      })()
+    : 'Parlay ticket not loaded in this session yet (or fetch failed).';
 
   const slateStr = (() => {
     const s = LAB.slateData;
@@ -5125,11 +5208,12 @@ ${upside.map(fmtPlayer).join('\n') || '  (none)'}`;
 
   return `You are Ben — the Oracle's autonomous NBA analytics and engineering assistant. Full authority: data, config, and code.
 
-APP STRUCTURE (4 tabs):
+APP STRUCTURE (5 tabs):
 - PREDICT: Daily lineup optimizer. Slate-Wide: Starting 5 = chalk (conservative, high-RS + moderate boost, 20-min avg/recent floor). Moonshot = high-boost upside plays (low ownership, 17+ min projected floor, RotoWire cleared). Per-Game: single "THE LINE UP" format (5 players, 20-min projected floor, no card boost — same 2-team pool). Slate locks 5 min before first tip.
 - LINE: Line of the Day — Over and Under prop picks. Over/Under sub-nav defaults to Under. History strip shows streak and hit rate.
-- BEN (here): Unlocked pre-game and post-game. Locked during play. End-of-day upload prompt auto-appears when all games finish.
-- HISTORY: Read-only. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player. Upload goes through Ben, not History.
+- PARLAY: Safest 3-leg player prop parlay on the slate — certainty-optimized (Z-score + Vegas blend, anti-fragility filters, correlation score). Shown on the Parlay tab and summarized below.
+- BEN (here): Chat with model context from Predict + Line + Parlay when loaded.
+- LOG: Read-only history. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player. Upload goes through Ben, not Log.
 
 DATA PIPELINE:
 - Screenshots → /api/parse-screenshot (Claude Haiku OCR) → /api/save-actuals → data/actuals/{date}.csv (source: my_draft or leaderboard)
@@ -5137,13 +5221,14 @@ DATA PIPELINE:
 - Predictions saved at lock → data/predictions/{date}.csv
 - Audit auto-generated at save-actuals → data/audit/{date}.json (MAE, directional accuracy, top misses)
 - Line picks → data/lines/{date}_pick.json (over_pick + under_pick) + data/lines/{date}.csv
+- Parlay ticket → data/parlays/{date}.json (three legs, combined_probability, narrative)
 - Card boost calibration: GET /api/lab/calibrate-boost → fits log_a/log_b from ownership data → propose via update_config action${LAB.briefing?.ownership_calibration_available ? `\n- OWNERSHIP DATA AVAILABLE for dates: ${(LAB.briefing.ownership_dates || []).join(', ')}. Run GET /api/lab/calibrate-boost to fit the boost formula to real data.` : ''}
 
 VISION: You have full image analysis capability. When the user attaches a photo using the 📷 button (left of the input box), you will see the image directly and can read every number, name, and stat visible. Use this for ownership screens, leaderboards, RS results, draft compositions, anything. If asked whether you can process images, say YES and tell them to use the camera button.
 
 CAPABILITIES:
 - Analyze any attached screenshot (use read from image content sent with the message)
-- Answer questions about today's slate, games, picks, or line
+- Answer questions about today's slate, games, picks, line, or parlay (3-leg ticket)
 - Read any file: use read_repo_file (CSVs, audit JSONs, code, config, line history)
 - Browse directories: use list_repo_directory to discover available dates/files
 - Config changes: <action>update_config</action> for parameter tuning (shows confirm UI), or write_repo_file for data/model-config.json for structural additions
@@ -5154,6 +5239,7 @@ WHEN TO USE WHAT:
 - Algorithmic changes (formulas, logic, filters) → read_repo_file the function → describe the exact change needed → tell the user to implement it via a developer push (you cannot write code files)
 - Investigating accuracy → read_repo_file data/audit/{date}.json or data/actuals/{date}.csv
 - Historical pick analysis → list_repo_directory data/predictions, then read specific files
+- Parlay ticket file → read_repo_file data/parlays/{date}.json if user needs detail beyond the PARLAY section above
 - Full player projections (card boosts, RS ratings for ALL players, not just the top 10 in context) → read_repo_file data/predictions/{date}.csv (available after slate locks; has all projected players with RS, boost, minutes, pts/reb/ast). Pre-lock: slate context above shows top 10 only — tell user projections save at lock.
 - Card boost for a specific player not in the lineups above → read predictions CSV or note the player is outside the model's top picks for today
 
@@ -5169,6 +5255,9 @@ ${slateStr}
 TODAY'S LINE OF THE DAY:
 ${lineStr}
 
+TODAY'S PARLAY (Parlay tab):
+${parlayStr}
+
 CURRENT MODEL CONFIG:
 ${cfgStr}
 
@@ -5183,12 +5272,19 @@ BEHAVIOR:
 - One change per response unless explicitly asked for more.`;
 }
 
+function _labSyncParlayContext(data) {
+  LAB.parlayData = data && typeof data === 'object' ? data : null;
+  if (LAB.initialized) LAB.system = buildLabSystemPrompt();
+}
+
 function _labSpinner(statusText) {
+  const label = (statusText && String(statusText).trim()) ? String(statusText) : 'Ben is thinking…';
   const el = document.createElement('div');
   el.className = 'lab-msg thinking';
   el.innerHTML = '<div class="lab-thinking-dots"><span></span><span></span><span></span></div>'
-    + (statusText ? '<div class="lab-think-status">' + statusText + '</div>' : '');
+    + '<div class="lab-think-status">' + _escapeHtml(label) + '</div>';
   const msgs = document.getElementById('labMessages');
+  if (msgs) msgs.classList.add('lab-has-messages');
   msgs.appendChild(el);
   const anchor = document.getElementById('labScrollAnchor');
   if (anchor) msgs.appendChild(anchor); // keep anchor as last child
@@ -5352,7 +5448,8 @@ async function executeLabAction(action) {
       msgEl.querySelector('div').textContent = 'Change declined.';
       msgEl.querySelector('div + div').remove();
     });
-    document.getElementById('labMessages').appendChild(msgEl);
+    const _lm = document.getElementById('labMessages');
+    if (_lm) { _lm.classList.add('lab-has-messages'); _lm.appendChild(msgEl); }
     msgEl.scrollIntoView({behavior:'smooth'});
   }
 }
@@ -5422,6 +5519,8 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
 
   const el = document.createElement('div');
   el.className = `lab-msg ${role}`;
+  const msgsRoot = document.getElementById('labMessages');
+  if (msgsRoot) msgsRoot.classList.add('lab-has-messages');
 
   if (role === 'assistant') {
     // Convert basic markdown: code blocks, tables, bold, italic, newlines
@@ -5442,11 +5541,12 @@ function appendLabMessage(role, content, hidden = false, isStatus = false, image
     el.textContent = content;
   }
 
-  const msgs = document.getElementById('labMessages');
+  const msgs = msgsRoot || document.getElementById('labMessages');
   msgs.appendChild(el);
   const anchor3 = document.getElementById('labScrollAnchor');
   if (anchor3) msgs.appendChild(anchor3);
   _labScrollToBottom();
+  _benPersistChatMirror();
 }
 
 // ── Ben scroll helper ──
