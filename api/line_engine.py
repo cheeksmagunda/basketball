@@ -338,18 +338,26 @@ PICK CRITERIA — PROP DIVERSIFICATION RULES (Do not default to Points):
 Still weigh: cascade minutes, opponent B2B, game total, recent form vs season, and spread — but **do not** let DFS-style point projections override a stronger True Prob on REB/AST.
 
 {direction_instruction}
+AUTO-FADE RULES (these scenarios are mathematically doomed — NEVER pick them):
+1. B2B GUARD EXHAUSTION: Do NOT pick OVER on Points or Assists for any guard/wing playing the 2nd night of a B2B. Glycogen depletion = lower per-minute efficiency + more turnovers.
+2. BLOWOUT TRUNCATION: Do NOT pick OVER on ANY stat for starters in games with spread >= 10. Coaches empty bench in garbage time — 22% minute reduction destroys Over probability.
+3. ROTATION SQUEEZE: Do NOT pick OVER for bench players (season avg < 12 PPG, < 22 min) in tight games (spread <= 4). Coaches shorten rotations in competitive games, eliminating opportunity.
+
 AVOID: players on B2B themselves, blowout favorites (team spread >10), injury-doubtful
 OVER-SPECIFIC RULES (overs have a 17% hit rate — be VERY selective):
-- Points overs: ONLY pick when edge ≥ 3.0 AND at least one catalyst (cascade, opp-B2B, high total, or hot recent streak)
-- Rebounds/assists overs: REQUIRE a strong catalyst (cascade, opp-B2B, or high total 230+) — do NOT pick on season-average form alone
-- Do NOT default to points when rebounds or assists show a higher True Prob for your required direction
+- Points overs: ONLY pick when edge >= 3.0 AND at least one catalyst (cascade, opp-B2B, high total, or hot recent streak)
+- Rebounds/assists overs: Use PERCENTAGE edge, not flat values. A 2.5 edge on a 5.5 line (45%) is improbable; a 2.5 edge on a 12.5 line (20%) is plausible. Require at least 18% edge AND a catalyst.
+- Do NOT confuse a hot L5 streak with a permanent shift — sportsbooks already priced the trend. Only use recent form >= 1.07x (not 1.15x) as confirmation.
 - Weak opponent defense (high defRtg) is a CONFIRMING signal for overs, not standalone
 - If news shows a teammate OUT, the cascade bonus is the strongest over signal available
-UNDER-SPECIFIC RULES (Fading stars is dangerous — be highly selective):
+UNDER-SPECIFIC RULES:
 1. AVOID UNDERS ON STARS IN CLOSE GAMES: If the spread is <= 5, do not pick an Under on a high-usage star. They will play 40+ minutes and dominate usage in the clutch.
-2. THE STAR BLOWOUT RULE: ONLY pick Unders on stars if they are heavy favorites (spread >= 8.5) and risk sitting the entire 4th quarter due to a blowout.
+2. THE STAR BLOWOUT RULE: ONLY pick Unders on stars if they are heavy favorites (spread >= 8.5) and risk sitting the entire 4th quarter due to a blowout. Spread >= 10 is even stronger.
 3. TARGET VOLATILE ROLE PLAYERS: The safest Unders are role players whose minutes are trending down, players who just lost their starting spot to an injury return, or players who rely purely on hot shooting rather than volume.
 4. FAIR VALUE CONFIRMATION: Look at the True Under Prob (True Probs ... % U). Do not pick an Under unless the mathematical probability is > 54.0%.
+5. JUICE IS YOUR FRIEND: When the Over is heavily juiced (-130 or worse), the sportsbook has inflated the line to exploit public bias. This is a GREEN LIGHT for Unders, not a trap — the line is artificially high.
+6. TRIVIAL LINE UNDERS ARE VALID: Low rebound lines (3.5-5.5) and assist lines (1.5-3.5) for non-primary ball handlers are highly predictable Unders. Counting stats accumulate in increments of 1 with a floor of zero.
+7. PLAYER ON B2B: Players on their own B2B suffer measurable 1-3 point decline. Strongly favor Unders on B2B players, especially guards/wings who cover the most court distance.
 {news_section}
 Set "line" to the [book: X.X] value when shown — that is the real bookmaker number and is more accurate than the season average. Only fall back to season average rounded to nearest 0.5 if no [book: X.X] is present. Recalculate "edge" as projection minus the line you use.
 Confidence range: 60-85.
@@ -501,6 +509,70 @@ def _run_parallel_claude(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AUTO-FADE — mathematical blindspots where the engine systematically fails
+# grep: LINE AUTO-FADE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _check_auto_fade(p, gctx, direction, stat_type, cfg):
+    """Check if a candidate should be auto-faded (vetoed).
+
+    Returns (should_fade, reason) tuple. Implements four fade scenarios from
+    the 2025-26 season post-mortem:
+
+    1. B2B Guard Exhaustion — guards/wings on their own B2B lose per-minute
+       efficiency due to glycogen depletion; veto overs on PTS/AST.
+    2. Blowout Truncation — starters in spread>10 games risk 4th-quarter
+       benching; veto ALL stat overs for starters.
+    3. Rotation Squeeze — bench players in tight games (<4 spread) vs elite
+       teams see shortened rotations; veto overs on trivial lines.
+    4. Covariance Conflict — multiple same-team rebounders can't all go over
+       (handled at lineup level, not per-candidate; skipped here).
+    """
+    auto_fade_cfg = cfg.get("auto_fade", {})
+    if not auto_fade_cfg.get("enabled", True):
+        return False, ""
+
+    spread = abs(gctx.get("spread", 0))
+    pred_min = p.get("predMin", 0) or p.get("season_min", p.get("min", 0))
+    season_pts = p.get("season_pts", 0)
+
+    # 1. B2B Guard Exhaustion — player on their own B2B, over on PTS or AST
+    if direction == "over" and stat_type in ("points", "assists"):
+        if p.get("is_b2b", False) or p.get("player_b2b", False):
+            b2b_min_pts = auto_fade_cfg.get("b2b_guard_min_season_pts", 12.0)
+            if season_pts >= b2b_min_pts:
+                return True, f"Auto-fade: player on B2B — {stat_type} over vetoed (fatigue)"
+
+    # 2. Blowout Truncation — starters in spread>10 risk minute evaporation
+    blowout_spread = auto_fade_cfg.get("blowout_spread_threshold", 10.0)
+    if direction == "over" and spread >= blowout_spread:
+        starter_min_floor = auto_fade_cfg.get("blowout_starter_min_floor", 28.0)
+        if pred_min >= starter_min_floor:
+            return True, f"Auto-fade: starter in blowout (spread {spread:.1f}) — over vetoed"
+
+    # 3. Rotation Squeeze — bench players in tight games lose minutes
+    tight_spread = auto_fade_cfg.get("rotation_squeeze_spread", 4.0)
+    if direction == "over" and spread <= tight_spread:
+        bench_min_ceiling = auto_fade_cfg.get("rotation_squeeze_bench_ceiling", 22.0)
+        if pred_min <= bench_min_ceiling and season_pts <= 12.0:
+            return True, f"Auto-fade: bench player in tight game (spread {spread:.1f}) — over vetoed"
+
+    return False, ""
+
+
+def _compute_pct_edge(edge, line):
+    """Compute percentage edge relative to the line.
+
+    For peripheral stats (rebounds, assists), percentage-based edge is more
+    meaningful than flat values. A 2.5 rebound edge on a 5.5 line is 45%
+    (highly improbable), while 2.5 on a 12.5 line is 20% (plausible).
+    """
+    if not line or line <= 0:
+        return 0.0
+    return abs(edge) / line * 100.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SIGNAL GENERATION — shared by both main candidate loop and last-resort path
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -571,12 +643,35 @@ def _generate_signals(p, gctx, direction, stat_type, season_val, recent_val, pro
 
     # 8. Spread — blowout risk (starters sit) or close game (full minutes)
     spread = abs(gctx.get("spread", 0))
+    blowout_threshold = cfg.get("auto_fade", {}).get("blowout_spread_threshold", 10.0)
     if direction == "under" and spread >= 8:
+        # Tiered blowout bonus: spread 8-10 gets +6, spread 10+ gets +10
+        blowout_bonus = 10 if spread >= blowout_threshold else 6
         signals.append({"type": "blowout_risk", "detail": f"Heavy favorite (spread {spread:.1f}) — starters may sit early"})
-        signal_bonus += 6
+        signal_bonus += blowout_bonus
     elif direction == "over" and spread <= 3:
         signals.append({"type": "close_game", "detail": f"Tight spread ({spread:.1f}) — starters play full minutes"})
         signal_bonus += 4
+
+    # 9. Player on B2B — fatigue penalty for overs, boost for unders
+    if p.get("is_b2b", False) or p.get("player_b2b", False):
+        if direction == "under":
+            signals.append({"type": "player_b2b", "detail": "Player on B2B — fatigue favors under"})
+            signal_bonus += 10
+        elif direction == "over":
+            signals.append({"type": "player_b2b", "detail": "Player on B2B — fatigue risk for over"})
+            signal_bonus -= 8  # Negative signal: reduces confidence
+
+    # 10. Juice-as-signal — heavy over juice = inflated line from public bias, favors under
+    odds_over = p.get("_odds_over") or 0
+    juice_threshold = cfg.get("juice_under_threshold", -130)
+    if direction == "under" and odds_over and odds_over < 0:
+        try:
+            if int(odds_over) <= juice_threshold:
+                signals.append({"type": "juice_signal", "detail": f"Heavy over juice ({odds_over}) — line inflated by public bias"})
+                signal_bonus += 8
+        except (TypeError, ValueError):
+            pass
 
     return signals, signal_bonus
 
@@ -610,11 +705,17 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
     min_edge_other_over = cfg.get("min_edge_other_over", min_edge_other)
 
     sf = cfg.get("stat_floors", {})
+    # Under-specific relaxed floors: trivial lines for unders are more predictable
+    # (counting stats in increments of 1 + hard floor of zero).
+    sf_under = cfg.get("stat_floors_under", {})
     stat_configs = [
-        ("points",   "pts",  "season_pts",  "recent_pts",  sf.get("points",   8.0), 18),
-        ("rebounds", "reb",  "season_reb",  "recent_reb",  sf.get("rebounds", 2.5), 15),
-        ("assists",  "ast",  "season_ast",  "recent_ast",  sf.get("assists",  2.0), 15),
+        ("points",   "pts",  "season_pts",  "recent_pts",  sf.get("points",   8.0), sf_under.get("points",   4.0), 18),
+        ("rebounds", "reb",  "season_reb",  "recent_reb",  sf.get("rebounds", 2.5), sf_under.get("rebounds", 3.5), 15),
+        ("assists",  "ast",  "season_ast",  "recent_ast",  sf.get("assists",  2.0), sf_under.get("assists",  1.0), 15),
     ]
+    # Percentage-based edge thresholds for peripheral stats
+    pct_edge_rebounds = cfg.get("pct_edge_rebounds", 18.0)
+    pct_edge_assists = cfg.get("pct_edge_assists", 18.0)
 
     for p in projections:
         pred_min  = p.get("predMin", 0)
@@ -622,10 +723,10 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
         gctx      = game_ctx_map.get(team_abbr, {})
         opponent  = gctx.get("opponent", "")
 
-        for stat_type, field, season_field, recent_field, min_season, min_min in stat_configs:
+        for stat_type, field, season_field, recent_field, min_season, min_season_under, min_min in stat_configs:
             season_val = p.get(season_field, p.get(field, 0))
             proj_val   = p.get(field, 0)
-            if season_val < min_season or pred_min < min_min or proj_val <= 0:
+            if proj_val <= 0 or pred_min < min_min:
                 continue
 
             book_odds = _lookup_player_odds(player_odds_map, p.get("name", ""), stat_type)
@@ -634,14 +735,38 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             line      = book_odds["line"]
             edge      = round(proj_val - line, 1)
             direction = "over" if edge > 0 else "under"
+
+            # Direction-aware season floor: unders use relaxed trivial floors
+            effective_min_season = min_season_under if direction == "under" else min_season
+            if season_val < effective_min_season:
+                continue
+
+            # Stash odds on player dict for signal generation (juice detection)
+            p["_odds_over"] = book_odds.get("odds_over")
+
+            # Auto-fade check — veto mathematically doomed candidates
+            should_fade, fade_reason = _check_auto_fade(p, gctx, direction, stat_type, cfg)
+            if should_fade:
+                print(f"[LineEngine] {fade_reason}: {p['name']} {stat_type} {direction}")
+                continue
+
+            # Edge threshold: points use flat min_edge; peripherals use percentage-based
             if stat_type == "points":
                 min_edge = min_edge_pts
+                if abs(edge) < min_edge:
+                    continue
             elif direction == "over":
-                min_edge = min_edge_other_over
+                # Percentage-based edge for peripheral overs
+                pct_threshold = pct_edge_rebounds if stat_type == "rebounds" else pct_edge_assists
+                pct_edge = _compute_pct_edge(edge, line)
+                if pct_edge < pct_threshold and abs(edge) < min_edge_other_over:
+                    continue
             else:
-                min_edge = min_edge_other
-            if abs(edge) < min_edge:
-                continue
+                # Percentage-based edge for peripheral unders
+                pct_threshold = pct_edge_rebounds if stat_type == "rebounds" else pct_edge_assists
+                pct_edge = _compute_pct_edge(edge, line)
+                if pct_edge < pct_threshold and abs(edge) < min_edge_other:
+                    continue
 
             recent_val = p.get(recent_field, proj_val)
             signals, signal_bonus = _generate_signals(
@@ -705,10 +830,10 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             pred_min  = p.get("predMin", 0) or p.get("season_min", p.get("min", 0))
             team_abbr = p.get("team", "")
             gctx      = game_ctx_map.get(team_abbr, {})
-            for stat_type, field, season_field, recent_field, min_season, min_min in stat_configs:
+            for stat_type, field, season_field, recent_field, min_season, min_season_under, min_min in stat_configs:
                 season_val = p.get(season_field, p.get(field, 0))
                 proj_val   = p.get(field, 0)
-                if season_val < min_season or pred_min < min_min or proj_val <= 0:
+                if pred_min < min_min or proj_val <= 0:
                     continue
                 lr_book   = _lookup_player_odds(player_odds_map, p.get("name", ""), stat_type)
                 if not lr_book:
@@ -718,6 +843,10 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                 if edge == 0:
                     continue
                 direction = "over" if edge > 0 else "under"
+                # Direction-aware season floor (relaxed for unders)
+                eff_floor = min_season_under if direction == "under" else min_season
+                if season_val < eff_floor:
+                    continue
                 if direction == "over" and over_pick:
                     continue
                 if direction == "under" and under_pick:

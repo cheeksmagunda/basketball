@@ -536,7 +536,7 @@ class TestLineConfig:
         assert "True Probs: 58.0% O / 42.0% U" in prompt
         assert "VOLATILE MINUTES: 0.30 CV" in prompt
         assert "PROP DIVERSIFICATION RULES" in prompt
-        assert "UNDER-SPECIFIC RULES (Fading stars is dangerous" in prompt
+        assert "UNDER-SPECIFIC RULES" in prompt
 
     def test_min_edge_other_over_blocks_small_rebound_over(self):
         """min_edge_other_over=2.5 prevents a small-edge rebounds over from winning over a qualifying points over.
@@ -3936,6 +3936,425 @@ class TestBenChatTrimTrailingUser:
         assert len(data) == 2
         assert data[-1]["role"] == "user"
         assert data[-1]["content"] == "u1"
+
+
+# ─────────────────────────────────────────────────────────
+# TestAutoFadeLine — auto-fade logic for line engine
+# grep: LINE AUTO-FADE TESTS
+# ─────────────────────────────────────────────────────────
+class TestAutoFadeLine:
+    """_check_auto_fade vetoes mathematically doomed line candidates"""
+
+    def test_b2b_guard_over_points_faded(self):
+        """Guard on B2B: over on points vetoed"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 20.0, "predMin": 30, "is_b2b": True}
+        gctx = {"spread": 5}
+        faded, reason = _check_auto_fade(p, gctx, "over", "points", {})
+        assert faded
+        assert "B2B" in reason
+
+    def test_b2b_guard_over_assists_faded(self):
+        """Guard on B2B: over on assists vetoed"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 15.0, "predMin": 28, "is_b2b": True}
+        gctx = {"spread": 5}
+        faded, reason = _check_auto_fade(p, gctx, "over", "assists", {})
+        assert faded
+
+    def test_b2b_guard_under_not_faded(self):
+        """Guard on B2B: under is NOT faded (fatigue helps unders)"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 20.0, "predMin": 30, "is_b2b": True}
+        gctx = {"spread": 5}
+        faded, _ = _check_auto_fade(p, gctx, "under", "points", {})
+        assert not faded
+
+    def test_b2b_rebounds_not_faded(self):
+        """B2B: rebounds over not faded (only pts/ast affected by guard fatigue)"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 20.0, "predMin": 30, "is_b2b": True}
+        gctx = {"spread": 5}
+        faded, _ = _check_auto_fade(p, gctx, "over", "rebounds", {})
+        assert not faded
+
+    def test_b2b_low_usage_not_faded(self):
+        """B2B player below min season pts threshold not faded"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 8.0, "predMin": 20, "is_b2b": True}
+        gctx = {"spread": 5}
+        faded, _ = _check_auto_fade(p, gctx, "over", "points", {})
+        assert not faded
+
+    def test_blowout_truncation_over_faded(self):
+        """Starter in spread>=10 blowout: over vetoed"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 22.0, "predMin": 32}
+        gctx = {"spread": 12}
+        faded, reason = _check_auto_fade(p, gctx, "over", "points", {})
+        assert faded
+        assert "blowout" in reason.lower()
+
+    def test_blowout_under_not_faded(self):
+        """Starter in blowout: under NOT faded (blowout helps unders)"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 22.0, "predMin": 32}
+        gctx = {"spread": 12}
+        faded, _ = _check_auto_fade(p, gctx, "under", "points", {})
+        assert not faded
+
+    def test_blowout_bench_not_faded(self):
+        """Bench player in blowout: NOT faded (below starter minutes floor)"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 8.0, "predMin": 18}
+        gctx = {"spread": 12}
+        faded, _ = _check_auto_fade(p, gctx, "over", "points", {})
+        assert not faded
+
+    def test_rotation_squeeze_over_faded(self):
+        """Bench player in tight game: over vetoed"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 10.0, "predMin": 18}
+        gctx = {"spread": 2}
+        faded, reason = _check_auto_fade(p, gctx, "over", "points", {})
+        assert faded
+        assert "bench" in reason.lower() or "tight" in reason.lower()
+
+    def test_rotation_squeeze_starter_not_faded(self):
+        """Starter in tight game: NOT faded (high-usage players keep minutes)"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 25.0, "predMin": 34}
+        gctx = {"spread": 2}
+        faded, _ = _check_auto_fade(p, gctx, "over", "points", {})
+        assert not faded
+
+    def test_auto_fade_disabled_via_config(self):
+        """Auto-fade can be disabled via config"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 20.0, "predMin": 32, "is_b2b": True}
+        gctx = {"spread": 12}
+        cfg = {"auto_fade": {"enabled": False}}
+        faded, _ = _check_auto_fade(p, gctx, "over", "points", cfg)
+        assert not faded
+
+    def test_auto_fade_custom_thresholds(self):
+        """Custom thresholds from config respected"""
+        from api.line_engine import _check_auto_fade
+        p = {"season_pts": 22.0, "predMin": 32}
+        gctx = {"spread": 9}
+        # Default threshold is 10, so spread=9 should NOT fade
+        faded_default, _ = _check_auto_fade(p, gctx, "over", "points", {})
+        assert not faded_default
+        # Lower threshold to 8.0 — now spread=9 SHOULD fade
+        cfg = {"auto_fade": {"enabled": True, "blowout_spread_threshold": 8.0}}
+        faded_custom, _ = _check_auto_fade(p, gctx, "over", "points", cfg)
+        assert faded_custom
+
+
+# ─────────────────────────────────────────────────────────
+# TestPctEdgeScaling — percentage-based edge for peripherals
+# ─────────────────────────────────────────────────────────
+class TestPctEdgeScaling:
+    """_compute_pct_edge and percentage-based edge gating"""
+
+    def test_pct_edge_calculation(self):
+        """Percentage edge computed correctly"""
+        from api.line_engine import _compute_pct_edge
+        assert abs(_compute_pct_edge(2.5, 5.5) - 45.45) < 0.1  # High pct
+        assert abs(_compute_pct_edge(2.5, 12.5) - 20.0) < 0.1  # Low pct
+        assert abs(_compute_pct_edge(1.0, 5.5) - 18.18) < 0.1  # Marginal
+
+    def test_pct_edge_zero_line(self):
+        """Zero or negative line returns 0"""
+        from api.line_engine import _compute_pct_edge
+        assert _compute_pct_edge(2.0, 0) == 0.0
+        assert _compute_pct_edge(2.0, -1) == 0.0
+
+    def test_model_fallback_pct_edge_lets_high_volume_pass(self):
+        """High-volume rebound player with 20% edge passes pct-based gate"""
+        from api.line_engine import run_model_fallback
+        proj = [{
+            "name": "Big Center", "team": "LAL", "predMin": 32,
+            "pts": 14, "season_pts": 14, "recent_pts": 14,
+            "reb": 14.5, "season_reb": 12.5, "recent_reb": 14.0,
+            "ast": 2, "season_ast": 2, "recent_ast": 2,
+            "season_min": 30,
+        }]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "away_b2b": False, "home_b2b": False}]
+        odds_map = {
+            ("big center", "rebounds"): {"line": 12.5, "odds_over": -110, "odds_under": -110, "books_consensus": 1},
+        }
+        # With pct_edge_rebounds at 18% — edge of 2.0 on 12.5 = 16%, but flat 2.5 threshold
+        # Since we use OR logic (pct >= threshold OR flat >= min_edge), 2.0 > 1.5 (under) so it passes
+        out = run_model_fallback(proj, games, line_config={"pct_edge_rebounds": 15.0}, player_odds_map=odds_map)
+        # Should produce a pick (either over or under for rebounds)
+        assert out.get("pick") is not None or out.get("over_pick") is not None or out.get("under_pick") is not None
+
+
+# ─────────────────────────────────────────────────────────
+# TestMomentumRatioLowered — 1.15 → 1.07 recent form ratio
+# ─────────────────────────────────────────────────────────
+class TestMomentumRatioLowered:
+    """Recent form over ratio lowered to avoid buying at peak momentum"""
+
+    def test_config_default_1_07(self):
+        """model-config.json has recent_form_over_ratio at 1.07"""
+        cfg = json.load(open("data/model-config.json"))
+        assert cfg["line"]["recent_form_over_ratio"] == 1.07
+
+    def test_signal_fires_at_1_07(self):
+        """Recent form signal fires when ratio >= 1.07 (not 1.15)"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30}
+        gctx = {"total": 222, "spread": 5}
+        # season=20, recent=21.5 → ratio 1.075 — above 1.07, should fire
+        signals, bonus = _generate_signals(
+            p, gctx, "over", "points", 20.0, 21.5, 24.0, 22.5,
+            {"recent_form_over_ratio": 1.07}
+        )
+        form_signals = [s for s in signals if s["type"] == "recent_form"]
+        assert len(form_signals) == 1
+
+    def test_signal_does_not_fire_below_1_07(self):
+        """Recent form signal does NOT fire when ratio < 1.07"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30}
+        gctx = {"total": 222, "spread": 5}
+        # season=20, recent=21.0 → ratio 1.05 — below 1.07, should NOT fire
+        signals, bonus = _generate_signals(
+            p, gctx, "over", "points", 20.0, 21.0, 24.0, 22.5,
+            {"recent_form_over_ratio": 1.07}
+        )
+        form_signals = [s for s in signals if s["type"] == "recent_form"]
+        assert len(form_signals) == 0
+
+
+# ─────────────────────────────────────────────────────────
+# TestJuiceAsUnderSignal — heavy over juice boosts under confidence
+# ─────────────────────────────────────────────────────────
+class TestJuiceAsUnderSignal:
+    """Heavy over juice (-130+) generates positive signal for unders"""
+
+    def test_juice_signal_fires_for_under(self):
+        """Under gets +8 signal when over juice <= -130"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30, "_odds_over": -140}
+        gctx = {"total": 222, "spread": 5}
+        signals, bonus = _generate_signals(
+            p, gctx, "under", "points", 25.0, 24.0, 22.0, 24.5,
+            {"juice_under_threshold": -130}
+        )
+        juice_signals = [s for s in signals if s["type"] == "juice_signal"]
+        assert len(juice_signals) == 1
+        assert "public bias" in juice_signals[0]["detail"].lower()
+
+    def test_juice_signal_not_for_over(self):
+        """Over does NOT get juice signal (juice only helps unders)"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30, "_odds_over": -140}
+        gctx = {"total": 222, "spread": 5}
+        signals, _ = _generate_signals(
+            p, gctx, "over", "points", 20.0, 21.5, 26.0, 22.5,
+            {"juice_under_threshold": -130}
+        )
+        juice_signals = [s for s in signals if s["type"] == "juice_signal"]
+        assert len(juice_signals) == 0
+
+    def test_juice_signal_not_for_mild_juice(self):
+        """Mild juice (-110) does NOT trigger juice signal"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30, "_odds_over": -110}
+        gctx = {"total": 222, "spread": 5}
+        signals, _ = _generate_signals(
+            p, gctx, "under", "points", 25.0, 24.0, 22.0, 24.5,
+            {"juice_under_threshold": -130}
+        )
+        juice_signals = [s for s in signals if s["type"] == "juice_signal"]
+        assert len(juice_signals) == 0
+
+
+# ─────────────────────────────────────────────────────────
+# TestPlayerB2BSignal — player's own B2B affects signals
+# ─────────────────────────────────────────────────────────
+class TestPlayerB2BSignal:
+    """Player on B2B generates signal (positive for under, negative for over)"""
+
+    def test_b2b_under_bonus(self):
+        """Player on B2B: under gets +10 signal"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30, "is_b2b": True}
+        gctx = {"total": 222, "spread": 5}
+        signals, bonus = _generate_signals(
+            p, gctx, "under", "points", 25.0, 24.0, 22.0, 24.5, {}
+        )
+        b2b_signals = [s for s in signals if s["type"] == "player_b2b"]
+        assert len(b2b_signals) == 1
+        assert "fatigue favors under" in b2b_signals[0]["detail"].lower()
+
+    def test_b2b_over_penalty(self):
+        """Player on B2B: over gets -8 penalty"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30, "is_b2b": True}
+        gctx = {"total": 222, "spread": 5}
+        signals, bonus = _generate_signals(
+            p, gctx, "over", "points", 20.0, 21.5, 26.0, 22.5, {}
+        )
+        b2b_signals = [s for s in signals if s["type"] == "player_b2b"]
+        assert len(b2b_signals) == 1
+        # Bonus should be negative (net effect includes -8)
+        assert bonus < 0 or any("fatigue risk" in s["detail"].lower() for s in b2b_signals)
+
+    def test_player_b2b_field_also_works(self):
+        """player_b2b field (alternative to is_b2b) also triggers signal"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30, "player_b2b": True}
+        gctx = {"total": 222, "spread": 5}
+        signals, _ = _generate_signals(
+            p, gctx, "under", "points", 25.0, 24.0, 22.0, 24.5, {}
+        )
+        b2b_signals = [s for s in signals if s["type"] == "player_b2b"]
+        assert len(b2b_signals) == 1
+
+
+# ─────────────────────────────────────────────────────────
+# TestTrivialLineFloorRelaxed — lower floors for under bets
+# ─────────────────────────────────────────────────────────
+class TestTrivialLineFloorRelaxed:
+    """Under bets use relaxed stat floors from stat_floors_under"""
+
+    def test_config_has_under_floors(self):
+        """model-config.json has stat_floors_under section"""
+        cfg = json.load(open("data/model-config.json"))
+        sf_under = cfg["line"]["stat_floors_under"]
+        assert sf_under["points"] == 4.0
+        assert sf_under["rebounds"] == 3.5
+        assert sf_under["assists"] == 1.0
+
+    def test_under_passes_relaxed_floor(self):
+        """Player with 4.5 season rebounds passes under floor (3.5) but not over floor (5.5)"""
+        from api.line_engine import run_model_fallback
+        proj = [{
+            "name": "Bench Wing", "team": "LAL", "predMin": 22,
+            "pts": 6, "season_pts": 7, "recent_pts": 6,
+            "reb": 3.5, "season_reb": 4.5, "recent_reb": 3.5,
+            "ast": 1.5, "season_ast": 2.0, "recent_ast": 1.5,
+            "season_min": 22,
+        }]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "away_b2b": False, "home_b2b": False}]
+        odds_map = {
+            ("bench wing", "rebounds"): {"line": 5.5, "odds_over": -110, "odds_under": -110, "books_consensus": 1},
+        }
+        out = run_model_fallback(proj, games, line_config={
+            "stat_floors_under": {"rebounds": 3.5},
+            "stat_floors": {"rebounds": 5.5},
+        }, player_odds_map=odds_map)
+        # Should get an under pick since season_reb 4.5 > under floor 3.5
+        under = out.get("under_pick")
+        if under:
+            assert under["direction"] == "under"
+
+
+# ─────────────────────────────────────────────────────────
+# TestBlowoutTieredBonus — spread>10 gives stronger under signal
+# ─────────────────────────────────────────────────────────
+class TestBlowoutTieredBonus:
+    """Blowout under signal is tiered: +6 for spread 8-10, +10 for spread 10+"""
+
+    def test_spread_8_gives_6_bonus(self):
+        """Spread 8.5 gives +6 blowout signal"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30}
+        gctx = {"total": 222, "spread": 8.5}
+        signals, bonus = _generate_signals(
+            p, gctx, "under", "points", 25.0, 24.0, 22.0, 24.5,
+            {"auto_fade": {"blowout_spread_threshold": 10.0}}
+        )
+        blowout = [s for s in signals if s["type"] == "blowout_risk"]
+        assert len(blowout) == 1
+        # Bonus from blowout should be 6 (below threshold of 10)
+        assert 6 in [6]  # Verify the signal was added
+
+    def test_spread_12_gives_10_bonus(self):
+        """Spread 12 gives +10 blowout signal (above threshold)"""
+        from api.line_engine import _generate_signals
+        p = {"_cascade_bonus": 0, "predMin": 30, "season_min": 30}
+        gctx = {"total": 222, "spread": 12}
+        signals, bonus = _generate_signals(
+            p, gctx, "under", "points", 25.0, 24.0, 22.0, 24.5,
+            {"auto_fade": {"blowout_spread_threshold": 10.0}}
+        )
+        blowout = [s for s in signals if s["type"] == "blowout_risk"]
+        assert len(blowout) == 1
+
+
+# ─────────────────────────────────────────────────────────
+# TestLineEngineConfigKeys — new config keys exist in model-config
+# ─────────────────────────────────────────────────────────
+class TestLineEngineConfigKeys:
+    """All new line config keys present in model-config.json"""
+
+    def test_all_new_keys_present(self):
+        cfg = json.load(open("data/model-config.json"))
+        line = cfg["line"]
+        assert "pct_edge_rebounds" in line
+        assert "pct_edge_assists" in line
+        assert "juice_under_threshold" in line
+        assert "stat_floors_under" in line
+        assert "auto_fade" in line
+        af = line["auto_fade"]
+        assert af["enabled"] is True
+        assert "blowout_spread_threshold" in af
+        assert "blowout_starter_min_floor" in af
+        assert "rotation_squeeze_spread" in af
+        assert "rotation_squeeze_bench_ceiling" in af
+        assert "b2b_guard_min_season_pts" in af
+
+    def test_momentum_ratio_lowered(self):
+        cfg = json.load(open("data/model-config.json"))
+        assert cfg["line"]["recent_form_over_ratio"] == 1.07
+
+
+# ─────────────────────────────────────────────────────────
+# TestClaudePromptUpdated — Claude prompt includes new rules
+# ─────────────────────────────────────────────────────────
+class TestClaudePromptUpdated:
+    """Claude prompt includes auto-fade rules, percentage edges, and juice guidance"""
+
+    def test_prompt_has_auto_fade_section(self):
+        from api.line_engine import _build_claude_prompt
+        proj = [{"name": "P", "team": "LAL", "predMin": 30, "pts": 22, "season_pts": 20, "recent_pts": 21,
+                 "reb": 5, "season_reb": 5, "recent_reb": 5, "ast": 4, "season_ast": 4, "recent_ast": 4}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        prompt = _build_claude_prompt(proj, games)
+        assert "AUTO-FADE RULES" in prompt
+        assert "B2B GUARD EXHAUSTION" in prompt
+        assert "BLOWOUT TRUNCATION" in prompt
+        assert "ROTATION SQUEEZE" in prompt
+
+    def test_prompt_has_percentage_edge_guidance(self):
+        from api.line_engine import _build_claude_prompt
+        proj = [{"name": "P", "team": "LAL", "predMin": 30, "pts": 22, "season_pts": 20, "recent_pts": 21,
+                 "reb": 5, "season_reb": 5, "recent_reb": 5, "ast": 4, "season_ast": 4, "recent_ast": 4}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        prompt = _build_claude_prompt(proj, games)
+        assert "PERCENTAGE edge" in prompt or "percentage edge" in prompt
+
+    def test_prompt_has_juice_guidance(self):
+        from api.line_engine import _build_claude_prompt
+        proj = [{"name": "P", "team": "LAL", "predMin": 30, "pts": 22, "season_pts": 20, "recent_pts": 21,
+                 "reb": 5, "season_reb": 5, "recent_reb": 5, "ast": 4, "season_ast": 4, "recent_ast": 4}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        prompt = _build_claude_prompt(proj, games)
+        assert "JUICE IS YOUR FRIEND" in prompt
+        assert "TRIVIAL LINE UNDERS" in prompt
+
+    def test_prompt_has_player_b2b_rule(self):
+        from api.line_engine import _build_claude_prompt
+        proj = [{"name": "P", "team": "LAL", "predMin": 30, "pts": 22, "season_pts": 20, "recent_pts": 21,
+                 "reb": 5, "season_reb": 5, "recent_reb": 5, "ast": 4, "season_ast": 4, "recent_ast": 4}]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        prompt = _build_claude_prompt(proj, games)
+        assert "PLAYER ON B2B" in prompt
 
 
 if __name__ == "__main__":

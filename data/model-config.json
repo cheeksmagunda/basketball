@@ -267,16 +267,32 @@
   "line": {
     "min_confidence": 50,
     "min_edge_pct": 3.0,
-    "recent_form_over_ratio": 1.15,
+    "recent_form_over_ratio": 1.07,
     "recent_form_under_ratio": 0.92,
     "min_edge_pts": 2.0,
     "min_edge_other": 1.5,
     "min_edge_other_over": 2.5,
+    "pct_edge_rebounds": 18.0,
+    "pct_edge_assists": 18.0,
     "min_season_minutes": 20.0,
+    "juice_under_threshold": -130,
     "stat_floors": {
       "points": 6.0,
       "rebounds": 5.5,
       "assists": 1.5
+    },
+    "stat_floors_under": {
+      "points": 4.0,
+      "rebounds": 3.5,
+      "assists": 1.0
+    },
+    "auto_fade": {
+      "enabled": true,
+      "blowout_spread_threshold": 10.0,
+      "blowout_starter_min_floor": 28.0,
+      "rotation_squeeze_spread": 4.0,
+      "rotation_squeeze_bench_ceiling": 22.0,
+      "b2b_guard_min_season_pts": 12.0
     }
   },
   "moonshot": {
