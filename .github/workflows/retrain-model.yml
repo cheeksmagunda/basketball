@@ -36,6 +36,11 @@ jobs:
         continue-on-error: true
         run: python train_boost_lgbm.py
 
+      - name: Retrain drafts popularity model (overlap with predictions)
+        id: retrain_drafts
+        continue-on-error: true
+        run: python train_drafts_lgbm.py
+
       - name: Retrain status note (RS)
         if: steps.retrain_rs.outcome != 'success'
         run: |
@@ -46,22 +51,27 @@ jobs:
         run: |
           echo "::warning::Boost retrain skipped due to API/network/data failure. Keeping current boost_model.pkl."
 
+      - name: Retrain status note (Drafts)
+        if: steps.retrain_drafts.outcome != 'success'
+        run: |
+          echo "::warning::Drafts model retrain skipped or insufficient overlap. Keeping current drafts_model.pkl."
+
       - name: Check if either model changed
-        if: steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success'
+        if: steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success'
         id: check
         run: |
-          if git diff --quiet lgbm_model.pkl boost_model.pkl 2>/dev/null; then
+          if git diff --quiet lgbm_model.pkl boost_model.pkl drafts_model.pkl 2>/dev/null; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Stamp model retrain date in config
-        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success') && steps.check.outputs.changed == 'true'
+        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success') && steps.check.outputs.changed == 'true'
         run: python scripts/bump_retrain_config.py
 
       - name: Bust today's slate cache on model change via API
-        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success') && steps.check.outputs.changed == 'true'
+        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success') && steps.check.outputs.changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
@@ -91,10 +101,10 @@ jobs:
             -d "$PAYLOAD"
 
       - name: Commit and push updated model + config
-        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success') && steps.check.outputs.changed == 'true'
+        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success') && steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add lgbm_model.pkl boost_model.pkl data/model-config.json
+          git add lgbm_model.pkl boost_model.pkl drafts_model.pkl data/model-config.json
           git commit -m "chore: daily models retrain $(date -u +%Y-%m-%d)"
           git push

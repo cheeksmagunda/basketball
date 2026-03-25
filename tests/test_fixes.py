@@ -10,6 +10,7 @@ import pytest
 import json
 import os
 import re
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, call
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -3267,6 +3268,27 @@ class TestParlayHistoryAndConfigHardening:
         assert 'json.dumps({"_busted": True}), "bust parlay cache"' not in src, (
             "refresh must not tombstone GitHub parlay files; this can erase history"
         )
+
+
+class TestVerifyTopPerformersScript:
+    """scripts/verify_top_performers.py runs clean (backtest when predictions overlap)."""
+
+    def test_verify_script_exits_zero(self):
+        import subprocess
+        import sys
+
+        repo = Path(__file__).resolve().parent.parent
+        script = repo / "scripts" / "verify_top_performers.py"
+        r = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert r.returncode == 0, r.stderr + r.stdout
+        out = (r.stdout or "").lower()
+        assert "joined" in out or "overlap" in out
 
 
 class TestParlayMidnightHandoff:

@@ -18,6 +18,11 @@ RS (game performance) and draft popularity (name/market/role) are separated: pop
 is not assumed to track tonight's RS spike.
 
 Writes boost_model.pkl as {"model": ..., "features": [...]}.
+
+Optional calibration pass: after drafts_model.pkl has been retrained on broad
+prediction/top_performers overlap and deployed, re-run this script so the saved
+boost weights reflect any residual error (training still uses historical true
+`drafts` for min_proxy, which is the correct label for popularity).
 """
 
 import csv

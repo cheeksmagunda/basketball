@@ -94,9 +94,11 @@ def _load_prediction_index() -> dict[str, dict[str, dict]]:
                 out[d][nm] = {
                     "pts": _safe_float(r.get("pts")),
                     "pred_min": _safe_float(r.get("pred_min")),
+                    "predicted_rs": _safe_float(r.get("predicted_rs")),
                     "team": team,
                     "big_market": 1.0 if team in big_m else 0.0,
                     "pos_bucket": float(_pos_bucket(r.get("pos", ""))),
+                    "pos": (r.get("pos") or "").strip(),
                 }
     return dict(out)
 
@@ -190,6 +192,19 @@ def train() -> None:
     if not pred_index:
         print("[drafts_model] No prediction CSVs — cannot train.")
         return
+    tp_dates: set[str] = set()
+    if TOP_PERFORMERS.exists():
+        with TOP_PERFORMERS.open("r", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                d = (r.get("date") or "").strip()
+                if d:
+                    tp_dates.add(d)
+    pred_dates = set(pred_index.keys())
+    ovl = tp_dates & pred_dates
+    print(
+        f"[drafts_model] top_performers dates: {len(tp_dates)} | "
+        f"prediction CSV dates: {len(pred_dates)} | overlap: {len(ovl)}"
+    )
     role_agg = _player_role_aggregates(pred_index)
     X, y, weights = build_training_matrix(pred_index, role_agg)
     if len(X) < 10:
