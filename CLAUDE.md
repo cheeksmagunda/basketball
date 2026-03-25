@@ -29,7 +29,8 @@ api/parlay_engine.py   — Safest 3-leg parlay optimizer (Z-score + correlation 
 api/rotowire.py        — RotoWire lineup scraper (free tier: availability + injury flags)
 data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
-data/actuals/          — Git-tracked daily actual result CSVs (via GitHub API)
+data/top_performers.csv — **Main historical dataset** (~2 months Real Sports leaderboard: RS, card boost, drafts, value); mega union of export + actuals (`scripts/rebuild_top_performers_mega.py`)
+data/actuals/          — Git-tracked per-day leaderboard/actual CSVs (Ben uploads + backfill); date = filename; primary label slices for drafts/boost training
 data/audit/            — Git-tracked daily audit JSONs (auto-generated on save-actuals)
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
 data/slate/            — GitHub-persisted prediction cache ({date}_slate.json, {date}_games.json)
@@ -38,8 +39,11 @@ data/boosts/           — Pre-game player boosts (fixed daily constants from Re
 data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
 lgbm_model.pkl         — LightGBM model bundle {model, features} for Real Score projections
 boost_model.pkl        — LightGBM model bundle {model, features} for Card Boost prediction
+drafts_model.pkl       — LightGBM draft-count (popularity) bundle; labels from top_performers + actuals
 train_lgbm.py          — Training script (12 features, run locally or via GitHub Actions)
-train_boost_lgbm.py    — Card Boost training script (8 features, run locally or via GitHub Actions)
+train_boost_lgbm.py    — Card Boost training script (2-feature vec; labels from top_performers/actuals)
+train_drafts_lgbm.py   — Draft-count training; joins top_performers/actuals to data/predictions/ for features
+scripts/verify_top_performers.py — Backtest drafts + boost vs leaderboard labels + predictions overlap
 railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
@@ -49,7 +53,9 @@ server.py              — Local dev server (uvicorn)
 
 The backend leverages two autonomous LightGBM models trained nightly via GitHub Actions:
 1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance.
-2. **`boost_model.pkl` (Card Boost Prediction)**: 8-feature model trained on historical actuals/ownership to predict community draft hype. Replaces legacy file-scanning. Accurately anticipates ownership spikes due to injury cascades and recent scoring surges.
+2. **`boost_model.pkl` (Card Boost Prediction)**: LightGBM on projected RS + `min_proxy` (from `drafts_model.pkl` when loaded). **Training labels** (`actual_card_boost`, `drafts`) come from the **top-performer historical corpus**—`data/top_performers.csv` (mega file) and `data/actuals/{date}.csv`—not from ESPN alone. Optional: retrain boost after `drafts_model.pkl` stabilizes so inference matches training-time `min_proxy` definition.
+
+**Historical leaderboard data (~2 months)** is the **primary ground-truth dataset** for Real Sports outcomes at the app level (Real Score, card boost, draft counts, value). `data/top_performers.csv` is the canonical rolled-up copy; `data/actuals/` holds per-day files (Ben pipeline + `scripts/sync_actuals_from_top_performers.py`). `data/predictions/` supplies pre-game features for joins at train/verify time. See README **Data Layer → Primary historical dataset**.
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
@@ -584,14 +590,13 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits). `recent_vs_season` = recent scoring vs season average (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts).
 - Retrained nightly by GitHub Actions (`retrain-model.yml`). Retrain manually: `python train_lgbm.py`.
 
-### Card Boost (`_est_card_boost`) — 4-Layer (ML + fallbacks)
-When pre-game boosts are uploaded, they are **ground truth** for that slate. Otherwise the pipeline estimates boost with a **LightGBM model** trained on historical actuals, then falls back to config and a sigmoid:
-- **Layer 0 — Daily ingestion** (`data/boosts/{date}.json`): Pre-game boosts via `/api/save-boosts` or screenshot parse (`type="boosts"`). Definitive when present.
-- **Layer 1 — `boost_model.pkl`**: 8-feature LightGBM (`train_boost_lgbm.py`) — hype/role proxies from season vs recent PTS/MIN, big-market flag, cascade minutes proxy, home/away. Output clamped to `floor`/`ceiling` in config.
-- **Layer 2 — Config overrides** (`card_boost.player_overrides`): Curated map for stars and edge cases when the model file is missing or returns no prediction.
-- **Layer 3 — Sigmoid fallback**: `boost = sig_ceiling - sig_range × sigmoid((effective_hype_ppg - sig_midpoint) / sig_scale)` where `effective_hype_ppg = max(season_pts, recent_pts) + 0.75 × cascade_bonus`. Big market discount from config.
+### Card Boost (`_est_card_boost`) — drafts estimate + 2-feature ML + sigmoid fallback
+No pre-game boost uploads or per-player overrides at inference. Pipeline:
+- **`drafts_model.pkl`** (optional): predicts `log1p(drafts)` from role/market/pos features; **`min_proxy = 12 + 5 × log1p(drafts)`** (clamped in config). If missing, `min_proxy` is derived from projected minutes (legacy inverse map).
+- **`boost_model.pkl`**: 2-feature LightGBM on **`[projected_rs, min_proxy]`** (`train_boost_lgbm.py`). Training targets **`actual_card_boost`** with **`min_proxy`** built from **true historical `drafts`** in **`data/top_performers.csv`** + **`data/actuals/`** (~2 months leaderboard corpus — **primary historical dataset**).
+- **Sigmoid fallback** when RS/minutes unavailable for ML: PPG tier curve + big-market discount from config.
 
-Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed overrides), not for live `_est_card_boost` scanning.
+Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed formula tweaks), not for live `_est_card_boost`.
 
 ### Moonshot Formula (v7 — quality over quantity)
 `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)`

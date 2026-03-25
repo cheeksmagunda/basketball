@@ -31,7 +31,8 @@ lgbm_model.pkl         — LightGBM model bundle {model, features}
 train_lgbm.py          — Training script (12 features)
 data/model-config.json — Runtime model config (Ben/Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs
-data/actuals/          — Git-tracked daily actual result CSVs
+data/top_performers.csv — **Main historical dataset** (~2 months leaderboard outcomes: RS, card boost, drafts, value); see Data Layer below
+data/actuals/          — Git-tracked per-day slices of that leaderboard data (+ Ben uploads); same schema, date = filename
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
 data/parlays/          — Git-tracked daily parlay JSON (ticket + lazy resolution)
@@ -63,7 +64,7 @@ The backend uses two mathematically distinct projection engines, each optimized 
 ESPN API (games, rosters, injuries, spreads)
   → LightGBM 12-feature points projection
   → Monte Carlo Real Score simulator (closeness, clutch-factor, momentum coefficients)
-  → Card Boost resolution (Layer 0 ingested boosts → overrides/ownership/sigmoid fallback)
+  → Card Boost resolution (`drafts_model.pkl` popularity proxy → `boost_model.pkl` → sigmoid fallback)
   → MILP slot optimizer → Starting 5 + Moonshot lineups
 ```
 **Why Monte Carlo?** DFS drafts reward high ceilings and variance. RS scoring is non-linear — tight games exponentially boost scores via closeness and clutch factors. Monte Carlo simulation captures these fat-tail distributions that deterministic medians miss.
@@ -251,11 +252,26 @@ All secrets and config live in **environment variables only** — never hardcode
 
 Retrained nightly via GitHub Actions (`retrain-model.yml`). Manual retrain: `python train_lgbm.py`.
 
+**Draft popularity + card boost:** `drafts_model.pkl` (`train_drafts_lgbm.py`) and `boost_model.pkl` (`train_boost_lgbm.py`) are trained on labels from the **top-performer historical dataset** (`data/top_performers.csv` + `data/actuals/`), joined to `data/predictions/` for features—see **Primary historical dataset** under Data Layer.
+
 ## Data Layer
 
 All persistent data stored in the GitHub repo via Contents API:
-- `data/predictions/{date}.csv` — player predictions per day
-- `data/actuals/{date}.csv` — actual results per day
+
+### Primary historical dataset (top performers, ~2 months)
+
+Real Sports **leaderboard outcomes** (who won the value contest, how many drafts, realized card boost, actual RS) live here. This corpus is the **main ground-truth history** for training/evaluating **draft-count** and **card-boost** models—not generic box scores alone.
+
+| Artifact | Role |
+|----------|------|
+| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player) with `actual_rs`, `actual_card_boost`, `drafts`, `total_value`, `source`, etc. Rebuilt as the union of itself and every `data/actuals/*.csv` via `scripts/rebuild_top_performers_mega.py` so nothing is dropped between per-day files and the rollup. |
+| **`data/actuals/{date}.csv`** | Per-slate CSVs (Ben flow + backfilled dates). Same columns as the mega file minus `date` (encoded in the filename). `scripts/sync_actuals_from_top_performers.py` adds missing days from the export without overwriting uploads. |
+| **`data/predictions/{date}.csv`** | Pre-game projections used to **join features** when training `drafts_model.pkl` / verifying (`scripts/verify_top_performers.py`); not the label source for popularity. |
+
+### Other tracked data
+
+(Predictions + per-day actuals also appear in the table above; Ben’s **save-actuals** flow merges into `data/actuals/` for Log grading.)
+
 - `data/audit/{date}.json` — pre-computed accuracy audit
 - `data/lines/{date}.csv` — primary pick for result tracking/resolve
 - `data/lines/{date}_pick.json` — dual-pick format `{over_pick, under_pick}` with odds fields
