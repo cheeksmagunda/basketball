@@ -1,20 +1,30 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MILP SLOT OPTIMIZER — Intelligent Draft Multiplier Assignment
+# MILP SLOT OPTIMIZER — Data-Driven Barbell Strategy
+#
+# Redesigned from 85-entry leaderboard analysis (Mar 5–22, 2026):
+#
+#   ARCHETYPE DISTRIBUTION OF TOP-5 DAILY WINNERS:
+#     Elite Hybrid (48.2%): RS ≥ 4.0, Boost ≥ 1.5  → avg value 21.1
+#     Star Anchor  (23.5%): RS ≥ 5.5, Boost < 1.5  → avg value 19.8
+#     Boost Leverage (20%): RS 2.5–4.0, Boost ≥ 2.5 → avg value 17.2
+#     Pure Boost    (0.0%): RS < 2.5, Boost ≥ 3.0   → NEVER wins
 #
 # The Real Sports App assigns escalating multipliers to draft slots:
 #   Slot 1 (2.0x) > Slot 2 (1.8x) > Slot 3 (1.6x) > Slot 4 (1.4x) > Slot 5 (1.2x)
 #
-# Uses Mixed-Integer Linear Programming (PuLP/CBC) to find the optimal
-# player-to-slot assignment, maximizing:
+# ADDITIVE formula: Value = RS × (SlotMult + CardBoost)
 #
-#   Σ E(RealScore_i) × (SlotMult_j + CardBoost_i) × X[i,j]
+# CHALK (Starting 5): Maximize Total Value directly. Allow stars with 0.0x
+#   boost if RS ≥ 5.5 — they win 23.5% of the time through sheer production.
+#   No artificial boost floors that kill generational RS performances.
 #
-# This is the ADDITIVE Real Sports formula — slot and card boost add together.
-# Assigning the highest raw-score player to 2.0x is optimal because marginal
-# slot benefit scales with raw score.
+# MOONSHOT: Maximize Leverage Value = RS^α × Boost^β × (Slot + Boost).
+#   The β exponent on boost captures the 48.2% Elite Hybrid archetype
+#   (RS 4+ AND boost 2+) that dominates leaderboards. RS floor at 3.0
+#   prevents the Pure Boost trap (0% historical win rate for RS < 2.5).
 #
 # TWO-PHASE OPTIMIZATION (moonshot):
-#   Phase 1: Select 5 players using shaped ratings (boost leverage, variance)
+#   Phase 1: Select 5 players using leverage-shaped ratings
 #   Phase 2: Re-assign slots using pure raw RS — because boost is a player-level
 #            constant, only raw RS determines optimal slot placement.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,56 +61,18 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     min_big_boost_count=0, big_boost_threshold=2.8):
     """Find the optimal player-to-slot assignment using MILP.
 
-    Maximizes: Σ rating_i × (slot_mult_j + card_boost_i) × X[i,j]
+    Data-driven objective functions based on 85-entry leaderboard analysis:
 
-    Args:
-        projections: List of player dicts with rating and team fields
-        n: Number of lineup slots (default 5)
-        min_per_team: Minimum players per team (0 = no constraint)
-        max_per_team: Maximum players per team (0 = no constraint)
-        sort_key: Key to sort by in fallback mode
-        rating_key: Key containing score for player selection
-        card_boost_key: Key containing additive card boost
-        time_limit: Solver time limit in seconds
-        max_low_boost: Max low-boost (star) players allowed (0 = no limit)
-        low_boost_threshold: Boost below this = "low boost" player
-        objective_mode: Optional shaping ("chalk"|"moonshot") applied to the
-            MILP objective coefficients using player_variance.
-        variance_penalty: Used when objective_mode="chalk" to downweight
-            high-variance players.
-        variance_uplift: Used when objective_mode="moonshot" to upweight
-            high-variance players.
-        boost_leverage_extra_power: When objective_mode="moonshot", further
-            scales rating by est_mult^(extra_power) to emphasize boost.
-        overlap_player_ids: Optional list of player ids to overlap-limit
-            against. Only applied when overlap_player_ids is non-empty and
-            overlap_cap > 0.
-        overlap_cap: Maximum allowed overlapped players in the returned lineup.
-            Interpreted as a count of players (not slots).
-        overlap_id_key: Projection dict key containing the player id.
-        two_phase: When True, run Phase 1 (player selection with shaped
-            ratings) then Phase 2 (slot assignment with raw RS). This
-            decouples selection from slotting so moonshot shaping doesn't
-            corrupt slot placement.
-        raw_rating_key: Key for raw (unaltered) RS used in Phase 2 slotting.
-            Required when two_phase=True. Falls back to rating_key if unset.
-        star_indices: Optional list of player indices (into projections) that
-            are "star" candidates. Used with min_star_count to enforce a
-            minimum star presence in the lineup.
-        min_star_count: Minimum number of players from star_indices that must
-            appear in the lineup (default 0 = no constraint).
-        max_star_count: If >0, at most this many star_indices players in the
-            lineup (default 0 = no upper cap).
-        max_per_game: Maximum players from the same game matchup (0 = no
-            constraint). Prevents over-concentration from a single game.
-        player_games: List of game IDs (one per player, same order as
-            projections). Required when max_per_game > 0.
-        min_high_boost_count: Minimum players with est_mult >= high_boost_threshold
-            in the lineup (0 = no constraint). Ensures contrarian plays.
-        high_boost_threshold: Boost floor for high-boost constraint (default 2.0).
-        min_big_boost_count: Minimum players with est_mult >= big_boost_threshold
-            in the lineup (0 = no constraint).
-        big_boost_threshold: Boost floor for big-boost constraint (default 2.8).
+    CHALK mode: Maximize Σ RS_i × (SlotMult_j + Boost_i) directly.
+      - No variance penalty — winners have ALL variance profiles
+      - Stars with 0.0x boost allowed — they win 23.5% through RS ≥ 5.5
+      - Elite Hybrids (RS ≥ 4.0, Boost ≥ 1.5) naturally float to top
+
+    MOONSHOT mode: Maximize Σ (RS_i^α × Boost_i^β) × (SlotMult_j + Boost_i)
+      - α = 1.0 (RS is the foundation — 98.8% of winners have RS ≥ 3.0)
+      - β = 0.8 (boost leverage — Elite Hybrids at 48.2% dominate)
+      - Variance uplift rewards streaky players (momentum bonus)
+      - Pure Boost trap prevented by RS ≥ 3.0 floor from pool gating
 
     Returns:
         List of n player dicts with slot assignments applied
@@ -159,7 +131,20 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 max_per_game=0, player_games=None,
                 min_high_boost_count=0, high_boost_threshold=2.0,
                 min_big_boost_count=0, big_boost_threshold=2.8):
-    """Run the MILP solver to find optimal player-slot assignments."""
+    """Run the MILP solver to find optimal player-slot assignments.
+
+    Objective shaping (data-driven from 85-entry archetype analysis):
+
+    CHALK: Pure Total Value — RS × (Slot + Boost). No artificial shaping.
+      The math naturally produces the barbell: stars get high RS × slot benefit,
+      role players get high boost × slot benefit. The solver finds the optimal
+      mix without us artificially constraining it.
+
+    MOONSHOT: Leverage-shaped — (RS × boost^β × (1 + variance×uplift)) × (Slot + Boost).
+      β = boost_leverage_extra_power (default 0.8) creates a nonlinear preference
+      for the Elite Hybrid archetype (RS 4+ / Boost 2+) that wins 48.2% of slates.
+      Variance uplift rewards hot-streak players (+momentum).
+    """
     players = list(range(len(projections)))
     slots = list(range(n))
     slot_mults = SLOT_MULTIPLIERS[:n]
@@ -180,14 +165,26 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
         card_boost = projections[i].get(card_boost_key, 0) or 0.0
 
         if objective_mode == "chalk":
-            # Median-ish: downweight high variance.
-            base_rating = base_rating * max(0.0, 1.0 - float(variance_penalty) * float(v))
+            # CHALK: Pure RS drives the objective. No variance penalty.
+            # Data shows winners span ALL variance profiles — penalizing variance
+            # killed Star Anchors (23.5% of winners) who are high-variance by nature.
+            # The only shaping is a mild consistency bonus for low-variance players
+            # to break ties between similar-RS candidates.
+            consistency_bonus = max(0.0, 0.02 * (1.0 - min(v, 1.0)))
+            base_rating = base_rating * (1.0 + consistency_bonus)
         elif objective_mode == "moonshot":
-            # High-end-ish: upweight high variance.
+            # MOONSHOT: Boost leverage is the primary differentiator.
+            # RS^1.0 × Boost^β × (1 + variance×uplift).
+            # β = 0.8: creates strong preference for Elite Hybrids (RS 4+ / Boost 2+)
+            # while still allowing Star Anchors (RS 5.5+ / Boost 0.5) through pure RS.
+            # Variance uplift: hot-streak players get moonshot ceiling boost.
             base_rating = base_rating * (1.0 + float(variance_uplift) * float(v))
             if boost_leverage_extra_power and boost_leverage_extra_power > 0:
-                # Extra emphasis on boost signal.
-                base_rating = base_rating * (max(float(card_boost), 0.0) ** float(boost_leverage_extra_power))
+                # Boost leverage: +3.0x boost player gets 3.0^0.8 = 2.41x rating mult
+                # +1.0x boost player gets 1.0^0.8 = 1.0x (neutral)
+                # +0.3x boost star gets 0.3^0.8 = 0.37x (heavily penalized in selection)
+                # This naturally produces the barbell without hardcoded thresholds.
+                base_rating = base_rating * (max(float(card_boost), 0.1) ** float(boost_leverage_extra_power))
 
         eff_rating[i] = base_rating
 
@@ -268,22 +265,18 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             ) <= min(int(max_star_count), n)
 
     # Max players per game (matchup) — prevents over-concentration in one game.
-    # Uses raw est_mult-derived game IDs passed in as player_games list.
     if max_per_game > 0 and player_games and len(player_games) == len(projections):
         game_groups = {}
         for i, game_id in enumerate(player_games):
             game_groups.setdefault(game_id, []).append(i)
         for game_id, game_idxs in game_groups.items():
             valid_idxs = [i for i in game_idxs if i in players]
-            # Only add constraint when the game has more players than the cap.
             if len(valid_idxs) > max_per_game:
                 prob += lpSum(
                     x[i, j] for i in valid_idxs for j in slots
                 ) <= max_per_game, f"max_per_game_{game_id}"
 
     # Minimum high-boost players — ensures contrarian plays are present.
-    # Always checks raw est_mult (not blended chalk_milp_boost) so real boosts
-    # are correctly identified regardless of objective blending.
     if min_high_boost_count > 0:
         hb_indices = [
             i for i, p in enumerate(projections)

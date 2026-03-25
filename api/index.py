@@ -46,14 +46,12 @@ try:
     from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
-    from api.fair_value import project_player_fv, dvp_binary_from_nba_com, should_cascade as _fv_should_cascade
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
-    from .fair_value import project_player_fv, dvp_binary_from_nba_com, should_cascade as _fv_should_cascade
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -806,6 +804,7 @@ _CONFIG_DEFAULTS = {
             "bonus_3cat": 1.08,
             "bonus_td": 1.15,
         },
+        "mc_strength": 0.5,  # Monte Carlo usage-scaled bonus strength
         "closeness": {
             "enabled": False,
             "strength": 0.5,
@@ -822,30 +821,7 @@ _CONFIG_DEFAULTS = {
         },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
-    "fair_value": {
-        "enabled": True,
-        "primary_window": 15,
-        "short_window": 10,
-        "ai_blend_weight": 0.12,
-        "cascade_policy": "elite_only",
-        "elite_cascade_ppg": 27.0,
-        "elite_players": [
-            "Nikola Jokic", "Shai Gilgeous-Alexander", "Luka Doncic",
-            "Giannis Antetokounmpo", "Jayson Tatum",
-        ],
-        "ats_regression_strength": 0.5,
-        "closeness_strength": 0.4,
-        "closeness_max": 1.5,
-        "momentum_strength": 0.15,
-        "default_total": 222.0,
-        "book_weights": {
-            "pinnacle": 1.5, "draftkings": 1.0, "fanduel": 1.0,
-            "betmgm": 0.9, "pointsbetus": 0.8,
-        },
-        "stat_types": ["points", "rebounds", "assists", "steals", "blocks", "threes"],
-        "edge_thresholds": {"min_edge_pct": 5.0, "min_ev": 0.03, "sharp_aligned_bonus": 1.15},
-        "compression": {"compression_divisor": 4.5, "compression_power": 0.78, "rs_cap": 20.0},
-    },
+    # fair_value section removed — engine deprecated in favor of Monte Carlo real_score.py
     "odds_enrichment": {
         "enabled": False,
         "blend_weight": 0.2,
@@ -2204,9 +2180,6 @@ def _pos_group(pos):
 def _cascade_minutes(roster, stats_map):
     """Redistribute minutes from OUT players to eligible teammates."""
     cascade_flags = {}
-    fv_cfg = _cfg("fair_value", _CONFIG_DEFAULTS.get("fair_value", {}))
-    if fv_cfg.get("enabled") and str(fv_cfg.get("cascade_policy", "")).lower() == "disabled":
-        return {}
 
     # Group players by team
     teams = {}
@@ -2234,10 +2207,6 @@ def _cascade_minutes(roster, stats_map):
         # Calculate total minutes freed per position group
         freed_by_group = {}
         for op, os in out_players:
-            if fv_cfg.get("enabled") and str(fv_cfg.get("cascade_policy", "")).lower() == "elite_only":
-                ppg = float(os.get("season_pts") or os.get("pts") or 0.0)
-                if not _fv_should_cascade(op.get("name", ""), ppg, config=fv_cfg):
-                    continue
             pg = _pos_group(op["pos"])
             freed_by_group[pg] = freed_by_group.get(pg, 0) + os.get("min", 0)
             # Centers also share with forwards
@@ -2677,224 +2646,11 @@ def _apply_post_lock_rs_calibration(projections: list, *, slate_locked: bool) ->
 # ─────────────────────────────────────────────────────────────────────────────
 # PLAYER PROJECTION ENGINE
 # grep: project_player, pinfo, stats, spread, total, rating, est_mult, blk, stl
-# grep: FAIR VALUE ENGINE — project_player_fv, _project_player_fair_value_body, _fv_edge_map
+# grep: PLAYER PROJECTION ENGINE — Monte Carlo Real Score
 # Returns projection dict: {name, team, pos, rating (RS), est_mult (card boost),
 #   predMin, pts, reb, ast, stl, blk, season_*/recent_* raw stats, signals}
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _opp_def_for_fair_value(opp_abbr, dvp_data):
-    row = (dvp_data or {}).get(opp_abbr) if opp_abbr else None
-    g, f = dvp_binary_from_nba_com(row)
-    return {
-        "pts_allowed_guards": g,
-        "pts_allowed_forwards": f,
-        "league_avg_guards": 26.0,
-        "league_avg_forwards": 21.5,
-    }
-
-
-def _book_lines_for_player(name, player_odds_map):
-    """Slice Odds API map to {stat_type: {line, odds_over, ...}} for one player."""
-    if not player_odds_map or not name:
-        return {}
-    nl = (name or "").lower().strip()
-    out = {}
-    for key, val in player_odds_map.items():
-        if isinstance(key, tuple) and len(key) == 2 and key[0] == nl:
-            out[key[1]] = val
-    return out
-
-
-def _project_player_fair_value_body(
-    pinfo, stats, spread, total, side, team_abbr,
-    cascade_bonus, is_b2b,
-    prefetched_gamelog, opp_abbr, dvp_data, player_odds_map,
-    proj_min, avg_min, pts, reb, ast, stl, blk, tov, fv_cfg,
-):
-    """Fair value path: rolling gamelog + DvP + books → rating; LightGBM secondary blend."""
-    athlete = dict(stats)
-    athlete["min"] = proj_min
-    opp_def = _opp_def_for_fair_value(opp_abbr, dvp_data)
-    book = _book_lines_for_player(pinfo.get("name", ""), player_odds_map or {})
-    cfg = dict(fv_cfg)
-    cfg.setdefault("compression", _CONFIG_DEFAULTS.get("fair_value", {}).get("compression", {}))
-    dfs_w = _cfg("real_score.dfs_weights", _CONFIG_DEFAULTS["real_score"]["dfs_weights"])
-    gs_cfg = _cfg("game_script", _CONFIG_DEFAULTS["game_script"])
-    fv_out = project_player_fv(
-        prefetched_gamelog,
-        athlete,
-        pinfo.get("pos") or "G",
-        opp_def,
-        spread or 0,
-        total or DEFAULT_TOTAL,
-        side,
-        book if book else None,
-        cfg,
-        dfs_weights=dfs_w,
-        gs_config=gs_cfg,
-    )
-    raw_rating = float(fv_out["rating"])
-    rs_cfg = _cfg("real_score", _CONFIG_DEFAULTS["real_score"])
-    _rs_defaults = _CONFIG_DEFAULTS["real_score"]
-    rs_cap = float(rs_cfg.get("rs_cap", _rs_defaults.get("rs_cap", 20.0)))
-    ai_weight = float(fv_cfg.get("ai_blend_weight", 0.15))
-
-    _ensure_lgbm_loaded()
-    ai_pred = None
-    if AI_MODEL is not None or AI_MODEL_BASELINE is not None:
-        try:
-            season_pts_ = stats.get("season_pts", pts)
-            recent_pts_ = stats.get("recent_pts", pts)
-            season_min_ = stats.get("season_min", avg_min)
-            recent_min_ = stats.get("recent_min", avg_min)
-            _gp = stats.get("gp", stats.get("games_played"))
-            feat_vec = _lgbm_feature_vector(
-                avg_min=avg_min,
-                pts=pts,
-                reb=reb,
-                ast=ast,
-                stl=stl,
-                blk=blk,
-                spread=spread,
-                side=side,
-                season_pts=season_pts_,
-                recent_pts=recent_pts_,
-                season_min=season_min_,
-                recent_min=recent_min_,
-                cascade_bonus=cascade_bonus,
-                games_played=float(_gp) if _gp is not None else None,
-            )
-            ai_pred = _lgbm_predict_rs(feat_vec)
-        except Exception as _lgbm_e:
-            print(f"[WARN] LightGBM inference failed (fair_value), using FV rating: {_lgbm_e}")
-
-    if ai_pred is not None:
-        raw_score = min(float(ai_pred) * ai_weight + raw_rating * (1.0 - ai_weight), rs_cap)
-    else:
-        raw_score = min(raw_rating, rs_cap)
-
-    p_pts = float((fv_out.get("pts") or {}).get("mean", pts))
-    p_reb = float((fv_out.get("reb") or {}).get("mean", reb))
-    p_ast = float((fv_out.get("ast") or {}).get("mean", ast))
-    p_stl = float((fv_out.get("stl") or {}).get("mean", stl))
-    p_blk = float((fv_out.get("blk") or {}).get("mean", blk))
-
-    arch_cfg = rs_cfg.get("archetype_calibration", {})
-    if arch_cfg.get("enabled", False):
-        arch = _infer_player_archetype(p_pts, avg_min, p_reb, stats)
-        mults = arch_cfg.get("archetypes", {}) or {}
-        m = float(mults.get(arch, 1.0))
-        if m != 1.0:
-            raw_score = min(raw_score * m, rs_cap)
-
-    # No Monte Carlo closeness when fair_value.enabled — closed-form is inside project_player_fv
-
-    cascade_cfg = rs_cfg.get("cascade_rs", {})
-    if cascade_cfg.get("enabled", False) and cascade_bonus > 0:
-        cascade_str = float(cascade_cfg.get("strength", 0.6))
-        cascade_rs_mult = 1.0 + min(cascade_bonus / 15.0, 0.30) * cascade_str
-        raw_score = min(raw_score * cascade_rs_mult, rs_cap)
-
-    season_pts = stats.get("season_pts", p_pts)
-    recent_pts = stats.get("recent_pts", p_pts)
-    season_min = stats.get("season_min", avg_min)
-    recent_min = stats.get("recent_min", avg_min)
-    player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
-
-    spike_cfg = rs_cfg.get("role_spike_rs", {})
-    if spike_cfg.get("enabled", False):
-        _spike_ratio = float(spike_cfg.get("min_ratio", 1.2))
-        if season_min > 0 and recent_min >= season_min * _spike_ratio and recent_pts > 0:
-            pts_surge = recent_pts / max(season_pts, 1)
-            spike_str = float(spike_cfg.get("strength", 0.4))
-            spike_mult = 1.0 + min(pts_surge - 1.0, 0.30) * spike_str
-            if spike_mult > 1.0:
-                raw_score = min(raw_score * spike_mult, rs_cap)
-
-    proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
-    vg = proj_cfg.get("volatility_guard", {})
-    if isinstance(vg, dict) and vg.get("enabled", False):
-        vmin_var = float(vg.get("min_scoring_variance", 0.18))
-        min_usage_pts = float(vg.get("min_season_pts", 14.0))
-        min_ppm = float(vg.get("min_pts_per_minute", 0.38))
-        vg_mult = float(vg.get("rating_mult", 0.93))
-        pos_u = (pinfo.get("pos") or "").strip().upper()
-        is_perimeter = (
-            pos_u.startswith("G")
-            or pos_u.startswith("F")
-            or pos_u in ("SG", "PG", "SF", "PF")
-        )
-        ppm = p_pts / max(avg_min, 1e-6)
-        if is_perimeter and season_pts >= min_usage_pts and ppm >= min_ppm and player_variance >= vmin_var:
-            raw_score = min(raw_score * vg_mult, rs_cap)
-
-    decline_factor = 1.0
-    if season_min > 0 and recent_min < season_min * 0.80:
-        decline_factor = max(recent_min / season_min, 0.85)
-        raw_score = min(raw_score * decline_factor, rs_cap)
-
-    card_boost = _est_card_boost(proj_min, p_pts, team_abbr, player_name=pinfo["name"])
-    avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
-    chalk_ev = round(raw_score * (avg_slot + card_boost), 2)
-    ceiling_score = raw_score * (1.0 + (player_variance * 0.5))
-    ceiling_ev = round(ceiling_score * (avg_slot + card_boost), 2)
-    ceiling_score = round(ceiling_score, 1)
-
-    return {
-        "id": pinfo["id"],
-        "name": pinfo["name"],
-        "player_variance": round(player_variance, 3),
-        "pos": pinfo["pos"],
-        "team": team_abbr,
-        "rating": round(raw_score, 1),
-        "chalk_ev": chalk_ev,
-        "ceiling_score": ceiling_score,
-        "ceiling_ev": ceiling_ev,
-        "predMin": round(proj_min, 1),
-        "pts": round(p_pts, 1),
-        "reb": round(p_reb, 1),
-        "ast": round(p_ast, 1),
-        "stl": round(p_stl, 1),
-        "blk": round(p_blk, 1),
-        "tov": round(tov, 1),
-        "est_mult": card_boost,
-        "slot": "1.0x",
-        "_decline": round(decline_factor, 2),
-        "_cascade_bonus": round(cascade_bonus, 1),
-        "season_min": round(stats.get("season_min", avg_min), 1),
-        "recent_min": round(recent_min, 1),
-        "season_pts": round(stats.get("season_pts", p_pts), 1),
-        "recent_pts": round(stats.get("recent_pts", p_pts), 1),
-        "season_reb": round(stats.get("season_reb", p_reb), 1),
-        "recent_reb": round(stats.get("recent_reb", p_reb), 1),
-        "season_ast": round(stats.get("season_ast", p_ast), 1),
-        "recent_ast": round(stats.get("recent_ast", p_ast), 1),
-        "season_stl": round(stats.get("season_stl", p_stl), 1),
-        "recent_stl": round(stats.get("recent_stl", p_stl), 1),
-        "season_blk": round(stats.get("season_blk", p_blk), 1),
-        "recent_blk": round(stats.get("recent_blk", p_blk), 1),
-        "injury_status": pinfo.get("injury_status", ""),
-        "_hot_streak": bool(
-            season_pts > 0
-            and recent_pts / season_pts >= float(_cfg("signals.hot_streak_ratio", 1.15))
-        ),
-        "_fv_edge_map": fv_out.get("edge_map") or {},
-        "fv_confidence": float(fv_out.get("confidence") or 0.0),
-        "_fv_hit_probs": {
-            "points": {
-                "over": float((fv_out.get("pts") or {}).get("hit_prob_over") or 0),
-                "under": float((fv_out.get("pts") or {}).get("hit_prob_under") or 0),
-            },
-            "rebounds": {
-                "over": float((fv_out.get("reb") or {}).get("hit_prob_over") or 0),
-                "under": float((fv_out.get("reb") or {}).get("hit_prob_under") or 0),
-            },
-            "assists": {
-                "over": float((fv_out.get("ast") or {}).get("hit_prob_over") or 0),
-                "under": float((fv_out.get("ast") or {}).get("hit_prob_under") or 0),
-            },
-        },
-    }
 
 
 def project_player(pinfo, stats, spread, total, side, team_abbr="",
@@ -2974,15 +2730,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     base = pts + reb + ast
     if base <= 0:
         return None
-
-    fv_cfg = _cfg("fair_value", _CONFIG_DEFAULTS.get("fair_value", {}))
-    if fv_cfg.get("enabled") and prefetched_gamelog and len(prefetched_gamelog.get("points") or []) >= 3:
-        return _project_player_fair_value_body(
-            pinfo, stats, spread, total, side, team_abbr,
-            cascade_bonus, is_b2b, prefetched_gamelog,
-            opp_abbr, dvp_data, player_odds_map,
-            proj_min, avg_min, pts, reb, ast, stl, blk, tov, fv_cfg,
-        )
 
     # Full DFS scoring formula (not just pts+reb+ast)
     heuristic = _dfs_score(pts, reb, ast, stl, blk, tov)
@@ -3089,11 +2836,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
 
     s_base = heuristic * pace_adj * spread_adj * home_adj
 
-    # ── RS projection: compress DFS base directly to RS scale ────────────────
-    # Monte Carlo removed — closeness×clutch×momentum was multiplying ALL players
-    # by 1.3-1.7x regardless of quality, inflating bench players from RS 2→4.
-    # Compress the DFS base (s_base) directly. With the same div/pow params,
-    # bench players (DFS ~16) now project RS ~2.3 instead of ~3.8.
+    # ── RS projection: Monte Carlo Real Score (usage-scaled) ─────────────────
+    # Re-integrated from real_score.py with usage scaling: stars in tight games
+    # get massive ceiling; bench players get near-neutral multiplier.
+    # This is the key to unlocking variance — the Fair Value engine killed it.
     season_pts = stats.get("season_pts", pts)
     recent_pts = stats.get("recent_pts", pts)
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
@@ -3102,15 +2848,30 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     _rs_defaults = _CONFIG_DEFAULTS["real_score"]
     comp_div = rs_cfg.get("compression_divisor", _rs_defaults["compression_divisor"])
     comp_pow = rs_cfg.get("compression_power", _rs_defaults["compression_power"])
-    raw_linear = s_base / comp_div
-    heuristic_rs = raw_linear ** comp_pow
-    # Asymmetric cap: high ceiling (20.0) to allow RS 6-8 projections for upside players,
-    # but floor stays accurate because compression_power still dampens low values.
     rs_cap = rs_cfg.get("rs_cap", _rs_defaults["rs_cap"])
-    heuristic_rs = min(heuristic_rs, rs_cap)
+
+    # Monte Carlo coefficients — Closeness, Clutch, Momentum from real_score.py
+    # Usage-scaled: only high-usage players get the full MC bonus (prevents
+    # bench inflation that caused the original removal).
+    try:
+        usage_rate = min(pts / max(avg_min, 1) / 0.5, 2.0)  # normalize to ~1.0 for avg player
+        mc_rs, mc_meta = real_score_projection(
+            s_base, spread or 0, total or DEFAULT_TOTAL,
+            usage_rate, player_variance,
+        )
+        # Usage-scale the MC bonus: bench players (usage <0.6) get <30% of the bonus
+        mc_bonus = mc_rs - s_base
+        mc_strength = float(rs_cfg.get("mc_strength", 0.5))
+        usage_gate = min(usage_rate / 1.0, 1.5)  # caps at 1.5 for elite usage
+        s_base_mc = s_base + mc_bonus * mc_strength * usage_gate
+    except Exception:
+        s_base_mc = s_base  # fallback: pure heuristic if MC fails
+
+    raw_linear = s_base_mc / comp_div
+    heuristic_rs = min(raw_linear ** comp_pow, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
-    # LightGBM outputs native RS units. 35% AI / 65% heuristic.
+    # LightGBM outputs native RS units. 30% AI / 70% heuristic.
     ai_weight = rs_cfg.get("ai_blend_weight", _rs_defaults["ai_blend_weight"])
     if ai_pred is not None:
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
@@ -4754,7 +4515,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  max_per_team=moonshot_max_team,
                                  objective_mode="moonshot",
                                  variance_uplift=0.35,
-                                 boost_leverage_extra_power=0.2,
+                                 boost_leverage_extra_power=0.8,
                                  overlap_player_ids=chalk_ids,
                                  overlap_cap=3,
                                  two_phase=True,
@@ -4769,7 +4530,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  max_per_team=moonshot_max_team,
                                  objective_mode="moonshot",
                                  variance_uplift=0.35,
-                                 boost_leverage_extra_power=0.2,
+                                 boost_leverage_extra_power=0.8,
                                  two_phase=True,
                                  raw_rating_key="rating",
                                  max_per_game=_moon_max_per_game,
@@ -5683,12 +5444,7 @@ def _get_slate_impl():
     try:
         all_proj = []
         game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-        fv_on = _cfg("fair_value.enabled", False)
-        gm, dvp_p, pom_p, dst_p = _fair_value_prefetch_for_games(draftable_games)
-        if gm is None:
-            gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
-        else:
-            gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = gm, dvp_p, pom_p, dst_p
+        gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
 
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {
@@ -5710,17 +5466,14 @@ def _get_slate_impl():
         except Exception as _odds_err:
             print(f"[odds_enrich] call-site error: {_odds_err}")
         # Matchup data: opponent defensive stats + game opponent map (used by Layer 1.5 and _build_lineups)
-        if not fv_on:
-            _def_stats = {}
-            try:
-                _def_stats = _fetch_team_def_stats()
-            except Exception as _def_err:
-                print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
-            _dvp_data = {}
-            try:
-                _dvp_data = _fetch_dvp_data()
-            except Exception as _dvp_err:
-                print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
+        try:
+            _def_stats = _fetch_team_def_stats()
+        except Exception as _def_err:
+            print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+        try:
+            _dvp_data = _fetch_dvp_data()
+        except Exception as _dvp_err:
+            print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
         _game_opp_map = _build_game_opp_map(draftable_games)
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
@@ -7412,7 +7165,7 @@ def _build_player_odds_map(games):
     with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         event_results = list(pool.map(_fetch_event_props, game_event_ids))
 
-    _book_weights = _cfg("fair_value.book_weights", _CONFIG_DEFAULTS.get("fair_value", {}).get("book_weights", {}))
+    _book_weights = _cfg("odds.book_weights", {"pinnacle": 1.5, "draftkings": 1.0, "fanduel": 1.0, "betmgm": 0.9, "pointsbetus": 0.8})
     _book_weights = {str(k).lower(): float(v) for k, v in (_book_weights or {}).items()}
 
     # Step 3: aggregate lines per (player_name_lower, stat_type)
@@ -7720,15 +7473,9 @@ def _run_line_engine_for_date(date):
         dvp_data = _fetch_dvp_data()
     except Exception as _dvp_err:
         print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
-    _fv_edge_map = None
-    if _cfg("fair_value.enabled", False):
-        _fv_edge_map = {}
-        for _p in all_proj:
-            if _p.get("id") and _p.get("_fv_edge_map"):
-                _fv_edge_map[_p["id"]] = _p["_fv_edge_map"]
     result = run_line_engine(
         all_proj, target_games, line_config, player_odds_map,
-        news_context=news_context, dvp_data=dvp_data, edge_map=_fv_edge_map,
+        news_context=news_context, dvp_data=dvp_data, edge_map=None,
     )
     return result, None
 
@@ -10380,33 +10127,11 @@ def _slate_prefetch_gamelogs(draftable_games, num_games=15):
 
 
 def _fair_value_prefetch_for_games(games):
-    """When fair_value.enabled: def stats, DvP, gamelogs, odds map for _run_game. Else (None,None,None,None).
-    grep: FAIR VALUE PREFETCH — shared batch inputs for slate/line/parlay/injury-check.
+    """Prefetch data for game projections. Returns (None, None, None, None).
+    Fair value engine has been deprecated — projections use Monte Carlo real_score.py exclusively.
+    grep: FAIR VALUE PREFETCH — deprecated, returns empty tuple for backward compat.
     """
-    if not _cfg("fair_value.enabled", False):
-        return None, None, None, None
-    _def_stats = {}
-    try:
-        _def_stats = _fetch_team_def_stats()
-    except Exception as e:
-        print(f"[fair_value prefetch] def {e}")
-    _dvp_data = {}
-    try:
-        _dvp_data = _fetch_dvp_data()
-    except Exception as e:
-        print(f"[fair_value prefetch] dvp {e}")
-    try:
-        n_g = int(_cfg("fair_value.primary_window", 15) or 15)
-        gamelog_map = _slate_prefetch_gamelogs(games, num_games=n_g)
-    except Exception as e:
-        print(f"[fair_value prefetch] gamelog {e}")
-        gamelog_map = {}
-    try:
-        player_odds_prefetch = _build_player_odds_map(games)
-    except Exception as e:
-        print(f"[fair_value prefetch] odds {e}")
-        player_odds_prefetch = {}
-    return gamelog_map, _dvp_data, player_odds_prefetch, _def_stats
+    return None, None, None, None
 
 
 def _fetch_gamelogs_batch(player_ids, num_games=15):
@@ -10518,16 +10243,10 @@ def _run_parlay_engine_sync(today):
         "odds_available": not projection_only,
         "projection_only": projection_only,
     }
-    fv_parlay = {}
-    if _cfg("fair_value.enabled", False):
-        for _p in all_proj:
-            if _p.get("id") and _p.get("_fv_hit_probs"):
-                fv_parlay[str(_p["id"])] = _p
-
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
         rw_statuses, parlay_config, gamelog_player_ids=gamelog_player_ids, dvp_data=_parlay_dvp_data,
-        fair_value_data=fv_parlay if fv_parlay else None,
+        fair_value_data=None,
     )
     if result:
         result["projection_only"] = projection_only
