@@ -28,7 +28,8 @@ from sklearn.model_selection import train_test_split
 SEASONS = ["2023-24", "2024-25", "2025-26"]
 
 # Total feature count — must match inference (see api/index.py)
-N_FEATURES = 16
+# v62: 16 original + 6 new = 22 features
+N_FEATURES = 22
 
 
 def _fetch_season_logs_with_retry(season: str, max_attempts: int = 6) -> pd.DataFrame:
@@ -190,6 +191,31 @@ df["starter_proxy"] = (df["avg_min"] >= 26.0).astype(float)
 # Placeholder for teammate/cascade signal at inference (training uses 0)
 df["cascade_signal"] = 0.0
 
+# v62: 6 new features from top-performer analysis
+# 1. Opponent points allowed (defensive weakness signal)
+opp_pts_allowed_map = df.groupby("OPP_TEAM")["PTS"].mean().to_dict()
+df["opp_pts_allowed"] = df["OPP_TEAM"].map(opp_pts_allowed_map).fillna(110.0)
+
+# 2. Team pace proxy (team's average total points per game — possessions indicator)
+team_total = df.groupby(["TEAM_ABBREVIATION", "GAME_DATE"])["PTS"].sum().reset_index()
+team_pace = team_total.groupby("TEAM_ABBREVIATION")["PTS"].mean().to_dict()
+df["team_pace_proxy"] = df["TEAM_ABBREVIATION"].map(team_pace).fillna(110.0)
+
+# 3. Usage share proxy (player's PPG as fraction of team PPG)
+team_ppg = df.groupby("TEAM_ABBREVIATION")["PTS"].mean()
+df["team_ppg"] = df["TEAM_ABBREVIATION"].map(team_ppg)
+df["usage_share"] = np.where(df["team_ppg"] > 0, df["avg_pts"] / df["team_ppg"], 0.0).clip(0.0, 0.5)
+
+# 4. Teammate out count — not available in training; placeholder (0 in training, set at inference)
+df["teammate_out_count"] = 0.0
+
+# 5. Game total — not available in training (would need external data); using team pace as proxy
+df["game_total"] = df["team_pace_proxy"] * 2  # rough proxy: 2x one team's pace ≈ game total
+
+# 6. Spread absolute value — not available in training; using home/away + record as proxy
+# At inference, actual spread from ESPN/odds is used.
+df["spread_abs"] = 5.0  # neutral default; inference uses real spread
+
 features = [
     "avg_min",
     "avg_pts",
@@ -207,6 +233,13 @@ features = [
     "min_volatility",
     "starter_proxy",
     "cascade_signal",
+    # v62: 6 new features
+    "opp_pts_allowed",
+    "team_pace_proxy",
+    "usage_share",
+    "teammate_out_count",
+    "game_total",
+    "spread_abs",
 ]
 
 assert len(features) == N_FEATURES
@@ -255,6 +288,25 @@ def _assign_weights(y_series: pd.Series) -> pd.Series:
 
 sample_weight = df.groupby(date_col, group_keys=False)[target].transform(_assign_weights)
 
+# v62: Top-performers sample weighting — players on the actual leaderboard get 3x weight
+top_perf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "top_performers.csv")
+if os.path.exists(top_perf_path):
+    try:
+        tp_df = pd.read_csv(top_perf_path)
+        tp_df["norm_name"] = tp_df["player_name"].apply(_normalize_name)
+        tp_df["date_key"] = pd.to_datetime(tp_df["date"]).dt.normalize()
+        tp_keys = set(zip(tp_df["norm_name"], tp_df["date_key"]))
+        is_leaderboard = [
+            (nn, dk) in tp_keys
+            for nn, dk in zip(df["norm_name"], df["date_key"])
+        ]
+        lb_boost = pd.Series([3.0 if is_lb else 1.0 for is_lb in is_leaderboard], index=df.index)
+        sample_weight = sample_weight * lb_boost
+        n_lb = sum(is_leaderboard)
+        print(f"   Top-performers boost: {n_lb} samples get 3x weight (from {len(tp_keys)} leaderboard entries)")
+    except Exception as e:
+        print(f"   [WARN] Could not load top_performers.csv for weighting: {e}")
+
 X = df[features].copy()
 y = df[target].astype(float)
 
@@ -283,13 +335,13 @@ print(f"2. Training dual-head LightGBM on {len(X_train)} samples...")
 print(f"   Features ({len(features)}): {features}")
 
 base_params = dict(
-    n_estimators=700,
-    learning_rate=0.045,
-    max_depth=7,
-    num_leaves=48,
+    n_estimators=900,       # v62: 700→900 for 22 features
+    learning_rate=0.035,    # v62: slower learning for more features
+    max_depth=8,            # v62: 7→8 for additional feature interactions
+    num_leaves=64,          # v62: 48→64 for increased capacity
     random_state=42,
-    subsample=0.85,
-    colsample_bytree=0.85,
+    subsample=0.80,         # v62: slight reduction for regularization
+    colsample_bytree=0.80,  # v62: same reason
 )
 
 model_baseline = lgb.LGBMRegressor(**base_params)

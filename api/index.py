@@ -872,8 +872,8 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
-        "chalk_min_boost_floor": 1.0,   # v59: require meaningful boost for chalk (was 0.7);
-                                        # stars with 0.0-0.3x boost are filtered — sweet spot is boost 1.0+
+        "chalk_min_boost_floor": 1.5,   # v62: 1.0→1.5; data shows boost<1.5 never wins (3% top-3 rate)
+                                        # sweet spot is boost 1.5+ with RS 4+
         # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
         # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
         "volatility_guard": {
@@ -885,11 +885,11 @@ _CONFIG_DEFAULTS = {
         },
     },
     "moonshot": {
-        # v59: Sweet spot targeting. Boost is 47% of total value — reward it strongly.
-        # Sweet spot: RS 3-6, boost 1.5-3.0. Kill star bypass, raise boost floor.
-        "min_minutes_floor":18, "min_recent_minutes_floor":18, "min_card_boost":1.5, "min_rating_floor":3.0,
+        # v62: RS-first targeting. Data: RS has 5x correlation with value vs boost.
+        # Sweet spot: RS 4-5, boost 2.0-3.0 (85.7% top-3 rate). Lower minutes to catch role players.
+        "min_minutes_floor":16, "min_recent_minutes_floor":16, "min_card_boost":1.8, "min_rating_floor":3.0,
         "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":99, "boost_leverage_power":1.0,
+        "max_centers":99, "boost_leverage_power":0.5,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.0,       # zero damping — moonshot wants maximum upside
         "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
@@ -943,18 +943,55 @@ _CONFIG_DEFAULTS = {
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": _SLOT_MULTS_SHARED,
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
-        # v59: 0.20 lets boost dominate (boost is 47% of total value in winner data).
-        # At 0.20, a 3.0x boost player gets milp_boost = 0.8*3.0 + 0.2*1.0 = 2.6.
-        "chalk_milp_rs_focus": 0.0,
+        # v62: 0.60 — RS is 5x more correlated with value than boost. At 0.60,
+        # milp_boost = 0.4*real + 0.6*neutral, so RS quality primarily drives MILP.
+        "chalk_milp_rs_focus": 0.6,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
         "enabled": True,
         "size": 15,          # v59: wider net for sweet spot targeting
-        "metric": "rs_x_boost", # v61: RS × (2 + boost) — matches confirmed Value = RS × (SlotMult + Boost)
+        "metric": "ev_weighted", # v62: RS^1.3 × (2.0 + boost) — RS exponent reflects 5x elasticity ratio
         "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric (unused with rs_x_boost)
         "blend_weight": 0.5,
         "per_game_carry": 0,  # top K per matchup by TV forced into core before global trim (0 = off)
+        "rs_exponent": 1.3,  # v62: RS^1.3 amplifies RS differences (elasticity 4.72 at high boost vs 2.10 at low)
+    },
+    # v62: Breakout detector — identifies players likely to have career nights.
+    # Unicorn top-20 entries avg RS=6.32, boost=2.26, drafts=48.
+    "breakout": {
+        "enabled": True,
+        "min_prob": 0.3,       # minimum spike probability to apply multiplier
+        "max_mult": 0.3,       # max RS boost: 1.0 + 0.75 * 0.3 = +22.5%
+        "cascade_high": 0.25, "cascade_low": 0.12,
+        "cascade_high_threshold": 8, "cascade_low_threshold": 4,
+        "pace_up_bonus": 0.15, "pace_up_total": 230, "pace_up_spread": 5,
+        "pace_moderate_bonus": 0.08, "pace_moderate_total": 225,
+        "opp_weak_bonus": 0.15, "opp_weak_threshold": 115,
+        "opp_moderate_bonus": 0.08, "opp_moderate_threshold": 113,
+        "hot_streak_bonus": 0.10, "hot_streak_ratio": 1.20,
+        "rest_bonus": 0.10, "rest_days_threshold": 3,
+        "dvp_bonus": 0.10, "prob_cap": 0.75,
+    },
+    # v62: Draft tier targeting — players drafted 6-20 have highest avg value (16.6).
+    # log10(drafts) vs boost correlation = -0.660.
+    "draft_tier": {
+        "enabled": True,
+        "tier_a_max_log_drafts": 1.3,  # ≤20 drafts
+        "tier_b_max_log_drafts": 2.0,  # 21-100 drafts
+        "tier_c_max_log_drafts": 2.7,  # 101-500 drafts
+        "tier_a_bonus": 1.08,
+        "tier_b_mult": 1.00,
+        "tier_c_penalty": 0.95,
+        "tier_d_penalty": 0.85,
+        "tier_d_rs_override": 7.0,     # stars with RS >= 7.0 bypass tier D penalty
+    },
+    # v62: Leaderboard probability classifier integration.
+    "leaderboard_clf": {
+        "enabled": True,
+        "weight": 0.6,       # core_score *= (min_score + weight * prob)
+        "min_score": 0.7,    # range: [0.7, 1.3]
+        "max_score": 1.3,
     },
     "line": {
         "min_confidence": 50,
@@ -1201,6 +1238,77 @@ def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
         return None
 
 
+# grep: LEADERBOARD CLASSIFIER
+LEADERBOARD_CLF = None
+_LEADERBOARD_CLF_LOAD_ATTEMPTED = False
+_LEADERBOARD_CLF_LOAD_LOCK = threading.Lock()
+_LEADERBOARD_CLF_PATHS = [
+    Path(__file__).resolve().parent.parent / "leaderboard_clf.pkl",
+    Path("/app/leaderboard_clf.pkl"),
+]
+
+def _ensure_leaderboard_clf_loaded():
+    """Lazy-load the leaderboard probability classifier."""
+    global LEADERBOARD_CLF, _LEADERBOARD_CLF_LOAD_ATTEMPTED
+    if _LEADERBOARD_CLF_LOAD_ATTEMPTED:
+        return
+    with _LEADERBOARD_CLF_LOAD_LOCK:
+        if _LEADERBOARD_CLF_LOAD_ATTEMPTED:
+            return
+        for _p in _LEADERBOARD_CLF_PATHS:
+            if _p.exists():
+                try:
+                    with open(_p, "rb") as _f:
+                        _bundle = pickle.load(_f)
+                    if isinstance(_bundle, dict) and "model" in _bundle:
+                        LEADERBOARD_CLF = _bundle["model"]
+                        print(f"[leaderboard_clf] loaded from {_p}")
+                    break
+                except Exception as e:
+                    print(f"[leaderboard_clf] load error: {e}")
+        _LEADERBOARD_CLF_LOAD_ATTEMPTED = True
+        if LEADERBOARD_CLF is None:
+            print("[leaderboard_clf] model not found — classifier disabled")
+
+def _predict_leaderboard_prob(player_info):
+    """Predict probability that a player appears on the daily leaderboard.
+
+    Returns 0.5 (neutral) if classifier not loaded or inference fails.
+    Features: projected_rs, estimated_boost, projected_value, season_pts, season_min,
+    recent_pts, recent_min, cascade_bonus, breakout_prob, log_predicted_drafts.
+    """
+    _ensure_leaderboard_clf_loaded()
+    if LEADERBOARD_CLF is None:
+        return 0.5
+
+    try:
+        rating = float(player_info.get("rating", 0) or 0)
+        est_mult = float(player_info.get("est_mult", 0) or 0)
+        features = np.array([[
+            rating,
+            est_mult,
+            rating * (2.0 + est_mult),  # projected_value
+            float(player_info.get("season_pts", 0) or 0),
+            float(player_info.get("season_min", 0) or 0),
+            float(player_info.get("recent_pts", 0) or 0),
+            float(player_info.get("recent_min", 0) or 0),
+            float(player_info.get("_cascade_bonus", 0) or 0),
+            float(player_info.get("_breakout_prob", 0) or 0),
+            _estimate_log_drafts(
+                float(player_info.get("season_pts", 0) or 0),
+                player_info.get("team", "") in set(_cfg("card_boost.big_market_teams",
+                    _CONFIG_DEFAULTS["card_boost"]["big_market_teams"])),
+                float(player_info.get("recent_pts", 0) or 0),
+                float(player_info.get("season_pts", 0) or 0),
+            ),
+        ]])
+        prob = float(LEADERBOARD_CLF.predict_proba(features)[0][1])
+        return max(0.0, min(1.0, prob))
+    except Exception as e:
+        print(f"[leaderboard_clf] inference error: {e}")
+        return 0.5
+
+
 def _lgbm_feature_vector(
     *,
     avg_min: float,
@@ -1217,8 +1325,14 @@ def _lgbm_feature_vector(
     recent_min: float,
     cascade_bonus: float,
     games_played: Optional[float] = None,
+    # v62: 6 new feature inputs
+    opp_pts_allowed: Optional[float] = None,
+    team_pace: Optional[float] = None,
+    team_ppg: Optional[float] = None,
+    teammate_out_count: float = 0.0,
+    game_total: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with train_lgbm.py (16 features)."""
+    """Build feature vector aligned with train_lgbm.py (22 features, v62)."""
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
     usage = float(
@@ -1241,6 +1355,15 @@ def _lgbm_feature_vector(
     )
     starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
     cascade_signal = float(np.clip(max(cascade_bonus, 0.0) / 15.0, 0.0, 1.5))
+
+    # v62: 6 new features
+    _opp_pts_allowed = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
+    _team_pace = float(team_pace) if team_pace is not None else 110.0
+    _usage_share = float(pts / max(float(team_ppg or 110), 1.0)) if team_ppg else 0.0
+    _teammate_out = float(teammate_out_count)
+    _game_total = float(game_total) if game_total is not None else 222.0
+    _spread_abs = abs(float(spread or 0))
+
     return [
         avg_min,
         season_pts,
@@ -1258,6 +1381,13 @@ def _lgbm_feature_vector(
         min_volatility,
         starter_proxy,
         cascade_signal,
+        # v62: 6 new features
+        _opp_pts_allowed,
+        _team_pace,
+        _usage_share,
+        _teammate_out,
+        _game_total,
+        _spread_abs,
     ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2467,6 +2597,138 @@ def _load_daily_boosts(date_str=None):
     return {}
 
 
+# grep: BREAKOUT DETECTOR
+def _compute_breakout_probability(player_info, game_info=None):
+    """Compute probability of a breakout performance (0.0-1.0).
+
+    Based on 578-entry top-performer analysis. Unicorn entries (value 25+) share:
+    cascade opportunity, pace-up matchup, opponent defensive weakness, hot streak, rest.
+    Returns spike probability used as RS multiplier when >= min_prob threshold.
+    """
+    bo = _cfg("breakout", _CONFIG_DEFAULTS.get("breakout", {}))
+    if not bo.get("enabled", True):
+        return 0.0
+
+    prob = 0.0
+    game = game_info or {}
+
+    # 1. Cascade opportunity: teammate starter OUT → inherits minutes
+    # (Paul Reed 5.6 RS when Embiid sat, Nique Clifford 5.9 RS)
+    cascade = float(player_info.get("_cascade_bonus", 0) or player_info.get("cascade_bonus", 0) or 0)
+    if cascade >= float(bo.get("cascade_high_threshold", 8)):
+        prob += float(bo.get("cascade_high", 0.25))
+    elif cascade >= float(bo.get("cascade_low_threshold", 4)):
+        prob += float(bo.get("cascade_low", 0.12))
+
+    # 2. Pace-up matchup: high-total close game
+    total = float(game.get("total", 222))
+    spread = abs(float(game.get("spread", 0)))
+    pace_up_total = float(bo.get("pace_up_total", 230))
+    pace_up_spread = float(bo.get("pace_up_spread", 5))
+    if total >= pace_up_total and spread <= pace_up_spread:
+        prob += float(bo.get("pace_up_bonus", 0.15))
+    elif total >= float(bo.get("pace_moderate_total", 225)):
+        prob += float(bo.get("pace_moderate_bonus", 0.08))
+
+    # 3. Opponent defensive weakness (bottom-10 defense)
+    opp_def = float(game.get("opp_def_rating", 112))
+    if opp_def >= float(bo.get("opp_weak_threshold", 115)):
+        prob += float(bo.get("opp_weak_bonus", 0.15))
+    elif opp_def >= float(bo.get("opp_moderate_threshold", 113)):
+        prob += float(bo.get("opp_moderate_bonus", 0.08))
+
+    # 4. Recent hot streak: last 3 games ≥ 120% of season average
+    recent_pts = float(player_info.get("recent_pts", 0) or 0)
+    season_pts = float(player_info.get("season_pts", 0) or 0)
+    if season_pts > 0 and recent_pts / season_pts >= float(bo.get("hot_streak_ratio", 1.20)):
+        prob += float(bo.get("hot_streak_bonus", 0.10))
+
+    # 5. Rest advantage: ≥3 rest days
+    rest = float(player_info.get("rest_days", 2) or 2)
+    if rest >= float(bo.get("rest_days_threshold", 3)):
+        prob += float(bo.get("rest_bonus", 0.10))
+
+    # 6. DvP position matchup advantage (if available)
+    if player_info.get("dvp_advantage", False):
+        prob += float(bo.get("dvp_bonus", 0.10))
+
+    return min(prob, float(bo.get("prob_cap", 0.75)))
+
+
+# grep: DRAFT TIER TARGETING
+def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw=0):
+    """Estimate log10(expected draft count) from player profile.
+
+    Calibrated from 578 top-performer entries:
+    - Stars (25+ PPG): ~1000 drafts (log=3.0)
+    - Starters (15-25 PPG): ~150 drafts (log=2.2)
+    - Role players (6-15 PPG): ~10-50 drafts (log=1.0-1.7)
+    - Deep bench (<6 PPG): ~3 drafts (log=0.5)
+    """
+    pts = max(float(season_pts), float(recent_pts))
+    if pts >= 25:
+        base = 3.0
+    elif pts >= 20:
+        base = 2.7
+    elif pts >= 15:
+        base = 2.2
+    elif pts >= 10:
+        base = 1.7
+    elif pts >= 6:
+        base = 1.0
+    else:
+        base = 0.5
+
+    # Big market teams get ~2x more drafts
+    if is_big_market:
+        base += 0.3
+
+    # Trending factor: recent scoring surge draws attention
+    if float(season_pts_raw) > 0 and float(recent_pts) / float(season_pts_raw) > 1.15:
+        base += 0.15
+
+    return max(0.0, min(3.5, base))
+
+
+def _assign_draft_tier(predicted_log_drafts):
+    """Assign draft tier based on expected popularity.
+
+    Data: drafts 6-20 bucket has highest avg value (16.6), avg boost 2.41.
+    Tier A = "known but obscure" sweet spot.
+    """
+    dt = _cfg("draft_tier", _CONFIG_DEFAULTS.get("draft_tier", {}))
+    if predicted_log_drafts <= float(dt.get("tier_a_max_log_drafts", 1.3)):
+        return "A"
+    elif predicted_log_drafts <= float(dt.get("tier_b_max_log_drafts", 2.0)):
+        return "B"
+    elif predicted_log_drafts <= float(dt.get("tier_c_max_log_drafts", 2.7)):
+        return "C"
+    else:
+        return "D"
+
+
+def _draft_tier_multiplier(tier, rating=0.0):
+    """Return EV multiplier for draft tier.
+
+    Tier A (1-20 drafts): ×1.08 — sweet spot
+    Tier B (21-100): neutral
+    Tier C (101-500): ×0.95 — too popular for good boost
+    Tier D (500+): ×0.85 — stars with massive drafts (unless RS >= 7.0)
+    """
+    dt = _cfg("draft_tier", _CONFIG_DEFAULTS.get("draft_tier", {}))
+    if tier == "A":
+        return float(dt.get("tier_a_bonus", 1.08))
+    elif tier == "B":
+        return float(dt.get("tier_b_mult", 1.00))
+    elif tier == "C":
+        return float(dt.get("tier_c_penalty", 0.95))
+    elif tier == "D":
+        if rating >= float(dt.get("tier_d_rs_override", 7.0)):
+            return 1.0  # exceptional RS overrides popularity penalty
+        return float(dt.get("tier_d_penalty", 0.85))
+    return 1.0
+
+
 def _est_card_boost(
     proj_min,
     pts,
@@ -2479,7 +2741,7 @@ def _est_card_boost(
 ):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Four-layer approach:
+    Five-layer approach (v62):
     0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
     1. BOOST MODEL — LightGBM inference from pre-game hype features.
     2. CONFIG OVERRIDES — player_overrides from model-config.json.
@@ -2523,6 +2785,19 @@ def _est_card_boost(
     ml_pred = _lgbm_predict_boost(feat_vec)
     if ml_pred is not None:
         return _clamp_round_boost(ml_pred, floor_val, ceiling)
+
+    # Layer 1.5: Log-linear estimation from predicted draft count.
+    # Data: log10(drafts) vs boost = -0.660 correlation (578 top-performer entries).
+    # Drafts 1-3: avg boost 2.78; Drafts 300-1000: avg boost 1.05.
+    ll_cfg = cb.get("log_linear", {})
+    if ll_cfg.get("enabled", False):
+        log_drafts = _estimate_log_drafts(
+            float(season_pts), team_abbr in big_markets, float(recent_pts), float(season_pts)
+        )
+        ll_intercept = float(ll_cfg.get("intercept", 3.2))
+        ll_slope = float(ll_cfg.get("slope", -0.75))
+        ll_boost = max(floor_val, min(ceiling, ll_intercept + ll_slope * log_drafts))
+        return _clamp_round_boost(ll_boost, floor_val, ceiling)
 
     # Layer 2: Config overrides (fallback when ML unavailable/missing).
     overrides = cb.get("player_overrides", {})
@@ -3005,6 +3280,23 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         if is_perimeter and season_pts >= min_usage_pts and ppm >= min_ppm and player_variance >= vmin_var:
             raw_score = min(raw_score * vg_mult, rs_cap)
 
+    # grep: BREAKOUT DETECTOR INTEGRATION
+    # v62: Breakout detector — identifies players likely to spike.
+    # Data: unicorn top-20 entries avg RS=6.32, boost=2.26; all share specific game conditions.
+    _breakout_prob = _compute_breakout_probability(
+        {"_cascade_bonus": cascade_bonus, "recent_pts": recent_pts,
+         "season_pts": season_pts, "rest_days": pinfo.get("rest_days", 2),
+         "dvp_advantage": pinfo.get("dvp_advantage", False)},
+        {"total": total or 222, "spread": spread or 0,
+         "opp_def_rating": pinfo.get("opp_def_rating", 112)},
+    )
+    _bo_cfg = _cfg("breakout", _CONFIG_DEFAULTS.get("breakout", {}))
+    _bo_min_prob = float(_bo_cfg.get("min_prob", 0.3))
+    _bo_max_mult = float(_bo_cfg.get("max_mult", 0.3))
+    if _breakout_prob >= _bo_min_prob:
+        _spike_mult = 1.0 + _breakout_prob * _bo_max_mult
+        raw_score = min(raw_score * _spike_mult, rs_cap)
+
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
     # Card boost is INVERSELY proportional to ownership — the app rewards
@@ -3057,6 +3349,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
+        "_breakout_prob": round(_breakout_prob, 3),
         # Recent vs season stats — used by line engine for trend detection
         "season_min": round(stats.get("season_min", avg_min), 1),
         "recent_min": round(recent_min, 1),
@@ -4492,11 +4785,40 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                     if _rs >= _tv_floor else -1.0)
             elif core_metric == "rs_x_boost":
                 # RS × (2.0 + boost) — matches confirmed leaderboard formula
-                # (Value = RS × (SlotMult + Boost), top slot = 2.0x).
-                # Using 1.0 as base massively over-weights boost: RS 3/boost 3 = 12
-                # beats RS 5/boost 1 = 10, but real values are 15 vs 15 (equal).
-                # 2.0 base correctly balances RS and boost contribution.
                 r["_core_score"] = r.get("rating", 0) * (2.0 + r.get("est_mult", 0.3))
+            elif core_metric == "ev_weighted":
+                # v62: RS^1.3 × (2.0 + boost) — RS exponent reflects 5x elasticity ratio.
+                # Data: each RS point is worth 4.72 value at boost≥2.5 vs 2.10 at boost<1.5.
+                # Exponent amplifies RS differences: RS 5.0 vs 3.5 goes from 1.43x to 1.62x.
+                _rs_exp = float(core_pool_cfg.get("rs_exponent", 1.3))
+                _rating = max(r.get("rating", 0), 0.1)
+                _base_score = (_rating ** _rs_exp) * (2.0 + r.get("est_mult", 0.3))
+                # Apply draft tier multiplier if enabled
+                dt_cfg = _cfg("draft_tier", _CONFIG_DEFAULTS.get("draft_tier", {}))
+                if dt_cfg.get("enabled", False):
+                    _big_markets = set(_cfg("card_boost.big_market_teams",
+                        _CONFIG_DEFAULTS["card_boost"]["big_market_teams"]))
+                    _log_drafts = _estimate_log_drafts(
+                        r.get("season_pts", 0), r.get("team", "") in _big_markets,
+                        r.get("recent_pts", 0), r.get("season_pts", 0)
+                    )
+                    _tier = _assign_draft_tier(_log_drafts)
+                    _tier_mult = _draft_tier_multiplier(_tier, _rating)
+                    _base_score *= _tier_mult
+                    r["_draft_tier"] = _tier
+                    r["_draft_tier_mult"] = _tier_mult
+                # Apply leaderboard classifier multiplier if enabled
+                _clf_cfg = _cfg("leaderboard_clf", _CONFIG_DEFAULTS.get("leaderboard_clf", {}))
+                if _clf_cfg.get("enabled", False):
+                    _lb_prob = _predict_leaderboard_prob(r)
+                    _clf_weight = float(_clf_cfg.get("weight", 0.6))
+                    _clf_min = float(_clf_cfg.get("min_score", 0.7))
+                    _clf_max = float(_clf_cfg.get("max_score", 1.3))
+                    _clf_mult = max(_clf_min, min(_clf_max, _clf_min + _clf_weight * _lb_prob))
+                    _base_score *= _clf_mult
+                    r["_leaderboard_prob"] = round(_lb_prob, 3)
+                    r["_clf_mult"] = round(_clf_mult, 3)
+                r["_core_score"] = _base_score
             elif core_metric == "tv":
                 # Pure Total Value formula: RS × (avg_slot + boost). No double-counting,
                 # no exponential leverage — ranks players by actual expected draft value.
