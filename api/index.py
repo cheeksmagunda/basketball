@@ -3087,6 +3087,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             season_min_ = stats.get("season_min", avg_min)
             recent_min_ = stats.get("recent_min", avg_min)
             _gp = stats.get("gp", stats.get("games_played"))
+            # v62 feature wiring: pass runtime game context instead of inference defaults.
+            _team_total_proxy = float(total or DEFAULT_TOTAL) / 2.0
+            _opp_def_proxy = 112.0 + ((1.0 if side == "away" else -1.0) * float(spread or 0) * 0.7)
             feat_vec = _lgbm_feature_vector(
                 avg_min=avg_min,
                 pts=pts,
@@ -3102,6 +3105,11 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 recent_min=recent_min_,
                 cascade_bonus=cascade_bonus,
                 games_played=float(_gp) if _gp is not None else None,
+                opp_pts_allowed=_opp_def_proxy,
+                team_pace=_team_total_proxy,
+                team_ppg=_team_total_proxy,
+                teammate_out_count=float(pinfo.get("teammate_out_count", 0.0) or 0.0),
+                game_total=float(total or DEFAULT_TOTAL),
             )
             ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:
@@ -3283,12 +3291,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # grep: BREAKOUT DETECTOR INTEGRATION
     # v62: Breakout detector — identifies players likely to spike.
     # Data: unicorn top-20 entries avg RS=6.32, boost=2.26; all share specific game conditions.
+    _opp_def_proxy = 112.0 + ((1.0 if side == "away" else -1.0) * float(spread or 0) * 0.7)
     _breakout_prob = _compute_breakout_probability(
         {"_cascade_bonus": cascade_bonus, "recent_pts": recent_pts,
          "season_pts": season_pts, "rest_days": pinfo.get("rest_days", 2),
          "dvp_advantage": pinfo.get("dvp_advantage", False)},
         {"total": total or 222, "spread": spread or 0,
-         "opp_def_rating": pinfo.get("opp_def_rating", 112)},
+         "opp_def_rating": pinfo.get("opp_def_rating", _opp_def_proxy)},
     )
     _bo_cfg = _cfg("breakout", _CONFIG_DEFAULTS.get("breakout", {}))
     _bo_min_prob = float(_bo_cfg.get("min_prob", 0.3))
@@ -4201,11 +4210,18 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
     cascade_flags = _cascade_minutes(all_roster, stats_map)
 
     # Project all players with cascade-adjusted minutes
+    # v62 feature context: track same-team OUT counts for teammate_out_count feature.
+    team_out_counts = {}
+    for p, ab, _ in players_in:
+        if p.get("is_out"):
+            team_out_counts[ab] = team_out_counts.get(ab, 0) + 1
+
     out = []
     for p, ab, sd in players_in:
         stats = stats_map.get(p["id"])
         if not stats:
             continue
+        p = {**p, "teammate_out_count": team_out_counts.get(ab, 0)}
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
         # Check if this player's team is on a back-to-back
         b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
@@ -4444,7 +4460,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if p.get("predMin", 0) < (p.get("season_min", 0) - chalk_min_tol):
             continue
         # Boost floor — players below this threshold fail unless star anchor applies.
-        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.0))
+        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.5))
         est_boost = p.get("est_mult", 0)
         is_star_anchor = False
         if est_boost < chalk_min_boost:

@@ -146,8 +146,8 @@ g = df.groupby(["PLAYER_ID", "SEASON"])
 df["usage_trend"] = np.where(df["avg_min"] > 0, df["recent_min"] / df["avg_min"], 1.0)
 df["usage_trend"] = df["usage_trend"].clip(USAGE_TREND_MIN, USAGE_TREND_MAX)
 
-opp_pts_allowed = df.groupby("OPP_TEAM")["PTS"].mean().to_dict()
-df["opp_def_rating"] = df["OPP_TEAM"].map(opp_pts_allowed)
+opp_pts_allowed_map = df.groupby("OPP_TEAM")["PTS"].mean().to_dict()
+df["opp_def_rating"] = df["OPP_TEAM"].map(opp_pts_allowed_map)
 df["home_away"] = df["MATCHUP"].str.contains(r"vs\.", regex=True).astype(float)
 
 df["avg_ast"] = g["AST"].transform(lambda x: x.rolling(5).mean().shift(1))
@@ -193,7 +193,6 @@ df["cascade_signal"] = 0.0
 
 # v62: 6 new features from top-performer analysis
 # 1. Opponent points allowed (defensive weakness signal)
-opp_pts_allowed_map = df.groupby("OPP_TEAM")["PTS"].mean().to_dict()
 df["opp_pts_allowed"] = df["OPP_TEAM"].map(opp_pts_allowed_map).fillna(110.0)
 
 # 2. Team pace proxy (team's average total points per game — possessions indicator)
