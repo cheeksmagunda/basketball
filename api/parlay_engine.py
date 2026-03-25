@@ -224,11 +224,16 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
         spread = g.get("spread")
         total = g.get("total", 222)
         start_time = g.get("startTime", "")
+        home_b2b = g.get("home_b2b", False)
+        away_b2b = g.get("away_b2b", False)
         for abbr, opp in [(home_abbr, away_abbr), (away_abbr, home_abbr)]:
+            is_home = (abbr == home_abbr)
             game_lookup[abbr] = {
                 "gameId": game_id, "opponent": opp, "spread": spread,
                 "total": total, "startTime": start_time,
                 "home": home_abbr, "away": away_abbr,
+                "is_b2b": home_b2b if is_home else away_b2b,
+                "opp_b2b": away_b2b if is_home else home_b2b,
             }
 
     stat_types = ["points", "rebounds", "assists"]
@@ -236,8 +241,15 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
     # Diagnostic counters for pipeline visibility
     _f = {"total": 0, "no_id": 0, "low_min": 0, "injury": 0, "no_game": 0,
           "blowout": 0, "gtd": 0, "skipped_pool": 0, "high_cv": 0, "low_games": 0,
-          "no_odds": 0, "low_line": 0, "bad_line": 0, "no_juice": 0, "no_log": 0, "low_conf": 0, "accepted": 0}
+          "no_odds": 0, "low_line": 0, "bad_line": 0, "no_juice": 0, "no_log": 0, "low_conf": 0,
+          "switch_heavy": 0, "fake_juice": 0, "accepted": 0}
     _pool = set(gamelog_player_ids) if gamelog_player_ids is not None else None
+
+    # Auto-fade config
+    auto_fade_cfg = cfg.get("auto_fade", {})
+    _switch_heavy = set(t.upper() for t in auto_fade_cfg.get("switch_heavy_teams", []))
+    _fake_juice_recent = float(auto_fade_cfg.get("fake_juice_recent_threshold", 0.80))
+    _fake_juice_season = float(auto_fade_cfg.get("fake_juice_season_ceiling", 0.55))
 
     for p in projections:
         pid = str(p.get("id", ""))
@@ -281,6 +293,9 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
         if _pool is not None and pid not in _pool:
             _f["skipped_pool"] += 1
             continue
+
+        # Player position (used by auto-fade filters)
+        _pos_raw = (p.get("position") or p.get("pos") or "").upper()
 
         # Minutes volatility filter
         player_log = gamelogs.get(pid, {})
@@ -346,6 +361,13 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
 
             # Determine direction: pick the side where model + Vegas agree
             for direction in ("over", "under"):
+                # Auto-fade: centers rebounds over vs switch-heavy defenses
+                if (stat == "rebounds" and direction == "over"
+                        and _pos_raw in ("C", "PF", "C-PF", "PF-C")
+                        and gctx.get("opponent", "").upper() in _switch_heavy):
+                    _f["switch_heavy"] += 1
+                    continue
+
                 odds_key = f"odds_{direction}"
                 american_odds = odds_data.get(odds_key)
                 vegas_prob = _american_to_implied(american_odds)
@@ -411,6 +433,15 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                     _f["low_conf"] += 1
                     continue
 
+                # Auto-fade: fake juice trap — high recent hit rate but model says regression likely
+                if direction == "over" and len(log_values) >= 5:
+                    _recent_hits = sum(1 for v in log_values[-10:] if v > book_line)
+                    _recent_total = min(len(log_values), 10)
+                    _recent_hit_rate = _recent_hits / _recent_total if _recent_total > 0 else 0
+                    if _recent_hit_rate >= _fake_juice_recent and model_prob < _fake_juice_season:
+                        _f["fake_juice"] += 1
+                        continue
+
                 # Raw edge
                 edge = proj_val - book_line if direction == "over" else book_line - proj_val
 
@@ -444,6 +475,9 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                     "game_time": gctx.get("startTime", ""),
                     "home_team": gctx.get("home", ""),
                     "away_team": gctx.get("away", ""),
+                    "is_b2b": bool(gctx.get("is_b2b")),
+                    "opp_b2b": bool(gctx.get("opp_b2b")),
+                    "season_reb": float(p.get("season_reb") or p.get("reb") or 0),
                 })
 
     print(f"[parlay] filter funnel: {_f}")
@@ -480,8 +514,14 @@ def _correlation_modifier(legs, parlay_config=None):
       - Two players on same team, both Rebounds Over (zero-sum boards)
     """
     cfg = parlay_config or {}
-    positive_boost = cfg.get("positive_correlation_boost", 1.15)
+    positive_boost = cfg.get("positive_correlation_boost", 1.08)
     shootout_boost = cfg.get("shootout_correlation_boost", 1.05)
+    pnr_rim_boost = cfg.get("pnr_rim_boost", 1.20)
+    pace_boost_threshold = cfg.get("pace_boost_total_threshold", 232.0)
+    pace_boost = cfg.get("pace_boost", 1.06)
+    rest_adv_boost = cfg.get("rest_advantage_boost", 1.08)
+    auto_fade_cfg = cfg.get("auto_fade", {})
+    perimeter_reb_floor = float(auto_fade_cfg.get("perimeter_scorer_reb_floor", 4.0))
 
     multiplier = 1.0
     reasons = []
@@ -507,15 +547,30 @@ def _correlation_modifier(legs, parlay_config=None):
         if len(ast_overs) >= 2:
             return 0.0, ["VETO: Two players on same team competing for assists"]
 
-    # ── POSITIVE: PG Assists Over + teammate Points Over (pick-and-roll synergy) ──
+    # ── POSITIVE: PG Assists Over + teammate Points Over ──
+    # Tiered: PnR-to-rim (interior finisher C/PF with 7+ reb) gets stronger boost
     for team, team_legs in by_team.items():
         ast_overs = [l for l in team_legs if l["stat_type"] == "assists" and l["direction"] == "over"]
         pts_overs = [l for l in team_legs if l["stat_type"] == "points" and l["direction"] == "over"]
         if ast_overs and pts_overs:
-            multiplier *= positive_boost
             a_name = ast_overs[0]["player_name"]
-            p_name = pts_overs[0]["player_name"]
-            reasons.append(f"Positive correlation: {a_name} assists feed {p_name} scoring (same team)")
+            p_leg = pts_overs[0]
+            p_name = p_leg["player_name"]
+            p_pos = p_leg.get("position", "")
+            p_reb = float(p_leg.get("season_reb", 0))
+            # Interior finisher: C/PF with 7+ rebounds → PnR-to-rim synergy (most stable)
+            is_interior = p_pos in ("C", "PF", "C-PF", "PF-C") and p_reb >= 7.0
+            # Perimeter-only scorer: low rebounds → fragile 3PT-dependent correlation
+            is_perimeter = p_reb < perimeter_reb_floor and p_pos in ("SG", "SF", "G", "GF", "SG-SF")
+            if is_interior:
+                multiplier *= pnr_rim_boost
+                reasons.append(f"PnR-to-rim synergy: {a_name} assists feed {p_name} interior finishing ({pnr_rim_boost}x)")
+            elif is_perimeter:
+                multiplier *= 0.95
+                reasons.append(f"Risk: perimeter-to-perimeter — {p_name} scoring depends on 3PT variance")
+            else:
+                multiplier *= positive_boost
+                reasons.append(f"Positive correlation: {a_name} assists feed {p_name} scoring (same team)")
 
     # ── POSITIVE: Opposing primary scorers, Points Over, tight game (shootout) ──
     for gid, game_legs in by_game.items():
@@ -544,6 +599,25 @@ def _correlation_modifier(legs, parlay_config=None):
                 if total is not None and float(total) >= 228:
                     multiplier *= 1.03
                     reasons.append(f"High-total game script alignment ({total} O/U)")
+
+    # ── POSITIVE: Pace asymmetry — high-total games inflate counting stats ──
+    _pace_applied = set()
+    for gid, game_legs in by_game.items():
+        if gid in _pace_applied:
+            continue
+        total = game_legs[0].get("game_total")
+        if total is not None and float(total) >= pace_boost_threshold:
+            multiplier *= pace_boost
+            _pace_applied.add(gid)
+            reasons.append(f"Pace boost: high-total game ({total} O/U ≥ {pace_boost_threshold})")
+
+    # ── POSITIVE: Rest advantage — team rested vs opponent on B2B ──
+    for team, team_legs in by_team.items():
+        # Check if this team has a rest advantage (not on B2B, opponent is)
+        sample = team_legs[0]
+        if not sample.get("is_b2b") and sample.get("opp_b2b"):
+            multiplier *= rest_adv_boost
+            reasons.append(f"Rest advantage: {team} rested vs opponent on back-to-back ({rest_adv_boost}x)")
 
     return round(multiplier, 4), reasons
 
@@ -677,24 +751,48 @@ def _score_structure(legs, parlay_config=None):
         bonus *= 1.05
         reasons.append("Stat diversification across 2 categories")
 
-    # Reward including a "market match" leg (Vegas heavily juiced, high confidence)
+    # Reward including a "market match" leg (Vegas heavily juiced, high confidence, low CV)
+    mm_max_cv = cfg.get("market_match_max_cv", 0.25)
     has_market_match = any(
         l.get("american_odds") is not None
         and float(l.get("american_odds", 0)) <= -140
         and l["blended_confidence"] >= 0.60
+        and l.get("minutes_cv", 0) <= mm_max_cv  # CV gate: volatile ≠ reliable
         for l in legs
     )
     if has_market_match:
         bonus *= 1.12
-        reasons.append("Market match: strong Vegas alignment on at least one leg")
+        reasons.append("Market match: strong Vegas alignment + stable rotation on at least one leg")
 
     # Penalize assists overs in wide-spread games (PG gets benched in blowouts)
+    pair_spread_threshold = cfg.get("correlated_pair_max_spread", 5.0)
     for l in legs:
         if l["stat_type"] == "assists" and l["direction"] == "over":
             spread = abs(float(l.get("game_spread") or 0))
-            if spread > 6.5:
+            if spread > pair_spread_threshold:
                 bonus *= 0.88
                 reasons.append(f"Risk: {l['player_name']} assists over in {spread}-pt spread game")
+
+    # B2B penalty on correlated pairs — fatigue breaks assists→points chain
+    b2b_penalty = float(cfg.get("auto_fade", {}).get("b2b_correlated_pair_penalty", 0.75))
+    for team, team_legs in by_team.items():
+        ast_overs = [l for l in team_legs if l["stat_type"] == "assists" and l["direction"] == "over"]
+        pts_overs = [l for l in team_legs if l["stat_type"] == "points" and l["direction"] == "over"]
+        if ast_overs and pts_overs:
+            if ast_overs[0].get("is_b2b"):
+                bonus *= b2b_penalty
+                reasons.append(f"Risk: correlated pair on B2B — fatigue disrupts assists+points correlation")
+
+    # Penalize correlated pairs in low-total games (insufficient possessions)
+    min_total = cfg.get("min_game_total", 225.5)
+    for team, team_legs in by_team.items():
+        ast_overs = [l for l in team_legs if l["stat_type"] == "assists" and l["direction"] == "over"]
+        pts_overs = [l for l in team_legs if l["stat_type"] == "points" and l["direction"] == "over"]
+        if ast_overs and pts_overs:
+            total = ast_overs[0].get("game_total")
+            if total is not None and float(total) < min_total:
+                bonus *= 0.85
+                reasons.append(f"Risk: low game total ({total} < {min_total}) — fewer possessions for pair")
 
     # Mild bonus for all-over combos (correlated with game pace)
     all_overs = all(l["direction"] == "over" for l in legs)
@@ -722,15 +820,18 @@ def _find_best_correlated_pair(pool, cfg=None):
     Returns (assists_leg, points_leg, score) or None if no valid pair exists.
     """
     cfg = cfg or {}
-    max_spread = cfg.get("correlated_pair_max_spread", 6.5)
+    max_spread = cfg.get("correlated_pair_max_spread", 5.0)
+    min_total = cfg.get("min_game_total", 225.5)
+    b2b_penalty = float(cfg.get("auto_fade", {}).get("b2b_correlated_pair_penalty", 0.75))
 
-    # Collect all assists-over legs from playmakers in non-blowout games
+    # Collect all assists-over legs from playmakers in non-blowout, tight-spread, high-total games
     ast_overs = [
         l for l in pool
         if l["stat_type"] == "assists"
         and l["direction"] == "over"
         and _is_playmaker(l)
         and (l.get("game_spread") is None or abs(float(l.get("game_spread", 0))) <= max_spread)
+        and (l.get("game_total") is None or float(l.get("game_total", 222)) >= min_total)
     ]
     if not ast_overs:
         return None
@@ -751,6 +852,9 @@ def _find_best_correlated_pair(pool, cfg=None):
             # Tighter spread = more game time = better for both legs
             spread_bonus = 1.15 if spread <= 3.0 else (1.08 if spread <= 5.0 else 1.0)
             score = ast_leg["blended_confidence"] * pts_leg["blended_confidence"] * spread_bonus
+            # B2B penalty: fatigue disrupts assists→points chain
+            if ast_leg.get("is_b2b"):
+                score *= b2b_penalty
             if score > best_score:
                 best_score = score
                 best = (ast_leg, pts_leg, score)
@@ -762,58 +866,51 @@ def _find_best_market_match(pool, pair, cfg=None):
     """Find the best market-match leg from a different game than the correlated pair.
 
     Market match = role player stat OVER with heavy Vegas juice and high model confidence.
+    CV gate: rejects volatile players regardless of juice (prevents "fake juice" trap).
+    Dynamic substitution: rebounds deprioritized vs elite defensive teams.
     Returns leg dict or None.
     """
     cfg = cfg or {}
     juice_threshold = cfg.get("market_match_juice_threshold", -140)
     min_conf = cfg.get("market_match_min_conf", 0.58)
+    max_cv = cfg.get("market_match_max_cv", 0.25)
+    auto_fade_cfg = cfg.get("auto_fade", {})
+    rebound_fade = set(t.upper() for t in auto_fade_cfg.get("rebound_fade_teams", []))
 
     pair_game_id = pair[0]["gameId"]
     pair_player_ids = {pair[0]["player_id"], pair[1]["player_id"]}
 
-    # Filter: different game, different players, over direction, meets juice + confidence
-    eligible = []
-    for l in pool:
+    def _mm_eligible(l, juice_thresh):
         if l["gameId"] == pair_game_id:
-            continue  # Must be from a different game for diversification
+            return False
         if l["player_id"] in pair_player_ids:
-            continue
+            return False
         if l["direction"] != "over":
-            continue
+            return False
         if l["blended_confidence"] < min_conf:
-            continue
+            return False
+        # CV gate: volatile players are unreliable for "sure thing" Market Match
+        if l.get("minutes_cv", 0) > max_cv:
+            return False
         odds = l.get("american_odds")
         if odds is not None:
             try:
-                if float(odds) > juice_threshold:
-                    continue  # Not juiced enough
+                if float(odds) > juice_thresh:
+                    return False
             except (TypeError, ValueError):
-                continue
-        eligible.append(l)
+                return False
+        return True
+
+    # Filter: different game, different players, over direction, meets juice + confidence + CV
+    eligible = [l for l in pool if _mm_eligible(l, juice_threshold)]
 
     if not eligible:
-        # Relax juice threshold to -120 if nothing at -140
+        # Relax juice threshold to -120 if nothing at -140 (keep CV gate)
         relaxed_juice = cfg.get("market_match_juice_relaxed", -120)
-        for l in pool:
-            if l["gameId"] == pair_game_id:
-                continue
-            if l["player_id"] in pair_player_ids:
-                continue
-            if l["direction"] != "over":
-                continue
-            if l["blended_confidence"] < min_conf:
-                continue
-            odds = l.get("american_odds")
-            if odds is not None:
-                try:
-                    if float(odds) > relaxed_juice:
-                        continue
-                except (TypeError, ValueError):
-                    continue
-            eligible.append(l)
+        eligible = [l for l in pool if _mm_eligible(l, relaxed_juice)]
 
     if not eligible:
-        # Final fallback: any over leg from a different game with decent confidence
+        # Final fallback: any over leg from a different game with decent confidence (relax CV)
         for l in pool:
             if l["gameId"] == pair_game_id:
                 continue
@@ -827,9 +924,15 @@ def _find_best_market_match(pool, pair, cfg=None):
     if not eligible:
         return None
 
-    # Prefer rebounds (matchup-driven), then highest confidence
+    # Dynamic Leg 1 substitution: deprioritize rebounds vs elite defensive teams
     def _mm_sort(l):
-        stat_pref = 0 if l["stat_type"] == "rebounds" else 1
+        # Rebounds preferred generally, but faded vs top defensive teams
+        if l["stat_type"] == "rebounds" and l.get("opponent", "").upper() in rebound_fade:
+            stat_pref = 2  # worst priority — elite defense suppresses boards
+        elif l["stat_type"] == "rebounds":
+            stat_pref = 0  # preferred (matchup-driven)
+        else:
+            stat_pref = 1
         return (stat_pref, -l["blended_confidence"])
 
     eligible.sort(key=_mm_sort)

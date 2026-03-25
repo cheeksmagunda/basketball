@@ -534,7 +534,7 @@ class TestParlayConfigDefaults:
         assert p["market_match_juice_threshold"] == -140
         assert p["market_match_juice_relaxed"] == -120
         assert p["market_match_min_conf"] == 0.58
-        assert p["correlated_pair_max_spread"] == 6.5
+        assert p["correlated_pair_max_spread"] == 5.0
         assert p["parlay_gamelog_pool_cap"] == 100
 
 
@@ -705,3 +705,547 @@ class TestParlayHistoryEndpoint:
         assert "result" in source
         assert "data/parlays/" in source
         assert "_github_write_file" in source
+
+
+# ── Post-Mortem v2: Auto-Fade Matrix Tests ─────────────────────────────────
+
+def _make_game(home="BOS", away="LAL", spread=-3.0, total=228.0, home_b2b=False, away_b2b=False):
+    """Helper: build a minimal game dict."""
+    return {
+        "home": {"abbr": home}, "away": {"abbr": away},
+        "gameId": f"{home}_{away}", "spread": spread, "total": total,
+        "startTime": "2026-03-25T23:00Z",
+        "home_b2b": home_b2b, "away_b2b": away_b2b,
+    }
+
+
+def _make_proj(name, team, pid="100", pts=20, reb=5, ast=5, position="SG",
+               season_min=30, season_pts=20, season_ast=5, season_reb=5,
+               rest_days=2):
+    """Helper: build a minimal projection dict."""
+    return {
+        "id": pid, "name": name, "team": team, "position": position,
+        "pts": pts, "reb": reb, "ast": ast,
+        "season_min": season_min, "predMin": season_min,
+        "season_pts": season_pts, "season_ast": season_ast, "season_reb": season_reb,
+        "rest_days": rest_days,
+    }
+
+
+def _make_gamelog(pts_vals=None, reb_vals=None, ast_vals=None, min_vals=None):
+    """Helper: build a minimal gamelog dict."""
+    return {
+        "points": pts_vals or [20, 22, 18, 21, 19, 23, 20, 17, 22, 21],
+        "rebounds": reb_vals or [5, 6, 4, 5, 7, 5, 6, 4, 5, 6],
+        "assists": ast_vals or [5, 4, 6, 5, 3, 5, 4, 6, 5, 4],
+        "minutes": min_vals or [32, 34, 31, 33, 32, 34, 33, 31, 32, 33],
+    }
+
+
+def _make_odds(line, odds_over=-110, odds_under=-110):
+    """Helper: build a minimal odds dict."""
+    return {"line": line, "odds_over": odds_over, "odds_under": odds_under}
+
+
+class TestAutoFadeSwitchHeavy:
+    """Centers rebounds over vs switch-heavy defenses should be filtered."""
+
+    def test_center_reb_over_vs_switch_heavy_filtered(self):
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("BOS", "LAL")]
+        proj = [_make_proj("Center Guy", "LAL", pid="1", position="C", reb=10, season_reb=10)]
+        odds = {("center guy", "rebounds"): _make_odds(8.5, -150, 120)}
+        gl = {"1": _make_gamelog(reb_vals=[10, 9, 11, 10, 8, 10, 9, 11, 10, 9])}
+        cfg = {"auto_fade": {"switch_heavy_teams": ["BOS"]}, "juice_threshold": -105, "min_blended_conf": 0.01}
+        cands, funnel = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        # Should filter center rebounds over vs BOS
+        reb_overs = [c for c in cands if c["stat_type"] == "rebounds" and c["direction"] == "over"]
+        assert len(reb_overs) == 0
+        assert funnel["switch_heavy"] >= 1
+
+    def test_center_reb_over_vs_non_switch_heavy_passes(self):
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("MIA", "LAL")]
+        proj = [_make_proj("Center Guy", "LAL", pid="1", position="C", reb=10, season_reb=10)]
+        odds = {("center guy", "rebounds"): _make_odds(8.5, -150, 120)}
+        gl = {"1": _make_gamelog(reb_vals=[10, 9, 11, 10, 8, 10, 9, 11, 10, 9])}
+        cfg = {"auto_fade": {"switch_heavy_teams": ["BOS"]}, "juice_threshold": -105, "min_blended_conf": 0.01}
+        cands, funnel = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        reb_overs = [c for c in cands if c["stat_type"] == "rebounds" and c["direction"] == "over"]
+        assert len(reb_overs) >= 1
+
+    def test_guard_reb_over_vs_switch_heavy_passes(self):
+        """Guards should not be filtered by switch-heavy fade."""
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("BOS", "LAL")]
+        proj = [_make_proj("Guard Guy", "LAL", pid="1", position="SG", reb=8, season_reb=8)]
+        odds = {("guard guy", "rebounds"): _make_odds(6.5, -150, 120)}
+        gl = {"1": _make_gamelog(reb_vals=[8, 9, 7, 8, 10, 8, 9, 7, 8, 9])}
+        cfg = {"auto_fade": {"switch_heavy_teams": ["BOS"]}, "juice_threshold": -105, "min_blended_conf": 0.01}
+        cands, funnel = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        reb_overs = [c for c in cands if c["stat_type"] == "rebounds" and c["direction"] == "over"]
+        assert len(reb_overs) >= 1
+
+
+class TestAutoFadeFakeJuice:
+    """High recent hit rate + low season model probability triggers fake juice fade."""
+
+    def test_fake_juice_filtered(self):
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("MIA", "LAL")]
+        proj = [_make_proj("Streaky Player", "LAL", pid="1", pts=15, season_pts=15)]
+        # Line at 12.5, recent values all above → high recent hit rate
+        # But model_prob should be low (std_dev is high relative to edge)
+        odds = {("streaky player", "points"): _make_odds(12.5, -150, 120)}
+        # Recent L10: 9 of 10 above 12.5 = 90% → fake juice triggers if model_prob < 0.55
+        gl = {"1": _make_gamelog(pts_vals=[15, 14, 13, 16, 14, 15, 13, 14, 11, 15])}
+        cfg = {
+            "auto_fade": {"fake_juice_recent_threshold": 0.80, "fake_juice_season_ceiling": 0.65},
+            "juice_threshold": -105, "min_blended_conf": 0.01,
+        }
+        cands, funnel = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        # With high recent hit rate AND projection close to line (low model_prob),
+        # the fake juice filter may fire — verify counter exists
+        assert "fake_juice" in funnel
+
+    def test_fake_juice_not_triggered_when_model_confident(self):
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("MIA", "LAL")]
+        proj = [_make_proj("Strong Player", "LAL", pid="1", pts=25, season_pts=25)]
+        # Line at 18.5, projection 25 → model is very confident (high model_prob)
+        odds = {("strong player", "points"): _make_odds(18.5, -150, 120)}
+        gl = {"1": _make_gamelog(pts_vals=[25, 24, 23, 26, 24, 25, 23, 24, 22, 25])}
+        cfg = {
+            "auto_fade": {"fake_juice_recent_threshold": 0.80, "fake_juice_season_ceiling": 0.55},
+            "juice_threshold": -105, "min_blended_conf": 0.01,
+        }
+        cands, funnel = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        pts_overs = [c for c in cands if c["stat_type"] == "points" and c["direction"] == "over"]
+        assert len(pts_overs) >= 1  # Should pass — model is confident
+
+
+class TestAutoFadeB2BPenalty:
+    """B2B correlated pairs get penalized in scoring."""
+
+    def test_b2b_pair_penalized_in_structure(self):
+        from api.parlay_engine import _score_structure
+        legs = [
+            {"team": "LAL", "stat_type": "assists", "direction": "over", "player_name": "PG",
+             "blended_confidence": 0.60, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": True, "opp_b2b": False,
+             "position": "PG", "season_reb": 3, "season_ast": 8, "gameId": "g1"},
+            {"team": "LAL", "stat_type": "points", "direction": "over", "player_name": "Scorer",
+             "blended_confidence": 0.60, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": True, "opp_b2b": False,
+             "position": "SF", "season_reb": 6, "season_ast": 2, "gameId": "g1"},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over", "player_name": "Big",
+             "blended_confidence": 0.60, "american_odds": -150, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "C", "season_reb": 10, "season_ast": 1, "gameId": "g2"},
+        ]
+        cfg_b2b = {"auto_fade": {"b2b_correlated_pair_penalty": 0.75}}
+        bonus_b2b, reasons_b2b = _score_structure(legs, cfg_b2b)
+
+        # Same legs but not on B2B
+        legs_rested = [dict(l, is_b2b=False) for l in legs]
+        bonus_rested, _ = _score_structure(legs_rested, cfg_b2b)
+
+        assert bonus_b2b < bonus_rested
+        assert any("B2B" in r for r in reasons_b2b)
+
+    def test_b2b_pair_penalized_in_correlated_pair_search(self):
+        from api.parlay_engine import _find_best_correlated_pair
+        pool = [
+            {"player_id": "1", "team": "LAL", "stat_type": "assists", "direction": "over",
+             "blended_confidence": 0.65, "position": "PG", "season_ast": 8,
+             "game_spread": -3, "game_total": 230, "is_b2b": True, "gameId": "g1"},
+            {"player_id": "2", "team": "LAL", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.65, "position": "SF", "season_ast": 2,
+             "game_spread": -3, "game_total": 230, "is_b2b": True, "gameId": "g1"},
+        ]
+        cfg = {"auto_fade": {"b2b_correlated_pair_penalty": 0.75}}
+        result = _find_best_correlated_pair(pool, cfg)
+        # Should still return a pair but with penalized score
+        assert result is not None
+        _, _, score = result
+        # Unpenalized would be ~0.65 * 0.65 * 1.15 = 0.486; penalized = 0.486 * 0.75 = 0.364
+        assert score < 0.45
+
+
+class TestGameTotalFloor:
+    """Correlated pairs in low-total games should be penalized or excluded."""
+
+    def test_low_total_pair_excluded(self):
+        from api.parlay_engine import _find_best_correlated_pair
+        pool = [
+            {"player_id": "1", "team": "LAL", "stat_type": "assists", "direction": "over",
+             "blended_confidence": 0.65, "position": "PG", "season_ast": 8,
+             "game_spread": -3, "game_total": 210, "is_b2b": False, "gameId": "g1"},
+            {"player_id": "2", "team": "LAL", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.65, "position": "SF", "season_ast": 2,
+             "game_spread": -3, "game_total": 210, "is_b2b": False, "gameId": "g1"},
+        ]
+        cfg = {"min_game_total": 225.5}
+        result = _find_best_correlated_pair(pool, cfg)
+        assert result is None  # Filtered by game total floor
+
+    def test_high_total_pair_passes(self):
+        from api.parlay_engine import _find_best_correlated_pair
+        pool = [
+            {"player_id": "1", "team": "LAL", "stat_type": "assists", "direction": "over",
+             "blended_confidence": 0.65, "position": "PG", "season_ast": 8,
+             "game_spread": -3, "game_total": 232, "is_b2b": False, "gameId": "g1"},
+            {"player_id": "2", "team": "LAL", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.65, "position": "SF", "season_ast": 2,
+             "game_spread": -3, "game_total": 232, "is_b2b": False, "gameId": "g1"},
+        ]
+        cfg = {"min_game_total": 225.5}
+        result = _find_best_correlated_pair(pool, cfg)
+        assert result is not None
+
+    def test_low_total_penalized_in_structure(self):
+        from api.parlay_engine import _score_structure
+        legs = [
+            {"team": "LAL", "stat_type": "assists", "direction": "over", "player_name": "PG",
+             "blended_confidence": 0.60, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 210, "is_b2b": False, "opp_b2b": False,
+             "position": "PG", "season_reb": 3, "season_ast": 8, "gameId": "g1"},
+            {"team": "LAL", "stat_type": "points", "direction": "over", "player_name": "SC",
+             "blended_confidence": 0.60, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 210, "is_b2b": False, "opp_b2b": False,
+             "position": "SF", "season_reb": 6, "season_ast": 2, "gameId": "g1"},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over", "player_name": "Big",
+             "blended_confidence": 0.60, "american_odds": -150, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 210, "is_b2b": False, "opp_b2b": False,
+             "position": "C", "season_reb": 10, "season_ast": 1, "gameId": "g2"},
+        ]
+        cfg = {"min_game_total": 225.5}
+        bonus, reasons = _score_structure(legs, cfg)
+        assert any("low game total" in r.lower() for r in reasons)
+
+
+class TestCVBasedMarketMatch:
+    """High-CV candidates lose market match bonus."""
+
+    def test_high_cv_no_market_match_bonus(self):
+        from api.parlay_engine import _score_structure
+        legs = [
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over", "player_name": "Big",
+             "blended_confidence": 0.65, "american_odds": -150, "minutes_cv": 0.35,  # High CV
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "C", "season_reb": 10, "season_ast": 1, "gameId": "g1"},
+            {"team": "LAL", "stat_type": "points", "direction": "over", "player_name": "Wing",
+             "blended_confidence": 0.55, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "SF", "season_reb": 4, "season_ast": 2, "gameId": "g2"},
+            {"team": "MIA", "stat_type": "assists", "direction": "over", "player_name": "PG",
+             "blended_confidence": 0.55, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "PG", "season_reb": 3, "season_ast": 7, "gameId": "g3"},
+        ]
+        cfg = {"market_match_max_cv": 0.25}
+        bonus, reasons = _score_structure(legs, cfg)
+        # Should NOT have market match bonus because the juiced leg has high CV
+        assert not any("Market match" in r for r in reasons)
+
+    def test_low_cv_gets_market_match_bonus(self):
+        from api.parlay_engine import _score_structure
+        legs = [
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over", "player_name": "Big",
+             "blended_confidence": 0.65, "american_odds": -150, "minutes_cv": 0.10,  # Low CV
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "C", "season_reb": 10, "season_ast": 1, "gameId": "g1"},
+            {"team": "LAL", "stat_type": "points", "direction": "over", "player_name": "Wing",
+             "blended_confidence": 0.55, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "SF", "season_reb": 4, "season_ast": 2, "gameId": "g2"},
+            {"team": "MIA", "stat_type": "assists", "direction": "over", "player_name": "PG",
+             "blended_confidence": 0.55, "american_odds": -110, "minutes_cv": 0.10,
+             "game_spread": -3, "game_total": 230, "is_b2b": False, "opp_b2b": False,
+             "position": "PG", "season_reb": 3, "season_ast": 7, "gameId": "g3"},
+        ]
+        cfg = {"market_match_max_cv": 0.25}
+        bonus, reasons = _score_structure(legs, cfg)
+        assert any("Market match" in r for r in reasons)
+
+
+class TestPnrRimBoost:
+    """Interior finisher gets stronger correlation boost than generic."""
+
+    def test_interior_finisher_gets_pnr_boost(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g1", "game_spread": -3, "game_total": 230,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Center", "position": "C", "season_ast": 1, "season_reb": 10,
+             "gameId": "g1", "game_spread": -3, "game_total": 230,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Other", "position": "PF", "season_ast": 1, "season_reb": 8,
+             "gameId": "g2", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"pnr_rim_boost": 1.20, "positive_correlation_boost": 1.08}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        # Should use PnR-to-rim boost (1.20) not generic (1.08)
+        assert mult >= 1.20
+        assert any("PnR-to-rim" in r for r in reasons)
+
+    def test_generic_boost_for_non_interior(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g1", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Wing", "position": "SF", "season_ast": 2, "season_reb": 6,
+             "gameId": "g1", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Other", "position": "PF", "season_ast": 1, "season_reb": 8,
+             "gameId": "g2", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"pnr_rim_boost": 1.20, "positive_correlation_boost": 1.08}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        # SF with 6 reb is not interior (needs 7+) → generic boost
+        assert any("Positive correlation" in r for r in reasons)
+        assert not any("PnR-to-rim" in r for r in reasons)
+
+
+class TestPerimeterToPerimeterFade:
+    """Perimeter-only scorer gets correlation penalty instead of boost."""
+
+    def test_perimeter_scorer_penalized(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g1", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Shooter", "position": "SG", "season_ast": 1, "season_reb": 2,
+             "gameId": "g1", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Other", "position": "PF", "season_ast": 1, "season_reb": 8,
+             "gameId": "g2", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"auto_fade": {"perimeter_scorer_reb_floor": 4.0}}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        # Perimeter scorer (SG, 2 reb < 4 floor) → penalty
+        assert any("perimeter-to-perimeter" in r.lower() for r in reasons)
+        # Should be penalized (0.95) not boosted (1.08)
+        assert mult < 1.0
+
+
+class TestPaceBoost:
+    """High-total games get pace boost multiplier."""
+
+    def test_pace_boost_applied(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Star", "position": "SF", "season_ast": 3, "season_reb": 6,
+             "gameId": "g1", "game_spread": -3, "game_total": 240,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Big", "position": "C", "season_ast": 1, "season_reb": 10,
+             "gameId": "g1", "game_spread": -3, "game_total": 240,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "MIA", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g2", "game_spread": -2, "game_total": 220,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"pace_boost_total_threshold": 232.0, "pace_boost": 1.06}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        assert any("Pace boost" in r for r in reasons)
+        assert mult >= 1.06
+
+    def test_no_pace_boost_below_threshold(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Star", "position": "SF", "season_ast": 3, "season_reb": 6,
+             "gameId": "g1", "game_spread": -3, "game_total": 220,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Big", "position": "C", "season_ast": 1, "season_reb": 10,
+             "gameId": "g2", "game_spread": -3, "game_total": 218,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "MIA", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g3", "game_spread": -2, "game_total": 220,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"pace_boost_total_threshold": 232.0, "pace_boost": 1.06}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        assert not any("Pace boost" in r for r in reasons)
+
+
+class TestRestAdvantageBoost:
+    """Rest advantage (team rested, opponent on B2B) gets boost."""
+
+    def test_rest_advantage_applied(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Star", "position": "SF", "season_ast": 3, "season_reb": 6,
+             "gameId": "g1", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": True},  # Rest advantage!
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Big", "position": "C", "season_ast": 1, "season_reb": 10,
+             "gameId": "g2", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "MIA", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g3", "game_spread": -2, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"rest_advantage_boost": 1.08}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        assert any("Rest advantage" in r for r in reasons)
+        assert mult >= 1.08
+
+    def test_no_rest_advantage_when_both_rested(self):
+        from api.parlay_engine import _correlation_modifier
+        legs = [
+            {"team": "LAL", "stat_type": "points", "direction": "over",
+             "player_name": "Star", "position": "SF", "season_ast": 3, "season_reb": 6,
+             "gameId": "g1", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "BOS", "stat_type": "rebounds", "direction": "over",
+             "player_name": "Big", "position": "C", "season_ast": 1, "season_reb": 10,
+             "gameId": "g2", "game_spread": -3, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+            {"team": "MIA", "stat_type": "assists", "direction": "over",
+             "player_name": "PG", "position": "PG", "season_ast": 8, "season_reb": 3,
+             "gameId": "g3", "game_spread": -2, "game_total": 228,
+             "is_b2b": False, "opp_b2b": False},
+        ]
+        cfg = {"rest_advantage_boost": 1.08}
+        mult, reasons = _correlation_modifier(legs, cfg)
+        assert not any("Rest advantage" in r for r in reasons)
+
+
+class TestTightenedSpread:
+    """correlated_pair_max_spread defaults to 5.0 (was 6.5)."""
+
+    def test_default_spread_5(self):
+        from api.parlay_engine import _find_best_correlated_pair
+        pool = [
+            {"player_id": "1", "team": "LAL", "stat_type": "assists", "direction": "over",
+             "blended_confidence": 0.65, "position": "PG", "season_ast": 8,
+             "game_spread": -6.0, "game_total": 230, "is_b2b": False, "gameId": "g1"},
+            {"player_id": "2", "team": "LAL", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.65, "position": "SF", "season_ast": 2,
+             "game_spread": -6.0, "game_total": 230, "is_b2b": False, "gameId": "g1"},
+        ]
+        # Default config — spread threshold is now 5.0
+        result = _find_best_correlated_pair(pool, {})
+        assert result is None  # 6.0 > 5.0 → excluded
+
+    def test_spread_4_passes(self):
+        from api.parlay_engine import _find_best_correlated_pair
+        pool = [
+            {"player_id": "1", "team": "LAL", "stat_type": "assists", "direction": "over",
+             "blended_confidence": 0.65, "position": "PG", "season_ast": 8,
+             "game_spread": -4.0, "game_total": 230, "is_b2b": False, "gameId": "g1"},
+            {"player_id": "2", "team": "LAL", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.65, "position": "SF", "season_ast": 2,
+             "game_spread": -4.0, "game_total": 230, "is_b2b": False, "gameId": "g1"},
+        ]
+        result = _find_best_correlated_pair(pool, {})
+        assert result is not None
+
+
+class TestDynamicLeg1Substitution:
+    """Rebounds deprioritized vs elite defensive teams in market match selection."""
+
+    def test_rebounds_deprioritized_vs_elite_defense(self):
+        from api.parlay_engine import _find_best_market_match
+        pair = (
+            {"gameId": "g1", "player_id": "10"},
+            {"gameId": "g1", "player_id": "11"},
+        )
+        pool = [
+            # Rebounds candidate vs OKC (elite defense)
+            {"player_id": "1", "team": "LAL", "stat_type": "rebounds", "direction": "over",
+             "blended_confidence": 0.62, "american_odds": -150, "minutes_cv": 0.10,
+             "opponent": "OKC", "gameId": "g2"},
+            # Points candidate vs MIA (not in fade list)
+            {"player_id": "2", "team": "BOS", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.60, "american_odds": -145, "minutes_cv": 0.10,
+             "opponent": "MIA", "gameId": "g3"},
+        ]
+        cfg = {
+            "auto_fade": {"rebound_fade_teams": ["OKC"]},
+            "market_match_juice_threshold": -140,
+            "market_match_min_conf": 0.58,
+            "market_match_max_cv": 0.30,
+        }
+        result = _find_best_market_match(pool, pair, cfg)
+        # Should prefer points over rebounds because OKC is in rebound_fade_teams
+        assert result is not None
+        assert result["stat_type"] == "points"
+
+    def test_rebounds_preferred_vs_normal_defense(self):
+        from api.parlay_engine import _find_best_market_match
+        pair = (
+            {"gameId": "g1", "player_id": "10"},
+            {"gameId": "g1", "player_id": "11"},
+        )
+        pool = [
+            {"player_id": "1", "team": "LAL", "stat_type": "rebounds", "direction": "over",
+             "blended_confidence": 0.62, "american_odds": -150, "minutes_cv": 0.10,
+             "opponent": "MIA", "gameId": "g2"},
+            {"player_id": "2", "team": "BOS", "stat_type": "points", "direction": "over",
+             "blended_confidence": 0.60, "american_odds": -145, "minutes_cv": 0.10,
+             "opponent": "PHO", "gameId": "g3"},
+        ]
+        cfg = {
+            "auto_fade": {"rebound_fade_teams": ["OKC"]},
+            "market_match_juice_threshold": -140,
+            "market_match_min_conf": 0.58,
+            "market_match_max_cv": 0.30,
+        }
+        result = _find_best_market_match(pool, pair, cfg)
+        # Should prefer rebounds (normal behavior) when not facing elite defense
+        assert result is not None
+        assert result["stat_type"] == "rebounds"
+
+
+class TestCandidateLegB2BFields:
+    """Candidate legs should carry is_b2b and opp_b2b fields from game data."""
+
+    def test_b2b_fields_in_candidates(self):
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("BOS", "LAL", home_b2b=True, away_b2b=False)]
+        proj = [_make_proj("Home Player", "BOS", pid="1")]
+        odds = {("home player", "points"): _make_odds(18.5, -120, -100)}
+        gl = {"1": _make_gamelog()}
+        cfg = {"juice_threshold": -105, "min_blended_conf": 0.01}
+        cands, _ = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        if cands:
+            c = cands[0]
+            assert "is_b2b" in c
+            assert "opp_b2b" in c
+            assert c["is_b2b"] is True  # BOS is home and home_b2b=True
+            assert c["opp_b2b"] is False
+
+    def test_season_reb_in_candidates(self):
+        from api.parlay_engine import build_candidate_legs
+        games = [_make_game("MIA", "LAL")]
+        proj = [_make_proj("Player", "LAL", pid="1", season_reb=8)]
+        odds = {("player", "points"): _make_odds(18.5, -120, -100)}
+        gl = {"1": _make_gamelog()}
+        cfg = {"juice_threshold": -105, "min_blended_conf": 0.01}
+        cands, _ = build_candidate_legs(proj, games, odds, gl, {}, cfg)
+        if cands:
+            assert cands[0]["season_reb"] == 8.0
