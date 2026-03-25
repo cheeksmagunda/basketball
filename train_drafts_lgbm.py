@@ -133,6 +133,7 @@ def _labeled_rows() -> list[dict]:
                         "date": r.get("date", ""),
                         "player_name": (r.get("player_name") or "").strip(),
                         "drafts": drafts,
+                        "actual_boost": _safe_float(r.get("actual_card_boost"), -1.0),
                     }
                 )
     if ACTUALS_DIR.exists():
@@ -144,7 +145,14 @@ def _labeled_rows() -> list[dict]:
                     name = (r.get("player_name") or "").strip()
                     if drafts <= 0 or not name:
                         continue
-                    rows.append({"date": d, "player_name": name, "drafts": drafts})
+                    rows.append(
+                        {
+                            "date": d,
+                            "player_name": name,
+                            "drafts": drafts,
+                            "actual_boost": _safe_float(r.get("actual_card_boost"), -1.0),
+                        }
+                    )
     # De-dupe (player, date)
     seen: set[tuple[str, str]] = set()
     uniq = []
@@ -160,9 +168,11 @@ def _labeled_rows() -> list[dict]:
 def build_training_matrix(
     pred_index: dict[str, dict[str, dict]],
     role_agg: dict[str, dict[str, float]],
+    labeled: list[dict] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     X, y, w = [], [], []
-    labeled = _labeled_rows()
+    if labeled is None:
+        labeled = _labeled_rows()
     for row in labeled:
         d, name = row["date"], row["player_name"]
         nm = _normalize_name(name)
@@ -199,14 +209,22 @@ def train() -> None:
                 d = (r.get("date") or "").strip()
                 if d:
                     tp_dates.add(d)
+    actuals_dates = set()
+    if ACTUALS_DIR.exists():
+        for p in ACTUALS_DIR.glob("*.csv"):
+            actuals_dates.add(p.stem)
+    labeled = _labeled_rows()
+    label_dates = {r["date"] for r in labeled if (r.get("date") or "").strip()}
     pred_dates = set(pred_index.keys())
-    ovl = tp_dates & pred_dates
+    ovl = label_dates & pred_dates
     print(
-        f"[drafts_model] top_performers dates: {len(tp_dates)} | "
+        f"[drafts_model] top_performers file dates: {len(tp_dates)} | "
+        f"actuals CSV dates: {len(actuals_dates)} | "
+        f"labeled dates (drafts>0, deduped): {len(label_dates)} | "
         f"prediction CSV dates: {len(pred_dates)} | overlap: {len(ovl)}"
     )
     role_agg = _player_role_aggregates(pred_index)
-    X, y, weights = build_training_matrix(pred_index, role_agg)
+    X, y, weights = build_training_matrix(pred_index, role_agg, labeled=labeled)
     if len(X) < 10:
         print(
             f"[drafts_model] Only {len(X)} joined rows — need top_performers/actuals dates "

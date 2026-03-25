@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Backtest drafts + card boost on rows from data/top_performers.csv where we have
-a matching slate row in data/predictions/{date}.csv.
+Backtest drafts + card boost on leaderboard-style labels where we have a matching
+slate row in data/predictions/{date}.csv.
+
+Labels come from the same union as train_drafts_lgbm:
+  - data/top_performers.csv (multi-date file), and
+  - data/actuals/{date}.csv on GitHub (same columns: drafts, actual_card_boost, …).
 
 Usage (repo root):
   python scripts/verify_top_performers.py
@@ -71,39 +75,54 @@ def main() -> int:
                 d = (r.get("date") or "").strip()
                 if d:
                     tp_dates.add(d)
+    actuals_dir = REPO / "data" / "actuals"
+    actuals_dates = (
+        {p.stem for p in actuals_dir.glob("*.csv")} if actuals_dir.is_dir() else set()
+    )
+
+    labeled = td._labeled_rows()
+    label_dates = {r["date"] for r in labeled if (r.get("date") or "").strip()}
     pred_dates = set(pred_index.keys())
-    overlap_dates = tp_dates & pred_dates
+    overlap_dates = label_dates & pred_dates
 
     rows: list[dict] = []
-    if tp_path.exists():
-        with tp_path.open("r", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                drafts = td._safe_float(r.get("drafts"), 0.0)
-                if drafts <= 0:
-                    continue
-                date = (r.get("date") or "").strip()
-                name = (r.get("player_name") or "").strip()
-                nm = td._normalize_name(name)
-                game = pred_index.get(date, {}).get(nm)
-                role = role_agg.get(nm)
-                if not game or not role:
-                    continue
-                boost_act = td._safe_float(r.get("actual_card_boost"), -1.0)
-                rows.append(
-                    {
-                        "date": date,
-                        "name": name,
-                        "drafts": drafts,
-                        "actual_boost": boost_act,
-                        "role_pts": role["role_pts"],
-                        "role_avg_min": role["role_avg_min"],
-                        "game": game,
-                    }
-                )
+    for row in labeled:
+        date = (row.get("date") or "").strip()
+        name = (row.get("player_name") or "").strip()
+        drafts = float(row.get("drafts") or 0.0)
+        if drafts <= 0 or not date or not name:
+            continue
+        nm = td._normalize_name(name)
+        game = pred_index.get(date, {}).get(nm)
+        role = role_agg.get(nm)
+        if not game or not role:
+            continue
+        boost_act = float(row.get("actual_boost", -1.0))
+        rows.append(
+            {
+                "date": date,
+                "name": name,
+                "drafts": drafts,
+                "actual_boost": boost_act,
+                "role_pts": role["role_pts"],
+                "role_avg_min": role["role_avg_min"],
+                "game": game,
+            }
+        )
 
     n = len(rows)
-    print(f"[verify] top_performers dates: {len(tp_dates)} | prediction dates: {len(pred_dates)}")
-    print(f"[verify] date overlap: {len(overlap_dates)} | joined top_performer rows (w/ slate): {n}")
+    print(
+        f"[verify] top_performers.csv dates: {len(tp_dates)} | "
+        f"data/actuals/*.csv dates: {len(actuals_dates)} | "
+        f"labeled dates (drafts>0, deduped): {len(label_dates)}"
+    )
+    print(f"[verify] prediction CSV dates: {len(pred_dates)} | overlap w/ labeled: {len(overlap_dates)}")
+    print(f"[verify] joined rows (label + slate projection): {n}")
+    if overlap_dates and n < 50:
+        print(
+            "[verify] note: predictions CSVs usually only include scope=slate lineup picks "
+            "(~10 players/day), not the full slate — most leaderboard names won't match a row."
+        )
 
     model_path = REPO / "drafts_model.pkl"
     if not model_path.exists():
@@ -113,7 +132,10 @@ def main() -> int:
         y_log = np.array([])
         pred_log = np.array([])
     elif n == 0:
-        print("[verify] No joined rows — save more data/predictions/{{date}}.csv for top_performers dates.")
+        print(
+            "[verify] No joined rows — need data/predictions/{{date}}.csv for dates that have "
+            "labels in top_performers.csv and/or data/actuals/{{date}}.csv."
+        )
         draft_mae = float("nan")
         sp = float("nan")
         y_log = np.array([])
