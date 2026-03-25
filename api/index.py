@@ -734,6 +734,7 @@ BLACKLISTED_PLAYERS = {
 _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
+        "use_daily_ingestion": False,
         "ceiling": 3.0, "floor": 0.2,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
         # Sigmoid tier estimation: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
@@ -2753,9 +2754,9 @@ def _est_card_boost(
 
     norm_name = _normalize_boost_name(player_name) if player_name else None
 
-    # Layer 0: Pre-game daily boost ingestion (ground truth when available)
-    # Boosts are fixed daily constants published by Real before drafts open.
-    if norm_name:
+    # Layer 0: Optional daily boost ingestion (disabled by default).
+    # Standard mode uses dynamic prediction boosts and skips daily constants.
+    if cb.get("use_daily_ingestion", False) and norm_name:
         daily_boosts = _load_daily_boosts()
         if norm_name in daily_boosts:
             return _clamp_round_boost(daily_boosts[norm_name], floor_val, ceiling)

@@ -14,6 +14,7 @@
     "min_game_pts": 8.0
   },
   "card_boost": {
+    "use_daily_ingestion": false,
     "ceiling": 3.0,
     "floor": 0.2,
     "big_market_teams": [

@@ -1965,11 +1965,10 @@ class TestPerGameFloor:
 
 
 # ---------------------------------------------------------------------------
-# BOOST INGESTION — Layer 0 (pre-game daily boosts)
+# BOOST INGESTION — Layer 0 (optional pre-game daily boosts)
 # ---------------------------------------------------------------------------
 class TestDailyBoostIngestion:
-    """Verify that Layer 0 (daily boost ingestion) takes priority over all
-    other boost estimation layers when available."""
+    """Verify daily boost ingestion behavior and config gate."""
 
     def test_load_daily_boosts_returns_empty_when_no_file(self):
         """_load_daily_boosts returns {} when no boosts file exists for today."""
@@ -2028,8 +2027,8 @@ class TestDailyBoostIngestion:
         assert result.get("klay thompson") == 2.5
         assert result.get("cameron payne") == 2.6
 
-    def test_est_card_boost_uses_daily_boost_first(self):
-        """_est_card_boost Layer 0 (daily ingestion) overrides all other layers."""
+    def test_est_card_boost_uses_daily_boost_when_enabled(self):
+        """_est_card_boost uses Layer 0 only when use_daily_ingestion=True."""
         from api.index import _est_card_boost
         import api.index as idx
         # Inject a daily boost for a player who also has a config override
@@ -2038,9 +2037,54 @@ class TestDailyBoostIngestion:
         import time
         idx._DAILY_BOOST_TS = time.time()
         # SGA has 0.0 in config overrides, but daily boost says 0.5
-        boost = _est_card_boost(30, 25.0, "OKC", "Shai Gilgeous-Alexander")
+        with patch.object(idx, "_cfg") as mock_cfg:
+            def _mocked_cfg(key, default=None):
+                if key == "card_boost":
+                    return {
+                        "use_daily_ingestion": True,
+                        "ceiling": 3.0,
+                        "floor": 0.2,
+                        "big_market_teams": ["OKC"],
+                        "log_linear": {"enabled": False},
+                        "player_overrides": {"Shai Gilgeous-Alexander": 0.0},
+                    }
+                return default
+            mock_cfg.side_effect = _mocked_cfg
+            boost = _est_card_boost(30, 25.0, "OKC", "Shai Gilgeous-Alexander")
         assert boost == 0.5, f"Layer 0 should override config override, got {boost}"
         # Cleanup
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_TS = 0
+
+    def test_est_card_boost_ignores_daily_boost_when_disabled(self):
+        """Dynamic model standard: Layer 0 ignored when use_daily_ingestion=False."""
+        from api.index import _est_card_boost
+        import api.index as idx
+        import time
+
+        idx._DAILY_BOOST_CACHE = {"shai gilgeous-alexander": 0.5}
+        idx._DAILY_BOOST_DATE = idx._et_date().isoformat()
+        idx._DAILY_BOOST_TS = time.time()
+
+        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
+            with patch.object(idx, "_cfg") as mock_cfg:
+                def _mocked_cfg(key, default=None):
+                    if key == "card_boost":
+                        return {
+                            "use_daily_ingestion": False,
+                            "ceiling": 3.0,
+                            "floor": 0.2,
+                            "big_market_teams": ["OKC"],
+                            "log_linear": {"enabled": False},
+                            "player_overrides": {"Shai Gilgeous-Alexander": 0.0},
+                            "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
+                            "big_market_discount": 0.15,
+                        }
+                    return default
+                mock_cfg.side_effect = _mocked_cfg
+                boost = _est_card_boost(30, 25.0, "OKC", "Shai Gilgeous-Alexander")
+
+        assert boost == 0.2
         idx._DAILY_BOOST_CACHE = {}
         idx._DAILY_BOOST_TS = 0
 
