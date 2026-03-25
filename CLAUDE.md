@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A daily NBA draft optimizer for the **Real Sports** app. It uses a unified fair-value projection engine (rolling windows + DvP normalization + deterministic closeness + odds EV) across Draft, Line, and Parlay, then applies card boosts and MILP lineup optimization. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+A daily NBA draft optimizer for the **Real Sports** app. Uses a **Dual-Engine Architecture**: DFS drafts (Starting 5 + Moonshot) are powered by a Monte Carlo `real_score` simulator to maximize variance, clutch-factor, and ceiling. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine to maximize median accuracy, Z-score probabilities, and floor stability. Card boosts + MILP lineup optimization on the draft side. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## How Real Sports Works
 
@@ -18,7 +18,7 @@ A daily NBA draft optimizer for the **Real Sports** app. It uses a unified fair-
 ```
 index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
-api/fair_value.py      — Unified deterministic fair-value engine (pure functions)
+api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only; pure functions)
 api/odds_math.py       — Shared American-odds implied probability helpers
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP)
@@ -39,6 +39,34 @@ train_lgbm.py          — Training script (12 features, run locally or via GitH
 railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
+```
+
+## Dual-Engine Architecture
+
+The backend uses two mathematically distinct projection engines, each purpose-built for its surface:
+
+### Engine 1: Monte Carlo `real_score` → DFS Drafts (Starting 5 + Moonshot)
+- **Pipeline**: ESPN → LightGBM → Monte Carlo RS (closeness + clutch + momentum) → Card Boost → MILP
+- **Why**: DFS drafts reward high ceilings and variance. RS scoring is non-linear (tight games exponentially boost scores). Monte Carlo captures fat-tail distributions that deterministic medians miss.
+- **Endpoints**: `/api/slate`, `/api/picks`, `/api/force-regenerate`, `/api/injury-check`
+- **Code**: `api/real_score.py`, `api/asset_optimizer.py`, projection pipeline in `api/index.py`
+
+### Engine 2: Deterministic `fair_value` → Prop Betting (Line + Parlay)
+- **Pipeline**: ESPN gamelogs (L10/L15 rolling windows) → DvP adjustment → Game script weights → Spread adj + momentum → Per-stat fair value + Z-score hit probabilities + EV classification
+- **Why**: Prop bets reward median accuracy and floor stability. An over/under bet cares about the most likely stat line, not the ceiling. Rolling window medians with Normal CDF hit probs produce tighter Z-scores.
+- **Endpoints**: `/api/line-of-the-day` (edge_map → fv_boost), `/api/parlay` (_fv_hit_probs → model_prob override)
+- **Code**: `api/fair_value.py` (pure functions, no I/O), `_compute_betting_fair_value()` in `api/index.py`
+
+### Isolation Boundary
+- `_compute_betting_fair_value()` is the **sole entry point** for Engine 2. It is called only from `_run_line_engine_for_date()` and `_run_parlay_engine_sync()`.
+- DFS draft paths (`/api/slate`, `/api/force-regenerate`, `/api/injury-check`) **never** invoke the fair value engine.
+- Engine 2 enriches Engine 1's projections — it does not replace them. Monte Carlo `all_proj` feeds both surfaces; fair value adds per-stat edge maps and hit probabilities on top.
+- Config: `fair_value.*` section in `data/model-config.json` (primary_window, short_window, edge_thresholds, compression).
+
+### grep tags
+```
+grep: FAIR VALUE BETTING        — _compute_betting_fair_value(), sole entry point for Engine 2
+grep: FAIR VALUE ENGINE         — project_player_fv in api/fair_value.py
 ```
 
 ## UI Structure
@@ -77,8 +105,8 @@ grep: INJURY CASCADE           — _cascade_minutes, _pos_group
 grep: CARD BOOST               — _est_card_boost, _dfs_score
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
-grep: FAIR VALUE ENGINE        — project_player_fv, _project_player_fair_value_body, _fv_edge_map
-grep: FAIR VALUE PREFETCH      — _fair_value_prefetch_for_games shared batch inputs
+grep: FAIR VALUE ENGINE        — project_player_fv in api/fair_value.py (pure functions, no I/O)
+grep: FAIR VALUE BETTING       — _compute_betting_fair_value() in api/index.py (Line + Parlay only)
 grep: ODDS ENRICHMENT          — _enrich_projections_with_odds, odds_map, blend_weight
 grep: WEB INTELLIGENCE         — _fetch_nba_news_context, Claude web_search, news_text
 grep: LINEUP REVIEW            — _lineup_review_opus, post-lineup Opus, lineup_review
@@ -818,10 +846,11 @@ Ben upload banner includes a "Skip All" button (muted style, right-aligned):
 
 | File | Role | Notes |
 |------|------|------|
-| **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
-| **api/parlay_engine.py** | Safest 3-leg parlay optimizer | Z-score hit probability, anti-fragility filters (blowout/CV/GTD), market alignment, correlation scoring. Called by api/index.py `/api/parlay`. Pure computation; no external I/O. |
+| **api/fair_value.py** | Deterministic fair-value engine (Engine 2) | Rolling L10/L15 windows, DvP adjustment, game script weights, spread adj, momentum, per-stat fair value + Z-score hit probs. **Prop betting only** — called via `_compute_betting_fair_value()` in index.py for Line + Parlay. Pure functions, no I/O. |
+| **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Receives `edge_map` from fair_value for `fv_boost` on confidence. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
+| **api/parlay_engine.py** | Safest 3-leg parlay optimizer | Z-score hit probability, anti-fragility filters (blowout/CV/GTD), market alignment, correlation scoring. Receives `fair_value_data` with `_fv_hit_probs` to override baseline model_prob. Called by api/index.py `/api/parlay`. Pure computation; no external I/O. |
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
-| **api/real_score.py** | Monte Carlo Real Score | RS projection (closeness, clutch, momentum). Used by projection pipeline in index. |
+| **api/real_score.py** | Monte Carlo Real Score (Engine 1) | RS projection (closeness, clutch, momentum). Used by DFS draft projection pipeline in index. |
 | **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Two-phase optimization for moonshot (Phase 1: player selection with shaped ratings; Phase 2: slot assignment with raw RS). No position-per-team constraint (Real Sports has no position requirements). Used by game runner in index. |
 | **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production runs as a persistent Docker container on Railway. |
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |

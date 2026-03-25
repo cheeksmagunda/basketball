@@ -1,6 +1,6 @@
 # The Oracle — NBA Draft Optimizer for Real Sports
 
-AI-powered daily NBA draft optimizer for the **Real Sports App**. Uses a unified deterministic fair-value engine (rolling windows, DvP normalization, closed-form closeness, and bookmaker EV) to drive Draft, Line, and Parlay surfaces, then applies Real Sports card boosts and MILP lineup optimization. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+AI-powered daily NBA draft optimizer for the **Real Sports App**. Uses a **Dual-Engine Architecture**: DFS drafts are powered by a Monte Carlo `real_score` simulator (variance, clutch-factor, ceiling), while prop betting surfaces (Line of the Day, Parlay) are powered by a deterministic `fair_value` engine (rolling medians, Z-score probabilities, floor stability). Card boosts + MILP lineup optimization on the draft side. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## What Real Sports Scores
 
@@ -18,7 +18,7 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 ```
 index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
-api/fair_value.py      — Unified deterministic fair-value projection engine (pure functions)
+api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only)
 api/odds_math.py       — Shared American-odds implied-prob helpers
 api/real_score.py      — Monte Carlo Real Score projection engine
 api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
@@ -52,19 +52,35 @@ server.py              — Local dev server (uvicorn)
 | **Ben** | Chat interface (Claude Opus). Always available. End-of-day upload flow (banner shows when pending upload date exists) |
 | **Log** | Historical drill-down — graded cards (Actual RS + ESPN box scores vs projections, hit/miss coloring). Pending state before uploads |
 
-## Scoring Pipeline
+## Dual-Engine Architecture
 
+The backend uses two mathematically distinct projection engines, each optimized for its use case:
+
+### Engine 1: Monte Carlo `real_score` (DFS Drafts — Starting 5 + Moonshot)
 ```
-ESPN API (games, rosters, injuries, spreads, gamelogs)
-  → Rolling L10/L15 fair-value projection (`api/fair_value.py`)
-  → Opponent-quality adjustment (binary Guards vs Forwards DvP mapping)
-  → Closed-form game closeness (deterministic; no Monte Carlo when fair value is enabled)
-  → Odds-aware fair value + EV classification (including bidirectional line movement)
+ESPN API (games, rosters, injuries, spreads)
+  → LightGBM 12-feature points projection
+  → Monte Carlo Real Score simulator (closeness, clutch-factor, momentum coefficients)
   → Card Boost resolution (Layer 0 ingested boosts → overrides/ownership/sigmoid fallback)
   → MILP slot optimizer → Starting 5 + Moonshot lineups
-
-`fair_value.enabled` in `data/model-config.json` gates rollout. It is now enabled by default for production parity across Draft, Line, and Parlay.
 ```
+**Why Monte Carlo?** DFS drafts reward high ceilings and variance. RS scoring is non-linear — tight games exponentially boost scores via closeness and clutch factors. Monte Carlo simulation captures these fat-tail distributions that deterministic medians miss.
+
+### Engine 2: Deterministic `fair_value` (Prop Betting — Line + Parlay)
+```
+ESPN gamelogs (L10/L15 rolling windows per stat)
+  → DvP opponent-quality adjustment (binary Guards vs Forwards mapping)
+  → Game script weights (pace-tier stat multipliers)
+  → Spread adjustment + momentum trend (L3 vs L10)
+  → Per-stat fair value, Z-score hit probabilities, EV classification
+  → Edge maps fed into Line engine (fv_boost on confidence) and Parlay engine (_fv_hit_probs override)
+```
+**Why deterministic?** Prop betting rewards median accuracy and floor stability. A points over/under bet cares about the most likely stat line, not the ceiling. Rolling window medians with Normal CDF hit probabilities produce tighter Z-scores for leg selection.
+
+### Isolation Boundary
+- `/api/slate`, `/api/picks`, `/api/force-regenerate`, `/api/injury-check` → **Engine 1 only** (Monte Carlo)
+- `/api/line-of-the-day`, `/api/parlay` → **Engine 2** enriches Engine 1 projections (fair value edge maps + hit probs)
+- `_compute_betting_fair_value()` is the sole entry point for Engine 2; it is never called from DFS draft paths
 
 ## 3-Layer Prediction Cache
 
