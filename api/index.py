@@ -46,12 +46,14 @@ try:
     from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
+    from api.fair_value import project_player_fv, dvp_binary_from_nba_com
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
+    from .fair_value import project_player_fv, dvp_binary_from_nba_com
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -821,7 +823,26 @@ _CONFIG_DEFAULTS = {
         },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
-    # fair_value section removed — engine deprecated in favor of Monte Carlo real_score.py
+    # fair_value config — powers deterministic prop betting pipeline (Line + Parlay only; NOT DFS drafts)
+    "fair_value": {
+        "primary_window": 15,
+        "short_window": 10,
+        "default_total": 222.0,
+        "bench_pts_threshold": 14.0,
+        "bench_min_threshold": 30.0,
+        "momentum_strength": 0.15,
+        "stat_types": ["points", "rebounds", "assists"],
+        "compression": {
+            "compression_divisor": 5.5,
+            "compression_power": 0.72,
+            "rs_cap": 20.0,
+        },
+        "edge_thresholds": {
+            "min_edge_pct": 5.0,
+            "min_ev": 0.03,
+            "sharp_aligned_bonus": 1.15,
+        },
+    },
     "odds_enrichment": {
         "enabled": False,
         "blend_weight": 0.2,
@@ -5894,12 +5915,9 @@ def _force_regenerate_sync(scope: str):
     # fails we preserve the existing cache so cold-start recovery still works.
     all_proj = []
     game_proj_map = {}
-    gm, dvp_p, pom_p, dst_p = _fair_value_prefetch_for_games(game_pool)
+    # DFS draft path — uses Monte Carlo real_score exclusively (no fair_value prefetch)
     with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-        if gm is None:
-            futs = {pool.submit(_run_game, g): g for g in game_pool}
-        else:
-            futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in game_pool}
+        futs = {pool.submit(_run_game, g): g for g in game_pool}
         for fut in as_completed(futs):
             try:
                 game = futs[fut]
@@ -6877,7 +6895,7 @@ async def injury_check(request: Request):
     # Regenerate only affected games
     games_map = {g["gameId"]: g for g in games}
     affected_games = [games_map[gid] for gid in injured_games if gid in games_map]
-    gm_prefetch, dvp_prefetch, odds_prefetch, _dst_prefetch = _fair_value_prefetch_for_games(affected_games)
+    # DFS draft path — uses Monte Carlo real_score exclusively (no fair_value prefetch)
     for gid in injured_games:
         game = games_map.get(gid)
         if not game:
@@ -6888,10 +6906,7 @@ async def injury_check(request: Request):
         except Exception:
             pass
         try:
-            if gm_prefetch is None:
-                projections = _run_game(game)
-            else:
-                projections = _run_game(game, gm_prefetch, dvp_prefetch, odds_prefetch)
+            projections = _run_game(game)
             if projections:
                 all_game_projs[gid] = projections
                 _cs(_ck_game_proj(gid), projections)
@@ -7286,14 +7301,10 @@ def _get_projections_for_date(date_obj):
     # Layer 2: GitHub games cache (cold /tmp after deploy)
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(draftable)
-    # Layer 3: full pipeline
+    # Layer 3: full pipeline (Monte Carlo real_score — no fair_value here)
     if not all_proj:
-        gm, dvp_p, pom_p, _dst = _fair_value_prefetch_for_games(draftable)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            if gm is None:
-                futs = {pool.submit(_run_game, g): g for g in draftable}
-            else:
-                futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in draftable}
+            futs = {pool.submit(_run_game, g): g for g in draftable}
             for fut in as_completed(futs):
                 try:
                     all_proj.extend(fut.result())
@@ -7432,12 +7443,9 @@ def _run_line_engine_for_date(date):
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
-        gm, dvp_p, pom_p, _dst = _fair_value_prefetch_for_games(target_games)
+        # Layer 3: Monte Carlo real_score pipeline (no fair_value — that runs post-projection)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            if gm is None:
-                futs = {pool.submit(_run_game, g): g for g in target_games}
-            else:
-                futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in target_games}
+            futs = {pool.submit(_run_game, g): g for g in target_games}
             try:
                 for fut in as_completed(futs, timeout=_T_EXECUTOR):
                     try: all_proj.extend(fut.result(timeout=_T_DEFAULT))
@@ -7463,9 +7471,15 @@ def _run_line_engine_for_date(date):
         dvp_data = _fetch_dvp_data()
     except Exception as _dvp_err:
         print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
+    # Fair Value enrichment — deterministic edge maps for prop betting confidence
+    fv_edge_map = {}
+    try:
+        fv_edge_map, _ = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
+    except Exception as _fv_err:
+        print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
     result = run_line_engine(
         all_proj, target_games, line_config, player_odds_map,
-        news_context=news_context, dvp_data=dvp_data, edge_map=None,
+        news_context=news_context, dvp_data=dvp_data, edge_map=fv_edge_map or None,
     )
     return result, None
 
@@ -10124,12 +10138,124 @@ def _slate_prefetch_gamelogs(draftable_games, num_games=15):
     return _fetch_gamelogs_for_slate(list(set(ids)), num_games=num_games)
 
 
-def _fair_value_prefetch_for_games(games):
-    """Prefetch data for game projections. Returns (None, None, None, None).
-    Fair value engine has been deprecated — projections use Monte Carlo real_score.py exclusively.
-    grep: FAIR VALUE PREFETCH — deprecated, returns empty tuple for backward compat.
+def _compute_betting_fair_value(all_proj, games, player_odds_map):
+    """Compute deterministic fair-value projections for the prop betting pipeline.
+
+    Uses api/fair_value.py (rolling windows + DvP + game script + spread adj + momentum)
+    to produce per-stat edge maps and hit probabilities.  This function is called
+    ONLY from Line and Parlay routes — never from /api/slate (DFS drafts use Monte
+    Carlo real_score.py exclusively).
+
+    Returns:
+        edge_map:        {player_id_str: {stat_type: {ev, hit_prob, edge_class, direction, edge_pct}}}
+        fair_value_data: {player_id_str: {_fv_hit_probs: {stat: {over, under}}, edge_map, rating, confidence}}
+
+    grep: FAIR VALUE BETTING — betting-only fair value enrichment
     """
-    return None, None, None, None
+    if not all_proj:
+        return {}, {}
+
+    # Build game lookup: team_abbr → game context
+    game_ctx: dict = {}
+    for g in games:
+        h_abbr = g["home"]["abbr"]
+        a_abbr = g["away"]["abbr"]
+        spread = float(g.get("spread") or 0)
+        total  = float(g.get("total") or 222)
+        game_ctx[h_abbr] = {"spread": spread, "total": total, "side": "home", "opp": a_abbr}
+        game_ctx[a_abbr] = {"spread": -spread, "total": total, "side": "away", "opp": h_abbr}
+
+    # Batch-fetch gamelogs for all projected players
+    player_ids = list({str(p.get("id", "")) for p in all_proj if p.get("id")})
+    gamelogs = _fetch_gamelogs_batch(player_ids, num_games=15)
+
+    # DvP data (cached daily)
+    dvp_data: dict = {}
+    try:
+        dvp_data = _fetch_dvp_data()
+    except Exception:
+        pass
+
+    fv_config = _cfg("fair_value", _CONFIG_DEFAULTS.get("fair_value", {}))
+
+    edge_map: dict = {}          # for line engine
+    fair_value_data: dict = {}   # for parlay engine
+
+    for p in all_proj:
+        pid = str(p.get("id", ""))
+        if not pid:
+            continue
+        team = p.get("team", "")
+        ctx = game_ctx.get(team)
+        if not ctx:
+            continue
+        gamelog = gamelogs.get(pid)
+        if not gamelog:
+            continue
+
+        # Opponent DvP
+        opp_abbr = ctx["opp"]
+        opp_def: dict = {}
+        if dvp_data and opp_abbr in dvp_data:
+            g_val, f_val = dvp_binary_from_nba_com(dvp_data[opp_abbr])
+            opp_def = {"pts_allowed_guards": g_val, "pts_allowed_forwards": f_val}
+
+        # Sportsbook lines for this player
+        pname = (p.get("name") or "").lower()
+        book_lines: dict = {}
+        for stat in ("points", "rebounds", "assists"):
+            odds_entry = (player_odds_map or {}).get((pname, stat))
+            if odds_entry:
+                book_lines[stat] = {
+                    "line": odds_entry.get("line"),
+                    "odds_over": odds_entry.get("odds_over"),
+                    "odds_under": odds_entry.get("odds_under"),
+                }
+
+        position = p.get("position", "F")
+        athlete_stats = {"min": p.get("avg_min") or p.get("season_min") or 25}
+
+        try:
+            fv = project_player_fv(
+                gamelog=gamelog,
+                athlete_stats=athlete_stats,
+                position=position,
+                opp_def=opp_def,
+                spread=ctx["spread"],
+                total=ctx["total"],
+                side=ctx["side"],
+                book_lines=book_lines or None,
+                config=fv_config,
+            )
+        except Exception as e:
+            print(f"[fair-value] projection error for {pid}: {e}")
+            continue
+
+        # edge_map for line engine: {stat_type: {direction, ev, hit_prob, edge_class, edge_pct}}
+        if fv.get("edge_map"):
+            edge_map[pid] = fv["edge_map"]
+
+        # fair_value_data for parlay engine: {_fv_hit_probs: {stat: {over, under}}}
+        fv_hit_probs: dict = {}
+        _STAT_KEY_MAP = {"points": "pts", "rebounds": "reb", "assists": "ast"}
+        for stat_name, short in _STAT_KEY_MAP.items():
+            stat_data = fv.get(short)
+            if stat_data and isinstance(stat_data, dict):
+                fv_hit_probs[stat_name] = {
+                    "over": stat_data.get("hit_prob_over"),
+                    "under": stat_data.get("hit_prob_under"),
+                }
+
+        fair_value_data[pid] = {
+            "_fv_hit_probs": fv_hit_probs,
+            "edge_map": fv.get("edge_map", {}),
+            "rating": fv.get("rating"),
+            "confidence": fv.get("confidence"),
+        }
+
+    print(f"[fair-value] computed {len(edge_map)} edge maps, "
+          f"{len(fair_value_data)} fv entries for betting pipeline")
+    return edge_map, fair_value_data
 
 
 def _fetch_gamelogs_batch(player_ids, num_games=15):
@@ -10169,12 +10295,9 @@ def _run_parlay_engine_sync(today):
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
-        gm, dvp_p, pom_p, _dst = _fair_value_prefetch_for_games(target_games)
+        # Layer 3: Monte Carlo real_score pipeline (no fair_value — that runs post-projection)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            if gm is None:
-                futs = {pool.submit(_run_game, g): g for g in target_games}
-            else:
-                futs = {pool.submit(_run_game, g, gm, dvp_p, pom_p): g for g in target_games}
+            futs = {pool.submit(_run_game, g): g for g in target_games}
             try:
                 for fut in as_completed(futs, timeout=_T_EXECUTOR):
                     try:
@@ -10233,6 +10356,13 @@ def _run_parlay_engine_sync(today):
     gamelogs = _fetch_gamelogs_batch(player_ids)
     print(f"[parlay] gamelogs fetched={len(gamelogs)} / pool {len(player_ids)} vs {len(all_proj)} projections (scoped={gamelog_player_ids is not None})")
 
+    # Fair Value enrichment — deterministic hit probabilities for parlay leg selection
+    _parlay_fv_data = {}
+    try:
+        _, _parlay_fv_data = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
+    except Exception as _fv_err:
+        print(f"[parlay] fair value enrichment failed (non-fatal): {_fv_err}")
+
     debug = {
         "projections": len(all_proj),
         "odds_entries": 0 if projection_only else len(player_odds_map),
@@ -10240,11 +10370,12 @@ def _run_parlay_engine_sync(today):
         "gamelog_pool": len(player_ids),
         "odds_available": not projection_only,
         "projection_only": projection_only,
+        "fair_value_entries": len(_parlay_fv_data),
     }
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
         rw_statuses, parlay_config, gamelog_player_ids=gamelog_player_ids, dvp_data=_parlay_dvp_data,
-        fair_value_data=None,
+        fair_value_data=_parlay_fv_data or None,
     )
     if result:
         result["projection_only"] = projection_only
