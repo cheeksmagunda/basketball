@@ -2,15 +2,19 @@
 """
 Train LightGBM card boost model from top_performers.csv.
 
-Uses projected RS as the primary performance signal. At inference, this is
-blended with a PPG-based sigmoid in _est_card_boost() to capture both
-game-level RS dynamics and stable player-tier recognition.
+Uses two features to predict card boost:
+1. perf_score: 14-day trailing average RS (performance signal)
+2. min_proxy: 12 + 5*log1p(drafts) (rotation level signal)
 
-Feature: perf_score (14-day trailing avg RS from top_performers.csv)
-Target:  actual_card_boost (0.0 to 3.0)
+Target: actual_card_boost (0.0 to 3.0)
 
-At inference: perf_score = projected_rs from the RS projection model.
-The sigmoid blend uses season_pts (PPG) from ESPN for the recognition signal.
+At inference:
+  - perf_score = projected_rs from the RS projection model
+  - min_proxy = 12 + 5*log1p(estimated_draft_count) ≈ projected_minutes
+
+This 2-feature model separates performance (RS) from rotation level (minutes),
+allowing the model to distinguish between high-RS stars with low boosts vs
+high-RS role players with high boosts.
 
 Writes boost_model.pkl as {"model": ..., "features": [...]}.
 """
@@ -28,7 +32,7 @@ TOP_PERFORMERS = Path("data/top_performers.csv")
 ACTUALS_DIR = Path("data/actuals")
 MODEL_OUT = Path("boost_model.pkl")
 
-FEATURES = ["perf_score"]
+FEATURES = ["perf_score", "min_proxy"]
 LOOKBACK_DAYS = 14
 
 
@@ -49,12 +53,14 @@ def _load_top_performers() -> list[dict]:
         for r in csv.DictReader(f):
             boost = _safe_float(r.get("actual_card_boost"), 0.0)
             rs = _safe_float(r.get("actual_rs"), 0.0)
+            drafts = _safe_float(r.get("drafts"), 0.0)
             if boost > 0 and rs > 0:
                 rows.append({
                     "date": r.get("date", ""),
                     "player_name": (r.get("player_name") or "").strip(),
                     "actual_rs": rs,
                     "actual_card_boost": boost,
+                    "drafts": drafts,
                 })
     return rows
 
@@ -70,6 +76,7 @@ def _load_actuals() -> list[dict]:
             for r in csv.DictReader(f):
                 boost = _safe_float(r.get("actual_card_boost"), 0.0)
                 rs = _safe_float(r.get("actual_rs"), 0.0)
+                drafts = _safe_float(r.get("drafts"), 0.0)
                 name = (r.get("player_name") or "").strip()
                 if boost > 0 and rs > 0 and name:
                     rows.append({
@@ -77,12 +84,18 @@ def _load_actuals() -> list[dict]:
                         "player_name": name,
                         "actual_rs": rs,
                         "actual_card_boost": boost,
+                        "drafts": drafts,
                     })
     return rows
 
 
 def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build (X, y, weights) from top_performers + actuals with 14-day lookback."""
+    """Build (X, y, weights) from top_performers + actuals with 14-day lookback.
+
+    Features:
+      1. perf_score: 14-day trailing avg RS
+      2. min_proxy: 12 + 5*log1p(avg_drafts) where avg_drafts is 14-day trailing avg
+    """
     all_rows = _load_top_performers() + _load_actuals()
     seen: set[tuple[str, str]] = set()
     unique = []
@@ -118,15 +131,24 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
             if prior_14d:
                 perf_score = float(np.mean([e["actual_rs"] for e in prior_14d]))
+                avg_drafts = float(np.mean([e["drafts"] for e in prior_14d]))
                 weight = 3.0
             elif prior_all:
                 perf_score = float(np.mean([e["actual_rs"] for e in prior_all]))
+                avg_drafts = float(np.mean([e["drafts"] for e in prior_all]))
                 weight = 2.0
             else:
                 perf_score = entry["actual_rs"]
+                avg_drafts = entry["drafts"]
                 weight = 1.0
 
-            X_list.append([perf_score])
+            # min_proxy estimates minutes from draft popularity
+            # 1-20 drafts → ~17-22 min (low rotation)
+            # 20-100 drafts → ~22-30 min (established role player)
+            # 100+ drafts → ~30+ min (star/starter)
+            min_proxy = 12.0 + 5.0 * np.log1p(avg_drafts)
+
+            X_list.append([perf_score, min_proxy])
             y_list.append(entry["actual_card_boost"])
             w_list.append(weight)
 
@@ -165,11 +187,15 @@ def train_model() -> None:
         pickle.dump(bundle, f)
     print(f"Saved {MODEL_OUT}")
 
-    # Print learned RS → Boost mapping
-    print("\nLearned RS → Boost mapping:")
-    for rs in [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 8.0]:
-        pred = model.predict([[rs]])[0]
-        print(f"  RS {rs:.1f} → boost {pred:.2f}")
+    # Print learned RS × Minutes → Boost mapping
+    print("\nLearned RS × Minutes → Boost mapping:")
+    print("(Simulating different rotation levels at fixed RS values)")
+    for rs in [3.0, 4.0, 5.0, 6.0]:
+        print(f"\n  RS {rs:.1f}:")
+        for drafts in [5, 25, 100, 410]:
+            min_proxy = 12.0 + 5.0 * np.log1p(drafts)
+            pred = model.predict([[rs, min_proxy]])[0]
+            print(f"    {drafts:3d} drafts (min_proxy {min_proxy:.1f}) → boost {pred:.2f}")
 
 
 if __name__ == "__main__":
