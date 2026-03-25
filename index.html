@@ -395,6 +395,14 @@
 
     @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
 
+    @media (prefers-reduced-motion: reduce) {
+      .player-card {
+        opacity: 1;
+        transform: none;
+        animation: none;
+      }
+    }
+
     /* Left colored accent bar */
     .player-card::before {
       content: '';
@@ -2140,6 +2148,10 @@ async function _hydrateApp() {
         LINE_LOTD_STATE.loadedAt = Date.now();
       } else if (ep.name === 'line_history') {
         LINE_HISTORY_DATA = data;
+        if (data) {
+          LINE_HIST_DATA = data;
+          LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE || {}, data);
+        }
       } else if (ep.name === 'log_dates') {
         if (Array.isArray(data)) {
           data.forEach(d => LOG.datesWithData.add(d));
@@ -2323,6 +2335,24 @@ function _postHydrateRender() {
     if (data.legs && data.legs.length > 0) {
       PARLAY_LOADED_DATE = _etToday();
       renderParlayTicket(data);
+    }
+  }
+
+  // ── Line: paint LOTD + history from hydration (first Line open skips duplicate /api/line-of-the-day) ──
+  if (LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'success' && LINE_LOTD_STATE.data) {
+    const lotdData = LINE_LOTD_STATE.data;
+    LINE_LOADED_DATE = _etToday();
+    _renderLineLOTDFromState();
+    if (lotdData.pick) {
+      _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+    }
+  }
+  if (LINE_HIST_DATA && LINE_HIST_DATA.picks && LINE_HIST_DATA.picks.length) {
+    const hw = _el('lineHistoryWrap');
+    if (hw) {
+      hw.style.display = 'block';
+      renderLineHistory(LINE_HIST_DATA);
+      filterLineHistory(LINE_DIR);
     }
   }
 }
@@ -3537,23 +3567,39 @@ async function initLogPage() {
   LOG._refetchedToday = false;
   closeLogDrilldown();
   buildLogDateStrip();
-  LOG_STATE = asyncStateLoading(LOG_STATE);
-  _renderLogGridFromState(todayStr);
 
-  LOG_LOADED_AT = Date.now();
-
-  // Hydration check: if dates and today's data already loaded (< 30s), skip fetches
+  // Hydration check first — avoids one-frame "Loading…" when LOG.data is already warm
   const _datesAge = LOG._datesLoadedAt ? (Date.now() - LOG._datesLoadedAt) : Infinity;
   const _dataAge = LOG._dataLoadedAt ? (Date.now() - LOG._dataLoadedAt) : Infinity;
-  const _isHydrated = _datesAge < 30000 && _dataAge < 30000;
+  const _isHydratedGrid = _dataAge < 30000 && LOG.data;
+  const _isHydratedDates = _datesAge < 30000 && LOG.datesWithData.size > 0;
 
-  if (_isHydrated && LOG.datesWithData.size > 0 && LOG.data) {
-    // Freshly hydrated data — render immediately, skip fetches
+  if (_isHydratedGrid && (_isHydratedDates || LOG.datesWithData.size > 0)) {
     console.log('[log] using hydrated data, skipping fetches');
     LOG_STATE = asyncStateSuccess(LOG_STATE, LOG.data);
+    LOG_LOADED_AT = Date.now();
     renderLogGrid(todayStr);
     return;
   }
+  if (_isHydratedGrid) {
+    // Have today's grid from hydration but date strip may be empty — paint grid, refresh dates in background
+    console.log('[log] using hydrated log/get, fetching dates in background');
+    LOG_STATE = asyncStateSuccess(LOG_STATE, LOG.data);
+    LOG_LOADED_AT = Date.now();
+    renderLogGrid(todayStr);
+    _fetchJson('/api/log/dates', 15000).then(function(arr) {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(d => LOG.datesWithData.add(d));
+      LOG._datesLoadedAt = Date.now();
+      try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
+      buildLogDateStrip();
+    }).catch(function() {});
+    return;
+  }
+
+  LOG_STATE = asyncStateLoading(LOG_STATE);
+  _renderLogGridFromState(todayStr);
+  LOG_LOADED_AT = Date.now();
 
   // Not hydrated or stale — fetch both in parallel
   const datesPromise = _fetchJson('/api/log/dates', 15000);
@@ -4519,8 +4565,11 @@ async function initLinePage() {
   const _isHydrated = _lotdAge < 30000; // < 30s: freshly hydrated
 
   if (!dateChanged && _isHydrated) {
-    // Freshly hydrated data — render immediately, skip all fetches
     console.log('[line] using hydrated data, skipping fetch');
+    _renderLineLOTDFromState();
+    const d = LINE_LOTD_STATE && LINE_LOTD_STATE.data;
+    if (d && d.pick) _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+    if (!LINE_HIST_DATA) fetchLineHistory();
     return;
   }
 

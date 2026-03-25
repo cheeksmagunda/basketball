@@ -108,6 +108,42 @@ Used for: slate, picks, log, line LOTD, line history.
 - **Lab lock:** 2 min; no loader.
 - **LOG.dateCache:** LRU eviction keeps last 15 dates in memory; `_evictLogCache()` runs after every cache insertion to prevent unbounded memory growth.
 
+## 8. Eager hydration vs first tab visit (`index.html`)
+
+Startup runs `_hydrateApp()` (parallel fetches) then **`_postHydrateRender()`**, which must paint any tab content that would otherwise wait for the first `switchTab` → `init*Page` call.
+
+| Endpoint (hydration) | Global(s) | Painted in `_postHydrateRender`? |
+|---------------------|-----------|----------------------------------|
+| `/api/slate` | `SLATE`, slate list | Yes (`switchSlate`, etc.) |
+| `/api/games` | Game selector | Via `games` endpoint `init` |
+| `/api/line-of-the-day` | `LINE_LOTD_STATE` | Yes — `_renderLineLOTDFromState()`, `LINE_LOADED_DATE`, live poll when `pick` present |
+| `/api/line-history` | `LINE_HIST_DATA`, `LINE_HISTORY_STATE` | Yes — `renderLineHistory` when picks exist |
+| `/api/log/dates` | `LOG.datesWithData` | Strip on `initLogPage` / `buildLogDateStrip` |
+| `/api/log/get?today` | `LOG.data` | Strip + grid when Log tab inits |
+| `/api/parlay` (optional) | `PARLAY_STATE` | Yes — `renderParlayTicket` |
+
+**First open of Line / Log after hydration:** Should not re-hit `/api/line-of-the-day` or flash a skeleton if data was already hydrated and post-render painted the DOM (`LINE_LOADED_DATE === today` and `LINE_LOTD_STATE.loadedAt` fresh). `initLinePage` short-circuit calls `_renderLineLOTDFromState()` so the DOM stays in sync when returning within the freshness window.
+
+## 9. Tab-switch flash sources (taxonomy)
+
+| Class | Examples |
+|-------|----------|
+| **Network** | `fetchLineOfTheDay`, `fetchParlay` (skeleton until response) |
+| **State order** | (Fixed) Log `initLogPage` used to set `loading` before checking hydrated `LOG.data` |
+| **Redundant fetch** | (Fixed) Line first visit after hydration without post-render paint |
+| **Layout** | `setTimeout(_initAllTogglePills, 30)`; Lab tab height + `scrollTo` |
+| **Animation** | `.player-card` `fadeUp` — optional `prefers-reduced-motion` to skip entrance |
+| **Stale refresh** | Predict `switchTab` → `loadSlate` if `SLATE_LOADED_AT` &gt; 5 min; Parlay refetch if data &gt; 15 min |
+
+## 10. Gaps addressed (Mar 2026 tab UX pass)
+
+| Area | Change |
+|------|--------|
+| Line + hydration | `_postHydrateRender` paints LOTD + history; hydration writes `LINE_HIST_DATA` / `LINE_HISTORY_STATE` for line-history |
+| Line revisit | `initLinePage` hydrated branch calls `_renderLineLOTDFromState` + live poll when applicable |
+| Log first paint | `initLogPage` checks hydrated `LOG.data` before setting `LOG_STATE` to loading |
+| Motion | `@media (prefers-reduced-motion: reduce)` on `.player-card` disables `fadeUp` |
+
 ---
 
-**Summary:** Loading is consistent across tabs (async state + skeletons or 8-ball where appropriate). All blocking fetches use `fetchWithTimeout`. Line tab fixes (no flash, first-load-after-hit background re-fetch) are in place. No critical gaps for production.
+**Summary:** Loading is consistent across tabs (async state + skeletons or 8-ball where appropriate). All blocking fetches use `fetchWithTimeout`. Line tab avoids duplicate LOTD fetch on first open when hydration succeeds; Log avoids a one-frame loading grid when log JSON was hydrated; reduced-motion users avoid card entrance animation flashes.
