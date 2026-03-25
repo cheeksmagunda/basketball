@@ -497,6 +497,33 @@ class TestLineConfig:
         # With no API key, always uses fallback — gets a result or no_edges error
         assert result.get("pick") is not None or result.get("error") is not None
 
+    def test_claude_prompt_includes_fair_value_when_edge_map(self):
+        """Line Claude path receives edge_map: prompt documents FV and player rows show FV fields."""
+        from api.line_engine import _build_claude_prompt
+        pid = "999001"
+        proj = [{
+            "id": pid, "name": "Test Star", "team": "LAL", "predMin": 32,
+            "pts": 28.0, "season_pts": 24.0, "recent_pts": 26.0,
+            "reb": 6.0, "season_reb": 6.0, "recent_reb": 6.0,
+            "ast": 5.0, "season_ast": 5.0, "recent_ast": 5.0,
+        }]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "spread": 2.0, "total": 228, "home_b2b": False, "away_b2b": False}]
+        edge_map = {
+            pid: {
+                "points": {
+                    "fair_median": 26.5, "hit_prob_over": 0.58, "hit_prob_under": 0.42,
+                    "ev_over": 0.07, "ev_under": -0.02, "edge_class": "model_only", "direction": "over",
+                },
+            },
+        }
+        prompt = _build_claude_prompt(
+            proj, games, "points", "over", stat_floors=None, edge_map=edge_map,
+        )
+        assert "FAIR VALUE (FV)" in prompt
+        assert "FV median 26.5pts" in prompt
+        assert "P(hit OVER)" in prompt
+        assert "P(hit UNDER)" in prompt
+
     def test_min_edge_other_over_blocks_small_rebound_over(self):
         """min_edge_other_over=2.5 prevents a small-edge rebounds over from winning over a qualifying points over.
         When a points over (edge=3.0) is available, the rebounds over (edge=1.5) should not be the over_pick.

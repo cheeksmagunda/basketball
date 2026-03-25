@@ -616,6 +616,12 @@ def project_player_fv(
             "ev": max(fv["ev_over"], fv["ev_under"]),
             "hit_prob": fv["hit_prob_over"] if fv["ev_over"] >= fv["ev_under"] else fv["hit_prob_under"],
             "edge_class": fv["edge_class"],
+            # Line-engine Claude prompt: both sides needed when force_direction is over vs under
+            "fair_median": round(float(mean), 2),
+            "hit_prob_over": float(fv["hit_prob_over"]),
+            "hit_prob_under": float(fv["hit_prob_under"]),
+            "ev_over": float(fv["ev_over"]),
+            "ev_under": float(fv["ev_under"]),
         }
 
     mroll = roll_adj.get("minutes") or {}

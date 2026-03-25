@@ -88,7 +88,76 @@ _STAT_META = {
 }
 
 
-def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None):
+def _fv_line_annotation(edge_map, player_id, stat_focus, force_direction=None):
+    """Format fair_value edge_map row for Claude (rolling-median engine; both O/U probs when present)."""
+    if not edge_map or player_id is None:
+        return ""
+    em = edge_map.get(str(player_id))
+    if not isinstance(em, dict):
+        return ""
+    row = em.get(stat_focus)
+    if not isinstance(row, dict):
+        return ""
+    meta = _STAT_META.get(stat_focus, _STAT_META["points"])
+    lbl = meta["label"]
+    parts = []
+    fm = row.get("fair_median")
+    if fm is not None:
+        try:
+            parts.append(f"FV median {float(fm):.1f}{lbl}")
+        except (TypeError, ValueError):
+            pass
+    hp_o = row.get("hit_prob_over")
+    hp_u = row.get("hit_prob_under")
+    if hp_o is None or hp_u is None:
+        hp = row.get("hit_prob")
+        d = (row.get("direction") or "over").lower()
+        if hp is not None:
+            try:
+                hp = float(hp)
+                if d == "over":
+                    if hp_o is None:
+                        hp_o = hp
+                    if hp_u is None:
+                        hp_u = 1.0 - hp_o
+                else:
+                    if hp_u is None:
+                        hp_u = hp
+                    if hp_o is None:
+                        hp_o = 1.0 - hp_u
+            except (TypeError, ValueError):
+                pass
+    try:
+        if hp_o is not None and hp_u is not None:
+            parts.append(f"P(hit OVER){float(hp_o):.0%} P(hit UNDER){float(hp_u):.0%}")
+    except (TypeError, ValueError):
+        pass
+    ev_o, ev_u = row.get("ev_over"), row.get("ev_under")
+    try:
+        if ev_o is not None and ev_u is not None:
+            parts.append(f"EV O{float(ev_o):+.2f} U{float(ev_u):+.2f}")
+        elif row.get("ev") is not None:
+            parts.append(f"max EV {float(row['ev']):+.2f}")
+    except (TypeError, ValueError):
+        pass
+    ec = row.get("edge_class")
+    if ec:
+        parts.append(f"class={ec}")
+    if force_direction:
+        fd = force_direction.lower()
+        try:
+            if fd == "over" and hp_o is not None:
+                parts.append(f"required OVER: P(hit){float(hp_o):.0%}")
+            elif fd == "under" and hp_u is not None:
+                parts.append(f"required UNDER: P(hit){float(hp_u):.0%}")
+        except (TypeError, ValueError):
+            pass
+    if not parts:
+        return ""
+    return " | " + " | ".join(parts)
+
+
+def _build_claude_prompt(projections, games, stat_focus="points", force_direction=None, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None, edge_map=None):
     """Format ESPN projection data into a structured prompt for Claude for a given stat type."""
     meta = dict(_STAT_META[stat_focus])  # copy so we can override min_season without mutating module-level dict
     if stat_floors and stat_focus in stat_floors:
@@ -154,12 +223,13 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
             elif ratio >= 1.05: trend = " ↑warm"
             elif ratio <= 0.85: trend = " ↓COLD"
             elif ratio <= 0.95: trend = " ↓cool"
+        fv_ann = _fv_line_annotation(edge_map, p.get("id"), stat_focus, force_direction)
         player_lines.append(
             f"  {p['name']} ({p.get('team','')}) vs {opp}: "
             f"proj {p.get('pts',0):.1f}pts/{p.get('reb',0):.1f}reb/{p.get('ast',0):.1f}ast "
             f"in {p.get('predMin',0):.0f}min | "
             f"season {season_val:.1f}{lbl} / recent {recent_val:.1f}{lbl}{trend} | "
-            f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}{book_str}"
+            f"edge {'+' if edge>=0 else ''}{edge:.1f}{flag_str}{book_str}{fv_ann}"
         )
 
     direction_instruction = (
@@ -207,11 +277,19 @@ def _build_claude_prompt(projections, games, stat_focus="points", force_directio
             "Coach rotation quotes are actionable — weight them heavily."
         )
 
+    fv_instruction = ""
+    if edge_map:
+        fv_instruction = (
+            "\nFAIR VALUE (FV) per player row: deterministic rolling-window median (L10/L15) + game script + DvP + spread — "
+            "not the same as season average. Use FV median and P(hit OVER)/P(hit UNDER) vs the book line to judge edge quality; "
+            "when your task is OVER-only or UNDER-only, prioritize players whose required-direction hit probability and EV are strong.\n"
+        )
+
     return f"""You are The Oracle's line engine. Analyze today's NBA slate and identify the single best player prop bet for {stat_focus.upper()}.
 
 TODAY'S GAMES:
 {chr(10).join(game_lines)}{dvp_section}
-
+{fv_instruction}
 TOP PLAYER PROJECTIONS FOR {stat_focus.upper()} (sorted by edge vs season baseline):
 {chr(10).join(player_lines)}
 
@@ -293,9 +371,9 @@ def _call_claude(prompt, stat_focus="points"):
         return None
 
 
-def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None):
+def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None, edge_map=None):
     """Build prompt and call Claude for a single stat type + direction. Returns (confidence, pick) or None."""
-    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map, news_context, dvp_data=dvp_data)
+    prompt = _build_claude_prompt(projections, games, stat_focus, force_direction, stat_floors, player_odds_map, news_context, dvp_data=dvp_data, edge_map=edge_map)
     pick   = _call_claude(prompt, stat_focus)
     if pick and pick.get("player_name") and pick.get("confidence", 0) > 0:
         # Enforce direction if forced (Claude occasionally ignores instruction)
@@ -305,7 +383,7 @@ def _call_claude_for_stat(projections, games, stat_focus, force_direction=None, 
     return None
 
 
-def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None):
+def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=None, news_context="", dvp_data=None, edge_map=None):
     """
     Run Claude in parallel for points/rebounds/assists × over/under (6 calls).
     Returns (best_over_pick, best_under_pick) independently.
@@ -317,7 +395,7 @@ def _run_parallel_claude(projections, games, stat_floors=None, player_odds_map=N
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
-            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map, news_context, dvp_data): (s, d)
+            executor.submit(_call_claude_for_stat, projections, games, s, d, stat_floors, player_odds_map, news_context, dvp_data, edge_map): (s, d)
             for s in stat_types for d in directions
         }
         for future in as_completed(futures):
@@ -665,7 +743,9 @@ def run_line_engine(projections, games, line_config=None, player_odds_map=None, 
     if not ANTHROPIC_API_KEY:
         return run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
 
-    over_data, under_data = _run_parallel_claude(projections, games, stat_floors, player_odds_map, news_context, dvp_data=dvp_data)
+    over_data, under_data = _run_parallel_claude(
+        projections, games, stat_floors, player_odds_map, news_context, dvp_data=dvp_data, edge_map=edge_map
+    )
 
     if not over_data and not under_data:
         print("[LineEngine] Claude returned no picks — using algorithmic fallback")
