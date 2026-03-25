@@ -17,6 +17,7 @@
 
 import numpy as np
 from datetime import datetime, timezone, timedelta
+import hashlib
 
 
 def _et_today():
@@ -34,7 +35,8 @@ def _make_rng(spread, total, seed_date=None, game_id=None):
     """Deterministic RNG seeded by game parameters + ET date for cache stability.
     Uses ET date (not UTC) so the seed stays consistent for the full NBA evening."""
     d = seed_date or _et_today()
-    seed = hash((d, round(spread, 1), round(total, 1), game_id)) % (2**31)
+    seed_key = f"{d}|{round(spread, 1)}|{round(total, 1)}|{game_id or ''}"
+    seed = int(hashlib.sha256(seed_key.encode("utf-8")).hexdigest()[:8], 16)
     return np.random.default_rng(seed)
 
 

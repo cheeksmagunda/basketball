@@ -4201,7 +4201,6 @@ function _markBenAnalysisRun(date) {
 
 async function _runBenAnalysisForDate(dateStr) {
   if (_hasBenAnalysisRun(dateStr)) return;
-  _markBenAnalysisRun(dateStr);
   let auditStr = '';
   try {
     const ar = await fetchWithTimeout(`/api/audit/get?date=${dateStr}`, {}, 10000);
@@ -4228,6 +4227,7 @@ async function _runBenAnalysisForDate(dateStr) {
   const summary = `All 5 uploads completed for ${dateStr}.${auditStr}`;
   appendLabMessage('user', summary);
   await labCallClaude();
+  _markBenAnalysisRun(dateStr);
 }
 
 // ── BEN UPLOAD (moved from Log page) ──

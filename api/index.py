@@ -8112,7 +8112,8 @@ def _parlay_active_date():
                 and not _parlay_fully_concluded(y_ticket)
             ):
                 y_games = fetch_games(yesterday)
-                y_all_final = bool(y_games) and _all_games_final(y_games)
+                y_all_final, _yr, _yf, _ylrs = _all_games_final(y_games) if bool(y_games) else (False, 0, 0, None)
+                y_all_final = bool(y_games) and bool(y_all_final)
                 if not y_all_final:
                     return yesterday
     except Exception:
@@ -8140,7 +8141,8 @@ def _parlay_live_tick_payload() -> dict:
             ticket = None
 
     games = fetch_games(target_date)
-    all_final = bool(games) and _all_games_final(games)
+    all_final, _remaining, _finals, _latest_remaining_start = _all_games_final(games) if bool(games) else (False, 0, 0, None)
+    all_final = bool(games) and bool(all_final)
 
     if not ticket or not ticket.get("legs"):
         return {"date": today_str, "legs": [], "all_games_final": all_final, "no_ticket": True}
@@ -10552,7 +10554,8 @@ async def get_parlay(request: Request):
         games = fetch_games(today)
         start_times = [g["startTime"] for g in games if g.get("startTime")]
         slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
-        slate_all_final = bool(games) and _all_games_final(games)
+        all_final, _remaining, _finals, _latest_remaining_start = _all_games_final(games) if bool(games) else (False, 0, 0, None)
+        slate_all_final = bool(games) and bool(all_final)
 
         # Cache check (30-min TTL). When every game is final, skip a pending /tmp copy so we
         # re-sync from GitHub — /api/parlay-history may have just written hit/miss there.
@@ -10800,7 +10803,8 @@ async def parlay_history(request: Request):
         try:
             _today_games = fetch_games(today)
             if _today_games:
-                today_games_final = _all_games_final(_today_games)
+                today_all_final, _tr, _tf, _tlrs = _all_games_final(_today_games)
+                today_games_final = bool(today_all_final)
         except Exception:
             today_games_final = False
         results_with_dates = []
