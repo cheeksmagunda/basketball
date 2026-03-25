@@ -14,5 +14,9 @@
   {
     "role": "assistant",
     "content": "Hey! \ud83d\udc4b\n\nBig 12-game slate tonight. What do you need? Lineups, line picks, player projections, model questions \u2014 fire away."
+  },
+  {
+    "role": "user",
+    "content": "Im stoked."
   }
 ]
