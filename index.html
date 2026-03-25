@@ -1920,8 +1920,6 @@ function switchTab(tab) {
     if (stale) loadSlate();
   }
   if (tab === 'line') {
-    let stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
-    if (stale) LINE_LOADED_DATE = '';  // bust cache so initLinePage re-fetches
     initLinePage();  // has its own cache guard (LINE_LOADED_DATE === todayET)
   }
   if (tab === 'parlay') initParlayPage();  // has its own staleness guard
