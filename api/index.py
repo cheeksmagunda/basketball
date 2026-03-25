@@ -10518,8 +10518,10 @@ async def get_parlay(request: Request):
         games = fetch_games(today)
         start_times = [g["startTime"] for g in games if g.get("startTime")]
         slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
+        slate_all_final = bool(games) and _all_games_final(games)
 
-        # Cache check (30-min TTL)
+        # Cache check (30-min TTL). When every game is final, skip a pending /tmp copy so we
+        # re-sync from GitHub — /api/parlay-history may have just written hit/miss there.
         cached = _cg(_CK_PARLAY)
         if cached and cached.get("_cache_date") == today_str:
             cached_at = cached.get("_cached_at")
@@ -10529,6 +10531,8 @@ async def get_parlay(request: Request):
                     if age_s < 1800:
                         if cached.get("projection_only"):
                             print("[parlay] bypassing projection-only /tmp cache (synthetic fallback removed)")
+                        elif slate_all_final and cached.get("result") == "pending":
+                            print("[parlay] bypassing /tmp cache — slate final, re-sync from GitHub")
                         else:
                             cached["locked"] = slate_locked
                             return JSONResponse(cached)
@@ -10829,6 +10833,22 @@ async def parlay_history(request: Request):
         if write_back_queue:
             with ThreadPoolExecutor(max_workers=_W_LIGHT * 2) as pool:
                 list(pool.map(_write_back, write_back_queue))
+            # Keep /api/parlay /tmp cache aligned with GitHub after same-day resolve
+            try:
+                for _ds, _pd in write_back_queue:
+                    if _ds != today_str or not _parlay_fully_concluded(_pd):
+                        continue
+                    _sync_g = fetch_games(today)
+                    _sync_st = [g["startTime"] for g in _sync_g if g.get("startTime")] if _sync_g else []
+                    _sync_locked = bool(_sync_st) and any(_is_locked(st) for st in _sync_st)
+                    _sync_payload = json.loads(json.dumps(_pd))
+                    _sync_payload["locked"] = _sync_locked
+                    _sync_payload["_cached_at"] = datetime.utcnow().isoformat()
+                    _sync_payload["_cache_date"] = today_str
+                    _cs(_CK_PARLAY, _sync_payload)
+                    break
+            except Exception as _ph_sync_err:
+                print(f"[parlay-history] cache sync after resolve: {_ph_sync_err}")
 
         # Recent history: concluded tickets only (no live/future; backend is source of truth).
         history_parlays = []

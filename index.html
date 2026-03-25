@@ -3476,8 +3476,7 @@ function _startParlayLiveSse() {
         }
         if (d.all_games_final) {
           _stopParlayLiveSse();
-          fetchParlay(true);
-          fetchParlayHistory(true);
+          fetchParlayHistory(true).then(function() { fetchParlay(true); }).catch(function() { fetchParlay(true); });
         }
       } catch (err) { console.warn('[parlay-sse]', err); }
     };

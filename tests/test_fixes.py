@@ -3296,6 +3296,12 @@ class TestParlayHistoryAndConfigHardening:
         assert "async def parlay_live_stream" in src
         assert "def _line_live_stat_dict(" in src
 
+    def test_get_parlay_bypasses_tmp_when_slate_final_and_pending(self):
+        src = open("api/index.py").read()
+        assert "slate_all_final" in src
+        assert "bypassing /tmp cache" in src
+        assert 'cached.get("result") == "pending"' in src
+
     def test_parlay_history_try_except_returns_safe_payload(self):
         src = open("api/index.py").read()
         assert "async def parlay_history(request: Request):" in src
