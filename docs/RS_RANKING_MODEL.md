@@ -1,5 +1,7 @@
 # RS ranking model (LightGBM v2)
 
+**Document Status:** Current Reference
+
 ## Goal
 
 Draft quality is dominated by **ordering players by Real Score (RS)** before card boost and slot multipliers are applied. Training and offline eval prioritize **top‑5 RS recall** and **NDCG@5** on RS, not lineup overlap alone.

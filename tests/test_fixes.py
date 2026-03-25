@@ -482,8 +482,12 @@ class TestLineConfig:
              "reb": 3, "season_reb": 3, "recent_reb": 3, "ast": 2, "season_ast": 2, "recent_ast": 2},
         ]
         games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "away_b2b": False, "home_b2b": False}]
-        out = run_model_fallback(proj, games, line_config={"min_confidence": 70})
-        assert out.get("error") is None or out.get("pick") is not None or out.get("over_pick") or out.get("under_pick")
+        odds_map = {
+            ("player a", "points"): {"line": 22.0, "odds_over": -110, "odds_under": -110, "books_consensus": 1},
+            ("player b", "points"): {"line": 8.0, "odds_over": -110, "odds_under": -110, "books_consensus": 1},
+        }
+        out = run_model_fallback(proj, games, line_config={"min_confidence": 70}, player_odds_map=odds_map)
+        assert out.get("error") is None or out.get("error") == "no_edges" or out.get("pick") is not None
 
     def test_run_line_engine_uses_fallback_without_api_key(self):
         """run_line_engine falls back to model when no API key; returns pick or error"""
@@ -555,7 +559,11 @@ class TestLineConfig:
         games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
         cfg = {"min_confidence": 50, "min_edge_pts": 2.0, "min_edge_other": 1.5,
                "min_edge_other_over": 2.5, "stat_floors": {"rebounds": 5.5, "points": 6.0, "assists": 1.5}}
-        result = run_model_fallback(proj, games, line_config=cfg)
+        odds_map = {
+            ("scorer", "points"): {"line": 22.0, "odds_over": -110, "odds_under": -110, "books_consensus": 1},
+            ("big man", "rebounds"): {"line": 6.0, "odds_over": -110, "odds_under": -110, "books_consensus": 1},
+        }
+        result = run_model_fallback(proj, games, line_config=cfg, player_odds_map=odds_map)
         over_pick = result.get("over_pick")
         # Points over qualifies in main path; rebounds over (edge=1.5) is blocked by min_edge_other_over
         # so over_pick should be the points pick, not the rebounds pick
@@ -579,6 +587,35 @@ class TestLineConfig:
         # The rebounds under (edge=1.5) should qualify since it uses min_edge_other (1.5), not the over threshold
         if under_pick:
             assert under_pick["direction"] == "under"
+
+    def test_fallback_requires_book_odds(self):
+        """run_model_fallback should not synthesize lines when odds are missing."""
+        from api.line_engine import run_model_fallback
+        proj = [{
+            "name": "No Odds Guy", "team": "LAL", "predMin": 32,
+            "pts": 24, "season_pts": 20, "recent_pts": 21,
+            "reb": 7, "season_reb": 6, "recent_reb": 6.5,
+            "ast": 5, "season_ast": 4, "recent_ast": 4.5
+        }]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        out = run_model_fallback(proj, games, line_config={"min_confidence": 0}, player_odds_map={})
+        assert out.get("pick") is None and out.get("over_pick") is None and out.get("under_pick") is None
+        assert out.get("error") == "odds_unavailable"
+
+    def test_fallback_returns_no_edges_when_odds_exist_but_no_qualifying_edge(self):
+        """When odds are present but no edge clears thresholds, return no_edges (not odds_unavailable)."""
+        from api.line_engine import run_model_fallback
+        proj = [{
+            "name": "Flat Edge", "team": "LAL", "predMin": 32,
+            "pts": 20.0, "season_pts": 20.0, "recent_pts": 20.0,
+            "reb": 1.0, "season_reb": 1.0, "recent_reb": 1.0,
+            "ast": 1.0, "season_ast": 1.0, "recent_ast": 1.0
+        }]
+        games = [{"home": {"abbr": "LAL"}, "away": {"abbr": "BOS"}, "home_b2b": False, "away_b2b": False}]
+        odds_map = {("flat edge", "points"): {"line": 20.0, "odds_over": -110, "odds_under": -110, "books_consensus": 1}}
+        out = run_model_fallback(proj, games, line_config={"min_confidence": 0, "min_edge_pts": 2.0}, player_odds_map=odds_map)
+        assert out.get("pick") is None and out.get("over_pick") is None and out.get("under_pick") is None
+        assert out.get("error") == "no_edges"
 
 
 # ─────────────────────────────────────────────────────────
@@ -3345,6 +3382,155 @@ class TestParlayHistoryAndConfigHardening:
         assert 'json.dumps({"_busted": True}), "bust parlay cache"' not in src, (
             "refresh must not tombstone GitHub parlay files; this can erase history"
         )
+
+
+class TestParlayMidnightHandoff:
+    """Regression coverage for midnight ET parlay active-date behavior."""
+
+    def test_active_date_prefers_yesterday_when_unresolved_and_not_final(self):
+        from api.index import _parlay_active_date
+        from datetime import date as _date
+
+        today = _date(2026, 3, 25)
+        yesterday = _date(2026, 3, 24)
+        y_json = json.dumps({
+            "date": "2026-03-24",
+            "result": "pending",
+            "legs": [{"player_name": "A", "result": "pending"}],
+        })
+
+        with patch("api.index._et_date", return_value=today), \
+             patch("api.index._github_get_file", return_value=(y_json, "sha")), \
+             patch("api.index.fetch_games", return_value=[{"gameId": "1"}]), \
+             patch("api.index._all_games_final", return_value=False):
+            picked = _parlay_active_date()
+
+        assert picked == yesterday
+
+    def test_active_date_returns_today_when_yesterday_is_final(self):
+        from api.index import _parlay_active_date
+        from datetime import date as _date
+
+        today = _date(2026, 3, 25)
+        y_json = json.dumps({
+            "date": "2026-03-24",
+            "result": "pending",
+            "legs": [{"player_name": "A", "result": "pending"}],
+        })
+
+        with patch("api.index._et_date", return_value=today), \
+             patch("api.index._github_get_file", return_value=(y_json, "sha")), \
+             patch("api.index.fetch_games", return_value=[{"gameId": "1"}]), \
+             patch("api.index._all_games_final", return_value=True):
+            picked = _parlay_active_date()
+
+        assert picked == today
+
+    def test_active_date_returns_today_when_yesterday_ticket_already_concluded(self):
+        from api.index import _parlay_active_date
+        from datetime import date as _date
+
+        today = _date(2026, 3, 25)
+        y_json = json.dumps({
+            "date": "2026-03-24",
+            "result": "miss",
+            "legs": [{"player_name": "A", "result": "miss"}],
+        })
+
+        with patch("api.index._et_date", return_value=today), \
+             patch("api.index._github_get_file", return_value=(y_json, "sha")):
+            picked = _parlay_active_date()
+
+        assert picked == today
+
+
+class TestParlayApiActiveDateBoundary:
+    """HTTP boundary tests for /api/parlay active-date behavior."""
+
+    def test_get_parlay_uses_active_date_for_generation_and_payload(self):
+        pytest.importorskip("fastapi", reason="Install dependencies: pip install -r requirements.txt")
+        from fastapi.testclient import TestClient
+        from datetime import date as _date
+        from api.index import app
+
+        target_date = _date(2026, 3, 24)
+        result = {
+            "legs": [
+                {
+                    "player_name": "Player A",
+                    "direction": "over",
+                    "stat_type": "points",
+                    "line": 18.5,
+                },
+                {
+                    "player_name": "Player B",
+                    "direction": "under",
+                    "stat_type": "rebounds",
+                    "line": 7.5,
+                },
+                {
+                    "player_name": "Player C",
+                    "direction": "over",
+                    "stat_type": "assists",
+                    "line": 5.5,
+                },
+            ],
+            "combined_probability": 0.64,
+            "correlation_multiplier": 1.02,
+            "correlation_reasons": [],
+            "parlay_score": 0.61,
+            "narrative": "Synthetic test payload",
+            "result": "pending",
+        }
+
+        with patch("api.index._check_rate_limit", return_value=None), \
+             patch("api.index._parlay_active_date", return_value=target_date), \
+             patch("api.index.fetch_games", return_value=[]), \
+             patch("api.index._cg", return_value=None), \
+             patch("api.index._github_get_file", return_value=(None, None)), \
+             patch("api.index._run_parlay_engine_sync", return_value=(result, None, {"odds_available": True})), \
+             patch("api.index._cs", return_value=None), \
+             patch("api.index._github_write_file", return_value=True):
+            client = TestClient(app)
+            r = client.get("/api/parlay")
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("date") == target_date.isoformat()
+        assert len(body.get("legs", [])) == 3
+        assert all(leg.get("date") == target_date.isoformat() for leg in body.get("legs", []))
+
+    def test_get_parlay_respects_active_date_lock_window(self):
+        pytest.importorskip("fastapi", reason="Install dependencies: pip install -r requirements.txt")
+        from fastapi.testclient import TestClient
+        from datetime import date as _date, datetime as _dt, timezone as _tz, timedelta as _td
+        from api.index import app
+
+        target_date = _date(2026, 3, 24)
+        live_start = (_dt.now(_tz.utc) - _td(hours=1)).isoformat()
+        minimal = {
+            "legs": [
+                {"player_name": "A", "direction": "over", "stat_type": "points", "line": 10.5},
+                {"player_name": "B", "direction": "over", "stat_type": "points", "line": 10.5},
+                {"player_name": "C", "direction": "over", "stat_type": "points", "line": 10.5},
+            ],
+            "result": "pending",
+        }
+
+        with patch("api.index._check_rate_limit", return_value=None), \
+             patch("api.index._parlay_active_date", return_value=target_date), \
+             patch("api.index.fetch_games", return_value=[{"startTime": live_start}]), \
+             patch("api.index._cg", return_value=None), \
+             patch("api.index._github_get_file", return_value=(None, None)), \
+             patch("api.index._run_parlay_engine_sync", return_value=(minimal, None, {"odds_available": True})), \
+             patch("api.index._cs", return_value=None), \
+             patch("api.index._github_write_file", return_value=True):
+            client = TestClient(app)
+            r = client.get("/api/parlay")
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("locked") is True
 
 
 class TestSuspendedPlayersFiltered:

@@ -1,5 +1,7 @@
 # Basketball — Real Sports Draft Optimizer
 
+**Document Status:** Current Reference
+
 ## What This Is
 
 A daily NBA draft optimizer for the **Real Sports** app. Uses a **Dual-Model Machine Learning Architecture**: a LightGBM model for Real Score projections and a LightGBM model for Card Boost prediction, with Monte Carlo + MILP optimization for DFS lineup construction. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine for median-accurate stat projections and hit probabilities. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
@@ -193,7 +195,7 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 | `/api/save-boosts` | POST | Save pre-game player boosts (fixed daily constants from Real). Stores to `data/boosts/{date}.json`; busts slate cache so pipeline uses Layer 0 ground-truth boosts. Body: `{date?, players: [{player_name, boost, team?, rax_cost?}]}` |
 | `/api/slate-check` | GET | Pass 2 trigger check — detects material changes since Pass 1 (injury, Vegas movement, watchlist activation). Returns `{changed, triggers, recommendation}` |
 
-**Admin / optional (not used by main UI):** `POST /api/reset-uploads` — deletes actuals + audit for a date (admin/debug). `POST /api/hindsight` — optimal hindsight lineup from actual RS (Ben-driven or future). `GET /api/version` — build identifier for deploy/monitoring.
+**Admin / optional (not used by main UI):** `POST /api/hindsight` — optimal hindsight lineup from actual RS (Ben-driven or future). `GET /api/version` — build identifier for deploy/monitoring.
 
 ## App init and tab data flow
 
@@ -990,6 +992,7 @@ If slate, line, and/or log all fail to load:
 1. **Deployed URL** — Use the production URL (`https://the-oracle.up.railway.app`); avoid file:// or wrong origin.
 2. **Health and version** — Call `GET /api/health` and `GET /api/version`; if they fail, the backend is unreachable or cold-starting.
 3. **Railway logs** — Look for `[slate] error:`, `[line-of-the-day] error:`, `[games] error:`, `[log/dates] error:` or "Task timed out" to identify the failing path.
+4. **Parlay SSE smoke** — Use `python3 scripts/parlay_sse_smoke.py --base-url <origin>` to validate `/api/parlay-live-stream` reconnect behavior and payload consistency against `/api/parlay`.
 
 ## Robustness Fixes (this session)
 

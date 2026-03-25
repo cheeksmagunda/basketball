@@ -1,5 +1,7 @@
 # The Oracle — NBA Draft Optimizer for Real Sports
 
+**Document Status:** Current Reference
+
 AI-powered daily NBA draft optimizer for the **Real Sports App**. Uses a **Dual-Engine Architecture**: DFS drafts are powered by a Monte Carlo `real_score` simulator (variance, clutch-factor, ceiling), while prop betting surfaces (Line of the Day, Parlay) are powered by a deterministic `fair_value` engine (rolling medians, Z-score probabilities, floor stability). Card boosts + MILP lineup optimization on the draft side. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## What Real Sports Scores
@@ -156,6 +158,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/parlay` | GET | Safest 3-leg parlay (30 min `/tmp` cache; rate-limited). Auto-saves to `data/parlays/{date}.json` |
 | `/api/parlay-history` | GET | Recent parlays + lazy ESPN resolution |
 | `/api/parlay-force-regenerate` | GET | Cron: pre-lock regeneration (see `railway.toml`) |
+| `/api/parlay-live-stream` | GET (SSE) | Live parlay leg progress stream for in-game updates and ticket state refresh |
 
 ### Ben (Lab)
 | Endpoint | Method | Description |
@@ -283,6 +286,14 @@ python3 -m pytest tests/ -v
 - **tests/test_fixes.py** — Backend: `_safe_float`, `_is_locked`, audit, GitHub retries, slate/cache, line, parlay-related guards.
 - **tests/test_core.py** — Helpers, line cache, JS contract checks, date boundaries.
 - **tests/test_parlay.py** — Parlay engine and endpoint contracts.
+
+SSE smoke test for reconnect/state consistency:
+
+```bash
+python3 scripts/parlay_sse_smoke.py --base-url http://127.0.0.1:8000 --cycles 5 --ticks 3
+# or against prod:
+python3 scripts/parlay_sse_smoke.py --base-url https://the-oracle.up.railway.app
+```
 
 Tests that import `api.index` require full dependencies (numpy, lightgbm, etc.). Use `pip install -r requirements.txt` first (e.g. in a virtual environment). If pytest reports tests *skipped* with reason "Install dependencies: pip install -r requirements.txt", install the requirements and re-run.
 

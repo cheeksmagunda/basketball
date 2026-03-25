@@ -1,13 +1,16 @@
 # Lightweight Production & Pipeline Audit
 
+**Document Status:** Historical Snapshot
+
 **Date:** 2026-03-08  
 **Scope:** Production config, object/variable/reference (design + data), pipeline/caching, LightGBM.
+**Note:** This is a point-in-time snapshot. Railway runtime/cadence details may have changed; use `railway.toml`, `README.md`, and `CLAUDE.md` as source of truth for current deployment behavior.
 
 ---
 
 ## 1. Production
 
-- **vercel.json:** Routes and crons correct. Single `/api/refresh` at 19 UTC; `/api/lab/auto-improve` 09 UTC; `/api/refresh-line-odds` at :55; `/api/auto-resolve-line` at 0,30. `ignoreCommand` excludes data-only commits. `maxDuration: 300` on API.
+- **railway.toml:** Routes and crons are managed on Railway; schedules and runtime behavior should be read from `railway.toml` (current source of truth).
 - **Env:** `GITHUB_TOKEN`, `GITHUB_REPO`, `ANTHROPIC_API_KEY`, `ODDS_API_KEY`, cron secret used for refresh/auto-improve. No hardcoded secrets.
 - **Health/version:** `/api/health` and `/api/version` present for pre-warm and debugging.
 

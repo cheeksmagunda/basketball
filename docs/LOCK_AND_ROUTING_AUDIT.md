@@ -1,5 +1,7 @@
 # Lock Infrastructure & Routing Audit
 
+**Document Status:** Historical Snapshot
+
 **Date:** 2026-03-08
 
 ## 1. Lock infrastructure audit
@@ -43,15 +45,15 @@
 
 ## 2. Routing audit
 
-### 2.1 Vercel (vercel.json)
+### 2.1 Railway (railway.toml)
 
-| Route | Dest | Notes |
-|-------|------|--------|
-| `/api/(.*)` | `/api/index.py` | All API traffic to FastAPI. |
-| `/(.*)` | `/index.html` | SPA fallback; no server-side routes. |
+| Config | Location | Notes |
+|--------|----------|-------|
+| Build/deploy/crons | `railway.toml` | Source of truth for watchPatterns, healthcheck, and cron schedules. |
+| API routing | FastAPI app | Endpoints are defined in `api/index.py` under `/api/*`. |
+| Frontend | `index.html` | SPA served by backend/static hosting. |
 
-Builds: `api/index.py` (Python, maxDuration 300s), `index.html` (static).  
-Crons: refresh (19:00 UTC only), auto-improve (09:00), refresh-line-odds (hourly at :55), auto-resolve-line (0, 30 min).
+Crons and schedules are maintained in `railway.toml` (game-window cadence for odds/auto-resolve, plus refresh/auto-improve/injury-check/MAE drift/parlay pre-generation).
 
 ### 2.2 FastAPI routes (api/index.py)
 

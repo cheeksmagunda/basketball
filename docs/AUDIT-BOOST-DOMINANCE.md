@@ -1,5 +1,7 @@
 # Audit: Boost Dominance — Strip to Winning Formula
 
+**Document Status:** Historical Snapshot
+
 **Date:** 2026-03-19
 **Scope:** Full pipeline audit against leaderboard-proven winning strategy
 **Core thesis:** Boost leverage dominates everything. Any code that dilutes, overrides, or contradicts this principle is flagged and addressed.

@@ -1,5 +1,7 @@
 # OddsAPI Quota Management (500 requests/day)
 
+**Document Status:** Current Reference
+
 ## Overview
 With a 500 request/day plan, we need to be efficient to avoid overage charges.
 

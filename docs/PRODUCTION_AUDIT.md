@@ -1,5 +1,7 @@
 # Production Audit — The Oracle (Basketball)
 
+**Document Status:** Historical Snapshot
+
 **Audit date:** 2026-03-08 (updated 2026-03-21)
 **Scope:** Security, reliability, performance, deployment, observability.
 
@@ -12,7 +14,6 @@
 | Endpoint | Method | Payload / input | Writes to GitHub / external |
 |----------|--------|------------------|-----------------------------|
 | `/api/save-predictions` | POST | (none) | `data/predictions/{date}.csv`; slate backup |
-| `/api/reset-uploads` | POST | `body.date` | Deletes `data/actuals/{date}.csv`, `data/audit/{date}.json` |
 | `/api/parse-screenshot` | POST | `UploadFile` (image) | None (Claude API only) |
 | `/api/save-actuals` | POST | `date`, `players[]` | `data/actuals/{date}.csv`, `data/audit/{date}.json` |
 | `/api/hindsight` | POST | `players[]` | None |
@@ -36,7 +37,7 @@
 
 ### 1.3 Security recommendations
 
-1. **Cron authentication (implemented):** `CRON_SECRET` env is checked on `/api/refresh`, `/api/auto-resolve-line`, and `/api/lab/auto-improve`. Vercel sends it as `Authorization: Bearer <CRON_SECRET>`. `/api/refresh-line-odds` is not protected (also called by Line tab Refresh button).
+1. **Cron authentication (implemented):** `CRON_SECRET` env is checked on `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`, `/api/mae-drift-check`, and `/api/force-regenerate?scope=full`. Railway cron jobs send it as `Authorization: Bearer <CRON_SECRET>`. `/api/refresh` and `/api/refresh-line-odds` are intentionally unprotected.
 2. **Request size limits:** Enforce max body size for `parse_screenshot` (e.g. 10MB already documented) and `lab_chat` (e.g. 100KB for JSON body) to avoid abuse.
 3. **Keep in Known Limitations:** Upload screenshot type (Real Scores vs Top Drafts etc.) remains client-trust only unless server-side content checks are added.
 
@@ -93,7 +94,7 @@
 ### 3.2 Performance recommendations
 
 1. **Warm-up:** If cold start latency is an issue, add a cron (e.g. 30 min before first tip) that hits `GET /api/slate` to warm cache and avoid first-user cold hit.
-2. **Profiling:** For 10–14 game slates, measure cold vs warm `/api/slate` and `/api/picks?gameId=X` via Vercel logs or a one-off script; confirm RotoWire/ESPN are not unnecessarily on the critical path after cache is warm.
+2. **Profiling:** For 10–14 game slates, measure cold vs warm `/api/slate` and `/api/picks?gameId=X` via Railway logs or a one-off script; confirm RotoWire/ESPN are not unnecessarily on the critical path after cache is warm.
 
 ---
 
@@ -105,9 +106,9 @@
 - **Crons (current, Railway):**
   - `/api/refresh` at 19:00 UTC — daily cache clear + auto-save.
   - `/api/lab/auto-improve` at 09:00 UTC — daily auto-tune.
-  - `/api/refresh-line-odds` at :55 each hour — hourly odds sync.
-  - `/api/auto-resolve-line` at :00 each hour — resolve line picks.
-  - `/api/injury-check` at 14,16,18,20,22,0 UTC — RotoWire checks.
+  - `/api/refresh-line-odds` at :55 during game-window hours (19-06 UTC).
+  - `/api/auto-resolve-line` at :00 during game-window hours (20-07 UTC).
+  - `/api/injury-check` at 18,22,2 UTC — key injury windows.
   - `/api/mae-drift-check` at 06:00 UTC Monday — weekly MAE drift.
 - **Health check:** `/api/health` with 120s timeout in railway.toml.
 - **Cron secret (implemented):** `CRON_SECRET` env var; when set, cron-only endpoints require `Authorization: Bearer <CRON_SECRET>`.
@@ -153,7 +154,7 @@
 ### 5.2 Observability recommendations
 
 1. **Health endpoint:** Same as reliability — `GET /api/health` for monitoring.
-2. **Structured logging (optional):** For critical paths (e.g. save-predictions, save-actuals, lab/update-config), log one JSON line per request with `level`, `endpoint`, `duration_ms`, `error` (if any) to improve log search in Vercel.
+2. **Structured logging (optional):** For critical paths (e.g. save-predictions, save-actuals, lab/update-config), log one JSON line per request with `level`, `endpoint`, `duration_ms`, `error` (if any) to improve log search in Railway.
 3. **Error tracking (optional):** If incident response is needed, add Sentry (or similar) with env-based DSN; capture only non-2xx or explicit catch blocks to avoid noise. Do not log request bodies that may contain PII.
 
 ---

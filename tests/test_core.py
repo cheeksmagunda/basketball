@@ -1444,3 +1444,22 @@ class TestFrontendAuditFixes:
         assert "m.player || '?'" in script_source, (
             "M2 regression: m.player accessed without fallback"
         )
+
+
+class TestParlayFrontendErrorState:
+    """Regression guards for parlay fetch error-state mismatch fix."""
+
+    def test_fetch_parlay_uses_has_ticket_data_guard(self):
+        src = (ROOT / "index.html").read_text()
+        assert "const hasTicketData = !!(PARLAY_STATE && PARLAY_STATE.data" in src, (
+            "fetchParlay catch must detect existing ticket data before showing empty-state"
+        )
+
+    def test_fetch_parlay_does_not_show_empty_when_ticket_exists(self):
+        src = (ROOT / "index.html").read_text()
+        assert "if (!hasTicketData && empty)" in src, (
+            "fetchParlay catch should show empty-state only when no ticket is rendered"
+        )
+        assert "else if (empty) {" in src and "empty.style.display = 'none';" in src, (
+            "fetchParlay catch must hide empty-state when existing ticket remains visible"
+        )

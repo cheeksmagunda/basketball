@@ -1,14 +1,17 @@
 # Heavier Production Audit
 
+**Document Status:** Historical Snapshot
+
 **Date:** 2026-03-08  
 **Scope:** Security, error handling, API consistency, frontend/backend contracts, timeouts, deployment, observability.
+**Note:** This is a historical snapshot. For current deployment/runtime behavior, use `railway.toml`, `README.md`, and `CLAUDE.md`.
 
 ---
 
 ## 1. Security
 
 - **Secrets:** No secrets in repo. `GITHUB_TOKEN`, `GITHUB_REPO`, `ANTHROPIC_API_KEY`, `ODDS_API_KEY`, `CRON_SECRET`, `DOCS_SECRET` from env. Startup warns on missing required vars; app degrades gracefully.
-- **Cron protection:** `_require_cron_secret()` used on `/api/refresh`, `/api/lab/auto-improve`, `/api/auto-resolve-line`, `/api/lab/skip-uploads`. When `CRON_SECRET` is set, only Bearer token auth passes.
+- **Cron protection:** `CRON_SECRET` gates cron-only endpoints (e.g. `/api/lab/auto-improve`, `/api/auto-resolve-line`, `/api/injury-check`, `/api/mae-drift-check`, `/api/force-regenerate?scope=full`) when set.
 - **Docs protection:** Optional `DOCS_SECRET` gates `/docs`, `/redoc`, `/openapi.json` via middleware.
 - **Rate limiting:** Thread-safe `_check_rate_limit()` applied to `parse-screenshot`, `line-of-the-day`, `lab/chat`. Limits and lock documented in code.
 - **User input:** Screenshot upload type is client-side only (noted in CLAUDE.md as known limitation). No SQL/NoSQL; GitHub API and file paths are controlled.
@@ -45,7 +48,7 @@
 
 ## 5. Timeouts and external calls
 
-- **Backend:** GitHub API 10–15s; ESPN 10s; Odds API 10s; Anthropic 30–45s for Lab/vision. Backtest capped to avoid Vercel 300s.
+- **Backend:** GitHub API 10–15s; ESPN 10s; Odds API 10s; Anthropic 30–45s for Lab/vision.
 - **Frontend:** fetchWithTimeout 10s default; 15s for picks; 30s for screenshot parse; Lab chat uses streaming (no body timeout by design).
 
 **Finding:** No critical issues. No changes.
@@ -54,7 +57,7 @@
 
 ## 6. Deployment and observability
 
-- **Vercel:** ignoreCommand excludes data-only commits. Crons and routes as in vercel.json. maxDuration 300 on API.
+- **Railway:** `watchPatterns` in `railway.toml` exclude data-only commits from rebuilds. Crons and health checks are configured in `railway.toml`.
 - **Logging:** Request middleware logs request_id, path, method, status, duration_ms (NDJSON). No PII in logs. Print used for warnings (e.g. LightGBM fallback, health config error).
 
 **Finding:** No critical issues. No changes.

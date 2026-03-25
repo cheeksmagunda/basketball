@@ -629,7 +629,9 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                 continue
 
             book_odds = _lookup_player_odds(player_odds_map, p.get("name", ""), stat_type)
-            line      = book_odds["line"] if book_odds else round(round(season_val * 2) / 2, 1)
+            if not book_odds:
+                continue  # Stop making up lines; require real Vegas odds
+            line      = book_odds["line"]
             edge      = round(proj_val - line, 1)
             direction = "over" if edge > 0 else "under"
             if stat_type == "points":
@@ -709,7 +711,9 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                 if season_val < min_season or pred_min < min_min or proj_val <= 0:
                     continue
                 lr_book   = _lookup_player_odds(player_odds_map, p.get("name", ""), stat_type)
-                line      = lr_book["line"] if lr_book else round(round(season_val * 2) / 2, 1)
+                if not lr_book:
+                    continue  # Stop making up lines; require real Vegas odds
+                line      = lr_book["line"]
                 edge      = round(proj_val - line, 1)
                 if edge == 0:
                     continue
@@ -751,7 +755,8 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                     under_pick = lr_under[0]
 
     if not candidates and not over_pick and not under_pick:
-        return {"pick": None, "over_pick": None, "under_pick": None, "error": "no_edges"}
+        error_code = "odds_unavailable" if not player_odds_map else "no_edges"
+        return {"pick": None, "over_pick": None, "under_pick": None, "error": error_code}
     primary    = over_pick if (over_pick and (not under_pick or over_pick["confidence"] >= under_pick["confidence"])) else under_pick
     return {
         "pick": primary, "over_pick": over_pick, "under_pick": under_pick,

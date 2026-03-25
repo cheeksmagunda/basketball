@@ -1,5 +1,7 @@
 # Global Variables & Design Tokens Audit
 
+**Document Status:** Historical Snapshot
+
 **Date:** 2026-03-08
 
 ## Frontend (index.html)

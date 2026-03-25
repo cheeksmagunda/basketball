@@ -10542,10 +10542,10 @@ async def get_parlay(request: Request):
         today = _parlay_active_date()
         today_str = today.isoformat()
 
-        # Determine lock status from TODAY's games only.
-        # No midnight rollover guard — today's parlay should show as unlocked
-        # until today's games actually start, even if yesterday's late games
-        # are still in their 6h lock window.
+        # Determine lock status from the ACTIVE parlay date returned by
+        # _parlay_active_date() (today, or yesterday after midnight when that
+        # ticket is still live). This keeps lock state aligned with whichever
+        # ticket the endpoint is currently serving.
         games = fetch_games(today)
         start_times = [g["startTime"] for g in games if g.get("startTime")]
         slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)

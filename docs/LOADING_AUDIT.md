@@ -1,5 +1,7 @@
 # Loading Audit — Frontend & UX
 
+**Document Status:** Current Reference
+
 Audit of loading states, timeouts, skeletons, and error handling across the app. Date: March 2026.
 
 ## 1. Fetch timeouts (frontend)
