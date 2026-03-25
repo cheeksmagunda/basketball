@@ -1960,62 +1960,66 @@ class TestDailyBoostIngestion:
         idx._DAILY_BOOST_TS = 0
 
 
-class TestOwnershipBoostTrendAdjustment:
-    def test_stale_monotonic_trend_applies_small_nudge(self):
-        """Stale, monotonic 0.2 total move should get a bounded forward nudge."""
-        from api.index import _load_ownership_boosts
+class TestBoostModelInference:
+    """Card boost Layer 1: LightGBM path (ownership CSV scanning removed)."""
+
+    def test_est_card_boost_uses_ml_when_model_returns_value(self):
+        """When _lgbm_predict_boost returns a float, result is clamped/rounded."""
+        from api.index import _est_card_boost
         import api.index as idx
-        import io
 
-        csv_map = {
-            "2026-03-11.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.3,,,ts\n",
-            "2026-03-13.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.2,,,ts\n",
-            "2026-03-18.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.1,,,ts\n",
-        }
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_DATE = ""
+        idx._DAILY_BOOST_TS = 0
 
-        def _open_side_effect(path, *args, **kwargs):
-            fname = os.path.basename(path)
-            if fname in csv_map:
-                return io.StringIO(csv_map[fname])
-            raise FileNotFoundError(path)
+        captured = {}
 
-        idx._OWNERSHIP_BOOST_CACHE = {}
-        idx._OWNERSHIP_BOOST_TS = 0
-        with patch.object(idx, "_today_str", return_value="2026-03-23"), \
-             patch("os.path.isdir", return_value=True), \
-             patch("os.listdir", side_effect=lambda p: sorted(csv_map.keys()) if p.endswith("ownership") else []), \
-             patch("builtins.open", side_effect=_open_side_effect):
-            result = _load_ownership_boosts()
+        def _fake_predict(vec):
+            captured["vec"] = list(vec)
+            return 2.35
 
-        assert result.get("trend guy") == 2.0
+        with patch.object(idx, "_lgbm_predict_boost", side_effect=_fake_predict):
+            b = _est_card_boost(
+                28.0, 15.0, "MEM", "Bench Player",
+                season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
+            )
 
-    def test_recent_small_monotonic_move_does_not_nudge(self):
-        """Fresh observations keep latest value when total move is only 0.2."""
-        from api.index import _load_ownership_boosts
+        assert b == 2.4
+        assert len(captured["vec"]) == 8
+        assert captured["vec"][6] == 2.0  # cascade_bonus aligns with training role_change_min proxy
+
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_TS = 0
+
+    def test_est_card_boost_falls_through_to_override_when_ml_none(self):
+        """Layer 2 config overrides apply when ML returns None."""
+        from api.index import _est_card_boost
         import api.index as idx
-        import io
 
-        csv_map = {
-            "2026-03-18.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.3,,,ts\n",
-            "2026-03-20.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.2,,,ts\n",
-            "2026-03-22.csv": "player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at\nTrend Guy,,0,0,2.1,,,ts\n",
+        idx._DAILY_BOOST_CACHE = {}
+        idx._DAILY_BOOST_DATE = ""
+        idx._DAILY_BOOST_TS = 0
+
+        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
+            b = _est_card_boost(
+                30.0, 25.0, "MIN", "Anthony Edwards",
+                season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
+            )
+        assert b == 0.3
+
+    def test_boost_players_dict_matches_save_boosts_shape(self):
+        """_boost_players_dict_from_json_data matches save-boosts player entries."""
+        from api.index import _boost_players_dict_from_json_data
+
+        data = {
+            "players": [
+                {"player_name": "Klay Thompson", "boost": 2.5},
+                {"name": "Cameron Payne", "boost": 2.6},
+            ]
         }
-
-        def _open_side_effect(path, *args, **kwargs):
-            fname = os.path.basename(path)
-            if fname in csv_map:
-                return io.StringIO(csv_map[fname])
-            raise FileNotFoundError(path)
-
-        idx._OWNERSHIP_BOOST_CACHE = {}
-        idx._OWNERSHIP_BOOST_TS = 0
-        with patch.object(idx, "_today_str", return_value="2026-03-23"), \
-             patch("os.path.isdir", return_value=True), \
-             patch("os.listdir", side_effect=lambda p: sorted(csv_map.keys()) if p.endswith("ownership") else []), \
-             patch("builtins.open", side_effect=_open_side_effect):
-            result = _load_ownership_boosts()
-
-        assert result.get("trend guy") == 2.1
+        d = _boost_players_dict_from_json_data(data)
+        assert d.get("klay thompson") == 2.5
+        assert d.get("cameron payne") == 2.6
 
 
 # ---------------------------------------------------------------------------

@@ -1077,11 +1077,20 @@ _LGBM_LOAD_LOCK = threading.Lock()
 _SLATE_GEN_LOCK = threading.Lock()
 _SLATE_GEN_IN_FLIGHT = False
 
-_LGBM_PATHS = [
-    Path(__file__).parent.parent / "lgbm_model.pkl",
-    Path(__file__).parent / "lgbm_model.pkl",
-    Path("lgbm_model.pkl"),
-]
+
+def _repo_pickle_paths(filename: str) -> list:
+    """Repo root, package dir, then CWD — same resolution order for bundled .pkl files."""
+    base = Path(__file__)
+    return [base.parent.parent / filename, base.parent / filename, Path(filename)]
+
+
+_LGBM_PATHS = _repo_pickle_paths("lgbm_model.pkl")
+_BOOST_PATHS = _repo_pickle_paths("boost_model.pkl")
+
+BOOST_MODEL = None
+BOOST_FEATURES = None
+_BOOST_LOAD_ATTEMPTED = False
+_BOOST_LOAD_LOCK = threading.Lock()
 
 def _ensure_lgbm_loaded():
     """Lazy-load the LightGBM model bundle on first use.
@@ -1131,6 +1140,48 @@ def _lgbm_predict_rs(feat_vec: list) -> Optional[float]:
     if AI_MODEL is not None:
         return float(AI_MODEL.predict(arr)[0])
     return None
+
+
+def _ensure_boost_model_loaded():
+    """Lazy-load LightGBM card boost model bundle on first use."""
+    global BOOST_MODEL, BOOST_FEATURES, _BOOST_LOAD_ATTEMPTED
+    if _BOOST_LOAD_ATTEMPTED:
+        return
+    with _BOOST_LOAD_LOCK:
+        if _BOOST_LOAD_ATTEMPTED:
+            return
+        for _p in _BOOST_PATHS:
+            if _p.exists():
+                try:
+                    with open(_p, "rb") as _f:
+                        _bundle = pickle.load(_f)
+                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
+                        BOOST_MODEL = _bundle["model"]
+                        BOOST_FEATURES = _bundle["features"]
+                        break
+                except Exception as e:
+                    print(f"[boost_model] load failed from {_p}: {e}")
+        _BOOST_LOAD_ATTEMPTED = True
+        if BOOST_MODEL is None:
+            print("[WARN] Boost model not found/invalid — using fallback boost estimation")
+
+
+def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
+    """Return predicted card boost from boost_model.pkl, or None on fallback."""
+    _ensure_boost_model_loaded()
+    if BOOST_MODEL is None or BOOST_FEATURES is None:
+        return None
+    if len(feat_vec) != len(BOOST_FEATURES):
+        print(
+            f"[boost_model] feature mismatch: expected {len(BOOST_FEATURES)}, got {len(feat_vec)}"
+        )
+        return None
+    try:
+        arr = np.array([feat_vec])
+        return float(BOOST_MODEL.predict(arr)[0])
+    except Exception as e:
+        print(f"[boost_model] inference failed: {e}")
+        return None
 
 
 def _lgbm_feature_vector(
@@ -2275,7 +2326,7 @@ def _cascade_minutes(roster, stats_map):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CARD BOOST & DFS SCORING
-# grep: _est_card_boost, _dfs_score, card boost, ownership, Real Score formula
+# grep: _est_card_boost, _dfs_score, card boost, boost_model, Real Score formula
 #
 # THE CORE MODEL — Optimized for the Real Sports App
 #
@@ -2299,6 +2350,21 @@ def _normalize_boost_name(name):
     import unicodedata as _ud
     n = _ud.normalize("NFKD", name).encode("ASCII", "ignore").decode("ASCII")
     return n.strip().lower()
+
+
+def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
+    return round(min(max(float(x), floor_val), ceiling), 1)
+
+
+def _boost_players_dict_from_json_data(data: dict) -> dict:
+    """Parse save-boosts JSON body into {normalized_name: boost float}."""
+    result = {}
+    for p in data.get("players", []):
+        name = p.get("player_name") or p.get("name", "")
+        boost = p.get("boost")
+        if name and boost is not None:
+            result[_normalize_boost_name(name)] = float(boost)
+    return result
 
 
 # ── Pre-game boost ingestion (Layer 0) ─────────────────────────────────────
@@ -2326,14 +2392,7 @@ def _load_daily_boosts(date_str=None):
         content, _ = _github_get_file(f"data/boosts/{date_str}.json")
         if content:
             data = json.loads(content)
-            players = data.get("players", [])
-            result = {}
-            for p in players:
-                name = p.get("player_name") or p.get("name", "")
-                boost = p.get("boost")
-                if name and boost is not None:
-                    nk = _normalize_boost_name(name)
-                    result[nk] = float(boost)
+            result = _boost_players_dict_from_json_data(data)
             _DAILY_BOOST_CACHE = result
             _DAILY_BOOST_DATE = date_str
             _DAILY_BOOST_TS = now
@@ -2346,14 +2405,7 @@ def _load_daily_boosts(date_str=None):
         if os.path.exists(local_path):
             with open(local_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            players = data.get("players", [])
-            result = {}
-            for p in players:
-                name = p.get("player_name") or p.get("name", "")
-                boost = p.get("boost")
-                if name and boost is not None:
-                    nk = _normalize_boost_name(name)
-                    result[nk] = float(boost)
+            result = _boost_players_dict_from_json_data(data)
             _DAILY_BOOST_CACHE = result
             _DAILY_BOOST_DATE = date_str
             _DAILY_BOOST_TS = now
@@ -2367,129 +2419,23 @@ def _load_daily_boosts(date_str=None):
     return {}
 
 
-# ── Auto-populated boost overrides from ownership/actuals data ──────────────
-# Reads data/ownership/ and data/actuals/ CSVs to build a dynamic override map
-# using the most recent observation per player. Refreshes every 10 minutes.
-_OWNERSHIP_BOOST_CACHE = {}
-_OWNERSHIP_BOOST_TS = 0
-
-def _load_ownership_boosts():
-    """Build {normalized_name: boost} from all ownership + actuals CSVs.
-
-    Uses most recent observation per player with trend extrapolation:
-    - For players with 3+ observations showing consistent decline (≥0.3 total drop),
-      extrapolates one step forward at 50% of the observed decay rate.
-    - Never inflates above the most-recent observed value.
-    - Extrapolation capped at 0.3 below most-recent to avoid over-correcting.
-
-    Cached 10 min.
-    """
-    global _OWNERSHIP_BOOST_CACHE, _OWNERSHIP_BOOST_TS
-    import time
-    now = time.time()
-    if _OWNERSHIP_BOOST_CACHE and (now - _OWNERSHIP_BOOST_TS) < _TTL_LOG:
-        return _OWNERSHIP_BOOST_CACHE
-
-    # Collect all observations per player: {nkey: {date_str: (boost_val, original_name)}}
-    # Using a dict keyed by date to automatically deduplicate (ownership + actuals may
-    # both have data for the same player on the same date — keep the latest file's value).
-    raw_obs = {}  # {normalized_name: {date_str: (boost_val, original_name)}}
-    for subdir in ["ownership", "actuals"]:
-        dirpath = os.path.join(os.path.dirname(__file__), "..", "data", subdir)
-        if not os.path.isdir(dirpath):
-            continue
-        for fname in sorted(os.listdir(dirpath)):
-            if not fname.endswith(".csv"):
-                continue
-            date_str = fname.replace(".csv", "")
-            fpath = os.path.join(dirpath, fname)
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    import csv as _csv
-                    reader = _csv.DictReader(f)
-                    for row in reader:
-                        # ownership CSVs use 'player', actuals use 'player_name'
-                        name = row.get("player") or row.get("player_name", "")
-                        if not name:
-                            continue
-                        boost_str = row.get("actual_card_boost", "")
-                        if not boost_str or boost_str == "None":
-                            continue
-                        try:
-                            bval = float(boost_str)
-                        except (ValueError, TypeError):
-                            continue
-                        if bval <= 0:
-                            continue
-                        nkey = _normalize_boost_name(name)
-                        raw_obs.setdefault(nkey, {})[date_str] = (bval, name)
-            except Exception:
-                continue
-
-    result = {}
-    try:
-        _today_dt = datetime.strptime(_today_str(), "%Y-%m-%d").date()
-    except Exception:
-        _today_dt = None
-    for nkey, date_map in raw_obs.items():
-        # Build deduplicated, date-sorted observation list
-        obs_list = sorted(date_map.items())  # [(date_str, (bval, name)), ...]
-        latest_date, (latest_boost, _name) = obs_list[-1]
-        stale_days = 0
-        if _today_dt is not None:
-            try:
-                stale_days = max(
-                    0,
-                    (_today_dt - datetime.strptime(latest_date, "%Y-%m-%d").date()).days,
-                )
-            except Exception:
-                stale_days = 0
-
-        # Trend extrapolation: if 3+ observations with consistent decline ≥ 0.3 total,
-        # apply a bounded forward adjustment. For stale observations, allow smaller
-        # monotonic moves (>=0.2) to correct drift faster.
-        if len(obs_list) >= 3:
-            boosts = [bval for _, (bval, _) in obs_list[-3:]]  # last 3
-            diffs = [boosts[i] - boosts[i+1] for i in range(len(boosts)-1)]
-            total_move = abs(sum(diffs))
-            monotonic = all(d > 0 for d in diffs) or all(d < 0 for d in diffs)
-            min_required_move = 0.2 if stale_days >= 3 else 0.3
-            if monotonic and (total_move + 1e-9) >= min_required_move:
-                avg_step = sum(diffs) / len(diffs)
-                # Stale values get a stronger correction than fresh observations.
-                step_mult = 1.0 if stale_days >= 3 else 0.5
-                extrapolated = latest_boost - (avg_step * step_mult)
-                # Keep adjustment bounded to +/-0.3 from latest observation.
-                extrapolated = max(extrapolated, latest_boost - 0.3)
-                extrapolated = min(extrapolated, latest_boost + 0.3)
-                # Preserve monotonic direction.
-                if avg_step > 0:
-                    extrapolated = min(extrapolated, latest_boost)
-                elif avg_step < 0:
-                    extrapolated = max(extrapolated, latest_boost)
-                result[nkey] = round(extrapolated, 1)
-                continue
-
-        result[nkey] = latest_boost
-
-    _OWNERSHIP_BOOST_CACHE = result
-    _OWNERSHIP_BOOST_TS = now
-    return _OWNERSHIP_BOOST_CACHE
-
-
-def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
+def _est_card_boost(
+    proj_min,
+    pts,
+    team_abbr,
+    player_name=None,
+    season_pts=0.0,
+    recent_pts=0.0,
+    cascade_bonus=0.0,
+    is_home=False,
+):
     """Get or estimate ADDITIVE card boost for Real Sports.
 
-    Four-layer approach (v51):
+    Four-layer approach:
     0. DAILY INGESTION — pre-game boosts from data/boosts/{date}.json (ground truth).
-       When available, this is the definitive value — no estimation needed.
-    1. OBSERVED DATA — auto-populated from data/actuals/ + data/ownership/ CSVs.
-       Most recent observation + trend extrapolation for consistently declining players.
-       Refreshed every 10 min. Takes precedence over manual config overrides because
-       real observations are always more accurate than static estimates.
+    1. BOOST MODEL — LightGBM inference from pre-game hype features.
     2. CONFIG OVERRIDES — player_overrides from model-config.json.
-       Fallback for players not yet observed in actuals (pre-season or rarely played).
-    3. SIGMOID TIER FALLBACK — for completely unknown players, estimate from PPG.
+    3. SIGMOID TIER FALLBACK — for completely unknown players.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -2502,42 +2448,57 @@ def _est_card_boost(proj_min, pts, team_abbr, player_name=None):
     if norm_name:
         daily_boosts = _load_daily_boosts()
         if norm_name in daily_boosts:
-            return round(min(max(daily_boosts[norm_name], floor_val), ceiling), 1)
+            return _clamp_round_boost(daily_boosts[norm_name], floor_val, ceiling)
 
-    # Layer 1: Observed from actuals/ownership CSVs (most recent + trend adjustment)
-    # Real observations beat static config estimates — avoids stale manual overrides.
-    if norm_name:
-        ownership_boosts = _load_ownership_boosts()
-        if norm_name in ownership_boosts:
-            return round(min(max(ownership_boosts[norm_name], floor_val), ceiling), 1)
+    # Layer 1: ML inference from dedicated boost model.
+    big_markets = set(
+        cb.get(
+            "big_market_teams",
+            ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
+        )
+    )
+    is_big_market = 1.0 if team_abbr in big_markets else 0.0
+    season_min_proxy = max(0.0, proj_min - cascade_bonus)
+    recent_min_proxy = proj_min
+    pts_ratio = float(recent_pts) / max(float(season_pts), 1.0)
+    is_home_val = 1.0 if is_home else 0.0
+    feat_vec = [
+        float(season_pts),
+        float(recent_pts),
+        float(season_min_proxy),
+        float(recent_min_proxy),
+        float(pts_ratio),
+        float(is_big_market),
+        float(cascade_bonus),
+        float(is_home_val),
+    ]
+    ml_pred = _lgbm_predict_boost(feat_vec)
+    if ml_pred is not None:
+        return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
-    # Layer 2: Config overrides (fallback for players not yet observed in actuals)
+    # Layer 2: Config overrides (fallback when ML unavailable/missing).
     overrides = cb.get("player_overrides", {})
     if norm_name:
         for k, v in overrides.items():
             if _normalize_boost_name(k) == norm_name:
                 return float(v)
 
-    # Layer 3: Sigmoid tier estimation from PPG
+    # Layer 3: Sigmoid tier estimation from hype-adjusted scoring signal.
     # boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
-    # Calibrated against 60+ observations from Mar 6/9/10 actuals:
-    #   PPG 27 → 0.26, PPG 20 → 0.53, PPG 15 → 1.10, PPG 12 → 1.60,
-    #   PPG 10 → 1.94, PPG 8 → 2.25, PPG 5 → 2.59
+    effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
     sig_ceiling  = cb.get("sig_ceiling", 3.0)
     sig_range    = cb.get("sig_range", 2.8)
     sig_midpoint = cb.get("sig_midpoint", 12.0)
     sig_scale    = cb.get("sig_scale", 4.0)
     bm_discount  = cb.get("big_market_discount", 0.15)
-    big_markets  = set(cb.get("big_market_teams", ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"]))
-
-    sigmoid_val = 1.0 / (1.0 + np.exp(-(pts - sig_midpoint) / sig_scale))
+    sigmoid_val = 1.0 / (1.0 + np.exp(-(effective_hype_ppg - sig_midpoint) / sig_scale))
     boost = sig_ceiling - sig_range * sigmoid_val
 
     # Big market players are more recognizable → slightly lower boost
-    if team_abbr in big_markets:
+    if is_big_market > 0.5:
         boost -= bm_discount
 
-    return round(min(max(boost, floor_val), ceiling), 1)
+    return _clamp_round_boost(boost, floor_val, ceiling)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
@@ -2998,7 +2959,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
     # Card boost is INVERSELY proportional to ownership — the app rewards
     # contrarian picks. Stars get crushed, obscure role players get huge boosts.
-    card_boost = _est_card_boost(proj_min, pts, team_abbr, player_name=pinfo["name"])
+    is_home = side == "home"
+    card_boost = _est_card_boost(
+        proj_min,
+        pts,
+        team_abbr,
+        player_name=pinfo["name"],
+        season_pts=season_pts,
+        recent_pts=recent_pts,
+        cascade_bonus=cascade_bonus,
+        is_home=is_home,
+    )
 
     # EV score — card-adjusted expected value using additive formula
     # Use average slot (1.6) for ranking; MILP uses exact slots
@@ -9828,7 +9799,7 @@ async def save_boosts(payload: dict = Body(...)):
         return _err(f"Failed to save boosts: {str(e)}", 500)
 
     # Bust caches so next slate request uses real boosts
-    _DAILY_BOOST_CACHE = {_normalize_boost_name(p["player_name"]): p["boost"] for p in clean_players}
+    _DAILY_BOOST_CACHE = _boost_players_dict_from_json_data({"players": clean_players})
     _DAILY_BOOST_DATE = date_str
     _DAILY_BOOST_TS = time.time()
     _bust_slate_cache()

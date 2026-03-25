@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A daily NBA draft optimizer for the **Real Sports** app. Uses a **Dual-Engine Architecture**: DFS drafts (Starting 5 + Moonshot) are powered by a Monte Carlo `real_score` simulator to maximize variance, clutch-factor, and ceiling. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine to maximize median accuracy, Z-score probabilities, and floor stability. Card boosts + MILP lineup optimization on the draft side. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+A daily NBA draft optimizer for the **Real Sports** app. Uses a **Dual-Model Machine Learning Architecture**: a LightGBM model for Real Score projections and a LightGBM model for Card Boost prediction, with Monte Carlo + MILP optimization for DFS lineup construction. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine for median-accurate stat projections and hit probabilities. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## How Real Sports Works
 
@@ -34,16 +34,22 @@ data/slate/            — GitHub-persisted prediction cache ({date}_slate.json,
 data/locks/            — Cold-start recovery: {date}_slate.json written at lock-promotion time
 data/boosts/           — Pre-game player boosts (fixed daily constants from Real, {date}.json)
 data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
-lgbm_model.pkl         — LightGBM model bundle {model, features} — retrained by retrain-model.yml
+lgbm_model.pkl         — LightGBM model bundle {model, features} for Real Score projections
+boost_model.pkl        — LightGBM model bundle {model, features} for Card Boost prediction
 train_lgbm.py          — Training script (12 features, run locally or via GitHub Actions)
+train_boost_lgbm.py    — Card Boost training script (8 features, run locally or via GitHub Actions)
 railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
 ```
 
-## Dual-Engine Architecture
+## Dual-Model Machine Learning Architecture
 
-The backend uses two mathematically distinct projection engines, each purpose-built for its surface:
+The backend leverages two autonomous LightGBM models trained nightly via GitHub Actions:
+1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance.
+2. **`boost_model.pkl` (Card Boost Prediction)**: 8-feature model trained on historical actuals/ownership to predict community draft hype. Replaces legacy file-scanning. Accurately anticipates ownership spikes due to injury cascades and recent scoring surges.
+
+The deterministic fair-value engine remains isolated to prop betting surfaces.
 
 ### Engine 1: Monte Carlo `real_score` → DFS Drafts (Starting 5 + Moonshot)
 - **Pipeline**: ESPN → LightGBM → Monte Carlo RS (closeness + clutch + momentum) → Card Boost → MILP
@@ -334,7 +340,6 @@ Generated during Pass 1 (and Pass 2 reruns). Identifies players NOT in the lineu
 
 ### What the App Does NOT Need
 With boosts as known constants:
-- **Boost prediction modeling** — not needed when daily boosts are ingested
 - **Real-time draft count tracking** — boosts are already set
 - **DFS ownership projection** — proxy not needed since boosts are directly observable
 
@@ -562,12 +567,14 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits). `recent_vs_season` = recent scoring vs season average (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts).
 - Retrained nightly by GitHub Actions (`retrain-model.yml`). Retrain manually: `python train_lgbm.py`.
 
-### Card Boost (`_est_card_boost`) — 4-Layer (v25)
-Boosts are **fixed daily constants** published by Real Sports before drafts open. They are **observable, not predicted**. The pipeline uses a 4-layer cascade:
-- **Layer 0 — Daily ingestion** (`data/boosts/{date}.json`): Pre-game boosts uploaded via `/api/save-boosts` or screenshot parse (`type="boosts"`). Ground truth when available — no estimation needed.
-- **Layer 1 — Config overrides** (`card_boost.player_overrides`): Manually curated boost map (~114 players). Used when daily boosts not yet ingested.
-- **Layer 2 — Ownership data** (`data/ownership/` + `data/actuals/` CSVs): Auto-populated from post-game screenshots. Most recent observation per player.
-- **Layer 3 — Sigmoid fallback**: `boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)`. Big market discount -0.15x. For unknown players only.
+### Card Boost (`_est_card_boost`) — 4-Layer (ML + fallbacks)
+When pre-game boosts are uploaded, they are **ground truth** for that slate. Otherwise the pipeline estimates boost with a **LightGBM model** trained on historical actuals, then falls back to config and a sigmoid:
+- **Layer 0 — Daily ingestion** (`data/boosts/{date}.json`): Pre-game boosts via `/api/save-boosts` or screenshot parse (`type="boosts"`). Definitive when present.
+- **Layer 1 — `boost_model.pkl`**: 8-feature LightGBM (`train_boost_lgbm.py`) — hype/role proxies from season vs recent PTS/MIN, big-market flag, cascade minutes proxy, home/away. Output clamped to `floor`/`ceiling` in config.
+- **Layer 2 — Config overrides** (`card_boost.player_overrides`): Curated map for stars and edge cases when the model file is missing or returns no prediction.
+- **Layer 3 — Sigmoid fallback**: `boost = sig_ceiling - sig_range × sigmoid((effective_hype_ppg - sig_midpoint) / sig_scale)` where `effective_hype_ppg = max(season_pts, recent_pts) + 0.75 × cascade_bonus`. Big market discount from config.
+
+Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed overrides), not for live `_est_card_boost` scanning.
 
 ### Moonshot Formula (v7 — quality over quantity)
 `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)`
@@ -899,6 +906,7 @@ TestClaudeContextLayer      — context pass enable/disable, multiplier clamping
 TestPredMinTolerance        — chalk (2.0) and moonshot (3.0) tolerance band config and code presence
 TestMoonshotPtsFloor        — separate moonshot pts floor (4.0) config and chalk enforcement (7.0)
 TestDailyBoostIngestion     — Layer 0 daily boost load/parse, _est_card_boost priority over config overrides
+TestBoostModelInference     — Layer 1 ML path + override fallback; shared JSON dict helper for boosts
 TestWatchlist               — _build_watchlist cascade candidate detection, max-10 cap
 TestBoostsScreenshotType    — parse-screenshot accepts 'boosts' screenshot_type
 TestCorePoolRsMetric        — core_pool.metric="rs" ranks by raw projected RS; "max_ev" backward compat
