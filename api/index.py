@@ -2668,7 +2668,9 @@ def _normalize_boost_name(name):
 
 
 def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
-    return round(min(max(float(x), floor_val), ceiling), 1)
+    # Keep boost precision for optimizer ranking; coarse 0.1 rounding flattens
+    # many players to 1.0 and can collapse RS×boost separation on small slates.
+    return round(min(max(float(x), floor_val), ceiling), 3)
 
 
 # grep: BREAKOUT DETECTOR
