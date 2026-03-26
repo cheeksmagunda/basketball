@@ -3779,42 +3779,54 @@ async function initLogPage() {
     return;
   }
 
+  // Local fallback: render last known today payload immediately while network fetch runs.
+  try {
+    const _raw = localStorage.getItem('log_get_' + todayStr);
+    if (_raw) {
+      const _cachedToday = JSON.parse(_raw);
+      if (_cachedToday && typeof _cachedToday === 'object') {
+        LOG.dateCache[todayStr] = { data: _cachedToday, loadedAt: Date.now() }; _evictLogCache();
+        LOG.data = _cachedToday;
+        LOG_STATE = asyncStateSuccess(LOG_STATE, _cachedToday);
+        renderLogGrid(todayStr);
+      }
+    }
+  } catch(e) {}
+
   LOG_STATE = asyncStateLoading(LOG_STATE);
   _renderLogGridFromState(todayStr);
   LOG_LOADED_AT = Date.now();
 
-  // Not hydrated or stale — fetch both in parallel
-  const datesPromise = _fetchJson('/api/log/dates', 15000);
-  const getPromise = _fetchJson(`/api/log/get?date=${todayStr}`, 15000);
-
-  const [datesRes, getRes] = await Promise.allSettled([datesPromise, getPromise]);
-
-  if (datesRes.status === 'fulfilled') {
-    datesRes.value.forEach(d => LOG.datesWithData.add(d));
+  // Fetch dates in background; never block grid paint on date strip refresh.
+  _fetchJson('/api/log/dates', 15000).then(function(arr) {
+    if (!Array.isArray(arr)) return;
+    arr.forEach(d => LOG.datesWithData.add(d));
     LOG._datesLoadedAt = Date.now();
     try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
     buildLogDateStrip();
-  }
+  }).catch(function() {});
 
-  if (getRes.status === 'fulfilled') {
-    const data = getRes.value;
+  // Prioritize today's grid payload for fast first paint.
+  try {
+    const data = await _fetchJson(`/api/log/get?date=${todayStr}`, 15000);
     LOG.dateCache[todayStr] = { data, loadedAt: Date.now() }; _evictLogCache();
     LOG.data = data;
     LOG._dataLoadedAt = Date.now();
     LOG_STATE = asyncStateSuccess(LOG_STATE, data);
+    try { localStorage.setItem('log_get_' + todayStr, JSON.stringify(data)); } catch(e) {}
     // Smart default: if today has no predictions, jump to most recent date with data
     if (!data.has_predictions && LOG.datesWithData.size > 0) {
       const mostRecent = [...LOG.datesWithData].sort().reverse()[0];
       if (mostRecent && mostRecent !== todayStr) { selectLogDate(mostRecent); return; }
     }
     renderLogGrid(todayStr);
-  } else {
+  } catch(e) {
     // Even on error for today, jump to most recent date with data if available
     if (LOG.datesWithData.size > 0) {
       const mostRecent = [...LOG.datesWithData].sort().reverse()[0];
       if (mostRecent) { selectLogDate(mostRecent); return; }
     }
-    LOG_STATE = asyncStateError(LOG_STATE, getRes.reason);
+    LOG_STATE = asyncStateError(LOG_STATE, e);
     _renderLogGridFromState(todayStr);
   }
 }
