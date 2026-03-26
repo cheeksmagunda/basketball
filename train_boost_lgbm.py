@@ -37,6 +37,7 @@ import numpy as np
 TOP_PERFORMERS = Path("data/top_performers.csv")
 ACTUALS_DIR = Path("data/actuals")
 MOST_POPULAR_DIR = Path("data/most_popular")
+PREDICTIONS_DIR = Path("data/predictions")
 MODEL_OUT = Path("boost_model.pkl")
 
 FEATURES = ["perf_score", "min_proxy"]
@@ -48,6 +49,51 @@ def _safe_float(value, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _load_predictions() -> dict:
+    """Load predicted RS values from data/predictions/*.csv.
+
+    Returns dict of (player_name, date) → projected_rs.
+    Looks for columns: predicted_rs, proj_rs, rating.
+    Falls back to empty dict if predictions dir doesn't exist.
+
+    TRAIN/INFERENCE ALIGNMENT FIX:
+    At inference (api/index.py), perf_score uses projected_rs from the RS projection pipeline.
+    At training time, we now use the same projected_rs from predictions CSVs (when available)
+    instead of actual_rs. This ensures the model learns the relationship between pre-game
+    estimates (what we actually know at draft time) and card boost, not post-game actuals.
+    """
+    if not PREDICTIONS_DIR.exists():
+        return {}
+
+    lookup = {}
+    for csv_path in sorted(PREDICTIONS_DIR.glob("*.csv")):
+        date_str = csv_path.stem  # e.g., "2026-03-20"
+        try:
+            with csv_path.open("r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    player = (row.get("player_name") or "").strip()
+                    if not player:
+                        continue
+
+                    # Try multiple column names for projected RS
+                    proj_rs = None
+                    for col in ["predicted_rs", "proj_rs", "rating", "projected_rs"]:
+                        if col in row and row[col]:
+                            try:
+                                proj_rs = float(row[col])
+                                break
+                            except (ValueError, TypeError):
+                                continue
+
+                    if proj_rs is not None and proj_rs > 0:
+                        lookup[(player, date_str)] = proj_rs
+        except Exception as e:
+            print(f"[WARN] Could not read predictions from {csv_path}: {e}")
+
+    return lookup
 
 
 def _load_top_performers() -> list[dict]:
@@ -124,9 +170,14 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build (X, y, weights) from top_performers + actuals with 14-day lookback.
 
     Features:
-      1. perf_score: 14-day trailing avg RS
+      1. perf_score: 14-day trailing avg projected RS (or actual RS if predictions unavailable)
       2. min_proxy: 12 + 5*log1p(avg_drafts) where avg_drafts is 14-day trailing avg
+
+    TRAIN/INFERENCE ALIGNMENT:
+    Uses projected RS from data/predictions/ when available to match inference behavior.
+    Falls back to actual RS for dates without predictions.
     """
+    predictions_lookup = _load_predictions()
     all_rows = _load_top_performers() + _load_actuals() + _load_most_popular()
     seen: set[tuple[str, str]] = set()
     unique = []
@@ -140,6 +191,9 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         return np.array([]), np.array([]), np.array([])
 
     print(f"Combined data: {len(unique)} unique (player, date) entries")
+    pred_available = sum(1 for (_, d) in predictions_lookup.keys() if d)
+    pred_used = 0
+    print(f"Predictions available: {pred_available} entries in lookup")
 
     by_player: dict[str, list[dict]] = defaultdict(list)
     for r in unique:
@@ -161,15 +215,39 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             prior_all = entries[:i]
 
             if prior_14d:
-                perf_score = float(np.mean([e["actual_rs"] for e in prior_14d]))
+                rs_values = []
+                for e in prior_14d:
+                    # Use predicted RS if available, fall back to actual RS
+                    key = (e["player_name"], e["date"])
+                    if key in predictions_lookup:
+                        rs_values.append(predictions_lookup[key])
+                        pred_used += 1
+                    else:
+                        rs_values.append(e["actual_rs"])
+                perf_score = float(np.mean(rs_values))
                 avg_drafts = float(np.mean([e["drafts"] for e in prior_14d]))
                 weight = 3.0
             elif prior_all:
-                perf_score = float(np.mean([e["actual_rs"] for e in prior_all]))
+                rs_values = []
+                for e in prior_all:
+                    # Use predicted RS if available, fall back to actual RS
+                    key = (e["player_name"], e["date"])
+                    if key in predictions_lookup:
+                        rs_values.append(predictions_lookup[key])
+                        pred_used += 1
+                    else:
+                        rs_values.append(e["actual_rs"])
+                perf_score = float(np.mean(rs_values))
                 avg_drafts = float(np.mean([e["drafts"] for e in prior_all]))
                 weight = 2.0
             else:
-                perf_score = entry["actual_rs"]
+                # Single observation: try to use prediction, fall back to actual
+                key = (entry["player_name"], entry["date"])
+                if key in predictions_lookup:
+                    perf_score = predictions_lookup[key]
+                    pred_used += 1
+                else:
+                    perf_score = entry["actual_rs"]
                 avg_drafts = entry["drafts"]
                 weight = 1.0
 
@@ -183,6 +261,7 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             y_list.append(entry["actual_card_boost"])
             w_list.append(weight)
 
+    print(f"Used {pred_used} predicted RS values (vs actual RS fallback)")
     return np.array(X_list), np.array(y_list), np.array(w_list)
 
 

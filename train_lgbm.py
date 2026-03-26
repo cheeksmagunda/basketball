@@ -28,8 +28,9 @@ from sklearn.model_selection import train_test_split
 SEASONS = ["2023-24", "2024-25", "2025-26"]
 
 # Total feature count — must match inference (see api/index.py)
-# v62: 16 original + 6 new = 22 features
-N_FEATURES = 22
+# v63: removed 4 dead features (cascade_signal, usage_share, teammate_out_count, spread_abs)
+# 18 features (16 original + 2 viable new)
+N_FEATURES = 18
 
 
 def _fetch_season_logs_with_retry(season: str, max_attempts: int = 6) -> pd.DataFrame:
@@ -171,8 +172,10 @@ df["recent_vs_season"] = np.where(
 
 df["games_played"] = g.cumcount()
 
+# v63: Fix data leakage — use season average REB, not same-game actual REB
+df["avg_reb"] = g["REB"].transform(lambda x: x.expanding().mean().shift(1))
 df["reb_per_min"] = np.where(
-    df["avg_min"] > 0, df["REB"] / df["avg_min"], 0.0
+    df["avg_min"] > 0, df["avg_reb"] / df["avg_min"], 0.0
 ).clip(0.0, 1.5)
 
 # Role-volatility features (known before game)
@@ -188,8 +191,7 @@ df["min_volatility"] = np.where(
 
 df["starter_proxy"] = (df["avg_min"] >= 26.0).astype(float)
 
-# Placeholder for teammate/cascade signal at inference (training uses 0)
-df["cascade_signal"] = 0.0
+# v63: Removed cascade_signal (dead feature — zero importance, trained on constant 0.0)
 
 # v62: 6 new features from top-performer analysis
 # 1. Opponent points allowed (defensive weakness signal)
@@ -200,20 +202,9 @@ team_total = df.groupby(["TEAM_ABBREVIATION", "GAME_DATE"])["PTS"].sum().reset_i
 team_pace = team_total.groupby("TEAM_ABBREVIATION")["PTS"].mean().to_dict()
 df["team_pace_proxy"] = df["TEAM_ABBREVIATION"].map(team_pace).fillna(110.0)
 
-# 3. Usage share proxy (player's PPG as fraction of team PPG)
-team_ppg = df.groupby("TEAM_ABBREVIATION")["PTS"].mean()
-df["team_ppg"] = df["TEAM_ABBREVIATION"].map(team_ppg)
-df["usage_share"] = np.where(df["team_ppg"] > 0, df["avg_pts"] / df["team_ppg"], 0.0).clip(0.0, 0.5)
+# v63: Removed usage_share (dead feature — zero importance) and teammate_out_count (dead feature)
 
-# 4. Teammate out count — not available in training; placeholder (0 in training, set at inference)
-df["teammate_out_count"] = 0.0
-
-# 5. Game total — not available in training (would need external data); using team pace as proxy
-df["game_total"] = df["team_pace_proxy"] * 2  # rough proxy: 2x one team's pace ≈ game total
-
-# 6. Spread absolute value — not available in training; using home/away + record as proxy
-# At inference, actual spread from ESPN/odds is used.
-df["spread_abs"] = 5.0  # neutral default; inference uses real spread
+# v63: Removed game_total and spread_abs (dead features — zero importance in model)
 
 features = [
     "avg_min",
@@ -231,14 +222,9 @@ features = [
     "l3_vs_l5_pts",
     "min_volatility",
     "starter_proxy",
-    "cascade_signal",
-    # v62: 6 new features
+    # v62: 2 viable new features (removed 4 dead: cascade_signal, usage_share, teammate_out, spread_abs)
     "opp_pts_allowed",
     "team_pace_proxy",
-    "usage_share",
-    "teammate_out_count",
-    "game_total",
-    "spread_abs",
 ]
 
 assert len(features) == N_FEATURES
@@ -328,6 +314,7 @@ y = df[target].astype(float)
     df.index,
     test_size=0.2,
     random_state=42,
+    shuffle=False,  # v63: Temporal split (not random) to avoid leakage
 )
 
 print(f"2. Training dual-head LightGBM on {len(X_train)} samples...")

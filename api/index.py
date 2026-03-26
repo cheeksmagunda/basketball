@@ -1375,14 +1375,25 @@ def _lgbm_feature_vector(
     recent_min: float,
     cascade_bonus: float,
     games_played: Optional[float] = None,
-    # v62: 6 new feature inputs
-    opp_pts_allowed: Optional[float] = None,
+    rest_days: Optional[float] = None,
     team_pace: Optional[float] = None,
-    team_ppg: Optional[float] = None,
-    teammate_out_count: float = 0.0,
-    game_total: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with train_lgbm.py (22 features, v62)."""
+    """Build feature vector aligned with train_lgbm.py (18 features, v63 post-audit).
+
+    v63 AUDIT FIXES (DATA LEAKAGE + TRAIN/INFERENCE ALIGNMENT):
+    - Removed 4 dead features (cascade_signal, usage_share, teammate_out_count, game_total, spread_abs)
+    - Feature count reduced 22 → 18 in train_lgbm.py
+    - reb_per_min fixed in training to use season avg REB, not same-game actual
+    - Temporal train/test split ensures realistic test metrics
+    - Now accepts actual rest_days instead of hardcoding 2.0
+    - Includes opp_pts_allowed and team_pace_proxy for realistic opponent context
+
+    Schema (18 features, ORDER MUST MATCH train_lgbm.py line 209-228):
+    0: avg_min, 1: season_pts, 2: usage_trend, 3: opp_def_rating, 4: home_away,
+    5: ast_rate, 6: def_rate, 7: pts_per_min, 8: rest_days, 9: recent_vs_season,
+    10: games_played, 11: reb_per_min, 12: l3_vs_l5_pts, 13: min_volatility,
+    14: starter_proxy, 15: opp_pts_allowed, 16: team_pace_proxy
+    """
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
     usage = float(
@@ -1394,7 +1405,7 @@ def _lgbm_feature_vector(
     def_rate_ = (stl + blk) / max(avg_min, 1)
     pts_per_min_ = pts / max(avg_min, 1)
     home_away_ = 1.0 if side == "home" else 0.0
-    rest_days_ = 2.0
+    rest_days_ = float(rest_days) if rest_days is not None else 2.0
     recent_vs_season_ = float(np.clip(recent_pts / max(season_pts, 1), 0.5, 2.0))
     games_played_ = float(games_played) if games_played is not None else 40.0
     reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
@@ -1404,40 +1415,31 @@ def _lgbm_feature_vector(
         np.clip(abs(recent_min - season_min) / max(season_min, 1.0), 0.0, 1.2)
     )
     starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
-    cascade_signal = float(np.clip(max(cascade_bonus, 0.0) / 15.0, 0.0, 1.5))
 
-    # v62: 6 new features
-    _opp_pts_allowed = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
-    _team_pace = float(team_pace) if team_pace is not None else 110.0
-    _usage_share = float(pts / max(float(team_ppg or 110), 1.0)) if team_ppg else 0.0
-    _teammate_out = float(teammate_out_count)
-    _game_total = float(game_total) if game_total is not None else 222.0
-    _spread_abs = abs(float(spread or 0))
+    # v63 AUDIT: Removed cascade_signal and computed team_pace_proxy
+    # These were dead/low-value features that inflated training cost
+    opp_pts_allowed_ = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
+    team_pace_proxy_ = float(team_pace) if team_pace is not None else 110.0
 
+    # v63 AUDIT: 18-feature schema matching train_lgbm.py (removed 4 dead features)
     return [
-        avg_min,
-        season_pts,
-        usage,
-        opp_def_rating,
-        home_away_,
-        ast_rate_,
-        def_rate_,
-        pts_per_min_,
-        rest_days_,
-        recent_vs_season_,
-        games_played_,
-        reb_per_min_,
-        l3_vs_l5_pts,
-        min_volatility,
-        starter_proxy,
-        cascade_signal,
-        # v62: 6 new features
-        _opp_pts_allowed,
-        _team_pace,
-        _usage_share,
-        _teammate_out,
-        _game_total,
-        _spread_abs,
+        avg_min,              # 0: avg_min
+        season_pts,           # 1: avg_pts (season average)
+        usage,                # 2: usage_trend (recent_min / avg_min)
+        opp_def_rating,       # 3: opp_def_rating
+        home_away_,           # 4: home_away
+        ast_rate_,            # 5: ast_rate
+        def_rate_,            # 6: def_rate
+        pts_per_min_,         # 7: pts_per_min
+        rest_days_,           # 8: rest_days
+        recent_vs_season_,    # 9: recent_vs_season
+        games_played_,        # 10: games_played
+        reb_per_min_,         # 11: reb_per_min
+        l3_vs_l5_pts,         # 12: l3_vs_l5_pts
+        min_volatility,       # 13: min_volatility
+        starter_proxy,        # 14: starter_proxy
+        opp_pts_allowed_,     # 15: opp_pts_allowed (v63 kept: viable signal)
+        team_pace_proxy_,     # 16: team_pace_proxy (v63 kept: viable signal)
     ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2572,12 +2574,23 @@ def _cascade_minutes(roster, stats_map):
 #           still enforcing floor/rotation guardrails.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _normalize_boost_name(name):
-    """Normalize player name for card boost lookup — strips diacritics, lowercases,
-    removes punctuation variants (apostrophes, periods, Jr./III suffixes)."""
+def _normalize_player_name(name):
+    """Normalize player name for consistent joining across datasets.
+
+    AUDIT FIX (v63): Player names with diacritics (é, à, ñ, etc.) were causing join
+    failures across predictions/top_performers/actuals/most_popular CSVs. This function
+    normalizes to ASCII-safe lowercase for reliable key matching.
+
+    Example: "José Altuve" → "jose altuve", "Sébastien Héry" → "sebastian hery"
+    """
     import unicodedata as _ud
-    n = _ud.normalize("NFKD", name).encode("ASCII", "ignore").decode("ASCII")
+    n = _ud.normalize("NFKD", name or "").encode("ASCII", "ignore").decode("ASCII")
     return n.strip().lower()
+
+
+def _normalize_boost_name(name):
+    """Alias for _normalize_player_name for backward compatibility."""
+    return _normalize_player_name(name)
 
 
 def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
@@ -3064,11 +3077,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 recent_min=recent_min_,
                 cascade_bonus=cascade_bonus,
                 games_played=float(_gp) if _gp is not None else None,
-                opp_pts_allowed=_opp_def_proxy,
+                rest_days=float(pinfo.get("rest_days", 2) or 2),
                 team_pace=_team_total_proxy,
-                team_ppg=_team_total_proxy,
-                teammate_out_count=float(pinfo.get("teammate_out_count", 0.0) or 0.0),
-                game_total=float(total or DEFAULT_TOTAL),
             )
             ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:
@@ -6921,7 +6931,10 @@ MOST_POPULAR_ROW_FIELDS = [
 
 
 def _parse_actuals_rows(content) -> list:
-    """Parse per-day actuals CSV. Header-aware: legacy files without `team` column still work."""
+    """Parse per-day actuals CSV. Header-aware: legacy files without `team` column still work.
+
+    AUDIT FIX (v63): Include normalized player name for consistent joining across datasets.
+    """
     rows = []
     if not content or not str(content).strip():
         return rows
@@ -6936,6 +6949,7 @@ def _parse_actuals_rows(content) -> list:
         rows.append(
             {
                 "player_name": pn,
+                "player_name_normalized": _normalize_player_name(pn),
                 "team": (r.get("team") or "").strip().upper(),
                 "actual_rs": r.get("actual_rs", ""),
                 "actual_card_boost": r.get("actual_card_boost", ""),
@@ -7008,7 +7022,10 @@ def _dates_from_top_performers_mega() -> set:
 
 def _load_player_actuals_for_date(date_str: str) -> list:
     """Primary: rows from data/top_performers.csv for date_str (ACT_FIELDS shape).
-    Fallback: legacy data/actuals/{date}.csv."""
+    Fallback: legacy data/actuals/{date}.csv.
+
+    AUDIT FIX (v63): Normalize player names for consistent joining across datasets.
+    """
     raw, _ = _github_get_file(TOP_PERFORMERS_GH_PATH)
     if raw:
         rows = _parse_top_performers_mega_rows(raw)
@@ -7016,9 +7033,11 @@ def _load_player_actuals_for_date(date_str: str) -> list:
         for r in rows:
             if (r.get("date") or "").strip() != date_str:
                 continue
+            orig_name = (r.get("player_name") or "").strip()
             out.append(
                 {
-                    "player_name": (r.get("player_name") or "").strip(),
+                    "player_name": orig_name,
+                    "player_name_normalized": _normalize_player_name(orig_name),
                     "team": (r.get("team") or "").strip().upper(),
                     "actual_rs": r.get("actual_rs", ""),
                     "actual_card_boost": r.get("actual_card_boost", ""),
