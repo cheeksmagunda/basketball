@@ -14,8 +14,11 @@
     "min_game_pts": 8.0
   },
   "card_boost": {
-    "ceiling": 3.0,
+    "ceiling": 3.5,
     "floor": 0.2,
+    "big_market_star_ppg_threshold": 15.0,
+    "ml_additive_correction": 0.25,
+    "max_prior_weight": 0.30,
     "big_market_teams": [
       "LAL",
       "GS",

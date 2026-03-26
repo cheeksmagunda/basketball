@@ -738,7 +738,10 @@ BLACKLISTED_PLAYERS = {
 _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
-        "ceiling": 3.0, "floor": 0.2,
+        "ceiling": 3.5, "floor": 0.2,
+        "big_market_star_ppg_threshold": 15.0,
+        "ml_additive_correction": 0.25,
+        "max_prior_weight": 0.30,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
     },
     "game_script": {
@@ -2898,7 +2901,14 @@ def _est_card_boost(
             ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
         )
     )
-    is_bm = 1.0 if team_abbr in big_markets else 0.0
+    # Only penalize big-market teams for stars — role players on NY/LAL are
+    # just as obscure as role players anywhere; applying the market flag to them
+    # systematically under-predicts their boost (observed: Alvarado NY -0.82x miss).
+    bm_star_threshold = float(cb.get("big_market_star_ppg_threshold", 0.0))
+    if bm_star_threshold > 0:
+        is_bm = 1.0 if (team_abbr in big_markets and float(season_pts or pts or 0.0) >= bm_star_threshold) else 0.0
+    else:
+        is_bm = 1.0 if team_abbr in big_markets else 0.0
     _rs  = float(projected_rs) if projected_rs is not None else 0.0
     _pm = float(proj_min) if proj_min is not None else 0.0
     _spts = float(season_pts or pts or 0.0)
@@ -2930,15 +2940,18 @@ def _est_card_boost(
             # Dynamic blend:
             # 1) More prior samples => more prior trust.
             # 2) Big recent-vs-season swings => trust daily ML more.
-            base_prior_w = min(0.45, 0.15 + 0.03 * float(prior_n))
+            max_pw = float(cb.get("max_prior_weight", 0.45))
+            base_prior_w = min(max_pw, 0.15 + 0.03 * float(prior_n))
             form_delta = abs(float(_rpts) - float(_spts)) / max(float(_spts), 1.0)
             form_delta = max(0.0, min(1.0, form_delta))
             form_dampen = 1.0 - min(0.65, 0.9 * form_delta)
             prior_w = base_prior_w * form_dampen
             ml_w = 1.0 - prior_w
             blended = (ml_w * float(ml_pred)) + (prior_w * float(prior))
+            blended += float(cb.get("ml_additive_correction", 0.0))
             return _clamp_round_boost(blended, floor_val, ceiling)
-        return _clamp_round_boost(ml_pred, floor_val, ceiling)
+        correction = float(cb.get("ml_additive_correction", 0.0))
+        return _clamp_round_boost(float(ml_pred) + correction, floor_val, ceiling)
 
     # Deterministic fallback: derive a non-flat boost from projected popularity.
     # This protects slate quality if the boost model is unavailable in runtime.
