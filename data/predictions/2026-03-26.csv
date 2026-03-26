@@ -1,21 +1,21 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Brandon Miller,4433287,CHA,F,6.3,0.5,31.2,20.0,4.9,3.4,1.1,0.7
+slate,chalk,2.0x,Brandon Miller,4433287,CHA,F,6.2,0.5,31.2,20.0,4.9,3.4,1.1,0.7
 slate,chalk,1.8x,Ausar Thompson,4684742,DET,G,3.9,1.4,26.3,9.9,5.8,2.9,1.9,0.9
 slate,chalk,1.6x,Derik Queen,4869780,NO,C,3.6,1.7,24.5,11.3,6.8,3.8,1.0,0.9
-slate,chalk,1.4x,Wendell Carter Jr.,4277847,ORL,C,3.5,1.3,31.7,11.9,7.6,2.1,0.8,0.6
+slate,chalk,1.4x,Wendell Carter Jr.,4277847,ORL,C,3.6,1.3,31.7,11.9,7.6,2.1,0.8,0.6
 slate,chalk,1.2x,Jose Alvarado,4277869,NY,G,3.1,1.6,24.2,7.4,2.5,3.4,1.0,0.1
 NY @ CHA,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,8.8,0.0,33.6,24.8,3.4,6.3,0.8,0.1
-NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,7.2,0.0,28.2,19.9,5.0,7.1,1.2,0.3
+NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,7.1,0.0,28.2,19.9,5.0,7.1,1.2,0.3
 NY @ CHA,the_lineup,1.6x,Karl-Anthony Towns,3136195,NY,C,6.9,0.0,31.6,20.7,11.8,2.9,0.9,0.7
-NY @ CHA,the_lineup,1.4x,Brandon Miller,4433287,CHA,F,6.7,0.0,31.2,20.0,4.9,3.4,1.1,0.7
-NY @ CHA,the_lineup,1.2x,Coby White,4395651,CHA,G,5.9,0.0,26.9,17.3,3.6,4.3,0.6,0.1
+NY @ CHA,the_lineup,1.4x,Brandon Miller,4433287,CHA,F,6.5,0.0,31.2,20.0,4.9,3.4,1.1,0.7
+NY @ CHA,the_lineup,1.2x,Coby White,4395651,CHA,G,5.8,0.0,26.9,17.3,3.6,4.3,0.6,0.1
 NO @ DET,the_lineup,2.0x,Zion Williamson,4395628,NO,F,6.5,0.0,30.0,21.9,5.9,3.5,1.0,0.6
 NO @ DET,the_lineup,1.8x,Jalen Duren,4433621,DET,C,5.6,0.0,25.2,18.1,10.5,1.8,0.9,0.8
 NO @ DET,the_lineup,1.6x,Saddiq Bey,4397136,NO,G,5.2,0.0,32.1,16.9,5.6,2.5,0.9,0.1
 NO @ DET,the_lineup,1.4x,Jordan Poole,4277956,NO,G,4.6,0.0,26.1,14.0,2.1,3.1,0.6,0.4
 NO @ DET,the_lineup,1.2x,Ausar Thompson,4684742,DET,G,4.5,0.0,26.3,9.9,5.8,2.9,1.9,0.9
-SAC @ ORL,the_lineup,2.0x,Wendell Carter Jr.,4277847,ORL,C,4.4,0.0,31.7,11.9,7.6,2.1,0.8,0.6
+SAC @ ORL,the_lineup,2.0x,Wendell Carter Jr.,4277847,ORL,C,4.5,0.0,31.7,11.9,7.6,2.1,0.8,0.6
 SAC @ ORL,the_lineup,1.8x,Paolo Banchero,4432573,ORL,F,3.9,0.0,37.0,22.7,8.2,5.0,0.7,0.6
-SAC @ ORL,the_lineup,1.6x,Malik Monk,4066262,SAC,G,3.7,0.0,30.3,12.6,2.0,3.0,0.6,0.4
-SAC @ ORL,the_lineup,1.4x,Maxime Raynaud,4898371,SAC,C,3.7,0.0,35.8,11.9,7.3,1.3,0.5,0.6
+SAC @ ORL,the_lineup,1.6x,Maxime Raynaud,4898371,SAC,C,3.8,0.0,35.8,11.9,7.3,1.3,0.5,0.6
+SAC @ ORL,the_lineup,1.4x,Malik Monk,4066262,SAC,G,3.7,0.0,30.3,12.6,2.0,3.0,0.6,0.4
 SAC @ ORL,the_lineup,1.2x,Tristan da Silva,4702382,ORL,F,3.6,0.0,27.3,9.5,3.7,1.5,0.9,0.3
