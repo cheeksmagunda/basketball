@@ -1,7 +1,7 @@
 {
-  "version": 64,
-  "updated_at": "2026-03-26T12:00:00Z",
-  "updated_by": "v64-fix-slate-preload-config-gaps",
+  "version": 65,
+  "updated_at": "2026-03-26T14:00:00Z",
+  "updated_by": "v65-boost-milp-2x-floor-data-driven",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -285,8 +285,8 @@
     "moonshot_max_per_game": 2,
     "chalk_min_high_boost_count": 3,
     "chalk_high_boost_threshold": 1.8,
-    "chalk_min_big_boost_count": 1,
-    "chalk_big_boost_threshold": 2.5
+    "chalk_min_big_boost_count": 2,
+    "chalk_big_boost_threshold": 2.0
   },
   "line": {
     "min_confidence": 50,
@@ -457,6 +457,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 65,
+      "date": "2026-03-26",
+      "change": "DATA-DRIVEN BOOST MILP (v65) — 62-date top_performers analysis (865 rows). #1 daily value winner: median boost 2.55x, 52% have boost>2.5x, only 6% have boost<1.0x. Top-5 value spots: 59% held by boost>=2.0x players; 88% of dates have 2+ such players in top-5. S5 constraint updated: chalk_min_big_boost_count 1→2, chalk_big_boost_threshold 2.5→2.0 — guarantees 2 players with boost>=2.0x in Starting 5, matching the data-verified winning formula. Also: boost model retrained (boost_model.pkl + drafts_model.pkl — scikit-learn 1.5.2 + LightGBM 4.3.0 compatible); sigmoid fallback removed entirely from _est_card_boost (ML-only path); 22-feature RS vector restored in _lgbm_feature_vector (opp_pts_allowed, team_pace, cascade_signal, teammate_out_count, game_total at indices 15-20 — these were silently bypassing AI RS predictions)."
+    },
     {
       "version": 62,
       "date": "2026-03-25",
