@@ -1,1 +1,1 @@
-{"sha": "73be17c", "status": "running", "started_at": "2026-03-26T03:26:27.353665+00:00"}
+{"sha": "73be17c", "status": "completed", "started_at": "2026-03-26T03:26:52.144893+00:00", "force_regenerate_status": "regenerated", "prewarm": {"status": "ok", "cache_status": "miss", "generated": true, "current_slate_date": "2026-03-25", "locked": true, "all_complete": false, "draftable_count": 12, "line_status": "error", "parlay_status": "skip:no_odds_data", "ts": "2026-03-26T03:26:52.144812"}, "completed_at": "2026-03-26T03:26:52.144901+00:00"}
