@@ -70,19 +70,26 @@ def _pos_bucket(pos: str) -> int:
     return 1
 
 
-def _load_big_market_teams() -> set[str]:
+def _load_big_market_teams() -> tuple[set[str], float]:
+    """Return (big_market_teams, star_ppg_threshold).
+
+    star_ppg_threshold > 0 means only apply the big-market flag to players
+    whose season PPG is at or above that threshold (same gate as inference).
+    """
     defaults = {"LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "LAC", "CHI"}
     if not MODEL_CONFIG.exists():
-        return defaults
+        return defaults, 0.0
     try:
         with MODEL_CONFIG.open("r", encoding="utf-8") as f:
             cfg = json.load(f)
-        teams = cfg.get("card_boost", {}).get("big_market_teams", [])
+        cb = cfg.get("card_boost", {})
+        teams = cb.get("big_market_teams", [])
         out = {str(t).strip().upper() for t in teams if str(t).strip()}
-        return out or defaults
+        threshold = float(cb.get("big_market_star_ppg_threshold", 0.0))
+        return (out or defaults), threshold
     except Exception as e:
         print(f"[WARN] Failed to load {MODEL_CONFIG}: {e}")
-        return defaults
+        return defaults, 0.0
 
 
 def _load_prediction_index() -> tuple[dict, dict]:
@@ -257,7 +264,7 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not labels:
         return np.array([]), np.array([]), np.array([])
 
-    big_markets = _load_big_market_teams()
+    big_markets, bm_star_threshold = _load_big_market_teams()
     X_list: list[list[float]] = []
     y_list: list[float] = []
     w_list: list[float] = []
@@ -306,7 +313,10 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             skipped += 1
             continue
 
-        is_big_market = 1.0 if (team or "").upper() in big_markets else 0.0
+        if bm_star_threshold > 0:
+            is_big_market = 1.0 if ((team or "").upper() in big_markets and season_pts >= bm_star_threshold) else 0.0
+        else:
+            is_big_market = 1.0 if (team or "").upper() in big_markets else 0.0
         feat_vec = [
             projected_rs,
             season_pts,
