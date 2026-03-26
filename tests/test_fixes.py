@@ -1958,7 +1958,7 @@ class TestPerGameFloor:
 # TWO-PASS PIPELINE — watchlist and pass metadata
 # ---------------------------------------------------------------------------
 class TestBoostModelInference:
-    """Card boost: boost_model LightGBM uses [projected_rs, min_proxy]."""
+    """Card boost: boost_model LightGBM uses direct 7-feature vector."""
 
     def test_est_card_boost_uses_ml_when_model_returns_value(self):
         """When boost LightGBM returns a float, that value is clamped and returned."""
@@ -1971,19 +1971,23 @@ class TestBoostModelInference:
             captured["vec"] = list(vec)
             return 2.0
 
-        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
-            with patch.object(idx, "_lgbm_predict_boost", side_effect=_fake_predict):
-                b = _est_card_boost(
-                    28.0, 15.0, "MEM", "Bench Player",
-                    season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
-                    projected_rs=4.5,
-                    season_avg_min=28.0,
-                    player_pos="G",
-                )
+        with patch.object(idx, "_lgbm_predict_boost", side_effect=_fake_predict):
+            b = _est_card_boost(
+                28.0, 15.0, "MEM", "Bench Player",
+                season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
+                projected_rs=4.5,
+                season_avg_min=28.0,
+                player_pos="G",
+            )
 
-        assert len(captured["vec"]) == 2
+        assert len(captured["vec"]) == 7
         assert captured["vec"][0] == 4.5
-        assert abs(captured["vec"][1] - 28.0) < 1e-6
+        assert captured["vec"][1] == 14.0
+        assert captured["vec"][2] == 16.0
+        assert captured["vec"][3] == 28.0
+        assert captured["vec"][4] == 28.0
+        assert captured["vec"][5] == 0.0
+        assert captured["vec"][6] == 0.0
         assert b == 2.0
 
     def test_est_card_boost_returns_sentinel_when_ml_none(self):
@@ -1991,15 +1995,14 @@ class TestBoostModelInference:
         from api.index import _est_card_boost
         import api.index as idx
 
-        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
-            with patch.object(idx, "_lgbm_predict_boost", return_value=None):
-                b = _est_card_boost(
-                    30.0, 25.0, "MIN", "Anthony Edwards",
-                    season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
-                    projected_rs=7.0,
-                    season_avg_min=30.0,
-                    player_pos="G",
-                )
+        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
+            b = _est_card_boost(
+                30.0, 25.0, "MIN", "Anthony Edwards",
+                season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
+                projected_rs=7.0,
+                season_avg_min=30.0,
+                player_pos="G",
+            )
         assert b == 1.0
 
     def test_est_card_boost_calls_ml_even_with_zero_projected_rs(self):
@@ -2007,10 +2010,11 @@ class TestBoostModelInference:
         from api.index import _est_card_boost
         import api.index as idx
 
-        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
-            with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost:
-                b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
-                mock_boost.assert_called_once()
+        with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost:
+            b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
+            mock_boost.assert_called_once()
+            args, _ = mock_boost.call_args
+            assert len(args[0]) == 7
         assert b == 1.5
 
 

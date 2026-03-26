@@ -1139,14 +1139,14 @@ def _repo_pickle_paths(filename: str) -> list:
 
 _LGBM_PATHS = _repo_pickle_paths("lgbm_model.pkl")
 _BOOST_PATHS = _repo_pickle_paths("boost_model.pkl")
-_DRAFTS_PATHS = _repo_pickle_paths("drafts_model.pkl")
+_DRAFTS_PATHS = _repo_pickle_paths("drafts_model.pkl")  # Deprecated: retained for audit/back-compat only.
 
 BOOST_MODEL = None
 BOOST_FEATURES = None
 _BOOST_LOAD_ATTEMPTED = False
 _BOOST_LOAD_LOCK = threading.Lock()
 
-DRAFTS_MODEL = None
+DRAFTS_MODEL = None  # Deprecated: no longer used by _est_card_boost direct-7f path.
 DRAFTS_FEATURES = None
 _DRAFTS_LOAD_ATTEMPTED = False
 _DRAFTS_LOAD_LOCK = threading.Lock()
@@ -1222,7 +1222,7 @@ def _ensure_boost_model_loaded():
                     print(f"[boost_model] load failed from {_p}: {e}")
         _BOOST_LOAD_ATTEMPTED = True
         if BOOST_MODEL is None:
-            print("[WARN] Boost model not found/invalid — using fallback boost estimation")
+            print("[CRITICAL] Boost model not found/invalid — _est_card_boost will return sentinel 1.0")
 
 
 def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
@@ -1244,7 +1244,7 @@ def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
 
 
 def _ensure_drafts_model_loaded():
-    """Lazy-load estimated draft-count (popularity) model."""
+    """DEPRECATED: Lazy-load estimated draft-count model (kept for back-compat)."""
     global DRAFTS_MODEL, DRAFTS_FEATURES, _DRAFTS_LOAD_ATTEMPTED
     if _DRAFTS_LOAD_ATTEMPTED:
         return
@@ -1280,7 +1280,7 @@ def _draft_pos_bucket(pos: str) -> int:
 
 
 def _lgbm_predict_log1p_drafts(feat_vec: list) -> Optional[float]:
-    """Predict log1p(drafts) from drafts_model.pkl, or None if unavailable."""
+    """DEPRECATED: Predict log1p(drafts) from drafts_model.pkl, or None if unavailable."""
     _ensure_drafts_model_loaded()
     if DRAFTS_MODEL is None or DRAFTS_FEATURES is None:
         return None
@@ -2818,13 +2818,10 @@ def _est_card_boost(
 ):
     """Get card boost for Real Sports via LightGBM.
 
-    2-feature LightGBM — [projected_rs, min_proxy]. min_proxy = 12 + 5*log1p(drafts),
-    where drafts come from drafts_model.pkl when present (stable role + market + pos),
-    else legacy inverse-map from projected minutes.
+    Direct 7-feature LightGBM (no min_proxy / no drafts-model chain):
+      [projected_rs, season_pts, recent_pts, season_min, pred_min, is_big_market, pos_bucket]
 
-    Always uses the ML model. No sigmoid fallback — boost is a prediction, not a heuristic.
-    If boost_model.pkl is unavailable, returns 1.0 as an emergency sentinel (should never
-    happen in production).
+    Always ML-only. If boost_model.pkl is unavailable, returns 1.0 emergency sentinel.
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -2838,24 +2835,14 @@ def _est_card_boost(
     )
     is_bm = 1.0 if team_abbr in big_markets else 0.0
     _rs  = float(projected_rs) if projected_rs is not None else 0.0
-    _pm  = float(proj_min) if proj_min is not None else 0.0
+    _pm = float(proj_min) if proj_min is not None else 0.0
     _spts = float(season_pts or pts or 0.0)
+    _rpts = float(recent_pts or _spts or 0.0)
     _smin = float(season_avg_min or _pm or 0.0)
+    _pmin = float(_pm or _smin or 0.0)
+    _pbucket = float(_draft_pos_bucket(player_pos))
 
-    log1p_drafts = _lgbm_predict_log1p_drafts(
-        [_spts, _smin, is_bm, float(_draft_pos_bucket(player_pos))]
-    )
-    if log1p_drafts is not None and log1p_drafts > 0:
-        min_m = float(cb.get("drafts_log1p_min", 0.5))
-        max_m = float(cb.get("drafts_log1p_max", 9.0))
-        z = float(np.clip(log1p_drafts, min_m, max_m))
-        min_proxy = 12.0 + 5.0 * z
-    else:
-        estimated_drafts = np.expm1((_pm - 12.0) / 5.0) if _pm > 0 else 0.0
-        estimated_drafts = max(0.0, estimated_drafts)
-        min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
-
-    feat_vec = [_rs, min_proxy]
+    feat_vec = [_rs, _spts, _rpts, _smin, _pmin, is_bm, _pbucket]
     ml_pred = _lgbm_predict_boost(feat_vec)
 
     if ml_pred is not None:
