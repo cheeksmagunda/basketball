@@ -31,7 +31,7 @@
 
 ## 3. API consistency
 
-- **REST:** GET for reads (slate, picks, games, log, audit, line, lab status/briefing/config). POST for mutations (save-predictions, save-actuals, save-line, parse-screenshot, lab/chat, lab/update-config, etc.). Query params for date/filters where appropriate.
+- **REST:** GET for reads (slate, picks, games, log, audit, line, lab status/briefing/config). POST for mutations (save-predictions, save-actuals, save-line, save-most-popular, parse-screenshot, lab/chat, lab/update-config, etc.). Query params for date/filters where appropriate.
 - **Contracts:** Slate has `date`, `games`, `lineups`, `locked`, `draftable_count`, `lock_time`. Line pick contract includes normalized fields per `_LINE_PICK_CONTRACT_FIELDS`. Log/audit use date-scoped CSV/JSON.
 
 **Finding:** No critical issues. No changes.

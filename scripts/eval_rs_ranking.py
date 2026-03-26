@@ -2,7 +2,8 @@
 """
 Evaluate slate RS ranking vs logged actuals (offline KPIs).
 
-Reads data/predictions/{date}.csv (all scopes/lineups; max predicted_rs per player) and data/actuals/{date}.csv.
+Reads data/predictions/{date}.csv (all scopes/lineups; max predicted_rs per player) and actual RS from
+data/top_performers.csv (rows for that date) with fallback to data/actuals/{date}.csv.
 Reports mean top-5 RS recall, mean NDCG@5 (RS as relevance), RS mass capture ratio,
 and a hindsight winner value ratio (std library only).
 
@@ -66,6 +67,36 @@ def _load_prediction_pool(path: str) -> dict[str, dict]:
     return out
 
 
+def _load_actuals_from_mega(mega_path: str, date_str: str) -> dict[str, dict]:
+    """norm -> {actual_rs, actual_card_boost} for one date from top_performers.csv."""
+    out: dict[str, dict] = {}
+    if not os.path.isfile(mega_path):
+        return out
+    with open(mega_path, newline="", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        if not r.fieldnames or "date" not in r.fieldnames:
+            return out
+        for row in r:
+            if (row.get("date") or "").strip() != date_str:
+                continue
+            try:
+                ars = float(row.get("actual_rs") or 0)
+            except (TypeError, ValueError):
+                continue
+            nm = _normalize_name(row.get("player_name", ""))
+            if not nm:
+                continue
+            acb = 0.0
+            if row.get("actual_card_boost") not in (None, ""):
+                try:
+                    acb = float(row["actual_card_boost"])
+                except (TypeError, ValueError):
+                    acb = 0.0
+            if nm not in out or ars > out[nm]["actual_rs"]:
+                out[nm] = {"actual_rs": ars, "actual_card_boost": acb}
+    return out
+
+
 def _load_actuals(path: str) -> dict[str, dict]:
     """norm -> {actual_rs, actual_card_boost}"""
     out: dict[str, dict] = {}
@@ -92,11 +123,16 @@ def _load_actuals(path: str) -> dict[str, dict]:
     return out
 
 
-def _eval_date(pred_path: str, act_path: str) -> dict | None:
+def _eval_date(pred_path: str, date_str: str, act_dir: str, mega_path: str) -> dict | None:
     preds = _load_prediction_pool(pred_path)
-    if not preds or not os.path.isfile(act_path):
+    if not preds:
         return None
-    act = _load_actuals(act_path)
+    act = _load_actuals_from_mega(mega_path, date_str)
+    if not act:
+        act_path = os.path.join(act_dir, f"{date_str}.csv")
+        if not os.path.isfile(act_path):
+            return None
+        act = _load_actuals(act_path)
     if not act:
         return None
 
@@ -162,6 +198,7 @@ def main() -> int:
 
     pred_dir = os.path.join(ROOT, "data", "predictions")
     act_dir = os.path.join(ROOT, "data", "actuals")
+    mega_path = os.path.join(ROOT, "data", "top_performers.csv")
     pred_files = sorted(glob.glob(os.path.join(pred_dir, "*.csv")))
     recalls, ndcgs, caps, vals = [], [], [], []
 
@@ -171,8 +208,7 @@ def main() -> int:
             continue
         if args.date_to and base > args.date_to:
             continue
-        af = os.path.join(act_dir, f"{base}.csv")
-        stats = _eval_date(pf, af)
+        stats = _eval_date(pf, base, act_dir, mega_path)
         if not stats:
             continue
         recalls.append(stats["top5_recall"])

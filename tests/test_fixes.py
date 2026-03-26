@@ -127,6 +127,8 @@ class TestComputeAudit:
 
     def _mock_github(self, pred, act):
         def side_effect(path):
+            if "top_performers.csv" in path:
+                return None, None
             if 'predictions' in path:
                 return pred, 'sha1'
             if 'actuals' in path:
@@ -151,11 +153,35 @@ class TestComputeAudit:
     def test_returns_none_without_actuals(self):
         from api.index import _compute_audit
         def side_effect(path):
+            if "top_performers.csv" in path:
+                return None, None
             if 'predictions' in path:
                 return self.PRED_CSV, 'sha1'
             return None, None
         with patch('api.index._github_get_file', side_effect=side_effect):
             assert _compute_audit('2026-03-08') is None
+
+    def test_uses_top_performers_mega_without_actuals_file(self):
+        """When mega CSV has rows for the date, audit runs without data/actuals/{date}.csv."""
+        from api.index import _compute_audit
+        tp_csv = (
+            "date,player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+            "2026-03-08,LeBron James,4.2,1.8,45000,,,highest_value\n"
+            "2026-03-08,Stephen Curry,6.1,1.2,80000,,,highest_value\n"
+            "2026-03-08,Kevin Durant,3.5,2.1,30000,,,highest_value\n"
+        )
+
+        def side_effect(path):
+            if "top_performers.csv" in path:
+                return tp_csv, "s0"
+            if "predictions" in path:
+                return self.PRED_CSV, "s1"
+            return None, None
+
+        with patch("api.index._github_get_file", side_effect=side_effect):
+            result = _compute_audit("2026-03-08")
+        assert result is not None
+        assert result["players_compared"] == 3
 
     def test_returns_none_when_no_players_overlap(self):
         from api.index import _compute_audit

@@ -3,9 +3,10 @@
 Backtest drafts + card boost on leaderboard-style labels where we have a matching
 slate row in data/predictions/{date}.csv.
 
-Labels come from the same union as train_drafts_lgbm:
-  - data/top_performers.csv (multi-date file), and
-  - data/actuals/{date}.csv on GitHub (same columns: drafts, actual_card_boost, …).
+Labels use the same union as train_drafts_lgbm:
+  - data/top_performers.csv (multi-date file)
+  - data/actuals/{date}.csv
+  - data/most_popular/{date}.csv (draft_count → drafts)
 
 Usage (repo root):
   python scripts/verify_top_performers.py

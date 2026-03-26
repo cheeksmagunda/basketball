@@ -1595,43 +1595,6 @@
 
   <!-- ══ TAB: LAB ══ -->
   <div id="tab-lab" class="tab-page">
-    <!-- Upload banner — lives OUTSIDE lock gate so uploads work even during active slates.
-         pending_upload_date routes actuals to yesterday's file regardless of today's lock state. -->
-    <div id="benUploadBanner" style="display:none;margin-bottom:10px;padding-top:16px;overflow:hidden;max-height:300px;transition:max-height 0.4s ease,opacity 0.4s ease,margin 0.4s ease;opacity:1">
-      <div style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.22);border-radius:14px;padding:10px 12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-          <div id="benBannerTitle" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.68rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--lab)">📋 Log Results</div>
-          <button id="benBannerSkipBtn" onclick="_benSkipAllUploads()"
-            style="background:rgba(255,255,255,0.08);border:none;border-radius:11px;color:var(--text-dim);padding:4px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.65rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s;line-height:1.4;backdrop-filter:blur(4px)">
-            ⊘ Skip All
-          </button>
-        </div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:10px;line-height:1.45">Upload your Real Sports screenshots — Ben will analyze accuracy and break down what the model got right.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button id="benBannerRSBtn" onclick="_benTriggerUpload('real_scores','banner')"
-            style="background:var(--lab);border:none;border-radius:var(--radius-card);color:var(--color-text-primary);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-            📸 Real Scores
-          </button>
-          <button id="benBannerWinBtn" onclick="_benTriggerUpload('top_drafts','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-            🏆 Top Drafts
-          </button>
-          <button id="benBannerS5Btn" onclick="_benTriggerUpload('starting_5','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-            ⚡ Starting 5
-          </button>
-          <button id="benBannerMSBtn" onclick="_benTriggerUpload('moonshot','banner')"
-            style="background:var(--surface2);border:1px solid var(--border-bright);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s">
-            🚀 Moonshot
-          </button>
-          <button id="benBannerMDBtn" onclick="_benTriggerUpload('most_drafted','banner')"
-            style="background:var(--surface2);border:1px solid rgba(139,92,246,0.4);border-radius:var(--radius-card);color:var(--text-dim);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;text-transform:uppercase;cursor:pointer;transition:all 0.2s"
-            title="Upload Most Popular / ownership screen to calibrate card boost formula">
-            📊 Most Popular
-          </button>
-        </div>
-      </div>
-    </div>
     <!-- Locked state (only when server explicitly returned locked=true) -->
     <div id="labLocked" style="display:none">
       <div class="empty-state" style="margin-top:32px">
@@ -1766,14 +1729,6 @@ function _fetchJson(url, timeout) {
 function _fmtDateShort(d, upper) {
   const s = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   return upper ? s.toUpperCase() : s;
-}
-
-/** Mark a Ben upload type as done in localStorage. */
-function _markBenUpload(date, key) {
-  const k = 'benUploads_' + date;
-  const u = _safeParseLocalStorage(k, {});
-  u[key] = true;
-  localStorage.setItem(k, JSON.stringify(u));
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2938,7 +2893,7 @@ function renderCards(picks, containerId, mode, opts = {}) {
     let statsHtml;
     if (isLog && playerStats) {
       // Graded layout: shows actual ESPN stats.
-      // Hit/miss coloring and projected comparison row only when RS upload is present (hasActuals).
+      // Hit/miss vs projection only when Log has actual RS (top_performers / legacy actuals).
       const gradedCols = statCols.map(s => {
         const actual = playerStats[s.k] != null ? parseFloat(playerStats[s.k]).toFixed(0) : null;
         const proj = parseFloat(s.v) || 0;
@@ -4145,275 +4100,6 @@ async function renderLogDrillCards() {
   renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap, statsActualsMap });
 }
 
-// Initialize upload banner — shows if there's a pending date with incomplete uploads.
-// Runs in BOTH locked and unlocked paths so uploads work during active slates.
-function _initUploadBanner() {
-  const _ub = document.getElementById('benUploadBanner');
-  if (!_ub) return;
-  const _pendingDate = LAB.briefing?.pending_upload_date || null;
-  if (!_pendingDate) { _ub.style.display = 'none'; return; }
-  const _ulFlags = _safeParseLocalStorage('benUploads_' + _pendingDate, {});
-  const _allDone = _ulFlags.real_scores && _ulFlags.top_drafts && _ulFlags.starting_5 && _ulFlags.moonshot && _ulFlags.most_drafted;
-  _ub.style.display = _allDone ? 'none' : 'block';
-  // Set banner title with the pending date + progress counter
-  const _title = document.getElementById('benBannerTitle');
-  if (_title) {
-    const d = new Date(_pendingDate + 'T12:00:00');
-    const dayStr = _fmtDateShort(d);
-    const doneCount = [_ulFlags.real_scores, _ulFlags.top_drafts, _ulFlags.starting_5, _ulFlags.moonshot, _ulFlags.most_drafted].filter(Boolean).length;
-    _title.textContent = '📋 Log Results — ' + dayStr + (doneCount > 0 ? '  ' + doneCount + '/5' : '');
-  }
-  // Hide already-completed buttons — user only sees what's still needed
-  const _hideBtn = (id) => { const b = document.getElementById(id); if (b) b.style.display = 'none'; };
-  if (_ulFlags.real_scores)  _hideBtn('benBannerRSBtn');
-  if (_ulFlags.top_drafts)   _hideBtn('benBannerWinBtn');
-  if (_ulFlags.starting_5)   _hideBtn('benBannerS5Btn');
-  if (_ulFlags.moonshot)     _hideBtn('benBannerMSBtn');
-  if (_ulFlags.most_drafted) _hideBtn('benBannerMDBtn');
-}
-
-// Hide upload banner once all 5 uploads are done — uses localStorage as source of truth
-// (DOM button state unreliable after hide-on-complete)
-function _checkBannerDone() {
-  const pendingDate = LAB.briefing?.pending_upload_date;
-  if (!pendingDate) return;
-  const _u = _safeParseLocalStorage('benUploads_' + pendingDate, {});
-  if (_u.real_scores && _u.top_drafts && _u.starting_5 && _u.moonshot && _u.most_drafted) {
-    const banner = document.getElementById('benUploadBanner');
-    if (banner) {
-      banner.style.maxHeight = '0';
-      banner.style.opacity   = '0';
-      banner.style.marginBottom = '0';
-      setTimeout(() => { banner.style.display = 'none'; }, 400);
-    }
-  }
-}
-
-function _allBenUploadsDone(date) {
-  const _u = _safeParseLocalStorage('benUploads_' + date, {});
-  return !!(_u.real_scores && _u.top_drafts && _u.starting_5 && _u.moonshot && _u.most_drafted);
-}
-
-function _hasBenAnalysisRun(date) {
-  try { return localStorage.getItem('benAnalysisDone_' + date) === '1'; } catch(e) { return false; }
-}
-
-function _markBenAnalysisRun(date) {
-  try { localStorage.setItem('benAnalysisDone_' + date, '1'); } catch(e) {}
-}
-
-async function _runBenAnalysisForDate(dateStr) {
-  if (_hasBenAnalysisRun(dateStr)) return;
-  let auditStr = '';
-  try {
-    const ar = await fetchWithTimeout(`/api/audit/get?date=${dateStr}`, {}, 10000);
-    if (ar.ok) {
-      const ad = await ar.json();
-      if (ad.mae != null) {
-        const dirAcc = ad.directional_accuracy != null ? Math.round(ad.directional_accuracy * 100) + '%' : 'N/A';
-        auditStr = ` Model accuracy — MAE: ${ad.mae}, directional: ${dirAcc}, over-projected: ${ad.over_projected}, under-projected: ${ad.under_projected}.`;
-        if (ad.biggest_misses?.length) {
-          auditStr += ' Biggest misses: ' + ad.biggest_misses.slice(0, 5).map(m =>
-            `${m.player || '?'} (pred ${m.predicted_rs ?? '?'} vs actual ${m.actual_rs ?? '?'})`
-          ).join(', ') + '.';
-        }
-      }
-    }
-  } catch(e) {}
-
-  try {
-    const freshBriefing = await _fetchJson('/api/lab/briefing', 10000);
-    LAB.briefing = freshBriefing;
-    LAB.system = buildLabSystemPrompt();
-  } catch(e) {}
-
-  const summary = `All 5 uploads completed for ${dateStr}.${auditStr}`;
-  appendLabMessage('user', summary);
-  await labCallClaude();
-  _markBenAnalysisRun(dateStr);
-}
-
-// ── BEN UPLOAD (moved from Log page) ──
-function _benTriggerUpload(type, source) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.onchange = () => _handleBenUpload(input.files[0], type, source);
-  input.click();
-}
-
-async function _benSkipAllUploads() {
-  /**
-   * Skip uploading results for the pending slate date.
-   * Hides banner, marks date as skipped in localStorage and backend,
-   * prevents screenshot processing (doesn't affect learning).
-   */
-  const pendingDate = LAB.briefing?.pending_upload_date || _etToday();
-
-  // Store in localStorage to persist across sessions
-  let skippedDates = _safeParseLocalStorage('benSkippedUploadDates', []);
-  if (!Array.isArray(skippedDates)) skippedDates = [];
-  if (!skippedDates.includes(pendingDate)) {
-    skippedDates.push(pendingDate);
-    localStorage.setItem('benSkippedUploadDates', JSON.stringify(skippedDates));
-  }
-
-  // Notify backend to skip screenshot processing for this date
-  try {
-    await fetchWithTimeout('/api/lab/skip-uploads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: pendingDate })
-    }, 10000);
-  } catch (e) {
-    console.warn('[skip-uploads] Backend notification failed:', e);
-    // Continue anyway — local skip is recorded
-  }
-
-  // Hide banner
-  const banner = document.getElementById('benUploadBanner');
-  if (banner) {
-    banner.style.maxHeight = '0';
-    banner.style.opacity = '0';
-    banner.style.marginBottom = '0';
-    setTimeout(() => { banner.style.display = 'none'; }, 400);
-  }
-
-  console.warn('[ben] Skipped uploads for ' + pendingDate);
-}
-
-async function _handleBenUpload(file, type, source) {
-  if (!file) return;
-  // Button ID mapping for all upload types
-  const _bannerBtnIds = {
-    'real_scores': 'benBannerRSBtn', 'top_drafts': 'benBannerWinBtn',
-    'starting_5': 'benBannerS5Btn',  'moonshot': 'benBannerMSBtn',
-    'most_drafted': 'benBannerMDBtn',
-  };
-  const _chatBtnIds = { 'real_scores': 'benUploadRSBtn', 'top_drafts': 'benUploadWinBtn' };
-  const _labels = {
-    'real_scores': '✓ Real Scores', 'top_drafts': '✓ Top Drafts',
-    'starting_5': '✓ Starting 5',  'moonshot': '✓ Moonshot',
-    'most_drafted': '✓ Most Popular',
-  };
-
-  const bannerBtnId = _bannerBtnIds[type];
-  const chatBtnId   = _chatBtnIds[type];
-  const btnId = source === 'banner' ? bannerBtnId : (chatBtnId || bannerBtnId);
-  const btn = document.getElementById(btnId);
-  const origText = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
-
-  // Is Ben chat available? (unlocked state visible)
-  const _benAvailable = document.getElementById('labUnlocked')?.style.display !== 'none';
-
-  try {
-    const form = new FormData();
-    form.append('file', file);
-    if (type === 'most_drafted') form.append('screenshot_type', 'most_drafted');
-    const r = await fetchWithTimeout('/api/parse-screenshot', { method: 'POST', body: form }, 30000);
-    if (!r.ok) throw new Error('Upload failed (HTTP ' + r.status + ')');
-    const data = await r.json();
-    if (!data.players?.length) throw new Error(data.error || 'No players found');
-
-    const today = LAB.briefing?.pending_upload_date || _etToday();
-    // _markDone: permanent green (used for chat buttons)
-    const _markDone = (id, label) => { const b = document.getElementById(id); if (b) { b.textContent = label; b.classList.add('btn-done'); b.disabled = true; } };
-    // _markBannerDone: flash green → update X/5 counter → hide after 1.5s
-    const _markBannerDone = (id, label, date) => {
-      const b = document.getElementById(id);
-      if (!b) return;
-      b.textContent = label; b.classList.add('btn-done'); b.disabled = true;
-      const _uf = _safeParseLocalStorage('benUploads_' + date, {});
-      const cnt = [_uf.real_scores, _uf.top_drafts, _uf.starting_5, _uf.moonshot, _uf.most_drafted].filter(Boolean).length;
-      const _t = document.getElementById('benBannerTitle');
-      if (_t) { const d = new Date(date + 'T12:00:00'); const ds = _fmtDateShort(d); _t.textContent = '📋 Log Results — ' + ds + (cnt > 0 ? '  ' + cnt + '/5' : ''); }
-      setTimeout(() => { b.style.display = 'none'; }, 1500);
-    };
-
-    if (type === 'real_scores' || type === 'starting_5' || type === 'moonshot') {
-      // All three save to the same actuals CSV (merge by player name).
-      // Tag source so we know where the data came from.
-      const taggedPlayers = data.players.map(p => ({ ...p, source: type }));
-      const _saveRes = await fetchWithTimeout('/api/save-actuals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: today, players: taggedPlayers }),
-      });
-      if (!_saveRes.ok) throw new Error(`Save actuals failed (${_saveRes.status})`);
-
-      // Write localStorage first so counter in _markBannerDone reads the updated count
-      _markBenUpload(today, type);
-      _markBannerDone(bannerBtnId, _labels[type], today);
-      if (chatBtnId) _markDone(chatBtnId, _labels[type]);
-      _checkBannerDone();
-
-      if (_benAvailable && _allBenUploadsDone(today)) {
-        await _runBenAnalysisForDate(today);
-      }
-
-    } else if (type === 'most_drafted') {
-      // most_drafted — ownership/popularity data for card boost calibration
-      const ownershipPlayers = data.players.filter(p => (p.player_name || p.name) && (p.draft_count != null || p.actual_card_boost != null));
-      if (ownershipPlayers.length) {
-        const _or = await fetchWithTimeout('/api/save-ownership', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date: today, players: ownershipPlayers }),
-        }, 10000);
-        if (!_or.ok) throw new Error('Save ownership failed (' + _or.status + ')');
-      }
-      _markBenUpload(today, 'most_drafted');
-      _markBannerDone(bannerBtnId, _labels[type], today);
-      _checkBannerDone();
-      const ownerStr = ownershipPlayers.slice(0, 5).map(p => {
-        const n = p.player_name || p.name || '?';
-        const d = p.draft_count != null ? `${p.draft_count} drafts` : '';
-        const b = p.actual_card_boost != null ? `+${p.actual_card_boost}x` : '';
-        return `${n}${d ? ' ' + d : ''}${b ? ' ' + b : ''}`;
-      }).join(', ');
-      const summary = `Most Popular uploaded for ${today} (${ownershipPlayers.length} players). Top: ${ownerStr}. ` +
-        `You can run GET /api/lab/calibrate-boost to fit the card boost formula to real ownership data once all uploads are complete.`;
-      if (_benAvailable && _allBenUploadsDone(today)) {
-        await _runBenAnalysisForDate(today);
-      }
-
-    } else {
-      // top_drafts — persist leaderboard data
-      const leaderboardPlayers = data.players.filter(p => p.player_name || p.name).map(p => ({
-        ...p, player_name: p.player_name || p.name || '', source: 'leaderboard',
-      }));
-      if (leaderboardPlayers.length) {
-        try {
-          const _lr = await fetchWithTimeout('/api/save-actuals', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ date: today, players: leaderboardPlayers }),
-          });
-          if (!_lr.ok) throw new Error('HTTP ' + _lr.status);
-        } catch(e) { _appendMsg('assistant', 'Failed to save leaderboard — try again.'); return; }
-      }
-      _markBenUpload(today, type);
-      _markBannerDone(bannerBtnId, _labels[type], today);
-      if (chatBtnId) _markDone(chatBtnId, _labels[type]);
-      _checkBannerDone();
-      const winnerStr = leaderboardPlayers.length
-        ? leaderboardPlayers.slice(0,6).map(p => `${p.player_name}${p.total_value ? ` (${p.total_value})` : ''}`).join(', ')
-        : `${data.players.length} entries parsed`;
-      const summary = `Top Drafts uploaded for ${today}. ${leaderboardPlayers.length ? 'Winners: ' + winnerStr : winnerStr}.`;
-      if (_benAvailable && _allBenUploadsDone(today)) {
-        await _runBenAnalysisForDate(today);
-      }
-    }
-
-  } catch(e) {
-    if (_benAvailable) {
-      appendLabMessage('assistant', `Upload failed: ${e.message}. Try again.`);
-    }
-    if (btn) { btn.disabled = false; btn.textContent = origText; }
-  }
-}
-
 // ════════════════════════════════════════════════════════
 // LINE PAGE — grep: initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
 // ════════════════════════════════════════════════════════
@@ -5146,7 +4832,7 @@ function switchLineDir(dir) {
 }
 
 // ════════════════════════════════════════════════════════
-// LAB PAGE — grep: initLabPage, LAB state, labCallClaude, buildLabSystemPrompt, _handleBenUpload
+// LAB PAGE — grep: initLabPage, LAB state, labCallClaude, buildLabSystemPrompt
 // ════════════════════════════════════════════════════════
 
 const LAB = {
@@ -5187,8 +4873,6 @@ function _resetLabAndRetry() {
 }
 
 function _showLabStatusUnknown() {
-  let _ub = document.getElementById('benUploadBanner');
-  if (_ub) _ub.style.display = 'none';
   const labLockedEl = _el('labLocked');
   const labConnErr = _el('labConnectionError');
   const labConnReason = _el('labConnectionErrorReason');
@@ -5227,12 +4911,10 @@ async function initLabPage() {
   LAB.initDate = today;
 
   // Ben is always available — skip lock status and show unlocked view directly.
-  // We still refresh context on stale init to pick up new slates and pending uploads.
+  // We still refresh context on stale init to pick up new slates.
   [_el('labLoading'), _el('labLocked'), _el('labConnectionError')].forEach(e => { if (e) e && (e.style.display = 'none'); });
   const labUnlockedEl = _el('labUnlocked');
   if (labUnlockedEl) labUnlockedEl.style.display = 'flex';
-  let _ub0 = _el('benUploadBanner');
-  if (_ub0) _ub0.style.display = 'none';
   await showLabUnlocked({ locked: false, games_final: 0 });
 
   // Load persisted daily Ben chat history (server + localStorage mirror if API fails or returns partial data).
@@ -5304,10 +4986,6 @@ async function showLabLocked(status) {
   document.getElementById('labConnectionError').style.display = 'none';
   document.getElementById('labLocked').style.display = 'block';
   _updateLabLockedStatus(status);
-
-  // Hide upload banner while locked — don't clutter the locked screen
-  let _ub = document.getElementById('benUploadBanner');
-  if (_ub) _ub.style.display = 'none';
 
   // Poll every 3 min while locked: update games remaining + unlock estimate,
   // and automatically flip to unlocked view when all games finish.
@@ -5389,8 +5067,6 @@ async function showLabUnlocked(status) {
     LAB.parlayData = (parlayRes.status === 'fulfilled' && parlayRes.value) ? parlayRes.value : null;
     // Rebuild system prompt with full context
     LAB.system = buildLabSystemPrompt();
-    // Upload banner (needs briefing data)
-    _initUploadBanner();
   });
 }
 
@@ -5481,13 +5157,14 @@ APP STRUCTURE (5 tabs):
 - LINE: Line of the Day — Over and Under prop picks. Over/Under sub-nav defaults to Under. History strip shows streak and hit rate.
 - PARLAY: Safest 3-leg player prop parlay on the slate — certainty-optimized (Z-score + Vegas blend, anti-fragility filters, correlation score). Shown on the Parlay tab and summarized below.
 - BEN (here): Chat with model context from Predict + Line + Parlay when loaded.
-- LOG: Read-only history. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player. Upload goes through Ben, not Log.
+- LOG: Read-only history. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player (actuals primarily from data/top_performers.csv by date).
 
-DATA PIPELINE:
-- Screenshots → /api/parse-screenshot (Claude Haiku OCR) → /api/save-actuals → data/actuals/{date}.csv (source: my_draft or leaderboard)
-- Most Popular screenshots → /api/parse-screenshot (screenshot_type=most_drafted) → /api/save-ownership → data/ownership/{date}.csv (draft_count + actual_card_boost per player)
+DATA PIPELINE (this season):
+- Historical outcomes for Log/audit: data/top_performers.csv (mega rollup by date) is primary; legacy data/actuals/{date}.csv still supported as fallback.
+- Developer-only ingestion: curl/scripts → /api/parse-screenshot + POST /api/save-most-popular, /api/save-most-drafted-3x, /api/save-winning-drafts (see docs/HISTORICAL_DATA.md). Optional INGEST_SECRET on those writers.
+- Most popular lists → data/most_popular/{date}.csv (POST /api/save-ownership is an alias of the same path).
 - Predictions saved at lock → data/predictions/{date}.csv
-- Audit auto-generated at save-actuals → data/audit/{date}.json (MAE, directional accuracy, top misses)
+- Audit JSON → data/audit/{date}.json (from predictions vs top_performers / actuals)
 - Line picks → data/lines/{date}_pick.json (over_pick + under_pick) + data/lines/{date}.csv
 - Parlay ticket → data/parlays/{date}.json (three legs, combined_probability, narrative)
 - Card boost calibration: GET /api/lab/calibrate-boost → fits log_a/log_b from ownership data → propose via update_config action${LAB.briefing?.ownership_calibration_available ? `\n- OWNERSHIP DATA AVAILABLE for dates: ${(LAB.briefing.ownership_dates || []).join(', ')}. Run GET /api/lab/calibrate-boost to fit the boost formula to real data.` : ''}
@@ -5505,7 +5182,7 @@ CAPABILITIES:
 WHEN TO USE WHAT:
 - Parameter tuning (scalars, weights, thresholds) → <action>backtest</action> first, then <action>update_config</action>
 - Algorithmic changes (formulas, logic, filters) → read_repo_file the function → describe the exact change needed → tell the user to implement it via a developer push (you cannot write code files)
-- Investigating accuracy → read_repo_file data/audit/{date}.json or data/actuals/{date}.csv
+- Investigating accuracy → read_repo_file data/audit/{date}.json; actual RS labels: data/top_performers.csv (filter by date) or legacy data/actuals/{date}.csv
 - Historical pick analysis → list_repo_directory data/predictions, then read specific files
 - Parlay ticket file → read_repo_file data/parlays/{date}.json if user needs detail beyond the PARLAY section above
 - Full player projections (card boosts, RS ratings for ALL players, not just the top 10 in context) → read_repo_file data/predictions/{date}.csv (available after slate locks; has all projected players with RS, boost, minutes, pts/reb/ast). Pre-lock: slate context above shows top 10 only — tell user projections save at lock.

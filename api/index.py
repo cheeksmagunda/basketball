@@ -107,6 +107,7 @@ def _validate_date(date_str: str) -> Optional[JSONResponse]:
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 GITHUB_REPO = os.getenv("GITHUB_REPO", "").strip()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+INGEST_SECRET = os.getenv("INGEST_SECRET", "").strip()
 
 # Startup env validation — warn on missing required vars (never crash; app degrades gracefully)
 _REQUIRED_ENV = ["GITHUB_TOKEN", "GITHUB_REPO", "ANTHROPIC_API_KEY"]
@@ -701,6 +702,9 @@ _DATA_PREFIXES = {
     "slate": "data/slate", "predictions": "data/predictions",
     "locks": "data/locks", "boosts": "data/boosts",
     "parlays": "data/parlays", "ownership": "data/ownership",
+    "most_popular": "data/most_popular",
+    "most_drafted_3x": "data/most_drafted_3x",
+    "winning_drafts": "data/winning_drafts",
     "actuals": "data/actuals", "audit": "data/audit",
     "lines": "data/lines",
 }
@@ -6503,8 +6507,7 @@ async def force_regenerate(request: Request, scope: str = Query("full")):
 
 
 async def reset_uploads(body: dict):
-    """Delete actuals + audit files for a given date from GitHub.
-    Used to undo an incorrect/early upload so Ben can re-prompt for the right date."""
+    """Delete data/actuals/{date}.csv and data/audit/{date}.json from GitHub (admin / repair)."""
     date_str = body.get("date")
     if not date_str:
         return _err("date required", 400)
@@ -6526,11 +6529,14 @@ async def parse_screenshot(
     file: UploadFile = File(...),
     screenshot_type: str = Form(default="actuals"),
 ):
-    """Parse a Real Sports app screenshot using Claude Vision API.
+    """Parse a Real Sports app screenshot using Claude Vision API (developer / script use).
 
     screenshot_type:
-      "actuals"      — default; extracts My Draft / Highest Value player RS data
-      "most_drafted" — extracts ownership leaderboard (player + draft_pct)
+      "actuals" — default; My Draft + Highest Value + leaderboard heuristics
+      "most_drafted" | "most_popular" — Most popular / most drafted list
+      "most_drafted_high_boost" — high-boost sub-leaderboard (e.g. 3x+)
+      "top_performers" — Highest value / top performers rows only
+      "winning_drafts" — up to 4 winning lineups (flat JSON rows per slot)
     """
     rl = _check_rate_limit(request, "parse-screenshot")
     if rl is not None:
@@ -6554,7 +6560,7 @@ async def parse_screenshot(
             "screenshot_type 'boosts' is removed — card boosts are model-estimated only.",
             400,
         )
-    if screenshot_type == "most_drafted":
+    if screenshot_type in ("most_drafted", "most_popular"):
         prompt = """Extract player ownership data from this Real Sports 'Most popular' or 'Most drafted' screenshot.
 
 For EACH player listed, extract:
@@ -6567,6 +6573,46 @@ For EACH player listed, extract:
 - avg_finish: average finish shown (e.g. "1st" → 1, "3rd" → 3), or null if not visible
 
 Return ONLY a JSON array of objects. No markdown, no explanation."""
+    elif screenshot_type == "most_drafted_high_boost":
+        prompt = """Extract players from this Real Sports screen showing the high card-boost popular / most-drafted sub-leaderboard (e.g. 3x boost filter). If the full list is shown, only include rows where card boost is clearly 3.0x or higher.
+
+For EACH player listed, extract:
+- rank: integer position in this visible list
+- player_name: full name
+- team: abbreviation if visible, else null
+- draft_count: parse k/m notation to integer
+- actual_rs: Real Score from triangle/symbol if shown, else null
+- actual_card_boost: "+X.Xx" as decimal (required for this screen)
+- avg_finish: ordinal as number if shown, else null
+
+Return ONLY a JSON array of objects. No markdown."""
+    elif screenshot_type == "top_performers":
+        prompt = """Extract ONLY the "Highest value" / top performing players section from this Real Sports screenshot. Ignore "My draft" unless there is no highest-value section.
+
+For EACH player row:
+- player_name: full name
+- actual_rs: Real Score (triangle/arrow symbol)
+- actual_card_boost: "+X.Xx" as decimal, or null
+- drafts: draft count if shown
+- avg_finish: null unless clearly shown
+- total_value: value number on the right if shown (e.g. 23.6)
+- source: always the string "highest_value"
+
+Return ONLY a JSON array of objects. No markdown."""
+    elif screenshot_type == "winning_drafts":
+        prompt = """Extract winning drafts from this Real Sports leaderboard (up to 4 winners, each with 5 players).
+
+For EACH player in each winning lineup, output one object:
+- winner_rank: integer 1-4 (which winning row, top winner = 1)
+- drafter_label: username or label for that winner if visible, else null
+- total_score: that winner's total score if visible, else null
+- slot_index: integer 1-5 (top of lineup to bottom)
+- player_name: full name
+- actual_rs: Real Score if visible, else null
+- slot_mult: slot multiplier if shown (e.g. 2.0x as 2.0), else null
+- card_boost: card boost "+X.Xx" as decimal if shown, else null
+
+Return ONLY a flat JSON array (one object per player slot). No markdown."""
     else:
         prompt = """Extract ALL player data from this Real Sports app screenshot.
 
@@ -6636,12 +6682,13 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
 def _compute_audit(date_str):
     """Compare predictions vs actuals for a date. Returns audit dict or None if no data."""
     pred_csv, _ = _github_get_file(f"data/predictions/{date_str}.csv")
-    act_csv,  _ = _github_get_file(f"data/actuals/{date_str}.csv")
-    if not pred_csv or not act_csv:
+    if not pred_csv:
+        return None
+    actuals = _load_player_actuals_for_date(date_str)
+    if not actuals:
         return None
 
-    preds   = _parse_csv(pred_csv, PRED_FIELDS)
-    actuals = _parse_csv(act_csv, ACT_FIELDS)
+    preds = _parse_csv(pred_csv, PRED_FIELDS)
 
     act_map = {r["player_name"].lower(): r for r in actuals}
 
@@ -6729,10 +6776,9 @@ def _compute_audit(date_str):
 
 @app.post("/api/save-actuals")
 async def save_actuals(payload: dict = Body(...)):
-    """Save confirmed actuals to GitHub as CSV.
+    """Merge parsed actuals into data/actuals/{date}.csv (legacy path).
 
-    Safety: Checks if user has skipped uploads for this date.
-    If skipped, returns early without processing screenshots.
+    If the date is in data/skipped-uploads.json, returns early (no-op).
     """
     date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
@@ -6741,14 +6787,13 @@ async def save_actuals(payload: dict = Body(...)):
     if not players:
         return _err("No player data", 400)
 
-    # Check if this date was marked as skipped by user
     try:
         skipped_content, _ = _github_get_file("data/skipped-uploads.json")
         if skipped_content:
             skipped_data = json.loads(skipped_content)
             if date_str in skipped_data.get("skipped_dates", []):
-                print(f"[save-actuals] Skipping upload for {date_str} (user marked as skipped)")
-                return {"status": "skipped", "date": date_str, "reason": "User skipped uploads for this date"}
+                print(f"[save-actuals] Skipping {date_str} (in skipped-uploads list)")
+                return {"status": "skipped", "date": date_str, "reason": "Date listed in data/skipped-uploads.json"}
     except Exception:
         pass  # If check fails, continue with normal processing
 
@@ -6834,6 +6879,80 @@ PRED_FIELDS = ["scope","lineup_type","slot","player_name","player_id","team","po
                "predicted_rs","est_card_boost","pred_min","pts","reb","ast","stl","blk"]
 ACT_FIELDS = ["player_name","actual_rs","actual_card_boost","drafts","avg_finish","total_value","source"]
 
+# grep: HISTORICAL DATA — mega top_performers, most_popular, winning_drafts, most_drafted_3x
+TOP_PERFORMERS_GH_PATH = "data/top_performers.csv"
+TP_MEGA_FIELDS = [
+    "date", "player_name", "actual_rs", "actual_card_boost",
+    "drafts", "avg_finish", "total_value", "source",
+]
+WINNING_DRAFTS_FIELDS = [
+    "winner_rank", "drafter_label", "total_score", "slot_index",
+    "player_name", "actual_rs", "slot_mult", "card_boost",
+]
+MOST_POPULAR_GH_PREFIX = "data/most_popular"
+OWNERSHIP_LEGACY_PREFIX = "data/ownership"
+MOST_DRAFTED_3X_GH_PREFIX = "data/most_drafted_3x"
+WINNING_DRAFTS_GH_PREFIX = "data/winning_drafts"
+MOST_POPULAR_ROW_FIELDS = [
+    "player", "team", "draft_count", "actual_rs", "actual_card_boost",
+    "avg_finish", "rank", "saved_at",
+]
+
+
+def _ingest_secret_ok(request: Request) -> bool:
+    if not INGEST_SECRET:
+        return True
+    if request.headers.get("X-Ingest-Key") == INGEST_SECRET:
+        return True
+    auth = request.headers.get("Authorization") or ""
+    if auth.startswith("Bearer ") and auth[7:].strip() == INGEST_SECRET:
+        return True
+    return False
+
+
+def _dates_from_top_performers_mega() -> set:
+    raw, _ = _github_get_file(TOP_PERFORMERS_GH_PATH)
+    if not raw:
+        return set()
+    rows = _parse_csv(raw, TP_MEGA_FIELDS)
+    return {(r.get("date") or "").strip() for r in rows if (r.get("date") or "").strip()}
+
+
+def _load_player_actuals_for_date(date_str: str) -> list:
+    """Primary: rows from data/top_performers.csv for date_str (ACT_FIELDS shape).
+    Fallback: legacy data/actuals/{date}.csv."""
+    raw, _ = _github_get_file(TOP_PERFORMERS_GH_PATH)
+    if raw:
+        rows = _parse_csv(raw, TP_MEGA_FIELDS)
+        out = []
+        for r in rows:
+            if (r.get("date") or "").strip() != date_str:
+                continue
+            out.append({
+                "player_name": (r.get("player_name") or "").strip(),
+                "actual_rs": r.get("actual_rs", ""),
+                "actual_card_boost": r.get("actual_card_boost", ""),
+                "drafts": r.get("drafts", ""),
+                "avg_finish": r.get("avg_finish", ""),
+                "total_value": r.get("total_value", ""),
+                "source": (r.get("source") or "highest_value").strip(),
+            })
+        if out:
+            return out
+    act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
+    return _parse_csv(act_csv, ACT_FIELDS) if act_csv else []
+
+
+def _github_get_most_popular_csv(date_str: str) -> tuple[str, str]:
+    """Return (content, path_used) for most-popular-style CSV; prefer data/most_popular/."""
+    p_new = f"{MOST_POPULAR_GH_PREFIX}/{date_str}.csv"
+    c, _ = _github_get_file(p_new)
+    if c:
+        return c, p_new
+    p_old = f"{OWNERSHIP_LEGACY_PREFIX}/{date_str}.csv"
+    c2, _ = _github_get_file(p_old)
+    return c2, p_old
+
 
 @app.get("/api/log/dates")
 async def log_dates():
@@ -6851,6 +6970,7 @@ async def log_dates():
                 name = item.get("name", "")
                 if name.endswith(".csv"):
                     dates.add(name[:-4])
+        dates |= _dates_from_top_performers_mega()
         result = sorted(dates, reverse=True)
         _cs(_CK_LOG_DATES, {"data": result, "ts": time.time()})
         return result
@@ -6873,14 +6993,9 @@ async def log_get(date: str = Query(None)):
         if time.time() - _log_cached["ts"] < _TTL_CONFIG:
             return _log_cached["data"]
 
-    with ThreadPoolExecutor(max_workers=_W_LIGHT) as pool:
-        (pred_csv, _), (act_csv, _) = list(pool.map(
-            _github_get_file,
-            [f"data/predictions/{date_str}.csv", f"data/actuals/{date_str}.csv"]
-        ))
-
+    pred_csv, _ = _github_get_file(f"data/predictions/{date_str}.csv")
     predictions = _parse_csv(pred_csv, PRED_FIELDS) if pred_csv else []
-    actuals = _parse_csv(act_csv, ACT_FIELDS) if act_csv else []
+    actuals = _load_player_actuals_for_date(date_str)
 
     # Group predictions by scope → lineup_type → players
     scopes = {}
@@ -9362,14 +9477,16 @@ async def lab_briefing():
     pred_items = _github_list_dir("data/predictions")
     act_items  = _github_list_dir("data/actuals")
     act_dates  = {i["name"].replace(".csv","") for i in act_items if i["name"].endswith(".csv")}
+    tp_dates   = _dates_from_top_performers_mega()
+    historical_dates = act_dates | tp_dates
 
-    # Find dates with both predictions and actuals
+    # Find dates with predictions and historical outcomes (mega top_performers and/or legacy actuals)
     paired = []
     for item in sorted(pred_items, key=lambda x: x.get("name",""), reverse=True):
         name = item.get("name","")
         if not name.endswith(".csv"): continue
         d = name[:-4]
-        if d in act_dates:
+        if d in historical_dates:
             paired.append(d)
 
     # Gather audits — use pre-computed JSON when cached, else compute live
@@ -9429,13 +9546,20 @@ async def lab_briefing():
         [i["name"].replace(".csv","") for i in pred_items if i["name"].endswith(".csv")],
         reverse=True
     )
-    pending_upload_date = next((d for d in pred_dates if d not in act_dates and d != today_iso), None)
+    # Pending = predictions exist but no rows for that date in mega top_performers (primary source).
+    pending_historical_date = next((d for d in pred_dates if d not in tp_dates and d != today_iso), None)
+    pending_upload_date = pending_historical_date
 
-    # Check for ownership calibration data
+    # Check for most-popular / ownership calibration data
     try:
-        own_items = _github_list_dir("data/ownership") or []
+        mp_items = _github_list_dir(MOST_POPULAR_GH_PREFIX) or []
+        leg_items = _github_list_dir(OWNERSHIP_LEGACY_PREFIX) or []
         own_dates = sorted(
-            [i["name"].replace(".csv", "") for i in own_items if i["name"].endswith(".csv")],
+            {
+                i["name"].replace(".csv", "")
+                for i in (mp_items + leg_items)
+                if i.get("name", "").endswith(".csv")
+            },
             reverse=True,
         )
     except Exception:
@@ -9454,6 +9578,7 @@ async def lab_briefing():
             "last_change_date": (cfg.get("changelog") or [{}])[-1].get("date",""),
         },
         "pending_upload_date": pending_upload_date,
+        "pending_historical_date": pending_historical_date,
         "ownership_calibration_available": len(own_dates) > 0,
         "ownership_dates": own_dates[:5],
     }
@@ -10230,13 +10355,9 @@ async def lab_chat(request: Request, payload: dict = Body(...)):
 
 @app.post("/api/lab/skip-uploads")
 async def lab_skip_uploads(payload: dict = Body(...)):
-    """Mark a specific date's screenshots as skipped (user doesn't want to upload).
+    """Append a date to data/skipped-uploads.json so save-actuals no-ops for that date.
 
-    Does NOT process the screenshots, does NOT store them, does NOT affect learning.
-    Simply records in GitHub that this date was skipped by the user.
-
-    Frontend calls this when user clicks "Skip All Uploads" button on the banner.
-    Stores indication in data/skipped-uploads.json for audit purposes.
+    Optional — no in-app UI; scripts or manual tooling may call this. Does not delete data.
     """
     date_str = payload.get("date", "").strip()
     if not date_str:
@@ -10267,23 +10388,16 @@ async def lab_skip_uploads(payload: dict = Body(...)):
         return {"status": "recorded_locally", "date": date_str}
 
 
-@app.post("/api/save-ownership")
-async def save_ownership(payload: dict = Body(...)):
-    """Save parsed Most Drafted / ownership data to GitHub as CSV.
-
-    Stores actual draft counts and card boosts per player for a given date.
-    Used by calibrate-boost for historical aggregates (research / retraining), not live projections.
-
-    Body: { date: str, players: [{player_name|name, team, draft_count, actual_rs,
-                                   actual_card_boost, avg_finish, rank}] }
-    """
+def _save_most_popular_style_csv(payload: dict, gh_prefix: str, commit_msg: str):
+    """Write most-popular schema CSV to gh_prefix/{date}.csv. Returns dict or JSONResponse."""
     date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
-    if bad: return bad
+    if bad:
+        return bad
 
     players = payload.get("players", [])
     if not players:
-        return {"saved": 0, "date": date_str}
+        return {"saved": 0, "date": date_str, "path": f"{gh_prefix}/{date_str}.csv"}
 
     rows = ["player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at"]
     ts = datetime.now(timezone.utc).isoformat()
@@ -10292,12 +10406,12 @@ async def save_ownership(payload: dict = Body(...)):
         name = str(p.get("player_name") or p.get("name", "")).strip().replace(",", " ")
         if not name:
             continue
-        team           = str(p.get("team") or "").upper().replace(",", "")
-        draft_count    = _safe_float(p.get("draft_count")) or 0
-        actual_rs      = _safe_float(p.get("actual_rs"))
-        actual_boost   = _safe_float(p.get("actual_card_boost"))
-        avg_finish     = _safe_float(p.get("avg_finish"))
-        rank           = int(p.get("rank") or 0)
+        team = str(p.get("team") or "").upper().replace(",", "")
+        draft_count = _safe_float(p.get("draft_count")) or 0
+        actual_rs = _safe_float(p.get("actual_rs"))
+        actual_boost = _safe_float(p.get("actual_card_boost"))
+        avg_finish = _safe_float(p.get("avg_finish"))
+        rank = int(p.get("rank") or 0)
         rows.append(
             f"{name},{team},{int(draft_count)},"
             f"{actual_rs if actual_rs is not None else ''},"
@@ -10308,17 +10422,110 @@ async def save_ownership(payload: dict = Body(...)):
         saved += 1
 
     if saved == 0:
-        return {"saved": 0, "date": date_str}
+        return {"saved": 0, "date": date_str, "path": f"{gh_prefix}/{date_str}.csv"}
 
     content = "\n".join(rows) + "\n"
-    path    = f"data/ownership/{date_str}.csv"
+    path = f"{gh_prefix}/{date_str}.csv"
     try:
-        _github_write_file(path, content, f"ownership data {date_str} ({saved} players)")
+        _github_write_file(path, content, f"{commit_msg} {date_str} ({saved} players)")
     except Exception as e:
-        print(f"[save-ownership] GitHub write failed: {e}")
-        return _err(f"Failed to save ownership data: {str(e)}", 500)
+        print(f"[save-most-popular] GitHub write failed: {e}")
+        return _err(f"Failed to save: {str(e)}", 500)
 
-    return {"saved": saved, "date": date_str}
+    return {"saved": saved, "date": date_str, "path": path}
+
+
+@app.post("/api/save-most-popular")
+async def save_most_popular(request: Request, payload: dict = Body(...)):
+    """Save parsed Most Popular list to data/most_popular/{date}.csv (developer ingest)."""
+    if not _ingest_secret_ok(request):
+        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+    out = _save_most_popular_style_csv(payload, MOST_POPULAR_GH_PREFIX, "most_popular")
+    if isinstance(out, JSONResponse):
+        return out
+    return out
+
+
+@app.post("/api/save-ownership")
+async def save_ownership(request: Request, payload: dict = Body(...)):
+    """Backward-compatible alias: writes data/most_popular/{date}.csv (same as save-most-popular).
+
+    Body: { date, players: [{player_name|name, team, draft_count, actual_rs,
+           actual_card_boost, avg_finish, rank}] }
+    """
+    if not _ingest_secret_ok(request):
+        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+    out = _save_most_popular_style_csv(payload, MOST_POPULAR_GH_PREFIX, "most_popular")
+    if isinstance(out, JSONResponse):
+        return out
+    return out
+
+
+@app.post("/api/save-most-drafted-3x")
+async def save_most_drafted_3x(request: Request, payload: dict = Body(...)):
+    """High-boost popular sub-list → data/most_drafted_3x/{date}.csv (same columns as most_popular)."""
+    if not _ingest_secret_ok(request):
+        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+    out = _save_most_popular_style_csv(payload, MOST_DRAFTED_3X_GH_PREFIX, "most_drafted_3x")
+    if isinstance(out, JSONResponse):
+        return out
+    out["min_boost_filter"] = payload.get("min_boost", 3.0)
+    return out
+
+
+@app.post("/api/save-winning-drafts")
+async def save_winning_drafts(request: Request, payload: dict = Body(...)):
+    """Long-format winning lineups → data/winning_drafts/{date}.csv (max 4 winners × 5 slots)."""
+    if not _ingest_secret_ok(request):
+        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+    date_str = payload.get("date", _today_str())
+    bad = _validate_date(date_str)
+    if bad:
+        return bad
+    raw = payload.get("rows") or payload.get("players") or []
+    if not raw:
+        return _err("rows or players required", 400)
+
+    ts = datetime.now(timezone.utc).isoformat()
+    lines = [",".join(WINNING_DRAFTS_FIELDS + ["saved_at"])]
+    saved = 0
+    for r in raw:
+        try:
+            wr = int(float(r.get("winner_rank") or 0))
+            si = int(float(r.get("slot_index") or 0))
+        except (TypeError, ValueError):
+            continue
+        if wr < 1 or wr > 4 or si < 1 or si > 5:
+            continue
+        pname = str(r.get("player_name") or r.get("name", "")).strip().replace(",", " ")
+        if not pname:
+            continue
+        dl = str(r.get("drafter_label") or "").replace(",", " ")
+        ts_val = r.get("total_score")
+        ars = r.get("actual_rs")
+        sm = r.get("slot_mult")
+        cb = r.get("card_boost")
+        lines.append(
+            f"{wr},{dl},{ts_val if ts_val is not None else ''},{si},{pname},"
+            f"{ars if ars is not None else ''},"
+            f"{sm if sm is not None else ''},"
+            f"{cb if cb is not None else ''},{ts}"
+        )
+        saved += 1
+
+    if saved == 0:
+        return _err("No valid rows (need winner_rank 1-4, slot_index 1-5, player_name)", 400)
+    if saved > 20:
+        return _err("Too many rows (max 20 = 4 winners × 5 slots)", 400)
+
+    path = f"{WINNING_DRAFTS_GH_PREFIX}/{date_str}.csv"
+    content = "\n".join(lines) + "\n"
+    try:
+        _github_write_file(path, content, f"winning_drafts {date_str} ({saved} rows)")
+    except Exception as e:
+        print(f"[save-winning-drafts] GitHub write failed: {e}")
+        return _err(f"Failed to save: {str(e)}", 500)
+    return {"saved": saved, "date": date_str, "path": path}
 
 
 @app.get("/api/lab/calibrate-boost")
@@ -10337,18 +10544,21 @@ async def lab_calibrate_boost():
         player_boosts = defaultdict(list)
         dates_used = []
 
-        # Collect from ownership CSVs
-        own_items = _github_list_dir("data/ownership") or []
+        mp_items = _github_list_dir(MOST_POPULAR_GH_PREFIX) or []
+        leg_items = _github_list_dir(OWNERSHIP_LEGACY_PREFIX) or []
         own_dates = sorted(
-            [i["name"].replace(".csv", "") for i in own_items if i["name"].endswith(".csv")],
+            {
+                i["name"].replace(".csv", "")
+                for i in (mp_items + leg_items)
+                if i.get("name", "").endswith(".csv")
+            },
             reverse=True,
         )
         for date_str in own_dates:
-            own_csv, _ = _github_get_file(f"data/ownership/{date_str}.csv")
+            own_csv, _src = _github_get_most_popular_csv(date_str)
             if not own_csv:
                 continue
-            own_rows = _parse_csv(own_csv, ["player", "team", "draft_count", "actual_rs",
-                                             "actual_card_boost", "avg_finish", "rank", "saved_at"])
+            own_rows = _parse_csv(own_csv, MOST_POPULAR_ROW_FIELDS)
             added = 0
             for row in own_rows:
                 boost = _safe_float(row.get("actual_card_boost"))

@@ -32,6 +32,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parent
 TOP_PERFORMERS = REPO / "data" / "top_performers.csv"
 ACTUALS_DIR = REPO / "data" / "actuals"
+MOST_POPULAR_DIR = REPO / "data" / "most_popular"
 PRED_DIR = REPO / "data" / "predictions"
 MODEL_CFG = REPO / "data" / "model-config.json"
 MODEL_OUT = REPO / "drafts_model.pkl"
@@ -153,6 +154,23 @@ def _labeled_rows() -> list[dict]:
                             "actual_boost": _safe_float(r.get("actual_card_boost"), -1.0),
                         }
                     )
+    if MOST_POPULAR_DIR.is_dir():
+        for csv_path in sorted(MOST_POPULAR_DIR.glob("*.csv")):
+            d = csv_path.stem
+            with csv_path.open("r", encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    drafts = _safe_float(r.get("draft_count") or r.get("drafts"), 0.0)
+                    name = (r.get("player") or r.get("player_name") or "").strip()
+                    if drafts <= 0 or not name:
+                        continue
+                    rows.append(
+                        {
+                            "date": d,
+                            "player_name": name,
+                            "drafts": drafts,
+                            "actual_boost": _safe_float(r.get("actual_card_boost"), -1.0),
+                        }
+                    )
     # De-dupe (player, date)
     seen: set[tuple[str, str]] = set()
     uniq = []
@@ -212,6 +230,9 @@ def train() -> None:
     actuals_dates = set()
     if ACTUALS_DIR.exists():
         for p in ACTUALS_DIR.glob("*.csv"):
+            actuals_dates.add(p.stem)
+    if MOST_POPULAR_DIR.is_dir():
+        for p in MOST_POPULAR_DIR.glob("*.csv"):
             actuals_dates.add(p.stem)
     labeled = _labeled_rows()
     label_dates = {r["date"] for r in labeled if (r.get("date") or "").strip()}

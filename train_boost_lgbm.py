@@ -21,8 +21,8 @@ Writes boost_model.pkl as {"model": ..., "features": [...]}.
 
 Optional calibration pass: after drafts_model.pkl has been retrained on broad
 prediction/top_performers overlap and deployed, re-run this script so the saved
-boost weights reflect any residual error (training still uses historical true
-`drafts` for min_proxy, which is the correct label for popularity).
+boost weights reflect any residual error. Training labels use `drafts` from
+`top_performers.csv`, `data/actuals/`, and `data/most_popular/` (merged, de-duped).
 """
 
 import csv
@@ -36,6 +36,7 @@ import numpy as np
 
 TOP_PERFORMERS = Path("data/top_performers.csv")
 ACTUALS_DIR = Path("data/actuals")
+MOST_POPULAR_DIR = Path("data/most_popular")
 MODEL_OUT = Path("boost_model.pkl")
 
 FEATURES = ["perf_score", "min_proxy"]
@@ -95,6 +96,30 @@ def _load_actuals() -> list[dict]:
     return rows
 
 
+def _load_most_popular() -> list[dict]:
+    """Labeled rows from data/most_popular/{date}.csv (player, draft_count, boosts)."""
+    if not MOST_POPULAR_DIR.is_dir():
+        return []
+    rows: list[dict] = []
+    for csv_path in sorted(MOST_POPULAR_DIR.glob("*.csv")):
+        date_str = csv_path.stem
+        with csv_path.open("r", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                boost = _safe_float(r.get("actual_card_boost"), 0.0)
+                rs = _safe_float(r.get("actual_rs"), 0.0)
+                drafts = _safe_float(r.get("draft_count") or r.get("drafts"), 0.0)
+                name = (r.get("player") or r.get("player_name") or "").strip()
+                if boost > 0 and rs > 0 and name:
+                    rows.append({
+                        "date": date_str,
+                        "player_name": name,
+                        "actual_rs": rs,
+                        "actual_card_boost": boost,
+                        "drafts": drafts,
+                    })
+    return rows
+
+
 def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build (X, y, weights) from top_performers + actuals with 14-day lookback.
 
@@ -102,7 +127,7 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
       1. perf_score: 14-day trailing avg RS
       2. min_proxy: 12 + 5*log1p(avg_drafts) where avg_drafts is 14-day trailing avg
     """
-    all_rows = _load_top_performers() + _load_actuals()
+    all_rows = _load_top_performers() + _load_actuals() + _load_most_popular()
     seen: set[tuple[str, str]] = set()
     unique = []
     for r in all_rows:

@@ -29,20 +29,23 @@ api/parlay_engine.py   — Safest 3-leg parlay optimizer (Z-score + correlation 
 api/rotowire.py        — RotoWire lineup scraper (free tier: availability + injury flags)
 data/model-config.json — Runtime model config (Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs (via GitHub API)
-data/top_performers.csv — **Main historical dataset** (~2 months Real Sports leaderboard: RS, card boost, drafts, value); mega union of export + actuals (`scripts/rebuild_top_performers_mega.py`)
-data/actuals/          — Git-tracked per-day leaderboard/actual CSVs (Ben uploads + backfill); date = filename; primary label slices for drafts/boost training
+data/top_performers.csv — **Main historical dataset** (Real Sports leaderboard by date); primary for Log + `_compute_audit` (`_load_player_actuals_for_date`)
+data/actuals/          — Legacy per-day CSVs; fallback when a date is absent from the mega file
+data/most_popular/     — Per-date most-drafted CSVs (`POST /api/save-most-popular` / `save-ownership` alias)
+data/most_drafted_3x/  — Optional high-boost popular slices
+data/winning_drafts/   — Optional long-format top-4 winner lineups
 data/audit/            — Git-tracked daily audit JSONs (auto-generated on save-actuals)
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
 data/slate/            — GitHub-persisted prediction cache ({date}_slate.json, {date}_games.json)
 data/locks/            — Cold-start recovery: {date}_slate.json written at lock-promotion time
 data/boosts/           — Pre-game player boosts (fixed daily constants from Real, {date}.json)
-data/skipped-uploads.json — User-selected dates to skip uploading (persists skip decisions across sessions)
+data/skipped-uploads.json — Dates where `save-actuals` no-ops (optional; `POST /api/lab/skip-uploads`)
 lgbm_model.pkl         — LightGBM model bundle {model, features} for Real Score projections
 boost_model.pkl        — LightGBM model bundle {model, features} for Card Boost prediction
 drafts_model.pkl       — LightGBM draft-count (popularity) bundle; labels from top_performers + actuals
 train_lgbm.py          — Training script (12 features, run locally or via GitHub Actions)
-train_boost_lgbm.py    — Card Boost training script (2-feature vec; labels from top_performers/actuals)
-train_drafts_lgbm.py   — Draft-count training; joins top_performers/actuals to data/predictions/ for features
+train_boost_lgbm.py    — Card Boost training (labels: top_performers + actuals + most_popular)
+train_drafts_lgbm.py   — Draft-count training; joins top_performers/actuals/most_popular to predictions for features
 scripts/verify_top_performers.py — Backtest drafts + boost vs leaderboard labels + predictions overlap
 railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
@@ -53,9 +56,9 @@ server.py              — Local dev server (uvicorn)
 
 The backend leverages two autonomous LightGBM models trained nightly via GitHub Actions:
 1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance.
-2. **`boost_model.pkl` (Card Boost Prediction)**: LightGBM on projected RS + `min_proxy` (from `drafts_model.pkl` when loaded). **Training labels** (`actual_card_boost`, `drafts`) come from the **top-performer historical corpus**—`data/top_performers.csv` (mega file) and `data/actuals/{date}.csv`—not from ESPN alone. Optional: retrain boost after `drafts_model.pkl` stabilizes so inference matches training-time `min_proxy` definition.
+2. **`boost_model.pkl` (Card Boost Prediction)**: LightGBM on projected RS + `min_proxy` (from `drafts_model.pkl` when loaded). **Training labels** (`actual_card_boost`, `drafts`) come from `data/top_performers.csv`, `data/actuals/`, and `data/most_popular/` (merged, de-duped)—not from ESPN alone. Optional: retrain boost after `drafts_model.pkl` stabilizes so inference matches training-time `min_proxy` definition.
 
-**Historical leaderboard data (~2 months)** is the **primary ground-truth dataset** for Real Sports outcomes at the app level (Real Score, card boost, draft counts, value). `data/top_performers.csv` is the canonical rolled-up copy; `data/actuals/` holds per-day files (Ben pipeline + `scripts/sync_actuals_from_top_performers.py`). `data/predictions/` supplies pre-game features for joins at train/verify time. See README **Data Layer → Primary historical dataset**.
+**Historical outcomes** for Log/audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. Developer ingestion for new rows: **`docs/HISTORICAL_DATA.md`** (parse-screenshot + `save-*` POSTs, optional **`INGEST_SECRET`**). `data/predictions/` supplies pre-game features for training joins.
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
@@ -90,8 +93,8 @@ grep: FAIR VALUE ENGINE         — project_player_fv in api/fair_value.py
 - **Predict**: Live slate optimizer (Starting 5 + Moonshot) and per-game analysis ("THE LINE UP" — single 5-player format, no card boost). "Slate-Wide | Game" sub-tabs inline at top of tab. Magic 8-ball loading animation.
 - **Line**: Line of the Day — best player prop edge (gold accent). "Over | Under" sub-tabs inline at top of tab. Bookmaker odds sync on a **game-window cron** (see `railway.toml`); pick cards show "Odds · [time] CT".
 - **Parlay**: Safest 3-leg player prop parlay (electric purple accent `--parlay: #d946ef`). Optimizes for **certainty** (floor), not edge. Uses Z-score hit probabilities, Vegas market alignment, anti-fragility filters, and strategic correlation scoring. Displays a stacked "ticket" card with combined probability, correlation multiplier, and narrative explanation. **Recent Parlays** history section below the ticket with scrollable hit/miss rows; tapping a row opens a bottom-sheet modal with the full 3-leg ticket detail and resolution (actual stats, leg-by-leg HIT/MISS). Parlay data persisted to `data/parlays/{date}.json`; lazy resolution via ESPN box scores on `/api/parlay-history`.
-- **Ben**: Plain chat interface with Claude (no quick-action buttons — user asks naturally). Teal accent. Chat is always available from the UI; upload banner still reflects pending data.
-- **Log**: Historical drill-down — date strip, game grid, graded prediction cards vs actuals (no user input — upload happens through Ben). Cards have two states: **Pending** ("Waiting for results") and **Graded** (actual RS + ESPN box score stats overlaid on projections with hit/miss coloring).
+- **Ben**: Plain chat with Claude (teal accent). Chat always available. **No in-app historical screenshot upload banner this season** — ingestion is script/curl only (`docs/HISTORICAL_DATA.md`).
+- **Log**: Historical drill-down — graded cards use actual RS from **top_performers** (or legacy actuals) plus ESPN box stats. **Pending** when neither RS labels nor ESPN stats exist for that card context.
 
 ### Sub-Nav Tabs (inline, not floating)
 Both `predictSubNav` (Slate-Wide | Game) and `lineSubNav` (Over | Under) are inline `div.predict-sub-nav` elements positioned at the top of their respective tab pages. They match the `.mode-tab` visual language exactly — same height, padding, `border-radius:11px`, Barlow Condensed 800. Active states: predict = chalk blue, Over = gold (`--line`), Under = teal (`--lab`).
@@ -117,9 +120,10 @@ grep: PARLAY TAB DOM           — index.html tab-parlay, parlayModal (logic: PA
 grep: PARLAY PAGE              — initParlayPage, fetchParlay, renderParlayTicket, PARLAY_STATE
 grep: PARLAY LIVE SSE          — /api/parlay-live-stream, _parlay_live_tick_payload, EventSource
 grep: PARLAY ENGINE MODULE     — api/parlay_engine.py (run_parlay_engine; HTTP grep: PARLAY ENGINE in index)
-grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt, _handleBenUpload
+grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt
+grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts
 grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
-grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, sync_actuals_from_top_performers, rebuild_top_performers_mega
+grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega
 grep: github_storage           — _github_get_file, _github_write_file
 grep: SLATE CACHE GITHUB       — _slate_cache_to_github, _games_cache_from_github, _bust_slate_cache
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
@@ -204,9 +208,12 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 | `/api/lab/auto-improve` | GET | **Cron** (daily 9am UTC): briefing → Haiku proposes change → backtest → auto-apply if ≥3% (requires CRON_SECRET when set) |
 | `/api/lab/chat-history` | GET | Return persisted daily Ben chat history as array `[{role, content}, ...]` |
 | `/api/lab/chat` | POST | Proxy to claude-opus-4-6 with Lab system prompt (keeps key server-side) |
-| `/api/lab/skip-uploads` | POST | Record dates the user skips uploading; persists to `data/skipped-uploads.json` |
-| `/api/lab/calibrate-boost` | GET | Fit card boost log formula params (log_a, log_b) from real ownership data in `data/ownership/`; requires ≥4 samples |
-| `/api/save-ownership` | POST | Save parsed Most Drafted data to `data/ownership/{date}.csv`; used as input for calibrate-boost |
+| `/api/lab/skip-uploads` | POST | Append date to `data/skipped-uploads.json` (save-actuals no-op); no in-app UI |
+| `/api/lab/calibrate-boost` | GET | Fit card boost params from `data/most_popular/` + legacy `data/ownership/`; requires ≥4 samples |
+| `/api/save-most-popular` | POST | Save Most Popular CSV → `data/most_popular/{date}.csv` (`INGEST_SECRET` when set) |
+| `/api/save-ownership` | POST | Alias: same as save-most-popular (writes `data/most_popular/`) |
+| `/api/save-most-drafted-3x` | POST | High-boost list → `data/most_drafted_3x/{date}.csv` |
+| `/api/save-winning-drafts` | POST | Winning lineups → `data/winning_drafts/{date}.csv` |
 | `/api/save-boosts` | POST | Save pre-game player boosts (fixed daily constants from Real). Stores to `data/boosts/{date}.json`; busts slate cache so pipeline uses Layer 0 ground-truth boosts. Body: `{date?, players: [{player_name, boost, team?, rax_cost?}]}` |
 | `/api/slate-check` | GET | Pass 2 trigger check — detects material changes since Pass 1 (injury, Vegas movement, watchlist activation). Returns `{changed, triggers, recommendation}` |
 
@@ -219,7 +226,7 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
   - **Line:** `initLinePage()` → fire-and-forget `GET /api/auto-resolve-line`, then `GET /api/line-of-the-day`, `GET /api/line-history`; live stat poll and resolve poll when applicable.
   - **Log:** `initLogPage()` → `GET /api/log/dates`, then `buildLogDateStrip()` (60-day strip); selecting a date calls `GET /api/log/get?date=X`; drill-down may call `GET /api/log/actuals-stats?date=X` (cached in `LOG._statsCache`).
   - **Parlay:** `initParlayPage()` → `GET /api/parlay` (90s timeout) + fire-and-forget `GET /api/parlay-history` (15s). Skeleton loading. Same-day cache guard (`PARLAY_LOADED_DATE`). Renders stacked 3-leg ticket card with combined probability + correlation multiplier + narrative. History section shows Recent Parlays with hit/miss pills; tapping a row opens bottom-sheet modal with full ticket detail.
-  - **Lab:** `initLabPage()` → pre-warm `GET /api/health`, then `GET /api/lab/status`; on unlock, loads briefing + config-history + line-of-the-day + slate + log for context; lock poll every 120s when locked.
+  - **Lab:** `initLabPage()` → chat UI immediately; `showLabUnlocked()` loads briefing + config-history + line + slate + log (+ parlay) in the background. `/api/lab/status` is pre-warmed from Predict and used when the locked Lab view/poll path runs (rare).
 
 ## Environment Variables (Railway)
 
@@ -227,6 +234,7 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 - `GITHUB_REPO` — e.g. `cheeksmagunda/basketball`
 - `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
 - `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day + draft pipeline enrichment)
+- `INGEST_SECRET` — (optional) When set, `POST /api/save-most-popular`, `save-ownership`, `save-most-drafted-3x`, and `save-winning-drafts` require `X-Ingest-Key` or `Authorization: Bearer <INGEST_SECRET>`. See `docs/HISTORICAL_DATA.md`.
 - `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Railway injects this via the cron commands in railway.toml. `/api/refresh` is intentionally unprotected (non-destructive, user-facing).
 - `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
 
@@ -280,25 +288,14 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - Decision history and config changes are stored in `LAB.messages` and `data/model-config.json`
 - The chat prompt includes full system context (briefing data, config state, backtest capability)
 
-### End-of-Day Upload Flow (in Ben)
-After a slate has a pending upload date (regardless of current slate lock state):
-- Upload banner with 5 buttons: **📸 Real Scores**, **🏆 Top Drafts**, **⚡ Starting 5**, **🚀 Moonshot**, **📊 Most Popular**
-- Banner shows whenever there is a `pending_upload_date`; it is no longer gated on Lab lock state
-- Banner title shows pending date + live progress counter (e.g. "Log Results — Fri, Mar 6  2/5")
-- `pending_upload_date` = most recent prediction date (excluding today) without actuals uploaded
-- **Skip All** button in top-right of banner header (meta-action on the date, not a data action)
-- `_handleBenUpload()` pipeline (per-button): `parse-screenshot → save-actuals/save-ownership → localStorage flags → (optional) audit/briefing + Ben analysis`
-- On successful upload: button flashes green for 1.5s, then **hides** (user only sees remaining uploads)
-- `_checkBannerDone()` uses **localStorage** as source of truth (not DOM disabled state, since buttons hide); fires on all 5 upload types including `most_drafted`
-- On reload: already-done buttons hidden immediately (no stale green buttons cluttering the banner)
-- Audit gate: `save-actuals` only generates `data/audit/{date}.json` when `real_scores` data is present
-- Real Scores, Top Drafts, Starting 5, Moonshot merge into actuals CSV (dedup by player name); Most Popular saves to `data/ownership/{date}.csv`
-- Heavy Ben analysis (audit summary + refreshed briefing + `labCallClaude`) only runs once **all 5** uploads are complete for a date; partial uploads are persisted but do not trigger full analysis.
-- Log page is **read-only** — no upload UI there
+### Historical data (developer-only this season)
+- No in-app Ben upload banner. Ingest new rows via **`docs/HISTORICAL_DATA.md`** (`parse-screenshot` + `save-most-popular`, `save-most-drafted-3x`, `save-winning-drafts`; optional **`INGEST_SECRET`**).
+- `/api/lab/briefing` returns **`pending_upload_date`** / **`pending_historical_date`**: most recent prediction date (excluding today) with **no rows in `data/top_performers.csv` for that date** (primary signal for “missing historical outcomes”).
+- `POST /api/save-actuals` remains for rare manual merges; audit still auto-writes when `real_scores` is present in the merged upload.
+- `/api/lab/skip-uploads` kept for API compatibility.
 
 ### Lab / Ben availability
 - Ben (Lab) chat is always available from the frontend’s perspective — the Lab tab no longer shows a locked vs unlocked state.
-- The upload banner depends only on data (`pending_upload_date` + localStorage flags), not on `/api/lab/status` or slate lock state.
 - Backend lock helpers (`_is_locked`, `_all_games_final`, `/api/lab/status`) still exist for internal decisions (e.g. slate generation, cron behavior), but they no longer gate Ben’s UI.
 
 ### Keyboard / Nav Behavior (Ben tab)
@@ -724,7 +721,7 @@ Key patterns used throughout:
 - **Backend:** A global `@app.exception_handler(Exception)` in `api/index.py` catches any unhandled exception: logs full traceback server-side and returns `JSONResponse({"error": "An unexpected error occurred"}, status_code=500)` with no stack trace or internal detail in the response.
 - **Frontend:** All `JSON.parse(localStorage.getItem(...))` usages are wrapped via `_safeParseLocalStorage(key, fallback)` so corrupted or invalid JSON does not throw. Critical DOM access uses `_el(id)` with null checks (or early return) in Line/Lab/Log/Predict and Lab lock poll so missing elements do not throw. Lab lock poll logs status fetch failures with `console.warn('[lab] Lock poll status check failed:', ...)` instead of failing silently. Lab chat uses an `AbortController` with a 60s connection timeout for the initial `/api/lab/chat` request; on timeout the user sees "Request timed out. Please try again."
 
-EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hidden context-loading messages don't suppress the upload prompt.
+Hidden `appendLabMessage(..., hidden=true)` rows are excluded from the visible chat list and from the payload sent to `/api/lab/chat`.
 
 **Health in deployment:** Use `GET /api/health` for uptime monitoring. Railway uses `healthcheckPath = "/api/health"` from railway.toml and shows health in the dashboard. Configure an external checker (e.g. UptimeRobot, Cronitor) for alerting on non-200.
 
@@ -733,7 +730,7 @@ EOD prompt check uses `LAB.messages.filter(m => !m.hidden).length === 0` — hid
 The system now uses **game completion events** instead of clock-based timeouts for slate unlocking. When the final game on a slate completes, the system:
 
 1. **Immediately detects completion** — `_all_games_final()` checks ESPN scoreboard and fires the unlock event
-2. **Triggers upload prompt** — Ben unlocks and shows the end-of-day upload banner
+2. **Unlocks Lab-facing flows** — slate no longer treated as in-progress for internal lock checks; next-day Predict data can load as games go final
 3. **Enables next slate** — New games become draftable within seconds of previous slate completion
 
 ### Cache TTL Optimization (Adaptive)
@@ -752,8 +749,8 @@ If ESPN API delays updating game status to "Final":
 ### Event-Driven Frontend Unlock
 When line polling detects games finished (`status === 'final'`):
 - Immediately triggers `/api/lab/status` check instead of waiting for next poll cycle (~1-2 min)
-- If Lab is active and unlocks, shows upload banner instantly
-- Falls back to auto-resolve cron if Ben not open
+- If Line poll runs while Lab is open, an extra `/api/lab/status` check can run (legacy paths); no upload UI
+- Falls back to auto-resolve cron if client is not open
 
 ### Lock System Priority
 The unlock logic prioritizes game completion over time windows:
@@ -792,7 +789,7 @@ Backend uses Python `ThreadPoolExecutor` for parallel processing:
 - **Retries up to 3 times** on HTTP 422 (SHA mismatch)
 - **Backoff delays**: 1s, 2s, 4s between retries
 - **Fresh SHA fetch** on each retry (not cached)
-- Protects against concurrent writes from cron + user uploads (rare but possible edge case)
+- Protects against concurrent writes from cron + overlapping API writes (rare but possible edge case)
 - Used for: predictions, actuals, line picks, config updates
 
 ### Cache TTL & Invalidation
@@ -845,40 +842,12 @@ Explicit TTLs protect against stale data while minimizing API calls:
 - Requires `finals > 0` before returning true (at least one game must have reached Final status)
 - Falls back to GitHub lock file recovery on cold start if ESPN unreachable
 
-## Skip Uploads Feature
+## Skip uploads (`/api/lab/skip-uploads`)
 
-Users can skip uploading results for specific slates without affecting model learning. This is useful for:
-- Incomplete drafts or testing scenarios
-- Days where Real Sports data is unreliable
-- Preventing outliers from skewing model retraining
+- **POST** `/api/lab/skip-uploads` with `{ "date": "YYYY-MM-DD" }` appends to `data/skipped-uploads.json` (GitHub write with retry). No in-app UI; optional for scripts.
+- **`save_actuals()`** returns early when the date is listed — avoids clobbering data for slates you intentionally ignore.
 
-### UI
-Ben upload banner includes a "Skip All" button (muted style, right-aligned):
-- Only shown when Ben is unlocked (after all games final)
-- Clicking hides the banner with fade animation
-- Updates to green (✓) after successful skip
-
-### Implementation
-- Frontend `_benSkipAllUploads()` (index.html lines 2177-2213):
-  - Stores skipped dates in `localStorage` (browser persistence)
-  - Calls `/api/lab/skip-uploads` to record server-side
-  - Hides banner immediately for better UX
-- Backend `/api/lab/skip-uploads` POST endpoint:
-  - Appends skipped date to `data/skipped-uploads.json`
-  - Exponential backoff retry for concurrent writes
-  - Returns success status
-- `save_actuals()` checks for skipped date before processing screenshot
-  - Silently skips processing if date is marked as skipped
-  - Allows users to upload later if they change their mind
-
-### Data Format
-`data/skipped-uploads.json`:
-```json
-{
-  "skipped_dates": ["2026-03-06", "2026-03-07"],
-  "last_updated": "2026-03-08T18:30:00Z"
-}
-```
+`data/skipped-uploads.json` shape: `{ "skipped_dates": ["..."], "last_skipped_at": "ISO8601" }`.
 
 ## Other Files (Extended Audit)
 
@@ -975,7 +944,7 @@ TestClaudePromptUpdated     — prompt has auto-fade, percentage edge, juice, pl
 - **TestLineCacheLogic** — when line cache is served vs bypassed (today unresolved / resolved / yesterday)
 - **TestJSSyntax** — unescaped apostrophes in single-quoted strings; presence of renderCards, renderLinePickCard, initLinePage, loadSlate, switchTab; _etToday / LINE_LOADED_DATE / _predSavedDate
 - **TestCacheDateBoundary** — cache keys consistent with ET date
-- **TestBenBannerActualsDetection** — Ben upload banner hides when today's actuals already saved
+- **TestBenBannerActualsDetection** — ACT_FIELDS / actuals-shaped CSV parsing (Log + audit inputs)
 - **TestBannerGuardJS** — banner-visibility check in showLabUnlocked() uses correct localStorage keys
 - **TestNormalizePlayer** — _normalize_player() contract: all required fields present with correct types
 - **TestNormalizeLinePick** — _normalize_line_pick() contract: all required fields, result defaults to "pending"
@@ -1029,7 +998,7 @@ Note: Tests that import `api.index` require dependencies (e.g. numpy, lightgbm).
 
 - Rate limiting uses an in-memory store with a lock (thread-safe); it does not persist across container restarts, so limits reset on redeploy.
 - `/tmp` is cleared on container restart (redeploy or crash) — caches don't survive restarts. GitHub-persisted caches (`data/slate/`, `data/locks/`) provide cold-start recovery for both predictions and lock state.
-- **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. The cron + user upload pattern is protected; conflicts are rare.
+- **Concurrent write conflicts (mitigated)**: `_github_write_file` implements exponential backoff (1s, 2s, 4s retries) to handle HTTP 422 SHA mismatches. Overlapping cron + API writes are handled; conflicts are rare.
 - Odds API: when over_pick and under_pick are the same player, `/api/refresh-line-odds` fetches once and applies the result to both (deduped).
 - Historical slate/lock cache files can create operational noise. Keep `data/slate/` and `data/locks/` pruned to active-slate artifacts.
 - Log tab shows a 60-day date strip (no "Load more"); dates with stored data are highlighted via `/api/log/dates`.
@@ -1058,7 +1027,7 @@ If slate, line, and/or log all fail to load:
 | `_checkBannerDone` uses localStorage | `index.html` | DOM disabled state unreliable after hide; localStorage is source of truth |
 | Audit gate on `real_scores` | `api/index.py` | `save-actuals` only generates audit JSON when `real_scores` rows present |
 | Dead code pruned | `index.html` | Removed empty `_renderBenEodPrompt()` function |
-| Skip All button relocated | `index.html` | Moved from button row to title bar (top-right) — semantic meta-action placement |
+| Ben historical upload banner removed | `index.html` | Ingestion is developer-only (`docs/HISTORICAL_DATA.md`); `skip-uploads` API retained |
 | Rate-limit thread-safety | `api/index.py` | `_RATE_LIMIT_LOCK` wraps read-modify-write of `_RATE_LIMIT_STORE` so concurrent requests are safe |
 | Line config wired from model-config | `api/index.py`, `api/line_engine.py` | `run_line_engine(projections, games, line_config)`; `min_confidence`, `min_edge_pct`, `recent_form_over_ratio`, `recent_form_under_ratio`, `min_edge_pts`, `min_edge_other`, `min_season_minutes`; projections enriched with real L5 before engine run |
 | Line min_season_minutes filter | `api/index.py`, `api/line_engine.py` | Filters out players whose season avg minutes fall below threshold before Claude or fallback runs. Default 20.0 min. Prevents fringe vets from qualifying on a single inflated projection day. Configurable via `line.min_season_minutes` in model-config. |
@@ -1093,7 +1062,7 @@ If slate, line, and/or log all fail to load:
 | Cache bust both dates | `api/index.py` | `auto_resolve_line` busts line cache for both `pick_date` AND `today` (differ on midnight rollover). |
 | `force-regenerate` scope=remaining unprotected | `api/index.py` | `/api/force-regenerate?scope=remaining` no longer requires CRON_SECRET — it's user-triggered from the Late Draft button. `scope=full` stays CRON_SECRET-gated. |
 | Vercel → Railway migration | `CLAUDE.md`, `api/index.py` | All Vercel references replaced with Railway equivalents (deployment model, env vars, cron schedule, URLs, watchPatterns). `VERCEL_GIT_COMMIT_SHA` → `RAILWAY_GIT_COMMIT_SHA` at all call sites. `vercel.json` noted as legacy/unused. |
-| Log tab ESPN stats auto-fetch | `index.html` | Removed `has_actuals` gate — ESPN box score stats now auto-fetch for any past date without requiring RS screenshot upload. "Waiting for results" pill only shows when ESPN stats also unavailable. New partial-graded card state: shows actual game stats (PTS/REB/AST/STL/BLK) without hit/miss coloring until RS is uploaded. |
+| Log tab ESPN stats auto-fetch | `index.html` | ESPN box scores fetch for past dates without gating on RS labels. Partial-graded state shows box stats without hit/miss coloring until Log has actual RS (from top_performers / legacy actuals). |
 | Per-game card boost pill removed | `api/index.py` | `_build_game_lineups` now zeroes `est_mult` in returned player data (not just MILP input) so the `+X.Xx card` pill never renders on per-game (THE LINE UP) cards where card boost is irrelevant. |
 | Over model tightening | `api/line_engine.py`, `api/index.py`, `data/model-config.json` | Four over-specific changes (under model untouched): (1) `stat_floors.rebounds` 2.0→5.5 — only legit rotation bigs qualify for rebounds picks. (2) `min_edge_other_over: 2.5` (new config key) — over picks for rebounds/assists need a 2.5+ edge; under picks keep 1.5. (3) `recent_form_over_ratio` 1.08→1.15 — require 15% recent spike to unlock +12 confidence bonus. (4) Claude AVOID clause updated — rebounds/assists overs require a catalyst (cascade, opp-B2B, or 230+ total). Tests added for `min_edge_other_over` asymmetry. |
 | Odds cron schedule fix | `railway.toml` | Same as above (3h → hourly). **Superseded:** game-window-only schedule in current `railway.toml`. |

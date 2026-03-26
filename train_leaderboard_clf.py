@@ -1,7 +1,7 @@
 """
 Train binary leaderboard classifier: P(player appears on daily top-performer leaderboard).
 
-v62: Trained on data/top_performers.csv (positive) vs data/actuals/*.csv non-leaderboard (negative).
+v62: Positives from data/top_performers.csv; negatives from players in data/actuals/*.csv (or synced per-day files) who are not top-performer rows for that date.
 Features are all available at pre-game prediction time.
 
 Output: leaderboard_clf.pkl — loaded by api/index.py for core pool scoring.

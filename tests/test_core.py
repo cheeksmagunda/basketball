@@ -363,21 +363,11 @@ class TestCacheDateBoundary:
 
 
 # ---------------------------------------------------------------------------
-# 5. Ben upload-banner actuals detection
+# 5. Log actuals rows (ACT_FIELDS / top_performers-shaped data)
 # ---------------------------------------------------------------------------
 
 class TestBenBannerActualsDetection:
-    """
-    The Ben upload banner must hide when today's actuals are already saved.
-
-    Root cause of the original bug: the banner checked only
-    briefing.latest_slate.date, which requires *paired* dates
-    (predictions + actuals both committed).  If the dedup guard
-    skipped the predictions commit, actuals existed but the briefing
-    didn't see them — banner stayed visible.
-
-    Fix: also check /api/log/get has_actuals directly.
-    """
+    """Regression tests for parsing actuals-shaped rows used by Log / audit (CSV or mega rollup)."""
 
     _ACT_CSV = (
         "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
@@ -421,30 +411,6 @@ class TestBenBannerActualsDetection:
         assert bool(actuals) is True
         assert bool(predictions) is False
 
-    def test_briefing_paired_logic_misses_actuals_without_predictions(self):
-        """
-        Reproduce the exact bug: briefing only surfaces today when BOTH
-        predictions and actuals are committed.  Actuals-only → latest_slate
-        date is NOT today → banner incorrectly stays visible.
-        """
-        from api.index import _et_date
-        today = _et_date().isoformat()
-
-        # Actuals exist for today; predictions were NOT committed (dedup guard)
-        act_dates  = {today}
-        pred_names = []           # empty — no predictions CSV on GitHub
-
-        paired = [
-            n[:-4] for n in sorted(pred_names, reverse=True)
-            if n.endswith(".csv") and n[:-4] in act_dates
-        ]
-
-        latest_slate_date = paired[0] if paired else None
-        assert latest_slate_date != today, (
-            "Without a predictions CSV the briefing cannot detect today's actuals — "
-            "confirming the bug. The fix is to also check /api/log/get has_actuals."
-        )
-
     def test_parse_csv_field_mapping(self):
         """Actuals CSV rows must map player_name and actual_rs correctly."""
         from api.index import _parse_csv, ACT_FIELDS
@@ -475,19 +441,63 @@ class TestBenBannerActualsDetection:
         assert rows[0]["source"]      == ""   # padded empty
 
 
+class TestLoadPlayerActualsForDate:
+    """_load_player_actuals_for_date: mega top_performers primary, legacy actuals fallback."""
+
+    def test_prefers_mega_top_performers(self):
+        from unittest.mock import patch
+        from api.index import _load_player_actuals_for_date
+
+        tp = (
+            "date,player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+            "2026-01-01,A Player,4.0,1.1,100,,,highest_value\n"
+        )
+
+        def se(path):
+            if "top_performers.csv" in path:
+                return tp, None
+            if "actuals" in path:
+                return "SHOULD_NOT_USE", None
+            return None, None
+
+        with patch("api.index._github_get_file", side_effect=se):
+            rows = _load_player_actuals_for_date("2026-01-01")
+        assert len(rows) == 1
+        assert rows[0]["player_name"] == "A Player"
+        assert rows[0]["source"] == "highest_value"
+
+    def test_fallback_legacy_actuals_when_mega_empty_for_date(self):
+        from unittest.mock import patch
+        from api.index import _load_player_actuals_for_date
+
+        tp = (
+            "date,player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+            "2026-01-02,Other,4.0,1.1,100,,,highest_value\n"
+        )
+        act = (
+            "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+            "B Player,3.0,0.5,50,,,real_scores\n"
+        )
+
+        def se(path):
+            if "top_performers.csv" in path:
+                return tp, None
+            if "actuals/2026-01-01.csv" in path:
+                return act, None
+            return None, None
+
+        with patch("api.index._github_get_file", side_effect=se):
+            rows = _load_player_actuals_for_date("2026-01-01")
+        assert len(rows) == 1
+        assert rows[0]["player_name"] == "B Player"
+
+
 # ---------------------------------------------------------------------------
-# 6. JS banner-guard regression — both detection signals must stay present
+# 6. Ben tab — no upload banner; context fetch from briefing + log
 # ---------------------------------------------------------------------------
 
 class TestBannerGuardJS:
-    """
-    The frontend banner-visibility check in showLabUnlocked() must use:
-      - LAB.briefing?.pending_upload_date  (pending slate date from backend)
-      - localStorage keyed by pending date (not _etToday())
-
-    pending_upload_date is the last predictions-only date with no actuals yet,
-    so uploads always target the correct slate date even when run next-morning.
-    """
+    """Historical screenshot upload UI removed; Ben still loads briefing and log context."""
 
     @pytest.fixture(scope="class")
     def script_source(self):
@@ -497,28 +507,26 @@ class TestBannerGuardJS:
         assert start != -1 and end != -1, "No <script> block found in index.html"
         return html[start:end]
 
-    def test_banner_check_uses_has_actuals(self, script_source):
-        """has_actuals is still used in the log rendering / other contexts."""
+    def test_has_actuals_in_log_flow(self, script_source):
         assert "has_actuals" in script_source, (
-            "Missing has_actuals reference — likely indicates log rendering was removed"
+            "Missing has_actuals — log rendering likely broken"
         )
 
-    def test_banner_check_uses_pending_upload_date(self, script_source):
-        """Banner visibility must use pending_upload_date from briefing."""
-        assert "pending_upload_date" in script_source, (
-            "Missing pending_upload_date — banner will use wrong date for localStorage key "
-            "and save-actuals, causing date mismatch between predictions and actuals"
-        )
+    def test_no_upload_banner_dom_id(self, script_source):
+        assert "benUploadBanner" not in script_source
+
+    def test_no_handle_ben_upload(self, script_source):
+        assert "_handleBenUpload" not in script_source
 
     def test_log_get_fetched_in_showlabunlocked(self, script_source):
-        """/api/log/get must be called from showLabUnlocked to detect today's actuals."""
         assert "/api/log/get" in script_source, (
-            "/api/log/get not called from showLabUnlocked — "
-            "banner detection will miss unpaired actuals"
+            "/api/log/get not called from showLabUnlocked"
         )
 
+    def test_briefing_fetched_in_showlabunlocked(self, script_source):
+        assert "/api/lab/briefing" in script_source
+
     def test_show_lab_unlocked_function_present(self, script_source):
-        """showLabUnlocked function must exist (catches accidental deletion)."""
         assert "showLabUnlocked" in script_source
 
 
@@ -1440,10 +1448,12 @@ class TestFrontendAuditFixes:
         )
 
     def test_biggest_misses_field_guards(self, script_source):
-        """M2: biggest_misses map must have field guards to prevent 'undefined' renders."""
-        assert "m.player || '?'" in script_source, (
-            "M2 regression: m.player accessed without fallback"
-        )
+        """M2: if JS maps over biggest_misses, require field guards (was Ben upload analysis)."""
+        import re
+        if re.search(r"biggest_misses\s*\.\s*(map|forEach)", script_source):
+            assert "m.player || '?'" in script_source, (
+                "M2 regression: m.player accessed without fallback"
+            )
 
 
 class TestParlayFrontendErrorState:

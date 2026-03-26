@@ -33,7 +33,7 @@
 |------|----------|
 | Predict tab | `SLATE.locked`, `SLATE.all_complete`; clientLocked fallback (5 min before first game); "Picks Locked" chip; savePredictions only when `SLATE.locked`. |
 | Game analysis | `PICKS_DATA.locked`; badge "Picks locked — showing final predictions". |
-| Ben tab | `initLabPage()` calls `/api/lab/status`; on failure shows "Unable to reach server — defaulting to locked" + Retry. Locked view hides upload banner; polling every 120s when locked. |
+| Ben tab | `initLabPage()` shows chat immediately; `showLabUnlocked()` loads briefing/context in background. Locked Lab view (if shown) polls `/api/lab/status` every 120s — no upload UI. |
 | Line tab | Odds refresh disabled when slate locked (backend). |
 
 ### 1.4 Issues found (and fixed)

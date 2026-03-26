@@ -25,13 +25,16 @@
 | `/api/lab/chat` | POST | `messages`, `system` | None (Anthropic API) |
 | `/api/lab/skip-uploads` | POST | `date` | `data/skipped-uploads.json` |
 | `/api/save-boosts` | POST | `date`, `players[]` | `data/boosts/{date}.json` |
-| `/api/save-ownership` | POST | `date`, `players[]` | `data/ownership/{date}.csv` |
+| `/api/save-ownership` | POST | `date`, `players[]` | `data/most_popular/{date}.csv` (alias; optional `INGEST_SECRET`) |
+| `/api/save-most-popular` | POST | same | same |
+| `/api/save-most-drafted-3x` | POST | same + optional `min_boost` | `data/most_drafted_3x/{date}.csv` |
+| `/api/save-winning-drafts` | POST | `date`, `rows`/`players` | `data/winning_drafts/{date}.csv` |
 
 **Input validation:** Lab config keys are restricted to alphanumeric dot-paths (regex in `lab_update_config`). Ben system prompt restricts file writes to `data/model-config.json`. Rate limiting on `parse-screenshot` (5/min), `lab/chat` (20/min), `line-of-the-day` (10/min) via thread-safe `_check_rate_limit()`.
 
 ### 1.2 Secrets and sensitive data
 
-- **Confirmed:** `GITHUB_TOKEN`, `GITHUB_REPO`, `ANTHROPIC_API_KEY`, `ODDS_API_KEY` are never echoed in JSON responses. They are used only in server-side requests.
+- **Confirmed:** `GITHUB_TOKEN`, `GITHUB_REPO`, `ANTHROPIC_API_KEY`, `ODDS_API_KEY` are never echoed in JSON responses. They are used only in server-side requests. Optional `INGEST_SECRET` gates historical `save-*` writers when set.
 - **Finding (addressed):** GitHub write failures now return generic "GitHub write failed" to the client and log full detail server-side only.
 - **Startup:** Missing env vars are logged with names only (`[WARN] Missing env vars: [...]`), not values. Safe.
 
@@ -39,7 +42,7 @@
 
 1. **Cron authentication (implemented):** `CRON_SECRET` env is checked on `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`, `/api/mae-drift-check`, and `/api/force-regenerate?scope=full`. Railway cron jobs send it as `Authorization: Bearer <CRON_SECRET>`. `/api/refresh` and `/api/refresh-line-odds` are intentionally unprotected.
 2. **Request size limits:** Enforce max body size for `parse_screenshot` (e.g. 10MB already documented) and `lab_chat` (e.g. 100KB for JSON body) to avoid abuse.
-3. **Keep in Known Limitations:** Upload screenshot type (Real Scores vs Top Drafts etc.) remains client-trust only unless server-side content checks are added.
+3. **Known limitation:** `parse-screenshot` trusts `screenshot_type` and image content — validate out-of-band for untrusted clients. Prefer `INGEST_SECRET` on `save-*` writers in production.
 
 ---
 
@@ -54,7 +57,7 @@
 | runAnalysis | `/api/picks` | 15s | OK |
 | savePredictions | `/api/save-predictions` | (default 10s) | OK |
 | log dates/get | `/api/log/dates`, `/api/log/get` | 10s | OK |
-| Ben skip-uploads | `/api/lab/skip-uploads` | default | OK |
+| skip-uploads (scripts) | `/api/lab/skip-uploads` | default | OK |
 | parse-screenshot | `/api/parse-screenshot` | 30s | OK |
 | save-actuals, audit/get | `/api/save-actuals`, `/api/audit/get` | 10s | OK |
 | initLinePage | `/api/auto-resolve-line` (fire-and-forget) | **none** | Background; no timeout by design. |

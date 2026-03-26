@@ -1,7 +1,8 @@
 """
 Calibrate DFS weights by regressing actual RS against predicted stat lines.
 
-Uses stored predictions (pts/reb/ast/stl/blk) matched against actual RS from data/actuals/.
+Uses stored predictions (pts/reb/ast/stl/blk) matched against actual RS from data/top_performers.csv
+(per date) with fallback to data/actuals/{date}.csv when the mega file has no rows for that date.
 Outputs optimal DFS weights that minimize RS prediction error.
 
 Usage:
@@ -13,6 +14,7 @@ from pathlib import Path
 
 PRED_DIR = Path(__file__).parent.parent / "data" / "predictions"
 ACT_DIR = Path(__file__).parent.parent / "data" / "actuals"
+TOP_PERFORMERS = Path(__file__).parent.parent / "data" / "top_performers.csv"
 
 
 def sf(v):
@@ -22,23 +24,43 @@ def sf(v):
         return 0.0
 
 
+def _actual_rs_map_for_date(date_str: str) -> dict:
+    """player_name.lower() -> actual_rs for one slate date."""
+    act_map = {}
+    if TOP_PERFORMERS.is_file():
+        with open(TOP_PERFORMERS, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if (row.get("date") or "").strip() != date_str:
+                    continue
+                name = (row.get("player_name") or "").strip()
+                if not name:
+                    continue
+                act_map[name.lower()] = sf(row.get("actual_rs", 0))
+    if act_map:
+        return act_map
+    per_day = ACT_DIR / f"{date_str}.csv"
+    if not per_day.is_file():
+        return {}
+    with open(per_day, encoding="utf-8") as f:
+        acts = list(csv.DictReader(f))
+    for a in acts:
+        nm = (a.get("player_name") or "").strip().lower()
+        if nm:
+            act_map[nm] = sf(a.get("actual_rs", 0))
+    return act_map
+
+
 def load_matched_data():
-    """Load matched prediction stats + actual RS for all dates."""
-    dates = sorted(
-        set(f.stem for f in PRED_DIR.glob("*.csv"))
-        & set(f.stem for f in ACT_DIR.glob("*.csv"))
-    )
+    """Load matched prediction stats + actual RS for all prediction dates that have labels."""
+    pred_dates = sorted(f.stem for f in PRED_DIR.glob("*.csv"))
+    dates = [d for d in pred_dates if _actual_rs_map_for_date(d)]
 
     rows = []
     for d in dates:
         with open(PRED_DIR / f"{d}.csv") as f:
             preds = list(csv.DictReader(f))
-        with open(ACT_DIR / f"{d}.csv") as f:
-            acts = list(csv.DictReader(f))
 
-        act_map = {}
-        for a in acts:
-            act_map[a["player_name"].lower()] = sf(a.get("actual_rs", 0))
+        act_map = _actual_rs_map_for_date(d)
 
         # Deduplicate: keep highest predicted RS per player per date
         seen = {}

@@ -31,15 +31,18 @@ lgbm_model.pkl         — LightGBM model bundle {model, features}
 train_lgbm.py          — Training script (12 features)
 data/model-config.json — Runtime model config (Ben/Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs
-data/top_performers.csv — **Main historical dataset** (~2 months leaderboard outcomes: RS, card boost, drafts, value); see Data Layer below
-data/actuals/          — Git-tracked per-day slices of that leaderboard data (+ Ben uploads); same schema, date = filename
+data/top_performers.csv — **Main historical dataset** (leaderboard outcomes by date); primary source for Log + audit
+data/actuals/          — Legacy per-day CSVs (same schema as rollup); optional fallback when a date is missing from the mega file
+data/most_popular/     — Per-date most-drafted / popularity CSVs (developer ingest; `save-ownership` writes here)
+data/most_drafted_3x/  — High-boost popular sub-list per date (optional)
+data/winning_drafts/   — Long-format top-4 winner lineups per date (optional)
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
 data/parlays/          — Git-tracked daily parlay JSON (ticket + lazy resolution)
 data/slate/            — GitHub-persisted prediction cache (current slate + games + bust marker)
 data/locks/            — Cold-start lock recovery: {date}_slate.json at lock time (active slate only)
 data/boosts/           — Pre-game boost uploads (Layer 0 ground-truth boosts, {date}.json)
-data/skipped-uploads.json — User-selected dates to skip uploading
+data/skipped-uploads.json — Optional list of dates where save-actuals no-ops (`POST /api/lab/skip-uploads`)
 railway.toml           — Railway config (crons, health check, watchPatterns)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
@@ -52,8 +55,8 @@ server.py              — Local dev server (uvicorn)
 | **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
 | **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh on a game-window cron. Resolved picks also in Recent Picks history |
 | **Parlay** | Safest 3-leg player prop parlay (certainty-focused). Ticket + Recent Parlays history with modal resolution |
-| **Ben** | Chat interface (Claude Opus). Always available. End-of-day upload flow (banner shows when pending upload date exists) |
-| **Log** | Historical drill-down — graded cards (Actual RS + ESPN box scores vs projections, hit/miss coloring). Pending state before uploads |
+| **Ben** | Chat interface (Claude Opus). Always available. Historical screenshot ingestion is **developer-only** this season (see [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md)) |
+| **Log** | Historical drill-down — graded cards (actual RS from `top_performers` / legacy actuals + ESPN box scores vs projections) |
 
 ## Dual-Engine Architecture
 
@@ -114,7 +117,7 @@ Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku whe
 
 ## Ben (Lab) Interface
 
-Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefing, config, slate, line, log data). After all games go final, Ben auto-prompts for screenshot uploads (Real Scores + Top Drafts) and computes hindsight optimal lineup.
+Plain chat powered by `claude-opus-4-6`. Context is auto-loaded in the background (briefing, config, slate, line, log, parlay when available). **Historical leaderboard CSVs are not uploaded from the app** this season — use [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md) (curl/scripts). `POST /api/hindsight` remains available for optimal hindsight lineups when you have actual RS inputs.
 
 **Config updates**: Ben can propose model parameter changes, run backtests, and apply changes to `data/model-config.json` via the GitHub Contents API — no redeploy needed.
 
@@ -129,7 +132,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/picks?gameId=X` | GET | Per-game predictions |
 | `/api/games` | GET | Today's games with lock status |
 | `/api/save-predictions` | POST | Save cached predictions to GitHub CSV (server-side lock guard — rejects pre-lock) |
-| `/api/parse-screenshot` | POST | Upload Real Sports screenshot; Claude Haiku parses it (`actuals`, `most_drafted`, or `boosts`) |
+| `/api/parse-screenshot` | POST | Claude Haiku vision OCR — `actuals` (default), `most_drafted` / `most_popular`, `most_drafted_high_boost`, `top_performers`, `winning_drafts` (see [HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md); `boosts` rejected) |
 | `/api/save-boosts` | POST | Persist pre-game boosts to `data/boosts/{date}.json` (Layer 0) and bust slate cache |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV + auto-generate audit JSON |
 | `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc, top misses) |
@@ -172,9 +175,12 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded on open (briefin
 | `/api/lab/rollback` | POST | Note rollback to target version (new version number) |
 | `/api/lab/backtest` | POST | Replay historical slates with proposed params, compare MAE |
 | `/api/lab/auto-improve` | GET | Cron: auto-tune model (requires CRON_SECRET when set) |
-| `/api/lab/skip-uploads` | POST | Record dates the user skips uploading |
-| `/api/save-ownership` | POST | Save parsed Most Drafted data to `data/ownership/{date}.csv` |
-| `/api/lab/calibrate-boost` | GET | Fit card boost log formula params from real ownership data (≥4 samples) |
+| `/api/lab/skip-uploads` | POST | Record skipped dates (API compat; optional for scripts) |
+| `/api/save-most-popular` | POST | Save Most Popular CSV → `data/most_popular/{date}.csv` (`INGEST_SECRET` when set) |
+| `/api/save-ownership` | POST | Alias of save-most-popular (writes `data/most_popular/`, not `data/ownership/`) |
+| `/api/save-most-drafted-3x` | POST | High-boost list → `data/most_drafted_3x/{date}.csv` |
+| `/api/save-winning-drafts` | POST | Long-format winners → `data/winning_drafts/{date}.csv` |
+| `/api/lab/calibrate-boost` | GET | Fit card boost params from `data/most_popular/` + legacy `data/ownership/` (≥4 samples) |
 
 ## Cron Schedule (UTC)
 
@@ -212,15 +218,9 @@ Source of truth: [`railway.toml`](railway.toml). When `CRON_SECRET` is set, prot
 
 **ESPN API Fallback**: If game status not updated for 4+ hours, mark as final. Requires at least one game in Final status before unlocking (safety against outages).
 
-## Skip Uploads Feature
+## Skip uploads (`/api/lab/skip-uploads`)
 
-Users can skip uploading results for specific slates without affecting model learning.
-
-**UI**: Ben upload banner includes "Skip All" button (muted, right-aligned). Clicking hides banner and records the skip server-side.
-
-**Data**: `data/skipped-uploads.json` tracks skipped dates. `save-actuals` silently skips processing for marked dates. Users can upload later if they change their mind.
-
-**Why skip?**: Incomplete drafts, test scenarios, or unreliable Real Sports data. Prevents outliers from skewing model retraining.
+Optional **API-only** hook: `POST /api/lab/skip-uploads` with `{ "date": "YYYY-MM-DD" }` appends to `data/skipped-uploads.json`. **`save-actuals`** still checks this list and no-ops for skipped dates (useful for scripts or manual merges). There is **no in-app button** for this anymore.
 
 ## Environment Variables
 
@@ -252,7 +252,7 @@ All secrets and config live in **environment variables only** — never hardcode
 
 Retrained nightly via GitHub Actions (`retrain-model.yml`). Manual retrain: `python train_lgbm.py`.
 
-**Draft popularity + card boost:** `drafts_model.pkl` (`train_drafts_lgbm.py`) and `boost_model.pkl` (`train_boost_lgbm.py`) are trained on labels from the **top-performer historical dataset** (`data/top_performers.csv` + `data/actuals/`), joined to `data/predictions/` for features—see **Primary historical dataset** under Data Layer.
+**Draft popularity + card boost:** `drafts_model.pkl` (`train_drafts_lgbm.py`) and `boost_model.pkl` (`train_boost_lgbm.py`) use labels from **`data/top_performers.csv`**, **`data/actuals/`**, and **`data/most_popular/`**, joined to `data/predictions/` for features—see **Primary historical dataset** below.
 
 ## Data Layer
 
@@ -264,13 +264,14 @@ Real Sports **leaderboard outcomes** (who won the value contest, how many drafts
 
 | Artifact | Role |
 |----------|------|
-| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player) with `actual_rs`, `actual_card_boost`, `drafts`, `total_value`, `source`, etc. Rebuilt as the union of itself and every `data/actuals/*.csv` via `scripts/rebuild_top_performers_mega.py` so nothing is dropped between per-day files and the rollup. |
-| **`data/actuals/{date}.csv`** | Per-slate CSVs (Ben flow + backfilled dates). Same columns as the mega file minus `date` (encoded in the filename). `scripts/sync_actuals_from_top_performers.py` adds missing days from the export without overwriting uploads. |
-| **`data/predictions/{date}.csv`** | Pre-game projections used to **join features** when training `drafts_model.pkl` / verifying (`scripts/verify_top_performers.py`); not the label source for popularity. |
+| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player). **Log** and **`_compute_audit`** read this first for each date. Rebuild via `scripts/rebuild_top_performers_mega.py` / sync scripts as needed. |
+| **`data/actuals/{date}.csv`** | Legacy per-day CSVs (same columns as mega minus `date`). Used when a date has **no** rows in the mega file, and for older tooling that still expects per-day files. |
+| **`data/most_popular/{date}.csv`** | Most-drafted / popularity snapshots (`save-most-popular` / `save-ownership` alias). Training + `calibrate-boost`. |
+| **`data/predictions/{date}.csv`** | Pre-game projections — feature source for drafts/boost training and `scripts/verify_top_performers.py`. |
 
 ### Other tracked data
 
-(Predictions + per-day actuals also appear in the table above; Ben’s **save-actuals** flow merges into `data/actuals/` for Log grading.)
+Optional: **`data/most_drafted_3x/`**, **`data/winning_drafts/`** — see [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md). **`POST /api/save-actuals`** still merges into `data/actuals/` when used (e.g. manual admin).
 
 - `data/audit/{date}.json` — pre-computed accuracy audit
 - `data/lines/{date}.csv` — primary pick for result tracking/resolve
@@ -280,7 +281,7 @@ Real Sports **leaderboard outcomes** (who won the value contest, how many drafts
 - `data/slate/{date}_games.json` — GitHub-persisted per-game projections (keyed by gameId); also hydrates cold `/tmp` for Line/Parlay
 - `data/locks/{date}_slate.json` — cold-start lock recovery (written at lock-promotion time)
 - `data/model-config.json` — runtime model parameters (5-min cache, fallback to defaults)
-- `data/skipped-uploads.json` — user-selected dates to skip uploading (persists skip decisions)
+- `data/skipped-uploads.json` — dates where `save-actuals` should no-op (optional; usually set via `POST /api/lab/skip-uploads`)
 
 ## Local Development
 
@@ -291,6 +292,8 @@ uvicorn server:app --reload
 # open http://localhost:8000
 ```
 
+**Historical CSV ingest (curl/scripts):** [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md) — `top_performers`, `most_popular`, `most_drafted_3x`, `winning_drafts`, optional `INGEST_SECRET`.
+
 **Find code fast:** [CLAUDE.md — Codebase Navigation (grep tags)](CLAUDE.md#codebase-navigation-grep-tags) lists search anchors for Predict / Line / Parlay (DOM + JS + API), backend modules, dev server, and training scripts.
 
 ## Testing
@@ -299,6 +302,7 @@ Unit tests cover lock logic, audit computation, GitHub retries, cache TTLs, line
 
 ```bash
 python3 -m pytest tests/ -v
+python3 scripts/verify_historical_datasets.py   # counts + prediction overlap (add --strict for CI)
 ```
 
 - **tests/test_fixes.py** — Backend: `_safe_float`, `_is_locked`, audit, GitHub retries, slate/cache, line, parlay-related guards.

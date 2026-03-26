@@ -31,8 +31,8 @@ All blocking API calls use `fetchWithTimeout(url, options, timeoutMs)`. Default 
 | Lab | `/api/lab/update-config` | 15s | POST |
 | Lab | `/api/lab/backtest` | 120s | POST; long-running |
 | Lab | `/api/lab/skip-uploads` | 10s default | POST |
-| Ben upload | `/api/parse-screenshot` | 30s | Claude vision |
-| Ben upload | `/api/save-actuals`, `/api/save-ownership` | 10s default | POST |
+| Dev ingest (optional) | `/api/parse-screenshot` | 30s | Claude vision OCR |
+| Dev ingest (optional) | `/api/save-actuals`, `/api/save-most-popular`, … | 10s default | POST; `INGEST_SECRET` when set |
 | Event (game final) | `/api/lab/status` | 10s | After line poll detects final |
 | Event (rotation) | `/api/auto-resolve-line` | 15s | When used from frontend |
 
