@@ -1279,9 +1279,10 @@ class TestMoonshotPtsFloor:
         with open("data/model-config.json") as f:
             cfg = json.load(f)
         assert cfg["scoring_thresholds"]["min_pts_projection"] == 5.0  # v57: 6.0→5.0, let high-boost role players through
-        # moonshot floor raised to 6.0 in v44 (was 3.0) — bench players need real production
-        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 5.0, \
-            f"moonshot pts floor should be >= 5.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
+        # v67 audit: moonshot floor lowered back to 3.0 — high-boost bench players ARE winners
+        # (62% of winning lineup slots have boost>=2.5, filtered out by 6.0 floor)
+        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 3.0, \
+            f"moonshot pts floor should be >= 3.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
 
     def test_project_player_uses_moonshot_floor(self):
         """project_player should use the lower moonshot floor (4.0) not 7.0."""
@@ -1963,12 +1964,12 @@ class TestPerGameFloor:
         assert "scoring_thresholds.min_game_pts" in src, \
             "Per-game pool must use scoring_thresholds.min_game_pts config key"
 
-    def test_chalk_season_min_floor_is_18(self):
-        """v62: chalk_season_min_floor 20→18 — optimal lineup min RS players avg 18-22 min."""
+    def test_chalk_season_min_floor_is_14(self):
+        """v67 audit: chalk_season_min_floor 18→14 — winning lineup players avg 12-18 min."""
         cfg = self._local_cfg()
         floor = cfg.get("projection", {}).get("chalk_season_min_floor")
-        assert floor == pytest.approx(18.0), \
-            f"chalk_season_min_floor should be 18.0, got {floor}"
+        assert floor == pytest.approx(14.0), \
+            f"chalk_season_min_floor should be 14.0, got {floor}"
 
     def test_den_not_in_big_market_teams(self):
         """DEN must be removed from big_market_teams — DEN role players are low-ownership."""
@@ -2267,10 +2268,12 @@ class TestChalkMilpRsFocusHigh:
         assert "chalk_milp_boost_neutral" in src
 
     def test_config_value(self):
-        """v62: Production config should have RS-dominant rs_focus (0.5-0.7)."""
+        """v67 audit: Production config should have boost-weighted rs_focus (0.2-0.5).
+        Data: 62% of winning slots have boost>=2.5. At 0.65, boost gap compressed to 0.875.
+        At 0.35, boost gap is 1.5 — lets MILP correctly assign high-boost to high slots."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.5 <= val <= 0.7, f"chalk_milp_rs_focus should be 0.5-0.7 (v62 RS-first); got {val}"
+        assert 0.2 <= val <= 0.5, f"chalk_milp_rs_focus should be 0.2-0.5 (v67 boost-weighted); got {val}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -2613,8 +2616,8 @@ class TestHighBoostRolePathway:
         hbr = cfg.get("moonshot", {}).get("high_boost_role", {})
         assert hbr.get("enabled") is True, "high_boost_role should be enabled"
         assert hbr.get("min_boost", 0) >= 1.5, "min_boost should be high enough to gate quality"
-        assert hbr.get("min_recent_min", 0) >= 12.0, "min_recent_min should require real minutes"
-        assert hbr.get("min_pred_min", 0) >= 12.0, "min_pred_min should require real minutes today"
+        assert hbr.get("min_recent_min", 0) >= 10.0, "min_recent_min should require real minutes"
+        assert hbr.get("min_pred_min", 0) >= 10.0, "min_pred_min should require real minutes today"
 
     def test_chalk_config_present(self):
         """model-config.json must have chalk HBR keys under projection."""
@@ -2624,7 +2627,7 @@ class TestHighBoostRolePathway:
         assert proj.get("chalk_hbr_min_boost", 0) >= proj.get("moonshot", {}).get(
             "high_boost_role", {}).get("min_boost", 0) or True, "chalk needs boost >= moonshot"
         assert proj.get("chalk_hbr_min_boost", 0) >= 2.0, "chalk boost threshold should be >= 2.0"
-        assert proj.get("chalk_hbr_min_recent_min", 0) >= 14.0, "chalk requires more recent minutes"
+        assert proj.get("chalk_hbr_min_recent_min", 0) >= 12.0, "chalk requires more recent minutes"
 
     def test_chalk_threshold_stricter_than_moonshot(self):
         """Chalk HBR thresholds must be stricter than moonshot (reliability vs ceiling)."""
