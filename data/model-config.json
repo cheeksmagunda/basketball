@@ -1,7 +1,7 @@
 {
-  "version": 63,
-  "updated_at": "2026-03-26T00:00:00Z",
-  "updated_by": "v63-audit-critical-fixes",
+  "version": 64,
+  "updated_at": "2026-03-26T12:00:00Z",
+  "updated_by": "v64-fix-slate-preload-config-gaps",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -323,6 +323,41 @@
       "rotation_squeeze_bench_ceiling": 22.0,
       "b2b_guard_min_season_pts": 12.0
     }
+  },
+  "parlay": {
+    "max_spread": 8.5,
+    "max_minutes_cv": 0.30,
+    "min_blended_conf": 0.52,
+    "min_season_minutes": 20.0,
+    "min_games_played": 10,
+    "juice_threshold": -105,
+    "max_candidates_for_combinations": 30,
+    "positive_correlation_boost": 1.08,
+    "shootout_correlation_boost": 1.05,
+    "min_line_floors": {
+      "points": 10.5,
+      "rebounds": 3.5,
+      "assists": 2.5
+    },
+    "market_match_juice_threshold": -140,
+    "market_match_juice_relaxed": -120,
+    "market_match_min_conf": 0.58,
+    "correlated_pair_max_spread": 5.0,
+    "parlay_gamelog_pool_cap": 100,
+    "min_game_total": 225.5,
+    "market_match_max_cv": 0.25,
+    "auto_fade": {
+      "switch_heavy_teams": ["BOS", "CLE", "MIN", "OKC"],
+      "rebound_fade_teams": ["OKC", "CLE", "MIN", "HOU", "BOS"],
+      "b2b_correlated_pair_penalty": 0.75,
+      "perimeter_scorer_reb_floor": 4.0,
+      "fake_juice_recent_threshold": 0.80,
+      "fake_juice_season_ceiling": 0.55
+    },
+    "pnr_rim_boost": 1.20,
+    "pace_boost_total_threshold": 232.0,
+    "pace_boost": 1.06,
+    "rest_advantage_boost": 1.08
   },
   "moonshot": {
     "min_minutes_floor": 16,

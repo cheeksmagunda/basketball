@@ -986,7 +986,7 @@ _CONFIG_DEFAULTS = {
     "line": {
         "min_confidence": 50,
         "min_edge_pct": 3.0,
-        "recent_form_over_ratio": 1.15,
+        "recent_form_over_ratio": 1.07,
         "recent_form_under_ratio": 0.92,
         "min_edge_pts": 2.0,
         "min_edge_other": 1.5,
@@ -994,6 +994,18 @@ _CONFIG_DEFAULTS = {
         "min_season_minutes": 20.0,
         # stat_floors must match line_engine._STAT_META defaults — used when GitHub is unreachable
         "stat_floors": {"points": 6.0, "rebounds": 5.5, "assists": 1.5},
+        "stat_floors_under": {"points": 4.0, "rebounds": 3.5, "assists": 1.0},
+        "juice_under_threshold": -130,
+        "pct_edge_rebounds": 18.0,
+        "pct_edge_assists": 18.0,
+        "auto_fade": {
+            "enabled": True,
+            "blowout_spread_threshold": 10.0,
+            "blowout_starter_min_floor": 28.0,
+            "rotation_squeeze_spread": 4.0,
+            "rotation_squeeze_bench_ceiling": 22.0,
+            "b2b_guard_min_season_pts": 12.0,
+        },
     },
     "lab": {
         "auto_improve_threshold_pct": 3.0,
@@ -1774,6 +1786,45 @@ def sanitize_line_config(raw_cfg: Any) -> dict:
         "rebounds": _clamp_float(sf_in.get("rebounds"), base["stat_floors"]["rebounds"], 0.0, 25.0),
         "assists": _clamp_float(sf_in.get("assists"), base["stat_floors"]["assists"], 0.0, 20.0),
     }
+    # ── Under-specific stat floors (relaxed — trivial lines are valid for unders) ──
+    sfu_base = base.get("stat_floors_under", {"points": 4.0, "rebounds": 3.5, "assists": 1.0})
+    sfu_in = cfg.get("stat_floors_under") if isinstance(cfg.get("stat_floors_under"), dict) else {}
+    out["stat_floors_under"] = {
+        "points": _clamp_float(sfu_in.get("points"), sfu_base.get("points", 4.0), 0.0, 50.0),
+        "rebounds": _clamp_float(sfu_in.get("rebounds"), sfu_base.get("rebounds", 3.5), 0.0, 25.0),
+        "assists": _clamp_float(sfu_in.get("assists"), sfu_base.get("assists", 1.0), 0.0, 20.0),
+    }
+    # ── Juice / percentage-edge / auto-fade thresholds ──
+    out["juice_under_threshold"] = int(round(_clamp_float(
+        cfg.get("juice_under_threshold"), base.get("juice_under_threshold", -130), -300.0, 0.0
+    )))
+    out["pct_edge_rebounds"] = _clamp_float(
+        cfg.get("pct_edge_rebounds"), base.get("pct_edge_rebounds", 18.0), 1.0, 50.0
+    )
+    out["pct_edge_assists"] = _clamp_float(
+        cfg.get("pct_edge_assists"), base.get("pct_edge_assists", 18.0), 1.0, 50.0
+    )
+    # ── Auto-fade matrix ──
+    af_base = base.get("auto_fade", {})
+    af_in = cfg.get("auto_fade") if isinstance(cfg.get("auto_fade"), dict) else {}
+    out["auto_fade"] = {
+        "enabled": bool(af_in.get("enabled", af_base.get("enabled", True))),
+        "blowout_spread_threshold": _clamp_float(
+            af_in.get("blowout_spread_threshold"), af_base.get("blowout_spread_threshold", 10.0), 0.0, 30.0
+        ),
+        "blowout_starter_min_floor": _clamp_float(
+            af_in.get("blowout_starter_min_floor"), af_base.get("blowout_starter_min_floor", 28.0), 10.0, 48.0
+        ),
+        "rotation_squeeze_spread": _clamp_float(
+            af_in.get("rotation_squeeze_spread"), af_base.get("rotation_squeeze_spread", 4.0), 0.0, 15.0
+        ),
+        "rotation_squeeze_bench_ceiling": _clamp_float(
+            af_in.get("rotation_squeeze_bench_ceiling"), af_base.get("rotation_squeeze_bench_ceiling", 22.0), 10.0, 40.0
+        ),
+        "b2b_guard_min_season_pts": _clamp_float(
+            af_in.get("b2b_guard_min_season_pts"), af_base.get("b2b_guard_min_season_pts", 12.0), 0.0, 40.0
+        ),
+    }
     return out
 
 
@@ -1864,6 +1915,18 @@ _LINE_CONFIG_EDITABLE_KEYS = {
     "line.stat_floors.points",
     "line.stat_floors.rebounds",
     "line.stat_floors.assists",
+    "line.stat_floors_under.points",
+    "line.stat_floors_under.rebounds",
+    "line.stat_floors_under.assists",
+    "line.juice_under_threshold",
+    "line.pct_edge_rebounds",
+    "line.pct_edge_assists",
+    "line.auto_fade.enabled",
+    "line.auto_fade.blowout_spread_threshold",
+    "line.auto_fade.blowout_starter_min_floor",
+    "line.auto_fade.rotation_squeeze_spread",
+    "line.auto_fade.rotation_squeeze_bench_ceiling",
+    "line.auto_fade.b2b_guard_min_season_pts",
 }
 _PARLAY_CONFIG_EDITABLE_KEYS = {
     "parlay.max_spread",
@@ -1883,6 +1946,18 @@ _PARLAY_CONFIG_EDITABLE_KEYS = {
     "parlay.min_line_floors.points",
     "parlay.min_line_floors.rebounds",
     "parlay.min_line_floors.assists",
+    "parlay.min_game_total",
+    "parlay.market_match_max_cv",
+    "parlay.pnr_rim_boost",
+    "parlay.pace_boost_total_threshold",
+    "parlay.pace_boost",
+    "parlay.rest_advantage_boost",
+    "parlay.auto_fade.switch_heavy_teams",
+    "parlay.auto_fade.rebound_fade_teams",
+    "parlay.auto_fade.b2b_correlated_pair_penalty",
+    "parlay.auto_fade.perimeter_scorer_reb_floor",
+    "parlay.auto_fade.fake_juice_recent_threshold",
+    "parlay.auto_fade.fake_juice_season_ceiling",
 }
 
 
@@ -4893,6 +4968,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  player_games=_moon_pool_games)
         core_pool = None
 
+    # Moonshot fallback: if MILP returned empty but we have candidates, sort by moonshot_ev.
+    # Prevents "No players to display yet" when the pool is thin or MILP constraints are
+    # unsatisfiable (e.g. max_per_game + overlap_cap conflict on a 2-game slate).
+    if not upside and moonshot_pool:
+        upside = sorted(moonshot_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)[:5]
+        for i, p in enumerate(upside):
+            p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
+        print(f"[build_lineups] moonshot MILP empty — sort fallback used ({len(upside)} players)")
+
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
 
 
@@ -7310,14 +7394,25 @@ async def refresh(request: Request):
     try:
         _rw_clear()
     except Exception: pass
-    # Bust GitHub-persisted slate cache so next request regenerates fresh
+    # Bust GitHub-persisted slate cache so full pipeline regeneration runs next.
     try:
         _bust_slate_cache()
     except Exception: pass
-    # Do not tombstone GitHub parlay files on refresh. Those JSON files are historical
-    # artifacts, not disposable caches; replacing them with {"_busted": true} can erase
-    # parlay history for that date if a regen never occurs.
+    # Do not tombstone GitHub parlay files on refresh — those are historical artifacts.
     # /tmp parlay cache is already cleared by CACHE_DIR glob unlink above.
+
+    # Full regeneration in background: bust + force prewarm runs the complete pipeline
+    # (ESPN → LightGBM → Monte Carlo → MILP) so the slate is ready before first user.
+    # This is one of 3 full regeneration triggers: (1) /api/refresh (2pm ET daily cron),
+    # (2) slate turn via prewarm cron (10pm-2am ET), (3) deploy startup prewarm.
+    def _bg_prewarm_after_refresh():
+        try:
+            _prewarm_current_slate_sync(force=True, include_slate=True)
+            print("[refresh] background full regeneration completed")
+        except Exception as e:
+            print(f"[refresh] background regeneration failed: {e}")
+    threading.Thread(target=_bg_prewarm_after_refresh, daemon=True).start()
+
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
@@ -11324,6 +11419,7 @@ def _run_parlay_engine_sync(today):
             "odds_entries": 0,
             "odds_available": False,
             "projection_only": True,
+            "has_key": has_key,
         }
 
     rw_statuses = {}
@@ -11414,9 +11510,7 @@ async def get_parlay(request: Request):
                 try:
                     age_s = (datetime.utcnow() - datetime.fromisoformat(cached_at)).total_seconds()
                     if age_s < 1800:
-                        if cached.get("projection_only"):
-                            print("[parlay] bypassing projection-only /tmp cache (synthetic fallback removed)")
-                        elif slate_all_final and cached.get("result") == "pending":
+                        if slate_all_final and cached.get("result") == "pending":
                             print("[parlay] bypassing /tmp cache — slate final, re-sync from GitHub")
                         else:
                             cached["locked"] = slate_locked
@@ -11434,15 +11528,13 @@ async def get_parlay(request: Request):
                 if gh_parlay.get("_busted"):
                     print(f"[parlay] GitHub cache busted — regenerating")
                 elif gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
-                    if gh_parlay.get("projection_only"):
-                        print("[parlay] projection-only GitHub ticket found — skipping (synthetic fallback removed)")
-                    else:
                         gh_parlay["locked"] = slate_locked
                         gh_parlay["_from_github"] = True
                         gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
                         gh_parlay["_cache_date"] = today_str
                         _cs(_CK_PARLAY, gh_parlay)
-                        print(f"[parlay] served from GitHub: {parlay_path}")
+                        _proj_note = " (projection-only)" if gh_parlay.get("projection_only") else ""
+                        print(f"[parlay] served from GitHub{_proj_note}: {parlay_path}")
                         return JSONResponse(gh_parlay)
         except Exception as _ge:
             print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
@@ -11451,11 +11543,13 @@ async def get_parlay(request: Request):
 
         if err or not result:
             no_odds = err == "no_odds_data" or (debug and not debug.get("odds_available"))
-            narrative = (
-                "Sportsbook odds unavailable. Parlay requires real player prop lines from bookmakers — check that ODDS_API_KEY is set and games have published props."
-                if no_odds else
-                "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks."
-            )
+            has_key = debug.get("has_key", bool(os.environ.get("ODDS_API_KEY"))) if debug else bool(os.environ.get("ODDS_API_KEY"))
+            if no_odds and not has_key:
+                narrative = "ODDS_API_KEY not configured. Parlay requires a valid Odds API key to fetch player prop lines."
+            elif no_odds:
+                narrative = "Could not retrieve player prop lines from the Odds API. The request returned no data — this may be a temporary API issue. Please try again."
+            else:
+                narrative = "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks."
             return JSONResponse({
                 "legs": [], "error": err or "no_valid_parlay",
                 "narrative": narrative,

@@ -3266,11 +3266,14 @@ class TestParlayHistoryAndConfigHardening:
         assert "MODEL</span>'" in src_ui
         assert "BOOK</span>'" not in src_ui
 
-    def test_projection_only_cache_bypass(self):
+    def test_projection_only_cache_served(self):
         src = open("api/index.py").read()
-        # projection-only caches are always bypassed now (synthetic fallback removed)
-        assert "bypassing projection-only /tmp cache" in src
-        assert "projection-only GitHub ticket found" in src
+        # projection-only parlays are now served from cache (better than no parlay)
+        # The old bypass strings should be removed
+        assert "bypassing projection-only /tmp cache" not in src
+        assert "projection-only GitHub ticket found" not in src
+        # projection-only parlays served from GitHub with a note
+        assert "(projection-only)" in src
 
     def test_line_and_parlay_sanitizers_enabled(self):
         from api.index import sanitize_line_config, sanitize_parlay_config
