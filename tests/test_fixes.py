@@ -2012,7 +2012,9 @@ class TestBoostModelInference:
         from api.index import _est_card_boost
         import api.index as idx
 
-        with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost:
+        # Patch both ML predict and prior so we isolate the ML-only path.
+        with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost, \
+             patch.object(idx, "_get_boost_prior", return_value=(None, 0)):
             b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
             mock_boost.assert_called_once()
             args, _ = mock_boost.call_args
