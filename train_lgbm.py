@@ -28,9 +28,9 @@ from sklearn.model_selection import train_test_split
 SEASONS = ["2023-24", "2024-25", "2025-26"]
 
 # Total feature count — must match inference (see api/index.py)
-# v63: removed 4 dead features (cascade_signal, usage_share, teammate_out_count, spread_abs)
-# 18 features (16 original + 2 viable new)
-N_FEATURES = 18
+# v63: removed 5 dead features (cascade_signal, usage_share, teammate_out_count, spread_abs, game_total)
+# 17 features (12 original + 5 new: l3_vs_l5_pts, min_volatility, starter_proxy, opp_pts_allowed, team_pace_proxy)
+N_FEATURES = 17
 
 
 def _fetch_season_logs_with_retry(season: str, max_attempts: int = 6) -> pd.DataFrame:

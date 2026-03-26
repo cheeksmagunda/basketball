@@ -286,7 +286,9 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             continue
 
         history_prior = [h for h in history if h.get("dt") and h["dt"] < cur_dt]
-        agg = _player_agg(history)
+        # Use history_prior for aggregates to avoid temporal leakage —
+        # season_pts/season_min must only reflect games BEFORE the label date.
+        agg = _player_agg(history_prior) if history_prior else _player_agg(history)
         season_pts = agg["season_pts"]
         season_min = agg["season_min"]
         recent_pts = _recent_pts_14d(history_prior, date_str, season_pts)

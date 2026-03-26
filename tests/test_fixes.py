@@ -669,8 +669,8 @@ class TestLgbmFeatureAlignment:
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
         n = len(AI_FEATURES)
-        assert n in (12, 16, 22), (
-            f"Expected 12 (legacy), 16 (v2), or 22 (v62) features, got {n}: {AI_FEATURES}"
+        assert n in (12, 16, 17, 22), (
+            f"Expected 12 (legacy), 16 (v2), 17 (v63), or 22 (v62) features, got {n}: {AI_FEATURES}"
         )
         assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
             f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
@@ -678,13 +678,18 @@ class TestLgbmFeatureAlignment:
         assert AI_FEATURES[11] == "reb_per_min", (
             f"12th feature (index 11) must be reb_per_min, got {AI_FEATURES[11]!r}"
         )
-        if n in (16, 22):
+        if n >= 16:
             assert AI_FEATURES[2] == "usage_trend", f"index 2 must be usage_trend, got {AI_FEATURES[2]!r}"
             assert AI_FEATURES[12] == "l3_vs_l5_pts", f"index 12 must be l3_vs_l5_pts, got {AI_FEATURES[12]!r}"
             assert AI_FEATURES[13] == "min_volatility", f"index 13 must be min_volatility, got {AI_FEATURES[13]!r}"
             assert AI_FEATURES[14] == "starter_proxy", f"index 14 must be starter_proxy, got {AI_FEATURES[14]!r}"
-            assert AI_FEATURES[15] == "cascade_signal", f"index 15 must be cascade_signal, got {AI_FEATURES[15]!r}"
+        if n == 17:
+            assert AI_FEATURES[15:17] == [
+                "opp_pts_allowed",
+                "team_pace_proxy",
+            ], f"v63 tail mismatch: {AI_FEATURES[15:17]!r}"
         if n == 22:
+            assert AI_FEATURES[15] == "cascade_signal", f"index 15 must be cascade_signal, got {AI_FEATURES[15]!r}"
             assert AI_FEATURES[16:22] == [
                 "opp_pts_allowed",
                 "team_pace_proxy",
@@ -693,24 +698,43 @@ class TestLgbmFeatureAlignment:
                 "game_total",
                 "spread_abs",
             ], f"v62 tail mismatch: {AI_FEATURES[16:22]!r}"
-        if n in (16, 22):
+        # Feature vector adapts to loaded model's feature list
+        vec = idx._lgbm_feature_vector(
+            avg_min=24.0,
+            pts=14.0,
+            reb=5.0,
+            ast=3.0,
+            stl=1.0,
+            blk=0.5,
+            spread=3.0,
+            side="home",
+            season_pts=14.0,
+            recent_pts=16.0,
+            season_min=24.0,
+            recent_min=26.0,
+            cascade_bonus=0.0,
+            games_played=40.0,
+        )
+        assert len(vec) == n, f"_lgbm_feature_vector must return {n} values, got {len(vec)}"
+
+    def test_feature_vector_canonical_fallback(self):
+        """When no model is loaded, feature vector uses 17-feature canonical order."""
+        import api.index as idx
+        # Save and temporarily clear loaded model state
+        saved_features = idx.AI_FEATURES
+        saved_attempted = idx._LGBM_LOAD_ATTEMPTED
+        try:
+            idx.AI_FEATURES = None
+            idx._LGBM_LOAD_ATTEMPTED = True  # prevent lazy load
             vec = idx._lgbm_feature_vector(
-                avg_min=24.0,
-                pts=14.0,
-                reb=5.0,
-                ast=3.0,
-                stl=1.0,
-                blk=0.5,
-                spread=3.0,
-                side="home",
-                season_pts=14.0,
-                recent_pts=16.0,
-                season_min=24.0,
-                recent_min=26.0,
-                cascade_bonus=0.0,
-                games_played=40.0,
+                avg_min=24.0, pts=14.0, reb=5.0, ast=3.0, stl=1.0, blk=0.5,
+                spread=3.0, side="home", season_pts=14.0, recent_pts=16.0,
+                season_min=24.0, recent_min=26.0, cascade_bonus=0.0,
             )
-            assert len(vec) == n, f"_lgbm_feature_vector must return {n} values, got {len(vec)}"
+            assert len(vec) == 17, f"Canonical fallback must return 17 features, got {len(vec)}"
+        finally:
+            idx.AI_FEATURES = saved_features
+            idx._LGBM_LOAD_ATTEMPTED = saved_attempted
 
 
 # ─────────────────────────────────────────────────────────
