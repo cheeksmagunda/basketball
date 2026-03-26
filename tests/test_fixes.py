@@ -2222,7 +2222,7 @@ class TestMoonshotRsBypass:
         """model-config.json must have moonshot.rs_bypass block."""
         cfg = json.load(open("data/model-config.json"))
         rb = cfg.get("moonshot", {}).get("rs_bypass", {})
-        assert rb.get("enabled") is False, "rs_bypass should be disabled in production config (v59)"
+        assert rb.get("enabled") is True, "rs_bypass should be enabled in production config (v66 ceiling lift)"
         assert rb.get("min_rating", 0) >= 4.0, "min_rating should be high enough to filter bench players"
         assert rb.get("min_season_min", 0) >= 20.0, "min_season_min should require proven starters"
 
@@ -2403,11 +2403,11 @@ class TestCascadeRsBoost:
         assert "cascade_rs" in src
         assert "cascade_rs_mult" in src
 
-    def test_cascade_rs_config_disabled(self):
-        """Production config should have cascade_rs disabled (v59)."""
+    def test_cascade_rs_config_enabled(self):
+        """Production config should have cascade_rs enabled (v66 ceiling lift)."""
         cfg = json.load(open("data/model-config.json"))
         cr = cfg.get("real_score", {}).get("cascade_rs", {})
-        assert cr.get("enabled") is False
+        assert cr.get("enabled") is True
 
     def test_cascade_rs_defaults_disabled(self):
         """_CONFIG_DEFAULTS should have cascade_rs disabled."""
@@ -2430,11 +2430,11 @@ class TestRoleSpikeRs:
         assert "spike_mult" in src
         assert "pts_surge" in src
 
-    def test_role_spike_config_disabled(self):
-        """Production config should have role_spike_rs disabled (v59)."""
+    def test_role_spike_config_enabled(self):
+        """Production config should have role_spike_rs enabled (v66 ceiling lift)."""
         cfg = json.load(open("data/model-config.json"))
         rs = cfg.get("real_score", {}).get("role_spike_rs", {})
-        assert rs.get("enabled") is False
+        assert rs.get("enabled") is True
 
     def test_role_spike_defaults_disabled(self):
         """_CONFIG_DEFAULTS should have role_spike_rs disabled."""
@@ -2761,7 +2761,7 @@ class TestRsCalibrationWeights:
         cfg = json.load(open("data/model-config.json"))
         su = cfg.get("moonshot", {}).get("scorer_upside", {})
         assert su, "moonshot.scorer_upside block must exist in model-config.json"
-        assert su.get("enabled") is False, "scorer_upside must be disabled (v59)"
+        assert su.get("enabled") is True, "scorer_upside must be enabled (v66 ceiling lift)"
         assert su.get("min_pts_per_min", 0) >= 0.40, "min_pts_per_min should be >= 0.40 (v58: 0.48)"
         assert su.get("min_season_pts", 0) >= 12.0, "min_season_pts should be >= 12.0"
         assert 1.0 < su.get("multiplier", 1.0) <= 1.25, (
@@ -2808,7 +2808,7 @@ class TestCascadeCapFix:
         """Production config must have cascade_rs enabled so cascade players get RS uplift."""
         cfg = json.load(open("data/model-config.json"))
         cr = cfg.get("real_score", {}).get("cascade_rs", {})
-        assert cr.get("enabled") is False, "cascade_rs.enabled must be False in production config (v59)"
+        assert cr.get("enabled") is True, "cascade_rs.enabled must be True in production config (v66 ceiling lift)"
 
 
 # ─────────────────────────────────────────────────────────
