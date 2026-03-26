@@ -267,12 +267,15 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
         return {"ok": True, "sha": new_commit_sha}
     except Exception as e:
         print(f"[github] batch write failed, falling back to sequential: {e}")
-        # Fallback: write files one at a time
+        failed_files = []
         for f in files:
             try:
                 _github_write_file(f["path"], f["content"], message)
             except Exception as e2:
                 print(f"[github] sequential fallback err {f['path']}: {e2}")
+                failed_files.append(f["path"])
+        if failed_files:
+            return {"ok": False, "fallback": True, "failed": failed_files}
         return {"ok": True, "fallback": True}
 
 
@@ -1083,6 +1086,19 @@ _CONFIG_DEFAULTS = {
         "blowout_variance_uplift": 0.04,     # reward variance in blowouts
         "neutral_favored_lean": 1.02,        # mild favored-team lean in moderate spreads
     },
+    "scoring_thresholds": {
+        "min_pts_projection": 7.0,
+        "min_pts_projection_moonshot": 3.0,
+        "min_pts_per_minute": 0.28,
+        "min_pts_per_minute_moonshot": 0.15,
+        "min_chalk_rating": 3.5,
+        "min_moonshot_rating": 3.0,
+        "min_moonshot_pts": 4.0,
+        "star_anchor_ppg": 20.0,
+        "scoring_bias_base": 1.0,
+        "scoring_bias_pts_weight": 0.0,
+        "min_game_pts": 8.0,
+    },
 }
 
 def _load_config():
@@ -1398,18 +1414,13 @@ def _lgbm_feature_vector(
     game_total: Optional[float] = None,
     teammate_out_count: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with lgbm_model.pkl (22 features).
+    """Build feature vector aligned with lgbm_model.pkl.
 
-    Schema (ORDER MUST MATCH lgbm_model.pkl features list):
-    0: avg_min, 1: avg_pts (season), 2: usage_trend, 3: opp_def_rating, 4: home_away,
-    5: ast_rate, 6: def_rate, 7: pts_per_min, 8: rest_days, 9: recent_vs_season,
-    10: games_played, 11: reb_per_min, 12: l3_vs_l5_pts, 13: min_volatility,
-    14: starter_proxy, 15: cascade_signal, 16: opp_pts_allowed, 17: team_pace_proxy,
-    18: usage_share (zero-importance, always 0.0), 19: teammate_out_count,
-    20: game_total, 21: spread_abs (zero-importance, always 0.0)
+    Uses the loaded model's AI_FEATURES list to select and order features,
+    so both v63 (17-feature) and legacy (22-feature) bundles work without
+    code changes. Falls back to the 17-feature canonical order if no bundle loaded.
     """
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
-    # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
     usage = float(
         np.clip(recent_min / max(avg_min, 1), USAGE_TREND_MIN, USAGE_TREND_MAX)
     )
@@ -1423,43 +1434,62 @@ def _lgbm_feature_vector(
     recent_vs_season_ = float(np.clip(recent_pts / max(season_pts, 1), 0.5, 2.0))
     games_played_ = float(games_played) if games_played is not None else 40.0
     reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
-    # Inference proxies for last-3 vs last-5 scoring shape (correlate with training features).
     l3_vs_l5_pts = float(np.clip((0.55 * recent_pts + 0.45 * season_pts) / max(recent_pts, 0.1), 0.4, 2.5))
     min_volatility = float(
         np.clip(abs(recent_min - season_min) / max(season_min, 1.0), 0.0, 1.2)
     )
     starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
-
     cascade_signal_  = 1.0 if cascade_bonus > 0 else 0.0
     opp_pts_allowed_ = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
     team_pace_proxy_ = float(team_pace) if team_pace is not None else 110.0
     game_total_      = float(game_total) if game_total is not None else 222.0
     teammate_out_    = float(teammate_out_count) if teammate_out_count is not None else 0.0
 
-    return [
-        avg_min,              # 0: avg_min
-        season_pts,           # 1: avg_pts (season average)
-        usage,                # 2: usage_trend (recent_min / avg_min)
-        opp_def_rating,       # 3: opp_def_rating
-        home_away_,           # 4: home_away
-        ast_rate_,            # 5: ast_rate
-        def_rate_,            # 6: def_rate
-        pts_per_min_,         # 7: pts_per_min
-        rest_days_,           # 8: rest_days
-        recent_vs_season_,    # 9: recent_vs_season
-        games_played_,        # 10: games_played
-        reb_per_min_,         # 11: reb_per_min
-        l3_vs_l5_pts,         # 12: l3_vs_l5_pts
-        min_volatility,       # 13: min_volatility
-        starter_proxy,        # 14: starter_proxy
-        cascade_signal_,      # 15: cascade_signal
-        opp_pts_allowed_,     # 16: opp_pts_allowed
-        team_pace_proxy_,     # 17: team_pace_proxy
-        0.0,                  # 18: usage_share (zero-importance in model)
-        teammate_out_,        # 19: teammate_out_count
-        game_total_,          # 20: game_total
-        0.0,                  # 21: spread_abs (zero-importance in model)
+    # Named feature map — superset of all features ever used in training.
+    # Key names MUST match the feature name strings in lgbm_model.pkl bundles.
+    _feature_map = {
+        "avg_min":           avg_min,
+        "avg_pts":           season_pts,
+        "usage_trend":       usage,
+        "opp_def_rating":    opp_def_rating,
+        "home_away":         home_away_,
+        "ast_rate":          ast_rate_,
+        "def_rate":          def_rate_,
+        "pts_per_min":       pts_per_min_,
+        "rest_days":         rest_days_,
+        "recent_vs_season":  recent_vs_season_,
+        "games_played":      games_played_,
+        "reb_per_min":       reb_per_min_,
+        "l3_vs_l5_pts":      l3_vs_l5_pts,
+        "min_volatility":    min_volatility,
+        "starter_proxy":     starter_proxy,
+        "cascade_signal":    cascade_signal_,
+        "opp_pts_allowed":   opp_pts_allowed_,
+        "team_pace_proxy":   team_pace_proxy_,
+        "usage_share":       0.0,
+        "teammate_out_count": teammate_out_,
+        "game_total":        game_total_,
+        "spread_abs":        0.0,
+    }
+
+    # Use the loaded model's feature list to select and order.
+    # This ensures inference always matches the trained feature contract.
+    _ensure_lgbm_loaded()
+    bundle_features = AI_FEATURES
+    if bundle_features:
+        missing = [f for f in bundle_features if f not in _feature_map]
+        if missing:
+            raise ValueError(f"Model requires unknown features: {missing}")
+        return [_feature_map[f] for f in bundle_features]
+
+    # Fallback: canonical 17-feature order (matches current train_lgbm.py)
+    _CANONICAL_FEATURES = [
+        "avg_min", "avg_pts", "usage_trend", "opp_def_rating", "home_away",
+        "ast_rate", "def_rate", "pts_per_min", "rest_days", "recent_vs_season",
+        "games_played", "reb_per_min", "l3_vs_l5_pts", "min_volatility",
+        "starter_proxy", "opp_pts_allowed", "team_pace_proxy",
     ]
+    return [_feature_map[f] for f in _CANONICAL_FEATURES]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -6065,6 +6095,14 @@ def _get_slate_impl():
         # admin bust was requested to fix bad lineups in the lock file (e.g. predMin
         # filter change). The pipeline runs with draftable games still in progress.
 
+    # ── Bust check (unlocked path) — multi-instance: another container may have
+    # busted via /api/refresh or config change; clear stale /tmp before serving.
+    try:
+        if _github_slate_bust_active():
+            _clear_local_slate_tmp_caches()
+    except Exception as _bust_chk_err:
+        print(f"[slate] github bust check err (unlocked): {_bust_chk_err}")
+
     # ── Layer 1: /tmp cache (warm Railway instance) ──
     cached = _cg(_CK_SLATE)
     if cached:
@@ -6340,7 +6378,9 @@ async def get_picks(gameId: str = Query(...)):
         return _err("Game not found", 404)
 
     start_time = game.get("startTime")
-    locked = _is_locked(start_time) if start_time else False
+    # Use _is_past_lock_window (no 6h ceiling) — once a game starts, picks stay
+    # frozen permanently. _is_locked has a 6h ceiling that would allow recompute.
+    locked = _is_past_lock_window(start_time) if start_time else False
     lock_key = _ck_picks_locked(gameId)
 
     if locked:

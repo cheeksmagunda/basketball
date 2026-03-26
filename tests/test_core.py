@@ -1053,6 +1053,23 @@ class TestConfigCoverage:
         val = _cfg("card_boost.ceiling", None)
         assert val == 3.0, f"Expected 3.0, got {val}"
 
+    def test_scoring_thresholds_in_config_defaults(self):
+        """scoring_thresholds block must exist in _CONFIG_DEFAULTS (hot-path reads depend on it)."""
+        from api.index import _CONFIG_DEFAULTS
+        st = _CONFIG_DEFAULTS.get("scoring_thresholds")
+        assert st is not None, "scoring_thresholds missing from _CONFIG_DEFAULTS"
+        assert st["min_pts_projection"] == 7.0
+        assert st["min_pts_projection_moonshot"] == 3.0
+        assert st["min_pts_per_minute"] == 0.28
+        assert st["min_chalk_rating"] == 3.5
+        assert st["min_game_pts"] == 8.0
+
+    def test_scoring_thresholds_readable_via_cfg(self):
+        """scoring_thresholds keys must be readable via _cfg() dot notation."""
+        from api.index import _cfg
+        assert _cfg("scoring_thresholds.min_pts_projection", None) == 7.0
+        assert _cfg("scoring_thresholds.min_chalk_rating", None) == 3.5
+
 
 # ---------------------------------------------------------------------------
 # 12. project_player contract — output shape regression guard
