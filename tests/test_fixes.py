@@ -1990,8 +1990,8 @@ class TestBoostModelInference:
         assert captured["vec"][6] == 0.0
         assert b == 2.0
 
-    def test_est_card_boost_returns_sentinel_when_ml_none(self):
-        """When boost model returns None (model unavailable), return 1.0 sentinel."""
+    def test_est_card_boost_returns_heuristic_when_ml_none(self):
+        """When boost model returns None, fallback must be non-flat heuristic (not 1.0 sentinel)."""
         from api.index import _est_card_boost
         import api.index as idx
 
@@ -2003,7 +2003,9 @@ class TestBoostModelInference:
                 season_avg_min=30.0,
                 player_pos="G",
             )
-        assert b == 1.0
+        # Star-ish profile should receive a low-but-not-flat boost in fallback path.
+        assert 0.2 <= b <= 1.5
+        assert b != 1.0
 
     def test_est_card_boost_calls_ml_even_with_zero_projected_rs(self):
         """ML model is always attempted — even with projected_rs=0 (no sigmoid path)."""

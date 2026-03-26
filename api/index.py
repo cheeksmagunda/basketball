@@ -2885,7 +2885,8 @@ def _est_card_boost(
     Direct 7-feature LightGBM (no min_proxy / no drafts-model chain):
       [projected_rs, season_pts, recent_pts, season_min, pred_min, is_big_market, pos_bucket]
 
-    Always ML-only. If boost_model.pkl is unavailable, returns 1.0 emergency sentinel.
+    Primary path is ML. If boost_model.pkl is unavailable/inference fails, falls back
+    to a deterministic heuristic estimate (never hard-flattens to +1x across slate).
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -2939,9 +2940,27 @@ def _est_card_boost(
             return _clamp_round_boost(blended, floor_val, ceiling)
         return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
-    # boost_model.pkl unavailable — emergency sentinel (should never trigger in production)
-    print(f"[CRITICAL] boost_model.pkl not loaded — returning 1.0 for {player_name}")
-    return 1.0
+    # Deterministic fallback: derive a non-flat boost from projected popularity.
+    # This protects slate quality if the boost model is unavailable in runtime.
+    # Lower predicted drafts => higher boost, with light market/form adjustments.
+    log_drafts = _estimate_log_drafts(_spts, bool(is_bm), _rpts, _spts)
+    fallback = 2.8 - 0.75 * float(log_drafts)
+    if _spts >= 22:
+        fallback -= 0.20
+    if _spts <= 10:
+        fallback += 0.15
+    if _pmin < 20:
+        fallback += 0.10
+    if is_bm:
+        fallback -= 0.10
+    form_ratio = float(_rpts) / max(float(_spts), 1.0)
+    if form_ratio >= 1.15:
+        fallback -= 0.08
+    elif form_ratio <= 0.90:
+        fallback += 0.08
+    out = _clamp_round_boost(fallback, floor_val, ceiling)
+    print(f"[WARN] boost model unavailable — heuristic fallback for {player_name}: {out}")
+    return out
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
