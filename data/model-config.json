@@ -29,8 +29,7 @@
       "CHI"
     ],
     "log_linear": {
-      "enabled": false,
-      "intercept": 3.2,
+      "intercept": 2.8,
       "slope": -0.75
     }
   },

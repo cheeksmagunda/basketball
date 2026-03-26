@@ -1227,7 +1227,7 @@ def _ensure_boost_model_loaded():
                     print(f"[boost_model] load failed from {_p}: {e}")
         _BOOST_LOAD_ATTEMPTED = True
         if BOOST_MODEL is None:
-            print("[CRITICAL] Boost model not found/invalid — _est_card_boost will return sentinel 1.0")
+            print("[WARN] Boost model not found/invalid — _est_card_boost will use heuristic fallback (non-flat)")
 
 
 def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
@@ -2914,10 +2914,10 @@ def _est_card_boost(
     expected_len = len(BOOST_FEATURES) if isinstance(BOOST_FEATURES, list) else 7
     if expected_len == 2:
         # Legacy model expected [projected_rs, min_proxy].
-        est_drafts = np.expm1((_pmin - 12.0) / 5.0) if _pmin > 0 else 0.0
-        est_drafts = max(0.0, est_drafts)
-        min_proxy = 12.0 + 5.0 * np.log1p(est_drafts)
-        feat_vec = [_rs, min_proxy]
+        # min_proxy is defined as 12 + 5*log1p(drafts); for inference we
+        # approximate it directly from predicted minutes (the inverse map gives
+        # back pmin, so just pass it through rather than doing a circular round-trip).
+        feat_vec = [_rs, _pmin]
     else:
         feat_vec = [_rs, _spts, _rpts, _smin, _pmin, is_bm, _pbucket]
     ml_pred = _lgbm_predict_boost(feat_vec)
@@ -2926,7 +2926,7 @@ def _est_card_boost(
         # Real fix: blend model prediction with historical player boost prior.
         # Boost is partly a sticky ownership trait by player archetype/market.
         prior, prior_n = _get_boost_prior(player_name or "")
-        if prior is not None and prior_n >= 2 and _rs > 0:
+        if prior is not None and prior_n >= 2 and _rs >= 0:
             # Dynamic blend:
             # 1) More prior samples => more prior trust.
             # 2) Big recent-vs-season swings => trust daily ML more.
@@ -2943,8 +2943,12 @@ def _est_card_boost(
     # Deterministic fallback: derive a non-flat boost from projected popularity.
     # This protects slate quality if the boost model is unavailable in runtime.
     # Lower predicted drafts => higher boost, with light market/form adjustments.
+    # Formula params are configurable via card_boost.log_linear in model-config.json.
+    _ll = cb.get("log_linear", {})
+    _intercept = float(_ll.get("intercept", 2.8))
+    _slope = float(_ll.get("slope", -0.75))
     log_drafts = _estimate_log_drafts(_spts, bool(is_bm), _rpts, _spts)
-    fallback = 2.8 - 0.75 * float(log_drafts)
+    fallback = _intercept + _slope * float(log_drafts)
     if _spts >= 22:
         fallback -= 0.20
     if _spts <= 10:
