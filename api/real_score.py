@@ -107,8 +107,13 @@ def clutch_coefficient(spread, total, usage_rate, player_variance,
     # Track margin through Q4
     margins = entering_margin[:, np.newaxis] + cumulative
 
-    # Count lead changes: margin crosses zero
+    # Count lead changes: margin crosses zero (ignore ties — np.sign(0)=0)
+    # Only count transitions between positive and negative, skipping zeros
     signs = np.sign(margins)
+    # Forward-fill zeros with last nonzero sign so ties don't create false crossings
+    for col in range(1, signs.shape[1]):
+        mask = signs[:, col] == 0
+        signs[mask, col] = signs[mask, col - 1]
     sign_changes = np.sum(np.abs(np.diff(signs, axis=1)) > 0, axis=1)
 
     # P(clutch) = fraction of sims with 2+ lead changes in Q4
