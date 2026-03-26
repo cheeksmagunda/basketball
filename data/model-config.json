@@ -1,7 +1,7 @@
 {
-  "version": 62,
-  "updated_at": "2026-03-25T18:00:00Z",
-  "updated_by": "v62-top-performer-analysis-overhaul",
+  "version": 63,
+  "updated_at": "2026-03-26T00:00:00Z",
+  "updated_by": "v63-audit-critical-fixes",
   "scoring_thresholds": {
     "min_pts_projection": 5.0,
     "min_pts_projection_moonshot": 6.0,
@@ -193,13 +193,13 @@
     }
   },
   "star_anchor": {
-    "enabled": false,
+    "enabled": true,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
     "min_boost": 0.5,
     "min_rating": 4.5,
     "require_count": 0,
-    "max_count": 0
+    "max_count": 1
   },
   "context_layer": {
     "enabled": false,
@@ -217,7 +217,7 @@
   "core_pool": {
     "enabled": true,
     "size": 15,
-    "metric": "ev_weighted",
+    "metric": "rs",
     "tv_floor_min_rs": 3.8,
     "blend_weight": 0.5,
     "per_game_carry": 0,
@@ -283,7 +283,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.6,
+    "chalk_milp_rs_focus": 0.0,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
@@ -326,14 +326,14 @@
   "moonshot": {
     "min_minutes_floor": 16,
     "min_recent_minutes_floor": 16,
-    "min_card_boost": 1.8,
+    "min_card_boost": 1.0,
     "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 99,
-    "boost_leverage_power": 0.5,
+    "boost_leverage_power": 0.0,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
