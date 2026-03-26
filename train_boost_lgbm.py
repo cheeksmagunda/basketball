@@ -41,6 +41,7 @@ FEATURES = [
     "pos_bucket",
 ]
 LOOKBACK_DAYS = 14
+SILVER_SINGLE_MIN_RS = 4.0
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -291,10 +292,10 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             weight = 3.0
             gold += 1
         else:
-            if len(history) < 2:
+            projected_rs = agg["mean_rs"]
+            if len(history) < 2 and projected_rs < SILVER_SINGLE_MIN_RS:
                 skipped += 1
                 continue
-            projected_rs = agg["mean_rs"]
             pred_min = season_min
             team = agg["team"]
             pos = agg["pos"]
