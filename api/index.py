@@ -2580,12 +2580,23 @@ def _cascade_minutes(roster, stats_map):
 #           still enforcing floor/rotation guardrails.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _normalize_boost_name(name):
-    """Normalize player name for card boost lookup — strips diacritics, lowercases,
-    removes punctuation variants (apostrophes, periods, Jr./III suffixes)."""
+def _normalize_player_name(name):
+    """Normalize player name for consistent joining across datasets.
+
+    AUDIT FIX (v63): Player names with diacritics (é, à, ñ, etc.) were causing join
+    failures across predictions/top_performers/actuals/most_popular CSVs. This function
+    normalizes to ASCII-safe lowercase for reliable key matching.
+
+    Example: "José Altuve" → "jose altuve", "Sébastien Héry" → "sebastian hery"
+    """
     import unicodedata as _ud
-    n = _ud.normalize("NFKD", name).encode("ASCII", "ignore").decode("ASCII")
+    n = _ud.normalize("NFKD", name or "").encode("ASCII", "ignore").decode("ASCII")
     return n.strip().lower()
+
+
+def _normalize_boost_name(name):
+    """Alias for _normalize_player_name for backward compatibility."""
+    return _normalize_player_name(name)
 
 
 def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
@@ -6930,7 +6941,10 @@ MOST_POPULAR_ROW_FIELDS = [
 
 
 def _parse_actuals_rows(content) -> list:
-    """Parse per-day actuals CSV. Header-aware: legacy files without `team` column still work."""
+    """Parse per-day actuals CSV. Header-aware: legacy files without `team` column still work.
+
+    AUDIT FIX (v63): Include normalized player name for consistent joining across datasets.
+    """
     rows = []
     if not content or not str(content).strip():
         return rows
@@ -6945,6 +6959,7 @@ def _parse_actuals_rows(content) -> list:
         rows.append(
             {
                 "player_name": pn,
+                "player_name_normalized": _normalize_player_name(pn),
                 "team": (r.get("team") or "").strip().upper(),
                 "actual_rs": r.get("actual_rs", ""),
                 "actual_card_boost": r.get("actual_card_boost", ""),
@@ -7017,7 +7032,10 @@ def _dates_from_top_performers_mega() -> set:
 
 def _load_player_actuals_for_date(date_str: str) -> list:
     """Primary: rows from data/top_performers.csv for date_str (ACT_FIELDS shape).
-    Fallback: legacy data/actuals/{date}.csv."""
+    Fallback: legacy data/actuals/{date}.csv.
+
+    AUDIT FIX (v63): Normalize player names for consistent joining across datasets.
+    """
     raw, _ = _github_get_file(TOP_PERFORMERS_GH_PATH)
     if raw:
         rows = _parse_top_performers_mega_rows(raw)
@@ -7025,9 +7043,11 @@ def _load_player_actuals_for_date(date_str: str) -> list:
         for r in rows:
             if (r.get("date") or "").strip() != date_str:
                 continue
+            orig_name = (r.get("player_name") or "").strip()
             out.append(
                 {
-                    "player_name": (r.get("player_name") or "").strip(),
+                    "player_name": orig_name,
+                    "player_name_normalized": _normalize_player_name(orig_name),
                     "team": (r.get("team") or "").strip().upper(),
                     "actual_rs": r.get("actual_rs", ""),
                     "actual_card_boost": r.get("actual_card_boost", ""),
