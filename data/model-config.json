@@ -181,7 +181,8 @@
     "chalk_min_boost_floor": 1.2,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
-    "chalk_hbr_min_boost": 2.5,
+    "chalk_hbr_min_boost": 2.0,
+    "chalk_hbr_min_season_min": 14.0,
     "chalk_hbr_min_recent_min": 16.0,
     "chalk_hbr_min_pred_min": 16.0,
     "volatility_guard": {
