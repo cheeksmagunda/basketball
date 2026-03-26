@@ -1,0 +1,7 @@
+# Ingestion automation dependencies (local-only — NOT installed on Railway)
+# Install with: pip install -r requirements-ingest.txt
+# Then: playwright install chromium
+
+playwright>=1.44
+python-dotenv>=1.0
+requests>=2.32.5
