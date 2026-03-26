@@ -2844,7 +2844,19 @@ def _est_card_boost(
     _pmin = float(_pm or _smin or 0.0)
     _pbucket = float(_draft_pos_bucket(player_pos))
 
-    feat_vec = [_rs, _spts, _rpts, _smin, _pmin, is_bm, _pbucket]
+    # Runtime compatibility: if a legacy 2-feature boost bundle is loaded in a
+    # warm/stale runtime, keep ML inference alive instead of collapsing to 1.0.
+    # Modern path is 7-feature direct model.
+    _ensure_boost_model_loaded()
+    expected_len = len(BOOST_FEATURES) if isinstance(BOOST_FEATURES, list) else 7
+    if expected_len == 2:
+        # Legacy model expected [projected_rs, min_proxy].
+        est_drafts = np.expm1((_pmin - 12.0) / 5.0) if _pmin > 0 else 0.0
+        est_drafts = max(0.0, est_drafts)
+        min_proxy = 12.0 + 5.0 * np.log1p(est_drafts)
+        feat_vec = [_rs, min_proxy]
+    else:
+        feat_vec = [_rs, _spts, _rpts, _smin, _pmin, is_bm, _pbucket]
     ml_pred = _lgbm_predict_boost(feat_vec)
 
     if ml_pred is not None:
