@@ -56,12 +56,21 @@ class TestHelpers:
         assert _is_locked(soon) is True
 
     def test_est_card_boost_decreases_with_star_minutes(self):
-        """Star players (high pts/min) should get a lower boost than bench players."""
+        """Star players (high min_proxy) should get a lower boost than bench players.
+        Uses mocked models so the test is independent of pkl version/availability."""
         from api.index import _est_card_boost
-        # High-usage star: 35 min, 28 pts → high ownership → lower boost
-        star_boost  = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL")
-        # Low-usage bench player: 12 min, 6 pts → low ownership → higher boost
-        bench_boost = _est_card_boost(proj_min=12, pts=6,  team_abbr="MEM")
+        import api.index as idx
+        from unittest.mock import patch
+
+        def mock_predict(feat_vec):
+            # Higher min_proxy (feat_vec[1]) → higher popularity → lower boost
+            return max(0.2, 3.0 - feat_vec[1] * 0.05)
+
+        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
+            with patch.object(idx, "_lgbm_predict_boost", side_effect=mock_predict):
+                star_boost  = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL")
+                bench_boost = _est_card_boost(proj_min=12, pts=6,  team_abbr="MEM")
+
         assert bench_boost > star_boost, (
             f"bench boost {bench_boost:.2f} should exceed star boost {star_boost:.2f}"
         )

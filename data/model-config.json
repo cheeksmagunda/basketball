@@ -28,11 +28,6 @@
       "LAC",
       "CHI"
     ],
-    "sig_ceiling": 3.0,
-    "sig_range": 2.8,
-    "sig_midpoint": 12.0,
-    "sig_scale": 4.0,
-    "big_market_discount": 0.15,
     "log_linear": {
       "enabled": false,
       "intercept": 3.2,

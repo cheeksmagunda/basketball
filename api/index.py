@@ -740,9 +740,6 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "ceiling": 3.0, "floor": 0.2,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
-        # Sigmoid fallback: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
-        "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
-        "big_market_discount": 0.15,
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -2817,56 +2814,19 @@ def _est_card_boost(
     season_avg_min=0.0,
     player_pos="",
 ):
-    """Get or estimate ADDITIVE card boost for Real Sports.
+    """Get card boost for Real Sports via LightGBM.
 
-    Two-step approach (no manual uploads, no per-player config overrides):
-    1. 2-feature LightGBM — [projected_rs, min_proxy]. min_proxy = 12 + 5*log1p(drafts),
-       where drafts come from drafts_model.pkl when present (stable role + market + pos),
-       else legacy inverse-map from projected minutes.
-    2. Sigmoid fallback — when RS/minutes are unavailable for ML; uses PPG tier + big-market discount.
+    2-feature LightGBM — [projected_rs, min_proxy]. min_proxy = 12 + 5*log1p(drafts),
+    where drafts come from drafts_model.pkl when present (stable role + market + pos),
+    else legacy inverse-map from projected minutes.
+
+    Always uses the ML model. No sigmoid fallback — boost is a prediction, not a heuristic.
+    If boost_model.pkl is unavailable, returns 1.0 as an emergency sentinel (should never
+    happen in production).
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
     floor_val = cb.get("floor", 0.2)
-
-    ml_pred = None
-    if projected_rs is not None and projected_rs > 0 and proj_min is not None and proj_min > 0:
-        big_markets = set(
-            cb.get(
-                "big_market_teams",
-                ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
-            )
-        )
-        is_bm = 1.0 if team_abbr in big_markets else 0.0
-        _spts = float(season_pts or pts or 0.0)
-        _smin = float(season_avg_min or proj_min or 0.0)
-        log1p_drafts = _lgbm_predict_log1p_drafts(
-            [_spts, _smin, is_bm, float(_draft_pos_bucket(player_pos))]
-        )
-        if log1p_drafts is not None and log1p_drafts > 0:
-            min_m = float(cb.get("drafts_log1p_min", 0.5))
-            max_m = float(cb.get("drafts_log1p_max", 9.0))
-            z = float(np.clip(log1p_drafts, min_m, max_m))
-            min_proxy = 12.0 + 5.0 * z
-        else:
-            estimated_drafts = np.expm1((float(proj_min) - 12.0) / 5.0)
-            estimated_drafts = max(0.0, estimated_drafts)
-            min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
-        feat_vec = [float(projected_rs), min_proxy]
-        ml_pred = _lgbm_predict_boost(feat_vec)
-
-    if ml_pred is not None:
-        return _clamp_round_boost(ml_pred, floor_val, ceiling)
-
-    # Sigmoid fallback (ML unavailable or missing projected_rs/proj_min).
-    effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
-    sig_ceiling  = cb.get("sig_ceiling", 3.0)
-    sig_range    = cb.get("sig_range", 2.8)
-    sig_midpoint = cb.get("sig_midpoint", 12.0)
-    sig_scale    = cb.get("sig_scale", 4.0)
-    bm_discount  = cb.get("big_market_discount", 0.15)
-    sigmoid_val = 1.0 / (1.0 + np.exp(-(effective_hype_ppg - sig_midpoint) / sig_scale))
-    boost = sig_ceiling - sig_range * sigmoid_val
 
     big_markets = set(
         cb.get(
@@ -2874,11 +2834,34 @@ def _est_card_boost(
             ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
         )
     )
-    is_big_market = 1.0 if team_abbr in big_markets else 0.0
-    if is_big_market > 0.5:
-        boost -= bm_discount
+    is_bm = 1.0 if team_abbr in big_markets else 0.0
+    _rs  = float(projected_rs) if projected_rs is not None else 0.0
+    _pm  = float(proj_min) if proj_min is not None else 0.0
+    _spts = float(season_pts or pts or 0.0)
+    _smin = float(season_avg_min or _pm or 0.0)
 
-    return _clamp_round_boost(boost, floor_val, ceiling)
+    log1p_drafts = _lgbm_predict_log1p_drafts(
+        [_spts, _smin, is_bm, float(_draft_pos_bucket(player_pos))]
+    )
+    if log1p_drafts is not None and log1p_drafts > 0:
+        min_m = float(cb.get("drafts_log1p_min", 0.5))
+        max_m = float(cb.get("drafts_log1p_max", 9.0))
+        z = float(np.clip(log1p_drafts, min_m, max_m))
+        min_proxy = 12.0 + 5.0 * z
+    else:
+        estimated_drafts = np.expm1((_pm - 12.0) / 5.0) if _pm > 0 else 0.0
+        estimated_drafts = max(0.0, estimated_drafts)
+        min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
+
+    feat_vec = [_rs, min_proxy]
+    ml_pred = _lgbm_predict_boost(feat_vec)
+
+    if ml_pred is not None:
+        return _clamp_round_boost(ml_pred, floor_val, ceiling)
+
+    # boost_model.pkl unavailable — emergency sentinel (should never trigger in production)
+    print(f"[CRITICAL] boost_model.pkl not loaded — returning 1.0 for {player_name}")
+    return 1.0
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
