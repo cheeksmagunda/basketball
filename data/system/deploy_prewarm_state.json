@@ -1,1 +1,1 @@
-{"sha": "599baf7", "status": "running", "started_at": "2026-03-26T14:22:50.753214+00:00"}
+{"sha": "599baf7", "status": "completed", "started_at": "2026-03-26T14:23:34.637905+00:00", "force_regenerate_status": "regenerated", "prewarm": {"status": "ok", "cache_status": "miss", "generated": true, "current_slate_date": "2026-03-26", "locked": false, "all_complete": false, "draftable_count": 3, "line_status": "error", "parlay_status": "generated", "ts": "2026-03-26T14:23:34.637677"}, "completed_at": "2026-03-26T14:23:34.637914+00:00"}
