@@ -15,6 +15,12 @@ restartPolicyMaxRetries = 3
 schedule = "0 19 * * *"
 command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh')\""
 
+# Slate transition prewarm (every 5 min): uses existing global slate logic to
+# warm the CURRENT slate cache when the app transitions (including midnight bleed).
+[[crons.jobs]]
+schedule = "*/5 * * * *"
+command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/prewarm-current-slate',headers=h)\""
+
 # Auto-tune model if ≥3% MAE improvement (Wed + Sun, 9am UTC)
 # Reduced from daily to 2x/week — model changes don't need daily evaluation
 [[crons.jobs]]

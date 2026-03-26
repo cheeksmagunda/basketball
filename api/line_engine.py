@@ -942,6 +942,7 @@ def run_line_engine(
     dvp_data=None,
     edge_map=None,
     fair_value_data=None,
+    prefer_fallback=False,
 ):
     """
     Main entry point. Uses Claude Haiku to reason about ESPN projection data
@@ -970,7 +971,7 @@ def run_line_engine(
     min_confidence = (line_config or {}).get("min_confidence", 50)
     stat_floors = (line_config or {}).get("stat_floors", {})
 
-    if not ANTHROPIC_API_KEY:
+    if prefer_fallback or not ANTHROPIC_API_KEY:
         return run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
 
     over_data, under_data = _run_parallel_claude(

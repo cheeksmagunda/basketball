@@ -3289,11 +3289,82 @@ class TestParlayHistoryAndConfigHardening:
         assert 'cfg["line"] = sanitize_line_config(cfg.get("line", {}))' in src
         assert 'cfg["parlay"] = sanitize_parlay_config(cfg.get("parlay", {}))' in src
 
+
+class TestLineLoadStabilizationRegressions:
+    """Regression guards for line load stabilization (no flash + fast backend path)."""
+
+    def test_line_rotation_refresh_keeps_card(self):
+        src = open("index.html").read()
+        assert "fetchLineOfTheDay(true, true);" in src, (
+            "rotation refresh should run as background nocache fetch (no skeleton reset)"
+        )
+        assert "LINE_LOTD_STATE = asyncStateInitial();" not in src[src.find("const needRotation"):src.find("if (overDone && underDone)")], (
+            "rotation block should not reset LOTD state to initial"
+        )
+
+    def test_line_fetch_dedup_and_timeout(self):
+        src = open("index.html").read()
+        assert "let _lineLotdFetchPromise = null;" in src
+        assert "if (_lineLotdFetchPromise) return _lineLotdFetchPromise;" in src
+        assert "fetchWithTimeout(_lotdUrl, {}, 30000);" in src, (
+            "line-of-the-day fetch should use 30s timeout budget"
+        )
+
+    def test_fast_path_engine_call_present(self):
+        src = open("api/index.py").read()
+        assert "_run_line_engine_for_date, today, False, True" in src, (
+            "line-of-the-day should attempt fast-path generation first"
+        )
+        assert "_run_line_engine_for_date, today, True, False" in src, (
+            "line-of-the-day retry should allow full enrichment path"
+        )
+
+    def test_lotd_payload_freshness_metadata(self):
+        src = open("api/index.py").read()
+        assert "def _line_payload_meta(" in src
+        assert '"source": source' in src
+        assert '"generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")' in src
+        assert '"is_stale": bool(stale)' in src
+        assert '"refreshing": bool(refreshing)' in src
+
     def test_refresh_does_not_tombstone_parlay_history_files(self):
         src = open("api/index.py").read()
         assert 'json.dumps({"_busted": True}), "bust parlay cache"' not in src, (
             "refresh must not tombstone GitHub parlay files; this can erase history"
         )
+
+
+class TestSlateTransitionPrewarm:
+    """Regression guards for cron prewarm of current slate."""
+
+    def test_prewarm_endpoint_exists_and_is_cron_gated(self):
+        src = open("api/index.py").read()
+        assert '@app.get("/api/prewarm-current-slate")' in src
+        assert "async def prewarm_current_slate(request: Request):" in src
+        assert "if not _require_cron_secret(request):" in src
+
+    def test_prewarm_uses_existing_slate_logic(self):
+        src = open("api/index.py").read()
+        assert '_with_response_cache(cache_key, "slate", _get_slate_impl)' in src, (
+            "prewarm must reuse _get_slate_impl (global slate transition logic)"
+        )
+        assert "_load_line_pick_for_date(current_slate_date)" in src
+        assert "_run_line_engine_for_date(line_date, False, True)" in src
+        assert "_parlay_active_date()" in src
+        assert "_run_parlay_engine_sync(parlay_date)" in src
+        assert "def _prewarm_current_slate_sync(force=False, include_slate=True):" in src
+
+    def test_railway_has_prewarm_cron(self):
+        src = open("railway.toml").read()
+        assert "*/5 * * * *" in src
+        assert "/api/prewarm-current-slate" in src
+
+    def test_deploy_startup_prewarm_hook_exists(self):
+        src = open("api/index.py").read()
+        assert '@app.on_event("startup")' in src
+        assert "async def _deploy_startup_prewarm():" in src
+        assert "_force_regenerate_sync(\"full\")" in src
+        assert "_prewarm_current_slate_sync(force=True, include_slate=False)" in src
 
 
 class TestVerifyTopPerformersScript:

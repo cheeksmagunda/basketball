@@ -5526,6 +5526,14 @@ def _force_regenerate_bg_worker():
         _force_regenerate_bg._in_flight = False
 
 
+def _deploy_prewarm_bg(*_args):
+    """Sentinel function used as attribute namespace for deploy prewarm state."""
+    pass
+
+
+_DEPLOY_PREWARM_STATE_PATH = "data/system/deploy_prewarm_state.json"
+
+
 def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
     # Fast path: if today's locked slate is already in memory, skip ALL external calls.
@@ -7311,6 +7319,207 @@ async def refresh(request: Request):
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
+def _load_deploy_prewarm_state():
+    try:
+        raw, _ = _github_get_file(_DEPLOY_PREWARM_STATE_PATH)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_deploy_prewarm_state(payload: dict):
+    try:
+        _github_write_file(
+            _DEPLOY_PREWARM_STATE_PATH,
+            json.dumps(payload, default=str),
+            "update deploy prewarm state",
+        )
+    except Exception as e:
+        print(f"[deploy-prewarm] state write err: {e}")
+
+
+def _prewarm_current_slate_sync(force=False, include_slate=True):
+    """Sync helper used by cron endpoint and deploy-triggered prewarm worker."""
+    today = _today_str()
+    is_hit = False
+    result = {}
+    if include_slate:
+        cache_key = _CACHE_KEYS["slate"].format(today)
+        result, is_hit = _with_response_cache(cache_key, "slate", _get_slate_impl)
+    else:
+        result = _get_slate_impl()
+    lineups = (result.get("lineups") or {})
+    has_lineups = bool(lineups.get("chalk") or lineups.get("upside"))
+    current_slate_date = result.get("date") or today
+
+    line_status = "hit"
+    try:
+        line_cached = _cg(_CK_LINE)
+        line_cache_ok = bool(
+            line_cached
+            and line_cached.get("_cache_date") == current_slate_date
+            and (line_cached.get("pick") or line_cached.get("over_pick") or line_cached.get("under_pick"))
+        )
+        line_saved = _load_line_pick_for_date(current_slate_date)
+        line_saved_ok = bool(line_saved and (line_saved.get("over_pick") or line_saved.get("under_pick")))
+        if force or (not line_cache_ok and not line_saved_ok):
+            line_date = date.fromisoformat(current_slate_date)
+            line_result, line_err = _run_line_engine_for_date(line_date, False, True)
+            if not line_err and line_result and line_result.get("pick"):
+                line_result.update(_line_payload_meta("prewarm_cron", stale=False, refreshing=False))
+                line_result["_cached_at"] = datetime.utcnow().isoformat()
+                line_result["_cache_date"] = current_slate_date
+                _cs(_CK_LINE, line_result)
+                try:
+                    _github_write_file(
+                        f"data/lines/{current_slate_date}_pick.json",
+                        json.dumps({"over_pick": line_result.get("over_pick"), "under_pick": line_result.get("under_pick")}),
+                        f"prewarm line picks {current_slate_date}",
+                    )
+                except Exception:
+                    pass
+                line_status = "generated"
+            else:
+                line_status = f"skip:{line_err or 'no_pick'}"
+    except Exception as _line_e:
+        print(f"[prewarm-current-slate] line prewarm err: {_line_e}")
+        line_status = "error"
+
+    parlay_status = "hit"
+    try:
+        parlay_date = _parlay_active_date()
+        parlay_date_str = parlay_date.isoformat()
+        parlay_cached = _cg(_CK_PARLAY)
+        parlay_cache_ok = bool(
+            parlay_cached
+            and parlay_cached.get("_cache_date") == parlay_date_str
+            and parlay_cached.get("legs")
+            and len(parlay_cached.get("legs", [])) == 3
+            and not parlay_cached.get("projection_only")
+        )
+        parlay_saved_ok = False
+        if not parlay_cache_ok:
+            try:
+                _raw, _ = _github_get_file(f"data/parlays/{parlay_date_str}.json")
+                if _raw:
+                    _saved = json.loads(_raw)
+                    parlay_saved_ok = bool(
+                        _saved.get("legs")
+                        and len(_saved.get("legs", [])) == 3
+                        and not _saved.get("projection_only")
+                        and not _saved.get("_busted")
+                    )
+            except Exception:
+                parlay_saved_ok = False
+        if force or (not parlay_cache_ok and not parlay_saved_ok):
+            parlay_result, parlay_err, _debug = _run_parlay_engine_sync(parlay_date)
+            if not parlay_err and parlay_result:
+                parlay_result["_cached_at"] = datetime.utcnow().isoformat()
+                parlay_result["_cache_date"] = parlay_date_str
+                _cs(_CK_PARLAY, parlay_result)
+                try:
+                    _save_payload = {
+                        "date": parlay_date_str,
+                        "result": "pending",
+                        "legs": parlay_result.get("legs", []),
+                        "combined_probability": parlay_result.get("combined_probability"),
+                        "correlation_multiplier": parlay_result.get("correlation_multiplier"),
+                        "correlation_reasons": parlay_result.get("correlation_reasons", []),
+                        "parlay_score": parlay_result.get("parlay_score"),
+                        "narrative": parlay_result.get("narrative", ""),
+                        "projection_only": parlay_result.get("projection_only", False),
+                        "generated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    _github_write_file(f"data/parlays/{parlay_date_str}.json", json.dumps(_save_payload), f"prewarm parlay {parlay_date_str}")
+                except Exception:
+                    pass
+                parlay_status = "generated"
+            else:
+                parlay_status = f"skip:{parlay_err or 'no_parlay'}"
+    except Exception as _par_e:
+        print(f"[prewarm-current-slate] parlay prewarm err: {_par_e}")
+        parlay_status = "error"
+
+    return {
+        "status": "ok",
+        "cache_status": "hit" if is_hit else "miss",
+        "generated": has_lineups,
+        "current_slate_date": current_slate_date,
+        "locked": bool(result.get("locked")),
+        "all_complete": bool(result.get("all_complete")),
+        "draftable_count": int(result.get("draftable_count", 0) or 0),
+        "line_status": line_status,
+        "parlay_status": parlay_status,
+        "ts": datetime.now().isoformat(),
+    }
+
+
+def _deploy_prewarm_worker(current_sha: str):
+    try:
+        print(f"[deploy-prewarm] starting for sha={current_sha}")
+        _save_deploy_prewarm_state({
+            "sha": current_sha,
+            "status": "running",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+        force_result = _force_regenerate_sync("full")
+        prewarm_result = _prewarm_current_slate_sync(force=True, include_slate=False)
+        _save_deploy_prewarm_state({
+            "sha": current_sha,
+            "status": "completed",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "force_regenerate_status": force_result.get("status"),
+            "prewarm": prewarm_result,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        print(f"[deploy-prewarm] done for sha={current_sha}: force={force_result.get('status')}")
+    except Exception as e:
+        print(f"[deploy-prewarm] error: {e}")
+        traceback.print_exc()
+        _save_deploy_prewarm_state({
+            "sha": current_sha,
+            "status": "error",
+            "error": str(e),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+    finally:
+        _deploy_prewarm_bg._in_flight = False
+
+
+@app.get("/api/prewarm-current-slate")
+async def prewarm_current_slate(request: Request):
+    """Cron prewarm for whichever slate is CURRENT per existing global slate logic."""
+    if not _require_cron_secret(request):
+        return _err("Unauthorized", 401)
+    try:
+        return await asyncio.to_thread(_prewarm_current_slate_sync, False, True)
+    except Exception as e:
+        print(f"[prewarm-current-slate] error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.on_event("startup")
+async def _deploy_startup_prewarm():
+    """On deploy, auto-trigger full regenerate + prewarm once per SHA."""
+    current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()[:7]
+    if not current_sha:
+        return
+    try:
+        st = _load_deploy_prewarm_state()
+        last_sha = (st.get("sha") or "").strip()
+        if last_sha == current_sha and st.get("status") == "completed":
+            return
+        if getattr(_deploy_prewarm_bg, "_in_flight", False):
+            return
+        _deploy_prewarm_bg._in_flight = True
+        threading.Thread(target=_deploy_prewarm_worker, args=(current_sha,), daemon=True).start()
+        print(f"[deploy-prewarm] queued for new sha={current_sha}")
+    except Exception as e:
+        print(f"[deploy-prewarm] startup check failed: {e}")
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Weekly MAE drift check (backend-only)
 # Writes a flag for ops/diagnostics; does NOT affect auto-improve behavior.
@@ -7971,7 +8180,7 @@ def _find_next_slate_date(start_date, max_days=30):
     return None
 
 
-def _run_line_engine_for_date(date):
+def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False):
     """Run the full line engine pipeline for a given date (datetime.date).
     Blocking — call via asyncio.to_thread() from async endpoints."""
     games = fetch_games(date)
@@ -8008,29 +8217,31 @@ def _run_line_engine_for_date(date):
     # primary "line" value in picks instead of ESPN season averages.
     # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
     player_odds_map = _build_player_odds_map(target_games)
-    # Fetch web search news context for the line engine (reuses Layer 1 cache).
-    # This gives Claude injury/rotation/rest intel that can improve pick quality.
     news_context = ""
-    try:
-        news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
-    except Exception as _news_err:
-        print(f"[line] web search for news context failed (non-fatal): {_news_err}")
     dvp_data = {}
-    try:
-        dvp_data = _fetch_dvp_data()
-    except Exception as _dvp_err:
-        print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
-    # Fair Value enrichment — deterministic edge maps for prop betting confidence
     fv_edge_map = {}
     fv_full_data = {}
-    try:
-        fv_edge_map, fv_full_data = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
-    except Exception as _fv_err:
-        print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
+    if full_enrichment:
+        # Fetch web search news context for the line engine (reuses Layer 1 cache).
+        # This gives Claude injury/rotation/rest intel that can improve pick quality.
+        try:
+            news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
+        except Exception as _news_err:
+            print(f"[line] web search for news context failed (non-fatal): {_news_err}")
+        try:
+            dvp_data = _fetch_dvp_data()
+        except Exception as _dvp_err:
+            print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
+        # Fair Value enrichment — deterministic edge maps for prop betting confidence
+        try:
+            fv_edge_map, fv_full_data = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
+        except Exception as _fv_err:
+            print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
     result = run_line_engine(
         all_proj, target_games, line_config, player_odds_map,
         news_context=news_context, dvp_data=dvp_data, edge_map=fv_edge_map or None,
         fair_value_data=fv_full_data or None,
+        prefer_fallback=prefer_fallback,
     )
     return result, None
 
@@ -8045,6 +8256,15 @@ def _picks_response(picks, **extra):
         "over_pick":  _normalize_line_pick(over)    if over    else None,
         "under_pick": _normalize_line_pick(under)   if under   else None,
         **extra,
+    }
+
+
+def _line_payload_meta(source, stale=False, refreshing=False):
+    return {
+        "source": source,
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "is_stale": bool(stale),
+        "refreshing": bool(refreshing),
     }
 
 
@@ -8199,6 +8419,10 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                         except Exception:
                             pass
                     if cached:
+                        cached.setdefault("source", "tmp_cache")
+                        cached.setdefault("generated_at", _cached_at or datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
+                        cached.setdefault("is_stale", False)
+                        cached.setdefault("refreshing", False)
                         return JSONResponse(cached)
 
         # ── Load today's picks ──
@@ -8222,10 +8446,14 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
 
         # ── No saved picks — generate fresh ──
         if not today_picks:
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+            eng_result, err = await asyncio.to_thread(
+                _run_line_engine_for_date, today, False, True
+            )
             if err or not eng_result or not eng_result.get("pick"):
                 print(f"[line-of-the-day] first attempt failed ({err}), retrying...")
-                eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+                eng_result, err = await asyncio.to_thread(
+                    _run_line_engine_for_date, today, True, False
+                )
             if err or not eng_result or not eng_result.get("pick"):
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
                                      "error": err or "no_projections"}, status_code=200)
@@ -8237,6 +8465,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                     _github_write_file(json_path, json.dumps(saves), f"line picks for {today_str}")
             except Exception as _save_err:
                 print(f"[line-of-the-day] auto-save err: {_save_err}")
+            eng_result.update(_line_payload_meta("generated_fast_path", stale=False, refreshing=False))
             eng_result["_cached_at"] = datetime.utcnow().isoformat()
             eng_result["_cache_date"] = today_str
             _cs(_CK_LINE, eng_result)
@@ -8246,7 +8475,9 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         missing_over  = not today_picks.get("over_pick")
         missing_under = not today_picks.get("under_pick")
         if missing_over or missing_under:
-            eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+            eng_result, err = await asyncio.to_thread(
+                _run_line_engine_for_date, today, False, True
+            )
             if not err and eng_result:
                 if missing_over and eng_result.get("over_pick"):
                     today_picks["over_pick"] = eng_result["over_pick"]
@@ -8312,7 +8543,11 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
 
         if over_resolved:
             try:
-                next_over, _ = await _get_or_generate_next_slate_pick(today, "over")
+                next_slate = _find_next_slate_date(today + timedelta(days=1))
+                next_over = None
+                if next_slate:
+                    next_picks = _load_line_pick_for_date(next_slate.isoformat()) or {}
+                    next_over = next_picks.get("over_pick")
             except Exception as _next_err:
                 print(f"[line-of-the-day] next-slate over generation failed (non-fatal): {_next_err}")
                 next_over = None
@@ -8320,7 +8555,11 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
 
         if under_resolved:
             try:
-                next_under, _ = await _get_or_generate_next_slate_pick(today, "under")
+                next_slate = _find_next_slate_date(today + timedelta(days=1))
+                next_under = None
+                if next_slate:
+                    next_picks = _load_line_pick_for_date(next_slate.isoformat()) or {}
+                    next_under = next_picks.get("under_pick")
             except Exception as _next_err:
                 print(f"[line-of-the-day] next-slate under generation failed (non-fatal): {_next_err}")
                 next_under = None
@@ -8333,8 +8572,9 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                      (final_under and not _is_pick_resolved(final_under))
         if not _has_fresh and (_had_resolved or final_over or final_under):
             print(f"[line-of-the-day] all picks resolved, next-slate not ready — returning next_slate_pending")
-            return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                 "error": "next_slate_pending"}, status_code=200)
+            _pending = {"pick": None, "over_pick": None, "under_pick": None, "error": "next_slate_pending"}
+            _pending.update(_line_payload_meta("next_slate_pending", stale=False, refreshing=False))
+            return JSONResponse(_pending, status_code=200)
 
         # ── Enrich if needed ──
         combo = {"over_pick": final_over, "under_pick": final_under}
@@ -8397,7 +8637,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             except Exception as _oe:
                 print(f"[line-of-the-day] inline odds enrichment failed (non-fatal): {_oe}")
 
-        result = _picks_response(combo, from_github=True, slate_summary=None)
+        result = _picks_response(combo, from_github=True, slate_summary=None, **_line_payload_meta("github_saved", stale=False, refreshing=False))
         result["_cached_at"] = datetime.utcnow().isoformat()
         result["_cache_date"] = today_str
         _cs(_CK_LINE, result)

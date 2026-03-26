@@ -2126,7 +2126,7 @@ async function _hydrateApp() {
   _HydrationState.startedAt = Date.now();
   showLoader('HYDRATING...');
 
-  const promises = _HYDRATION_ENDPOINTS.map(async (ep) => {
+  const _fetchHydrationEndpoint = async function(ep) {
     try {
       const r = await fetchWithTimeout(ep.url, {}, ep.timeout);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -2172,20 +2172,31 @@ async function _hydrateApp() {
       if (!ep.optional) _HydrationState.phase++;
       return { name: ep.name, ok: false, error: e.message };
     }
-  });
+  };
 
-  // Wait for all (including optional/failed ones) to settle
-  const results = await Promise.allSettled(promises);
+  // Critical-first hydration: unblock app once slate + games are done.
+  // Non-critical tabs (Line/Log/Parlay) continue hydrating in background.
+  const _criticalNames = new Set(['slate', 'games']);
+  const _critical = _HYDRATION_ENDPOINTS.filter(ep => _criticalNames.has(ep.name));
+  const _deferred = _HYDRATION_ENDPOINTS.filter(ep => !_criticalNames.has(ep.name));
+
+  const criticalResults = await Promise.allSettled(_critical.map(_fetchHydrationEndpoint));
   _HydrationState.completedAt = Date.now();
-  const duration_ms = _HydrationState.completedAt - _HydrationState.startedAt;
-  console.log(`[hydrate] complete in ${duration_ms}ms:`, _HydrationState);
+  const critical_ms = _HydrationState.completedAt - _HydrationState.startedAt;
+  console.log(`[hydrate] critical complete in ${critical_ms}ms:`, _HydrationState);
 
   hideLoader();
-
-  // ── Post-hydration rendering (all the work loadSlate() normally does) ──
   _postHydrateRender();
 
-  return results;
+  // Continue hydrating non-critical endpoints without blocking first paint.
+  Promise.allSettled(_deferred.map(_fetchHydrationEndpoint)).then(function(results) {
+    _HydrationState.deferredCompletedAt = Date.now();
+    const total_ms = _HydrationState.deferredCompletedAt - _HydrationState.startedAt;
+    console.log(`[hydrate] deferred complete in ${total_ms}ms`);
+    return results;
+  }).catch(function() {});
+
+  return criticalResults;
 }
 
 /**
@@ -4114,6 +4125,8 @@ let _lineRotationTriggered = false; // gate: true once per-direction rotation re
 let _lineRotationDoneFor = new Set(); // keys "over-Team-Opp" / "under-Team-Opp" we already ran rotation for (stops cycling)
 let _lineLastLiveKey = '';   // last-rendered live snapshot key; avoid re-painting card when unchanged (stops flash)
 let LINE_HIST_DATA = null;   // cached history payload; cleared on date change
+let _lineLotdFetchPromise = null; // dedupe in-flight LOTD fetches
+let _lineLotdLoadingTimer = null; // delayed skeleton timer (avoid flash on fast responses)
 // Decoupled AsyncState for Line tab — grep: LINE_LOTD_STATE, LINE_HISTORY_STATE
 let LINE_LOTD_STATE = asyncStateInitial();
 let LINE_HISTORY_STATE = asyncStateInitial();
@@ -4249,10 +4262,9 @@ async function _startLineLivePoll(overPick, underPick) {
       if (underDone && underKey) _lineRotationDoneFor.add(underKey);
       _lineRotationTriggered = true;
       LINE_LOADED_DATE = _etToday();
-      LINE_LOTD_STATE = asyncStateInitial();
       setTimeout(() => {
-        _renderLineLOTDFromState(); // show skeleton immediately
-        fetchLineOfTheDay(true);   // nocache — backend will inline-resolve and rotate
+        // Keep last-good card visible; rotate in place once fresh payload arrives.
+        fetchLineOfTheDay(true, true);   // nocache — backend will inline-resolve and rotate
         fetchLineHistory();        // reload history so resolved pick shows up there
       }, 1500);
     }
@@ -4366,42 +4378,62 @@ function _renderLineLOTDFromState() {
 }
 
 async function fetchLineOfTheDay(nocache = false, background = false) {
+  if (_lineLotdFetchPromise) return _lineLotdFetchPromise;
+  const _hasPriorData = LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'success' && LINE_LOTD_STATE.data;
   if (!background) {
     LINE_LOTD_STATE = asyncStateLoading(LINE_LOTD_STATE);
     if (_lineLiveScheduleTimer) { clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null; }
-    _renderLineLOTDFromState();
+    if (_lineLotdLoadingTimer) { clearTimeout(_lineLotdLoadingTimer); _lineLotdLoadingTimer = null; }
+    // Avoid loader flash on fast cache hits; only show skeleton if still loading after a short delay.
+    if (!_hasPriorData) {
+      _lineLotdLoadingTimer = setTimeout(() => {
+        _lineLotdLoadingTimer = null;
+        if (LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'loading') _renderLineLOTDFromState();
+      }, 700);
+    }
   }
 
   let r;
-  try {
-    const _lotdUrl = nocache ? '/api/line-of-the-day?nocache=1' : '/api/line-of-the-day';
-    r = await fetchWithTimeout(_lotdUrl, {}, 90000);
-    if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
-    let data = await r.json();
-    LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
-    _renderLineLOTDFromState();
-    _lineRotationTriggered = false; // allow next game completion to trigger rotation
-    if (data.pick) {
-      _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-      if (!background) {
-        // Save picks to GitHub as a safety net (backend auto-saves, but this catches failures).
-        fetchWithTimeout('/api/save-line', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-        }, 10000).catch(function(e) { console.warn('[save-line] background save failed:', e); });
-      }
-      // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
-      // when a game finishes and re-fetches line-of-the-day for per-direction rotation.
-    }
-  } catch(e) {
-    if (!background) {
-      console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
-      LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
+  _lineLotdFetchPromise = (async function() {
+    try {
+      const _lotdUrl = nocache ? '/api/line-of-the-day?nocache=1' : '/api/line-of-the-day';
+      r = await fetchWithTimeout(_lotdUrl, {}, 30000);
+      if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
+      let data = await r.json();
+      LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
       _renderLineLOTDFromState();
+      _lineRotationTriggered = false; // allow next game completion to trigger rotation
+      if (data.pick) {
+        _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
+        if (!background) {
+          // Save picks to GitHub as a safety net (backend auto-saves, but this catches failures).
+          fetchWithTimeout('/api/save-line', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
+          }, 10000).catch(function(e) { console.warn('[save-line] background save failed:', e); });
+        }
+        // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
+        // when a game finishes and re-fetches line-of-the-day for per-direction rotation.
+      }
+    } catch(e) {
+      if (!background) {
+        console.warn('[line-of-the-day] failed:', classifyFetchError(e, r), e && e.message ? e.message : '');
+        if (!_hasPriorData) {
+          LINE_LOTD_STATE = asyncStateError(LINE_LOTD_STATE, e);
+          _renderLineLOTDFromState();
+        } else {
+          // Preserve last-good card if refresh fails.
+          LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, LINE_LOTD_STATE.data || {});
+        }
+      }
+      _lineRotationTriggered = false; // allow next poll to retry rotation on error
+    } finally {
+      if (_lineLotdLoadingTimer) { clearTimeout(_lineLotdLoadingTimer); _lineLotdLoadingTimer = null; }
+      _lineLotdFetchPromise = null;
     }
-    _lineRotationTriggered = false; // allow next poll to retry rotation on error
-  }
+  })();
+  return _lineLotdFetchPromise;
 }
 
 function retryLineOfTheDay() {
@@ -4479,12 +4511,10 @@ async function initLinePage() {
   }
 
   if (!dateChanged) {
-    // Same day — check if data is stale (>15 min since last success).
-    // If stale, do a foreground fetch with skeleton; otherwise background re-fetch.
+    // Same day — stale refresh stays in background to avoid card flashing.
     const _isStale = _lotdAge > 15 * 60 * 1000; // 15 min staleness threshold
     if (_isStale) {
-      // Data too old — foreground fetch with skeleton so user sees loading indicator
-      fetchLineOfTheDay(true, false);
+      fetchLineOfTheDay(true, true);
       fetchLineHistory();
       return;
     }
