@@ -1,18 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost
-Nikola Jokic,,11100,3.1,0.0
-Victor Wembanyama,,8600,3.7,0.2
-Shai Gilgeous-Alexander,,6800,5.0,0.0
-Cade Cunningham,,5600,0.7,0.2
-Kon Knueppel,,4800,3.4,0.8
-Donovan Mitchell,,3400,3.4,0.2
-Quentin Grimes,,3000,1.0,1.6
-DeMar DeRozan,,2800,0.4,0.9
-James Harden,,2700,4.8,0.4
-LaMelo Ball,,2700,4.7,0.6
-Karl-Anthony Towns,,2600,4.2,0.6
-Jamal Murray,,2600,2.3,0.2
-Precious Achiuwa,,2500,1.8,2.0
-Justin Edwards,,2500,1.8,3.0
-Julius Randle,,2400,3.8,0.6
-Devin Booker,,2300,4.2,0.5
-Stephon Castle,,2100,3.4,0.8
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

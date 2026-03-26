@@ -1,6 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost,min_boost
-Justin Edwards,,2500,1.8,3.0,3.0
-Will Riley,,1600,2.9,3.0,3.0
-Keon Ellis,,810,1.4,3.0,3.0
-Nique Clifford,,674,2.6,3.0,3.0
-Jared McCain,,299,0.8,3.0,3.0
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

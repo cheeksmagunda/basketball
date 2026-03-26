@@ -1,18 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost
-Victor Wembanyama,,7900,5.3,0.2
-Luka Doncic,LAL,7100,9.1,1.0
-Jalen Duren,,4900,3.9,0.6
-Kon Knueppel,,4500,3.2,0.8
-Devin Booker,,4300,2.3,0.5
-James Harden,CLE,3600,5.5,0.4
-LaMelo Ball,,3200,3.8,0.6
-Paolo Banchero,,2700,2.8,0.6
-DeMar DeRozan,,2600,2.4,0.9
-Kawhi Leonard,,2500,0.0,0.2
-Ryan Rollins,,2500,1.9,0.8
-Bam Adebayo,,2400,4.2,0.6
-Cody Williams,,2400,4.0,3.0
-VJ Edgecombe,,2300,7.8,1.0
-Evan Mobley,,2200,4.7,0.6
-Trey Murphy III,,2100,4.1,0.6
-Justin Edwards,,2000,5.3,3.0
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

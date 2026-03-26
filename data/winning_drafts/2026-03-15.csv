@@ -1,31 +1,31 @@
-rank,username,total_value,player_name,real_score,card_boost,slot_multiplier
-1,cflinger,83.42,B. Sensabaugh,2.1,2.1,2.0
-1,cflinger,83.42,C. Williams,6,3.0,1.8
-1,cflinger,83.42,G. Payton II,4.3,3.0,1.6
-1,cflinger,83.42,J. Edwards,2.8,3.0,1.4
-1,cflinger,83.42,Q. Post,3.3,3.0,1.2
-2,egreenwaldijr,83.09,P. Achiuwa,3,2.1,2.0
-2,egreenwaldijr,83.09,C. Williams,6,3.0,1.8
-2,egreenwaldijr,83.09,D. DeRozan,6.8,0.9,1.6
-2,egreenwaldijr,83.09,O. Tshiebwe,2.5,3.0,1.4
-2,egreenwaldijr,83.09,K. Hayes,3.3,3.0,1.2
-3,silvehr,80.84,I. Collier,2.7,1.4,2.0
-3,silvehr,80.84,G. Santos,3.2,2.5,1.8
-3,silvehr,80.84,J. Walker,3.5,2.3,1.6
-3,silvehr,80.84,C. Williams,6,3.0,1.4
-3,silvehr,80.84,G. Payton II,4.3,3.0,1.2
-4,unamazingausten,79.86,C. Williams,6,3.0,2.0
-4,unamazingausten,79.86,B. Podziemski,3.7,1.4,1.8
-4,unamazingausten,79.86,B. Sensabaugh,2.1,2.1,1.6
-4,unamazingausten,79.86,G. Santos,3.2,2.5,1.4
-4,unamazingausten,79.86,G. Payton II,4.3,3.0,1.2
-5,dayten64,79.86,C. Williams,6,3.0,2.0
-5,dayten64,79.86,B. Podziemski,3.7,1.4,1.8
-5,dayten64,79.86,B. Sensabaugh,2.1,2.1,1.6
-5,dayten64,79.86,G. Santos,3.2,2.5,1.4
-5,dayten64,79.86,G. Payton II,4.3,3.0,1.2
-6,stephcurryno1rider,79.83,D. DeRozan,6.8,0.9,2.0
-6,stephcurryno1rider,79.83,I. Collier,2.7,1.4,1.8
-6,stephcurryno1rider,79.83,P. Achiuwa,3,2.1,1.6
-6,stephcurryno1rider,79.83,C. Williams,6,3.0,1.4
-6,stephcurryno1rider,79.83,K. Hayes,3.3,3.0,1.2
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+,,,,B. Sensabaugh,UTAH,,,2.1,
+,,,,C. Williams,UTAH,,,3.0,
+,,,,G. Payton II,GS,,,3.0,
+,,,,J. Edwards,PHI,,,3.0,
+,,,,Q. Post,GS,,,3.0,
+,,,,P. Achiuwa,SAC,,,2.1,
+,,,,C. Williams,UTAH,,,3.0,
+,,,,D. DeRozan,SAC,,,0.9,
+,,,,O. Tshiebwe,UTAH,,,3.0,
+,,,,K. Hayes,SAC,,,3.0,
+,,,,I. Collier,UTAH,,,1.4,
+,,,,G. Santos,GS,,,2.5,
+,,,,J. Walker,IND,,,2.3,
+,,,,C. Williams,UTAH,,,3.0,
+,,,,G. Payton II,GS,,,3.0,
+,,,,C. Williams,UTAH,,,3.0,
+,,,,B. Podziemski,GS,,,1.4,
+,,,,B. Sensabaugh,UTAH,,,2.1,
+,,,,G. Santos,GS,,,2.5,
+,,,,G. Payton II,GS,,,3.0,
+,,,,C. Williams,UTAH,,,3.0,
+,,,,B. Podziemski,GS,,,1.4,
+,,,,B. Sensabaugh,UTAH,,,2.1,
+,,,,G. Santos,GS,,,2.5,
+,,,,G. Payton II,GS,,,3.0,
+,,,,D. DeRozan,SAC,,,0.9,
+,,,,I. Collier,UTAH,,,1.4,
+,,,,P. Achiuwa,SAC,,,2.1,
+,,,,C. Williams,UTAH,,,3.0,
+,,,,K. Hayes,SAC,,,3.0,

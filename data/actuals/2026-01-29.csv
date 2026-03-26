@@ -1,14 +1,14 @@
 player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Tim Hardaway Jr.,,5.5,1.9,8,,21.6,highest_value
-Dillon Brooks,,6.9,1.1,151,,21.3,highest_value
-Kon Knueppel,,7.0,0.9,293,,20.3,highest_value
-Cooper Flagg,,7.1,0.8,240,,19.9,highest_value
-Joel Embiid,,7.1,0.4,396,,17.1,highest_value
-Tyrese Maxey,,8.0,0.1,1400,,16.8,highest_value
-Michael Porter Jr.,,6.3,0.5,901,,15.7,highest_value
-Jaime Jaquez Jr.,,4.5,1.2,14,,14.4,highest_value
-Dennis Schröder,,4.1,1.5,11,,14.3,highest_value
-Jaden McDaniels,,4.2,1.3,65,,14.0,highest_value
-Dru Smith,,2.8,3.0,3,,13.9,highest_value
-Clint Capela,,2.8,3.0,4,,13.8,highest_value
-Jalen Duren,,4.8,0.8,86,,13.4,highest_value
+Tim Hardaway Jr.,DEN,5.5,1.9,8,,21.6,highest_value
+Dillon Brooks,PHX,6.9,1.1,151,,21.3,highest_value
+Kon Knueppel,CHA,7.0,0.9,293,,20.3,highest_value
+Cooper Flagg,DAL,7.1,0.8,240,,19.9,highest_value
+Joel Embiid,PHI,7.1,0.4,396,,17.1,highest_value
+Tyrese Maxey,PHI,8.0,0.1,1400,,16.8,highest_value
+Michael Porter Jr.,BKN,6.3,0.5,901,,15.7,highest_value
+Jaime Jaquez Jr.,MIA,4.5,1.2,14,,14.4,highest_value
+Dennis Schröder,SAC,4.1,1.5,11,,14.3,highest_value
+Jaden McDaniels,MIN,4.2,1.3,65,,14.0,highest_value
+Dru Smith,MIA,2.8,3.0,3,,13.9,highest_value
+Clint Capela,HOU,2.8,3.0,4,,13.8,highest_value
+Jalen Duren,DET,4.8,0.8,86,,13.4,highest_value

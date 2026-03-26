@@ -1,18 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost
-Luka Doncic,,9700,5.9,0.0
-Nikola Jokic,,8400,5.2,0.0
-Shai Gilgeous-Alexander,,6900,4.5,0.0
-Jalen Johnson,,4400,3.7,0.2
-Jaylen Brown,,4200,4.8,0.3
-Kevin Durant,,3900,2.7,0.5
-Cooper Flagg,,3400,2.5,0.7
-Gui Santos,,3200,0.9,2.4
-Nickeil Alexander-Walker,,3100,3.5,0.8
-Julius Randle,,2700,4.0,0.6
-Cody Williams,,2600,1.7,3.0
-Brandon Ingram,,2500,2.5,0.7
-Scottie Barnes,,2200,2.6,0.5
-Jamal Murray,,2000,4.3,0.2
-Amen Thompson,,2000,4.5,0.6
-Trey Murphy III,,2000,4.0,0.6
-Alperen Sengun,,1800,5.1,0.5
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

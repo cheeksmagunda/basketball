@@ -1,14 +1,14 @@
 player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Hugo González,,4.3,3.0,6,,21.5,highest_value
-Reed Sheppard,,5.1,1.5,1300,,17.9,highest_value
-Sharife Cooper,,3.5,3.0,8,,17.7,highest_value
-Kyle Filipowski,,4.0,2.2,131,,16.7,highest_value
-Jamal Murray,,7.2,0.2,831,,15.9,highest_value
-Kris Dunn,,3.4,2.4,62,,14.9,highest_value
-Keyonte George,,5.8,0.5,647,,14.5,highest_value
-Yanic Konan Niederhauser,,2.8,3.0,4,,14.0,highest_value
-Jonas Valančiūnas,,2.7,2.8,79,,12.9,highest_value
-Payton Pritchard,,4.4,0.8,575,,12.2,highest_value
-Nate Williams,,2.4,3.0,3,,12.1,highest_value
-Brandin Podziemski,,3.5,1.4,681,,12.0,highest_value
-Al Horford,,2.9,2.0,37,,11.7,highest_value
+Hugo González,BOS,4.3,3.0,6,,21.5,highest_value
+Reed Sheppard,HOU,5.1,1.5,1300,,17.9,highest_value
+Sharife Cooper,WSH,3.5,3.0,8,,17.7,highest_value
+Kyle Filipowski,UTAH,4.0,2.2,131,,16.7,highest_value
+Jamal Murray,DEN,7.2,0.2,831,,15.9,highest_value
+Kris Dunn,LAC,3.4,2.4,62,,14.9,highest_value
+Keyonte George,UTAH,5.8,0.5,647,,14.5,highest_value
+Yanic Konan Niederhauser,LAC,2.8,3.0,4,,14.0,highest_value
+Jonas Valančiūnas,DEN,2.7,2.8,79,,12.9,highest_value
+Payton Pritchard,BOS,4.4,0.8,575,,12.2,highest_value
+Nate Williams,GS,2.4,3.0,3,,12.1,highest_value
+Brandin Podziemski,GS,3.5,1.4,681,,12.0,highest_value
+Al Horford,GS,2.9,2.0,37,,11.7,highest_value

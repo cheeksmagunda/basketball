@@ -1,14 +1,14 @@
 player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Bones Hyland,,3.9,3.0,67,,19.5,highest_value
-Rui Hachimura,,4.5,2.2,9,,18.7,highest_value
-Donovan Mitchell,,8.3,0.2,828,,18.3,highest_value
-Luka Dončić,,8.7,,7300,,17.4,highest_value
-Brandon Miller,,5.6,0.9,36,,16.3,highest_value
-CJ McCollum,,5.3,1.0,19,,15.9,highest_value
-Paolo Banchero,,5.8,0.7,78,,15.5,highest_value
-Alperen Şengün,,6.2,0.4,373,,15.0,highest_value
-Jarace Walker,,3.0,2.9,16,,14.6,highest_value
-Dyson Daniels,,4.7,1.0,58,,14.1,highest_value
-Christian Koloko,,2.6,3.0,1,,12.9,highest_value
-Ryan Kalkbrenner,,3.0,2.1,1,,12.5,highest_value
-Donte DiVincenzo,,3.8,1.2,138,,12.0,highest_value
+Bones Hyland,MIN,3.9,3.0,67,,19.5,highest_value
+Rui Hachimura,LAL,4.5,2.2,9,,18.7,highest_value
+Donovan Mitchell,CLE,8.3,0.2,828,,18.3,highest_value
+Luka Dončić,LAL,8.7,,7300,,17.4,highest_value
+Brandon Miller,CHA,5.6,0.9,36,,16.3,highest_value
+CJ McCollum,ATL,5.3,1.0,19,,15.9,highest_value
+Paolo Banchero,ORL,5.8,0.7,78,,15.5,highest_value
+Alperen Şengün,HOU,6.2,0.4,373,,15.0,highest_value
+Jarace Walker,IND,3.0,2.9,16,,14.6,highest_value
+Dyson Daniels,ATL,4.7,1.0,58,,14.1,highest_value
+Christian Koloko,ATL,2.6,3.0,1,,12.9,highest_value
+Ryan Kalkbrenner,CHA,3.0,2.1,1,,12.5,highest_value
+Donte DiVincenzo,MIN,3.8,1.2,138,,12.0,highest_value

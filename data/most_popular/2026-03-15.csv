@@ -1,18 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost
-Shai Gilgeous-Alexander,,6800,4.0,0.0
-Cade Cunningham,,6200,4.9,0.2
-Jalen Brunson,,5800,4.5,0.4
-Brice Sensabaugh,,4600,2.1,2.1
-Donovan Mitchell,,4100,4.9,0.2
-Karl-Anthony Towns,,3800,2.7,0.6
-Jalen Duren,,3600,3.3,0.7
-Cooper Flagg,,3500,4.8,0.7
-James Harden,,3400,1.6,0.3
-Gui Santos,,3200,3.2,2.5
-Isaiah Collier,,3000,2.7,1.4
-DeMar DeRozan,,3000,6.8,0.9
-Precious Achiuwa,,3000,3.0,2.1
-Anthony Edwards,,2800,2.6,0.2
-Deni Avdija,,2700,3.4,0.4
-Nique Clifford,,2600,1.4,3.0
-Brandin Podziemski,,2400,3.7,1.4
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

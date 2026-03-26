@@ -1,14 +1,14 @@
 player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Dru Smith,,3.4,3.0,14,,17.0,highest_value
-Justin Champagnie,,3.6,2.6,1,,16.7,highest_value
-Joel Embiid,,6.4,0.5,151,,16.1,highest_value
-OG Anunoby,,4.6,1.2,5,,14.8,highest_value
-Tre Johnson,,3.3,2.3,17,,14.2,highest_value
-Caleb Martin,,2.8,3.0,1,,14.2,highest_value
-Jamir Watkins,,3.2,3.0,1,,14.0,highest_value
-Max Christie,,3.4,1.9,77,,13.3,highest_value
-Dean Wade,,2.6,3.0,1,,13.1,highest_value
-Simone Fontecchio,,2.6,3.0,35,,13.1,highest_value
-Bub Carrington,,3.0,2.4,14,,13.1,highest_value
-Kevin Huerter,,3.3,2.0,4,,13.1,highest_value
-Josh Hart,,4.2,1.1,17,,13.0,highest_value
+Dru Smith,MIA,3.4,3.0,14,,17.0,highest_value
+Justin Champagnie,WSH,3.6,2.6,1,,16.7,highest_value
+Joel Embiid,PHI,6.4,0.5,151,,16.1,highest_value
+OG Anunoby,NY,4.6,1.2,5,,14.8,highest_value
+Tre Johnson,WSH,3.3,2.3,17,,14.2,highest_value
+Caleb Martin,DAL,2.8,3.0,1,,14.2,highest_value
+Jamir Watkins,WSH,3.2,3.0,1,,14.0,highest_value
+Max Christie,DAL,3.4,1.9,77,,13.3,highest_value
+Dean Wade,CLE,2.6,3.0,1,,13.1,highest_value
+Simone Fontecchio,MIA,2.6,3.0,35,,13.1,highest_value
+Bub Carrington,WSH,3.0,2.4,14,,13.1,highest_value
+Kevin Huerter,CHI,3.3,2.0,4,,13.1,highest_value
+Josh Hart,NY,4.2,1.1,17,,13.0,highest_value

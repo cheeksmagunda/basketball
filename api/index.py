@@ -7290,6 +7290,7 @@ MOST_POPULAR_GH_PREFIX = "data/most_popular"
 OWNERSHIP_LEGACY_PREFIX = "data/ownership"
 MOST_DRAFTED_3X_GH_PREFIX = "data/most_drafted_3x"
 WINNING_DRAFTS_GH_PREFIX = "data/winning_drafts"
+SLATE_RESULTS_GH_PREFIX = "data/slate_results"
 MOST_POPULAR_ROW_FIELDS = [
     "player", "team", "draft_count", "actual_rs", "actual_card_boost",
     "avg_finish", "rank", "saved_at",
@@ -7376,6 +7377,96 @@ def _ingest_secret_ok(request: Request) -> bool:
     if auth.startswith("Bearer ") and auth[7:].strip() == INGEST_SECRET:
         return True
     return False
+
+
+def _parse_completed_regular_season_games(scoreboard: dict) -> list[dict]:
+    """Extract completed regular-season game finals from ESPN scoreboard payload."""
+    games = []
+    for ev in (scoreboard or {}).get("events", []):
+        season = ev.get("season") or {}
+        if (season.get("slug") or "") != "regular-season":
+            continue
+        comps = ev.get("competitions") or []
+        if not comps:
+            continue
+        comp = comps[0] or {}
+        st = (comp.get("status") or {}).get("type") or {}
+        if not st.get("completed"):
+            continue
+        home = away = None
+        for cd in comp.get("competitors") or []:
+            team = cd.get("team") or {}
+            abbr = str(team.get("abbreviation") or "").strip().upper()
+            if not abbr:
+                continue
+            rec = {
+                "abbr": abbr,
+                "score": int(_safe_float(cd.get("score"), 0)),
+                "winner": bool(cd.get("winner")),
+            }
+            if cd.get("homeAway") == "home":
+                home = rec
+            else:
+                away = rec
+        if not home or not away:
+            continue
+        if home["score"] == away["score"]:
+            continue
+        if home["winner"]:
+            w, l = home, away
+        elif away["winner"]:
+            w, l = away, home
+        elif home["score"] > away["score"]:
+            w, l = home, away
+        else:
+            w, l = away, home
+        games.append(
+            {
+                "home": home["abbr"],
+                "away": away["abbr"],
+                "home_score": home["score"],
+                "away_score": away["score"],
+                "winner": w["abbr"],
+                "loser": l["abbr"],
+                "winner_score": w["score"],
+                "loser_score": l["score"],
+            }
+        )
+    return games
+
+
+def _save_slate_results_for_date(date_str: str, skip_if_existing_nonzero: bool = True) -> dict:
+    """Persist one day's completed game finals to data/slate_results/{date}.json."""
+    bad = _validate_date(date_str)
+    if bad:
+        return {"status": "invalid_date", "date": date_str}
+
+    path = f"{SLATE_RESULTS_GH_PREFIX}/{date_str}.json"
+    if skip_if_existing_nonzero:
+        existing_raw, _ = _github_get_file(path)
+        if existing_raw:
+            try:
+                existing = json.loads(existing_raw)
+                if int(_safe_float(existing.get("game_count"), 0)) > 0:
+                    return {"status": "skipped_existing", "date": date_str, "path": path}
+            except Exception:
+                pass
+
+    ymd = date_str.replace("-", "")
+    data = _espn_get(f"{ESPN}/scoreboard?dates={ymd}")
+    games = _parse_completed_regular_season_games(data)
+    payload = {
+        "date": date_str,
+        "game_count": len(games),
+        "games": games,
+        "season_stage": "regular-season",
+        "source": "espn_scoreboard_api",
+        "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    wr = _github_write_file(path, json.dumps(payload, indent=2) + "\n", f"slate_results {date_str}")
+    if not wr.get("ok"):
+        return {"status": "write_error", "date": date_str, "path": path}
+    return {"status": "saved", "date": date_str, "path": path, "game_count": len(games)}
 
 
 def _dates_from_top_performers_mega() -> set:
@@ -7686,6 +7777,16 @@ async def refresh(request: Request):
     threading.Thread(target=_bg_prewarm_after_refresh, daemon=True).start()
 
     return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
+
+
+@app.get("/api/save-slate-results")
+async def save_slate_results(request: Request, date: Optional[str] = None):
+    """Cron/admin helper: persist completed regular-season final scores for a date."""
+    if not _require_cron_secret(request):
+        return _err("Unauthorized", 401)
+    date_str = date or _today_str()
+    out = _save_slate_results_for_date(date_str, skip_if_existing_nonzero=False)
+    return out
 
 
 def _load_deploy_prewarm_state():
@@ -9624,6 +9725,17 @@ async def auto_resolve_line(request: Request):
         results[direction] = {"status": "resolved", "result": result,
                               "actual_stat": actual, "player": player_name,
                               "line": line_val}
+
+    # Auto-persist final scoreboard results for correlation analysis artifacts.
+    # Runs on every game-window cron tick and captures both current ET day and
+    # pick_date to handle midnight rollover slates.
+    try:
+        for _sr_date in sorted(set([today, pick_date])):
+            _sr = _save_slate_results_for_date(_sr_date, skip_if_existing_nonzero=True)
+            if _sr.get("status") == "saved":
+                print(f"[auto-resolve] saved slate_results for {_sr_date} ({_sr.get('game_count', 0)} games)")
+    except Exception as e:
+        print(f"[auto-resolve] slate_results auto-save err: {e}")
 
     if not resolved_any:
         return {"status": "no_change", "details": results}

@@ -1,14 +1,14 @@
 player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Dominick Barlow,,5.7,2.7,38,,27.0,highest_value
-Jaden McDaniels,,5.0,1.2,451,,16.0,highest_value
-Vince Williams Jr.,,3.2,2.3,5,,13.8,highest_value
-Donte DiVincenzo,,4.2,1.2,394,,13.4,highest_value
-Alperen Şengün,,5.5,0.4,1100,,13.3,highest_value
-Kobe Sanders,,2.5,3.0,43,,12.3,highest_value
-Grant Williams,,2.4,3.0,1,,12.1,highest_value
-Anthony Edwards,,5.2,0.3,1300,,12.0,highest_value
-Isaiah Jackson,,2.4,3.0,1,,12.0,highest_value
-Bennedict Mathurin,,3.4,1.5,54,,12.0,highest_value
-Ty Jerome,,3.7,1.2,42,,12.0,highest_value
-Jaren Jackson Jr.,,4.1,0.9,194,,11.9,highest_value
-Jordan Miller,,2.6,2.5,70,,11.8,highest_value
+Dominick Barlow,PHI,5.7,2.7,38,,27.0,highest_value
+Jaden McDaniels,MIN,5.0,1.2,451,,16.0,highest_value
+Vince Williams Jr.,MEM,3.2,2.3,5,,13.8,highest_value
+Donte DiVincenzo,MIN,4.2,1.2,394,,13.4,highest_value
+Alperen Şengün,HOU,5.5,0.4,1100,,13.3,highest_value
+Kobe Sanders,LAC,2.5,3.0,43,,12.3,highest_value
+Grant Williams,CHA,2.4,3.0,1,,12.1,highest_value
+Anthony Edwards,MIN,5.2,0.3,1300,,12.0,highest_value
+Isaiah Jackson,IND,2.4,3.0,1,,12.0,highest_value
+Bennedict Mathurin,IND,3.4,1.5,54,,12.0,highest_value
+Ty Jerome,MEM,3.7,1.2,42,,12.0,highest_value
+Jaren Jackson Jr.,MEM,4.1,0.9,194,,11.9,highest_value
+Jordan Miller,LAC,2.6,2.5,70,,11.8,highest_value

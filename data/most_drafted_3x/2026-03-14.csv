@@ -1,6 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost,min_boost
-Nique Clifford,,2600,2.1,3.0,3.0
-Brook Lopez,,567,0.9,3.0,3.0
-Nolan Traore,,555,0.3,3.0,3.0
-Justin Edwards,,501,3.4,3.0,3.0
-Josh Minott,,499,1.1,3.0,3.0
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

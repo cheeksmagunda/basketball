@@ -1,6 +1,1 @@
-player_name,team,drafts,actual_rs,actual_card_boost,min_boost
-Nique Clifford,,2600,1.4,3.0,3.0
-Keon Ellis,,1400,1.4,3.0,3.0
-Justin Edwards,,1200,2.8,3.0,3.0
-Cody Williams,,1200,6.0,3.0,3.0
-Gary Payton II,,461,4.3,3.0,3.0
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at

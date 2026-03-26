@@ -15,6 +15,26 @@ Six on-disk historical structures (mega rollup + per-date files):
 
 **Team column:** Use 3-letter NBA abbr when known. Parser prompts ask Haiku for `team` on `actuals` / `top_performers` / `winning_drafts`. Backfill: `python scripts/migrate_historical_add_team.py` (fills blanks from `data/predictions/{date}.csv` when player names match). Legacy CSVs without `team` still load via `_parse_actuals_rows` / `_parse_top_performers_mega_rows`.
 
+### Team audit (new ingestions only)
+
+After each new ingest date, run a **date-scoped** team audit (do not run full-history unless needed):
+
+```bash
+# Example for one new ingest date
+python scripts/audit_backfill_teams.py --dates 2026-03-25
+python scripts/fix_team_consistency_pass2.py --dates 2026-03-25
+
+# Multiple new dates at once (comma-separated)
+python scripts/audit_backfill_teams.py --dates 2026-03-25,2026-03-26
+python scripts/fix_team_consistency_pass2.py --dates 2026-03-25,2026-03-26
+```
+
+What this does (per date):
+- normalizes team aliases to canonical app abbreviations (`GS`, `NY`, `SA`, `NO`, `UTAH`, `WSH`)
+- backfills missing teams from predictions, same-date historical rows, and ESPN boxscores
+- handles mid-season trades correctly by resolving teams **by date**
+- cleans blank-player ingestion artifacts in `most_popular` / `most_drafted_3x`
+
 After updating `data/actuals/{date}.csv`, run `python scripts/rebuild_top_performers_mega.py` so `top_performers.csv` stays in sync.
 
 Legacy `data/ownership/{date}.csv` is still readable for calibrate-boost; new writes use **`POST /api/save-most-popular`** or **`POST /api/save-ownership`** (alias → `data/most_popular/`).

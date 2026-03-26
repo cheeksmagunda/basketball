@@ -1,21 +1,21 @@
 winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
-1,qwizzywizzy,80.71,1,Daniss Jenkins,,5.1,4.6,,2026-03-26T03:12:30.978913+00:00
-1,qwizzywizzy,80.71,2,G. Santos,,3.1,4.3,,2026-03-26T03:12:30.978913+00:00
-1,qwizzywizzy,80.71,3,Ace Bailey,,5.1,3.5,,2026-03-26T03:12:30.978913+00:00
-1,qwizzywizzy,80.71,4,W. Clayton Jr.,,2.1,4.4,,2026-03-26T03:12:30.978913+00:00
-1,qwizzywizzy,80.71,5,Brook Lopez,,4.1,4.2,,2026-03-26T03:12:30.978913+00:00
-2,yogurtslapss,79.56,1,Gary Payton II,,3.7,5.0,,2026-03-26T03:12:30.978913+00:00
-2,yogurtslapss,79.56,2,Sandro Mamukelashvili,,4.2,3.7,,2026-03-26T03:12:30.978913+00:00
-2,yogurtslapss,79.56,3,Daniel Gafford,,4.5,3.6,,2026-03-26T03:12:30.978913+00:00
-2,yogurtslapss,79.56,4,Daniss Jenkins,,5.1,4.0,,2026-03-26T03:12:30.978913+00:00
-2,yogurtslapss,79.56,5,Jared McCain,,2.2,4.2,,2026-03-26T03:12:30.978913+00:00
-3,yvngandy,78.34,1,Daniss Jenkins,,5.1,4.6,,2026-03-26T03:12:30.978913+00:00
-3,yvngandy,78.34,2,Gary Payton II,,3.7,4.8,,2026-03-26T03:12:30.978913+00:00
-3,yvngandy,78.34,3,V. Edgecombe,,4.3,2.6,,2026-03-26T03:12:30.978913+00:00
-3,yvngandy,78.34,4,Ace Bailey,,5.1,3.3,,2026-03-26T03:12:30.978913+00:00
-3,yvngandy,78.34,5,Jared McCain,,2.2,4.2,,2026-03-26T03:12:30.978913+00:00
-4,burneracc0,78.25,1,Collin Sexton,,4.3,3.8,,2026-03-26T03:12:30.978913+00:00
-4,burneracc0,78.25,2,Ace Bailey,,5.1,3.7,,2026-03-26T03:12:30.978913+00:00
-4,burneracc0,78.25,3,Daniel Gafford,,4.5,3.6,,2026-03-26T03:12:30.978913+00:00
-4,burneracc0,78.25,4,Z. Williams,,1.9,4.2,,2026-03-26T03:12:30.978913+00:00
-4,burneracc0,78.25,5,Daniss Jenkins,,5.1,3.8,,2026-03-26T03:12:30.978913+00:00
+1,qwizzywizzy,80.71,1,Daniss Jenkins,DET,5.1,4.6,,2026-03-26T03:12:30.978913+00:00
+1,qwizzywizzy,80.71,2,G. Santos,GS,3.1,4.3,,2026-03-26T03:12:30.978913+00:00
+1,qwizzywizzy,80.71,3,Ace Bailey,UTAH,5.1,3.5,,2026-03-26T03:12:30.978913+00:00
+1,qwizzywizzy,80.71,4,W. Clayton Jr.,MEM,2.1,4.4,,2026-03-26T03:12:30.978913+00:00
+1,qwizzywizzy,80.71,5,Brook Lopez,LAC,4.1,4.2,,2026-03-26T03:12:30.978913+00:00
+2,yogurtslapss,79.56,1,Gary Payton II,GS,3.7,5.0,,2026-03-26T03:12:30.978913+00:00
+2,yogurtslapss,79.56,2,Sandro Mamukelashvili,TOR,4.2,3.7,,2026-03-26T03:12:30.978913+00:00
+2,yogurtslapss,79.56,3,Daniel Gafford,DAL,4.5,3.6,,2026-03-26T03:12:30.978913+00:00
+2,yogurtslapss,79.56,4,Daniss Jenkins,DET,5.1,4.0,,2026-03-26T03:12:30.978913+00:00
+2,yogurtslapss,79.56,5,Jared McCain,OKC,2.2,4.2,,2026-03-26T03:12:30.978913+00:00
+3,yvngandy,78.34,1,Daniss Jenkins,DET,5.1,4.6,,2026-03-26T03:12:30.978913+00:00
+3,yvngandy,78.34,2,Gary Payton II,GS,3.7,4.8,,2026-03-26T03:12:30.978913+00:00
+3,yvngandy,78.34,3,V. Edgecombe,PHI,4.3,2.6,,2026-03-26T03:12:30.978913+00:00
+3,yvngandy,78.34,4,Ace Bailey,UTAH,5.1,3.3,,2026-03-26T03:12:30.978913+00:00
+3,yvngandy,78.34,5,Jared McCain,OKC,2.2,4.2,,2026-03-26T03:12:30.978913+00:00
+4,burneracc0,78.25,1,Collin Sexton,CHI,4.3,3.8,,2026-03-26T03:12:30.978913+00:00
+4,burneracc0,78.25,2,Ace Bailey,UTAH,5.1,3.7,,2026-03-26T03:12:30.978913+00:00
+4,burneracc0,78.25,3,Daniel Gafford,DAL,4.5,3.6,,2026-03-26T03:12:30.978913+00:00
+4,burneracc0,78.25,4,Z. Williams,BKN,1.9,4.2,,2026-03-26T03:12:30.978913+00:00
+4,burneracc0,78.25,5,Daniss Jenkins,DET,5.1,3.8,,2026-03-26T03:12:30.978913+00:00
