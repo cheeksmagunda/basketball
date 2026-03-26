@@ -2560,7 +2560,7 @@ async function loadSlate() {
         } catch(e) {}
       }
       if (restored && restored.lineups?.chalk?.length) {
-        SLATE = { ...restored, locked: true, all_complete: slateData.all_complete || false };
+        SLATE = { ...restored, locked: true, lock_time: slateData.lock_time || restored.lock_time, all_complete: slateData.all_complete || false };
       } else {
         SLATE = slateData;
       }

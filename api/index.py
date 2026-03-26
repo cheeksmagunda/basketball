@@ -5694,7 +5694,8 @@ def _get_slate_impl():
         if lock_cached:
             lock_cached["locked"] = True
             lock_cached.setdefault("draftable_count", len(draftable_games))
-            if lock_time: lock_cached.setdefault("lock_time", lock_time)
+            if lock_time and not lock_cached.get("lock_time"):
+                lock_cached["lock_time"] = lock_time
             # Scenario 1 auto-detect: if a new deploy landed mid-slate, the cached
             # picks were built with the old model. Detect SHA mismatch and regenerate
             # in the background — user gets the stale-but-functional slate immediately,
@@ -5712,7 +5713,8 @@ def _get_slate_impl():
         if cached:
             cached["locked"] = True
             cached.setdefault("draftable_count", len(draftable_games))
-            if lock_time: cached.setdefault("lock_time", lock_time)
+            if lock_time and not cached.get("lock_time"):
+                cached["lock_time"] = lock_time
             _ls(_CK_SLATE_LOCKED, cached)
             _slate_backup_to_github(cached)
             # Inline slate prediction save at lock-promotion time.
@@ -5766,8 +5768,8 @@ def _get_slate_impl():
         if has_players or not draftable_games:
             gh_cached["locked"] = locked
             gh_cached.setdefault("draftable_count", len(draftable_games))
-            if lock_time:
-                gh_cached.setdefault("lock_time", lock_time)
+            if lock_time and not gh_cached.get("lock_time"):
+                gh_cached["lock_time"] = lock_time
             # Warm /tmp cache for subsequent requests on this instance
             _cs(_CK_SLATE, gh_cached)
             # Also warm per-game /tmp caches from GitHub
