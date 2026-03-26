@@ -1,7 +1,7 @@
 {
-  "version": 68,
-  "updated_at": "2026-03-26T22:00:00Z",
-  "updated_by": "v68-production-anchor-scoring-floors",
+  "version": 69,
+  "updated_at": "2026-03-26T23:00:00Z",
+  "updated_by": "v69-rs-first-elite-hybrid-calibration",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -281,13 +281,13 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.55,
+    "chalk_milp_rs_focus": 0.75,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
     "chalk_min_high_boost_count": 3,
     "chalk_high_boost_threshold": 1.8,
-    "chalk_min_big_boost_count": 2,
+    "chalk_min_big_boost_count": 3,
     "chalk_big_boost_threshold": 2.0
   },
   "line": {
@@ -382,11 +382,6 @@
       "min_recent_min": 14.0,
       "min_pred_min": 14.0
     },
-    "production_anchor": {
-      "enabled": true,
-      "min_count": 1,
-      "min_pts": 12.0
-    },
     "scoring_pts_bias_threshold": 10.0,
     "scoring_pts_bias_scale": 0.0,
     "scorer_upside": {
@@ -464,6 +459,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 69,
+      "date": "2026-03-26",
+      "change": "RS-FIRST ELITE HYBRID CALIBRATION (v69). Corrected winning drafts analysis (20 drafts, 5 dates): display_mult = slot + boost, NOT just boost. Corrected findings: RS correlates r=0.651 with score (1.67x > boost r=0.391). 50% of winning drafts have a star RS>=6. Avg per-player boost 2.27 (not 3.59). 25% of winner slots are Elite Hybrids (RS 4-6, Boost>=2). Changes: (1) REVERT production_anchor — wrong approach based on incorrect data assumption. (2) chalk_milp_rs_focus 0.55->0.75 — RS is the primary driver of winning score. (3) chalk_min_big_boost_count 2->3 at threshold 2.0 — 69% of winning slots have boost>=2.0, targeting 3/5. (4) Keep rs_bypass enabled — 50% of winning drafts have RS>=6 star, can't block them. (5) Keep scoring floors from v68 (chalk 7.0, moonshot 5.0, HBR 14min) — RS matters."
+    },
     {
       "version": 68,
       "date": "2026-03-26",

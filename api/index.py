@@ -895,9 +895,6 @@ _CONFIG_DEFAULTS = {
         "scoring_pts_bias_threshold": 10.0, "scoring_pts_bias_scale": 0.0,
         # Blend moonshot ceiling toward raw RS×matchup so middling-boost stable scorers compete.
         "ev_rating_blend": 0.0,
-        # Production anchor: force at least 1 player with projected pts >= min_pts into moonshot.
-        # Historical winners were role players who SCORED A LOT — need guaranteed production.
-        "production_anchor": {"enabled": True, "min_count": 1, "min_pts": 12.0},
     },
     "matchup": {
         "enabled": True,
@@ -5120,11 +5117,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         # high-boost-role pathway for 2.0x+/14min players) and ranks by moonshot_ev which
         # uses boost_leverage_power to strongly favor 3.0x boost players.
         # overlap_cap=3 ensures Moonshot differentiates from Starting 5 (max 3 shared players).
-        # Production anchor: force at least 1 guaranteed scorer into moonshot.
-        _pa_cfg = moon_cfg.get("production_anchor", {})
-        _pa_enabled = _pa_cfg.get("enabled", True)
-        _pa_min_count = int(_pa_cfg.get("min_count", 1)) if _pa_enabled else 0
-        _pa_min_pts = float(_pa_cfg.get("min_pts", 12.0)) if _pa_enabled else 0.0
         _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
@@ -5138,14 +5130,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  two_phase=True,
                                  raw_rating_key="rating",
                                  max_per_game=_moon_max_per_game,
-                                 player_games=_moon_pool_games,
-                                 min_scorer_count=_pa_min_count,
-                                 scorer_pts_threshold=_pa_min_pts)
+                                 player_games=_moon_pool_games)
     else:
-        _pa_cfg = moon_cfg.get("production_anchor", {})
-        _pa_enabled = _pa_cfg.get("enabled", True)
-        _pa_min_count = int(_pa_cfg.get("min_count", 1)) if _pa_enabled else 0
-        _pa_min_pts = float(_pa_cfg.get("min_pts", 12.0)) if _pa_enabled else 0.0
         _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
@@ -5157,9 +5143,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  two_phase=True,
                                  raw_rating_key="rating",
                                  max_per_game=_moon_max_per_game,
-                                 player_games=_moon_pool_games,
-                                 min_scorer_count=_pa_min_count,
-                                 scorer_pts_threshold=_pa_min_pts)
+                                 player_games=_moon_pool_games)
         core_pool = None
 
     # Chalk fallback: if MILP returns <5 but we have enough candidates, fill from sorted EV.
