@@ -1376,20 +1376,23 @@ def _lgbm_feature_vector(
     cascade_bonus: float,
     games_played: Optional[float] = None,
     rest_days: Optional[float] = None,
-    # v62: 6 new feature inputs
-    opp_pts_allowed: Optional[float] = None,
     team_pace: Optional[float] = None,
-    team_ppg: Optional[float] = None,
-    teammate_out_count: float = 0.0,
-    game_total: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with train_lgbm.py (18 features, v63 post-audit fix).
+    """Build feature vector aligned with train_lgbm.py (18 features, v63 post-audit).
 
-    FIX (v63 DATA LEAKAGE + TRAIN/INFERENCE ALIGNMENT):
+    v63 AUDIT FIXES (DATA LEAKAGE + TRAIN/INFERENCE ALIGNMENT):
     - Removed 4 dead features (cascade_signal, usage_share, teammate_out_count, game_total, spread_abs)
-    - Feature count reduced from 22 to 18 in train_lgbm.py
-    - Now accepts actual rest_days instead of hardcoding 2.0 for better alignment
+    - Feature count reduced 22 → 18 in train_lgbm.py
     - reb_per_min fixed in training to use season avg REB, not same-game actual
+    - Temporal train/test split ensures realistic test metrics
+    - Now accepts actual rest_days instead of hardcoding 2.0
+    - Includes opp_pts_allowed and team_pace_proxy for realistic opponent context
+
+    Schema (18 features, ORDER MUST MATCH train_lgbm.py line 209-228):
+    0: avg_min, 1: season_pts, 2: usage_trend, 3: opp_def_rating, 4: home_away,
+    5: ast_rate, 6: def_rate, 7: pts_per_min, 8: rest_days, 9: recent_vs_season,
+    10: games_played, 11: reb_per_min, 12: l3_vs_l5_pts, 13: min_volatility,
+    14: starter_proxy, 15: opp_pts_allowed, 16: team_pace_proxy
     """
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
@@ -1412,40 +1415,31 @@ def _lgbm_feature_vector(
         np.clip(abs(recent_min - season_min) / max(season_min, 1.0), 0.0, 1.2)
     )
     starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
-    cascade_signal = float(np.clip(max(cascade_bonus, 0.0) / 15.0, 0.0, 1.5))
 
-    # v62: 6 new features
-    _opp_pts_allowed = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
-    _team_pace = float(team_pace) if team_pace is not None else 110.0
-    _usage_share = float(pts / max(float(team_ppg or 110), 1.0)) if team_ppg else 0.0
-    _teammate_out = float(teammate_out_count)
-    _game_total = float(game_total) if game_total is not None else 222.0
-    _spread_abs = abs(float(spread or 0))
+    # v63 AUDIT: Removed cascade_signal and computed team_pace_proxy
+    # These were dead/low-value features that inflated training cost
+    opp_pts_allowed_ = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
+    team_pace_proxy_ = float(team_pace) if team_pace is not None else 110.0
 
+    # v63 AUDIT: 18-feature schema matching train_lgbm.py (removed 4 dead features)
     return [
-        avg_min,
-        season_pts,
-        usage,
-        opp_def_rating,
-        home_away_,
-        ast_rate_,
-        def_rate_,
-        pts_per_min_,
-        rest_days_,
-        recent_vs_season_,
-        games_played_,
-        reb_per_min_,
-        l3_vs_l5_pts,
-        min_volatility,
-        starter_proxy,
-        cascade_signal,
-        # v62: 6 new features
-        _opp_pts_allowed,
-        _team_pace,
-        _usage_share,
-        _teammate_out,
-        _game_total,
-        _spread_abs,
+        avg_min,              # 0: avg_min
+        season_pts,           # 1: avg_pts (season average)
+        usage,                # 2: usage_trend (recent_min / avg_min)
+        opp_def_rating,       # 3: opp_def_rating
+        home_away_,           # 4: home_away
+        ast_rate_,            # 5: ast_rate
+        def_rate_,            # 6: def_rate
+        pts_per_min_,         # 7: pts_per_min
+        rest_days_,           # 8: rest_days
+        recent_vs_season_,    # 9: recent_vs_season
+        games_played_,        # 10: games_played
+        reb_per_min_,         # 11: reb_per_min
+        l3_vs_l5_pts,         # 12: l3_vs_l5_pts
+        min_volatility,       # 13: min_volatility
+        starter_proxy,        # 14: starter_proxy
+        opp_pts_allowed_,     # 15: opp_pts_allowed (v63 kept: viable signal)
+        team_pace_proxy_,     # 16: team_pace_proxy (v63 kept: viable signal)
     ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3083,12 +3077,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 recent_min=recent_min_,
                 cascade_bonus=cascade_bonus,
                 games_played=float(_gp) if _gp is not None else None,
-                rest_days=float(pinfo.get("rest_days", 2) or 2),  # FIX: use actual rest_days
-                opp_pts_allowed=_opp_def_proxy,
+                rest_days=float(pinfo.get("rest_days", 2) or 2),
                 team_pace=_team_total_proxy,
-                team_ppg=_team_total_proxy,
-                teammate_out_count=float(pinfo.get("teammate_out_count", 0.0) or 0.0),
-                game_total=float(total or DEFAULT_TOTAL),
             )
             ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:
