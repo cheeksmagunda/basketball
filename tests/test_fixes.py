@@ -2272,7 +2272,7 @@ class TestChalkMilpRsFocusHigh:
         At 0.35, boost gap is 1.5 — lets MILP correctly assign high-boost to high slots."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.2 <= val <= 0.6, f"chalk_milp_rs_focus should be 0.2-0.6 (v68 RS-weighted); got {val}"
+        assert 0.2 <= val <= 0.8, f"chalk_milp_rs_focus should be 0.2-0.8 (v69 RS-first); got {val}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -4713,14 +4713,11 @@ class TestProductionAnchor:
         # Should still return 5 players (constraint skipped because no scorers available)
         assert len(result) == 5
 
-    def test_config_defaults_have_production_anchor(self):
-        """_CONFIG_DEFAULTS moonshot section has production_anchor."""
+    def test_production_anchor_reverted_from_defaults(self):
+        """v69: production_anchor removed from _CONFIG_DEFAULTS — wrong approach."""
         from api.index import _CONFIG_DEFAULTS
         moon = _CONFIG_DEFAULTS.get("moonshot", {})
-        pa = moon.get("production_anchor", {})
-        assert pa.get("enabled") is True
-        assert pa.get("min_count") == 1
-        assert pa.get("min_pts") == 12.0
+        assert "production_anchor" not in moon
 
     def test_model_config_scoring_floors(self):
         """model-config.json has tightened scoring floors."""
@@ -4731,23 +4728,30 @@ class TestProductionAnchor:
         assert st.get("min_pts_projection") == 7.0, "chalk pts floor should be 7.0"
         assert st.get("min_pts_projection_moonshot") == 5.0, "moonshot pts floor should be 5.0"
 
-    def test_model_config_production_anchor(self):
-        """model-config.json has production_anchor in moonshot section."""
+    def test_model_config_no_production_anchor(self):
+        """v69: production_anchor removed from model-config.json."""
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        pa = cfg.get("moonshot", {}).get("production_anchor", {})
-        assert pa.get("enabled") is True
-        assert pa.get("min_count") == 1
-        assert pa.get("min_pts") == 12.0
+        pa = cfg.get("moonshot", {}).get("production_anchor")
+        assert pa is None, "production_anchor should be removed from moonshot config"
 
-    def test_model_config_chalk_rs_focus(self):
-        """chalk_milp_rs_focus raised to 0.55."""
+    def test_model_config_chalk_rs_focus_075(self):
+        """v69: chalk_milp_rs_focus raised to 0.75 — RS drives winning (r=0.651)."""
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
         lu = cfg.get("lineup", {})
-        assert lu.get("chalk_milp_rs_focus") == 0.55
+        assert lu.get("chalk_milp_rs_focus") == 0.75
+
+    def test_model_config_big_boost_count_3(self):
+        """v69: chalk_min_big_boost_count=3 — 69% of winning slots have boost>=2.0."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        lu = cfg.get("lineup", {})
+        assert lu.get("chalk_min_big_boost_count") == 3
+        assert lu.get("chalk_big_boost_threshold") == 2.0
 
 
 if __name__ == "__main__":
