@@ -1051,7 +1051,7 @@ class TestConfigCoverage:
         from api.index import _cfg
         # card_boost.ceiling is an existing 3rd-level key
         val = _cfg("card_boost.ceiling", None)
-        assert val == 3.0, f"Expected 3.0, got {val}"
+        assert val == 3.5, f"Expected 3.5, got {val}"
 
     def test_scoring_thresholds_in_config_defaults(self):
         """scoring_thresholds block must exist in _CONFIG_DEFAULTS (hot-path reads depend on it)."""
