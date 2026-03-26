@@ -18,5 +18,9 @@
   {
     "role": "assistant",
     "content": "Love the energy! 12 games tonight \u2014 plenty to work with. Here's the quick rundown:\n\n**\ud83c\udfc0 Chalk (Starting 5):**\n1. Jaime Jaquez Jr. (MIA) \u2014 RS 5.0\n2. Jaden McDaniels (MIN) \u2014 RS 4.7\n3. Rudy Gobert (MIN) \u2014 RS 4.3\n4. Ausar Thompson (DET) \u2014 RS 3.7\n5. Kel'el Ware (MIA) \u2014 RS 3.6\n\n**\ud83c\udf19 Moonshot:**\n1. Rudy Gobert (MIN) \u2014 1.50x boost\n2. Ausar Thompson (DET) \u2014 1.60x boost\n3. Tari Eason (HOU) \u2014 1.70x boost\n4. Zaccharie Risacher (ATL) \u2014 1.70x boost\n5. Kris Dunn (LAC) \u2014 2.00x boost\n\n**\ud83d\udcc8 Line of the Day:**\n- **OVER:** LeBron James \u2014 OVER 18.5 pts (proj 22.2, +3.7 edge)\n- **UNDER:** Nickeil Alexander-Walker \u2014 UNDER 18.5 pts (proj 18.4)\n\nWhat do you want to dig into? Specific game, player, parlay, model tuning \u2014 whatever you need. \ud83d\udd25"
+  },
+  {
+    "role": "user",
+    "content": "why don't i see line of the day or parlay"
   }
 ]
