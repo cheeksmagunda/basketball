@@ -1,0 +1,33 @@
+{
+  "date": "2026-03-24",
+  "game_count": 4,
+  "games": [
+    {
+      "winner": "DEN",
+      "loser": "PHX",
+      "winner_score": 125,
+      "loser_score": 123
+    },
+    {
+      "winner": "NYK",
+      "loser": "NOP",
+      "winner_score": 121,
+      "loser_score": 116
+    },
+    {
+      "winner": "CLE",
+      "loser": "ORL",
+      "winner_score": 136,
+      "loser_score": 131
+    },
+    {
+      "winner": "CHA",
+      "loser": "SAC",
+      "winner_score": 134,
+      "loser_score": 90
+    }
+  ],
+  "source": "manual_screenshot",
+  "notes": "Winner/loser order from app display; home/away not specified.",
+  "saved_at": "2026-03-26T01:00:00+00:00"
+}

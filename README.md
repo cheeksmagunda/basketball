@@ -36,6 +36,7 @@ data/actuals/          — Legacy per-day CSVs (same schema as rollup); optional
 data/most_popular/     — Per-date most-drafted / popularity CSVs (developer ingest; `save-ownership` writes here)
 data/most_drafted_3x/  — High-boost popular sub-list per date (optional)
 data/winning_drafts/   — Long-format top-4 winner lineups per date (optional)
+data/slate_results/    — Per-date JSON: slate game_count + final scores (manual; future model features)
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
 data/parlays/          — Git-tracked daily parlay JSON (ticket + lazy resolution)
@@ -271,7 +272,7 @@ Real Sports **leaderboard outcomes** (who won the value contest, how many drafts
 
 ### Other tracked data
 
-Optional: **`data/most_drafted_3x/`**, **`data/winning_drafts/`** — see [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md). **`POST /api/save-actuals`** still merges into `data/actuals/` when used (e.g. manual admin).
+Optional: **`data/most_drafted_3x/`**, **`data/winning_drafts/`**, **`data/slate_results/{date}.json`** — see [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md). **`POST /api/save-actuals`** still merges into `data/actuals/` when used (e.g. manual admin).
 
 - `data/audit/{date}.json` — pre-computed accuracy audit
 - `data/lines/{date}.csv` — primary pick for result tracking/resolve
@@ -292,7 +293,7 @@ uvicorn server:app --reload
 # open http://localhost:8000
 ```
 
-**Historical CSV ingest (curl/scripts):** [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md) — `top_performers`, `most_popular`, `most_drafted_3x`, `winning_drafts`, optional `INGEST_SECRET`.
+**Historical ingest (curl/scripts):** [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md) — `top_performers`, `most_popular`, `most_drafted_3x`, `winning_drafts`, `slate_results` JSON, optional `INGEST_SECRET`.
 
 **Find code fast:** [CLAUDE.md — Codebase Navigation (grep tags)](CLAUDE.md#codebase-navigation-grep-tags) lists search anchors for Predict / Line / Parlay (DOM + JS + API), backend modules, dev server, and training scripts.
 

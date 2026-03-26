@@ -34,6 +34,7 @@ data/actuals/          — Legacy per-day CSVs; fallback when a date is absent f
 data/most_popular/     — Per-date most-drafted CSVs (`POST /api/save-most-popular` / `save-ownership` alias)
 data/most_drafted_3x/  — Optional high-boost popular slices
 data/winning_drafts/   — Optional long-format top-4 winner lineups
+data/slate_results/    — Per-date JSON: game_count, final scores by matchup (training / analytics; no save-* API yet)
 data/audit/            — Git-tracked daily audit JSONs (auto-generated on save-actuals)
 data/lines/            — Git-tracked daily Line of the Day picks (via GitHub API)
 data/slate/            — GitHub-persisted prediction cache ({date}_slate.json, {date}_games.json)
@@ -121,7 +122,7 @@ grep: PARLAY PAGE              — initParlayPage, fetchParlay, renderParlayTick
 grep: PARLAY LIVE SSE          — /api/parlay-live-stream, _parlay_live_tick_payload, EventSource
 grep: PARLAY ENGINE MODULE     — api/parlay_engine.py (run_parlay_engine; HTTP grep: PARLAY ENGINE in index)
 grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt
-grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts
+grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts, slate_results
 grep: PDF INGEST PLAYBOOK      — Assistant playbook: user uploads PDFs (screenshots inside); rasterize, parse-screenshot, save-*, rebuild_top_performers_mega
 grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
 grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega

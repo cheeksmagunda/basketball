@@ -46,6 +46,7 @@ def main() -> int:
     m3 = REPO / "data" / "most_drafted_3x"
     wd = REPO / "data" / "winning_drafts"
     own = REPO / "data" / "ownership"
+    slate = REPO / "data" / "slate_results"
 
     tp_dates = _dates_from_top_performers(tp)
     pred_dates = _csv_stems(pred_dir)
@@ -53,13 +54,17 @@ def main() -> int:
     m3_dates = _csv_stems(m3)
     wd_dates = _csv_stems(wd)
     own_dates = _csv_stems(own)
+    slate_dates: set[str] = set()
+    if slate.is_dir():
+        slate_dates = {p.stem for p in slate.glob("*.json")}
 
     ovl = tp_dates & pred_dates
     print(
         f"[historical] top_performers dates: {len(tp_dates)} | rows file: {tp.is_file()}\n"
         f"  predictions dates: {len(pred_dates)} | overlap(tp ∩ pred): {len(ovl)}\n"
         f"  most_popular/*.csv: {len(mp_dates)} | most_drafted_3x/*.csv: {len(m3_dates)}\n"
-        f"  winning_drafts/*.csv: {len(wd_dates)} | legacy ownership/*.csv: {len(own_dates)}"
+        f"  winning_drafts/*.csv: {len(wd_dates)} | legacy ownership/*.csv: {len(own_dates)}\n"
+        f"  slate_results/*.json: {len(slate_dates)}"
     )
 
     if args.strict and pred_dates and not ovl:
