@@ -362,7 +362,7 @@
   "moonshot": {
     "min_minutes_floor": 16,
     "min_recent_minutes_floor": 16,
-    "min_card_boost": 2.0,
+    "min_card_boost": 1.5,
     "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
