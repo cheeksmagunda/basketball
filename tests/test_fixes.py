@@ -1986,8 +1986,8 @@ class TestBoostModelInference:
         assert abs(captured["vec"][1] - 28.0) < 1e-6
         assert b == 2.0
 
-    def test_est_card_boost_uses_sigmoid_when_ml_none(self):
-        """When boost model returns None, fall back to PPG sigmoid."""
+    def test_est_card_boost_returns_sentinel_when_ml_none(self):
+        """When boost model returns None (model unavailable), return 1.0 sentinel."""
         from api.index import _est_card_boost
         import api.index as idx
 
@@ -2000,17 +2000,18 @@ class TestBoostModelInference:
                     season_avg_min=30.0,
                     player_pos="G",
                 )
-        assert b <= 0.5
+        assert b == 1.0
 
-    def test_est_card_boost_sigmoid_when_no_projected_rs(self):
-        """Without projected_rs, boost model is skipped — sigmoid from season PPG."""
+    def test_est_card_boost_calls_ml_even_with_zero_projected_rs(self):
+        """ML model is always attempted — even with projected_rs=0 (no sigmoid path)."""
         from api.index import _est_card_boost
         import api.index as idx
 
-        with patch.object(idx, "_lgbm_predict_boost") as mock_boost:
-            b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
-            mock_boost.assert_not_called()
-        assert b <= 0.5
+        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
+            with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost:
+                b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
+                mock_boost.assert_called_once()
+        assert b == 1.5
 
 
 class TestWatchlist:
@@ -4547,7 +4548,7 @@ class TestLogLinearBoost:
 
 
 class TestLgbmFeatureVector22:
-    """v62: _lgbm_feature_vector returns 22 features with new inputs."""
+    """_lgbm_feature_vector returns 22 features matching lgbm_model.pkl schema."""
 
     def test_returns_22_features(self):
         from api.index import _lgbm_feature_vector
@@ -4555,7 +4556,7 @@ class TestLgbmFeatureVector22:
             avg_min=28, pts=18, reb=6, ast=4, stl=1, blk=0.5,
             spread=-3.5, side="home", season_pts=17, recent_pts=19,
             season_min=28, recent_min=29, cascade_bonus=0,
-            opp_pts_allowed=115, team_pace=112, team_ppg=110,
+            opp_pts_allowed=115, team_pace=112,
             teammate_out_count=1, game_total=228,
         )
         assert len(vec) == 22
@@ -4569,9 +4570,8 @@ class TestLgbmFeatureVector22:
             season_min=24, recent_min=25, cascade_bonus=0,
         )
         assert len(vec) == 22
-        # Last 6 should have reasonable defaults
-        assert vec[16] == 110.0  # opp_pts_allowed default
-        assert vec[20] == 222.0  # game_total default
+        assert vec[16] == 110.0  # opp_pts_allowed default (index 16)
+        assert vec[20] == 222.0  # game_total default (index 20)
 
 
 class TestConfigV62Defaults:

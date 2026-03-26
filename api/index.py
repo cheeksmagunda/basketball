@@ -740,9 +740,6 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "ceiling": 3.0, "floor": 0.2,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
-        # Sigmoid fallback: boost = sig_ceiling - sig_range × sigmoid((PPG - sig_midpoint) / sig_scale)
-        "sig_ceiling": 3.0, "sig_range": 2.8, "sig_midpoint": 12.0, "sig_scale": 4.0,
-        "big_market_discount": 0.15,
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1389,22 +1386,19 @@ def _lgbm_feature_vector(
     games_played: Optional[float] = None,
     rest_days: Optional[float] = None,
     team_pace: Optional[float] = None,
+    opp_pts_allowed: Optional[float] = None,
+    game_total: Optional[float] = None,
+    teammate_out_count: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with train_lgbm.py (18 features, v63 post-audit).
+    """Build feature vector aligned with lgbm_model.pkl (22 features).
 
-    v63 AUDIT FIXES (DATA LEAKAGE + TRAIN/INFERENCE ALIGNMENT):
-    - Removed 4 dead features (cascade_signal, usage_share, teammate_out_count, game_total, spread_abs)
-    - Feature count reduced 22 → 18 in train_lgbm.py
-    - reb_per_min fixed in training to use season avg REB, not same-game actual
-    - Temporal train/test split ensures realistic test metrics
-    - Now accepts actual rest_days instead of hardcoding 2.0
-    - Includes opp_pts_allowed and team_pace_proxy for realistic opponent context
-
-    Schema (18 features, ORDER MUST MATCH train_lgbm.py line 209-228):
-    0: avg_min, 1: season_pts, 2: usage_trend, 3: opp_def_rating, 4: home_away,
+    Schema (ORDER MUST MATCH lgbm_model.pkl features list):
+    0: avg_min, 1: avg_pts (season), 2: usage_trend, 3: opp_def_rating, 4: home_away,
     5: ast_rate, 6: def_rate, 7: pts_per_min, 8: rest_days, 9: recent_vs_season,
     10: games_played, 11: reb_per_min, 12: l3_vs_l5_pts, 13: min_volatility,
-    14: starter_proxy, 15: opp_pts_allowed, 16: team_pace_proxy
+    14: starter_proxy, 15: cascade_signal, 16: opp_pts_allowed, 17: team_pace_proxy,
+    18: usage_share (zero-importance, always 0.0), 19: teammate_out_count,
+    20: game_total, 21: spread_abs (zero-importance, always 0.0)
     """
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
@@ -1428,12 +1422,12 @@ def _lgbm_feature_vector(
     )
     starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
 
-    # v63 AUDIT: Removed cascade_signal and computed team_pace_proxy
-    # These were dead/low-value features that inflated training cost
+    cascade_signal_  = 1.0 if cascade_bonus > 0 else 0.0
     opp_pts_allowed_ = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
     team_pace_proxy_ = float(team_pace) if team_pace is not None else 110.0
+    game_total_      = float(game_total) if game_total is not None else 222.0
+    teammate_out_    = float(teammate_out_count) if teammate_out_count is not None else 0.0
 
-    # v63 AUDIT: 18-feature schema matching train_lgbm.py (removed 4 dead features)
     return [
         avg_min,              # 0: avg_min
         season_pts,           # 1: avg_pts (season average)
@@ -1450,8 +1444,13 @@ def _lgbm_feature_vector(
         l3_vs_l5_pts,         # 12: l3_vs_l5_pts
         min_volatility,       # 13: min_volatility
         starter_proxy,        # 14: starter_proxy
-        opp_pts_allowed_,     # 15: opp_pts_allowed (v63 kept: viable signal)
-        team_pace_proxy_,     # 16: team_pace_proxy (v63 kept: viable signal)
+        cascade_signal_,      # 15: cascade_signal
+        opp_pts_allowed_,     # 16: opp_pts_allowed
+        team_pace_proxy_,     # 17: team_pace_proxy
+        0.0,                  # 18: usage_share (zero-importance in model)
+        teammate_out_,        # 19: teammate_out_count
+        game_total_,          # 20: game_total
+        0.0,                  # 21: spread_abs (zero-importance in model)
     ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2817,56 +2816,19 @@ def _est_card_boost(
     season_avg_min=0.0,
     player_pos="",
 ):
-    """Get or estimate ADDITIVE card boost for Real Sports.
+    """Get card boost for Real Sports via LightGBM.
 
-    Two-step approach (no manual uploads, no per-player config overrides):
-    1. 2-feature LightGBM — [projected_rs, min_proxy]. min_proxy = 12 + 5*log1p(drafts),
-       where drafts come from drafts_model.pkl when present (stable role + market + pos),
-       else legacy inverse-map from projected minutes.
-    2. Sigmoid fallback — when RS/minutes are unavailable for ML; uses PPG tier + big-market discount.
+    2-feature LightGBM — [projected_rs, min_proxy]. min_proxy = 12 + 5*log1p(drafts),
+    where drafts come from drafts_model.pkl when present (stable role + market + pos),
+    else legacy inverse-map from projected minutes.
+
+    Always uses the ML model. No sigmoid fallback — boost is a prediction, not a heuristic.
+    If boost_model.pkl is unavailable, returns 1.0 as an emergency sentinel (should never
+    happen in production).
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
     floor_val = cb.get("floor", 0.2)
-
-    ml_pred = None
-    if projected_rs is not None and projected_rs > 0 and proj_min is not None and proj_min > 0:
-        big_markets = set(
-            cb.get(
-                "big_market_teams",
-                ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
-            )
-        )
-        is_bm = 1.0 if team_abbr in big_markets else 0.0
-        _spts = float(season_pts or pts or 0.0)
-        _smin = float(season_avg_min or proj_min or 0.0)
-        log1p_drafts = _lgbm_predict_log1p_drafts(
-            [_spts, _smin, is_bm, float(_draft_pos_bucket(player_pos))]
-        )
-        if log1p_drafts is not None and log1p_drafts > 0:
-            min_m = float(cb.get("drafts_log1p_min", 0.5))
-            max_m = float(cb.get("drafts_log1p_max", 9.0))
-            z = float(np.clip(log1p_drafts, min_m, max_m))
-            min_proxy = 12.0 + 5.0 * z
-        else:
-            estimated_drafts = np.expm1((float(proj_min) - 12.0) / 5.0)
-            estimated_drafts = max(0.0, estimated_drafts)
-            min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
-        feat_vec = [float(projected_rs), min_proxy]
-        ml_pred = _lgbm_predict_boost(feat_vec)
-
-    if ml_pred is not None:
-        return _clamp_round_boost(ml_pred, floor_val, ceiling)
-
-    # Sigmoid fallback (ML unavailable or missing projected_rs/proj_min).
-    effective_hype_ppg = max(float(season_pts), float(recent_pts)) + (float(cascade_bonus) * 0.75)
-    sig_ceiling  = cb.get("sig_ceiling", 3.0)
-    sig_range    = cb.get("sig_range", 2.8)
-    sig_midpoint = cb.get("sig_midpoint", 12.0)
-    sig_scale    = cb.get("sig_scale", 4.0)
-    bm_discount  = cb.get("big_market_discount", 0.15)
-    sigmoid_val = 1.0 / (1.0 + np.exp(-(effective_hype_ppg - sig_midpoint) / sig_scale))
-    boost = sig_ceiling - sig_range * sigmoid_val
 
     big_markets = set(
         cb.get(
@@ -2874,11 +2836,34 @@ def _est_card_boost(
             ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
         )
     )
-    is_big_market = 1.0 if team_abbr in big_markets else 0.0
-    if is_big_market > 0.5:
-        boost -= bm_discount
+    is_bm = 1.0 if team_abbr in big_markets else 0.0
+    _rs  = float(projected_rs) if projected_rs is not None else 0.0
+    _pm  = float(proj_min) if proj_min is not None else 0.0
+    _spts = float(season_pts or pts or 0.0)
+    _smin = float(season_avg_min or _pm or 0.0)
 
-    return _clamp_round_boost(boost, floor_val, ceiling)
+    log1p_drafts = _lgbm_predict_log1p_drafts(
+        [_spts, _smin, is_bm, float(_draft_pos_bucket(player_pos))]
+    )
+    if log1p_drafts is not None and log1p_drafts > 0:
+        min_m = float(cb.get("drafts_log1p_min", 0.5))
+        max_m = float(cb.get("drafts_log1p_max", 9.0))
+        z = float(np.clip(log1p_drafts, min_m, max_m))
+        min_proxy = 12.0 + 5.0 * z
+    else:
+        estimated_drafts = np.expm1((_pm - 12.0) / 5.0) if _pm > 0 else 0.0
+        estimated_drafts = max(0.0, estimated_drafts)
+        min_proxy = 12.0 + 5.0 * np.log1p(estimated_drafts)
+
+    feat_vec = [_rs, min_proxy]
+    ml_pred = _lgbm_predict_boost(feat_vec)
+
+    if ml_pred is not None:
+        return _clamp_round_boost(ml_pred, floor_val, ceiling)
+
+    # boost_model.pkl unavailable — emergency sentinel (should never trigger in production)
+    print(f"[CRITICAL] boost_model.pkl not loaded — returning 1.0 for {player_name}")
+    return 1.0
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
@@ -3154,6 +3139,9 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 games_played=float(_gp) if _gp is not None else None,
                 rest_days=float(pinfo.get("rest_days", 2) or 2),
                 team_pace=_team_total_proxy,
+                opp_pts_allowed=_opp_def_proxy,
+                game_total=float(total or DEFAULT_TOTAL),
+                teammate_out_count=float(pinfo.get("teammate_out_count", 0) or 0),
             )
             ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:
