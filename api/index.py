@@ -2659,7 +2659,7 @@ def _cascade_minutes(roster, stats_map):
                 cascade_flags[pid] += bonus
 
     # Cap per-player cascade (config: cascade.per_player_cap_minutes)
-    cap_min = _cfg("cascade.per_player_cap_minutes", 3.0)
+    cap_min = _cfg("cascade.per_player_cap_minutes", _CONFIG_DEFAULTS["cascade"]["per_player_cap_minutes"])
     for pid in cascade_flags:
         cascade_flags[pid] = min(cascade_flags[pid], cap_min)
 
@@ -3011,10 +3011,11 @@ def _est_card_boost(
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
-    w = _cfg("real_score.dfs_weights", {"pts":1.5,"reb":0.5,"ast":1.0,"stl":3.0,"blk":1.5,"tov":-1.0})
-    return (pts * w.get("pts", 1.5) + reb * w.get("reb", 0.5) +
-            ast * w.get("ast", 1.0) + stl * w.get("stl", 3.0) +
-            blk * w.get("blk", 1.5) + tov * w.get("tov", -1.0))
+    _w_defaults = _CONFIG_DEFAULTS["real_score"]["dfs_weights"]
+    w = _cfg("real_score.dfs_weights", _w_defaults)
+    return (pts * w.get("pts", _w_defaults["pts"]) + reb * w.get("reb", _w_defaults["reb"]) +
+            ast * w.get("ast", _w_defaults["ast"]) + stl * w.get("stl", _w_defaults["stl"]) +
+            blk * w.get("blk", _w_defaults["blk"]) + tov * w.get("tov", _w_defaults["tov"]))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3396,15 +3397,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             raw_score = min(raw_score * m, rs_cap)
 
     # ── Game closeness RS multiplier — selective by player usage ──────────
-    # The RS algorithm HEAVILY rewards plays in tight games (clutch factor).
-    # Re-integrated from real_score.py but scaled by usage so bench players
-    # don't inflate (the old bug). High-usage players in tight games get the
-    # full closeness bonus. Low-usage bench players get almost nothing.
-    #
-    # Key insight: a role player in a 2-point game with 3 steals and a scoring
-    # run will outscore a superstar in a blowout EVERY TIME in RS.
+    # WARNING: closeness is ALREADY applied inside real_score_projection() via
+    # c_c (the closeness coefficient). This block applies it a SECOND time with
+    # usage scaling. Only enable if mc_strength is set to 0 (MC path disabled),
+    # otherwise the closeness bonus will be double-counted.
     close_cfg = rs_cfg.get("closeness", {})
-    if close_cfg.get("enabled", False):
+    _mc_active = float(rs_cfg.get("mc_strength", 0.5)) > 0
+    if close_cfg.get("enabled", False) and not _mc_active:
         try:
             c_c = closeness_coefficient(spread, total, game_id=game_id)
             # Usage proxy: pts_per_min normalized (league avg ~0.5 pts/min)
@@ -4606,8 +4605,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         #   starter role due to injury — cascade engine gave them 10+ bonus minutes).
         #   This prevents "DFS Ghosts": trickle-cascade bench warmers won't clear
         #   both gates simultaneously, only true spot-starters will.
-        chalk_min_floor = _cfg("projection.chalk_season_min_floor", 20.0)
-        chalk_recent_floor = _cfg("projection.chalk_recent_min_floor", 15.0)
+        chalk_min_floor = _cfg("projection.chalk_season_min_floor",
+                              _CONFIG_DEFAULTS["projection"]["chalk_season_min_floor"])
+        chalk_recent_floor = _cfg("projection.chalk_recent_min_floor",
+                                  _CONFIG_DEFAULTS["projection"]["chalk_recent_min_floor"])
         _recent_min_chalk = p.get("recent_min", 0) or p.get("season_min", 0)
         is_regular     = (p.get("season_min", 0) >= chalk_min_floor and
                           _recent_min_chalk >= chalk_recent_floor)
@@ -5175,8 +5176,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
                 continue
             _mp = {**p}
-            _mp["adj_ceiling"] = round(float(p.get("rating", 0)), 3)
-            _mp["moonshot_ev"] = round(float(p.get("rating", 0)) * (avg_slot + float(p.get("est_mult", 0))), 2)
+            # Apply boost leverage consistent with main moonshot path
+            _relax_boost_power = moon_cfg.get("boost_leverage_power", _moon_defaults["boost_leverage_power"])
+            _relax_boost_lev = max(float(p.get("est_mult", 0)), 0.2) ** _relax_boost_power
+            _mp["adj_ceiling"] = round(float(p.get("rating", 0)) * _relax_boost_lev, 3)
+            _mp["moonshot_ev"] = round(_mp["adj_ceiling"] * (avg_slot + float(p.get("est_mult", 0))), 2)
             relaxed_pool.append(_mp)
         if relaxed_pool:
             moonshot_pool = sorted(relaxed_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
@@ -11271,8 +11275,8 @@ async def lab_calibrate_boost():
     try:
         from collections import defaultdict
 
-        ceiling = _cfg("card_boost.ceiling", 3.0)
-        floor_  = _cfg("card_boost.floor", 0.2)
+        ceiling = _cfg("card_boost.ceiling", _CONFIG_DEFAULTS["card_boost"]["ceiling"])
+        floor_  = _cfg("card_boost.floor", _CONFIG_DEFAULTS["card_boost"]["floor"])
 
         player_boosts = defaultdict(list)
         dates_used = []
