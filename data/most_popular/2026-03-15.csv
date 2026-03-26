@@ -1,15 +1,18 @@
-player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
-Cody Williams,,78,6,3.0,,1,2026-03-18T05:03:38.821976+00:00
-Gary Payton II,,11,4.3,3.0,,2,2026-03-18T05:03:38.821976+00:00
-DeMar DeRozan,,627,6.8,0.9,,3,2026-03-18T05:03:38.821976+00:00
-Jakob Poeltl,,1,5.4,1.6,,4,2026-03-18T05:03:38.821976+00:00
-Bobby Portis,,21,5.2,1.6,,5,2026-03-18T05:03:38.821976+00:00
-Aaron Nesmith,,2,4.8,1.9,,6,2026-03-18T05:03:38.821976+00:00
-Killian Hayes,,7,3.3,3.0,,7,2026-03-18T05:03:38.821976+00:00
-Quinten Post,,4,3.3,3.0,,8,2026-03-18T05:03:38.821976+00:00
-Quentin Grimes,,470,4.2,1.7,,9,2026-03-18T05:03:38.821976+00:00
-Jarace Walker,,24,3.5,2.3,,10,2026-03-18T05:03:38.821976+00:00
-P.J. Washington,,4,4.5,1.5,,11,2026-03-18T05:03:38.821976+00:00
-Naji Marshall,,20,4.4,1.4,,12,2026-03-18T05:03:38.821976+00:00
-Alex Caruso,,2,2.9,3.0,,13,2026-03-18T05:03:38.821976+00:00
-Julius Randle,,162,5.5,0.6,,14,2026-03-18T05:03:38.821976+00:00
+player_name,team,drafts,actual_rs,actual_card_boost
+Shai Gilgeous-Alexander,,6800,4.0,0.0
+Cade Cunningham,,6200,4.9,0.2
+Jalen Brunson,,5800,4.5,0.4
+Brice Sensabaugh,,4600,2.1,2.1
+Donovan Mitchell,,4100,4.9,0.2
+Karl-Anthony Towns,,3800,2.7,0.6
+Jalen Duren,,3600,3.3,0.7
+Cooper Flagg,,3500,4.8,0.7
+James Harden,,3400,1.6,0.3
+Gui Santos,,3200,3.2,2.5
+Isaiah Collier,,3000,2.7,1.4
+DeMar DeRozan,,3000,6.8,0.9
+Precious Achiuwa,,3000,3.0,2.1
+Anthony Edwards,,2800,2.6,0.2
+Deni Avdija,,2700,3.4,0.4
+Nique Clifford,,2600,1.4,3.0
+Brandin Podziemski,,2400,3.7,1.4
