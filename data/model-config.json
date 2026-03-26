@@ -178,7 +178,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.5,
+    "chalk_min_boost_floor": 1.2,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.5,
@@ -283,7 +283,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.0,
+    "chalk_milp_rs_focus": 0.5,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
@@ -326,13 +326,13 @@
   "moonshot": {
     "min_minutes_floor": 16,
     "min_recent_minutes_floor": 16,
-    "min_card_boost": 1.0,
+    "min_card_boost": 2.0,
     "min_rating_floor": 3.0,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
-    "max_centers": 99,
+    "max_centers": 2,
     "boost_leverage_power": 0.0,
     "variance_penalty": 0,
     "max_per_team": 3,
@@ -359,7 +359,7 @@
     },
     "rs_bypass": {
       "enabled": false,
-      "min_rating": 5.0,
+      "min_rating": 6.0,
       "min_season_min": 25.0,
       "min_boost": 0.3
     },
