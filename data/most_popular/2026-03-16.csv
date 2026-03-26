@@ -1,14 +1,18 @@
-player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
-Nickeil Alexander-Walker,,293,6.8,0.9,,1,2026-03-18T05:03:38.822030+00:00
-Jordan Miller,,14,3.8,2.5,,2,2026-03-18T05:03:38.822030+00:00
-Matas Buzelis,,172,5,1.3,,3,2026-03-18T05:03:38.822030+00:00
-Naji Marshall,,41,4.8,1.3,,4,2026-03-18T05:03:38.822030+00:00
-Gui Santos,,243,3.4,2.5,,5,2026-03-18T05:03:38.822030+00:00
-De'Anthony Melton,,9,4.1,1.7,,6,2026-03-18T05:03:38.822030+00:00
-Kristaps Porzingis,,28,5,1.0,,7,2026-03-18T05:03:38.822030+00:00
-Gary Payton II,,60,2.9,3.0,,8,2026-03-18T05:03:38.822030+00:00
-Oso Ighodaro,,5,3,2.9,,9,2026-03-18T05:03:38.822030+00:00
-Will Riley,,13,2.9,3.0,,10,2026-03-18T05:03:38.822030+00:00
-Karlo Matković,,1,2.8,3.0,,11,2026-03-18T05:03:38.822030+00:00
-Devin Booker,,552,5.5,0.5,,12,2026-03-18T05:03:38.822030+00:00
-Leonard Miller,,30,2.7,3.0,,13,2026-03-18T05:03:38.822030+00:00
+player_name,team,drafts,actual_rs,actual_card_boost
+Luka Doncic,,10800,5.0,0.0
+Victor Wembanyama,,10300,3.7,0.2
+Kevin Durant,,5300,1.3,0.5
+Cooper Flagg,,4200,3.3,0.7
+Jaylen Brown,,4100,5.6,0.3
+Jalen Johnson,,4000,5.7,0.3
+Gui Santos,,3800,3.4,2.5
+Devin Booker,,3600,5.5,0.5
+Paolo Banchero,,2800,2.5,0.6
+Desmond Bane,,2300,2.3,0.7
+Stephon Castle,,2200,3.7,0.8
+Amen Thompson,,2200,3.4,0.6
+Trey Murphy III,,2100,3.6,0.6
+De'Aaron Fox,,2100,2.9,0.6
+Donovan Clingan,,2000,2.4,0.9
+Brandin Podziemski,,2000,1.6,1.3
+Austin Reaves,,1900,3.1,0.5
