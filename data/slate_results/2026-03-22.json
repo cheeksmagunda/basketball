@@ -1,0 +1,59 @@
+{
+  "date": "2026-03-22",
+  "game_count": 5,
+  "games": [
+    {
+      "home": "DEN",
+      "away": "POR",
+      "home_score": 128,
+      "away_score": 112,
+      "winner": "DEN",
+      "loser": "POR",
+      "winner_score": 128,
+      "loser_score": 112
+    },
+    {
+      "home": "SAC",
+      "away": "BKN",
+      "home_score": 126,
+      "away_score": 122,
+      "winner": "SAC",
+      "loser": "BKN",
+      "winner_score": 126,
+      "loser_score": 122
+    },
+    {
+      "home": "NY",
+      "away": "WSH",
+      "home_score": 145,
+      "away_score": 113,
+      "winner": "NY",
+      "loser": "WSH",
+      "winner_score": 145,
+      "loser_score": 113
+    },
+    {
+      "home": "BOS",
+      "away": "MIN",
+      "home_score": 92,
+      "away_score": 102,
+      "winner": "MIN",
+      "loser": "BOS",
+      "winner_score": 102,
+      "loser_score": 92
+    },
+    {
+      "home": "PHX",
+      "away": "TOR",
+      "home_score": 120,
+      "away_score": 98,
+      "winner": "PHX",
+      "loser": "TOR",
+      "winner_score": 120,
+      "loser_score": 98
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:21Z"
+}

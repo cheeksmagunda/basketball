@@ -1,0 +1,89 @@
+{
+  "date": "2026-01-29",
+  "game_count": 8,
+  "games": [
+    {
+      "home": "PHI",
+      "away": "SAC",
+      "home_score": 113,
+      "away_score": 111,
+      "winner": "PHI",
+      "loser": "SAC",
+      "winner_score": 113,
+      "loser_score": 111
+    },
+    {
+      "home": "WSH",
+      "away": "MIL",
+      "home_score": 109,
+      "away_score": 99,
+      "winner": "WSH",
+      "loser": "MIL",
+      "winner_score": 109,
+      "loser_score": 99
+    },
+    {
+      "home": "ATL",
+      "away": "HOU",
+      "home_score": 86,
+      "away_score": 104,
+      "winner": "HOU",
+      "loser": "ATL",
+      "winner_score": 104,
+      "loser_score": 86
+    },
+    {
+      "home": "CHI",
+      "away": "MIA",
+      "home_score": 113,
+      "away_score": 116,
+      "winner": "MIA",
+      "loser": "CHI",
+      "winner_score": 116,
+      "loser_score": 113
+    },
+    {
+      "home": "DAL",
+      "away": "CHA",
+      "home_score": 121,
+      "away_score": 123,
+      "winner": "CHA",
+      "loser": "DAL",
+      "winner_score": 123,
+      "loser_score": 121
+    },
+    {
+      "home": "DEN",
+      "away": "BKN",
+      "home_score": 107,
+      "away_score": 103,
+      "winner": "DEN",
+      "loser": "BKN",
+      "winner_score": 107,
+      "loser_score": 103
+    },
+    {
+      "home": "PHX",
+      "away": "DET",
+      "home_score": 114,
+      "away_score": 96,
+      "winner": "PHX",
+      "loser": "DET",
+      "winner_score": 114,
+      "loser_score": 96
+    },
+    {
+      "home": "MIN",
+      "away": "OKC",
+      "home_score": 123,
+      "away_score": 111,
+      "winner": "MIN",
+      "loser": "OKC",
+      "winner_score": 123,
+      "loser_score": 111
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:02Z"
+}

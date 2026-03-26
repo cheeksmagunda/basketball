@@ -1,0 +1,29 @@
+{
+  "date": "2025-10-23",
+  "game_count": 2,
+  "games": [
+    {
+      "home": "IND",
+      "away": "OKC",
+      "home_score": 135,
+      "away_score": 141,
+      "winner": "OKC",
+      "loser": "IND",
+      "winner_score": 141,
+      "loser_score": 135
+    },
+    {
+      "home": "GS",
+      "away": "DEN",
+      "home_score": 137,
+      "away_score": 131,
+      "winner": "GS",
+      "loser": "DEN",
+      "winner_score": 137,
+      "loser_score": 131
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:23Z"
+}

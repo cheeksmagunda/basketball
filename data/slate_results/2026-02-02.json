@@ -1,0 +1,49 @@
+{
+  "date": "2026-02-02",
+  "game_count": 4,
+  "games": [
+    {
+      "home": "CHA",
+      "away": "NO",
+      "home_score": 102,
+      "away_score": 95,
+      "winner": "CHA",
+      "loser": "NO",
+      "winner_score": 102,
+      "loser_score": 95
+    },
+    {
+      "home": "IND",
+      "away": "HOU",
+      "home_score": 114,
+      "away_score": 118,
+      "winner": "HOU",
+      "loser": "IND",
+      "winner_score": 118,
+      "loser_score": 114
+    },
+    {
+      "home": "MEM",
+      "away": "MIN",
+      "home_score": 137,
+      "away_score": 128,
+      "winner": "MEM",
+      "loser": "MIN",
+      "winner_score": 137,
+      "loser_score": 128
+    },
+    {
+      "home": "LAC",
+      "away": "PHI",
+      "home_score": 113,
+      "away_score": 128,
+      "winner": "PHI",
+      "loser": "LAC",
+      "winner_score": 128,
+      "loser_score": 113
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:03Z"
+}

@@ -1,0 +1,39 @@
+{
+  "date": "2025-11-13",
+  "game_count": 3,
+  "games": [
+    {
+      "home": "CLE",
+      "away": "TOR",
+      "home_score": 113,
+      "away_score": 126,
+      "winner": "TOR",
+      "loser": "CLE",
+      "winner_score": 126,
+      "loser_score": 113
+    },
+    {
+      "home": "PHX",
+      "away": "IND",
+      "home_score": 133,
+      "away_score": 98,
+      "winner": "PHX",
+      "loser": "IND",
+      "winner_score": 133,
+      "loser_score": 98
+    },
+    {
+      "home": "UTAH",
+      "away": "ATL",
+      "home_score": 122,
+      "away_score": 132,
+      "winner": "ATL",
+      "loser": "UTAH",
+      "winner_score": 132,
+      "loser_score": 122
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:31Z"
+}

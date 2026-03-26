@@ -1,0 +1,49 @@
+{
+  "date": "2025-12-11",
+  "game_count": 4,
+  "games": [
+    {
+      "home": "HOU",
+      "away": "LAC",
+      "home_score": 115,
+      "away_score": 113,
+      "winner": "HOU",
+      "loser": "LAC",
+      "winner_score": 115,
+      "loser_score": 113
+    },
+    {
+      "home": "MIL",
+      "away": "BOS",
+      "home_score": 116,
+      "away_score": 101,
+      "winner": "MIL",
+      "loser": "BOS",
+      "winner_score": 116,
+      "loser_score": 101
+    },
+    {
+      "home": "NO",
+      "away": "POR",
+      "home_score": 143,
+      "away_score": 120,
+      "winner": "NO",
+      "loser": "POR",
+      "winner_score": 143,
+      "loser_score": 120
+    },
+    {
+      "home": "SAC",
+      "away": "DEN",
+      "home_score": 105,
+      "away_score": 136,
+      "winner": "DEN",
+      "loser": "SAC",
+      "winner_score": 136,
+      "loser_score": 105
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:44Z"
+}

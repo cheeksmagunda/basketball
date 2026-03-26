@@ -36,7 +36,7 @@ data/actuals/          — Legacy per-day CSVs (same schema as rollup); optional
 data/most_popular/     — Per-date most-drafted / popularity CSVs (developer ingest; `save-ownership` writes here)
 data/most_drafted_3x/  — High-boost popular sub-list per date (optional)
 data/winning_drafts/   — Long-format top-4 winner lineups per date (optional)
-data/slate_results/    — Per-date JSON: slate game_count + final scores (manual; future model features)
+data/slate_results/    — Per-date JSON + `regular_season_games_flat.csv` (ESPN RS scores; see HISTORICAL_DATA.md)
 data/audit/            — Git-tracked daily audit JSONs
 data/lines/            — Git-tracked daily Line of the Day picks
 data/parlays/          — Git-tracked daily parlay JSON (ticket + lazy resolution)

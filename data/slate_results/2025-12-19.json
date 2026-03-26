@@ -1,0 +1,59 @@
+{
+  "date": "2025-12-19",
+  "game_count": 5,
+  "games": [
+    {
+      "home": "BOS",
+      "away": "MIA",
+      "home_score": 129,
+      "away_score": 116,
+      "winner": "BOS",
+      "loser": "MIA",
+      "winner_score": 129,
+      "loser_score": 116
+    },
+    {
+      "home": "NY",
+      "away": "PHI",
+      "home_score": 107,
+      "away_score": 116,
+      "winner": "PHI",
+      "loser": "NY",
+      "winner_score": 116,
+      "loser_score": 107
+    },
+    {
+      "home": "ATL",
+      "away": "SA",
+      "home_score": 98,
+      "away_score": 126,
+      "winner": "SA",
+      "loser": "ATL",
+      "winner_score": 126,
+      "loser_score": 98
+    },
+    {
+      "home": "CLE",
+      "away": "CHI",
+      "home_score": 125,
+      "away_score": 136,
+      "winner": "CHI",
+      "loser": "CLE",
+      "winner_score": 136,
+      "loser_score": 125
+    },
+    {
+      "home": "MIN",
+      "away": "OKC",
+      "home_score": 112,
+      "away_score": 107,
+      "winner": "MIN",
+      "loser": "OKC",
+      "winner_score": 112,
+      "loser_score": 107
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:46Z"
+}

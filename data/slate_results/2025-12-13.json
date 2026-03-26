@@ -1,0 +1,29 @@
+{
+  "date": "2025-12-13",
+  "game_count": 2,
+  "games": [
+    {
+      "home": "ORL",
+      "away": "NY",
+      "home_score": 120,
+      "away_score": 132,
+      "winner": "NY",
+      "loser": "ORL",
+      "winner_score": 132,
+      "loser_score": 120
+    },
+    {
+      "home": "OKC",
+      "away": "SA",
+      "home_score": 109,
+      "away_score": 111,
+      "winner": "SA",
+      "loser": "OKC",
+      "winner_score": 111,
+      "loser_score": 109
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:44Z"
+}

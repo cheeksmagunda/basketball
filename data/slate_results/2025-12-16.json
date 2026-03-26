@@ -1,0 +1,19 @@
+{
+  "date": "2025-12-16",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "NY",
+      "away": "SA",
+      "home_score": 124,
+      "away_score": 113,
+      "winner": "NY",
+      "loser": "SA",
+      "winner_score": 124,
+      "loser_score": 113
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:45Z"
+}

@@ -1,0 +1,69 @@
+{
+  "date": "2026-02-21",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "PHX",
+      "away": "ORL",
+      "home_score": 113,
+      "away_score": 110,
+      "winner": "PHX",
+      "loser": "ORL",
+      "winner_score": 113,
+      "loser_score": 110
+    },
+    {
+      "home": "NO",
+      "away": "PHI",
+      "home_score": 126,
+      "away_score": 111,
+      "winner": "NO",
+      "loser": "PHI",
+      "winner_score": 126,
+      "loser_score": 111
+    },
+    {
+      "home": "MIA",
+      "away": "MEM",
+      "home_score": 136,
+      "away_score": 120,
+      "winner": "MIA",
+      "loser": "MEM",
+      "winner_score": 136,
+      "loser_score": 120
+    },
+    {
+      "home": "CHI",
+      "away": "DET",
+      "home_score": 110,
+      "away_score": 126,
+      "winner": "DET",
+      "loser": "CHI",
+      "winner_score": 126,
+      "loser_score": 110
+    },
+    {
+      "home": "SA",
+      "away": "SAC",
+      "home_score": 139,
+      "away_score": 122,
+      "winner": "SA",
+      "loser": "SAC",
+      "winner_score": 139,
+      "loser_score": 122
+    },
+    {
+      "home": "NY",
+      "away": "HOU",
+      "home_score": 108,
+      "away_score": 106,
+      "winner": "NY",
+      "loser": "HOU",
+      "winner_score": 108,
+      "loser_score": 106
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:11Z"
+}

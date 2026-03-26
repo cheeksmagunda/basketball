@@ -1,0 +1,89 @@
+{
+  "date": "2025-11-29",
+  "game_count": 8,
+  "games": [
+    {
+      "home": "MIN",
+      "away": "BOS",
+      "home_score": 119,
+      "away_score": 115,
+      "winner": "MIN",
+      "loser": "BOS",
+      "winner_score": 119,
+      "loser_score": 115
+    },
+    {
+      "home": "CHA",
+      "away": "TOR",
+      "home_score": 118,
+      "away_score": 111,
+      "winner": "CHA",
+      "loser": "TOR",
+      "winner_score": 118,
+      "loser_score": 111
+    },
+    {
+      "home": "IND",
+      "away": "CHI",
+      "home_score": 103,
+      "away_score": 101,
+      "winner": "IND",
+      "loser": "CHI",
+      "winner_score": 103,
+      "loser_score": 101
+    },
+    {
+      "home": "MIA",
+      "away": "DET",
+      "home_score": 135,
+      "away_score": 138,
+      "winner": "DET",
+      "loser": "MIA",
+      "winner_score": 138,
+      "loser_score": 135
+    },
+    {
+      "home": "MIL",
+      "away": "BKN",
+      "home_score": 116,
+      "away_score": 99,
+      "winner": "MIL",
+      "loser": "BKN",
+      "winner_score": 116,
+      "loser_score": 99
+    },
+    {
+      "home": "GS",
+      "away": "NO",
+      "home_score": 104,
+      "away_score": 96,
+      "winner": "GS",
+      "loser": "NO",
+      "winner_score": 104,
+      "loser_score": 96
+    },
+    {
+      "home": "PHX",
+      "away": "DEN",
+      "home_score": 112,
+      "away_score": 130,
+      "winner": "DEN",
+      "loser": "PHX",
+      "winner_score": 130,
+      "loser_score": 112
+    },
+    {
+      "home": "LAC",
+      "away": "DAL",
+      "home_score": 110,
+      "away_score": 114,
+      "winner": "DAL",
+      "loser": "LAC",
+      "winner_score": 114,
+      "loser_score": 110
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:39Z"
+}

@@ -1,0 +1,69 @@
+{
+  "date": "2026-01-10",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "CLE",
+      "away": "MIN",
+      "home_score": 146,
+      "away_score": 134,
+      "winner": "CLE",
+      "loser": "MIN",
+      "winner_score": 146,
+      "loser_score": 134
+    },
+    {
+      "home": "IND",
+      "away": "MIA",
+      "home_score": 123,
+      "away_score": 99,
+      "winner": "IND",
+      "loser": "MIA",
+      "winner_score": 123,
+      "loser_score": 99
+    },
+    {
+      "home": "DET",
+      "away": "LAC",
+      "home_score": 92,
+      "away_score": 98,
+      "winner": "LAC",
+      "loser": "DET",
+      "winner_score": 98,
+      "loser_score": 92
+    },
+    {
+      "home": "BOS",
+      "away": "SA",
+      "home_score": 95,
+      "away_score": 100,
+      "winner": "SA",
+      "loser": "BOS",
+      "winner_score": 100,
+      "loser_score": 95
+    },
+    {
+      "home": "CHI",
+      "away": "DAL",
+      "home_score": 125,
+      "away_score": 107,
+      "winner": "CHI",
+      "loser": "DAL",
+      "winner_score": 125,
+      "loser_score": 107
+    },
+    {
+      "home": "UTAH",
+      "away": "CHA",
+      "home_score": 95,
+      "away_score": 150,
+      "winner": "CHA",
+      "loser": "UTAH",
+      "winner_score": 150,
+      "loser_score": 95
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:55Z"
+}

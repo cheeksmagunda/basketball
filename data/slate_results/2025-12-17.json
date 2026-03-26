@@ -1,0 +1,29 @@
+{
+  "date": "2025-12-17",
+  "game_count": 2,
+  "games": [
+    {
+      "home": "CHI",
+      "away": "CLE",
+      "home_score": 127,
+      "away_score": 111,
+      "winner": "CHI",
+      "loser": "CLE",
+      "winner_score": 127,
+      "loser_score": 111
+    },
+    {
+      "home": "MIN",
+      "away": "MEM",
+      "home_score": 110,
+      "away_score": 116,
+      "winner": "MEM",
+      "loser": "MIN",
+      "winner_score": 116,
+      "loser_score": 110
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:46Z"
+}

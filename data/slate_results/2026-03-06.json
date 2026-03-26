@@ -1,0 +1,79 @@
+{
+  "date": "2026-03-06",
+  "game_count": 7,
+  "games": [
+    {
+      "home": "BOS",
+      "away": "DAL",
+      "home_score": 120,
+      "away_score": 100,
+      "winner": "BOS",
+      "loser": "DAL",
+      "winner_score": 120,
+      "loser_score": 100
+    },
+    {
+      "home": "CHA",
+      "away": "MIA",
+      "home_score": 120,
+      "away_score": 128,
+      "winner": "MIA",
+      "loser": "CHA",
+      "winner_score": 128,
+      "loser_score": 120
+    },
+    {
+      "home": "HOU",
+      "away": "POR",
+      "home_score": 106,
+      "away_score": 99,
+      "winner": "HOU",
+      "loser": "POR",
+      "winner_score": 106,
+      "loser_score": 99
+    },
+    {
+      "home": "DEN",
+      "away": "NY",
+      "home_score": 103,
+      "away_score": 142,
+      "winner": "NY",
+      "loser": "DEN",
+      "winner_score": 142,
+      "loser_score": 103
+    },
+    {
+      "home": "PHX",
+      "away": "NO",
+      "home_score": 118,
+      "away_score": 116,
+      "winner": "PHX",
+      "loser": "NO",
+      "winner_score": 118,
+      "loser_score": 116
+    },
+    {
+      "home": "SA",
+      "away": "LAC",
+      "home_score": 116,
+      "away_score": 112,
+      "winner": "SA",
+      "loser": "LAC",
+      "winner_score": 116,
+      "loser_score": 112
+    },
+    {
+      "home": "LAL",
+      "away": "IND",
+      "home_score": 128,
+      "away_score": 117,
+      "winner": "LAL",
+      "loser": "IND",
+      "winner_score": 128,
+      "loser_score": 117
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:15Z"
+}

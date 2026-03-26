@@ -1,0 +1,59 @@
+{
+  "date": "2026-01-01",
+  "game_count": 5,
+  "games": [
+    {
+      "home": "BKN",
+      "away": "HOU",
+      "home_score": 96,
+      "away_score": 120,
+      "winner": "HOU",
+      "loser": "BKN",
+      "winner_score": 120,
+      "loser_score": 96
+    },
+    {
+      "home": "DET",
+      "away": "MIA",
+      "home_score": 112,
+      "away_score": 118,
+      "winner": "MIA",
+      "loser": "DET",
+      "winner_score": 118,
+      "loser_score": 112
+    },
+    {
+      "home": "DAL",
+      "away": "PHI",
+      "home_score": 108,
+      "away_score": 123,
+      "winner": "PHI",
+      "loser": "DAL",
+      "winner_score": 123,
+      "loser_score": 108
+    },
+    {
+      "home": "SAC",
+      "away": "BOS",
+      "home_score": 106,
+      "away_score": 120,
+      "winner": "BOS",
+      "loser": "SAC",
+      "winner_score": 120,
+      "loser_score": 106
+    },
+    {
+      "home": "LAC",
+      "away": "UTAH",
+      "home_score": 118,
+      "away_score": 101,
+      "winner": "LAC",
+      "loser": "UTAH",
+      "winner_score": 118,
+      "loser_score": 101
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:51Z"
+}

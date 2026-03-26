@@ -1,0 +1,69 @@
+{
+  "date": "2025-11-11",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "BKN",
+      "away": "TOR",
+      "home_score": 109,
+      "away_score": 119,
+      "winner": "TOR",
+      "loser": "BKN",
+      "winner_score": 119,
+      "loser_score": 109
+    },
+    {
+      "home": "NY",
+      "away": "MEM",
+      "home_score": 133,
+      "away_score": 120,
+      "winner": "NY",
+      "loser": "MEM",
+      "winner_score": 133,
+      "loser_score": 120
+    },
+    {
+      "home": "PHI",
+      "away": "BOS",
+      "home_score": 102,
+      "away_score": 100,
+      "winner": "PHI",
+      "loser": "BOS",
+      "winner_score": 102,
+      "loser_score": 100
+    },
+    {
+      "home": "OKC",
+      "away": "GS",
+      "home_score": 126,
+      "away_score": 102,
+      "winner": "OKC",
+      "loser": "GS",
+      "winner_score": 126,
+      "loser_score": 102
+    },
+    {
+      "home": "UTAH",
+      "away": "IND",
+      "home_score": 152,
+      "away_score": 128,
+      "winner": "UTAH",
+      "loser": "IND",
+      "winner_score": 152,
+      "loser_score": 128
+    },
+    {
+      "home": "SAC",
+      "away": "DEN",
+      "home_score": 108,
+      "away_score": 122,
+      "winner": "DEN",
+      "loser": "SAC",
+      "winner_score": 122,
+      "loser_score": 108
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:31Z"
+}

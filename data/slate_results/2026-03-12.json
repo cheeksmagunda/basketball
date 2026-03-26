@@ -1,0 +1,99 @@
+{
+  "date": "2026-03-12",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "DET",
+      "away": "PHI",
+      "home_score": 131,
+      "away_score": 109,
+      "winner": "DET",
+      "loser": "PHI",
+      "winner_score": 131,
+      "loser_score": 109
+    },
+    {
+      "home": "IND",
+      "away": "PHX",
+      "home_score": 108,
+      "away_score": 123,
+      "winner": "PHX",
+      "loser": "IND",
+      "winner_score": 123,
+      "loser_score": 108
+    },
+    {
+      "home": "ORL",
+      "away": "WSH",
+      "home_score": 136,
+      "away_score": 131,
+      "winner": "ORL",
+      "loser": "WSH",
+      "winner_score": 136,
+      "loser_score": 131
+    },
+    {
+      "home": "ATL",
+      "away": "BKN",
+      "home_score": 108,
+      "away_score": 97,
+      "winner": "ATL",
+      "loser": "BKN",
+      "winner_score": 108,
+      "loser_score": 97
+    },
+    {
+      "home": "MIA",
+      "away": "MIL",
+      "home_score": 112,
+      "away_score": 105,
+      "winner": "MIA",
+      "loser": "MIL",
+      "winner_score": 112,
+      "loser_score": 105
+    },
+    {
+      "home": "MEM",
+      "away": "DAL",
+      "home_score": 112,
+      "away_score": 120,
+      "winner": "DAL",
+      "loser": "MEM",
+      "winner_score": 120,
+      "loser_score": 112
+    },
+    {
+      "home": "SA",
+      "away": "DEN",
+      "home_score": 131,
+      "away_score": 136,
+      "winner": "DEN",
+      "loser": "SA",
+      "winner_score": 136,
+      "loser_score": 131
+    },
+    {
+      "home": "OKC",
+      "away": "BOS",
+      "home_score": 104,
+      "away_score": 102,
+      "winner": "OKC",
+      "loser": "BOS",
+      "winner_score": 104,
+      "loser_score": 102
+    },
+    {
+      "home": "LAL",
+      "away": "CHI",
+      "home_score": 142,
+      "away_score": 130,
+      "winner": "LAL",
+      "loser": "CHI",
+      "winner_score": 142,
+      "loser_score": 130
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:17Z"
+}

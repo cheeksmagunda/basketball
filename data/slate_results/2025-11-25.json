@@ -1,0 +1,39 @@
+{
+  "date": "2025-11-25",
+  "game_count": 3,
+  "games": [
+    {
+      "home": "WSH",
+      "away": "ATL",
+      "home_score": 132,
+      "away_score": 113,
+      "winner": "WSH",
+      "loser": "ATL",
+      "winner_score": 132,
+      "loser_score": 113
+    },
+    {
+      "home": "PHI",
+      "away": "ORL",
+      "home_score": 103,
+      "away_score": 144,
+      "winner": "ORL",
+      "loser": "PHI",
+      "winner_score": 144,
+      "loser_score": 103
+    },
+    {
+      "home": "LAL",
+      "away": "LAC",
+      "home_score": 135,
+      "away_score": 118,
+      "winner": "LAL",
+      "loser": "LAC",
+      "winner_score": 135,
+      "loser_score": 118
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:37Z"
+}

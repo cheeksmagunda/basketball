@@ -1,0 +1,99 @@
+{
+  "date": "2026-01-15",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "ORL",
+      "away": "MEM",
+      "home_score": 118,
+      "away_score": 111,
+      "winner": "ORL",
+      "loser": "MEM",
+      "winner_score": 118,
+      "loser_score": 111
+    },
+    {
+      "home": "DET",
+      "away": "PHX",
+      "home_score": 108,
+      "away_score": 105,
+      "winner": "DET",
+      "loser": "PHX",
+      "winner_score": 108,
+      "loser_score": 105
+    },
+    {
+      "home": "MIA",
+      "away": "BOS",
+      "home_score": 114,
+      "away_score": 119,
+      "winner": "BOS",
+      "loser": "MIA",
+      "winner_score": 119,
+      "loser_score": 114
+    },
+    {
+      "home": "HOU",
+      "away": "OKC",
+      "home_score": 91,
+      "away_score": 111,
+      "winner": "OKC",
+      "loser": "HOU",
+      "winner_score": 111,
+      "loser_score": 91
+    },
+    {
+      "home": "SA",
+      "away": "MIL",
+      "home_score": 119,
+      "away_score": 101,
+      "winner": "SA",
+      "loser": "MIL",
+      "winner_score": 119,
+      "loser_score": 101
+    },
+    {
+      "home": "DAL",
+      "away": "UTAH",
+      "home_score": 144,
+      "away_score": 122,
+      "winner": "DAL",
+      "loser": "UTAH",
+      "winner_score": 144,
+      "loser_score": 122
+    },
+    {
+      "home": "GS",
+      "away": "NY",
+      "home_score": 126,
+      "away_score": 113,
+      "winner": "GS",
+      "loser": "NY",
+      "winner_score": 126,
+      "loser_score": 113
+    },
+    {
+      "home": "POR",
+      "away": "ATL",
+      "home_score": 117,
+      "away_score": 101,
+      "winner": "POR",
+      "loser": "ATL",
+      "winner_score": 117,
+      "loser_score": 101
+    },
+    {
+      "home": "LAL",
+      "away": "CHA",
+      "home_score": 117,
+      "away_score": 135,
+      "winner": "CHA",
+      "loser": "LAL",
+      "winner_score": 135,
+      "loser_score": 117
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:57Z"
+}

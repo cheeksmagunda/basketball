@@ -1,0 +1,59 @@
+{
+  "date": "2025-10-25",
+  "game_count": 5,
+  "games": [
+    {
+      "home": "ORL",
+      "away": "CHI",
+      "home_score": 98,
+      "away_score": 110,
+      "winner": "CHI",
+      "loser": "ORL",
+      "winner_score": 110,
+      "loser_score": 98
+    },
+    {
+      "home": "ATL",
+      "away": "OKC",
+      "home_score": 100,
+      "away_score": 117,
+      "winner": "OKC",
+      "loser": "ATL",
+      "winner_score": 117,
+      "loser_score": 100
+    },
+    {
+      "home": "PHI",
+      "away": "CHA",
+      "home_score": 125,
+      "away_score": 121,
+      "winner": "PHI",
+      "loser": "CHA",
+      "winner_score": 125,
+      "loser_score": 121
+    },
+    {
+      "home": "MEM",
+      "away": "IND",
+      "home_score": 128,
+      "away_score": 103,
+      "winner": "MEM",
+      "loser": "IND",
+      "winner_score": 128,
+      "loser_score": 103
+    },
+    {
+      "home": "DEN",
+      "away": "PHX",
+      "home_score": 133,
+      "away_score": 111,
+      "winner": "DEN",
+      "loser": "PHX",
+      "winner_score": 133,
+      "loser_score": 111
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:24Z"
+}

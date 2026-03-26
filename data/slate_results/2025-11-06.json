@@ -1,0 +1,19 @@
+{
+  "date": "2025-11-06",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "PHX",
+      "away": "LAC",
+      "home_score": 115,
+      "away_score": 102,
+      "winner": "PHX",
+      "loser": "LAC",
+      "winner_score": 115,
+      "loser_score": 102
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:29Z"
+}

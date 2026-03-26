@@ -1,0 +1,49 @@
+{
+  "date": "2026-02-15",
+  "game_count": 4,
+  "games": [
+    {
+      "home": "STARS",
+      "away": "WORLD",
+      "home_score": 37,
+      "away_score": 35,
+      "winner": "STARS",
+      "loser": "WORLD",
+      "winner_score": 37,
+      "loser_score": 35
+    },
+    {
+      "home": "STRIPES",
+      "away": "STARS",
+      "home_score": 42,
+      "away_score": 40,
+      "winner": "STRIPES",
+      "loser": "STARS",
+      "winner_score": 42,
+      "loser_score": 40
+    },
+    {
+      "home": "STRIPES",
+      "away": "WORLD",
+      "home_score": 48,
+      "away_score": 45,
+      "winner": "STRIPES",
+      "loser": "WORLD",
+      "winner_score": 48,
+      "loser_score": 45
+    },
+    {
+      "home": "STRIPES",
+      "away": "STARS",
+      "home_score": 21,
+      "away_score": 47,
+      "winner": "STARS",
+      "loser": "STRIPES",
+      "winner_score": 47,
+      "loser_score": 21
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:09Z"
+}

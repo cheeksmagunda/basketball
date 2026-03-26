@@ -1,0 +1,49 @@
+{
+  "date": "2025-11-20",
+  "game_count": 4,
+  "games": [
+    {
+      "home": "ORL",
+      "away": "LAC",
+      "home_score": 129,
+      "away_score": 101,
+      "winner": "ORL",
+      "loser": "LAC",
+      "winner_score": 129,
+      "loser_score": 101
+    },
+    {
+      "home": "MEM",
+      "away": "SAC",
+      "home_score": 137,
+      "away_score": 96,
+      "winner": "MEM",
+      "loser": "SAC",
+      "winner_score": 137,
+      "loser_score": 96
+    },
+    {
+      "home": "MIL",
+      "away": "PHI",
+      "home_score": 114,
+      "away_score": 123,
+      "winner": "PHI",
+      "loser": "MIL",
+      "winner_score": 123,
+      "loser_score": 114
+    },
+    {
+      "home": "SA",
+      "away": "ATL",
+      "home_score": 135,
+      "away_score": 126,
+      "winner": "SA",
+      "loser": "ATL",
+      "winner_score": 135,
+      "loser_score": 126
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:35Z"
+}

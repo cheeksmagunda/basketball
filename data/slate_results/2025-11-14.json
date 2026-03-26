@@ -1,0 +1,99 @@
+{
+  "date": "2025-11-14",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "NY",
+      "away": "MIA",
+      "home_score": 140,
+      "away_score": 132,
+      "winner": "NY",
+      "loser": "MIA",
+      "winner_score": 140,
+      "loser_score": 132
+    },
+    {
+      "home": "ORL",
+      "away": "BKN",
+      "home_score": 105,
+      "away_score": 98,
+      "winner": "ORL",
+      "loser": "BKN",
+      "winner_score": 105,
+      "loser_score": 98
+    },
+    {
+      "home": "DET",
+      "away": "PHI",
+      "home_score": 114,
+      "away_score": 105,
+      "winner": "DET",
+      "loser": "PHI",
+      "winner_score": 114,
+      "loser_score": 105
+    },
+    {
+      "home": "HOU",
+      "away": "POR",
+      "home_score": 140,
+      "away_score": 116,
+      "winner": "HOU",
+      "loser": "POR",
+      "winner_score": 140,
+      "loser_score": 116
+    },
+    {
+      "home": "MIL",
+      "away": "CHA",
+      "home_score": 147,
+      "away_score": 134,
+      "winner": "MIL",
+      "loser": "CHA",
+      "winner_score": 147,
+      "loser_score": 134
+    },
+    {
+      "home": "MIN",
+      "away": "SAC",
+      "home_score": 124,
+      "away_score": 110,
+      "winner": "MIN",
+      "loser": "SAC",
+      "winner_score": 124,
+      "loser_score": 110
+    },
+    {
+      "home": "NO",
+      "away": "LAL",
+      "home_score": 104,
+      "away_score": 118,
+      "winner": "LAL",
+      "loser": "NO",
+      "winner_score": 118,
+      "loser_score": 104
+    },
+    {
+      "home": "DAL",
+      "away": "LAC",
+      "home_score": 127,
+      "away_score": 133,
+      "winner": "LAC",
+      "loser": "DAL",
+      "winner_score": 133,
+      "loser_score": 127
+    },
+    {
+      "home": "SA",
+      "away": "GS",
+      "home_score": 108,
+      "away_score": 109,
+      "winner": "GS",
+      "loser": "SA",
+      "winner_score": 109,
+      "loser_score": 108
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:32Z"
+}

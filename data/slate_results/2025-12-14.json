@@ -1,0 +1,89 @@
+{
+  "date": "2025-12-14",
+  "game_count": 8,
+  "games": [
+    {
+      "home": "IND",
+      "away": "WSH",
+      "home_score": 89,
+      "away_score": 108,
+      "winner": "WSH",
+      "loser": "IND",
+      "winner_score": 108,
+      "loser_score": 89
+    },
+    {
+      "home": "CLE",
+      "away": "CHA",
+      "home_score": 111,
+      "away_score": 119,
+      "winner": "CHA",
+      "loser": "CLE",
+      "winner_score": 119,
+      "loser_score": 111
+    },
+    {
+      "home": "ATL",
+      "away": "PHI",
+      "home_score": 120,
+      "away_score": 117,
+      "winner": "ATL",
+      "loser": "PHI",
+      "winner_score": 120,
+      "loser_score": 117
+    },
+    {
+      "home": "BKN",
+      "away": "MIL",
+      "home_score": 127,
+      "away_score": 82,
+      "winner": "BKN",
+      "loser": "MIL",
+      "winner_score": 127,
+      "loser_score": 82
+    },
+    {
+      "home": "MIN",
+      "away": "SAC",
+      "home_score": 117,
+      "away_score": 103,
+      "winner": "MIN",
+      "loser": "SAC",
+      "winner_score": 117,
+      "loser_score": 103
+    },
+    {
+      "home": "CHI",
+      "away": "NO",
+      "home_score": 104,
+      "away_score": 114,
+      "winner": "NO",
+      "loser": "CHI",
+      "winner_score": 114,
+      "loser_score": 104
+    },
+    {
+      "home": "PHX",
+      "away": "LAL",
+      "home_score": 114,
+      "away_score": 116,
+      "winner": "LAL",
+      "loser": "PHX",
+      "winner_score": 116,
+      "loser_score": 114
+    },
+    {
+      "home": "POR",
+      "away": "GS",
+      "home_score": 136,
+      "away_score": 131,
+      "winner": "POR",
+      "loser": "GS",
+      "winner_score": 136,
+      "loser_score": 131
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:45Z"
+}

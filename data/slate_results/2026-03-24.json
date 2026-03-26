@@ -3,31 +3,47 @@
   "game_count": 4,
   "games": [
     {
-      "winner": "DEN",
-      "loser": "PHX",
-      "winner_score": 125,
-      "loser_score": 123
+      "home": "CHA",
+      "away": "SAC",
+      "home_score": 134,
+      "away_score": 90,
+      "winner": "CHA",
+      "loser": "SAC",
+      "winner_score": 134,
+      "loser_score": 90
     },
     {
-      "winner": "NYK",
-      "loser": "NOP",
+      "home": "NY",
+      "away": "NO",
+      "home_score": 121,
+      "away_score": 116,
+      "winner": "NY",
+      "loser": "NO",
       "winner_score": 121,
       "loser_score": 116
     },
     {
+      "home": "CLE",
+      "away": "ORL",
+      "home_score": 136,
+      "away_score": 131,
       "winner": "CLE",
       "loser": "ORL",
       "winner_score": 136,
       "loser_score": 131
     },
     {
-      "winner": "CHA",
-      "loser": "SAC",
-      "winner_score": 134,
-      "loser_score": 90
+      "home": "PHX",
+      "away": "DEN",
+      "home_score": 123,
+      "away_score": 125,
+      "winner": "DEN",
+      "loser": "PHX",
+      "winner_score": 125,
+      "loser_score": 123
     }
   ],
-  "source": "manual_screenshot",
-  "notes": "Winner/loser order from app display; home/away not specified.",
-  "saved_at": "2026-03-26T01:00:00+00:00"
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:21Z"
 }

@@ -1,0 +1,109 @@
+{
+  "date": "2026-02-07",
+  "game_count": 10,
+  "games": [
+    {
+      "home": "BKN",
+      "away": "WSH",
+      "home_score": 127,
+      "away_score": 113,
+      "winner": "BKN",
+      "loser": "WSH",
+      "winner_score": 127,
+      "loser_score": 113
+    },
+    {
+      "home": "OKC",
+      "away": "HOU",
+      "home_score": 106,
+      "away_score": 112,
+      "winner": "HOU",
+      "loser": "OKC",
+      "winner_score": 112,
+      "loser_score": 106
+    },
+    {
+      "home": "SA",
+      "away": "DAL",
+      "home_score": 138,
+      "away_score": 125,
+      "winner": "SA",
+      "loser": "DAL",
+      "winner_score": 138,
+      "loser_score": 125
+    },
+    {
+      "home": "ORL",
+      "away": "UTAH",
+      "home_score": 120,
+      "away_score": 117,
+      "winner": "ORL",
+      "loser": "UTAH",
+      "winner_score": 120,
+      "loser_score": 117
+    },
+    {
+      "home": "ATL",
+      "away": "CHA",
+      "home_score": 119,
+      "away_score": 126,
+      "winner": "CHA",
+      "loser": "ATL",
+      "winner_score": 126,
+      "loser_score": 119
+    },
+    {
+      "home": "CHI",
+      "away": "DEN",
+      "home_score": 120,
+      "away_score": 136,
+      "winner": "DEN",
+      "loser": "CHI",
+      "winner_score": 136,
+      "loser_score": 120
+    },
+    {
+      "home": "LAL",
+      "away": "GS",
+      "home_score": 105,
+      "away_score": 99,
+      "winner": "LAL",
+      "loser": "GS",
+      "winner_score": 105,
+      "loser_score": 99
+    },
+    {
+      "home": "PHX",
+      "away": "PHI",
+      "home_score": 103,
+      "away_score": 109,
+      "winner": "PHI",
+      "loser": "PHX",
+      "winner_score": 109,
+      "loser_score": 103
+    },
+    {
+      "home": "POR",
+      "away": "MEM",
+      "home_score": 122,
+      "away_score": 115,
+      "winner": "POR",
+      "loser": "MEM",
+      "winner_score": 122,
+      "loser_score": 115
+    },
+    {
+      "home": "SAC",
+      "away": "CLE",
+      "home_score": 126,
+      "away_score": 132,
+      "winner": "CLE",
+      "loser": "SAC",
+      "winner_score": 132,
+      "loser_score": 126
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:42:05Z"
+}

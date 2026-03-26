@@ -1,0 +1,99 @@
+{
+  "date": "2025-11-21",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "CLE",
+      "away": "IND",
+      "home_score": 120,
+      "away_score": 109,
+      "winner": "CLE",
+      "loser": "IND",
+      "winner_score": 120,
+      "loser_score": 109
+    },
+    {
+      "home": "BOS",
+      "away": "BKN",
+      "home_score": 105,
+      "away_score": 113,
+      "winner": "BKN",
+      "loser": "BOS",
+      "winner_score": 113,
+      "loser_score": 105
+    },
+    {
+      "home": "TOR",
+      "away": "WSH",
+      "home_score": 140,
+      "away_score": 110,
+      "winner": "TOR",
+      "loser": "WSH",
+      "winner_score": 140,
+      "loser_score": 110
+    },
+    {
+      "home": "CHI",
+      "away": "MIA",
+      "home_score": 107,
+      "away_score": 143,
+      "winner": "MIA",
+      "loser": "CHI",
+      "winner_score": 143,
+      "loser_score": 107
+    },
+    {
+      "home": "DAL",
+      "away": "NO",
+      "home_score": 118,
+      "away_score": 115,
+      "winner": "DAL",
+      "loser": "NO",
+      "winner_score": 118,
+      "loser_score": 115
+    },
+    {
+      "home": "PHX",
+      "away": "MIN",
+      "home_score": 114,
+      "away_score": 113,
+      "winner": "PHX",
+      "loser": "MIN",
+      "winner_score": 114,
+      "loser_score": 113
+    },
+    {
+      "home": "HOU",
+      "away": "DEN",
+      "home_score": 109,
+      "away_score": 112,
+      "winner": "DEN",
+      "loser": "HOU",
+      "winner_score": 112,
+      "loser_score": 109
+    },
+    {
+      "home": "UTAH",
+      "away": "OKC",
+      "home_score": 112,
+      "away_score": 144,
+      "winner": "OKC",
+      "loser": "UTAH",
+      "winner_score": 144,
+      "loser_score": 112
+    },
+    {
+      "home": "GS",
+      "away": "POR",
+      "home_score": 123,
+      "away_score": 127,
+      "winner": "POR",
+      "loser": "GS",
+      "winner_score": 127,
+      "loser_score": 123
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:35Z"
+}

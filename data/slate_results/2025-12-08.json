@@ -1,0 +1,39 @@
+{
+  "date": "2025-12-08",
+  "game_count": 3,
+  "games": [
+    {
+      "home": "IND",
+      "away": "SAC",
+      "home_score": 116,
+      "away_score": 105,
+      "winner": "IND",
+      "loser": "SAC",
+      "winner_score": 116,
+      "loser_score": 105
+    },
+    {
+      "home": "MIN",
+      "away": "PHX",
+      "home_score": 105,
+      "away_score": 108,
+      "winner": "PHX",
+      "loser": "MIN",
+      "winner_score": 108,
+      "loser_score": 105
+    },
+    {
+      "home": "NO",
+      "away": "SA",
+      "home_score": 132,
+      "away_score": 135,
+      "winner": "SA",
+      "loser": "NO",
+      "winner_score": 135,
+      "loser_score": 132
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:43Z"
+}

@@ -1,0 +1,99 @@
+{
+  "date": "2025-11-03",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "BKN",
+      "away": "MIN",
+      "home_score": 109,
+      "away_score": 125,
+      "winner": "MIN",
+      "loser": "BKN",
+      "winner_score": 125,
+      "loser_score": 109
+    },
+    {
+      "home": "IND",
+      "away": "MIL",
+      "home_score": 115,
+      "away_score": 117,
+      "winner": "MIL",
+      "loser": "IND",
+      "winner_score": 117,
+      "loser_score": 115
+    },
+    {
+      "home": "BOS",
+      "away": "UTAH",
+      "home_score": 103,
+      "away_score": 105,
+      "winner": "UTAH",
+      "loser": "BOS",
+      "winner_score": 105,
+      "loser_score": 103
+    },
+    {
+      "home": "NY",
+      "away": "WSH",
+      "home_score": 119,
+      "away_score": 102,
+      "winner": "NY",
+      "loser": "WSH",
+      "winner_score": 119,
+      "loser_score": 102
+    },
+    {
+      "home": "HOU",
+      "away": "DAL",
+      "home_score": 110,
+      "away_score": 102,
+      "winner": "HOU",
+      "loser": "DAL",
+      "winner_score": 110,
+      "loser_score": 102
+    },
+    {
+      "home": "MEM",
+      "away": "DET",
+      "home_score": 106,
+      "away_score": 114,
+      "winner": "DET",
+      "loser": "MEM",
+      "winner_score": 114,
+      "loser_score": 106
+    },
+    {
+      "home": "DEN",
+      "away": "SAC",
+      "home_score": 130,
+      "away_score": 124,
+      "winner": "DEN",
+      "loser": "SAC",
+      "winner_score": 130,
+      "loser_score": 124
+    },
+    {
+      "home": "POR",
+      "away": "LAL",
+      "home_score": 115,
+      "away_score": 123,
+      "winner": "LAL",
+      "loser": "POR",
+      "winner_score": 123,
+      "loser_score": 115
+    },
+    {
+      "home": "LAC",
+      "away": "MIA",
+      "home_score": 119,
+      "away_score": 120,
+      "winner": "MIA",
+      "loser": "LAC",
+      "winner_score": 120,
+      "loser_score": 119
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:27Z"
+}

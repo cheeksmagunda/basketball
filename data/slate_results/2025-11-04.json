@@ -1,0 +1,69 @@
+{
+  "date": "2025-11-04",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "TOR",
+      "away": "MIL",
+      "home_score": 128,
+      "away_score": 100,
+      "winner": "TOR",
+      "loser": "MIL",
+      "winner_score": 128,
+      "loser_score": 100
+    },
+    {
+      "home": "ATL",
+      "away": "ORL",
+      "home_score": 127,
+      "away_score": 112,
+      "winner": "ATL",
+      "loser": "ORL",
+      "winner_score": 127,
+      "loser_score": 112
+    },
+    {
+      "home": "CHI",
+      "away": "PHI",
+      "home_score": 113,
+      "away_score": 111,
+      "winner": "CHI",
+      "loser": "PHI",
+      "winner_score": 113,
+      "loser_score": 111
+    },
+    {
+      "home": "NO",
+      "away": "CHA",
+      "home_score": 116,
+      "away_score": 112,
+      "winner": "NO",
+      "loser": "CHA",
+      "winner_score": 116,
+      "loser_score": 112
+    },
+    {
+      "home": "GS",
+      "away": "PHX",
+      "home_score": 118,
+      "away_score": 107,
+      "winner": "GS",
+      "loser": "PHX",
+      "winner_score": 118,
+      "loser_score": 107
+    },
+    {
+      "home": "LAC",
+      "away": "OKC",
+      "home_score": 107,
+      "away_score": 126,
+      "winner": "OKC",
+      "loser": "LAC",
+      "winner_score": 126,
+      "loser_score": 107
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:27Z"
+}

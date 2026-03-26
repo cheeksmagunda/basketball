@@ -1,0 +1,129 @@
+{
+  "date": "2025-12-18",
+  "game_count": 12,
+  "games": [
+    {
+      "home": "CHA",
+      "away": "ATL",
+      "home_score": 133,
+      "away_score": 126,
+      "winner": "CHA",
+      "loser": "ATL",
+      "winner_score": 133,
+      "loser_score": 126
+    },
+    {
+      "home": "IND",
+      "away": "NY",
+      "home_score": 113,
+      "away_score": 114,
+      "winner": "NY",
+      "loser": "IND",
+      "winner_score": 114,
+      "loser_score": 113
+    },
+    {
+      "home": "BKN",
+      "away": "MIA",
+      "home_score": 95,
+      "away_score": 106,
+      "winner": "MIA",
+      "loser": "BKN",
+      "winner_score": 106,
+      "loser_score": 95
+    },
+    {
+      "home": "OKC",
+      "away": "LAC",
+      "home_score": 122,
+      "away_score": 101,
+      "winner": "OKC",
+      "loser": "LAC",
+      "winner_score": 122,
+      "loser_score": 101
+    },
+    {
+      "home": "SA",
+      "away": "WSH",
+      "home_score": 119,
+      "away_score": 94,
+      "winner": "SA",
+      "loser": "WSH",
+      "winner_score": 119,
+      "loser_score": 94
+    },
+    {
+      "home": "MIL",
+      "away": "TOR",
+      "home_score": 105,
+      "away_score": 111,
+      "winner": "TOR",
+      "loser": "MIL",
+      "winner_score": 111,
+      "loser_score": 105
+    },
+    {
+      "home": "NO",
+      "away": "HOU",
+      "home_score": 133,
+      "away_score": 128,
+      "winner": "NO",
+      "loser": "HOU",
+      "winner_score": 133,
+      "loser_score": 128
+    },
+    {
+      "home": "DAL",
+      "away": "DET",
+      "home_score": 116,
+      "away_score": 114,
+      "winner": "DAL",
+      "loser": "DET",
+      "winner_score": 116,
+      "loser_score": 114
+    },
+    {
+      "home": "DEN",
+      "away": "ORL",
+      "home_score": 126,
+      "away_score": 115,
+      "winner": "DEN",
+      "loser": "ORL",
+      "winner_score": 126,
+      "loser_score": 115
+    },
+    {
+      "home": "PHX",
+      "away": "GS",
+      "home_score": 99,
+      "away_score": 98,
+      "winner": "PHX",
+      "loser": "GS",
+      "winner_score": 99,
+      "loser_score": 98
+    },
+    {
+      "home": "UTAH",
+      "away": "LAL",
+      "home_score": 135,
+      "away_score": 143,
+      "winner": "LAL",
+      "loser": "UTAH",
+      "winner_score": 143,
+      "loser_score": 135
+    },
+    {
+      "home": "POR",
+      "away": "SAC",
+      "home_score": 134,
+      "away_score": 133,
+      "winner": "POR",
+      "loser": "SAC",
+      "winner_score": 134,
+      "loser_score": 133
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:46Z"
+}

@@ -1,0 +1,29 @@
+{
+  "date": "2025-10-21",
+  "game_count": 2,
+  "games": [
+    {
+      "home": "OKC",
+      "away": "HOU",
+      "home_score": 125,
+      "away_score": 124,
+      "winner": "OKC",
+      "loser": "HOU",
+      "winner_score": 125,
+      "loser_score": 124
+    },
+    {
+      "home": "LAL",
+      "away": "GS",
+      "home_score": 109,
+      "away_score": 119,
+      "winner": "GS",
+      "loser": "LAL",
+      "winner_score": 119,
+      "loser_score": 109
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:22Z"
+}

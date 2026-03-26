@@ -1,0 +1,69 @@
+{
+  "date": "2025-11-01",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "MIL",
+      "away": "SAC",
+      "home_score": 133,
+      "away_score": 135,
+      "winner": "SAC",
+      "loser": "MIL",
+      "winner_score": 135,
+      "loser_score": 133
+    },
+    {
+      "home": "CHA",
+      "away": "MIN",
+      "home_score": 105,
+      "away_score": 122,
+      "winner": "MIN",
+      "loser": "CHA",
+      "winner_score": 122,
+      "loser_score": 105
+    },
+    {
+      "home": "IND",
+      "away": "GS",
+      "home_score": 114,
+      "away_score": 109,
+      "winner": "IND",
+      "loser": "GS",
+      "winner_score": 114,
+      "loser_score": 109
+    },
+    {
+      "home": "WSH",
+      "away": "ORL",
+      "home_score": 94,
+      "away_score": 125,
+      "winner": "ORL",
+      "loser": "WSH",
+      "winner_score": 125,
+      "loser_score": 94
+    },
+    {
+      "home": "BOS",
+      "away": "HOU",
+      "home_score": 101,
+      "away_score": 128,
+      "winner": "HOU",
+      "loser": "BOS",
+      "winner_score": 128,
+      "loser_score": 101
+    },
+    {
+      "home": "DET",
+      "away": "DAL",
+      "home_score": 122,
+      "away_score": 110,
+      "winner": "DET",
+      "loser": "DAL",
+      "winner_score": 122,
+      "loser_score": 110
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "saved_at": "2026-03-26T00:41:26Z"
+}
