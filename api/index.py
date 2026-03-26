@@ -1375,6 +1375,7 @@ def _lgbm_feature_vector(
     recent_min: float,
     cascade_bonus: float,
     games_played: Optional[float] = None,
+    rest_days: Optional[float] = None,
     # v62: 6 new feature inputs
     opp_pts_allowed: Optional[float] = None,
     team_pace: Optional[float] = None,
@@ -1382,7 +1383,14 @@ def _lgbm_feature_vector(
     teammate_out_count: float = 0.0,
     game_total: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with train_lgbm.py (22 features, v62)."""
+    """Build feature vector aligned with train_lgbm.py (18 features, v63 post-audit fix).
+
+    FIX (v63 DATA LEAKAGE + TRAIN/INFERENCE ALIGNMENT):
+    - Removed 4 dead features (cascade_signal, usage_share, teammate_out_count, game_total, spread_abs)
+    - Feature count reduced from 22 to 18 in train_lgbm.py
+    - Now accepts actual rest_days instead of hardcoding 2.0 for better alignment
+    - reb_per_min fixed in training to use season avg REB, not same-game actual
+    """
     USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
     # Must match train_lgbm.py: usage_trend = clip(recent_min / avg_min, ...)
     usage = float(
@@ -1394,7 +1402,7 @@ def _lgbm_feature_vector(
     def_rate_ = (stl + blk) / max(avg_min, 1)
     pts_per_min_ = pts / max(avg_min, 1)
     home_away_ = 1.0 if side == "home" else 0.0
-    rest_days_ = 2.0
+    rest_days_ = float(rest_days) if rest_days is not None else 2.0
     recent_vs_season_ = float(np.clip(recent_pts / max(season_pts, 1), 0.5, 2.0))
     games_played_ = float(games_played) if games_played is not None else 40.0
     reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
@@ -3064,6 +3072,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 recent_min=recent_min_,
                 cascade_bonus=cascade_bonus,
                 games_played=float(_gp) if _gp is not None else None,
+                rest_days=float(pinfo.get("rest_days", 2) or 2),  # FIX: use actual rest_days
                 opp_pts_allowed=_opp_def_proxy,
                 team_pace=_team_total_proxy,
                 team_ppg=_team_total_proxy,
