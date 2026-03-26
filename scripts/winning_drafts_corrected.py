@@ -166,7 +166,172 @@ SCREENSHOT_DATA = [
         {"name": "G. Santos", "display": 3.9, "rs": 3.2},
         {"name": "G. Payton II", "display": 4.2, "rs": 4.3},
     ]},
+
+    # ═══ Feb 21 (Saturday) ═══
+    {"date": "2026-02-21", "rank": 1, "user": "way2gone", "score": 75.66, "games": 8, "players": [
+        {"name": "J. Green", "display": 4.5, "rs": 3.7},
+        {"name": "D. Bane", "display": 2.6, "rs": 6.5},
+        {"name": "G. Jackson II", "display": 4.2, "rs": 4.8},
+        {"name": "O. Prosper", "display": 4.4, "rs": 2.6},
+        {"name": "M. Raynaud", "display": 3.5, "rs": 3.0},
+    ]},
+    {"date": "2026-02-21", "rank": 2, "user": "isaac.iu23", "score": 73.69, "games": 8, "players": [
+        {"name": "J. Green", "display": 4.5, "rs": 3.7},
+        {"name": "J. Smith", "display": 3.7, "rs": 3.3},
+        {"name": "J. Wells", "display": 3.8, "rs": 4.0},
+        {"name": "G. Jackson II", "display": 4.0, "rs": 4.8},
+        {"name": "M. Raynaud", "display": 3.5, "rs": 3.0},
+    ]},
+    {"date": "2026-02-21", "rank": 3, "user": "phls", "score": 73.39, "games": 8, "players": [
+        {"name": "V. Wembanyama", "display": 2.3, "rs": 5.6},
+        {"name": "J. Green", "display": 4.3, "rs": 3.7},
+        {"name": "J. Wells", "display": 3.8, "rs": 4.0},
+        {"name": "G. Jackson II", "display": 4.0, "rs": 4.8},
+        {"name": "P. Reed", "display": 3.9, "rs": 2.6},
+    ]},
+    {"date": "2026-02-21", "rank": 4, "user": "carsonwentzimissyou", "score": 73.39, "games": 8, "players": [
+        {"name": "V. Wembanyama", "display": 2.3, "rs": 5.6},
+        {"name": "J. Green", "display": 4.3, "rs": 3.7},
+        {"name": "J. Wells", "display": 3.8, "rs": 4.0},
+        {"name": "G. Jackson II", "display": 4.0, "rs": 4.8},
+        {"name": "P. Reed", "display": 3.9, "rs": 2.6},
+    ]},
+
+    # ═══ Feb 22 (Sunday) ═══
+    {"date": "2026-02-22", "rank": 1, "user": "crosbyt", "score": 81.36, "games": 5, "players": [
+        {"name": "B. Podziemski", "display": 3.5, "rs": 4.7},
+        {"name": "A. Horford", "display": 4.0, "rs": 5.3},
+        {"name": "M. Moody", "display": 3.6, "rs": 4.4},
+        {"name": "G. Santos", "display": 4.4, "rs": 3.8},
+        {"name": "D. Melton", "display": 3.1, "rs": 3.7},
+    ]},
+    {"date": "2026-02-22", "rank": 2, "user": "maximuslan", "score": 74.09, "games": 5, "players": [
+        {"name": "I. Joe", "display": 4.4, "rs": 3.7},
+        {"name": "K. Middleton", "display": 4.1, "rs": 4.6},
+        {"name": "G. Santos", "display": 4.6, "rs": 3.8},
+        {"name": "J. Walker", "display": 3.9, "rs": 3.7},
+        {"name": "K. Ellis", "display": 4.2, "rs": 1.6},
+    ]},
+    {"date": "2026-02-22", "rank": 3, "user": "jalapenojordan", "score": 73.46, "games": 5, "players": [
+        {"name": "C. Wallace", "display": 4.3, "rs": 4.5},
+        {"name": "I. Joe", "display": 4.2, "rs": 3.7},
+        {"name": "G. Santos", "display": 4.6, "rs": 3.8},
+        {"name": "J. Walker", "display": 3.9, "rs": 3.7},
+        {"name": "G. Williams", "display": 4.2, "rs": 1.5},
+    ]},
+    {"date": "2026-02-22", "rank": 4, "user": "nate", "score": 73.44, "games": 5, "players": [
+        {"name": "C. Wallace", "display": 4.3, "rs": 4.5},
+        {"name": "I. Joe", "display": 4.2, "rs": 3.7},
+        {"name": "J. Walker", "display": 4.1, "rs": 3.7},
+        {"name": "G. Santos", "display": 4.4, "rs": 3.8},
+        {"name": "M. Potter", "display": 4.2, "rs": 1.5},
+    ]},
+
+    # ═══ Feb 23 (Monday) ═══
+    {"date": "2026-02-23", "rank": 1, "user": "boz123", "score": 67.70, "games": 4, "players": [
+        {"name": "N. Clifford", "display": 5.0, "rs": 3.2},
+        {"name": "P. Achiuwa", "display": 4.5, "rs": 4.0},
+        {"name": "B. Sensabaugh", "display": 4.0, "rs": 3.3},
+        {"name": "R. Holland II", "display": 4.4, "rs": 3.1},
+        {"name": "T. Eason", "display": 2.9, "rs": 2.4},
+    ]},
+    {"date": "2026-02-23", "rank": 2, "user": "jonnyfades", "score": 66.80, "games": 4, "players": [
+        {"name": "M. Raynaud", "display": 4.3, "rs": 2.7},
+        {"name": "J. Duren", "display": 2.5, "rs": 4.6},
+        {"name": "J. Smith Jr.", "display": 2.8, "rs": 6.4},
+        {"name": "B. Sensabaugh", "display": 3.8, "rs": 3.3},
+        {"name": "N. Clifford", "display": 4.2, "rs": 3.2},
+    ]},
+    {"date": "2026-02-23", "rank": 3, "user": "biggiesmallz32", "score": 66.60, "games": 4, "players": [
+        {"name": "J. Smith Jr.", "display": 3.2, "rs": 6.4},
+        {"name": "M. Raynaud", "display": 4.1, "rs": 2.7},
+        {"name": "B. Sensabaugh", "display": 4.0, "rs": 3.3},
+        {"name": "A. Thompson", "display": 2.0, "rs": 3.1},
+        {"name": "P. Achiuwa", "display": 3.9, "rs": 4.0},
+    ]},
+    {"date": "2026-02-23", "rank": 4, "user": "jmill22", "score": 66.20, "games": 4, "players": [
+        {"name": "J. Duren", "display": 2.7, "rs": 4.6},
+        {"name": "J. Smith Jr.", "display": 3.0, "rs": 6.4},
+        {"name": "K. Durant", "display": 2.1, "rs": 4.2},
+        {"name": "B. Sensabaugh", "display": 3.8, "rs": 3.3},
+        {"name": "N. Clifford", "display": 4.2, "rs": 3.2},
+    ]},
+
+    # ═══ Feb 24 (Tuesday) ═══
+    {"date": "2026-02-24", "rank": 1, "user": "userjan4", "score": 77.46, "games": 6, "players": [
+        {"name": "L. Doncic", "display": 2.0, "rs": 5.1},
+        {"name": "I. Joe", "display": 4.1, "rs": 3.7},
+        {"name": "G. Santos", "display": 4.6, "rs": 3.1},
+        {"name": "C. Wallace", "display": 3.6, "rs": 5.8},
+        {"name": "M. Potter", "display": 4.2, "rs": 4.1},
+    ]},
+    {"date": "2026-02-24", "rank": 2, "user": "stovetop1", "score": 76.69, "games": 6, "players": [
+        {"name": "J. Green", "display": 4.0, "rs": 1.7},
+        {"name": "C. Wallace", "display": 4.0, "rs": 5.8},
+        {"name": "G. Santos", "display": 4.6, "rs": 3.1},
+        {"name": "I. Joe", "display": 3.7, "rs": 3.7},
+        {"name": "J. Kuminga", "display": 3.3, "rs": 5.8},
+    ]},
+    {"date": "2026-02-24", "rank": 3, "user": "jalenhurtskids", "score": 76.45, "games": 6, "players": [
+        {"name": "C. Wallace", "display": 4.2, "rs": 5.8},
+        {"name": "I. Joe", "display": 4.1, "rs": 3.7},
+        {"name": "D. Clingan", "display": 2.6, "rs": 3.8},
+        {"name": "V. Edgecombe", "display": 2.4, "rs": 4.4},
+        {"name": "J. McDaniels", "display": 2.4, "rs": 7.0},
+    ]},
+    {"date": "2026-02-24", "rank": 4, "user": "emoji_user", "score": 76.04, "games": 6, "players": [
+        {"name": "C. Wallace", "display": 4.2, "rs": 5.8},
+        {"name": "I. Joe", "display": 4.1, "rs": 3.7},
+        {"name": "J. Walker", "display": 4.0, "rs": 2.7},
+        {"name": "G. Santos", "display": 4.4, "rs": 3.1},
+        {"name": "K. Jones", "display": 4.2, "rs": 2.9},
+    ]},
+
+    # ═══ Feb 25 (Wednesday) ═══
+    {"date": "2026-02-25", "rank": 1, "user": "pabl0escobar", "score": 80.67, "games": 7, "players": [
+        {"name": "J. Allen", "display": 3.0, "rs": 5.1},
+        {"name": "J. Williams", "display": 4.7, "rs": 4.8},
+        {"name": "W. Richard", "display": 4.6, "rs": 4.4},
+        {"name": "J. Small", "display": 3.8, "rs": 3.0},
+        {"name": "G. Jackson II", "display": 3.6, "rs": 3.0},
+    ]},
+    {"date": "2026-02-25", "rank": 2, "user": "caustic", "score": 76.58, "games": 7, "players": [
+        {"name": "J. Williams", "display": 4.9, "rs": 4.8},
+        {"name": "G. Santos", "display": 4.8, "rs": 3.5},
+        {"name": "P. Spencer", "display": 4.6, "rs": 3.1},
+        {"name": "B. Podziemski", "display": 2.9, "rs": 3.0},
+        {"name": "A. Wiggins", "display": 3.6, "rs": 3.7},
+    ]},
+    {"date": "2026-02-25", "rank": 3, "user": "claypool_", "score": 76.29, "games": 7, "players": [
+        {"name": "D. Schroder", "display": 3.6, "rs": 3.4},
+        {"name": "R. Sheppard", "display": 3.4, "rs": 3.8},
+        {"name": "J. Small", "display": 4.0, "rs": 3.0},
+        {"name": "J. Williams", "display": 4.3, "rs": 4.8},
+        {"name": "W. Richard", "display": 4.2, "rs": 4.4},
+    ]},
+    {"date": "2026-02-25", "rank": 4, "user": "chrisharmon", "score": 76.29, "games": 7, "players": [
+        {"name": "D. Schroder", "display": 3.6, "rs": 3.4},
+        {"name": "R. Sheppard", "display": 3.4, "rs": 3.8},
+        {"name": "J. Small", "display": 4.0, "rs": 3.0},
+        {"name": "J. Williams", "display": 4.3, "rs": 4.8},
+        {"name": "W. Richard", "display": 4.2, "rs": 4.4},
+    ]},
 ]
+
+# Game counts for dates where we know them
+GAME_COUNTS = {
+    "2026-02-21": 8,
+    "2026-02-22": 5,
+    "2026-02-23": 4,
+    "2026-02-24": 6,
+    "2026-02-25": 7,
+    # Mar dates — approximate from typical NBA schedules
+    "2026-03-15": 7,
+    "2026-03-16": 5,
+    "2026-03-19": 8,
+    "2026-03-22": 6,
+    "2026-03-23": 7,
+}
 
 
 def run():
@@ -360,6 +525,96 @@ def run():
     for d in all_drafts[:5]:
         computed = sum(p["value"] for p in d["players"])
         print(f"  {d['date']} rank {d['rank']}: displayed={d['score']:.2f}  computed={computed:.2f}  diff={d['score']-computed:+.2f}")
+
+    # ═══ SCORES BY GAME COUNT ═══
+    print(f"\n{'WINNING SCORES BY GAME COUNT':=^70}")
+    by_games = defaultdict(list)
+    for d in all_drafts:
+        gc = GAME_COUNTS.get(d["date"])
+        if gc:
+            by_games[gc].append(d)
+
+    for gc in sorted(by_games.keys()):
+        drafts = by_games[gc]
+        s = [d["score"] for d in drafts]
+        r1 = [d["score"] for d in drafts if d["rank"] == 1]
+        print(f"  {gc} games: n={len(drafts)}  "
+              f"mean={statistics.mean(s):.1f}  median={statistics.median(s):.1f}  "
+              f"range=[{min(s):.1f}, {max(s):.1f}]"
+              f"{'  #1 avg=' + f'{statistics.mean(r1):.1f}' if r1 else ''}")
+
+    # ═══ WHAT DOES A 70+ LINEUP LOOK LIKE? ═══
+    print(f"\n{'WHAT DOES A 70+ LINEUP LOOK LIKE? (slot by slot)':=^70}")
+    over70 = [d for d in all_drafts if d["score"] >= 70]
+    under70 = [d for d in all_drafts if d["score"] < 70]
+    print(f"  70+ lineups: {len(over70)} / {len(all_drafts)} ({len(over70)/len(all_drafts)*100:.0f}%)")
+    print(f"  <70 lineups: {len(under70)} / {len(all_drafts)} ({len(under70)/len(all_drafts)*100:.0f}%)")
+
+    if over70:
+        print(f"\n  70+ LINEUP AVERAGES:")
+        o70_scores = [d["score"] for d in over70]
+        print(f"    Score: mean={statistics.mean(o70_scores):.1f}  range=[{min(o70_scores):.1f}, {max(o70_scores):.1f}]")
+        print(f"    Total RS:    {statistics.mean([d['total_rs'] for d in over70]):.1f}")
+        print(f"    Total boost: {statistics.mean([d['total_boost'] for d in over70]):.1f}")
+        print(f"    Max RS:      {statistics.mean([d['max_rs'] for d in over70]):.2f}")
+        print(f"    Min RS:      {statistics.mean([d['min_rs'] for d in over70]):.2f}")
+        print(f"    Stars (RS>=6): {statistics.mean([1 if d['has_star'] else 0 for d in over70]):.0%} have one")
+        print(f"    Boost>=2.0:  {statistics.mean([d['high_boost_2plus'] for d in over70]):.1f} / 5 players")
+
+        print(f"\n  70+ SLOT-BY-SLOT BREAKDOWN:")
+        for slot_idx in range(5):
+            sp = []
+            for d in over70:
+                if slot_idx < len(d["players"]):
+                    sp.append(d["players"][slot_idx])
+            if not sp:
+                continue
+            avg_rs = statistics.mean([p["rs"] for p in sp])
+            avg_boost = statistics.mean([p["card_boost"] for p in sp])
+            avg_display = statistics.mean([p["display_mult"] for p in sp])
+            avg_val = statistics.mean([p["value"] for p in sp])
+            min_rs = min(p["rs"] for p in sp)
+            max_rs = max(p["rs"] for p in sp)
+            print(f"    Slot {slot_idx+1} ({SLOT_MULTS[slot_idx]}x): "
+                  f"RS={avg_rs:.2f} [{min_rs:.1f}-{max_rs:.1f}]  "
+                  f"boost={avg_boost:.2f}  display={avg_display:.2f}  value={avg_val:.1f}")
+
+    if under70:
+        print(f"\n  <70 LINEUP AVERAGES (for comparison):")
+        u70_scores = [d["score"] for d in under70]
+        print(f"    Score: mean={statistics.mean(u70_scores):.1f}")
+        print(f"    Total RS:    {statistics.mean([d['total_rs'] for d in under70]):.1f}")
+        print(f"    Total boost: {statistics.mean([d['total_boost'] for d in under70]):.1f}")
+        print(f"    Max RS:      {statistics.mean([d['max_rs'] for d in under70]):.2f}")
+
+    # ═══ WHAT SEPARATES 70+ FROM <70? ═══
+    if over70 and under70:
+        print(f"\n{'WHAT SEPARATES 70+ FROM <70':=^70}")
+        o_rs = statistics.mean([d["total_rs"] for d in over70])
+        u_rs = statistics.mean([d["total_rs"] for d in under70])
+        o_boost = statistics.mean([d["total_boost"] for d in over70])
+        u_boost = statistics.mean([d["total_boost"] for d in under70])
+        o_max = statistics.mean([d["max_rs"] for d in over70])
+        u_max = statistics.mean([d["max_rs"] for d in under70])
+        o_min = statistics.mean([d["min_rs"] for d in over70])
+        u_min = statistics.mean([d["min_rs"] for d in under70])
+        print(f"                    70+       <70       delta")
+        print(f"  Total RS:      {o_rs:6.1f}    {u_rs:6.1f}    {o_rs-u_rs:+.1f}")
+        print(f"  Total boost:   {o_boost:6.1f}    {u_boost:6.1f}    {o_boost-u_boost:+.1f}")
+        print(f"  Max RS:        {o_max:6.2f}    {u_max:6.2f}    {o_max-u_max:+.2f}")
+        print(f"  Min RS:        {o_min:6.2f}    {u_min:6.2f}    {o_min-u_min:+.2f}")
+        o_star = sum(1 for d in over70 if d["has_star"]) / len(over70)
+        u_star = sum(1 for d in under70 if d["has_star"]) / len(under70)
+        print(f"  Has star:      {o_star:6.0%}    {u_star:6.0%}")
+
+    # ═══ EVERY WINNING DRAFT LINE BY LINE ═══
+    print(f"\n{'EVERY WINNING DRAFT (sorted by score)':=^70}")
+    for d in sorted(all_drafts, key=lambda x: x["score"], reverse=True):
+        gc = GAME_COUNTS.get(d["date"], "?")
+        star_flag = "*" if d.get("has_star") else " "
+        print(f"  {d['date']} #{d['rank']} {star_flag} {d['score']:6.1f}  "
+              f"RS={d['total_rs']:5.1f}  boost={d['total_boost']:5.1f}  "
+              f"games={gc}  max_rs={d['max_rs']:.1f}")
 
 
 if __name__ == "__main__":
