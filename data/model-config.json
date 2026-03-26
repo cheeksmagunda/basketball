@@ -369,7 +369,7 @@
     "require_rotowire_clearance": true,
     "max_ownership_pct": 3.0,
     "max_centers": 2,
-    "boost_leverage_power": 0.0,
+    "boost_leverage_power": 0.5,
     "variance_penalty": 0,
     "max_per_team": 3,
     "wildcard_min_boost": 2.0,
