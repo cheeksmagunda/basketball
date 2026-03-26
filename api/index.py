@@ -2926,8 +2926,14 @@ def _est_card_boost(
         # Boost is partly a sticky ownership trait by player archetype/market.
         prior, prior_n = _get_boost_prior(player_name or "")
         if prior is not None and prior_n >= 2 and _rs > 0:
-            # Keep ML dominant; add prior as a stabilizer.
-            prior_w = min(0.45, 0.15 + 0.03 * float(prior_n))
+            # Dynamic blend:
+            # 1) More prior samples => more prior trust.
+            # 2) Big recent-vs-season swings => trust daily ML more.
+            base_prior_w = min(0.45, 0.15 + 0.03 * float(prior_n))
+            form_delta = abs(float(_rpts) - float(_spts)) / max(float(_spts), 1.0)
+            form_delta = max(0.0, min(1.0, form_delta))
+            form_dampen = 1.0 - min(0.65, 0.9 * form_delta)
+            prior_w = base_prior_w * form_dampen
             ml_w = 1.0 - prior_w
             blended = (ml_w * float(ml_pred)) + (prior_w * float(prior))
             return _clamp_round_boost(blended, floor_val, ceiling)
