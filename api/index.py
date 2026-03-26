@@ -4534,6 +4534,52 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
         chalk_eligible.append(p)
 
+    # Small-slate quality expansion:
+    # If strict chalk gates produce <5 candidates, add intersection-style players that
+    # still have real production (RS + minutes + at least moderate boost) instead of
+    # dropping to a trivial 4-man "all stars only" build.
+    if len(chalk_eligible) < 5:
+        existing = {p.get("name") for p in chalk_eligible}
+        relaxed_rating_floor = max(3.2, float(_cfg("scoring_thresholds.min_chalk_rating", 3.5)) - 0.3)
+        relaxed_boost_floor = max(1.0, float(_cfg("projection.chalk_min_boost_floor", 1.5)) - 0.5)
+        relaxed_pred_min_floor = 18.0
+        for p in projections:
+            if len(chalk_eligible) >= 8:
+                break
+            if p.get("name") in existing or p.get("name") in BLACKLISTED_PLAYERS:
+                continue
+            if p.get("rating", 0) < relaxed_rating_floor:
+                continue
+            if p.get("predMin", 0) < relaxed_pred_min_floor and p.get("season_min", 0) < relaxed_pred_min_floor:
+                continue
+            # Keep intersection intent: either moderate boost or true high-RS anchor.
+            if p.get("est_mult", 0) < relaxed_boost_floor and p.get("rating", 0) < 5.0:
+                continue
+            if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
+                continue
+
+            _est_boost = p.get("est_mult", 0)
+            _capped = min(_est_boost, boost_cap)
+            _opp = p.get("opp", "")
+            _matchup = _compute_matchup_factor(p, _opp, def_stats or {}, dvp_data=dvp_data)
+            _matchup = max(
+                float(_cfg("matchup.chalk_adj_min", 0.92)),
+                min(float(_cfg("matchup.chalk_adj_max", 1.10)), _matchup)
+            )
+            _lu = _cfg("lineup", _CONFIG_DEFAULTS["lineup"])
+            _rs_focus = max(0.0, min(1.0, float(_lu.get("chalk_milp_rs_focus", 0.0))))
+            _boost_neutral = float(_lu.get("chalk_milp_boost_neutral", 1.0))
+            p["capped_boost"] = _capped
+            p["_is_star_anchor"] = bool(
+                p.get("season_pts", 0) >= 20.0 and p.get("season_min", 0) >= 25.0 and p.get("rating", 0) >= 4.5
+            )
+            p["chalk_milp_boost"] = round((1.0 - _rs_focus) * float(_capped) + _rs_focus * _boost_neutral, 4)
+            p["chalk_ev_capped"] = round(p["rating"] * _matchup * (avg_slot + _capped), 2)
+            chalk_eligible.append(p)
+            existing.add(p.get("name"))
+        if len(chalk_eligible) < 5:
+            print(f"[build_lineups] chalk candidate pool still thin after small-slate expansion ({len(chalk_eligible)})")
+
     # Star anchor: identify star candidate indices for the MILP constraint.
     # These are players that bypassed the boost floor via the star anchor pathway.
     # The MILP will require at least min_star_count of them in the lineup.
