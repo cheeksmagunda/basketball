@@ -5757,6 +5757,47 @@ def _force_regenerate_bg_worker():
         _force_regenerate_bg._in_flight = False
 
 
+def _slate_has_flat_boosts(slate_obj: dict) -> bool:
+    """Detect suspicious locked slate artifacts where all boosts collapse to +1x.
+
+    We only flag when we have enough players (slate-wide chalk + upside) to avoid
+    false positives on tiny/malformed payloads.
+    """
+    try:
+        lineups = (slate_obj or {}).get("lineups", {}) or {}
+        players = list(lineups.get("chalk", []) or []) + list(lineups.get("upside", []) or [])
+        if len(players) < 8:
+            return False
+        boosts = []
+        for p in players:
+            b = _safe_float((p or {}).get("est_mult"), -999.0)
+            if b > -900:
+                boosts.append(round(float(b), 3))
+        if len(boosts) < 8:
+            return False
+        return all(abs(b - 1.0) <= 1e-9 for b in boosts)
+    except Exception:
+        return False
+
+
+def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
+    """Trigger background full regeneration when locked cache is stale/suspicious."""
+    _current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()
+    _cached_sha = str((cached_slate or {}).get("deploy_sha", "") or "").strip()
+    _sha_mismatch = bool(_current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7])
+    _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
+    if not (_sha_mismatch or _flat_boosts):
+        return
+    if getattr(_force_regenerate_bg, "_in_flight", False):
+        return
+    _force_regenerate_bg._in_flight = True
+    if _sha_mismatch:
+        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — background regeneration triggered")
+    elif _flat_boosts:
+        print(f"[{reason_prefix}] suspicious flat +1x boosts detected — background regeneration triggered")
+    threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
+
+
 def _deploy_prewarm_bg(*_args):
     """Sentinel function used as attribute namespace for deploy prewarm state."""
     pass
@@ -5777,6 +5818,7 @@ def _get_slate_impl():
         if not _lk_starts or any(_is_past_lock_window(st) for st in _lk_starts):
             _lk_pre["locked"] = True
             _lk_pre.setdefault("draftable_count", 0)
+            _maybe_trigger_locked_slate_regen(_lk_pre, "slate-fastpath")
             return _lk_pre
         # Games haven't started — fall through to fetch live games + GitHub check
     # Cold-start fast path: check GitHub backup and fetch games in parallel.
@@ -5795,6 +5837,7 @@ def _get_slate_impl():
             _gh_pre["locked"] = True
             _gh_pre.setdefault("draftable_count", 0)
             _ls(_CK_SLATE_LOCKED, _gh_pre)
+            _maybe_trigger_locked_slate_regen(_gh_pre, "slate-preload")
             return _gh_pre
         # Games haven't started — don't trust lock file, fall through to pipeline
 
@@ -5870,6 +5913,7 @@ def _get_slate_impl():
                 if all_final and _fin > 0:
                     lock_cached["all_complete"] = True
                     _ls(_CK_SLATE_LOCKED, lock_cached)
+            _maybe_trigger_locked_slate_regen(lock_cached, "slate-prelocked")
             return lock_cached
 
         # Cache miss (cold start) — check regular /tmp cache and GitHub backup BEFORE
@@ -5887,6 +5931,7 @@ def _get_slate_impl():
             reg_cached.setdefault("draftable_count", 0)
             _ls(_CK_SLATE_LOCKED, reg_cached)
             _slate_backup_to_github(reg_cached)
+            _maybe_trigger_locked_slate_regen(reg_cached, "slate-regcache")
             return reg_cached
         if gh_backup is None:
             gh_backup = _slate_restore_from_github()
@@ -5895,6 +5940,7 @@ def _get_slate_impl():
             gh_backup["all_complete"] = all_complete
             gh_backup.setdefault("draftable_count", 0)
             _ls(_CK_SLATE_LOCKED, gh_backup)
+            _maybe_trigger_locked_slate_regen(gh_backup, "slate-prebackup")
             return gh_backup
         # All caches empty — forced regeneration after config bust during a locked slate.
         # (e.g. model config changed post-lock, user hit Refresh to get new picks)
@@ -5937,17 +5983,7 @@ def _get_slate_impl():
             lock_cached.setdefault("draftable_count", len(draftable_games))
             if lock_time and not lock_cached.get("lock_time"):
                 lock_cached["lock_time"] = lock_time
-            # Scenario 1 auto-detect: if a new deploy landed mid-slate, the cached
-            # picks were built with the old model. Detect SHA mismatch and regenerate
-            # in the background — user gets the stale-but-functional slate immediately,
-            # and the next request will serve the freshly regenerated picks.
-            _current_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
-            _cached_sha = lock_cached.get("deploy_sha", "")
-            if _current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7]:
-                if not getattr(_force_regenerate_bg, "_in_flight", False):
-                    _force_regenerate_bg._in_flight = True
-                    print(f"[slate] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — background regeneration triggered")
-                    threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
+            _maybe_trigger_locked_slate_regen(lock_cached, "slate")
             return lock_cached
         # Check regular cache and promote to lock cache
         cached = _cg(_CK_SLATE)
@@ -5986,6 +6022,7 @@ def _get_slate_impl():
             gh_backup["locked"] = True
             gh_backup.setdefault("draftable_count", len(draftable_games))
             _ls(_CK_SLATE_LOCKED, gh_backup)
+            _maybe_trigger_locked_slate_regen(gh_backup, "slate-backup")
             return gh_backup
         # Lock file missing or busted (tombstoned by _bust_slate_cache) — fall through
         # to the full pipeline for forced regeneration. This handles the case where an
