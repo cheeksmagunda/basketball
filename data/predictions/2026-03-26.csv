@@ -1,26 +1,26 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Mikal Bridges,3147657,NY,G,4.9,1.52,35.9,14.7,4.1,3.7,1.3,0.8
-slate,chalk,1.8x,Josh Hart,3062679,NY,G,4.7,1.6,33.0,11.9,7.5,4.7,1.1,0.3
-slate,chalk,1.6x,Daniss Jenkins,5107199,DET,G,3.8,2.2,24.9,8.3,2.0,3.3,0.9,0.2
-slate,chalk,1.4x,Precious Achiuwa,4431679,SAC,PF,3.7,2.28,31.0,9.0,6.4,1.2,0.8,0.7
-slate,chalk,1.2x,Tristan da Silva,4702382,ORL,F,3.1,2.28,27.3,9.5,3.7,1.5,0.9,0.3
-slate,upside,2.0x,Josh Hart,3062679,NY,G,4.7,1.6,33.0,11.9,7.5,4.7,1.1,0.3
-slate,upside,1.8x,Daniss Jenkins,5107199,DET,G,3.8,2.2,24.9,8.3,2.0,3.3,0.9,0.2
-slate,upside,1.6x,Precious Achiuwa,4431679,SAC,PF,3.7,2.28,31.0,9.0,6.4,1.2,0.8,0.7
-slate,upside,1.4x,Jose Alvarado,4277869,NY,G,3.1,2.2,24.2,7.4,2.5,3.4,1.0,0.1
-slate,upside,1.2x,Daeqwon Plowden,4279318,SAC,G,3.1,2.2,30.8,9.6,3.0,1.1,0.7,0.2
-NY @ CHA,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,8.8,0.0,33.6,24.8,3.4,6.3,0.8,0.1
-NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,7.2,0.0,28.2,19.9,5.0,7.1,1.2,0.3
-NY @ CHA,the_lineup,1.6x,Karl-Anthony Towns,3136195,NY,C,6.9,0.0,31.6,20.7,11.8,2.9,0.9,0.7
-NY @ CHA,the_lineup,1.4x,Brandon Miller,4433287,CHA,F,6.7,0.0,31.2,20.0,4.9,3.4,1.1,0.7
-NY @ CHA,the_lineup,1.2x,Coby White,4395651,CHA,G,5.8,0.0,26.9,17.3,3.6,4.3,0.6,0.1
-NO @ DET,the_lineup,2.0x,Zion Williamson,4395628,NO,F,6.8,0.0,30.0,21.9,5.9,3.5,1.0,0.6
-NO @ DET,the_lineup,1.8x,Dejounte Murray,3907497,NO,G,6.0,0.0,29.2,17.2,5.2,6.4,1.5,0.2
-NO @ DET,the_lineup,1.6x,Saddiq Bey,4397136,NO,G,5.3,0.0,32.1,16.9,5.6,2.5,0.9,0.1
-NO @ DET,the_lineup,1.4x,Daniss Jenkins,5107199,DET,G,4.3,0.0,24.9,8.3,2.0,3.3,0.9,0.2
-NO @ DET,the_lineup,1.2x,Kevin Huerter,4066372,DET,G,4.2,0.0,27.2,10.0,3.5,2.6,0.9,0.5
-SAC @ ORL,the_lineup,2.0x,Wendell Carter Jr.,4277847,ORL,C,4.5,0.0,31.7,11.9,7.6,2.1,0.8,0.6
-SAC @ ORL,the_lineup,1.8x,Paolo Banchero,4432573,ORL,F,3.9,0.0,37.0,22.7,8.2,5.0,0.7,0.6
-SAC @ ORL,the_lineup,1.6x,Maxime Raynaud,4898371,SAC,C,3.8,0.0,35.8,11.9,7.3,1.3,0.5,0.6
-SAC @ ORL,the_lineup,1.4x,Malik Monk,4066262,SAC,G,3.7,0.0,30.3,12.6,2.0,3.0,0.6,0.4
-SAC @ ORL,the_lineup,1.2x,Tristan da Silva,4702382,ORL,F,3.6,0.0,27.3,9.5,3.7,1.5,0.9,0.3
+slate,chalk,2.0x,Brandon Miller,4433287,CHA,F,9.0,0.78,31.2,20.0,4.9,3.4,1.1,0.7
+slate,chalk,1.8x,Zion Williamson,4395628,NO,F,8.4,0.78,31.6,21.9,5.9,3.5,1.0,0.6
+slate,chalk,1.6x,Daniss Jenkins,5107199,DET,G,6.2,2.2,24.9,8.3,2.0,3.3,0.9,0.2
+slate,chalk,1.4x,Precious Achiuwa,4431679,SAC,PF,4.9,2.28,31.0,9.0,6.4,1.2,0.8,0.7
+slate,chalk,1.2x,Moritz Wagner,3150844,ORL,F,4.7,2.11,18.9,7.9,3.5,0.9,0.5,0.1
+slate,upside,2.0x,Mikal Bridges,3147657,NY,G,6.6,1.52,35.9,14.7,4.1,3.7,1.3,0.8
+slate,upside,1.8x,Daniss Jenkins,5107199,DET,G,6.2,2.2,24.9,8.3,2.0,3.3,0.9,0.2
+slate,upside,1.6x,Killian Hayes,4683024,SAC,G,5.7,2.01,27.3,5.7,2.7,3.7,0.6,0.2
+slate,upside,1.4x,Devin Carter,4433188,SAC,G,4.8,2.28,23.5,7.1,2.6,2.1,0.8,0.2
+slate,upside,1.2x,Jose Alvarado,4277869,NY,G,4.4,2.2,24.2,7.4,2.5,3.4,1.0,0.1
+NY @ CHA,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,12.0,0.0,33.6,24.8,3.4,6.3,0.8,0.1
+NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,10.6,0.0,28.9,19.9,5.0,7.1,1.2,0.3
+NY @ CHA,the_lineup,1.6x,Brandon Miller,4433287,CHA,F,9.5,0.0,31.2,20.0,4.9,3.4,1.1,0.7
+NY @ CHA,the_lineup,1.4x,Coby White,4395651,CHA,G,8.5,0.0,27.7,17.3,3.6,4.3,0.6,0.1
+NY @ CHA,the_lineup,1.2x,Karl-Anthony Towns,3136195,NY,C,8.2,0.0,31.6,20.7,11.8,2.9,0.9,0.7
+NO @ DET,the_lineup,2.0x,Zion Williamson,4395628,NO,F,8.9,0.0,31.6,21.9,5.9,3.5,1.0,0.6
+NO @ DET,the_lineup,1.8x,Dejounte Murray,3907497,NO,G,8.8,0.0,29.2,17.2,5.2,6.4,1.5,0.2
+NO @ DET,the_lineup,1.6x,Kevin Huerter,4066372,DET,G,7.8,0.0,27.2,10.0,3.5,2.6,0.9,0.5
+NO @ DET,the_lineup,1.4x,Daniss Jenkins,5107199,DET,G,7.1,0.0,24.9,8.3,2.0,3.3,0.9,0.2
+NO @ DET,the_lineup,1.2x,Saddiq Bey,4397136,NO,G,6.7,0.0,32.1,16.9,5.6,2.5,0.9,0.1
+SAC @ ORL,the_lineup,2.0x,Jalen Suggs,4432165,ORL,G,7.2,0.0,28.9,13.6,3.7,5.0,1.8,0.7
+SAC @ ORL,the_lineup,1.8x,Wendell Carter Jr.,4277847,ORL,C,5.5,0.0,31.7,11.9,7.6,2.1,0.8,0.6
+SAC @ ORL,the_lineup,1.6x,Malik Monk,4066262,SAC,G,5.5,0.0,29.3,12.6,2.0,3.0,0.6,0.4
+SAC @ ORL,the_lineup,1.4x,Maxime Raynaud,4898371,SAC,C,5.3,0.0,35.8,11.9,7.3,1.3,0.5,0.6
+SAC @ ORL,the_lineup,1.2x,DeMar DeRozan,3978,SAC,G,5.3,0.0,37.0,18.8,3.3,4.1,1.1,0.3
