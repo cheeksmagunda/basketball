@@ -122,6 +122,7 @@ grep: PARLAY LIVE SSE          — /api/parlay-live-stream, _parlay_live_tick_pa
 grep: PARLAY ENGINE MODULE     — api/parlay_engine.py (run_parlay_engine; HTTP grep: PARLAY ENGINE in index)
 grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt
 grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts
+grep: PDF INGEST PLAYBOOK      — Assistant playbook: user uploads PDFs (screenshots inside); rasterize, parse-screenshot, save-*, rebuild_top_performers_mega
 grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
 grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega
 grep: github_storage           — _github_get_file, _github_write_file
@@ -293,6 +294,38 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - `/api/lab/briefing` returns **`pending_upload_date`** / **`pending_historical_date`**: most recent prediction date (excluding today) with **no rows in `data/top_performers.csv` for that date** (primary signal for “missing historical outcomes”).
 - `POST /api/save-actuals` remains for rare manual merges; audit still auto-writes when `real_scores` is present in the merged upload.
 - `/api/lab/skip-uploads` kept for API compatibility.
+
+### Assistant playbook: user uploads PDFs (screenshots inside)
+
+Use this when the user drops **PDFs** (or multi-page exports) that contain Real Sports app screenshots. The backend **`POST /api/parse-screenshot` accepts images only**: `image/png`, `image/jpeg`, `image/gif`, `image/webp` (max 10MB). **Do not POST the PDF** to parse-screenshot.
+
+1. **Rasterize first** — Export each screenshot page to PNG or JPEG (one file per screen the model should read). Options: macOS Preview (File → Export), `pdftoppm -png file.pdf page`, ImageMagick `convert -density 200 file.pdf page-%02d.png`, or ask the user to save each page as an image. Crop so one Real Sports screen dominates the image if the PDF has margins.
+
+2. **Slate date** — Get `YYYY-MM-DD` from the user, the PDF filename (e.g. `2026-03-20-leaderboards.pdf`), or explicit labels in the chat. Every save payload must use the same `date` for that slate.
+
+3. **Per image: classify → `screenshot_type` → parse → save**
+
+   | What the image shows | `screenshot_type` (Form field) | Next step: POST body |
+   |----------------------|-------------------------------|----------------------|
+   | Most popular / most drafted list | `most_popular` or `most_drafted` | `POST /api/save-most-popular` with `{"date":"…","players": <response.players>}` |
+   | High-boost (e.g. 3x+) sub-leaderboard | `most_drafted_high_boost` | `POST /api/save-most-drafted-3x` with same shape + optional `"min_boost": 3.0` |
+   | Up to four winning lineups (flat rows) | `winning_drafts` | `POST /api/save-winning-drafts` with `{"date":"…","rows": <response.players>}` (or `players`) |
+   | Highest-value / top performers strip only | `top_performers` | `POST /api/save-actuals` with `{"date":"…","players": <response.players>}` |
+   | My Draft + Highest value / mixed leaderboard | `actuals` (default) | `POST /api/save-actuals` with same shape |
+
+   Parse (example): `curl -sS -X POST "$BASE/api/parse-screenshot" -F "file=@./page01.png" -F "screenshot_type=most_popular"`. Response is always `{"players":[...]}` — pass that array through to the save call (field name `players` for most endpoints; `winning_drafts` also accepts `rows`).
+
+4. **`INGEST_SECRET`** — When set on the server, `save-most-popular`, `save-ownership`, `save-most-drafted-3x`, and `save-winning-drafts` require header **`X-Ingest-Key: <secret>`** or **`Authorization: Bearer <secret>`**. `save-actuals` does not use this secret. Use production `BASE` (e.g. Railway app URL) or local `uvicorn` if the user is developing.
+
+5. **Rate limit** — `parse-screenshot` is capped at **5 requests/minute** per IP. Space OCR calls (~12+ seconds apart) or the user gets HTTP 429.
+
+6. **`data/top_performers.csv` (mega)** — `save-actuals` writes **`data/actuals/{date}.csv`** on GitHub. Log/audit prefer rows in **`data/top_performers.csv`** keyed by `date`. After ingesting via `save-actuals`, tell the user to run locally: **`python scripts/rebuild_top_performers_mega.py`**, then commit and push **`data/top_performers.csv`** (merges mega + all `data/actuals/*.csv`). Skip this only if they rely solely on per-day actuals for that date.
+
+7. **Verify** — `python scripts/verify_historical_datasets.py` and, when predictions exist for those dates, `python scripts/verify_top_performers.py`.
+
+8. **If the assistant cannot call the user’s API** — Output exact `curl` commands (with placeholder paths and `BASE`), the chosen `screenshot_type` per file, and the reminder about rasterizing PDFs and rebuild script.
+
+Canonical reference: **`docs/HISTORICAL_DATA.md`**.
 
 ### Lab / Ben availability
 - Ben (Lab) chat is always available from the frontend’s perspective — the Lab tab no longer shows a locked vs unlocked state.
