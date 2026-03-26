@@ -9695,8 +9695,9 @@ async def line_history():
     # still appear in history — the JSON has the resolved results.
     csv_dates  = {i["name"][:-4]  for i in items if i.get("name", "").endswith(".csv")}
     json_dates = {i["name"][:-10] for i in items if i.get("name", "").endswith("_pick.json")}
-    # Cap at 30 days for more comprehensive history; parallel GitHub fetches keep it fast
-    all_dates  = sorted(csv_dates | json_dates, reverse=True)[:30]
+    # Full history: include all available dates (newest first).
+    # Fetches run in parallel to keep latency manageable.
+    all_dates  = sorted(csv_dates | json_dates, reverse=True)
 
     # Fetch CSV + JSON for each date in parallel
     def _fetch_date_files(date_str):

@@ -4734,7 +4734,7 @@ function renderLineHistoryRows(picks, dirFilter) {
   let html = '';
   const filtered = dirFilter === 'all' ? picks : picks.filter(p => (p.direction || 'over') === dirFilter);
   const _picks = [];
-  filtered.slice(0, 10).forEach(p => {
+  filtered.forEach(p => {
     const result = p.result || 'pending';
     const dir    = p.direction || 'over';
     const idx    = _picks.push(p) - 1;
