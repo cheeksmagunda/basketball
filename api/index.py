@@ -10621,6 +10621,12 @@ def _ben_chat_maybe_reset_for_today_locked() -> None:
         _BEN_CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         _BEN_CHAT_HISTORY_PATH.write_text("[]")
         _BEN_CHAT_HISTORY_DATE_PATH.write_text(json.dumps({"et_date": today}, indent=2))
+        # Also reset GitHub files so cold starts (after Railway redeploy) see the clear slate, not stale old messages
+        try:
+            _github_write_file("data/ben_chat_history.json", "[]", f"Clear Ben chat on slate turnover {today}")
+            _github_write_file("data/ben_chat_history_last_et_date.json", json.dumps({"et_date": today}, indent=2), f"Update Ben chat date marker {today}")
+        except Exception as gh_err:
+            print(f"[ben-chat] github reset failed (non-fatal): {gh_err}")
     except Exception as e:
         print(f"[ben-chat] reset failed: {e}")
 
