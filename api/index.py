@@ -6786,11 +6786,9 @@ async def slate_check(request: Request):
 async def force_regenerate(request: Request, scope: str = Query("full")):
     """Force-regenerate predictions mid-slate.
 
-    scope=full: Re-run ALL games (dev shipped model update mid-slate). CRON_SECRET-gated.
+    scope=full: Re-run ALL games (dev shipped model update mid-slate). User-facing, no auth.
     scope=remaining: Only games not yet started (user woke up late). User-facing, no auth.
     """
-    if scope == "full" and not _require_cron_secret(request):
-        return _err("Unauthorized", 401)
     if scope not in ("full", "remaining"):
         return _err("scope must be 'full' or 'remaining'", 400)
 
