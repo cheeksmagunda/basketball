@@ -22,5 +22,9 @@
   {
     "role": "assistant",
     "content": "Looking at today's slate context:\n\n**LINE OF THE DAY:**\n> No line picks available today.\n\n**PARLAY:**\n> No active 3-leg ticket. Could not retrieve player prop lines from the Odds API. The request returned no data \u2014 this may be a temporary API issue.\n\nBoth are blank tonight. The most likely reason is the **Odds API returned no player prop data** for today's 3-game slate (NY @ CHA, NO @ DET, SAC @ ORL). This happens when:\n\n1. **Books haven't posted player props yet** \u2014 smaller slates with less marquee matchups sometimes get props posted later\n2. **API rate limit or outage** \u2014 temporary issue on the provider side\n3. **Thin slate filtering** \u2014 3 games may not produce enough candidates that pass the model's confidence/edge floors\n\nThe Line engine needs real sportsbook lines (Over/Under numbers + juice) to calculate edge. Without them, it correctly returns nothing rather than guessing.\n\n**What you can do:**\n- **Wait and refresh** closer to tip \u2014 props often populate 2-4 hours before gametime\n- If props still don't load, I can manually look at projections and give you my best read on any player you're interested in\n\nWant me to check if the games have started or pull up any specific player projections for tonight?"
+  },
+  {
+    "role": "user",
+    "content": "who is in the moonshot today"
   }
 ]
