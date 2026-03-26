@@ -1,18 +1,18 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
 slate,chalk,2.0x,Mikal Bridges,3147657,NY,G,4.9,1.52,35.9,14.7,4.1,3.7,1.3,0.8
-slate,chalk,1.8x,Josh Hart,3062679,NY,G,4.6,1.6,33.0,11.9,7.5,4.7,1.1,0.3
+slate,chalk,1.8x,Josh Hart,3062679,NY,G,4.7,1.6,33.0,11.9,7.5,4.7,1.1,0.3
 slate,chalk,1.6x,Daniss Jenkins,5107199,DET,G,3.8,2.2,24.9,8.3,2.0,3.3,0.9,0.2
-slate,chalk,1.4x,Daeqwon Plowden,4279318,SAC,G,3.1,2.2,30.8,9.6,3.0,1.1,0.7,0.2
+slate,chalk,1.4x,Precious Achiuwa,4431679,SAC,PF,3.7,2.28,31.0,9.0,6.4,1.2,0.8,0.7
 slate,chalk,1.2x,Tristan da Silva,4702382,ORL,F,3.1,2.28,27.3,9.5,3.7,1.5,0.9,0.3
-slate,upside,2.0x,Josh Hart,3062679,NY,G,4.6,1.6,33.0,11.9,7.5,4.7,1.1,0.3
+slate,upside,2.0x,Josh Hart,3062679,NY,G,4.7,1.6,33.0,11.9,7.5,4.7,1.1,0.3
 slate,upside,1.8x,Daniss Jenkins,5107199,DET,G,3.8,2.2,24.9,8.3,2.0,3.3,0.9,0.2
-slate,upside,1.6x,Moritz Wagner,3150844,ORL,F,3.1,2.11,18.9,7.9,3.5,0.9,0.5,0.1
-slate,upside,1.4x,Tristan da Silva,4702382,ORL,F,3.1,2.28,27.3,9.5,3.7,1.5,0.9,0.3
-slate,upside,1.2x,Jose Alvarado,4277869,NY,G,3.1,2.2,24.2,7.4,2.5,3.4,1.0,0.1
+slate,upside,1.6x,Precious Achiuwa,4431679,SAC,PF,3.7,2.28,31.0,9.0,6.4,1.2,0.8,0.7
+slate,upside,1.4x,Jose Alvarado,4277869,NY,G,3.1,2.2,24.2,7.4,2.5,3.4,1.0,0.1
+slate,upside,1.2x,Daeqwon Plowden,4279318,SAC,G,3.1,2.2,30.8,9.6,3.0,1.1,0.7,0.2
 NY @ CHA,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,8.8,0.0,33.6,24.8,3.4,6.3,0.8,0.1
-NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,7.1,0.0,28.2,19.9,5.0,7.1,1.2,0.3
+NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,7.2,0.0,28.2,19.9,5.0,7.1,1.2,0.3
 NY @ CHA,the_lineup,1.6x,Karl-Anthony Towns,3136195,NY,C,6.9,0.0,31.6,20.7,11.8,2.9,0.9,0.7
-NY @ CHA,the_lineup,1.4x,Brandon Miller,4433287,CHA,F,6.5,0.0,31.2,20.0,4.9,3.4,1.1,0.7
+NY @ CHA,the_lineup,1.4x,Brandon Miller,4433287,CHA,F,6.7,0.0,31.2,20.0,4.9,3.4,1.1,0.7
 NY @ CHA,the_lineup,1.2x,Coby White,4395651,CHA,G,5.8,0.0,26.9,17.3,3.6,4.3,0.6,0.1
 NO @ DET,the_lineup,2.0x,Zion Williamson,4395628,NO,F,6.8,0.0,30.0,21.9,5.9,3.5,1.0,0.6
 NO @ DET,the_lineup,1.8x,Dejounte Murray,3907497,NO,G,6.0,0.0,29.2,17.2,5.2,6.4,1.5,0.2
