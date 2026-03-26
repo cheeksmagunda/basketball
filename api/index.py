@@ -4943,9 +4943,44 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  player_games=_moon_pool_games)
         core_pool = None
 
-    # Moonshot fallback: if MILP returned empty but we have candidates, sort by moonshot_ev.
-    # Prevents "No players to display yet" when the pool is thin or MILP constraints are
-    # unsatisfiable (e.g. max_per_game + overlap_cap conflict on a 2-game slate).
+    # Chalk fallback: if MILP returns <5 but we have enough candidates, fill from sorted EV.
+    # This protects small slates where hard constraints can make the MILP infeasible.
+    if len(chalk) < 5 and chalk_eligible:
+        _filled = sorted(chalk_eligible, key=lambda x: x.get("chalk_ev_capped", 0), reverse=True)[:5]
+        for i, p in enumerate(_filled):
+            p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
+        chalk = _filled
+        print(f"[build_lineups] chalk MILP short ({len(chalk)}) — EV fallback used")
+
+    # Moonshot fallback 1: if gateing produced too small a pool on a small slate,
+    # build a relaxed pool so users still get a usable contrarian lineup.
+    if len(moonshot_pool) < 5:
+        relaxed_pool = []
+        # Keep this conservative: only relax when the strict pool is too thin.
+        relaxed_min_rating = 2.2
+        relaxed_min_pred_min = 12.0
+        relaxed_min_boost = max(1.0, float(min_boost) - 0.5)
+        for p in projections:
+            if p.get("name") in BLACKLISTED_PLAYERS:
+                continue
+            if p.get("rating", 0) < relaxed_min_rating:
+                continue
+            if p.get("predMin", 0) < relaxed_min_pred_min:
+                continue
+            if p.get("est_mult", 0) < relaxed_min_boost:
+                continue
+            if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
+                continue
+            _mp = {**p}
+            _mp["adj_ceiling"] = round(float(p.get("rating", 0)), 3)
+            _mp["moonshot_ev"] = round(float(p.get("rating", 0)) * (avg_slot + float(p.get("est_mult", 0))), 2)
+            relaxed_pool.append(_mp)
+        if relaxed_pool:
+            moonshot_pool = sorted(relaxed_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
+            print(f"[build_lineups] moonshot strict pool too thin ({len(moonshot_pool)}) — relaxed small-slate pool used")
+
+    # Moonshot fallback 2: if MILP returned empty but we have candidates, sort by moonshot_ev.
+    # Prevents "No players to display yet" when constraints are unsatisfiable.
     if not upside and moonshot_pool:
         upside = sorted(moonshot_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)[:5]
         for i, p in enumerate(upside):
