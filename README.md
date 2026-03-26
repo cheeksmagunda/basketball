@@ -265,8 +265,8 @@ Real Sports **leaderboard outcomes** (who won the value contest, how many drafts
 
 | Artifact | Role |
 |----------|------|
-| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player). **Log** and **`_compute_audit`** read this first for each date. Rebuild via `scripts/rebuild_top_performers_mega.py` / sync scripts as needed. |
-| **`data/actuals/{date}.csv`** | Legacy per-day CSVs (same columns as mega minus `date`). Used when a date has **no** rows in the mega file, and for older tooling that still expects per-day files. |
+| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player) with **`team`** (NBA abbr). **Log** and **`_compute_audit`** read this first for each date. Rebuild via `scripts/rebuild_top_performers_mega.py` / sync scripts as needed. |
+| **`data/actuals/{date}.csv`** | Legacy per-day CSVs (same columns as mega minus `date`, including **`team`**). Used when a date has **no** rows in the mega file, and for older tooling that still expects per-day files. |
 | **`data/most_popular/{date}.csv`** | Most-drafted / popularity snapshots (`save-most-popular` / `save-ownership` alias). Training + `calibrate-boost`. |
 | **`data/predictions/{date}.csv`** | Pre-game projections — feature source for drafts/boost training and `scripts/verify_top_performers.py`. |
 

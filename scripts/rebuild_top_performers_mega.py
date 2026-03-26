@@ -22,6 +22,7 @@ ACT = REPO / "data" / "actuals"
 FIELDS = [
     "date",
     "player_name",
+    "team",
     "actual_rs",
     "actual_card_boost",
     "drafts",

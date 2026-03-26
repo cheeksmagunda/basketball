@@ -2,15 +2,18 @@
 
 This season, **Log** and **audit** treat `data/top_performers.csv` as the **primary** source of per-player outcomes (filtered by `date`). Legacy `data/actuals/{date}.csv` is still read when a date has no rows in the mega file.
 
-Five canonical on-disk structures (plus mega rollup):
+Six on-disk historical structures (mega rollup + per-date files):
 
 | Dataset | Path | Role |
 |--------|------|------|
-| Top performers (mega) | `data/top_performers.csv` | Rolled-up leaderboard rows (`date`, `player_name`, RS, boost, drafts, …) |
-| Most popular | `data/most_popular/{date}.csv` | Full popularity list (`player`, `team`, `draft_count`, `actual_rs`, `actual_card_boost`, …) |
-| Most drafted (high boost) | `data/most_drafted_3x/{date}.csv` | Same column layout as most popular; screen/prompt targets 3x+ (or pass `min_boost` in JSON metadata) |
-| Winning drafts | `data/winning_drafts/{date}.csv` | Long format: `winner_rank`, `drafter_label`, `total_score`, `slot_index`, `player_name`, `actual_rs`, `slot_mult`, `card_boost`, `saved_at` |
+| Top performers (mega) | `data/top_performers.csv` | Rolled-up rows: `date`, `player_name`, **`team`** (NBA abbr), `actual_rs`, `actual_card_boost`, `drafts`, `avg_finish`, `total_value`, `source` |
+| Most popular | `data/most_popular/{date}.csv` | Full list: `player`, **`team`**, `draft_count`, `actual_rs`, `actual_card_boost`, … (same `team` idea; column is `player` not `player_name`) |
+| Most drafted (high boost) | `data/most_drafted_3x/{date}.csv` | Same columns as most popular (`player`, `team`, …) |
+| Winning drafts | `data/winning_drafts/{date}.csv` | Long format: `winner_rank`, `drafter_label`, `total_score`, `slot_index`, `player_name`, **`team`**, `actual_rs`, `slot_mult`, `card_boost`, `saved_at` |
+| Per-day actuals (legacy) | `data/actuals/{date}.csv` | Same shape as mega minus `date`: `player_name`, **`team`**, `actual_rs`, … |
 | Slate results | `data/slate_results/{date}.json` | That day’s NBA slate: `game_count`, `games[]` with `winner`/`loser` team abbr and final scores (manual or API backfill). **Not wired into live `/api` yet** — for analytics and future model features (pace, blowouts, rest). |
+
+**Team column:** Use 3-letter NBA abbr when known. Parser prompts ask Haiku for `team` on `actuals` / `top_performers` / `winning_drafts`. Backfill: `python scripts/migrate_historical_add_team.py` (fills blanks from `data/predictions/{date}.csv` when player names match). Legacy CSVs without `team` still load via `_parse_actuals_rows` / `_parse_top_performers_mega_rows`.
 
 After updating `data/actuals/{date}.csv`, run `python scripts/rebuild_top_performers_mega.py` so `top_performers.csv` stays in sync.
 

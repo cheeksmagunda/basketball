@@ -2,8 +2,8 @@
 """Create data/actuals/{date}.csv for dates that appear in data/top_performers.csv
 but have no actuals file yet. Does not overwrite existing CSVs.
 
-Same column layout as hand-uploaded actuals: player_name, actual_rs, actual_card_boost,
-drafts, avg_finish, total_value, source.
+Same column layout as hand-uploaded actuals: player_name, team, actual_rs,
+actual_card_boost, drafts, avg_finish, total_value, source.
 
 Usage (repo root):  python scripts/sync_actuals_from_top_performers.py
 """
@@ -18,6 +18,7 @@ TOP = REPO / "data" / "top_performers.csv"
 ACT = REPO / "data" / "actuals"
 OUT_FIELDS = [
     "player_name",
+    "team",
     "actual_rs",
     "actual_card_boost",
     "drafts",

@@ -125,7 +125,7 @@ grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildL
 grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts, slate_results
 grep: PDF INGEST PLAYBOOK      — Assistant playbook: user uploads PDFs (screenshots inside); rasterize, parse-screenshot, save-*, rebuild_top_performers_mega
 grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
-grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega
+grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega, migrate_historical_add_team
 grep: github_storage           — _github_get_file, _github_write_file
 grep: SLATE CACHE GITHUB       — _slate_cache_to_github, _games_cache_from_github, _bust_slate_cache
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
@@ -314,7 +314,7 @@ Use this when the user drops **PDFs** (or multi-page exports) that contain Real 
    | Highest-value / top performers strip only | `top_performers` | `POST /api/save-actuals` with `{"date":"…","players": <response.players>}` |
    | My Draft + Highest value / mixed leaderboard | `actuals` (default) | `POST /api/save-actuals` with same shape |
 
-   Parse (example): `curl -sS -X POST "$BASE/api/parse-screenshot" -F "file=@./page01.png" -F "screenshot_type=most_popular"`. Response is always `{"players":[...]}` — pass that array through to the save call (field name `players` for most endpoints; `winning_drafts` also accepts `rows`).
+   Parse (example): `curl -sS -X POST "$BASE/api/parse-screenshot" -F "file=@./page01.png" -F "screenshot_type=most_popular"`. Response is always `{"players":[...]}` — pass that array through to the save call (field name `players` for most endpoints; `winning_drafts` also accepts `rows`). Haiku is prompted to extract **`team`** (NBA abbr) for `actuals`, `top_performers`, and `winning_drafts`; `save-actuals` / `save-winning-drafts` persist it so mega + per-day CSVs stay joinable to predictions and `slate_results`.
 
 4. **`INGEST_SECRET`** — When set on the server, `save-most-popular`, `save-ownership`, `save-most-drafted-3x`, and `save-winning-drafts` require header **`X-Ingest-Key: <secret>`** or **`Authorization: Bearer <secret>`**. `save-actuals` does not use this secret. Use production `BASE` (e.g. Railway app URL) or local `uvicorn` if the user is developing.
 

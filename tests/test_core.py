@@ -363,7 +363,7 @@ class TestCacheDateBoundary:
 
 
 # ---------------------------------------------------------------------------
-# 5. Log actuals rows (ACT_FIELDS / top_performers-shaped data)
+# 5. Log actuals rows (_parse_actuals_rows / top_performers-shaped data)
 # ---------------------------------------------------------------------------
 
 class TestBenBannerActualsDetection:
@@ -374,6 +374,10 @@ class TestBenBannerActualsDetection:
         "LeBron James,5.2,1.4,1234,2.1,8.7,screenshot\n"
         "Anthony Davis,4.1,1.2,890,3.0,6.5,screenshot\n"
     )
+    _ACT_CSV_WITH_TEAM = (
+        "player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
+        "LeBron James,LAL,5.2,1.4,1234,2.1,8.7,screenshot\n"
+    )
     _PRED_CSV = (
         "scope,lineup_type,slot,player_name,player_id,team,pos,"
         "predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk\n"
@@ -382,21 +386,21 @@ class TestBenBannerActualsDetection:
 
     def test_has_actuals_true_when_csv_has_data(self):
         """log_get must return has_actuals=True when actuals CSV has player rows."""
-        from api.index import _parse_csv, ACT_FIELDS
-        rows = _parse_csv(self._ACT_CSV, ACT_FIELDS)
+        from api.index import _parse_actuals_rows
+        rows = _parse_actuals_rows(self._ACT_CSV)
         assert bool(rows) is True
 
     def test_has_actuals_false_when_csv_missing(self):
         """log_get must return has_actuals=False when actuals CSV is absent."""
-        from api.index import _parse_csv, ACT_FIELDS
-        rows = _parse_csv(None, ACT_FIELDS)
+        from api.index import _parse_actuals_rows
+        rows = _parse_actuals_rows(None)
         assert bool(rows) is False
 
     def test_has_actuals_false_when_csv_header_only(self):
         """log_get must return has_actuals=False for a header-only actuals CSV."""
-        from api.index import _parse_csv, ACT_FIELDS
+        from api.index import _parse_actuals_rows
         header_only = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
-        rows = _parse_csv(header_only, ACT_FIELDS)
+        rows = _parse_actuals_rows(header_only)
         assert bool(rows) is False
 
     def test_has_actuals_independent_of_predictions(self):
@@ -405,40 +409,46 @@ class TestBenBannerActualsDetection:
         This is why /api/log/get is the reliable signal — not the briefing,
         which requires both files (paired).
         """
-        from api.index import _parse_csv, ACT_FIELDS, PRED_FIELDS
-        actuals     = _parse_csv(self._ACT_CSV, ACT_FIELDS)
+        from api.index import _parse_actuals_rows, _parse_csv, PRED_FIELDS
+        actuals     = _parse_actuals_rows(self._ACT_CSV)
         predictions = _parse_csv(None, PRED_FIELDS)           # no predictions committed
         assert bool(actuals) is True
         assert bool(predictions) is False
 
-    def test_parse_csv_field_mapping(self):
+    def test_parse_actuals_rows_field_mapping(self):
         """Actuals CSV rows must map player_name and actual_rs correctly."""
-        from api.index import _parse_csv, ACT_FIELDS
-        rows = _parse_csv(self._ACT_CSV, ACT_FIELDS)
+        from api.index import _parse_actuals_rows
+        rows = _parse_actuals_rows(self._ACT_CSV)
         assert rows[0]["player_name"] == "LeBron James"
         assert rows[0]["actual_rs"]   == "5.2"
+        assert rows[0]["team"]       == ""
         assert rows[1]["player_name"] == "Anthony Davis"
 
-    def test_parse_csv_quoted_commas(self):
+    def test_parse_actuals_rows_team_column(self):
+        from api.index import _parse_actuals_rows
+        rows = _parse_actuals_rows(self._ACT_CSV_WITH_TEAM)
+        assert rows[0]["team"] == "LAL"
+
+    def test_parse_actuals_rows_quoted_commas(self):
         """Quoted fields containing commas must parse as single values."""
-        from api.index import _parse_csv, ACT_FIELDS
+        from api.index import _parse_actuals_rows
         csv = (
             "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\n"
             '"Smith, Jr.",4.1,1.2,500,3.0,6.5,screenshot\n'
         )
-        rows = _parse_csv(csv, ACT_FIELDS)
+        rows = _parse_actuals_rows(csv)
         assert len(rows) == 1
         assert rows[0]["player_name"] == "Smith, Jr."
 
-    def test_parse_csv_short_row_padded(self):
-        """Rows with fewer columns than the header must be padded, not crash."""
-        from api.index import _parse_csv, ACT_FIELDS
+    def test_parse_actuals_rows_short_row(self):
+        """Sparse rows still produce a valid dict (missing cells empty)."""
+        from api.index import _parse_actuals_rows
         csv = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source\nPlayer X,3.5\n"
-        rows = _parse_csv(csv, ACT_FIELDS)
+        rows = _parse_actuals_rows(csv)
         assert len(rows) == 1
         assert rows[0]["player_name"] == "Player X"
         assert rows[0]["actual_rs"]   == "3.5"
-        assert rows[0]["source"]      == ""   # padded empty
+        assert rows[0]["source"]      == ""
 
 
 class TestLoadPlayerActualsForDate:

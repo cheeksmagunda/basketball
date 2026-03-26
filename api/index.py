@@ -6591,6 +6591,7 @@ Return ONLY a JSON array of objects. No markdown."""
 
 For EACH player row:
 - player_name: full name
+- team: NBA team abbreviation if visible on the row or logo (e.g. LAL, DEN, PHX), else null
 - actual_rs: Real Score (triangle/arrow symbol)
 - actual_card_boost: "+X.Xx" as decimal, or null
 - drafts: draft count if shown
@@ -6608,6 +6609,7 @@ For EACH player in each winning lineup, output one object:
 - total_score: that winner's total score if visible, else null
 - slot_index: integer 1-5 (top of lineup to bottom)
 - player_name: full name
+- team: NBA team abbreviation if visible (logo or text), else null
 - actual_rs: Real Score if visible, else null
 - slot_mult: slot multiplier if shown (e.g. 2.0x as 2.0), else null
 - card_boost: card boost "+X.Xx" as decimal if shown, else null
@@ -6622,6 +6624,7 @@ The screenshot may contain two sections:
 
 For EACH player, extract:
 - player_name: full name
+- team: NBA team abbreviation if visible (logo or text), else null
 - actual_rs: the Real Score number shown with a triangle/arrow symbol (e.g. if it shows "⌃3.1" the value is 3.1, if "⌃0" the value is 0)
 - actual_card_boost: the card boost shown as "+X.Xx" (e.g. "+3.0x" → 3.0, "+0.9x" → 0.9). If no + symbol is shown, set to null
 - drafts: number of drafts (e.g. "31", "1.1k" → 1100, "5k" → 5000, "13.6k" → 13600)
@@ -6630,7 +6633,7 @@ For EACH player, extract:
 - source: "my_draft" if from "My draft" section, "highest_value" if from "Highest value" section
 
 If this is a Leaderboard screenshot, extract each drafter's lineup:
-- For each player in a lineup: player_name, actual_rs (the number shown), card_multiplier (e.g. "4.2x" → 4.2)
+- For each player in a lineup: player_name, team (abbr if visible), actual_rs (the number shown), card_multiplier (e.g. "4.2x" → 4.2)
 - source: "leaderboard"
 - Include the drafter's total_score
 
@@ -6709,7 +6712,7 @@ def _compute_audit(date_str):
         dir_hits.append(1 if (err >= 0) == (pred_rs >= 3.0) else 0)  # directional: above/below avg
         misses.append({
             "player":       row["player_name"],
-            "team":         row.get("team", ""),
+            "team":         (a.get("team") or row.get("team") or ""),
             "predicted_rs": round(pred_rs, 2),
             "actual_rs":    round(actual_rs, 2),
             "error":        round(err, 2),
@@ -6798,35 +6801,30 @@ async def save_actuals(payload: dict = Body(...)):
         pass  # If check fails, continue with normal processing
 
     path = f"data/actuals/{date_str}.csv"
-    header = "player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source"
 
     # Check if file already exists (to append / overwrite with dedup)
     existing, _ = _github_get_file(path)
-    rows = []
+    merged: list = []
     if existing:
-        # Keep existing rows, but drop any row whose player_name matches a new upload
-        # (prevents duplicates if user uploads the same screenshot twice)
+        merged = _parse_actuals_rows(existing)
         new_names = {str(p.get("player_name", "")).strip().lower() for p in players}
-        lines = existing.strip().split("\n")
-        for line in (lines[1:] if len(lines) > 1 else []):
-            if not line.strip():
-                continue
-            # Use csv.reader so quoted names containing commas parse correctly
-            try:
-                first_field = next(csv.reader(io.StringIO(line)))[0].strip().lower()
-            except Exception:
-                first_field = line.split(",")[0].strip().strip('"').lower()
-            if first_field not in new_names:
-                rows.append(line)
+        merged = [r for r in merged if r["player_name"].lower() not in new_names]
 
-    # Add new rows
     for p in players:
-        rows.append(",".join(_csv_escape(p.get(k, "")) for k in [
-            "player_name", "actual_rs", "actual_card_boost",
-            "drafts", "avg_finish", "total_value", "source"
-        ]))
+        merged.append(
+            {
+                "player_name": str(p.get("player_name", "")).strip(),
+                "team": str(p.get("team", "")).strip().upper(),
+                "actual_rs": p.get("actual_rs", ""),
+                "actual_card_boost": p.get("actual_card_boost", ""),
+                "drafts": p.get("drafts", ""),
+                "avg_finish": p.get("avg_finish", ""),
+                "total_value": p.get("total_value", ""),
+                "source": str(p.get("source", "")).strip(),
+            }
+        )
 
-    csv_content = header + "\n" + "\n".join(rows) + "\n"
+    csv_content = _actuals_csv_from_rows(merged)
     result = _github_write_file(path, csv_content, f"actuals for {date_str}")
     if result.get("error"):
         return _err(result["error"], 500)
@@ -6842,7 +6840,7 @@ async def save_actuals(payload: dict = Body(...)):
             audit_path = f"data/audit/{date_str}.json"
             _github_write_file(audit_path, json.dumps(audit, indent=2), f"audit for {date_str}")
 
-    return {"status": "saved", "path": path, "rows": len(rows), "audit": audit}
+    return {"status": "saved", "path": path, "rows": len(merged), "audit": audit}
 
 
 def _parse_csv(content, header_fields):
@@ -6877,17 +6875,40 @@ def _parse_csv(content, header_fields):
 
 PRED_FIELDS = ["scope","lineup_type","slot","player_name","player_id","team","pos",
                "predicted_rs","est_card_boost","pred_min","pts","reb","ast","stl","blk"]
-ACT_FIELDS = ["player_name","actual_rs","actual_card_boost","drafts","avg_finish","total_value","source"]
+ACT_FIELDS = [
+    "player_name",
+    "team",
+    "actual_rs",
+    "actual_card_boost",
+    "drafts",
+    "avg_finish",
+    "total_value",
+    "source",
+]
 
 # grep: HISTORICAL DATA — mega top_performers, most_popular, winning_drafts, most_drafted_3x
 TOP_PERFORMERS_GH_PATH = "data/top_performers.csv"
 TP_MEGA_FIELDS = [
-    "date", "player_name", "actual_rs", "actual_card_boost",
-    "drafts", "avg_finish", "total_value", "source",
+    "date",
+    "player_name",
+    "team",
+    "actual_rs",
+    "actual_card_boost",
+    "drafts",
+    "avg_finish",
+    "total_value",
+    "source",
 ]
 WINNING_DRAFTS_FIELDS = [
-    "winner_rank", "drafter_label", "total_score", "slot_index",
-    "player_name", "actual_rs", "slot_mult", "card_boost",
+    "winner_rank",
+    "drafter_label",
+    "total_score",
+    "slot_index",
+    "player_name",
+    "team",
+    "actual_rs",
+    "slot_mult",
+    "card_boost",
 ]
 MOST_POPULAR_GH_PREFIX = "data/most_popular"
 OWNERSHIP_LEGACY_PREFIX = "data/ownership"
@@ -6897,6 +6918,73 @@ MOST_POPULAR_ROW_FIELDS = [
     "player", "team", "draft_count", "actual_rs", "actual_card_boost",
     "avg_finish", "rank", "saved_at",
 ]
+
+
+def _parse_actuals_rows(content) -> list:
+    """Parse per-day actuals CSV. Header-aware: legacy files without `team` column still work."""
+    rows = []
+    if not content or not str(content).strip():
+        return rows
+    f = io.StringIO(str(content).strip())
+    reader = csv.DictReader(f)
+    for r in reader:
+        if not r:
+            continue
+        pn = (r.get("player_name") or "").strip()
+        if not pn:
+            continue
+        rows.append(
+            {
+                "player_name": pn,
+                "team": (r.get("team") or "").strip().upper(),
+                "actual_rs": r.get("actual_rs", ""),
+                "actual_card_boost": r.get("actual_card_boost", ""),
+                "drafts": r.get("drafts", ""),
+                "avg_finish": r.get("avg_finish", ""),
+                "total_value": r.get("total_value", ""),
+                "source": (r.get("source") or "").strip(),
+            }
+        )
+    return rows
+
+
+def _parse_top_performers_mega_rows(content: str) -> list:
+    """Parse data/top_performers.csv. Header-aware: legacy rows without `team` default to ''."""
+    rows = []
+    if not content or not str(content).strip():
+        return rows
+    f = io.StringIO(str(content).strip())
+    reader = csv.DictReader(f)
+    for r in reader:
+        if not r:
+            continue
+        d = (r.get("date") or "").strip()
+        pn = (r.get("player_name") or "").strip()
+        if not d or not pn:
+            continue
+        rows.append(
+            {
+                "date": d,
+                "player_name": pn,
+                "team": (r.get("team") or "").strip().upper(),
+                "actual_rs": r.get("actual_rs", ""),
+                "actual_card_boost": r.get("actual_card_boost", ""),
+                "drafts": r.get("drafts", ""),
+                "avg_finish": r.get("avg_finish", ""),
+                "total_value": r.get("total_value", ""),
+                "source": (r.get("source") or "highest_value").strip(),
+            }
+        )
+    return rows
+
+
+def _actuals_csv_from_rows(rows: list) -> str:
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=ACT_FIELDS, extrasaction="ignore")
+    w.writeheader()
+    for r in rows:
+        w.writerow({k: (r.get(k) if r.get(k) is not None else "") for k in ACT_FIELDS})
+    return buf.getvalue()
 
 
 def _ingest_secret_ok(request: Request) -> bool:
@@ -6914,7 +7002,7 @@ def _dates_from_top_performers_mega() -> set:
     raw, _ = _github_get_file(TOP_PERFORMERS_GH_PATH)
     if not raw:
         return set()
-    rows = _parse_csv(raw, TP_MEGA_FIELDS)
+    rows = _parse_top_performers_mega_rows(raw)
     return {(r.get("date") or "").strip() for r in rows if (r.get("date") or "").strip()}
 
 
@@ -6923,24 +7011,27 @@ def _load_player_actuals_for_date(date_str: str) -> list:
     Fallback: legacy data/actuals/{date}.csv."""
     raw, _ = _github_get_file(TOP_PERFORMERS_GH_PATH)
     if raw:
-        rows = _parse_csv(raw, TP_MEGA_FIELDS)
+        rows = _parse_top_performers_mega_rows(raw)
         out = []
         for r in rows:
             if (r.get("date") or "").strip() != date_str:
                 continue
-            out.append({
-                "player_name": (r.get("player_name") or "").strip(),
-                "actual_rs": r.get("actual_rs", ""),
-                "actual_card_boost": r.get("actual_card_boost", ""),
-                "drafts": r.get("drafts", ""),
-                "avg_finish": r.get("avg_finish", ""),
-                "total_value": r.get("total_value", ""),
-                "source": (r.get("source") or "highest_value").strip(),
-            })
+            out.append(
+                {
+                    "player_name": (r.get("player_name") or "").strip(),
+                    "team": (r.get("team") or "").strip().upper(),
+                    "actual_rs": r.get("actual_rs", ""),
+                    "actual_card_boost": r.get("actual_card_boost", ""),
+                    "drafts": r.get("drafts", ""),
+                    "avg_finish": r.get("avg_finish", ""),
+                    "total_value": r.get("total_value", ""),
+                    "source": (r.get("source") or "highest_value").strip(),
+                }
+            )
         if out:
             return out
     act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
-    return _parse_csv(act_csv, ACT_FIELDS) if act_csv else []
+    return _parse_actuals_rows(act_csv) if act_csv else []
 
 
 def _github_get_most_popular_csv(date_str: str) -> tuple[str, str]:
@@ -9812,7 +9903,7 @@ async def lab_backtest(payload: dict = Body(...)):
         if not pred_csv or not act_csv: continue
 
         preds   = _parse_csv(pred_csv, PRED_FIELDS)
-        actuals = _parse_csv(act_csv, ACT_FIELDS)
+        actuals = _parse_actuals_rows(act_csv)
         act_map = {r["player_name"].lower(): _safe_float(r.get("actual_rs")) for r in actuals}
 
         cur_errs  = []
@@ -10487,29 +10578,40 @@ async def save_winning_drafts(request: Request, payload: dict = Body(...)):
         return _err("rows or players required", 400)
 
     ts = datetime.now(timezone.utc).isoformat()
-    lines = [",".join(WINNING_DRAFTS_FIELDS + ["saved_at"])]
+    buf = io.StringIO()
+    wr_csv = csv.writer(buf)
+    wr_csv.writerow(WINNING_DRAFTS_FIELDS + ["saved_at"])
     saved = 0
     for r in raw:
         try:
-            wr = int(float(r.get("winner_rank") or 0))
+            wrn = int(float(r.get("winner_rank") or 0))
             si = int(float(r.get("slot_index") or 0))
         except (TypeError, ValueError):
             continue
-        if wr < 1 or wr > 4 or si < 1 or si > 5:
+        if wrn < 1 or wrn > 4 or si < 1 or si > 5:
             continue
-        pname = str(r.get("player_name") or r.get("name", "")).strip().replace(",", " ")
+        pname = str(r.get("player_name") or r.get("name", "")).strip()
         if not pname:
             continue
-        dl = str(r.get("drafter_label") or "").replace(",", " ")
+        dl = str(r.get("drafter_label") or "")
         ts_val = r.get("total_score")
         ars = r.get("actual_rs")
         sm = r.get("slot_mult")
         cb = r.get("card_boost")
-        lines.append(
-            f"{wr},{dl},{ts_val if ts_val is not None else ''},{si},{pname},"
-            f"{ars if ars is not None else ''},"
-            f"{sm if sm is not None else ''},"
-            f"{cb if cb is not None else ''},{ts}"
+        team = str(r.get("team", "")).strip().upper()
+        wr_csv.writerow(
+            [
+                wrn,
+                dl,
+                ts_val if ts_val is not None else "",
+                si,
+                pname,
+                team,
+                ars if ars is not None else "",
+                sm if sm is not None else "",
+                cb if cb is not None else "",
+                ts,
+            ]
         )
         saved += 1
 
@@ -10519,7 +10621,7 @@ async def save_winning_drafts(request: Request, payload: dict = Body(...)):
         return _err("Too many rows (max 20 = 4 winners × 5 slots)", 400)
 
     path = f"{WINNING_DRAFTS_GH_PREFIX}/{date_str}.csv"
-    content = "\n".join(lines) + "\n"
+    content = buf.getvalue()
     try:
         _github_write_file(path, content, f"winning_drafts {date_str} ({saved} rows)")
     except Exception as e:
@@ -10580,8 +10682,7 @@ async def lab_calibrate_boost():
             act_csv, _ = _github_get_file(f"data/actuals/{date_str}.csv")
             if not act_csv:
                 continue
-            act_rows = _parse_csv(act_csv, ["player_name", "actual_rs", "actual_card_boost",
-                                             "drafts", "avg_finish", "total_value", "source"])
+            act_rows = _parse_actuals_rows(act_csv)
             added = 0
             for row in act_rows:
                 boost = _safe_float(row.get("actual_card_boost"))

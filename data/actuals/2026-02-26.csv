@@ -1,14 +1,14 @@
-player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Precious Achiuwa,7.2,2.6,28,,33.0,highest_value
-Corey Kispert,5.4,3.0,3,,27.1,highest_value
-Saddiq Bey,7.2,1.1,48,,22.4,highest_value
-Julian Champagnie,5.6,1.9,10,,21.7,highest_value
-Nique Clifford,3.6,3.0,23,,17.8,highest_value
-Robert Williams III,3.9,2.5,6,,17.3,highest_value
-Desmond Bane,6.4,0.7,521,,17.2,highest_value
-Naji Marshall,5.0,1.3,168,,16.6,highest_value
-Reed Sheppard,4.6,1.6,27,,16.4,highest_value
-Devin Carter,3.3,3.0,2,,16.3,highest_value
-Dejounte Murray,3.1,3.0,170,,15.6,highest_value
-Daeqwon Plowden,3.1,3.0,3,,15.4,highest_value
-Brandon Miller,5.0,0.9,36,,14.5,highest_value
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Precious Achiuwa,,7.2,2.6,28,,33.0,highest_value
+Corey Kispert,,5.4,3.0,3,,27.1,highest_value
+Saddiq Bey,,7.2,1.1,48,,22.4,highest_value
+Julian Champagnie,,5.6,1.9,10,,21.7,highest_value
+Nique Clifford,,3.6,3.0,23,,17.8,highest_value
+Robert Williams III,,3.9,2.5,6,,17.3,highest_value
+Desmond Bane,,6.4,0.7,521,,17.2,highest_value
+Naji Marshall,,5.0,1.3,168,,16.6,highest_value
+Reed Sheppard,,4.6,1.6,27,,16.4,highest_value
+Devin Carter,,3.3,3.0,2,,16.3,highest_value
+Dejounte Murray,,3.1,3.0,170,,15.6,highest_value
+Daeqwon Plowden,,3.1,3.0,3,,15.4,highest_value
+Brandon Miller,,5.0,0.9,36,,14.5,highest_value

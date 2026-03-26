@@ -1,14 +1,14 @@
-player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Immanuel Quickley,8.0,0.9,85,,23.3,highest_value
-Julian Champagnie,5.0,1.9,11,,19.6,highest_value
-Buddy Hield,3.7,3.0,25,,18.6,highest_value
-Pelle Larsson,4.2,2.3,3,,18.2,highest_value
-Isaiah Collier,4.0,2.0,3,,16.1,highest_value
-Tre Jones,5.0,1.2,98,,15.9,highest_value
-Jusuf Nurkić,4.8,1.2,23,,15.2,highest_value
-John Collins,3.9,1.8,14,,14.8,highest_value
-Luka Dončić,7.1,,5300,,14.3,highest_value
-Sandro Mamukelashvili,3.6,1.9,523,,14.2,highest_value
-Scottie Barnes,5.5,0.5,792,,13.7,highest_value
-Coby White,4.2,1.2,29,,13.4,highest_value
-Spencer Jones,2.7,3.0,4,,13.4,highest_value
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Immanuel Quickley,,8.0,0.9,85,,23.3,highest_value
+Julian Champagnie,,5.0,1.9,11,,19.6,highest_value
+Buddy Hield,,3.7,3.0,25,,18.6,highest_value
+Pelle Larsson,,4.2,2.3,3,,18.2,highest_value
+Isaiah Collier,,4.0,2.0,3,,16.1,highest_value
+Tre Jones,,5.0,1.2,98,,15.9,highest_value
+Jusuf Nurkić,,4.8,1.2,23,,15.2,highest_value
+John Collins,,3.9,1.8,14,,14.8,highest_value
+Luka Dončić,,7.1,,5300,,14.3,highest_value
+Sandro Mamukelashvili,,3.6,1.9,523,,14.2,highest_value
+Scottie Barnes,,5.5,0.5,792,,13.7,highest_value
+Coby White,,4.2,1.2,29,,13.4,highest_value
+Spencer Jones,,2.7,3.0,4,,13.4,highest_value

@@ -106,7 +106,7 @@ class TestIsLocked:
 
 # ─────────────────────────────────────────────────────────
 # TestComputeAudit — accuracy comparison logic
-# CSV must match PRED_FIELDS / ACT_FIELDS column order from api/index.py
+# Predictions CSV matches PRED_FIELDS; actuals use header-aware _parse_actuals_rows (see ACT_FIELDS in api/index.py).
 # ─────────────────────────────────────────────────────────
 class TestComputeAudit:
     """_compute_audit — predictions vs actuals MAE and directional accuracy"""

@@ -1,14 +1,14 @@
-player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Simone Fontecchio,3.9,3.0,6,,19.7,highest_value
-Mikal Bridges,7.0,0.8,204,,19.5,highest_value
-OG Anunoby,5.6,1.2,7,,17.9,highest_value
-Gui Santos,3.6,3.0,3,,17.9,highest_value
-Moussa Diabaté,4.7,1.8,5,,17.9,highest_value
-Al Horford,4.0,2.4,1,,17.8,highest_value
-Anthony Black,5.5,1.2,100,,17.5,highest_value
-Moses Moody,4.0,2.1,34,,16.3,highest_value
-Ace Bailey,3.5,2.5,18,,15.9,highest_value
-Buddy Hield,2.8,3.0,7,,14.1,highest_value
-Jaren Jackson Jr.,4.6,1.0,77,,13.9,highest_value
-Dyson Daniels,4.7,0.9,70,,13.7,highest_value
-Tyler Kolek,2.7,3.0,3,,13.6,highest_value
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Simone Fontecchio,,3.9,3.0,6,,19.7,highest_value
+Mikal Bridges,,7.0,0.8,204,,19.5,highest_value
+OG Anunoby,,5.6,1.2,7,,17.9,highest_value
+Gui Santos,,3.6,3.0,3,,17.9,highest_value
+Moussa Diabaté,,4.7,1.8,5,,17.9,highest_value
+Al Horford,,4.0,2.4,1,,17.8,highest_value
+Anthony Black,,5.5,1.2,100,,17.5,highest_value
+Moses Moody,,4.0,2.1,34,,16.3,highest_value
+Ace Bailey,,3.5,2.5,18,,15.9,highest_value
+Buddy Hield,,2.8,3.0,7,,14.1,highest_value
+Jaren Jackson Jr.,,4.6,1.0,77,,13.9,highest_value
+Dyson Daniels,,4.7,0.9,70,,13.7,highest_value
+Tyler Kolek,,2.7,3.0,3,,13.6,highest_value

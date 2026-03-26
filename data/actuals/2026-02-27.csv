@@ -1,14 +1,14 @@
-player_name,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
-Olivier-Maxence Prosper,3.8,3.0,13,,18.9,highest_value
-Craig Porter Jr.,3.5,2.7,8,,16.4,highest_value
-Jalen Duren,5.8,0.7,717,,15.8,highest_value
-Landry Shamet,3.2,2.8,6,,15.6,highest_value
-Cam Spencer,4.3,1.5,103,,15.0,highest_value
-OG Anunoby,4.8,1.1,63,,14.9,highest_value
-Ausar Thompson,4.2,1.5,32,,14.8,highest_value
-Jarrett Allen,4.8,1.0,321,,14.5,highest_value
-Jaylen Brown,6.2,0.3,949,,14.2,highest_value
-Christian Braun,3.6,1.9,10,,14.0,highest_value
-Nikola Vučević,5.0,0.8,189,,13.9,highest_value
-Jalen Brunson,5.4,0.4,796,,13.0,highest_value
-Baylor Scheierman,2.6,3.0,5,,13.0,highest_value
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Olivier-Maxence Prosper,,3.8,3.0,13,,18.9,highest_value
+Craig Porter Jr.,,3.5,2.7,8,,16.4,highest_value
+Jalen Duren,,5.8,0.7,717,,15.8,highest_value
+Landry Shamet,,3.2,2.8,6,,15.6,highest_value
+Cam Spencer,,4.3,1.5,103,,15.0,highest_value
+OG Anunoby,,4.8,1.1,63,,14.9,highest_value
+Ausar Thompson,,4.2,1.5,32,,14.8,highest_value
+Jarrett Allen,,4.8,1.0,321,,14.5,highest_value
+Jaylen Brown,,6.2,0.3,949,,14.2,highest_value
+Christian Braun,,3.6,1.9,10,,14.0,highest_value
+Nikola Vučević,,5.0,0.8,189,,13.9,highest_value
+Jalen Brunson,,5.4,0.4,796,,13.0,highest_value
+Baylor Scheierman,,2.6,3.0,5,,13.0,highest_value
