@@ -173,7 +173,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.2,
+    "chalk_min_boost_floor": 1.5,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.0,
@@ -189,13 +189,13 @@
     }
   },
   "star_anchor": {
-    "enabled": true,
+    "enabled": false,
     "min_season_pts": 20.0,
     "min_season_min": 25.0,
     "min_boost": 0.5,
     "min_rating": 4.5,
     "require_count": 0,
-    "max_count": 1
+    "max_count": 0
   },
   "context_layer": {
     "enabled": false,
@@ -213,7 +213,7 @@
   "core_pool": {
     "enabled": true,
     "size": 15,
-    "metric": "rs",
+    "metric": "ev_weighted",
     "tv_floor_min_rs": 3.8,
     "blend_weight": 0.5,
     "per_game_carry": 0,
