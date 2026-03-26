@@ -1,5 +1,5 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,LaMelo Ball,4432816,CHA,G,6.7,1.0,28.2,19.9,5.0,7.1,1.2,0.3
+slate,chalk,2.0x,Jalen Duren,4433621,DET,C,5.6,1.0,25.2,18.1,10.5,1.8,0.9,0.8
 slate,chalk,1.8x,Malik Monk,4066262,SAC,G,4.1,1.0,30.3,12.6,2.0,3.0,0.6,0.4
 slate,chalk,1.6x,Maxime Raynaud,4898371,SAC,C,4.1,1.0,35.8,11.9,7.3,1.3,0.5,0.6
 slate,chalk,1.4x,Paolo Banchero,4432573,ORL,F,3.6,1.0,37.0,22.7,8.2,5.0,0.7,0.6
