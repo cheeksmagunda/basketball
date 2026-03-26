@@ -1,10 +1,10 @@
 {
-  "version": 67,
-  "updated_at": "2026-03-26T21:00:00Z",
-  "updated_by": "v67-audit-open-gates-boost-rebalance",
+  "version": 68,
+  "updated_at": "2026-03-26T22:00:00Z",
+  "updated_by": "v68-production-anchor-scoring-floors",
   "scoring_thresholds": {
-    "min_pts_projection": 5.0,
-    "min_pts_projection_moonshot": 3.0,
+    "min_pts_projection": 7.0,
+    "min_pts_projection_moonshot": 5.0,
     "min_pts_per_minute": 0.25,
     "min_pts_per_minute_moonshot": 0.22,
     "min_chalk_rating": 3.0,
@@ -161,10 +161,10 @@
     "dnp_risk_min_threshold": 5.0,
     "reliability_floor": 0.7,
     "chalk_boost_cap": 3.0,
-    "chalk_season_min_floor": 14.0,
+    "chalk_season_min_floor": 16.0,
     "b2b_minute_penalty": 0.88,
     "default_total": 222,
-    "chalk_recent_min_floor": 14.0,
+    "chalk_recent_min_floor": 16.0,
     "leverage_top_slots": 1,
     "leverage_boost_threshold": 1.5,
     "big_man_calibration": {
@@ -180,8 +180,8 @@
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.0,
     "chalk_hbr_min_season_min": 14.0,
-    "chalk_hbr_min_recent_min": 12.0,
-    "chalk_hbr_min_pred_min": 12.0,
+    "chalk_hbr_min_recent_min": 16.0,
+    "chalk_hbr_min_pred_min": 16.0,
     "volatility_guard": {
       "enabled": false,
       "min_scoring_variance": 0.18,
@@ -281,7 +281,7 @@
       1.4,
       1.2
     ],
-    "chalk_milp_rs_focus": 0.35,
+    "chalk_milp_rs_focus": 0.55,
     "chalk_milp_boost_neutral": 1.0,
     "chalk_max_per_game": 2,
     "moonshot_max_per_game": 2,
@@ -379,8 +379,13 @@
     "high_boost_role": {
       "enabled": true,
       "min_boost": 2.0,
-      "min_recent_min": 10.0,
-      "min_pred_min": 10.0
+      "min_recent_min": 14.0,
+      "min_pred_min": 14.0
+    },
+    "production_anchor": {
+      "enabled": true,
+      "min_count": 1,
+      "min_pts": 12.0
     },
     "scoring_pts_bias_threshold": 10.0,
     "scoring_pts_bias_scale": 0.0,
@@ -459,6 +464,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 68,
+      "date": "2026-03-26",
+      "change": "PRODUCTION ANCHOR + SCORING FLOORS (v68). Mar 26 moonshot had 0 players projecting >8.3 pts — all high-boost low-production. Historical winners were role players who SCORED A LOT that night. Changes: (1) NEW moonshot.production_anchor — MILP constraint forces at least 1 player with pts>=12.0 into moonshot lineup (configurable min_count/min_pts). (2) min_pts_projection 5.0->7.0 (chalk must project 7+ pts). (3) min_pts_projection_moonshot 3.0->5.0 (prevent sub-5pt players). (4) HBR min_recent/pred_min 10->14 (require real rotation role). (5) chalk_milp_rs_focus 0.35->0.55 (RS drives slot assignment more). (6) chalk_season/recent_min 14->16."
+    },
     {
       "version": 67,
       "date": "2026-03-26",

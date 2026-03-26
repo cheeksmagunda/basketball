@@ -58,7 +58,8 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     star_indices=None, min_star_count=0, max_star_count=0,
                     max_per_game=0, player_games=None,
                     min_high_boost_count=0, high_boost_threshold=2.0,
-                    min_big_boost_count=0, big_boost_threshold=2.8):
+                    min_big_boost_count=0, big_boost_threshold=2.8,
+                    min_scorer_count=0, scorer_pts_threshold=0.0):
     """Find the optimal player-to-slot assignment using MILP.
 
     Data-driven objective functions based on 85-entry leaderboard analysis:
@@ -102,7 +103,9 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                                min_high_boost_count=min_high_boost_count,
                                high_boost_threshold=high_boost_threshold,
                                min_big_boost_count=min_big_boost_count,
-                               big_boost_threshold=big_boost_threshold)
+                               big_boost_threshold=big_boost_threshold,
+                               min_scorer_count=min_scorer_count,
+                               scorer_pts_threshold=scorer_pts_threshold)
 
         if two_phase and len(selected) == n:
             # Phase 2: re-assign slots using raw RS for optimal placement.
@@ -130,7 +133,8 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 star_indices=None, min_star_count=0, max_star_count=0,
                 max_per_game=0, player_games=None,
                 min_high_boost_count=0, high_boost_threshold=2.0,
-                min_big_boost_count=0, big_boost_threshold=2.8):
+                min_big_boost_count=0, big_boost_threshold=2.8,
+                min_scorer_count=0, scorer_pts_threshold=0.0):
     """Run the MILP solver to find optimal player-slot assignments.
 
     Objective shaping (data-driven from 85-entry archetype analysis):
@@ -297,6 +301,19 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
             prob += lpSum(
                 x[i, j] for i in bb_indices for j in slots
             ) >= min_big_boost_count, "min_big_boost"
+
+    # Production anchor constraint — ensures at least min_scorer_count players
+    # with projected pts >= scorer_pts_threshold are in the lineup. This guarantees
+    # guaranteed scoring production (historical winners always had 1+ big scorer).
+    if min_scorer_count > 0 and scorer_pts_threshold > 0:
+        scorer_indices = [
+            i for i, p in enumerate(projections)
+            if (p.get("pts", 0) or 0) >= scorer_pts_threshold
+        ]
+        if len(scorer_indices) >= min_scorer_count:
+            prob += lpSum(
+                x[i, j] for i in scorer_indices for j in slots
+            ) >= min_scorer_count, "min_scorer"
 
     solver = PULP_CBC_CMD(msg=0, timeLimit=time_limit)
     prob.solve(solver)
