@@ -4754,46 +4754,43 @@ class TestProductionAnchor:
         assert lu.get("chalk_big_boost_threshold") == 2.0
 
 
-class TestPpgBoostCorrection:
-    """PPG-scaled boost correction for under-drafted low-PPG players."""
+class TestDataFittedBoostFormula:
+    """v71: Data-fitted boost formula from 909 observations."""
 
-    def test_config_defaults_have_ppg_correction(self):
+    def test_no_prior_weight_in_defaults(self):
+        """max_prior_weight should be 0 — never trust prior data."""
         from api.index import _CONFIG_DEFAULTS
         cb = _CONFIG_DEFAULTS.get("card_boost", {})
-        ppg = cb.get("ppg_boost_correction", {})
-        assert ppg.get("enabled") is True
-        assert ppg.get("ppg_threshold") == 12.0
-        assert ppg.get("max_correction") == 0.75
+        assert cb.get("max_prior_weight") == 0.0
 
-    def test_model_config_has_ppg_correction(self):
+    def test_no_ppg_correction_in_defaults(self):
+        """ppg_boost_correction removed — replaced by data-fitted formula."""
+        from api.index import _CONFIG_DEFAULTS
+        cb = _CONFIG_DEFAULTS.get("card_boost", {})
+        assert "ppg_boost_correction" not in cb
+
+    def test_log_linear_formula_fitted(self):
+        """Fallback formula coefficients match 909-observation regression."""
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        ppg = cfg.get("card_boost", {}).get("ppg_boost_correction", {})
-        assert ppg.get("enabled") is True
-        assert ppg.get("max_correction") == 0.75
+        ll = cfg.get("card_boost", {}).get("log_linear", {})
+        assert ll.get("intercept") == 3.34, f"intercept should be 3.34, got {ll.get('intercept')}"
+        assert ll.get("slope") == -0.71, f"slope should be -0.71, got {ll.get('slope')}"
 
-    def test_correction_scales_with_ppg(self):
-        """Lower PPG → higher correction. 6 PPG gets ~0.375, 0 PPG gets 0.75."""
-        threshold = 12.0
-        max_corr = 0.75
-        # 6 PPG
-        corr_6 = max_corr * (1.0 - 6.0 / threshold)
-        assert 0.37 <= corr_6 <= 0.38
-        # 0 PPG
-        corr_0 = max_corr * (1.0 - 0.0 / threshold)
-        assert corr_0 == 0.75
-        # 12 PPG (at threshold)
-        corr_12 = max_corr * (1.0 - 12.0 / threshold)
-        assert corr_12 == 0.0
-        # 15 PPG (above threshold) — no correction applied
-        assert 15.0 >= threshold  # code skips correction
-
-    def test_correction_not_applied_above_threshold(self):
-        """Players with PPG >= threshold get no correction."""
-        threshold = 12.0
-        # Bridges 14.7 PPG — should NOT get correction
-        assert 14.7 >= threshold
+    def test_formula_predicts_correctly(self):
+        """boost = 3.34 - 0.71 × log10(drafts) produces correct values."""
+        import math
+        intercept, slope = 3.34, -0.71
+        # 5 drafts → ~2.85 (low-drafted role player)
+        pred_5 = intercept + slope * math.log10(5)
+        assert 2.8 <= pred_5 <= 2.9
+        # 100 drafts → ~1.92
+        pred_100 = intercept + slope * math.log10(100)
+        assert 1.9 <= pred_100 <= 2.0
+        # 5000 drafts → ~0.71
+        pred_5000 = intercept + slope * math.log10(5000)
+        assert 0.7 <= pred_5000 <= 0.8
 
 
 if __name__ == "__main__":
