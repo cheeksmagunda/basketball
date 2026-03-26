@@ -5624,9 +5624,14 @@ def _get_slate_impl():
     today_str = _today_str()
     _lk_pre = _lg(_CK_SLATE_LOCKED)
     if _lk_pre and _lk_pre.get("date") == today_str:
-        _lk_pre["locked"] = True
-        _lk_pre.setdefault("draftable_count", 0)
-        return _lk_pre
+        # Guard: validate games have actually started before serving the cached lock state.
+        # force-regenerate may have written a lock file with locked=True before tip-off.
+        _lk_starts = [g.get("startTime", "") for g in _lk_pre.get("games", []) if g.get("startTime")]
+        if not _lk_starts or any(_is_past_lock_window(st) for st in _lk_starts):
+            _lk_pre["locked"] = True
+            _lk_pre.setdefault("draftable_count", 0)
+            return _lk_pre
+        # Games haven't started — fall through to fetch live games + GitHub check
     # Cold-start fast path: check GitHub backup and fetch games in parallel.
     # The backup is written at lock-promotion time so it exists on most cold starts.
     # Running both concurrently saves 1-2s vs sequential on every cold start.
@@ -5636,10 +5641,15 @@ def _get_slate_impl():
         _gh_pre = _gh_pre_fut.result()
         games   = _games_fut.result()
     if _gh_pre and _gh_pre.get("date") == today_str and _gh_pre.get("locked"):
-        _gh_pre["locked"] = True
-        _gh_pre.setdefault("draftable_count", 0)
-        _ls(_CK_SLATE_LOCKED, _gh_pre)
-        return _gh_pre
+        # Guard: validate at least one game has passed its lock window using live ESPN data.
+        # Lock file may be written by force-regenerate before games start today (pass: 2).
+        _live_starts = [g.get("startTime", "") for g in games if g.get("startTime")]
+        if not _live_starts or any(_is_past_lock_window(st) for st in _live_starts):
+            _gh_pre["locked"] = True
+            _gh_pre.setdefault("draftable_count", 0)
+            _ls(_CK_SLATE_LOCKED, _gh_pre)
+            return _gh_pre
+        # Games haven't started — don't trust lock file, fall through to pipeline
 
     # Midnight rollover guard: if none of today's games have started yet but
     # yesterday's games are still in progress, hold yesterday's locked slate.
