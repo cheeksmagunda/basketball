@@ -1278,10 +1278,9 @@ class TestMoonshotPtsFloor:
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        assert cfg["scoring_thresholds"]["min_pts_projection"] == 5.0  # v57: 6.0→5.0, let high-boost role players through
-        # v67 audit: moonshot floor lowered back to 3.0 — high-boost bench players ARE winners
-        # (62% of winning lineup slots have boost>=2.5, filtered out by 6.0 floor)
-        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 3.0, \
+        assert cfg["scoring_thresholds"]["min_pts_projection"] == 7.0  # v68: 5.0→7.0, chalk must project 7+ pts
+        # v68: moonshot floor raised to 5.0 — prevent sub-5pt players
+        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 5.0, \
             f"moonshot pts floor should be >= 3.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
 
     def test_project_player_uses_moonshot_floor(self):
@@ -1964,12 +1963,12 @@ class TestPerGameFloor:
         assert "scoring_thresholds.min_game_pts" in src, \
             "Per-game pool must use scoring_thresholds.min_game_pts config key"
 
-    def test_chalk_season_min_floor_is_14(self):
-        """v67 audit: chalk_season_min_floor 18→14 — winning lineup players avg 12-18 min."""
+    def test_chalk_season_min_floor_is_16(self):
+        """v68: chalk_season_min_floor 14→16 — require real rotation minutes."""
         cfg = self._local_cfg()
         floor = cfg.get("projection", {}).get("chalk_season_min_floor")
-        assert floor == pytest.approx(14.0), \
-            f"chalk_season_min_floor should be 14.0, got {floor}"
+        assert floor == pytest.approx(16.0), \
+            f"chalk_season_min_floor should be 16.0, got {floor}"
 
     def test_den_not_in_big_market_teams(self):
         """DEN must be removed from big_market_teams — DEN role players are low-ownership."""
@@ -2273,7 +2272,7 @@ class TestChalkMilpRsFocusHigh:
         At 0.35, boost gap is 1.5 — lets MILP correctly assign high-boost to high slots."""
         cfg = json.load(open("data/model-config.json"))
         val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.2 <= val <= 0.5, f"chalk_milp_rs_focus should be 0.2-0.5 (v67 boost-weighted); got {val}"
+        assert 0.2 <= val <= 0.6, f"chalk_milp_rs_focus should be 0.2-0.6 (v68 RS-weighted); got {val}"
 
 
 # ─────────────────────────────────────────────────────────
@@ -4657,6 +4656,98 @@ class TestConfigV62Defaults:
         from api.index import _CONFIG_DEFAULTS
         proj = _CONFIG_DEFAULTS.get("projection", {})
         assert proj.get("chalk_min_boost_floor") == 1.5  # was 1.0, now 1.5
+
+
+class TestProductionAnchor:
+    """Production anchor: MILP forces at least 1 scorer into moonshot lineup."""
+
+    def test_milp_forces_scorer_into_moonshot(self):
+        """When min_scorer_count=1 and scorer_pts_threshold=12, at least 1 player with pts>=12 is selected."""
+        from api.asset_optimizer import optimize_lineup
+        # 6 candidates: 5 low-pts high-boost + 1 scorer
+        players = [
+            {"name": f"Role{i}", "rating": 4.0, "adj_ceiling": 4.0 * (2.5 ** 0.8),
+             "est_mult": 2.5, "pts": 7.0, "player_variance": 0.1,
+             "moonshot_ev": 4.0 * (2.5 ** 0.8) * (1.6 + 2.5), "team": f"T{i}", "id": f"r{i}"}
+            for i in range(5)
+        ]
+        scorer = {"name": "Scorer1", "rating": 6.0, "adj_ceiling": 6.0 * (0.8 ** 0.8),
+                  "est_mult": 0.8, "pts": 18.0, "player_variance": 0.2,
+                  "moonshot_ev": 6.0 * (0.8 ** 0.8) * (1.6 + 0.8), "team": "TX", "id": "s1"}
+        players.append(scorer)
+        result = optimize_lineup(players, n=5, sort_key="moonshot_ev",
+                                 rating_key="adj_ceiling", card_boost_key="est_mult",
+                                 objective_mode="moonshot", boost_leverage_extra_power=0.8,
+                                 min_scorer_count=1, scorer_pts_threshold=12.0)
+        names = [p["name"] for p in result]
+        assert "Scorer1" in names, f"Scorer1 should be forced into lineup, got {names}"
+
+    def test_milp_no_constraint_when_disabled(self):
+        """When min_scorer_count=0, no scorer constraint is applied."""
+        from api.asset_optimizer import optimize_lineup
+        players = [
+            {"name": f"Role{i}", "rating": 4.0, "adj_ceiling": 4.0 * (2.5 ** 0.8),
+             "est_mult": 2.5, "pts": 7.0, "player_variance": 0.1,
+             "moonshot_ev": 4.0 * (2.5 ** 0.8) * (1.6 + 2.5), "team": f"T{i}", "id": f"r{i}"}
+            for i in range(6)
+        ]
+        result = optimize_lineup(players, n=5, sort_key="moonshot_ev",
+                                 rating_key="adj_ceiling", card_boost_key="est_mult",
+                                 objective_mode="moonshot", boost_leverage_extra_power=0.8,
+                                 min_scorer_count=0, scorer_pts_threshold=12.0)
+        assert len(result) == 5
+
+    def test_milp_graceful_when_no_scorers_available(self):
+        """When no players meet scorer threshold, constraint is skipped (not infeasible)."""
+        from api.asset_optimizer import optimize_lineup
+        players = [
+            {"name": f"Role{i}", "rating": 4.0, "adj_ceiling": 4.0 * (2.5 ** 0.8),
+             "est_mult": 2.5, "pts": 7.0, "player_variance": 0.1,
+             "moonshot_ev": 4.0 * (2.5 ** 0.8) * (1.6 + 2.5), "team": f"T{i}", "id": f"r{i}"}
+            for i in range(6)
+        ]
+        result = optimize_lineup(players, n=5, sort_key="moonshot_ev",
+                                 rating_key="adj_ceiling", card_boost_key="est_mult",
+                                 objective_mode="moonshot", boost_leverage_extra_power=0.8,
+                                 min_scorer_count=1, scorer_pts_threshold=12.0)
+        # Should still return 5 players (constraint skipped because no scorers available)
+        assert len(result) == 5
+
+    def test_config_defaults_have_production_anchor(self):
+        """_CONFIG_DEFAULTS moonshot section has production_anchor."""
+        from api.index import _CONFIG_DEFAULTS
+        moon = _CONFIG_DEFAULTS.get("moonshot", {})
+        pa = moon.get("production_anchor", {})
+        assert pa.get("enabled") is True
+        assert pa.get("min_count") == 1
+        assert pa.get("min_pts") == 12.0
+
+    def test_model_config_scoring_floors(self):
+        """model-config.json has tightened scoring floors."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        st = cfg.get("scoring_thresholds", {})
+        assert st.get("min_pts_projection") == 7.0, "chalk pts floor should be 7.0"
+        assert st.get("min_pts_projection_moonshot") == 5.0, "moonshot pts floor should be 5.0"
+
+    def test_model_config_production_anchor(self):
+        """model-config.json has production_anchor in moonshot section."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        pa = cfg.get("moonshot", {}).get("production_anchor", {})
+        assert pa.get("enabled") is True
+        assert pa.get("min_count") == 1
+        assert pa.get("min_pts") == 12.0
+
+    def test_model_config_chalk_rs_focus(self):
+        """chalk_milp_rs_focus raised to 0.55."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        lu = cfg.get("lineup", {})
+        assert lu.get("chalk_milp_rs_focus") == 0.55
 
 
 if __name__ == "__main__":
