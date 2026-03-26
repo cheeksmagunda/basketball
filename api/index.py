@@ -744,6 +744,7 @@ _CONFIG_DEFAULTS = {
         "ceiling": 3.5, "floor": 0.2,
         "big_market_star_ppg_threshold": 15.0,
         "ml_additive_correction": 0.25,
+        "ppg_boost_correction": {"enabled": True, "ppg_threshold": 12.0, "max_correction": 0.75},
         "max_prior_weight": 0.30,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
     },
@@ -2963,6 +2964,21 @@ def _est_card_boost(
     ml_pred = _lgbm_predict_boost(feat_vec)
 
     if ml_pred is not None:
+        # PPG-scaled correction: the ML model systematically under-predicts boost
+        # for low-PPG players. Mar 26 data: Hayes 5.7PPG predicted +2.01 actual +3.0,
+        # Sasser 5.8PPG predicted +2.11 actual +3.0, Wagner 7.9PPG predicted +2.11
+        # actual +3.0. Players <8 PPG are barely drafted → get 2.5-3.0x actual boosts
+        # but model outputs ~2.0. Correction scales inversely with PPG.
+        _ppg_correction_cfg = cb.get("ppg_boost_correction", {})
+        _ppg_correction_enabled = _ppg_correction_cfg.get("enabled", True)
+        if _ppg_correction_enabled:
+            _ppg_threshold = float(_ppg_correction_cfg.get("ppg_threshold", 12.0))
+            _max_correction = float(_ppg_correction_cfg.get("max_correction", 0.6))
+            if _spts < _ppg_threshold and _spts > 0:
+                # Linear ramp: 0 PPG → max_correction, ppg_threshold → 0
+                _ppg_corr = _max_correction * (1.0 - _spts / _ppg_threshold)
+                ml_pred = float(ml_pred) + _ppg_corr
+
         # Real fix: blend model prediction with historical player boost prior.
         # Boost is partly a sticky ownership trait by player archetype/market.
         prior, prior_n = _get_boost_prior(player_name or "")
