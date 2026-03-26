@@ -1151,6 +1151,11 @@ DRAFTS_FEATURES = None
 _DRAFTS_LOAD_ATTEMPTED = False
 _DRAFTS_LOAD_LOCK = threading.Lock()
 
+# Player-level historical boost priors (loaded once from local data files).
+_BOOST_PRIORS = None
+_BOOST_PRIORS_LOADED = False
+_BOOST_PRIORS_LOCK = threading.Lock()
+
 def _ensure_lgbm_loaded():
     """Lazy-load the LightGBM model bundle on first use.
     Supports bundle_version 2 (baseline + spike) or legacy single model."""
@@ -2673,6 +2678,63 @@ def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
     return round(min(max(float(x), floor_val), ceiling), 3)
 
 
+def _ensure_boost_priors_loaded():
+    """Build player->(mean_boost,count) priors from local historical datasets."""
+    global _BOOST_PRIORS, _BOOST_PRIORS_LOADED
+    if _BOOST_PRIORS_LOADED:
+        return
+    with _BOOST_PRIORS_LOCK:
+        if _BOOST_PRIORS_LOADED:
+            return
+        rows_by_name = {}
+
+        def _add_row(name_raw: str, boost_raw):
+            n = _normalize_player_name(name_raw or "")
+            b = _safe_float(boost_raw, 0.0)
+            if not n or b <= 0:
+                return
+            rows_by_name.setdefault(n, []).append(b)
+
+        try:
+            tp = Path("data/top_performers.csv")
+            if tp.exists():
+                with tp.open("r", encoding="utf-8") as f:
+                    for r in csv.DictReader(f):
+                        _add_row(r.get("player_name", ""), r.get("actual_card_boost"))
+        except Exception as e:
+            print(f"[boost_priors] top_performers read failed: {e}")
+
+        for d in ("data/actuals", "data/most_popular"):
+            try:
+                pdir = Path(d)
+                if not pdir.exists():
+                    continue
+                for p in pdir.glob("*.csv"):
+                    with p.open("r", encoding="utf-8") as f:
+                        for r in csv.DictReader(f):
+                            name = r.get("player_name") or r.get("player") or ""
+                            _add_row(name, r.get("actual_card_boost"))
+            except Exception as e:
+                print(f"[boost_priors] {d} read failed: {e}")
+
+        _BOOST_PRIORS = {
+            name: {"mean": float(np.mean(v)), "count": int(len(v))}
+            for name, v in rows_by_name.items() if v
+        }
+        _BOOST_PRIORS_LOADED = True
+
+
+def _get_boost_prior(player_name: str) -> tuple[Optional[float], int]:
+    _ensure_boost_priors_loaded()
+    if not _BOOST_PRIORS:
+        return None, 0
+    key = _normalize_player_name(player_name or "")
+    rec = (_BOOST_PRIORS or {}).get(key)
+    if not rec:
+        return None, 0
+    return float(rec.get("mean", 0.0) or 0.0), int(rec.get("count", 0) or 0)
+
+
 # grep: BREAKOUT DETECTOR
 def _compute_breakout_probability(player_info, game_info=None):
     """Compute probability of a breakout performance (0.0-1.0).
@@ -2860,6 +2922,15 @@ def _est_card_boost(
     ml_pred = _lgbm_predict_boost(feat_vec)
 
     if ml_pred is not None:
+        # Real fix: blend model prediction with historical player boost prior.
+        # Boost is partly a sticky ownership trait by player archetype/market.
+        prior, prior_n = _get_boost_prior(player_name or "")
+        if prior is not None and prior_n >= 2 and _rs > 0:
+            # Keep ML dominant; add prior as a stabilizer.
+            prior_w = min(0.45, 0.15 + 0.03 * float(prior_n))
+            ml_w = 1.0 - prior_w
+            blended = (ml_w * float(ml_pred)) + (prior_w * float(prior))
+            return _clamp_round_boost(blended, floor_val, ceiling)
         return _clamp_round_boost(ml_pred, floor_val, ceiling)
 
     # boost_model.pkl unavailable — emergency sentinel (should never trigger in production)
