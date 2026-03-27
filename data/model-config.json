@@ -1,5 +1,5 @@
 {
-  "version": 72,
+  "version": 73,
   "updated_at": "2026-03-27T12:00:00Z",
   "updated_by": "v72-fix-game-diversity-boost-cap-quality",
   "scoring_thresholds": {
@@ -285,8 +285,8 @@
     ],
     "chalk_milp_rs_focus": 0.75,
     "chalk_milp_boost_neutral": 1.0,
-    "chalk_max_per_game": 1,
-    "moonshot_max_per_game": 1,
+    "chalk_max_per_game": 2,
+    "moonshot_max_per_game": 2,
     "chalk_min_high_boost_count": 1,
     "chalk_high_boost_threshold": 1.8,
     "chalk_min_big_boost_count": 1,
