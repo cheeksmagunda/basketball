@@ -1,0 +1,10 @@
+{
+  "format": "lightgbm_native",
+  "features": [
+    "role_pts",
+    "role_avg_min",
+    "big_market",
+    "pos_bucket"
+  ],
+  "model_file": "drafts_model.txt"
+}

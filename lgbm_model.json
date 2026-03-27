@@ -1,0 +1,30 @@
+{
+  "format": "lightgbm_native",
+  "bundle_version": 2,
+  "features": [
+    "avg_min",
+    "avg_pts",
+    "usage_trend",
+    "opp_def_rating",
+    "home_away",
+    "ast_rate",
+    "def_rate",
+    "pts_per_min",
+    "rest_days",
+    "recent_vs_season",
+    "games_played",
+    "reb_per_min",
+    "l3_vs_l5_pts",
+    "min_volatility",
+    "starter_proxy",
+    "cascade_signal",
+    "opp_pts_allowed",
+    "team_pace_proxy",
+    "usage_share",
+    "teammate_out_count",
+    "game_total",
+    "spread_abs"
+  ],
+  "baseline_file": "lgbm_baseline.txt",
+  "spike_file": "lgbm_spike.txt"
+}
