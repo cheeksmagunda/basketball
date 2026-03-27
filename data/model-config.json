@@ -1,7 +1,7 @@
 {
-  "version": 69,
-  "updated_at": "2026-03-26T23:00:00Z",
-  "updated_by": "v69-rs-first-elite-hybrid-calibration",
+  "version": 71,
+  "updated_at": "2026-03-27T00:30:00Z",
+  "updated_by": "v71-data-fitted-boost-formula",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -18,7 +18,7 @@
     "floor": 0.2,
     "big_market_star_ppg_threshold": 15.0,
     "ml_additive_correction": 0.25,
-    "max_prior_weight": 0.30,
+    "max_prior_weight": 0.0,
     "big_market_teams": [
       "LAL",
       "GS",
@@ -32,8 +32,8 @@
       "CHI"
     ],
     "log_linear": {
-      "intercept": 2.8,
-      "slope": -0.75
+      "intercept": 3.34,
+      "slope": -0.71
     }
   },
   "game_script": {
@@ -459,6 +459,16 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 69,
+      "date": "2026-03-26",
+      "change": "DATA-FITTED BOOST FORMULA (v71). 909-observation regression: boost = 3.34 - 0.71×log10(drafts), R²=0.642. Replaces v70 PPG correction hack and prior blending. Changes: (1) Fallback log-linear intercept 2.8→3.34, slope -0.75→-0.71 (fitted from actual data). (2) Remove ppg_boost_correction — was a bandaid for wrong intercept. (3) max_prior_weight 0.30→0.0 — never trust prior data, predict from profile only. (4) Remove prior blending code path from _est_card_boost. (5) Boost persistence analysis: 57% unchanged slate-to-slate, 93% change ≤0.2 — but we predict from scratch each time per user requirement."
+    },
+    {
+      "version": 70,
+      "date": "2026-03-26",
+      "change": "SUPERSEDED BY v71. PPG-BOOST CORRECTION (v70). Mar 26 actual boost data shows systematic under-prediction for low-PPG players: Hayes 5.7PPG predicted +2.01 actual +3.0, Sasser 5.8PPG +2.11 actual +3.0, Wagner 7.9PPG +2.11 actual +3.0. Players <8PPG barely drafted -> get 2.5-3.0x actual boosts but model outputs ~2.0. Fix: PPG-scaled correction in _est_card_boost that adds up to +0.75 for 0-PPG players, linearly ramping to 0 at 12 PPG. Config: card_boost.ppg_boost_correction.{enabled, ppg_threshold, max_correction}."
+    },
     {
       "version": 69,
       "date": "2026-03-26",

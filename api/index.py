@@ -744,7 +744,7 @@ _CONFIG_DEFAULTS = {
         "ceiling": 3.5, "floor": 0.2,
         "big_market_star_ppg_threshold": 15.0,
         "ml_additive_correction": 0.25,
-        "max_prior_weight": 0.30,
+        "max_prior_weight": 0.0,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
     },
     "game_script": {
@@ -2963,33 +2963,17 @@ def _est_card_boost(
     ml_pred = _lgbm_predict_boost(feat_vec)
 
     if ml_pred is not None:
-        # Real fix: blend model prediction with historical player boost prior.
-        # Boost is partly a sticky ownership trait by player archetype/market.
-        prior, prior_n = _get_boost_prior(player_name or "")
-        if prior is not None and prior_n >= 2 and _rs >= 0:
-            # Dynamic blend:
-            # 1) More prior samples => more prior trust.
-            # 2) Big recent-vs-season swings => trust daily ML more.
-            max_pw = float(cb.get("max_prior_weight", 0.45))
-            base_prior_w = min(max_pw, 0.15 + 0.03 * float(prior_n))
-            form_delta = abs(float(_rpts) - float(_spts)) / max(float(_spts), 1.0)
-            form_delta = max(0.0, min(1.0, form_delta))
-            form_dampen = 1.0 - min(0.65, 0.9 * form_delta)
-            prior_w = base_prior_w * form_dampen
-            ml_w = 1.0 - prior_w
-            blended = (ml_w * float(ml_pred)) + (prior_w * float(prior))
-            blended += float(cb.get("ml_additive_correction", 0.0))
-            return _clamp_round_boost(blended, floor_val, ceiling)
+        # ML model + additive correction. No prior blending — boost must be
+        # predicted purely from player profile (prior data not reliably available).
         correction = float(cb.get("ml_additive_correction", 0.0))
         return _clamp_round_boost(float(ml_pred) + correction, floor_val, ceiling)
 
-    # Deterministic fallback: derive a non-flat boost from projected popularity.
-    # This protects slate quality if the boost model is unavailable in runtime.
-    # Lower predicted drafts => higher boost, with light market/form adjustments.
-    # Formula params are configurable via card_boost.log_linear in model-config.json.
+    # Deterministic fallback: derive boost from projected popularity.
+    # Fitted from 909 observations: boost = 3.34 - 0.71 × log10(drafts), R²=0.642.
+    # Configurable via card_boost.log_linear in model-config.json.
     _ll = cb.get("log_linear", {})
-    _intercept = float(_ll.get("intercept", 2.8))
-    _slope = float(_ll.get("slope", -0.75))
+    _intercept = float(_ll.get("intercept", 3.34))
+    _slope = float(_ll.get("slope", -0.71))
     log_drafts = _estimate_log_drafts(_spts, bool(is_bm), _rpts, _spts)
     fallback = _intercept + _slope * float(log_drafts)
     if _spts >= 22:
