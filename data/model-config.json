@@ -102,6 +102,7 @@
     "compression_power": 0.80,
     "rs_cap": 25.0,
     "ai_blend_weight": 0.35,
+    "max_post_compression_mult": 1.40,
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -175,7 +176,7 @@
     },
     "bench_pts_threshold": 14.0,
     "bench_min_threshold": 30.0,
-    "chalk_min_boost_floor": 1.5,
+    "chalk_min_boost_floor": 0.3,
     "pred_min_tolerance": 2.0,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.0,
@@ -192,12 +193,12 @@
   },
   "star_anchor": {
     "enabled": true,
-    "min_season_pts": 20.0,
-    "min_season_min": 25.0,
-    "min_boost": 0.3,
-    "min_rating": 4.5,
+    "min_season_pts": 12.0,
+    "min_season_min": 20.0,
+    "min_boost": 0.1,
+    "min_rating": 3.5,
     "require_count": 0,
-    "max_count": 2
+    "max_count": 3
   },
   "context_layer": {
     "enabled": true,

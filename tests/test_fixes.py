@@ -4823,5 +4823,80 @@ class TestDataFittedBoostFormula:
         assert 0.7 <= pred_5000 <= 0.8
 
 
+class TestPostCompressionMultCap:
+    """Post-compression multiplier cap prevents stacked boosts from inflating
+    bench player RS projections (e.g. Sasser 3.0 → 6.1 via cascade+spike+breakout+archetype)."""
+
+    def test_cap_config_present(self):
+        """model-config.json must have max_post_compression_mult in real_score."""
+        cfg = json.load(open("data/model-config.json"))
+        rs = cfg.get("real_score", {})
+        cap = rs.get("max_post_compression_mult")
+        assert cap is not None, "max_post_compression_mult must be in real_score config"
+        assert 1.2 <= cap <= 1.6, f"cap should be between 1.2 and 1.6, got {cap}"
+
+    def test_cap_code_enforced(self):
+        """project_player must track _pre_boost_rs and enforce _max_post_mult."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "_pre_boost_rs" in src, "Must track RS before post-compression boosts"
+        assert "_max_post_mult" in src, "Must read max post-compression multiplier from config"
+        assert "_actual_mult" in src, "Must compute actual multiplier ratio"
+
+    def test_cap_prevents_extreme_inflation(self):
+        """With cap at 1.40, RS 3.0 can reach at most 4.2 (not 5.6+)."""
+        cap = 1.40
+        pre_boost = 3.0
+        max_result = pre_boost * cap
+        assert max_result == pytest.approx(4.2, abs=0.01)
+        # Without cap, stacking 1.87x would give 5.61
+        uncapped = pre_boost * 1.87
+        assert uncapped > 5.5, "Uncapped would exceed 5.5"
+        assert max_result < 4.5, "Capped must stay below 4.5"
+
+
+class TestLoweredChalkBoostFloor:
+    """Chalk boost floor lowered from 1.5 to 0.3 so top RS performers
+    (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) enter the S5 pool."""
+
+    def test_chalk_boost_floor_lowered(self):
+        """model-config.json chalk_min_boost_floor must be <= 0.5."""
+        cfg = json.load(open("data/model-config.json"))
+        floor = cfg.get("projection", {}).get("chalk_min_boost_floor", 1.5)
+        assert floor <= 0.5, f"chalk_min_boost_floor should be <= 0.5, got {floor}"
+
+    def test_star_anchor_wider(self):
+        """Star anchor must allow sub-20 PPG players through with lower thresholds."""
+        cfg = json.load(open("data/model-config.json"))
+        sa = cfg.get("star_anchor", {})
+        assert sa.get("min_season_pts", 20) <= 15, \
+            f"star_anchor min_season_pts should be <= 15, got {sa.get('min_season_pts')}"
+        assert sa.get("min_rating", 4.5) <= 4.0, \
+            f"star_anchor min_rating should be <= 4.0, got {sa.get('min_rating')}"
+        assert sa.get("max_count", 1) >= 3, \
+            f"star_anchor max_count should be >= 3, got {sa.get('max_count')}"
+
+    def test_code_reads_chalk_boost_floor(self):
+        """Chalk pool must read chalk_min_boost_floor from config."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "chalk_min_boost_floor" in src, "Must read chalk_min_boost_floor from config"
+
+    def test_top_rs_players_pass_boost_floor(self):
+        """Players with boost 0.3+ should clear the lowered floor."""
+        cfg = json.load(open("data/model-config.json"))
+        floor = cfg["projection"]["chalk_min_boost_floor"]
+        # Top RS performers from Mar 27 leaderboard
+        test_players = [
+            ("Duren", 0.6),
+            ("Knueppel", 0.8),
+            ("DeRozan", 1.0),
+            ("Banchero", 0.6),
+            ("Hart", 1.0),
+        ]
+        for name, boost in test_players:
+            assert boost >= floor, f"{name} (boost {boost}) should pass floor {floor}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

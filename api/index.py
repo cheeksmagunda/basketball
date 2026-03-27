@@ -3371,6 +3371,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             raw_score *= float(bucket_cfg.get("low_mult", _bc_defaults.get("low_mult", 1.0)))
         raw_score = min(raw_score, rs_cap)
 
+    # ── Post-compression multiplier cap ────────────────────────────────
+    # Track raw_score before any post-compression boosts so we can cap
+    # the total multiplicative inflation.  Stacking cascade_rs × role_spike
+    # × breakout × archetype can reach 1.87× and inflate bench players
+    # from RS 3 to RS 6.  Cap at 1.40× (configurable) to prevent this.
+    _pre_boost_rs = raw_score
+    _max_post_mult = float(rs_cfg.get("max_post_compression_mult", 1.40))
+
     arch_cfg = rs_cfg.get("archetype_calibration", {})
     if arch_cfg.get("enabled", False):
         arch = _infer_player_archetype(pts, avg_min, reb, stats)
@@ -3463,6 +3471,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if _breakout_prob >= _bo_min_prob:
         _spike_mult = 1.0 + _breakout_prob * _bo_max_mult
         raw_score = min(raw_score * _spike_mult, rs_cap)
+
+    # ── Enforce post-compression multiplier cap ─────────────────────────
+    # All post-compression boosts (archetype, close-game, cascade_rs,
+    # role_spike, breakout) have now been applied.  Clamp total inflation.
+    if _pre_boost_rs > 0:
+        _actual_mult = raw_score / _pre_boost_rs
+        if _actual_mult > _max_post_mult:
+            raw_score = round(_pre_boost_rs * _max_post_mult, 4)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
