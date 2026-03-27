@@ -743,7 +743,7 @@ _CONFIG_DEFAULTS = {
     "card_boost": {
         "ceiling": 3.5, "floor": 0.2,
         "big_market_star_ppg_threshold": 15.0,
-        "ml_additive_correction": 0.25,
+        "ml_additive_correction": -0.25,
         "max_prior_weight": 0.0,
         "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
     },
@@ -865,8 +865,8 @@ _CONFIG_DEFAULTS = {
         },
         "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
-        "chalk_min_boost_floor": 1.5,   # v62: 1.0→1.5; data shows boost<1.5 never wins (3% top-3 rate)
-                                        # sweet spot is boost 1.5+ with RS 4+
+        "chalk_min_boost_floor": 0.3,   # v75: lowered from 1.5 — Mar 26 winners had boost 0.6-1.0x
+                                        # Duren/Knueppel/DeRozan all have boost <1.5 but won every draft
         # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
         # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
         "volatility_guard": {
@@ -880,7 +880,7 @@ _CONFIG_DEFAULTS = {
     "moonshot": {
         # v62: RS-first targeting. Data: RS has 5x correlation with value vs boost.
         # Sweet spot: RS 4-5, boost 2.0-3.0 (85.7% top-3 rate). Lower minutes to catch role players.
-        "min_minutes_floor":16, "min_recent_minutes_floor":16, "min_card_boost":1.8, "min_rating_floor":3.0,
+        "min_minutes_floor":16, "min_recent_minutes_floor":16, "min_card_boost":0.5, "min_rating_floor":3.5,
         "card_boost_weight":2.5, "minutes_weight":1.0,
         "max_centers":99, "boost_leverage_power":0.5,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
@@ -935,9 +935,9 @@ _CONFIG_DEFAULTS = {
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": _SLOT_MULTS_SHARED,
         # Starting 5 MILP: blend boost toward neutral so RS drives selection.
-        # v62: 0.60 — RS is 5x more correlated with value than boost. At 0.60,
-        # milp_boost = 0.4*real + 0.6*neutral, so RS quality primarily drives MILP.
-        "chalk_milp_rs_focus": 0.6,
+        # v75: 0.75 — Mar 26 data confirms RS drives winning (r=0.651). At 0.75,
+        # milp_boost = 0.25*real + 0.75*neutral, so RS dominates MILP selection.
+        "chalk_milp_rs_focus": 0.75,
         "chalk_milp_boost_neutral": 1.0,
     },
     "core_pool": {
@@ -4870,16 +4870,33 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if pred_min < (season_min - moon_min_tol):
             continue
 
-        # Hard boost floor — with RS-bypass for high-RS proven scorers.
+        # Hard boost floor — with star anchor pathway AND RS-bypass for high-RS scorers.
+        is_moonshot_star_anchor = False
         if est_mult < min_boost:
-            rs_bypass = moon_cfg.get("rs_bypass", {})
-            if (rs_bypass.get("enabled", False)
-                    and p.get("rating", 0) >= float(rs_bypass.get("min_rating", 5.0))
-                    and season_min >= float(rs_bypass.get("min_season_min", 25.0))
-                    and est_mult >= float(rs_bypass.get("min_boost", 0.3))):
-                pass  # high-RS bypass
+            # Star anchor pathway: genuine scorers bypass boost floor so moonshot
+            # always includes 1 high-PPG player for RS floor (same as chalk).
+            sa_cfg_m = _cfg("star_anchor", {})
+            sa_enabled_m = sa_cfg_m.get("enabled", True) if isinstance(sa_cfg_m, dict) else True
+            sa_min_pts_m = float(sa_cfg_m.get("min_season_pts", 20.0)) if isinstance(sa_cfg_m, dict) else 20.0
+            sa_min_min_m = float(sa_cfg_m.get("min_season_min", 25.0)) if isinstance(sa_cfg_m, dict) else 25.0
+            sa_min_boost_m = float(sa_cfg_m.get("min_boost", 0.8)) if isinstance(sa_cfg_m, dict) else 0.8
+            sa_min_rating_m = float(sa_cfg_m.get("min_rating", 4.0)) if isinstance(sa_cfg_m, dict) else 4.0
+            if (sa_enabled_m
+                    and season_pts >= sa_min_pts_m
+                    and season_min >= sa_min_min_m
+                    and est_mult >= sa_min_boost_m
+                    and p.get("rating", 0) >= sa_min_rating_m):
+                is_moonshot_star_anchor = True
             else:
-                continue
+                # RS-bypass for high-RS proven scorers
+                rs_bypass = moon_cfg.get("rs_bypass", {})
+                if (rs_bypass.get("enabled", False)
+                        and p.get("rating", 0) >= float(rs_bypass.get("min_rating", 5.0))
+                        and season_min >= float(rs_bypass.get("min_season_min", 25.0))
+                        and est_mult >= float(rs_bypass.get("min_boost", 0.3))):
+                    pass  # high-RS bypass
+                else:
+                    continue
 
         # RotoWire: only exclude confirmed OUT players.
         if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
@@ -4959,11 +4976,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             "adj_ceiling":    adj_ceiling,
             "_matchup_factor": round(matchup_factor, 3),
             "_rw_cleared":    True,
+            "_is_star_anchor": is_moonshot_star_anchor,
         })
 
     # No center cap — position balancing removed (boost dominance audit Mar 19).
     # Poeltl, Queta, Achiuwa all appear in winning lineups.
     moonshot_max_team = int(moon_cfg.get("max_per_team", 2))
+
+    # Star anchor indices for moonshot MILP — same constraint as chalk.
+    # Forces 1 guaranteed high-RS producer in moonshot (unified 1+4 strategy).
+    moonshot_star_indices = [
+        i for i, p in enumerate(moonshot_pool)
+        if p.get("_is_star_anchor", False)
+    ] if sa_enabled else []
 
     if core_pool_enabled:
         # ── Core pool path: one 7–10 player core; both lineups are configurations of it ──
@@ -5120,6 +5145,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         # high-boost-role pathway for 2.0x+/14min players) and ranks by moonshot_ev which
         # uses boost_leverage_power to strongly favor 3.0x boost players.
         # overlap_cap=3 ensures Moonshot differentiates from Starting 5 (max 3 shared players).
+        # Moonshot star indices relative to moonshot_pool
+        _moon_star_indices = [
+            i for i, p in enumerate(moonshot_pool)
+            if p.get("_is_star_anchor", False)
+        ] if sa_enabled else []
         _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
                                  rating_key="adj_ceiling",
@@ -5133,7 +5163,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  two_phase=True,
                                  raw_rating_key="rating",
                                  max_per_game=_moon_max_per_game,
-                                 player_games=_moon_pool_games)
+                                 player_games=_moon_pool_games,
+                                 star_indices=_moon_star_indices if _moon_star_indices else None,
+                                 min_star_count=sa_require if _moon_star_indices else 0,
+                                 max_star_count=sa_max if sa_max > 0 else 0)
     else:
         _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
         upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
@@ -5146,7 +5179,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  two_phase=True,
                                  raw_rating_key="rating",
                                  max_per_game=_moon_max_per_game,
-                                 player_games=_moon_pool_games)
+                                 player_games=_moon_pool_games,
+                                 star_indices=moonshot_star_indices if moonshot_star_indices else None,
+                                 min_star_count=sa_require if moonshot_star_indices else 0,
+                                 max_star_count=sa_max if sa_max > 0 else 0)
         core_pool = None
 
     # Chalk fallback: if MILP returns <5 but we have enough candidates, fill from sorted EV.

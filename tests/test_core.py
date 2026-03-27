@@ -1043,7 +1043,7 @@ class TestConfigCoverage:
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
             val = _cfg("moonshot.min_rating_floor", None)
-        assert val == 3.0, f"Expected 3.0 (lowered back from 3.5 in v59), got {val}"
+        assert val == 3.5, f"Expected 3.5 (v75: raised for no-duds RS floor), got {val}"
 
     def test_line_min_confidence_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS

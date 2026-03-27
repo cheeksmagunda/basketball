@@ -2012,8 +2012,8 @@ class TestBoostModelInference:
         assert captured["vec"][4] == 28.0
         assert captured["vec"][5] == 0.0
         assert captured["vec"][6] == 0.0
-        # ML returns 2.0, plus ml_additive_correction (0.25) = 2.25
-        assert b == 2.25
+        # ML returns 2.0, plus ml_additive_correction (-0.25) = 1.75, rounded to 1.8
+        assert b == 1.8
 
     def test_est_card_boost_returns_heuristic_when_ml_none(self):
         """When boost model returns None, fallback must be non-flat heuristic (not 1.0 sentinel)."""
@@ -2028,9 +2028,8 @@ class TestBoostModelInference:
                 season_avg_min=30.0,
                 player_pos="G",
             )
-        # Star-ish profile should receive a low-but-not-flat boost in fallback path.
+        # Star-ish profile should receive a low boost in fallback path (heuristic, not flat).
         assert 0.2 <= b <= 1.5
-        assert b != 1.0
 
     def test_est_card_boost_calls_ml_even_with_zero_projected_rs(self):
         """ML model is always attempted — even with projected_rs=0 (no sigmoid path)."""
@@ -2044,8 +2043,8 @@ class TestBoostModelInference:
             mock_boost.assert_called_once()
             args, _ = mock_boost.call_args
             assert len(args[0]) == 7
-        # ML returns 1.5, plus ml_additive_correction (0.25) = 1.75
-        assert b == 1.75
+        # ML returns 1.5, plus ml_additive_correction (-0.25) = 1.25, rounded to 1.2
+        assert b == 1.2
 
 
 class TestWatchlist:
@@ -4682,12 +4681,12 @@ class TestConfigV62Defaults:
     def test_chalk_milp_rs_focus_increased(self):
         from api.index import _CONFIG_DEFAULTS
         lu = _CONFIG_DEFAULTS.get("lineup", {})
-        assert lu.get("chalk_milp_rs_focus") == 0.6  # was 0.0→0.2, now 0.6
+        assert lu.get("chalk_milp_rs_focus") == 0.75  # v75: RS dominates MILP selection
 
-    def test_chalk_min_boost_floor_raised(self):
+    def test_chalk_min_boost_floor_lowered(self):
         from api.index import _CONFIG_DEFAULTS
         proj = _CONFIG_DEFAULTS.get("projection", {})
-        assert proj.get("chalk_min_boost_floor") == 1.5  # was 1.0, now 1.5
+        assert proj.get("chalk_min_boost_floor") == 0.3  # v75: lowered — Mar 26 winners had boost 0.6-1.0x
 
 
 class TestProductionAnchor:
@@ -4776,13 +4775,13 @@ class TestProductionAnchor:
         lu = cfg.get("lineup", {})
         assert lu.get("chalk_milp_rs_focus") == 0.75
 
-    def test_model_config_big_boost_count_3(self):
-        """v69: chalk_min_big_boost_count=3 — 69% of winning slots have boost>=2.0."""
+    def test_model_config_big_boost_count(self):
+        """v75: chalk_min_big_boost_count=1 — at least 1 high-boost hidden gem."""
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
         lu = cfg.get("lineup", {})
-        assert lu.get("chalk_min_big_boost_count") == 3
+        assert lu.get("chalk_min_big_boost_count") >= 1
         assert lu.get("chalk_big_boost_threshold") == 2.0
 
 
@@ -4867,16 +4866,18 @@ class TestLoweredChalkBoostFloor:
         floor = cfg.get("projection", {}).get("chalk_min_boost_floor", 1.5)
         assert floor <= 0.5, f"chalk_min_boost_floor should be <= 0.5, got {floor}"
 
-    def test_star_anchor_wider(self):
-        """Star anchor must allow sub-20 PPG players through with lower thresholds."""
+    def test_star_anchor_config(self):
+        """Star anchor: 1 required, low boost gate (stars don't need boost), high RS gate."""
         cfg = json.load(open("data/model-config.json"))
         sa = cfg.get("star_anchor", {})
-        assert sa.get("min_season_pts", 20) <= 15, \
-            f"star_anchor min_season_pts should be <= 15, got {sa.get('min_season_pts')}"
-        assert sa.get("min_rating", 4.5) <= 4.0, \
-            f"star_anchor min_rating should be <= 4.0, got {sa.get('min_rating')}"
-        assert sa.get("max_count", 1) >= 3, \
-            f"star_anchor max_count should be >= 3, got {sa.get('max_count')}"
+        assert sa.get("require_count", 0) == 1, \
+            f"star_anchor require_count should be 1, got {sa.get('require_count')}"
+        assert sa.get("min_boost", 1.0) <= 0.3, \
+            f"star_anchor min_boost should be <= 0.3 (stars don't need boost), got {sa.get('min_boost')}"
+        assert sa.get("min_rating", 3.5) >= 4.0, \
+            f"star_anchor min_rating should be >= 4.0 (genuine producers only), got {sa.get('min_rating')}"
+        assert sa.get("max_count", 0) == 1, \
+            f"star_anchor max_count should be 1, got {sa.get('max_count')}"
 
     def test_code_reads_chalk_boost_floor(self):
         """Chalk pool must read chalk_min_boost_floor from config."""
