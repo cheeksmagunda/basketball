@@ -319,7 +319,8 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
     prob.solve(solver)
 
     if LpStatus[prob.status] != "Optimal":
-        return _fallback_sort(projections, n, "chalk_ev")
+        return _fallback_sort(projections, n, "chalk_ev",
+                              max_per_game=max_per_game, player_games=player_games)
 
     result = []
     for j in slots:
@@ -336,9 +337,34 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
     return result
 
 
-def _fallback_sort(projections, n, sort_key):
-    """Simple sort-and-assign fallback when MILP is unavailable."""
-    result = sorted(projections, key=lambda x: x.get(sort_key, 0), reverse=True)[:n]
+def _fallback_sort(projections, n, sort_key, max_per_game=0, player_games=None):
+    """Sort-and-assign fallback when MILP is unavailable.
+
+    When max_per_game and player_games are provided, uses a greedy selection
+    that respects the per-game cap so fallback doesn't stack 3+ players from
+    the same matchup (the most common infeasibility symptom).
+    """
+    if max_per_game > 0 and player_games and len(player_games) == len(projections):
+        sorted_pairs = sorted(
+            enumerate(projections),
+            key=lambda x: x[1].get(sort_key, 0),
+            reverse=True,
+        )
+        result = []
+        game_counts = {}
+        for i, p in sorted_pairs:
+            gid = player_games[i]
+            if game_counts.get(gid, 0) < max_per_game:
+                result.append(p)
+                game_counts[gid] = game_counts.get(gid, 0) + 1
+            if len(result) == n:
+                break
+        # If game-aware greedy can't fill n slots (very small slate), fall back to plain sort
+        if len(result) < n:
+            result = sorted(projections, key=lambda x: x.get(sort_key, 0), reverse=True)[:n]
+    else:
+        result = sorted(projections, key=lambda x: x.get(sort_key, 0), reverse=True)[:n]
+
     for i, p in enumerate(result):
         p["slot"] = SLOT_LABELS[i] if i < len(SLOT_LABELS) else "1.0x"
     return result
