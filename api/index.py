@@ -363,7 +363,18 @@ def _slate_cache_from_github(date_str: str = None):
             bust_content, _ = _github_get_file(bust_path, ref_override=ref)
             if bust_content:
                 bust_data = json.loads(bust_content)
-                if bust_data.get("_busted") or bust_data.get("at"):
+                # Time-based expiry: busts older than 90 minutes auto-expire so a failed
+                # regeneration can't permanently block the cache indefinitely.
+                if bust_data.get("at"):
+                    try:
+                        bust_age_s = (datetime.now(timezone.utc) -
+                                      datetime.fromisoformat(bust_data["at"])).total_seconds()
+                        if bust_age_s > 5400:  # 90 minutes
+                            print(f"[slate-cache] bust expired ({bust_age_s:.0f}s old), ignoring")
+                            break  # Treat as expired — fall through to normal cache read
+                    except Exception:
+                        pass
+                if bust_data.get("_busted"):
                     return None
         path = f"data/slate/{today}_slate.json"
         content, _ = _github_get_file(path)
@@ -392,7 +403,16 @@ def _github_slate_bust_active() -> bool:
             bust_content, _ = _github_get_file(bust_path, ref_override=ref)
             if bust_content:
                 bust_data = json.loads(bust_content)
-                if bust_data.get("_busted") or bust_data.get("at"):
+                # 90-min expiry consistent with _slate_cache_from_github
+                if bust_data.get("at"):
+                    try:
+                        bust_age_s = (datetime.now(timezone.utc) -
+                                      datetime.fromisoformat(bust_data["at"])).total_seconds()
+                        if bust_age_s > 5400:  # 90 minutes
+                            return False
+                    except Exception:
+                        pass
+                if bust_data.get("_busted"):
                     return True
     except Exception:
         pass
@@ -6484,7 +6504,24 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
         result = _add_cache_metadata(result, is_hit, cache_key)
         return result
     except Exception as e:
-        print(f"[slate] error: {e}")
+        import traceback as _tb
+        print(f"[slate] PIPELINE ERROR: {e}\n{_tb.format_exc()}")
+        # Auto-clear stale bust sentinel so future requests can retry cleanly.
+        # Only fires for busts 30+ minutes old (fresh busts may still be mid-regeneration).
+        try:
+            _today = _today_str()
+            _bust_path = f"data/slate/{_today}_bust.json"
+            _bc, _ = _github_get_file(_bust_path)
+            if _bc:
+                _bd = json.loads(_bc)
+                if _bd.get("at"):
+                    _age = (datetime.now(timezone.utc) -
+                            datetime.fromisoformat(_bd["at"])).total_seconds()
+                    if _age > 1800:  # 30+ min stale
+                        _github_write_file(_bust_path, "{}", f"auto-clear stale bust {_today}")
+                        print(f"[slate] auto-cleared stale bust ({_age:.0f}s old)")
+        except Exception:
+            pass
         return JSONResponse(
             content={
                 "error": "slate_failed",
@@ -12186,8 +12223,12 @@ async def get_parlay(request: Request):
 
         if err or not result:
             no_odds = err == "no_odds_data" or (debug and not debug.get("odds_available"))
+            no_proj = err == "no_projections"
             has_key = debug.get("has_key", bool(os.environ.get("ODDS_API_KEY"))) if debug else bool(os.environ.get("ODDS_API_KEY"))
-            if no_odds and not has_key:
+            if no_proj:
+                narrative = ("Parlay unavailable \u2014 slate projections are rebuilding. "
+                             "This usually resolves in a few minutes. Please retry.")
+            elif no_odds and not has_key:
                 narrative = "ODDS_API_KEY not configured. Parlay requires a valid Odds API key to fetch player prop lines."
             elif no_odds:
                 narrative = "Could not retrieve player prop lines from the Odds API. The request returned no data — this may be a temporary API issue. Please try again."

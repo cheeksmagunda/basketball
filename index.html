@@ -2218,7 +2218,7 @@ function _postHydrateRender() {
       if (list) list.innerHTML =
         '<div class="empty-state">' +
           '<span class="icon">📡</span>' +
-          '<p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>' +
+          '<p>The projection pipeline is rebuilding.<br>Tap Retry to try again.</p>' +
           '<button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>' +
         '</div>';
       return;
@@ -2584,9 +2584,21 @@ async function loadSlate() {
         if (list) list.innerHTML = `
           <div class="empty-state">
             <span class="icon">📡</span>
-            <p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>
-            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
+            <p>The projection pipeline is rebuilding.<br>Auto-retrying in <span id="slateRetryCountdown">120</span>s.</p>
+            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="_cancelSlateRetry();loadSlate()">Try now</button>
           </div>`;
+        let _cd = 120;
+        if (_slateFailRetryTimer) clearInterval(_slateFailRetryTimer);
+        _slateFailRetryTimer = setInterval(function() {
+          _cd--;
+          const el = _el('slateRetryCountdown');
+          if (el) el.textContent = _cd;
+          if (_cd <= 0) {
+            clearInterval(_slateFailRetryTimer);
+            _slateFailRetryTimer = null;
+            loadSlate();
+          }
+        }, 1000);
       }
       return;
     }
