@@ -1435,6 +1435,10 @@
         <button class="mode-tab" data-t="upside" onclick="switchSlate('upside')">🚀 Moonshot</button>
       </div>
 
+      <div id="slateRefreshBar" style="display:none;text-align:center;padding:6px 0 2px;">
+        <button onclick="_slateFailRetryCount=0;loadSlate()" style="background:none;border:1px solid rgba(255,255,255,0.12);color:var(--color-text-muted);font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:var(--tracking-caps);text-transform:uppercase;padding:5px 14px;border-radius:var(--radius-pill);cursor:pointer;">↻ Refresh Picks</button>
+        <span id="slateRefreshNote" style="display:block;font-size:0.65rem;color:var(--color-text-muted);margin-top:3px;opacity:0.6;"></span>
+      </div>
       <div id="slateList"></div>
       <div id="lateDraftBelowCards" style="display:none;padding:14px 0 4px;">
         <button id="lateDraftBtn" onclick="triggerLateDraft()" style="width:100%;background:rgba(255,255,255,0.06);color:var(--color-text-muted);border:1px solid rgba(255,255,255,0.12);padding:10px 0;border-radius:var(--radius-card);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;letter-spacing:var(--tracking-caps);text-transform:uppercase;cursor:pointer;">Late Draft</button>
@@ -2115,7 +2119,7 @@ let _HydrationState = {
 const _HYDRATION_ENDPOINTS = [
   { name: 'slate', url: '/api/slate', timeout: 30000, init: null },
   { name: 'games', url: '/api/games', timeout: 10000, init: function(data) { populateGameSelector(data.data || data); } },
-  { name: 'line', url: '/api/line-of-the-day', timeout: 60000, init: null },
+  { name: 'line', url: '/api/line-of-the-day', timeout: 30000, init: null },
   { name: 'line_history', url: '/api/line-history', timeout: 10000, init: null },
   { name: 'log_dates', url: '/api/log/dates', timeout: 10000, init: null },
   { name: 'log_get', url: '/api/log/get?date=' + _etToday(), timeout: 10000, init: null },
@@ -2328,6 +2332,12 @@ function _postHydrateRender() {
       }
     }
     if (SLATE.locked) _slateAutoRefreshCount = 0;
+
+    // Show subtle refresh button when slate is locked (injury regeneration detection)
+    const _srb = _el('slateRefreshBar');
+    if (_srb) {
+      _srb.style.display = SLATE.locked && !SLATE.all_complete ? 'block' : 'none';
+    }
   } else {
     // Slate hydration failed — show retry
     const list = _el('slateList');
@@ -2565,7 +2575,7 @@ async function loadSlate() {
           <div class="empty-state">
             <span class="icon">📡</span>
             <p>Slate temporarily unavailable.<br>Retrying in <span id="slateRetryCountdown">${_secs}</span>s&hellip;</p>
-            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="_cancelSlateRetry();loadSlate()">Retry now</button>
+            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="_cancelSlateRetry();_slateFailRetryCount=0;loadSlate()">Retry now</button>
           </div>`;
         let _cd = _secs;
         if (_slateFailRetryTimer) clearInterval(_slateFailRetryTimer);
@@ -2585,7 +2595,7 @@ async function loadSlate() {
           <div class="empty-state">
             <span class="icon">📡</span>
             <p>The projection pipeline is rebuilding.<br>Auto-retrying in <span id="slateRetryCountdown">120</span>s.</p>
-            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="_cancelSlateRetry();loadSlate()">Try now</button>
+            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="_cancelSlateRetry();_slateFailRetryCount=0;loadSlate()">Try now</button>
           </div>`;
         let _cd = 120;
         if (_slateFailRetryTimer) clearInterval(_slateFailRetryTimer);
@@ -3072,7 +3082,7 @@ async function savePredictions() {
   _predSavedDate = today;
   _predSavedLockedCount = lockedNow;
   try {
-    const r = await fetchWithTimeout('/api/save-predictions', { method: 'POST' });
+    const r = await fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 25000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
   } catch(e) {
     _predSavedDate = ''; // allow retry on next call
@@ -4270,7 +4280,7 @@ async function _startLineLivePoll(overPick, underPick) {
       player_name: pick.player_name || '' });
     if (pick.player_id) p.set('player_id', pick.player_id);
     try {
-      const r = await fetchWithTimeout('/api/line-live-stat?' + p);
+      const r = await fetchWithTimeout('/api/line-live-stat?' + p, {}, 20000);
       return r.ok ? r.json() : null;
     } catch(e) { return null; }
   }

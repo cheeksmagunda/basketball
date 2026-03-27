@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_URL = os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com/v1/messages")
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 
@@ -385,7 +386,7 @@ def _call_claude(prompt, stat_focus="points"):
         return None
     try:
         resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
+            ANTHROPIC_API_URL,
             headers={
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
@@ -399,10 +400,19 @@ def _call_claude(prompt, stat_focus="points"):
             timeout=30,
         )
         resp.raise_for_status()
-        text = resp.json()["content"][0]["text"].strip()
+        rj = resp.json()
+        content = rj.get("content") or []
+        if not content or not isinstance(content, list):
+            print(f"[LineEngine] Empty/invalid content array for {stat_focus} — using fallback")
+            return None
+        text = (content[0].get("text") or "").strip()
+        if not text:
+            print(f"[LineEngine] Empty text in Claude response for {stat_focus} — using fallback")
+            return None
         # Strip markdown fences if Claude adds them despite instructions
         if text.startswith("```"):
-            text = text.split("```")[1]
+            parts = text.split("```")
+            text = parts[1] if len(parts) >= 3 else text[3:]
             if text.startswith("json"):
                 text = text[4:]
             text = text.strip()
