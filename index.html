@@ -1792,6 +1792,7 @@ let SLATE_LOADED_AT = 0;
 let _slateAutoRefreshCount = 0; // Cap for the delay<=0 retry loop (max 3)
 let _slateAutoRefreshTimer = null; // Prevent duplicate auto-refresh timers
 let _slateNextDayPoll = null;     // Poll for next-day slate after all_complete
+let _slateLoadInFlight = false;   // Prevent concurrent loadSlate() calls
 
 // Log page state — grep: LOG state, history page, drill-down
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -2527,6 +2528,8 @@ function _prewarmLineAndParlay(todayET) {
 }
 
 async function loadSlate() {
+  if (_slateLoadInFlight) return; // Prevent concurrent calls (visibilitychange + poll overlap)
+  _slateLoadInFlight = true;
   SLATE_STATE = asyncStateLoading(SLATE_STATE);
   showLoader();
   // Only show skeletons on first load — background polls keep existing cards visible
@@ -2704,6 +2707,8 @@ async function loadSlate() {
         <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
       </div>`;
     initGameSelector(); // fallback: try to fill game dropdown when slate fetch failed
+  } finally {
+    _slateLoadInFlight = false;
   }
 }
 
@@ -4813,9 +4818,10 @@ function filterLineHistory(dir) {
   moveTogglePill(histWrap, activeBtn, rgb);
   document.getElementById('lineHistoryList').innerHTML = renderLineHistoryRows(LINE_HIST_DATA?.picks, dir);
 
-  // Recompute stats for the filtered subset
+  // Recompute stats for the filtered subset — use same (direction || 'over') default
+  // as renderLineHistoryRows so stats always match the rendered pick count.
   const filtered = dir === 'all' ? (LINE_HIST_DATA?.picks || [])
-    : (LINE_HIST_DATA?.picks || []).filter(p => p.direction === dir);
+    : (LINE_HIST_DATA?.picks || []).filter(p => (p.direction || 'over') === dir);
   const hits   = filtered.filter(p => p.result === 'hit');
   const misses = filtered.filter(p => p.result === 'miss');
   const total  = hits.length + misses.length;
@@ -5316,13 +5322,17 @@ async function labCallClaude(attachedImage = null) {
     // Manual AbortController provides 60s connection timeout.
     const chatAbort = new AbortController();
     const chatTimeoutId = setTimeout(() => chatAbort.abort(), 60000);
-    const r = await fetch('/api/lab/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: apiMessages, system: LAB.system }),
-      signal: chatAbort.signal,
-    });
-    clearTimeout(chatTimeoutId);
+    let r;
+    try {
+      r = await fetch('/api/lab/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, system: LAB.system }),
+        signal: chatAbort.signal,
+      });
+    } finally {
+      clearTimeout(chatTimeoutId); // Always clear — prevents orphaned timer on network errors
+    }
 
     // Read SSE stream — backend emits status events then final content
     if (!r.ok) throw new Error('chat ' + r.status);
