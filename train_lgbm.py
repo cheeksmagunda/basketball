@@ -370,9 +370,19 @@ print(
 BASELINE_TXT = "lgbm_baseline.txt"
 SPIKE_TXT = "lgbm_spike.txt"
 
+def _strip_lgbm_noise_params(path: str):
+    """Remove training-only params that cause harmless but noisy warnings on load."""
+    txt = Path(path).read_text()
+    for param in ("early_stopping_min_delta", "bagging_by_query"):
+        txt = re.sub(rf"^{param}=.*\n", "", txt, flags=re.MULTILINE)
+        txt = re.sub(rf"^\[{param}:.*\]\n", "", txt, flags=re.MULTILINE)
+    Path(path).write_text(txt)
+
 print("4. Saving native LightGBM models + lgbm_model.json...")
 model_baseline.booster_.save_model(BASELINE_TXT)
 model_spike.booster_.save_model(SPIKE_TXT)
+_strip_lgbm_noise_params(BASELINE_TXT)
+_strip_lgbm_noise_params(SPIKE_TXT)
 meta = {
     "format": "lightgbm_native",
     "bundle_version": 2,

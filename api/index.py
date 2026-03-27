@@ -1189,14 +1189,27 @@ def _load_config():
         try:
             age = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
             if age < _TTL_CONFIG:
-                return json.loads(cache_file.read_text())
+                raw = cache_file.read_text().strip()
+                if raw:
+                    return json.loads(raw)
+                # Empty file — delete and fall through to GitHub
+                cache_file.unlink(missing_ok=True)
+        except json.JSONDecodeError:
+            # Corrupt cache file — delete and fall through to GitHub
+            try:
+                cache_file.unlink(missing_ok=True)
+            except Exception:
+                pass
         except Exception as _ce:
             print(f"[WARN] Config cache read failed: {_ce}")
     try:
         content, _ = _github_get_file("data/model-config.json")
         if content:
             cfg = json.loads(content)
-            cache_file.write_text(json.dumps(cfg))
+            # Atomic write: write to temp file then rename to prevent empty/partial reads
+            tmp_file = cache_file.with_suffix(".tmp")
+            tmp_file.write_text(json.dumps(cfg))
+            tmp_file.rename(cache_file)
             return cfg
     except Exception as _ce:
         print(f"[WARN] Config GitHub load failed, using defaults: {_ce}")

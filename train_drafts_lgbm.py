@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
@@ -267,6 +268,12 @@ def train() -> None:
     )
     model.fit(X, y, sample_weight=weights)
     model.booster_.save_model(str(MODEL_TXT))
+    # Strip training-only params that cause harmless but noisy warnings on load
+    _txt = MODEL_TXT.read_text()
+    for _param in ("early_stopping_min_delta", "bagging_by_query"):
+        _txt = re.sub(rf"^{_param}=.*\n", "", _txt, flags=re.MULTILINE)
+        _txt = re.sub(rf"^\[{_param}:.*\]\n", "", _txt, flags=re.MULTILINE)
+    MODEL_TXT.write_text(_txt)
     meta = {"format": "lightgbm_native", "features": FEATURES, "model_file": MODEL_TXT.name}
     with MODEL_JSON.open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
