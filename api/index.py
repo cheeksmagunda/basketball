@@ -942,7 +942,8 @@ _CONFIG_DEFAULTS = {
     },
     "core_pool": {
         "enabled": True,
-        "size": 15,          # v59: wider net for sweet spot targeting
+        "size": 15,          # absolute cap; dynamic sizing scales down for small slates
+        "size_per_game": 3.0, # effective size = max(8, round(games * size_per_game)), capped by size
         "metric": "ev_weighted", # v62: RS^1.3 × (2.0 + boost) — RS exponent reflects 5x elasticity ratio
         "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric (unused with rs_x_boost)
         "blend_weight": 0.5,
@@ -5007,7 +5008,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         # Starting 5, they shouldn't be in the pool at all. This prevents the chalk gate
         # bypass where sub-4.0-RS moonshot-only players leaked into Starting 5.
 
-        core_size = min(int(core_pool_cfg.get("size", 8)), max(5, len(eligible_union)))
+        # Dynamic core size: scale with slate size so a 3-game slate uses ~9 slots
+        # instead of the full 20, keeping the pool focused. Configured size is the cap.
+        _num_games = len({p.get("gameId") for p in projections if p.get("gameId")}) or 1
+        _size_per_game = float(core_pool_cfg.get("size_per_game", 3.0))
+        _dynamic_cap = max(8, round(_num_games * _size_per_game))
+        core_size = min(int(core_pool_cfg.get("size", 15)), _dynamic_cap, max(5, len(eligible_union)))
         core_metric = (core_pool_cfg.get("metric") or "max_ev").lower()
         blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
         for r in eligible_union:

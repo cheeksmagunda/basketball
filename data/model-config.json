@@ -215,7 +215,8 @@
   },
   "core_pool": {
     "enabled": true,
-    "size": 20,
+    "size": 30,
+    "size_per_game": 3.0,
     "metric": "ev_weighted",
     "tv_floor_min_rs": 3.8,
     "blend_weight": 0.5,
