@@ -939,6 +939,10 @@ _CONFIG_DEFAULTS = {
         # milp_boost = 0.25*real + 0.75*neutral, so RS dominates MILP selection.
         "chalk_milp_rs_focus": 0.75,
         "chalk_milp_boost_neutral": 1.0,
+        "chalk_max_per_team": 2,
+        "chalk_max_double_teams": 1,   # max teams allowed to hit the 2-player ceiling
+        "moonshot_max_per_team": 2,
+        "moonshot_max_double_teams": 1,
     },
     "core_pool": {
         "enabled": True,
@@ -4755,6 +4759,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     _chalk_max_per_game = int(_lu_cfg.get("chalk_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
     _moon_max_per_game = int(_lu_cfg.get("moonshot_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
     _chalk_max_per_team = int(_lu_cfg.get("chalk_max_per_team", 2)) if isinstance(_lu_cfg, dict) else 2
+    _chalk_max_double_teams = int(_lu_cfg.get("chalk_max_double_teams", 0)) if isinstance(_lu_cfg, dict) else 0
+    _moon_max_per_team = int(_lu_cfg.get("moonshot_max_per_team", 2)) if isinstance(_lu_cfg, dict) else 2
+    _moon_max_double_teams = int(_lu_cfg.get("moonshot_max_double_teams", 0)) if isinstance(_lu_cfg, dict) else 0
     _chalk_min_high_boost = int(_lu_cfg.get("chalk_min_high_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
     _chalk_high_boost_thr = float(_lu_cfg.get("chalk_high_boost_threshold", 2.0)) if isinstance(_lu_cfg, dict) else 2.0
     _chalk_min_big_boost = int(_lu_cfg.get("chalk_min_big_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
@@ -4773,6 +4780,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=_chalk_max_per_team,
+                                max_double_teams=_chalk_max_double_teams,
                                 star_indices=chalk_star_indices if chalk_star_indices else None,
                                 min_star_count=sa_require if chalk_star_indices else 0,
                                 max_star_count=sa_max if sa_max > 0 else 0,
@@ -4981,7 +4989,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 
     # No center cap — position balancing removed (boost dominance audit Mar 19).
     # Poeltl, Queta, Achiuwa all appear in winning lineups.
-    moonshot_max_team = int(moon_cfg.get("max_per_team", 2))
+    moonshot_max_team = _moon_max_per_team
 
     # Star anchor indices for moonshot MILP — same constraint as chalk.
     # Forces 1 guaranteed high-RS producer in moonshot (unified 1+4 strategy).
@@ -5125,6 +5133,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
                                 max_per_team=_chalk_max_per_team,
+                                max_double_teams=_chalk_max_double_teams,
                                 objective_mode="chalk",
                                 variance_penalty=0.5,
                                 star_indices=_core_star_indices if _core_star_indices else None,
@@ -5155,6 +5164,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
+                                 max_double_teams=_moon_max_double_teams,
                                  objective_mode="moonshot",
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.8,
@@ -5173,6 +5183,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                  rating_key="adj_ceiling",
                                  card_boost_key="est_mult",
                                  max_per_team=moonshot_max_team,
+                                 max_double_teams=_moon_max_double_teams,
                                  objective_mode="moonshot",
                                  variance_uplift=0.35,
                                  boost_leverage_extra_power=0.8,

@@ -59,7 +59,8 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                     max_per_game=0, player_games=None,
                     min_high_boost_count=0, high_boost_threshold=2.0,
                     min_big_boost_count=0, big_boost_threshold=2.8,
-                    min_scorer_count=0, scorer_pts_threshold=0.0):
+                    min_scorer_count=0, scorer_pts_threshold=0.0,
+                    max_double_teams=0):
     """Find the optimal player-to-slot assignment using MILP.
 
     Data-driven objective functions based on 85-entry leaderboard analysis:
@@ -105,7 +106,8 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                                min_big_boost_count=min_big_boost_count,
                                big_boost_threshold=big_boost_threshold,
                                min_scorer_count=min_scorer_count,
-                               scorer_pts_threshold=scorer_pts_threshold)
+                               scorer_pts_threshold=scorer_pts_threshold,
+                               max_double_teams=max_double_teams)
 
         if two_phase and len(selected) == n:
             # Phase 2: re-assign slots using raw RS for optimal placement.
@@ -134,7 +136,8 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 max_per_game=0, player_games=None,
                 min_high_boost_count=0, high_boost_threshold=2.0,
                 min_big_boost_count=0, big_boost_threshold=2.8,
-                min_scorer_count=0, scorer_pts_threshold=0.0):
+                min_scorer_count=0, scorer_pts_threshold=0.0,
+                max_double_teams=0):
     """Run the MILP solver to find optimal player-slot assignments.
 
     Objective shaping (data-driven from 85-entry archetype analysis):
@@ -216,10 +219,27 @@ def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,
                 ) >= min(min_per_team, len(player_indices))
 
     if max_per_team > 0:
-        for t, player_indices in teams.items():
-            prob += lpSum(
-                x[i, j] for i in player_indices for j in slots
-            ) <= max_per_team
+        if max_double_teams > 0 and max_per_team >= 2:
+            # "At most max_double_teams teams may contribute max_per_team players;
+            # all other teams contribute at most (max_per_team - 1) players."
+            #
+            # Formulation: introduce binary z_t per team.
+            #   n_t ≤ (max_per_team - 1) + z_t        [z_t unlocks the extra slot]
+            #   Σ z_t ≤ max_double_teams               [budget for double-team slots]
+            #
+            # In maximisation the solver sets z_t=1 only when it actually uses
+            # the extra slot, so no tightening penalty for teams with 1 player.
+            z = {}
+            for t, player_indices in teams.items():
+                z[t] = LpVariable(f"z_{t}", cat=LpBinary)
+                n_t = lpSum(x[i, j] for i in player_indices for j in slots)
+                prob += n_t <= (max_per_team - 1) + z[t], f"max_team_{t}"
+            prob += lpSum(z[t] for t in teams) <= max_double_teams, "max_double_teams"
+        else:
+            for t, player_indices in teams.items():
+                prob += lpSum(
+                    x[i, j] for i in player_indices for j in slots
+                ) <= max_per_team
 
     # No position-per-team constraint — Real Sports has no position requirements.
     # The solver freely selects any player combination regardless of position overlap.
