@@ -6860,8 +6860,8 @@ def _force_regenerate_sync(scope: str):
             except Exception as e:
                 print(f"[force-regen] game lineups err {gid}: {e}")
 
-    # Step 4: Pipeline succeeded — now bust old cache and write fresh data to all layers
-    _bust_slate_cache()
+    # Step 4: (Bust deferred — only bust if we have valid results to write.
+    # Busting without a valid replacement leaves the cache permanently empty.)
 
     # Step 5: Build the slate cache object and persist to all layers
     deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
@@ -6888,6 +6888,8 @@ def _force_regenerate_sync(scope: str):
         "pass": 2,
     }
     if chalk or upside:
+        # Only bust AFTER confirming we have valid lineups to replace it with.
+        _bust_slate_cache()
         _cs(_CK_SLATE, result)
         _ls(_CK_SLATE_LOCKED, result)
         _slate_cache_to_github(result)
@@ -8178,8 +8180,8 @@ async def _deploy_startup_prewarm():
     try:
         st = _load_deploy_prewarm_state()
         last_sha = (st.get("sha") or "").strip()
-        if last_sha == current_sha and st.get("status") == "completed":
-            return
+        if last_sha == current_sha and st.get("status") in ("completed", "error"):
+            return  # Don't retry a failed prewarm on restart — it would bust cache again
         if getattr(_deploy_prewarm_bg, "_in_flight", False):
             return
         _deploy_prewarm_bg._in_flight = True
