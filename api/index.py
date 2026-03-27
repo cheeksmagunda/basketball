@@ -12018,10 +12018,14 @@ async def get_parlay(request: Request):
         # causing confusing mid-slate parlay changes. Mar 26 bug: parlay kept changing.
         if slate_locked:
             print(f"[parlay] slate locked, no cached/GitHub parlay — returning empty (not regenerating)")
-            return JSONResponse({"error": "parlay_locked", "locked": True,
+            return JSONResponse({"error": "parlay_locked", "locked": True, "legs": [],
+                                 "narrative": "Today's parlay wasn't generated before tip-off. Check back tomorrow for a fresh pick.",
                                  "message": "Parlay was not generated before lock. Check back tomorrow."})
 
-        result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
+        result, err, debug = await asyncio.wait_for(
+            asyncio.to_thread(_run_parlay_engine_sync, today),
+            timeout=150,
+        )
 
         if err or not result:
             no_odds = err == "no_odds_data" or (debug and not debug.get("odds_available"))
@@ -12084,6 +12088,12 @@ async def get_parlay(request: Request):
 
         return JSONResponse(result)
 
+    except asyncio.TimeoutError:
+        print("[parlay] engine timed out after 150s")
+        return JSONResponse({
+            "legs": [], "error": "parlay_timeout",
+            "narrative": "Parlay generation timed out. ESPN or Odds API may be slow right now. Please try again.",
+        }, status_code=200)
     except Exception as e:
         print(f"[parlay] error: {e}")
         traceback.print_exc()
@@ -12127,14 +12137,23 @@ async def parlay_force_regenerate(request: Request):
         except Exception:
             pass
 
-    result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, target_date)
+    try:
+        result, err, debug = await asyncio.wait_for(
+            asyncio.to_thread(_run_parlay_engine_sync, target_date),
+            timeout=150,
+        )
+    except asyncio.TimeoutError:
+        return JSONResponse({
+            "legs": [], "error": "parlay_timeout",
+            "narrative": "Parlay generation timed out. ESPN or Odds API may be slow right now. Please try again.",
+        }, status_code=200)
 
     if err or not result:
         return JSONResponse({
-            "error": err or "no_valid_parlay",
-            "narrative": f"Could not generate a parlay for {target_str}.",
+            "legs": [], "error": err or "no_valid_parlay",
+            "narrative": f"Could not generate a parlay for {target_str}. {'' if not err else err}".strip().rstrip('.') + '.',
             "debug": debug or {},
-        }, status_code=503)
+        }, status_code=200)
 
     # For historical dates, mark as pending — parlay-history will resolve via ESPN
     result_status = "pending"
