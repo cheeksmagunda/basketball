@@ -1,7 +1,7 @@
 {
-  "version": 77,
-  "updated_at": "2026-03-27T21:00:00Z",
-  "updated_by": "v77-star-boost-cap-big-market-threshold-fix",
+  "version": 78,
+  "updated_at": "2026-03-27T21:30:00Z",
+  "updated_by": "v78-team-boost-ceiling-popular-franchise-fix",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -38,6 +38,16 @@
     "log_linear": {
       "intercept": 3.34,
       "slope": -0.71
+    },
+    "team_boost_ceiling": {
+      "GS": 2.2,
+      "GSW": 2.2,
+      "CLE": 2.0,
+      "MEM": 1.8,
+      "OKC": 2.0,
+      "BOS": 2.0,
+      "DEN": 2.2,
+      "MIL": 2.2
     }
   },
   "game_script": {
@@ -471,6 +481,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 78,
+      "date": "2026-03-27",
+      "change": "PER-TEAM BOOST CEILING (v78). Global corrections can't fix popular-franchise role players: Draymond (GS, 8.5 PPG) predicts 2.8x but actual 1.9x because model sees low PPG as obscure, Merrill (CLE, 12 PPG) 2.2x vs 1.8x actual, Spencer (MEM, 10.7 PPG) 2.2x vs 1.5x actual. The same penalty that fixes Draymond would destroy Sensabaugh (UTAH, actual 2.1x). Fix: team_boost_ceiling dict caps predictions per franchise without lowering small-market teams. GS→2.2x, CLE→2.0x, MEM→1.8x, OKC/BOS→2.0x, DEN/MIL→2.2x. Expected outcomes: Draymond 2.8→2.2x (actual 1.9x, 0.3x gap vs prior 0.9x), Merrill 2.2→2.0x (actual 1.8x, 0.2x gap), Spencer 2.2→1.8x (actual 1.5x, 0.3x gap), Sensabaugh unchanged 2.2x (actual 2.1x). Code: _apply_caps() replaces _cap_for_star(), applies both star-tier and team-ceiling in sequence."
+    },
     {
       "version": 77,
       "date": "2026-03-27",
