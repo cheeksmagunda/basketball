@@ -10194,8 +10194,12 @@ def _all_games_final(games):
     # keeping the app locked indefinitely. Now uses slate start times when ESPN is empty.
     _fallback_latest = latest_remaining
     if not _fallback_latest and games:
-        # ESPN scoreboard empty — use slate game start times as fallback
-        _slate_starts = [g.get("startTime", "") for g in games if g.get("startTime")]
+        # ESPN scoreboard empty — use PAST slate game start times as fallback.
+        # Filter to only started games; future start times (tomorrow's games in
+        # the ESPN response after midnight) would give negative hours_since_start
+        # and prevent the fallback from firing on yesterday's completed slate.
+        _slate_starts = [g.get("startTime", "") for g in games
+                         if g.get("startTime") and _is_past_lock_window(g.get("startTime", ""))]
         if _slate_starts:
             _fallback_latest = max(_slate_starts)
     if not all_final and _fallback_latest:
