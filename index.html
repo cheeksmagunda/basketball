@@ -2218,7 +2218,7 @@ function _postHydrateRender() {
       if (list) list.innerHTML =
         '<div class="empty-state">' +
           '<span class="icon">📡</span>' +
-          '<p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>' +
+          '<p>The projection pipeline is rebuilding.<br>Tap Retry to try again.</p>' +
           '<button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>' +
         '</div>';
       return;
@@ -2584,9 +2584,21 @@ async function loadSlate() {
         if (list) list.innerHTML = `
           <div class="empty-state">
             <span class="icon">📡</span>
-            <p>Slate temporarily unavailable.<br>Tap Retry to try again.</p>
-            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="loadSlate()">Try again</button>
+            <p>The projection pipeline is rebuilding.<br>Auto-retrying in <span id="slateRetryCountdown">120</span>s.</p>
+            <button type="button" class="secondary-btn" style="margin-top:12px" onclick="_cancelSlateRetry();loadSlate()">Try now</button>
           </div>`;
+        let _cd = 120;
+        if (_slateFailRetryTimer) clearInterval(_slateFailRetryTimer);
+        _slateFailRetryTimer = setInterval(function() {
+          _cd--;
+          const el = _el('slateRetryCountdown');
+          if (el) el.textContent = _cd;
+          if (_cd <= 0) {
+            clearInterval(_slateFailRetryTimer);
+            _slateFailRetryTimer = null;
+            loadSlate();
+          }
+        }, 1000);
       }
       return;
     }
@@ -3826,7 +3838,7 @@ async function initLogPage() {
       LOG._datesLoadedAt = Date.now();
       try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
       buildLogDateStrip();
-    }).catch(function() {});
+    }).catch(function(e) { console.warn('[log/dates] failed to load date strip:', e); });
     return;
   }
 
@@ -4474,7 +4486,9 @@ async function fetchLineOfTheDay(nocache = false, background = false) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-          }, 10000).catch(function(e) { console.warn('[save-line] background save failed:', e); });
+          }, 10000).then(function(r) {
+            if (!r.ok) console.warn('[save-line] server error:', r.status);
+          }).catch(function(e) { console.warn('[save-line] background save failed:', e); });
         }
         // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
         // when a game finishes and re-fetches line-of-the-day for per-direction rotation.
