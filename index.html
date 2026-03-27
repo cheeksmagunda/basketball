@@ -1911,7 +1911,8 @@ function switchTab(tab) {
   }
   if (tab === 'predictions') {
     let stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
-    if (stale) loadSlate();
+    let dateStale = SLATE && SLATE.locked && SLATE.date && SLATE.date !== _etToday();
+    if (stale || dateStale) loadSlate();
   }
   if (tab === 'line') {
     // Keep Line cache ownership in the Line page initializer only.
@@ -2374,6 +2375,16 @@ function _postHydrateRender() {
   // This fetches all critical endpoints in parallel before showing the app.
   _hydrateApp();
 })();
+
+// Visibility-based stale slate detection: if the user leaves the app open
+// overnight and returns the next day with a locked previous-day slate,
+// reload automatically so they see today's picks without a manual refresh.
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState !== 'visible') return;
+  if (!SLATE || !SLATE.locked) return;
+  if (!SLATE.date) return;
+  if (SLATE.date !== _etToday()) loadSlate();
+});
 
 // ════════════════════════════════════════════════════════════════════
 // GAME SELECTOR — grep: initGameSelector, populateGameSelector, gameSel, /api/games
