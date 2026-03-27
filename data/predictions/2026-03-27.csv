@@ -4,11 +4,11 @@ slate,chalk,1.8x,Jordan Poole,4277956,NO,G,7.0,2.5,25.4,14.0,2.1,3.1,0.6,0.4
 slate,chalk,1.6x,Khris Middleton,6609,DAL,F,6.8,2.3,29.1,11.8,4.0,3.2,0.8,0.2
 slate,chalk,1.4x,Klay Thompson,6475,DAL,G,6.7,2.6,27.3,13.2,2.4,1.5,0.6,0.3
 slate,chalk,1.2x,Brice Sensabaugh,5105839,UTAH,F,6.6,2.1,32.4,13.6,3.0,1.7,0.7,0.1
-slate,upside,2.0x,James Harden,3992,CLE,G,8.2,0.4,37.6,24.1,5.1,7.9,1.2,0.4
-slate,upside,1.8x,Jordan Poole,4277956,NO,G,7.0,2.5,25.4,14.0,2.1,3.1,0.6,0.4
-slate,upside,1.6x,Klay Thompson,6475,DAL,G,6.7,2.6,27.3,13.2,2.4,1.5,0.6,0.3
-slate,upside,1.4x,Brook Lopez,3448,LAC,C,6.0,3.0,23.8,9.4,3.7,1.2,0.6,1.2
-slate,upside,1.2x,Bogdan Bogdanovic,3037789,LAC,G,5.2,3.0,23.2,8.6,2.8,2.6,0.6,0.0
+slate,upside,2.0x,Jordan Poole,4277956,NO,G,7.0,2.5,25.4,14.0,2.1,3.1,0.6,0.4
+slate,upside,1.8x,Klay Thompson,6475,DAL,G,6.7,2.6,27.3,13.2,2.4,1.5,0.6,0.3
+slate,upside,1.6x,Brook Lopez,3448,LAC,C,6.0,3.0,23.8,9.4,3.7,1.2,0.6,1.2
+slate,upside,1.4x,Bogdan Bogdanovic,3037789,LAC,G,5.2,3.0,23.2,8.6,2.8,2.6,0.6,0.0
+slate,upside,1.2x,James Harden,3992,CLE,G,8.2,0.4,37.6,24.1,5.1,7.9,1.2,0.4
 LAC @ IND,the_lineup,2.0x,Kawhi Leonard,6450,LAC,F,9.2,0.0,32.9,26.8,6.3,3.5,1.9,0.5
 LAC @ IND,the_lineup,1.8x,Pascal Siakam,3149673,IND,F,8.5,0.0,35.8,22.8,6.6,3.8,1.1,0.4
 LAC @ IND,the_lineup,1.6x,Darius Garland,4396907,LAC,G,8.4,0.0,31.2,18.9,2.4,6.9,0.9,0.1
@@ -35,9 +35,9 @@ CHI @ OKC,the_lineup,1.6x,Ajay Mitchell,4900671,OKC,G,7.2,0.0,22.9,13.5,3.4,3.4,
 CHI @ OKC,the_lineup,1.4x,Tre Jones,4395626,CHI,G,7.2,0.0,30.7,12.2,3.0,5.3,1.1,0.2
 CHI @ OKC,the_lineup,1.2x,Collin Sexton,4277811,CHI,G,7.1,0.0,31.1,15.4,2.1,3.5,1.0,0.1
 NO @ TOR,the_lineup,2.0x,Jordan Poole,4277956,NO,G,7.7,0.0,25.4,14.0,2.1,3.1,0.6,0.4
-NO @ TOR,the_lineup,1.8x,Jeremiah Fears,5144091,NO,G,6.2,0.0,25.5,13.1,3.6,3.2,1.1,0.3
-NO @ TOR,the_lineup,1.6x,RJ Barrett,4395625,TOR,F,6.1,0.0,30.6,18.9,5.3,3.3,0.8,0.3
-NO @ TOR,the_lineup,1.4x,Scottie Barnes,4433134,TOR,F,5.9,0.0,34.0,18.3,7.7,5.4,1.4,1.4
+NO @ TOR,the_lineup,1.8x,RJ Barrett,4395625,TOR,F,6.5,0.0,31.2,18.9,5.3,3.3,0.8,0.3
+NO @ TOR,the_lineup,1.6x,Jeremiah Fears,5144091,NO,G,6.2,0.0,25.5,13.1,3.6,3.2,1.1,0.3
+NO @ TOR,the_lineup,1.4x,Scottie Barnes,4433134,TOR,F,6.1,0.0,34.6,18.3,7.7,5.4,1.4,1.4
 NO @ TOR,the_lineup,1.2x,Zion Williamson,4395628,NO,F,5.7,0.0,27.8,21.9,5.9,3.4,1.0,0.6
 UTAH @ DEN,the_lineup,2.0x,Peyton Watson,4576087,DEN,G,7.7,0.0,23.7,13.7,4.6,1.9,0.9,1.1
 UTAH @ DEN,the_lineup,1.8x,Brice Sensabaugh,5105839,UTAH,F,7.5,0.0,32.4,13.6,3.0,1.7,0.7,0.1
