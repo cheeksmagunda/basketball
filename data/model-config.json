@@ -1,7 +1,7 @@
 {
-  "version": 79,
-  "updated_at": "2026-03-27T22:00:00Z",
-  "updated_by": "v79-team-boost-ceiling-tighter-conservative",
+  "version": 80,
+  "updated_at": "2026-03-27T22:30:00Z",
+  "updated_by": "v80-star-tier-mitchell-tatum-exact",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -20,8 +20,9 @@
     "ml_additive_correction": -0.40,
     "max_prior_weight": 0.0,
     "star_ppg_tiers": [
-      {"min_ppg": 24, "boost_cap": 0.4},
-      {"min_ppg": 20, "boost_cap": 0.8}
+      {"min_ppg": 26, "boost_cap": 0.2},
+      {"min_ppg": 22, "boost_cap": 0.4},
+      {"min_ppg": 19, "boost_cap": 0.8}
     ],
     "big_market_teams": [
       "LAL",
@@ -481,6 +482,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 80,
+      "date": "2026-03-27",
+      "change": "STAR TIER EXACT CALIBRATION (v80). Mitchell (27.7 PPG, CLE) showing 0.4x but actual 0.2x — 24+ tier cap too high. Tatum (19.1 PPG season avg, BOS) showing 0.9x but actual 0.8x — 20+ threshold too high, 19.1 doesn't hit it. Fix: (1) Split 24+ into 26+→0.2x (matches Mitchell floor, also catches SGA/Jokic level stars) and 22+→0.4x. (2) Lower 20+ threshold to 19+ so Tatum (19.1 PPG) triggers the cap and lands at 0.8x. Config-only."
+    },
     {
       "version": 79,
       "date": "2026-03-27",
