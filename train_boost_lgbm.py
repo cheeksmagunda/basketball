@@ -2,8 +2,13 @@
 """
 Train LightGBM card boost model from historical outcomes + prediction features.
 
-Direct 7-feature model:
-  [projected_rs, season_pts, recent_pts, season_min, pred_min, is_big_market, pos_bucket]
+Direct 8-feature model:
+  [projected_rs, season_pts, recent_pts, season_min, pred_min,
+   team_market_score, pos_bucket, ppg_tier]
+
+Replaces the old binary is_big_market flag with a continuous team_market_score
+(0.0–1.0) covering all 30 teams, plus a ppg_tier feature (0–4) that segments
+player recognition tiers without a hard PPG threshold cliff.
 
 Labels:
   actual_card_boost from top_performers + actuals + most_popular (merged, deduped)
@@ -37,9 +42,25 @@ FEATURES = [
     "recent_pts",
     "season_min",
     "pred_min",
-    "is_big_market",
+    "team_market_score",
     "pos_bucket",
+    "ppg_tier",
 ]
+
+# Continuous team market score (0.0–1.0) covering all 30 teams.
+# Reflects fanbase size + franchise recognition + playoff relevance.
+# Higher score = more fans drafting from that team = lower expected card boost.
+# Must stay in sync with TEAM_MARKET_SCORES in api/index.py.
+TEAM_MARKET_SCORES = {
+    "LAL": 1.00, "GSW": 0.95, "GS": 0.95, "BOS": 0.90, "NYK": 0.90, "NY": 0.90,
+    "PHI": 0.75, "MIA": 0.75, "LAC": 0.70, "CHI": 0.70,
+    "BKN": 0.65, "DEN": 0.65, "MIL": 0.60, "DAL": 0.60,
+    "HOU": 0.55, "PHX": 0.55, "ATL": 0.50, "TOR": 0.50,
+    "CLE": 0.45, "IND": 0.40, "ORL": 0.35, "POR": 0.35,
+    "DET": 0.30, "MIN": 0.30, "OKC": 0.25, "UTA": 0.25,
+    "SAS": 0.25, "NOP": 0.20, "NO": 0.20, "MEM": 0.20,
+    "CHA": 0.15, "SAC": 0.15, "WSH": 0.10,
+}
 LOOKBACK_DAYS = 14
 SILVER_SINGLE_MIN_RS = 4.0
 
@@ -70,26 +91,31 @@ def _pos_bucket(pos: str) -> int:
     return 1
 
 
-def _load_big_market_teams() -> tuple[set[str], float]:
-    """Return (big_market_teams, star_ppg_threshold).
+def _get_team_market_score(team: str) -> float:
+    """Return continuous market score (0.0–1.0) for a team abbreviation.
 
-    star_ppg_threshold > 0 means only apply the big-market flag to players
-    whose season PPG is at or above that threshold (same gate as inference).
+    Higher = larger/more engaged fanbase = player more likely to be drafted
+    regardless of their stats = lower expected card boost.
+    Defaults to 0.3 for unknown teams (small-market neutral).
     """
-    defaults = {"LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "LAC", "CHI"}
-    if not MODEL_CONFIG.exists():
-        return defaults, 0.0
-    try:
-        with MODEL_CONFIG.open("r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        cb = cfg.get("card_boost", {})
-        teams = cb.get("big_market_teams", [])
-        out = {str(t).strip().upper() for t in teams if str(t).strip()}
-        threshold = float(cb.get("big_market_star_ppg_threshold", 0.0))
-        return (out or defaults), threshold
-    except Exception as e:
-        print(f"[WARN] Failed to load {MODEL_CONFIG}: {e}")
-        return defaults, 0.0
+    return TEAM_MARKET_SCORES.get((team or "").strip().upper(), 0.3)
+
+
+def _ppg_tier_bucket(season_pts: float) -> int:
+    """Coarse PPG tier (0–4) for player recognition.
+
+    Segments players into popularity tiers without a hard threshold cliff.
+    Must stay in sync with _ppg_tier_bucket() in api/index.py.
+    """
+    if season_pts < 8:
+        return 0   # bench/fringe — truly obscure
+    if season_pts < 13:
+        return 1   # role player — recognizable but not star
+    if season_pts < 18:
+        return 2   # secondary scorer
+    if season_pts < 24:
+        return 3   # main option
+    return 4       # star/franchise — nationally known, heavily drafted
 
 
 def _load_prediction_index() -> tuple[dict, dict]:
@@ -264,7 +290,6 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not labels:
         return np.array([]), np.array([]), np.array([])
 
-    big_markets, bm_star_threshold = _load_big_market_teams()
     X_list: list[list[float]] = []
     y_list: list[float] = []
     w_list: list[float] = []
@@ -315,18 +340,15 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             skipped += 1
             continue
 
-        if bm_star_threshold > 0:
-            is_big_market = 1.0 if ((team or "").upper() in big_markets and season_pts >= bm_star_threshold) else 0.0
-        else:
-            is_big_market = 1.0 if (team or "").upper() in big_markets else 0.0
         feat_vec = [
             projected_rs,
             season_pts,
             recent_pts,
             season_min,
             pred_min if pred_min > 0 else season_min,
-            is_big_market,
+            _get_team_market_score(team),
             float(_pos_bucket(pos)),
+            float(_ppg_tier_bucket(season_pts)),
         ]
 
         X_list.append(feat_vec)
@@ -340,19 +362,24 @@ def build_training_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def _print_validation_grid(model: lgb.LGBMRegressor) -> None:
-    print("\nValidation grid (star tiers x projected RS):")
-    print("Expected direction: higher season_pts -> lower boost at fixed RS")
-    ppg_tiers = [8.0, 22.0, 28.0]
+    print("\nValidation grid (ppg tier x projected RS x market):")
+    print("Expected direction: higher season_pts / higher market -> lower boost at fixed RS")
+    # [projected_rs, season_pts, recent_pts, season_min, pred_min, team_market_score, pos_bucket, ppg_tier]
+    test_cases = [
+        (8.0, 20.0, 0.10, 1),   # role player, small market (e.g. UTA bench)
+        (9.0, 22.0, 0.40, 1),   # role player, mid market (e.g. IND/CLE role player — TJ McConnell)
+        (24.0, 35.0, 0.45, 4),  # star, mid market (e.g. Harden on CLE)
+        (24.0, 35.0, 1.00, 4),  # star, top market (e.g. LeBron on LAL)
+    ]
     rs_levels = [3.0, 5.0, 7.0, 10.0]
-    mins_map = {8.0: 20.0, 22.0: 32.0, 28.0: 35.0}
-    for ppg in ppg_tiers:
-        smin = mins_map[ppg]
+    labels = ["bench/sm-mkt", "role/mid-mkt (McConnell)", "star/mid-mkt (Harden)", "star/top-mkt (LeBron)"]
+    for (ppg, smin, mkt, tier), label in zip(test_cases, labels):
         preds = []
         for rs in rs_levels:
-            vec = [rs, ppg, ppg, smin, smin, 0.0, 0.0]
+            vec = [rs, ppg, ppg, smin, smin, mkt, 0.0, float(tier)]
             pred = float(model.predict([vec])[0])
             preds.append(f"RS{rs:.0f}:{pred:.2f}")
-        print(f"  PPG {ppg:>4.0f} -> " + " | ".join(preds))
+        print(f"  {label:30s} -> " + " | ".join(preds))
 
 
 def train_model() -> None:
