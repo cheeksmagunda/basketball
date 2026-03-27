@@ -114,6 +114,50 @@ def _get_odds_api_key() -> str:
     """The Odds API key trimmed of whitespace (Railway/dashboard pastes often add newlines)."""
     return (os.environ.get("ODDS_API_KEY") or "").strip()
 
+
+class OddsApiRequiredError(Exception):
+    """Line/Parlay require live Odds API player props — no stale-cache or model-line substitutes."""
+
+    __slots__ = ("code", "detail")
+
+    def __init__(self, code: str, detail: str = ""):
+        self.code = code
+        self.detail = detail or code
+        super().__init__(self.detail)
+
+
+_ODDS_REQUIRED_HINTS = {
+    "odds_not_configured": "ODDS_API_KEY is not set. Add a valid key to fetch sportsbook lines.",
+    "odds_no_games": "No slate games available to match Odds API events.",
+    "odds_events_http_401": "Odds API rejected the request (401). Check ODDS_API_KEY validity and quota.",
+    "odds_events_http": "Odds API events request failed. Check key, quota, or API status.",
+    "odds_events_network": "Network error reaching the Odds API.",
+    "odds_no_matching_events": "Today's ESPN games did not match any Odds API NBA events.",
+    "odds_no_outcomes": "Odds API returned no player prop outcomes for this slate (lines may not be published yet).",
+    "odds_no_prop_lines": "Could not build consensus player lines from Odds API responses.",
+}
+
+
+def _odds_required_hint(code: str) -> str:
+    return _ODDS_REQUIRED_HINTS.get(code, "Odds API did not return usable player prop lines.")
+
+
+def _is_odds_required_line_err(err) -> bool:
+    return isinstance(err, dict) and err.get("type") == "odds_required"
+
+
+def _line_odds_required_response(err_dict: dict) -> dict:
+    code = err_dict.get("code", "odds_unavailable")
+    return {
+        "pick": None,
+        "over_pick": None,
+        "under_pick": None,
+        "error": code,
+        "message": _odds_required_hint(code),
+        "odds_detail": (err_dict.get("detail") or "")[:500],
+    }
+
+
 # Startup env validation — warn on missing required vars (never crash; app degrades gracefully)
 _REQUIRED_ENV = ["GITHUB_TOKEN", "GITHUB_REPO", "ANTHROPIC_API_KEY"]
 _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
@@ -8184,7 +8228,9 @@ def _prewarm_current_slate_sync(force=False, include_slate=True):
         if force or (not line_cache_ok and not line_saved_ok):
             line_date = date.fromisoformat(current_slate_date)
             line_result, line_err = _run_line_engine_for_date(line_date, False, True)
-            if not line_err and line_result and line_result.get("pick"):
+            if _is_odds_required_line_err(line_err):
+                line_status = f"skip:odds:{line_err.get('code', 'unknown')}"
+            elif not line_err and line_result and line_result.get("pick"):
                 line_result.update(_line_payload_meta("prewarm_cron", stale=False, refreshing=False))
                 line_result["_cached_at"] = datetime.utcnow().isoformat()
                 line_result["_cache_date"] = current_slate_date
@@ -8598,7 +8644,7 @@ def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_
         return None
 
 
-def _build_player_odds_map(games):
+def _build_player_odds_map(games, *, require_fresh_book_odds=False):
     """Bulk-fetch Odds API player props for all slate games.
 
     Makes 1 + N calls (events list + one props call per game) instead of
@@ -8607,16 +8653,27 @@ def _build_player_odds_map(games):
     Successful maps are cached for _TTL_ODDS_FRESH seconds (same ET-day fingerprint)
     so /api/slate, line, and parlay reuse one Odds API round-trip per warm instance.
 
+    When require_fresh_book_odds is True (Line / Parlay / refresh-line-odds), missing
+    key, HTTP failures, event mismatch, or empty prop aggregation raise OddsApiRequiredError
+    instead of returning {} or reusing stale odds_last_success_map_v1.
+
     Returns {(player_name_lower, stat_type): {"line", "odds_over", "odds_under",
-    "books_consensus"}} or {} on any failure.
+    "books_consensus"}} or {} on any failure when require_fresh_book_odds is False.
     """
     api_key = _get_odds_api_key()
     if not api_key:
         print("[odds_map] ODDS_API_KEY missing or empty after trim — skipping odds fetch")
+        if require_fresh_book_odds:
+            raise OddsApiRequiredError(
+                "odds_not_configured",
+                "ODDS_API_KEY is missing or empty",
+            )
         return {}
 
     if not games:
         print("[odds_map] no games provided — skipping odds fetch")
+        if require_fresh_book_odds:
+            raise OddsApiRequiredError("odds_no_games", "No games list for Odds API match")
         return {}
 
     # Track daily quota usage to prevent waste (500 requests/day = ~30 full slates)
@@ -8650,21 +8707,22 @@ def _build_player_odds_map(games):
     except Exception:
         pass
 
-    # Degraded mode: if the Odds API is rate-limiting / failing, fall back to the
-    # last successfully built map (previous hour). This keeps lineup generation alive.
+    # Degraded mode (draft odds enrichment only): reuse last successful map (~1h) when
+    # the live Odds API fails. Line/Parlay never use this when require_fresh_book_odds.
     cache_key = "odds_last_success_map_v1"
     cached_odds_map = {}
-    try:
-        cp = _cp(cache_key)
-        if cp.exists():
-            age = time.time() - cp.stat().st_mtime
-            if age < 3600:  # 1h
-                obj = json.loads(cp.read_text()) if cp.read_text() else {}
-                if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
-                    cached_odds_map = obj.get("data") or {}
-                    print(f"[odds_map] loaded {len(cached_odds_map)} cached entries (age={age:.0f}s)")
-    except Exception:
-        cached_odds_map = {}
+    if not require_fresh_book_odds:
+        try:
+            cp = _cp(cache_key)
+            if cp.exists():
+                age = time.time() - cp.stat().st_mtime
+                if age < 3600:  # 1h
+                    obj = json.loads(cp.read_text()) if cp.read_text() else {}
+                    if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
+                        cached_odds_map = obj.get("data") or {}
+                        print(f"[odds_map] loaded {len(cached_odds_map)} cached entries (age={age:.0f}s)")
+        except Exception:
+            cached_odds_map = {}
 
     markets_param = ",".join(_STAT_MARKET.values())  # player_points,player_rebounds,player_assists
     _market_to_stat = {v: k for k, v in _STAT_MARKET.items()}
@@ -8681,11 +8739,21 @@ def _build_player_odds_map(games):
             print(f"[odds_map] events fetch failed: HTTP {ev_r.status_code} (remaining={remaining}, used={used}) — {ev_r.text[:200]}")
             if ev_r.status_code == 401:
                 print("[odds_map] hint: 401 usually means invalid/expired ODDS_API_KEY or wrong key pasted (try re-key in Railway)")
+            if require_fresh_book_odds:
+                _code = "odds_events_http_401" if ev_r.status_code == 401 else "odds_events_http"
+                raise OddsApiRequiredError(
+                    _code,
+                    f"Odds API events HTTP {ev_r.status_code}: {ev_r.text[:200]}",
+                )
             return cached_odds_map or {}
         all_events = ev_r.json()
         print(f"[odds_map] Odds API returned {len(all_events)} events (remaining={remaining}, used={used})")
+    except OddsApiRequiredError:
+        raise
     except Exception as e:
         print(f"[odds_map] events fetch error: {e}")
+        if require_fresh_book_odds:
+            raise OddsApiRequiredError("odds_events_network", str(e)) from e
         return cached_odds_map or {}
 
     # Map gameId → Odds API event_id
@@ -8714,6 +8782,11 @@ def _build_player_odds_map(games):
         if all_events:
             sample = [(ev.get("home_team","?"), ev.get("away_team","?")) for ev in all_events[:3]]
             print(f"[odds_map] sample Odds API events: {sample}")
+        if require_fresh_book_odds:
+            raise OddsApiRequiredError(
+                "odds_no_matching_events",
+                f"ESPN games={len(games)}, Odds API events={len(all_events)}",
+            )
         return cached_odds_map or {}
 
     # Step 2: fetch props for each game in parallel (1 call per game)
@@ -8812,8 +8885,19 @@ def _build_player_odds_map(games):
         }
 
     print(f"[odds_map] fetched {len(result_map)} player+stat lines from Odds API")
-    if not result_map and cached_odds_map:
-        return cached_odds_map
+    if not result_map:
+        if require_fresh_book_odds:
+            if outcomes_count == 0:
+                raise OddsApiRequiredError(
+                    "odds_no_outcomes",
+                    "Odds API returned no usable player prop outcomes for matched games",
+                )
+            raise OddsApiRequiredError(
+                "odds_no_prop_lines",
+                "Could not aggregate any consensus lines from Odds API outcomes",
+            )
+        if cached_odds_map:
+            return cached_odds_map
 
     if result_map:
         try:
@@ -9034,10 +9118,12 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
     if not all_proj:
         return None, "no_projections"
     line_config = sanitize_line_config(_cfg("line", _CONFIG_DEFAULTS.get("line", {})))
-    # Fetch bookmaker lines from Odds API for all slate games — used as the
-    # primary "line" value in picks instead of ESPN season averages.
-    # Falls back to {} if ODDS_API_KEY is missing or API fails (graceful degradation).
-    player_odds_map = _build_player_odds_map(target_games)
+    # Fetch bookmaker lines from Odds API — required for Line of the Day (no stale-map / model-only substitute).
+    try:
+        player_odds_map = _build_player_odds_map(target_games, require_fresh_book_odds=True)
+    except OddsApiRequiredError as e:
+        print(f"[line] Odds API required — {e.code}: {e.detail}")
+        return None, {"type": "odds_required", "code": e.code, "detail": e.detail}
     news_context = ""
     dvp_data = {}
     fv_edge_map = {}
@@ -9169,7 +9255,7 @@ async def _get_or_generate_next_slate_pick(today, direction: str):
 
     # Direction missing from next-day file — generate it
     eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, next_slate)
-    if err or not eng_result:
+    if _is_odds_required_line_err(err) or err or not eng_result:
         return None, None
     new_pick = eng_result.get(dir_key)
     if not new_pick:
@@ -9270,14 +9356,23 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             eng_result, err = await asyncio.to_thread(
                 _run_line_engine_for_date, today, False, True
             )
+            if _is_odds_required_line_err(err):
+                _payload = _line_odds_required_response(err)
+                _payload.update(_line_payload_meta("odds_failed", stale=False, refreshing=False))
+                return JSONResponse(_payload, status_code=200)
             if err or not eng_result or not eng_result.get("pick"):
                 print(f"[line-of-the-day] first attempt failed ({err}), retrying...")
                 eng_result, err = await asyncio.to_thread(
                     _run_line_engine_for_date, today, True, False
                 )
+            if _is_odds_required_line_err(err):
+                _payload = _line_odds_required_response(err)
+                _payload.update(_line_payload_meta("odds_failed", stale=False, refreshing=False))
+                return JSONResponse(_payload, status_code=200)
             if err or not eng_result or not eng_result.get("pick"):
+                _em = err if isinstance(err, str) else "no_projections"
                 return JSONResponse({"pick": None, "over_pick": None, "under_pick": None,
-                                     "error": err or "no_projections"}, status_code=200)
+                                     "error": _em}, status_code=200)
             try:
                 json_path = f"data/lines/{today_str}_pick.json"
                 existing_json, _ = _github_get_file(json_path)
@@ -9299,7 +9394,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             eng_result, err = await asyncio.to_thread(
                 _run_line_engine_for_date, today, False, True
             )
-            if not err and eng_result:
+            if not _is_odds_required_line_err(err) and not err and eng_result:
                 if missing_over and eng_result.get("over_pick"):
                     today_picks["over_pick"] = eng_result["over_pick"]
                     today_picks["over_pick"].setdefault("date", today_str)
@@ -9479,8 +9574,10 @@ async def line_force_regenerate():
     today_str = today.isoformat()
 
     eng_result, err = await asyncio.to_thread(_run_line_engine_for_date, today)
+    if _is_odds_required_line_err(err):
+        return JSONResponse({**_line_odds_required_response(err), "status": "failed"}, status_code=503)
     if err or not eng_result or not eng_result.get("pick"):
-        return _err(err or "no_projections", 503)
+        return _err(err if isinstance(err, str) else "no_projections", 503)
 
     saves = {"over_pick": eng_result.get("over_pick"), "under_pick": eng_result.get("under_pick")}
     _github_write_file(
@@ -9571,7 +9668,19 @@ async def refresh_line_odds():
     if not picks:
         return {"status": "no_pick"}
 
-    player_odds_map = _build_player_odds_map(games)
+    try:
+        player_odds_map = _build_player_odds_map(games, require_fresh_book_odds=True)
+    except OddsApiRequiredError as e:
+        return JSONResponse(
+            {
+                "status": "odds_unavailable",
+                "error": e.code,
+                "message": _odds_required_hint(e.code),
+                "odds_detail": (e.detail or "")[:500],
+                "updated": False,
+            },
+            status_code=503,
+        )
     use_bulk = bool(player_odds_map)
 
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -10209,7 +10318,10 @@ async def auto_resolve_line(request: Request):
                                        f"line picks for {next_day_str}")
                     results["next_day"] = next_day_str
                 elif err:
-                    print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err}")
+                    if _is_odds_required_line_err(err):
+                        print(f"[auto-resolve] next-day generation failed (odds) for {next_day_str}: {err.get('code')} — {err.get('detail')}")
+                    else:
+                        print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err}")
         except Exception as e:
             print(f"[auto-resolve] next-day generation err: {e}")
 
@@ -12182,33 +12294,26 @@ def _run_parlay_engine_sync(today):
     if not all_proj:
         return None, "no_projections", {}
 
-    # Fetch odds
-    player_odds_map = _build_player_odds_map(target_games)
-    print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
-
-    # Synthetic fallback when Odds API unavailable: build model-only lines from
-    # projections (nearest 0.5 snap) so the parlay engine can still run.
-    # Fires when: props not yet published (~pre-5pm ET), Odds API down, or no
-    # game matching. Thresholds loosened below to compensate for no Vegas signal.
-    projection_only = not bool(player_odds_map)
+    # Fetch odds — required (no synthetic / projection-only substitute).
     has_key = bool(_get_odds_api_key())
-    if projection_only:
-        print(f"[parlay] no Odds API data (ODDS_API_KEY={'set' if has_key else 'empty'}) — "
-              f"building synthetic lines from {len(all_proj)} projections")
-        player_odds_map = {}
-        for _p in all_proj:
-            _name_lower = (_p.get("name") or "").lower()
-            if not _name_lower:
-                continue
-            for _stat_type, _key in (("points", "pts"), ("rebounds", "reb"), ("assists", "ast")):
-                _proj_val = float(_p.get(_key) or 0)
-                if _proj_val > 0.5:
-                    player_odds_map[(_name_lower, _stat_type)] = {
-                        "line": round(_proj_val * 2) / 2,
-                        "odds_over": -110,
-                        "odds_under": -110,
-                        "books_consensus": 0,
-                    }
+    try:
+        player_odds_map = _build_player_odds_map(target_games, require_fresh_book_odds=True)
+    except OddsApiRequiredError as e:
+        print(f"[parlay] Odds API required — {e.code}: {e.detail}")
+        debug = {
+            "projections": len(all_proj),
+            "odds_entries": 0,
+            "odds_unavailable": True,
+            "odds_error_code": e.code,
+            "odds_message": e.detail,
+            "has_key": has_key,
+            "odds_available": False,
+            "projection_only": False,
+        }
+        return None, "no_odds_data", debug
+
+    print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
+    projection_only = False
 
     rw_statuses = {}
     try:
@@ -12223,10 +12328,6 @@ def _run_parlay_engine_sync(today):
         print(f"[parlay] DvP fetch error (non-fatal): {_pdvp_err}")
 
     parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
-    if projection_only:
-        # Loosen thresholds when running on synthetic lines (no Vegas signal)
-        parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
-        parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
 
     gamelog_id_list = select_parlay_gamelog_player_ids(
         all_proj, target_games, player_odds_map, rw_statuses, parlay_config, projection_only
@@ -12251,11 +12352,11 @@ def _run_parlay_engine_sync(today):
 
     debug = {
         "projections": len(all_proj),
-        "odds_entries": 0 if projection_only else len(player_odds_map),
+        "odds_entries": len(player_odds_map),
         "gamelogs": len(gamelogs),
         "gamelog_pool": len(player_ids),
-        "odds_available": not projection_only,
-        "projection_only": projection_only,
+        "odds_available": True,
+        "projection_only": False,
         "fair_value_entries": len(_parlay_fv_data),
         "has_key": has_key,
     }
@@ -12356,12 +12457,21 @@ async def get_parlay(request: Request):
                              "This usually resolves in a few minutes. Please retry.")
             elif no_odds and not has_key:
                 narrative = "ODDS_API_KEY not configured. Parlay requires a valid Odds API key to fetch player prop lines."
+            elif err == "no_odds_data" and debug:
+                _oc = debug.get("odds_error_code") or "odds_unavailable"
+                _hint = _odds_required_hint(_oc)
+                _detail = (debug.get("odds_message") or "").strip()
+                if _detail and _detail != _oc and _detail not in _hint and len(_detail) < 400:
+                    narrative = f"{_hint} — {_detail}"
+                else:
+                    narrative = _hint
             elif no_odds:
-                narrative = "Could not retrieve player prop lines from the Odds API. The request returned no data — this may be a temporary API issue. Please try again."
+                narrative = "Could not retrieve player prop lines from the Odds API. Please try again."
             else:
                 narrative = "No valid 3-leg parlay found on today's slate. This typically means too few games, insufficient odds data, or all candidates were filtered by anti-fragility checks."
+            out_err = (debug.get("odds_error_code") if (err == "no_odds_data" and debug) else None) or err or "no_valid_parlay"
             return JSONResponse({
-                "legs": [], "error": err or "no_valid_parlay",
+                "legs": [], "error": out_err,
                 "narrative": narrative,
                 "locked": slate_locked,
                 "debug": debug or {},
@@ -12431,7 +12541,7 @@ async def get_parlay(request: Request):
 async def parlay_force_regenerate(request: Request):
     """Force-generate (or re-generate) a parlay, overwriting any cached/saved version.
     Accepts optional ?date=YYYY-MM-DD for historical regeneration (defaults to today).
-    Uses real Odds API props when available; falls back to synthetic projection-based lines.
+    Requires a working Odds API (real player prop lines — no projection substitute).
     No CRON_SECRET required — user-facing from the Parlay tab."""
     date_param = str(request.query_params.get("date", "")).strip()
     if date_param:
@@ -12473,9 +12583,21 @@ async def parlay_force_regenerate(request: Request):
         }, status_code=200)
 
     if err or not result:
+        if err == "no_odds_data" and debug:
+            _oc = debug.get("odds_error_code") or "odds_unavailable"
+            _hint = _odds_required_hint(_oc)
+            _detail = (debug.get("odds_message") or "").strip()
+            if _detail and _detail != _oc and _detail not in _hint and len(_detail) < 400:
+                narrative = f"{_hint} — {_detail}"
+            else:
+                narrative = _hint
+            out_err = debug.get("odds_error_code") or err
+        else:
+            narrative = f"Could not generate a parlay for {target_str}. {'' if not err else err}".strip().rstrip('.') + '.'
+            out_err = err or "no_valid_parlay"
         return JSONResponse({
-            "legs": [], "error": err or "no_valid_parlay",
-            "narrative": f"Could not generate a parlay for {target_str}. {'' if not err else err}".strip().rstrip('.') + '.',
+            "legs": [], "error": out_err,
+            "narrative": narrative,
             "debug": debug or {},
         }, status_code=200)
 
