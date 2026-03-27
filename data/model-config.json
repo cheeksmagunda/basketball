@@ -1,7 +1,7 @@
 {
-  "version": 76,
-  "updated_at": "2026-03-27T20:00:00Z",
-  "updated_by": "v76-pred-min-direction-factor-max-double-teams",
+  "version": 77,
+  "updated_at": "2026-03-27T21:00:00Z",
+  "updated_by": "v77-star-boost-cap-big-market-threshold-fix",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -16,9 +16,13 @@
   "card_boost": {
     "ceiling": 3.0,
     "floor": 0.2,
-    "big_market_star_ppg_threshold": 15.0,
-    "ml_additive_correction": -0.25,
+    "big_market_star_ppg_threshold": 10.0,
+    "ml_additive_correction": -0.40,
     "max_prior_weight": 0.0,
+    "star_ppg_tiers": [
+      {"min_ppg": 24, "boost_cap": 0.4},
+      {"min_ppg": 20, "boost_cap": 0.8}
+    ],
     "big_market_teams": [
       "LAL",
       "GS",
@@ -467,6 +471,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 77,
+      "date": "2026-03-27",
+      "change": "STAR BOOST CAP + BIG MARKET THRESHOLD FIX (v77). Observed Mar 27: Podz 2.2x predicted vs 1.4x actual, Mitchell far off (actual 0.2x), Melton/McConnell wrong direction, Javon Small 2.0x actual. Root causes: (1) High-PPG national stars (Mitchell 26PPG on CLE) get no big-market penalty since CLE not in big_market_teams — model has no signal he's massively popular. Fixed via new star_ppg_tiers hard cap: 24+PPG→cap 0.4x, 20+PPG→cap 0.8x. Applied after ML correction in both ML and fallback paths. (2) big_market_star_ppg_threshold 15.0→10.0 so GS role players like Podz (13PPG) now get is_bm=1, which feeds the ML model better signal for Warriors popularity. (3) ml_additive_correction -0.25→-0.40 to correct systematic overestimation across all players. Code: _cap_for_star() inner function in _est_card_boost, applied to both ML and fallback return paths."
+    },
     {
       "version": 69,
       "date": "2026-03-26",

@@ -2973,11 +2973,28 @@ def _est_card_boost(
         feat_vec = [_rs, _spts, _rpts, _smin, _pmin, is_bm, _pbucket]
     ml_pred = _lgbm_predict_boost(feat_vec)
 
+    # Star PPG tier caps — high-PPG players are nationally popular regardless of
+    # team market size, so the ML model (which uses is_big_market as a proxy) will
+    # systematically over-predict their boost. These hard caps apply after ML
+    # correction so a 26 PPG player like Mitchell cannot get predicted at 1.0x+
+    # when his actual boost is 0.2x.  Configurable via card_boost.star_ppg_tiers.
+    _star_tiers = sorted(
+        cb.get("star_ppg_tiers", []),
+        key=lambda t: float(t.get("min_ppg", 0)),
+        reverse=True,
+    )
+
+    def _cap_for_star(raw):
+        for _tier in _star_tiers:
+            if _spts >= float(_tier.get("min_ppg", 9999)):
+                return min(raw, float(_tier.get("boost_cap", ceiling)))
+        return raw
+
     if ml_pred is not None:
         # ML model + additive correction. No prior blending — boost must be
         # predicted purely from player profile (prior data not reliably available).
         correction = float(cb.get("ml_additive_correction", 0.0))
-        return _clamp_round_boost(float(ml_pred) + correction, floor_val, ceiling)
+        return _clamp_round_boost(_cap_for_star(float(ml_pred) + correction), floor_val, ceiling)
 
     # Deterministic fallback: derive boost from projected popularity.
     # Fitted from 909 observations: boost = 3.34 - 0.71 × log10(drafts), R²=0.642.
@@ -3000,7 +3017,7 @@ def _est_card_boost(
         fallback -= 0.08
     elif form_ratio <= 0.90:
         fallback += 0.08
-    out = _clamp_round_boost(fallback, floor_val, ceiling)
+    out = _clamp_round_boost(_cap_for_star(fallback), floor_val, ceiling)
     print(f"[WARN] boost model unavailable — heuristic fallback for {player_name}: {out}")
     return out
 
