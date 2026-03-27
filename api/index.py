@@ -885,7 +885,6 @@ _CONFIG_DEFAULTS = {
         "max_centers":99, "boost_leverage_power":0.5,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.0,       # zero damping — moonshot wants maximum upside
-        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
         # RS-bypass DISABLED: stars with 0.0-0.3x boost are a trap (Jokic TV 16-18 vs rotation TV 20+)
         "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
@@ -3372,6 +3371,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             raw_score *= float(bucket_cfg.get("low_mult", _bc_defaults.get("low_mult", 1.0)))
         raw_score = min(raw_score, rs_cap)
 
+    # ── Post-compression multiplier cap ────────────────────────────────
+    # Track raw_score before any post-compression boosts so we can cap
+    # the total multiplicative inflation.  Stacking cascade_rs × role_spike
+    # × breakout × archetype can reach 1.87× and inflate bench players
+    # from RS 3 to RS 6.  Cap at 1.40× (configurable) to prevent this.
+    _pre_boost_rs = raw_score
+    _max_post_mult = float(rs_cfg.get("max_post_compression_mult", 1.40))
+
     arch_cfg = rs_cfg.get("archetype_calibration", {})
     if arch_cfg.get("enabled", False):
         arch = _infer_player_archetype(pts, avg_min, reb, stats)
@@ -3464,6 +3471,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if _breakout_prob >= _bo_min_prob:
         _spike_mult = 1.0 + _breakout_prob * _bo_max_mult
         raw_score = min(raw_score * _spike_mult, rs_cap)
+
+    # ── Enforce post-compression multiplier cap ─────────────────────────
+    # All post-compression boosts (archetype, close-game, cascade_rs,
+    # role_spike, breakout) have now been applied.  Clamp total inflation.
+    if _pre_boost_rs > 0:
+        _actual_mult = raw_score / _pre_boost_rs
+        if _actual_mult > _max_post_mult:
+            raw_score = round(_pre_boost_rs * _max_post_mult, 4)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -4785,11 +4800,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", _moon_defaults["min_recent_minutes_floor"])
     min_boost        = moon_cfg.get("min_card_boost", _moon_defaults["min_card_boost"])
 
-    # Wildcard thresholds — read once outside the loop
-    # Wildcard gate: ultra-high-boost deep bench players bypass season/recent min floors.
-    wildcard_boost        = moon_cfg.get("wildcard_min_boost", _moon_defaults["wildcard_min_boost"])
-    wildcard_min          = moon_cfg.get("wildcard_min_minutes", _moon_defaults["wildcard_min_minutes"])
-    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", _moon_defaults["wildcard_min_season_pts"])
     variance_penalty_coef = moon_cfg.get("variance_penalty", _moon_defaults["variance_penalty"])
     # Matchup intel from Claude Layer 1.5 (pre-fetched, passed in)
     _matchup_intel = matchup_intel or {}
@@ -4834,17 +4844,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         # High-boost role player pathway: consistent rotation player whose value comes
         # from a high card boost + real RS projection, not from minutes volume.
         # Example: 16 min/game player with +2.5x boost and RS 4.5 → chalk_ev 18.45 —
-        # beats many starters on EV. The boost floor IS the quality gate here.
+        # beats many starters on EV. Boost + minimum RS rating gate quality here.
         hbr_cfg = moon_cfg.get("high_boost_role", {})
         hbr_enabled     = hbr_cfg.get("enabled", True)
         hbr_min_boost   = float(hbr_cfg.get("min_boost", 2.0))
         hbr_min_recent  = float(hbr_cfg.get("min_recent_min", 14.0))
         hbr_min_pred    = float(hbr_cfg.get("min_pred_min", 14.0))
+        hbr_min_rating  = float(hbr_cfg.get("min_rating", 2.5))
         is_high_boost_role = (
             hbr_enabled
             and est_mult >= hbr_min_boost
             and recent_min >= hbr_min_recent
             and pred_min >= hbr_min_pred
+            and p.get("rating", 0) >= hbr_min_rating
         )
         if not (is_moonshot_regular or is_moonshot_spot_starter
                 or is_role_spike or is_high_boost_role):
@@ -5144,7 +5156,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     if len(moonshot_pool) < 5:
         relaxed_pool = []
         # Keep this conservative: only relax when the strict pool is too thin.
-        relaxed_min_rating = 2.2
+        relaxed_min_rating = 2.5
         relaxed_min_pred_min = 12.0
         relaxed_min_boost = max(1.0, float(min_boost) - 0.5)
         for p in projections:
@@ -5834,20 +5846,26 @@ def _slate_has_flat_boosts(slate_obj: dict) -> bool:
 
 
 def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
-    """Trigger background full regeneration when locked cache is stale/suspicious."""
+    """Trigger background full regeneration when locked cache is stale/suspicious.
+    IMPORTANT: Only triggers for flat-boost anomalies. Deploy SHA mismatches are
+    intentionally suppressed during locked slates — changing picks mid-game is worse
+    than serving slightly stale model output. The new model will be used on the next
+    unlocked slate automatically."""
     _current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()
     _cached_sha = str((cached_slate or {}).get("deploy_sha", "") or "").strip()
     _sha_mismatch = bool(_current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7])
     _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
-    if not (_sha_mismatch or _flat_boosts):
+    if _sha_mismatch and not _flat_boosts:
+        # Deploy SHA mismatch alone is not worth regenerating during a locked slate.
+        # Users have already drafted based on the locked picks. Log and skip.
+        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — skipping regen (slate locked, picks preserved)")
+        return
+    if not _flat_boosts:
         return
     if getattr(_force_regenerate_bg, "_in_flight", False):
         return
     _force_regenerate_bg._in_flight = True
-    if _sha_mismatch:
-        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — background regeneration triggered")
-    elif _flat_boosts:
-        print(f"[{reason_prefix}] suspicious flat +1x boosts detected — background regeneration triggered")
+    print(f"[{reason_prefix}] suspicious flat +1x boosts detected — background regeneration triggered")
     threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
 
 
@@ -6662,6 +6680,18 @@ def _force_regenerate_sync(scope: str):
 
     # Step 5: Build the slate cache object and persist to all layers
     deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+    # Calculate lock_time from earliest game start (same logic as normal slate path)
+    _fr_lock_time = None
+    _fr_start_times = [g.get("startTime") for g in games if g.get("startTime")]
+    if _fr_start_times:
+        try:
+            _fr_earliest = min(_fr_start_times)
+            _fr_lock_buf = _cfg("projection.lock_buffer_minutes", 5)
+            _fr_gs = datetime.fromisoformat(_fr_earliest.replace("Z", "+00:00")).astimezone(timezone.utc)
+            _fr_lock_dt = _fr_gs - timedelta(minutes=_fr_lock_buf)
+            _fr_lock_time = _fr_lock_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass
     result = {
         "date": today_str, "games": games,
         "lineups": lineups, "locked": True,
@@ -6669,6 +6699,7 @@ def _force_regenerate_sync(scope: str):
         "score_bounds": _score_bounds_for_lineups(lineups),
         "deploy_sha": deploy_sha[:7] if deploy_sha else "",
         "watchlist": _fr_watchlist,
+        "lock_time": _fr_lock_time,
         "pass": 2,
     }
     if chalk or upside:
@@ -9272,7 +9303,12 @@ def _line_live_stat_dict(
 
     ev = data.get("header", {}).get("competitions", [{}])[0]
     game_status = ev.get("status", {})
-    completed = game_status.get("type", {}).get("completed", False)
+    _gst = game_status.get("type", {})
+    completed = (
+        _gst.get("completed", False)
+        or _gst.get("state", "").lower() == "post"
+        or _gst.get("name", "").upper() == "STATUS_FINAL"
+    )
     period = game_status.get("period", 0)
     clock = game_status.get("displayClock", "")
 
@@ -9602,8 +9638,13 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
     data = _espn_get(f"{ESPN}/scoreboard?dates={query_date}")
     team_played_in_final = False
     for ev in data.get("events", []):
-        # Only use completed games
-        completed = ev.get("status", {}).get("type", {}).get("completed", False)
+        # Only use completed games (check all ESPN completion signals)
+        _evt = ev.get("status", {}).get("type", {})
+        completed = (
+            _evt.get("completed", False)
+            or _evt.get("state", "").lower() == "post"
+            or _evt.get("name", "").upper() == "STATUS_FINAL"
+        )
         if not completed:
             continue
         game_id = ev.get("id", "")
@@ -10103,7 +10144,15 @@ def _all_games_final(games):
     def _tally(scoreboard_data):
         fins, rem, latest = 0, 0, None
         for ev in scoreboard_data.get("events", []):
-            completed = ev.get("status", {}).get("type", {}).get("completed", False)
+            _st = ev.get("status", {}).get("type", {})
+            # ESPN has multiple completion signals — `completed` (bool) lags behind
+            # `state` ("post") and `name` ("STATUS_FINAL"). Check all three so we
+            # detect game completion as fast as the NBA app does.
+            completed = (
+                _st.get("completed", False)
+                or _st.get("state", "").lower() == "post"
+                or _st.get("name", "").upper() == "STATUS_FINAL"
+            )
             start = ev.get("date", "")
             if completed:
                 fins += 1
@@ -10140,25 +10189,24 @@ def _all_games_final(games):
     # AGGRESSIVE FALLBACK: If ESPN isn't marking games as complete but they've been
     # running for 4.5+ hours, treat as final anyway. This handles ESPN API delays.
     # NBA games max ~3.5h; 4.5h buffer includes OT, 2OT, and processing delays.
-    # KEY: Removed the `finals > 0` requirement. Now fires even if ESPN is completely
-    # lagged on all game statuses. This prevents 6-hour lock ceiling waits when ESPN
-    # is slow during high-traffic periods (evening games on Saturdays).
-    if not all_final and remaining > 0 and latest_remaining:
+    # v72: Also fires when remaining=0 AND we have slate game start times as fallback.
+    # Mar 26 bug: ESPN returned finals=0, remaining=0 for a completed 3-game slate,
+    # keeping the app locked indefinitely. Now uses slate start times when ESPN is empty.
+    _fallback_latest = latest_remaining
+    if not _fallback_latest and games:
+        # ESPN scoreboard empty — use slate game start times as fallback
+        _slate_starts = [g.get("startTime", "") for g in games if g.get("startTime")]
+        if _slate_starts:
+            _fallback_latest = max(_slate_starts)
+    if not all_final and _fallback_latest:
         try:
-            latest_dt = datetime.fromisoformat(latest_remaining.replace("Z", "+00:00"))
+            latest_dt = datetime.fromisoformat(_fallback_latest.replace("Z", "+00:00"))
             hours_since_start = (now_ts - latest_dt.timestamp()) / 3600
             if hours_since_start >= 4.5:
                 all_final = True
-                print(f"[espn fallback] latest_remaining running {hours_since_start:.1f}h — forcing all_final=True (ESPN lagged)")
+                print(f"[espn fallback] latest game started {hours_since_start:.1f}h ago — forcing all_final=True (ESPN lagged/empty)")
         except Exception:
             pass
-
-    # Safety: if ESPN returned no data (both counts 0), we cannot confirm games
-    # are final even if it's past game time. Only lock files and manual override
-    # can force unlock when ESPN is unreachable. This prevents false unlock during
-    # ESPN outages that coincide with off-days or startup delays.
-    if finals == 0 and remaining == 0:
-        all_final = False
 
     result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
@@ -11913,6 +11961,15 @@ async def get_parlay(request: Request):
         except Exception as _ge:
             print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
 
+        # Lock guard: once slate is locked, refuse to regenerate. The parlay should
+        # have been generated pre-lock (via cron or first visit). Regenerating during
+        # a live slate produces different results as Odds API drops pre-game props,
+        # causing confusing mid-slate parlay changes. Mar 26 bug: parlay kept changing.
+        if slate_locked:
+            print(f"[parlay] slate locked, no cached/GitHub parlay — returning empty (not regenerating)")
+            return JSONResponse({"error": "parlay_locked", "locked": True,
+                                 "message": "Parlay was not generated before lock. Check back tomorrow."})
+
         result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
 
         if err or not result:
@@ -12205,9 +12262,10 @@ async def parlay_history(request: Request):
                 print(f"[parlay-history] cache sync after resolve: {_ph_sync_err}")
 
         # Recent history: concluded tickets only (no live/future; backend is source of truth).
+        # Exclude today — today's parlay is already shown as the active ticket card.
         history_parlays = []
         for date_str, parlay in results_with_dates:
-            if date_str > today_str:
+            if date_str >= today_str:
                 continue
             if not _parlay_fully_concluded(parlay):
                 continue

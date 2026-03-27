@@ -403,7 +403,7 @@ Mar 18 leaderboard analysis: winners are **rotation players with 20+ minutes AND
 
 ### Projection-level gates (project_player)
 
-- **Minimum 6 projected pts** (moonshot floor) — universal floor in `project_player()` uses `min_pts_projection_moonshot` (default 6.0); filters out deep bench players (Missi 5.5, Matkovic 5.7) who never produce
+- **Minimum 5 projected pts** (moonshot floor) — universal floor in `project_player()` uses `min_pts_projection_moonshot` (default 5.0); filters out deep bench players who never produce
 - **Minimum 0.22 pts/min** (moonshot floor) — `min_pts_per_minute_moonshot` (default 0.22); chalk enforces stricter 0.28 separately
 - **Scoring bias multiplier** — players whose pts drive their base score (scorers)
   receive a mild upside boost (up to 1.15×) over balanced accumulators
@@ -420,8 +420,7 @@ Mar 18 leaderboard analysis: winners are **rotation players with 20+ minutes AND
 - **Minimum 3.0 rating** — Mar 18 winners all had RS 2.8+ actual; 2.0 floor let in RS 0.7-1.5 players
 - **Minimum 1.5 card boost** — moonshot is contrarian; this is the core filter
 - **Season/recent min >= 20** — proven rotation players (Sensabaugh 22min, GP2 20min, Clingan 23min pass; Missi 19min, Jackson 16min, Matkovic 14min filtered)
-- **Minimum 6 projected PPG** and **0.22 pts/min** — require real scoring production
-- **Wildcard gate**: boost >= 2.0, min 15 min, min 7 PPG — no garbage-time wildcards
+- **Minimum 5 projected PPG** and **0.22 pts/min** — require real scoring production
 - **Boost leverage power 1.2** (down from 1.6) — reduces +3x boost dominance from 5.8x to 3.7x
 - **No center penalty** — Poeltl, Queta, Achiuwa all appear in winning lineups
 - **Light variance damping** (0.15, down from 0.45) — moonshot wants upside
@@ -441,8 +440,11 @@ while widening the ceiling for high-upside players:
 - **rs_cap**: 20.0 (was 15.0, applied 4× in pipeline) — removes artificial ceiling that bunched everyone
 - **AI blend**: 35/65 AI/heuristic (`ai_blend_weight: 0.35`) — LightGBM clusters outputs in 2.5-4.5; lower AI weight preserves a wider RS spread from the heuristic path.
 
+- **max_post_compression_mult**: 1.40 — caps total stacked post-compression multipliers (archetype × cascade_rs × role_spike × breakout) to prevent bench players from inflating from RS 3 to RS 6+. Mar 27 showed Sasser projected 6.1 but actual 0.2 — the 4 stacking boosts created a 1.87× inflation.
+
 **Result**: RS distribution widens from ~3-4.5 to ~2-8. Stars can project RS 6-8,
 role players stay at RS 2-4, and the gap between them drives better lineup selection.
+Post-compression cap prevents runaway inflation for cascade-elevated bench players.
 
 ### Design rationale
 
@@ -473,11 +475,10 @@ Team incentive gates in `team_motivation`: `enabled`, `start_date`, `seeding_gap
 
 Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
 `min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
-`wildcard_min_boost`, `wildcard_min_minutes`, `wildcard_min_season_pts`,
 `max_centers`, `max_per_team`, `dev_team_pts_floor`, `pred_min_tolerance` (default 3.0),
 `rs_bypass.enabled`, `rs_bypass.min_rating`, `rs_bypass.min_season_min`, `rs_bypass.min_boost`,
 `high_boost_role.enabled`, `high_boost_role.min_boost`, `high_boost_role.min_recent_min`,
-`high_boost_role.min_pred_min`, `scorer_upside.enabled`, `scorer_upside.min_pts_per_min`,
+`high_boost_role.min_pred_min`, `high_boost_role.min_rating`, `scorer_upside.enabled`, `scorer_upside.min_pts_per_min`,
 `scorer_upside.min_season_pts`, `scorer_upside.multiplier`,
 `roto_confirmed_min_rating`, `roto_confirmed_min_boost`.
 
@@ -539,7 +540,7 @@ Per-game in `per_game`: `enabled`, `total_baseline` (222), `total_mult_strength`
 When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single **core pool** of up to 15 players projected to "pop off" that day. The core is the union of chalk-eligible players, ranked by a core score, with top N selected. **Starting 5** = best 5-of-core for reliability (chalk_ev); **Moonshot** = best 5-of-core for ceiling (moonshot_ev). High exposure and repeats across the two lineups are intended — they are different configurations of the same high-confidence pool. Config: `core_pool.enabled`, `core_pool.size`, `core_pool.metric` (`"rs"` | `"max_ev"` | `"blend"`), `core_pool.blend_weight`. **RS-first strategy (v8)**: `metric = "rs"` ranks core pool by raw projected RS (the `rating` field) so the highest-RS players always enter the MILP candidate set regardless of card boost. `"max_ev"` uses `max(chalk_ev, moonshot_ev)`, `"blend"` uses weighted average. When `core_pool.enabled` is false, legacy behavior: separate chalk and moonshot pools, each MILP from its own pool (overlap still allowed). Target: **70+ total draft score** for both.
 
 ### Slate-Wide: Starting 5 (chalk)
-MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 22-minute season avg minutes floor** (`season_min >= 22`) and **20-minute recent avg** (`recent_min >= 20`). Configurable via `projection.chalk_season_min_floor` and `chalk_recent_min_floor`. **Star anchor pathway**: players with season_pts >= 20 bypass the boost floor (`chalk_min_boost_floor`), letting one high-PPG star into the pool on nights they project well. Limited by `chalk_max_stars=1`.
+MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 16-minute season avg minutes floor** (`season_min >= 16`) and **16-minute recent avg** (`recent_min >= 16`). Configurable via `projection.chalk_season_min_floor` and `chalk_recent_min_floor`. **Boost floor lowered to 0.3** (`chalk_min_boost_floor`) so top RS performers (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) enter the chalk pool — the MILP with `chalk_milp_rs_focus=0.75` handles RS-first selection. **Star anchor pathway** (widened): players with season_pts >= 12 and rating >= 3.5 bypass the boost floor. Up to 3 stars allowed (`star_anchor.max_count`).
 
 ### Slate-Wide: Moonshot (v8 — RS-first)
 RS-first strategy: **top projected RS scorers drive selection**, with boost as a secondary signal. Formula: `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)` where `boost_leverage = est_mult^0.6` (reduced from 1.2 — halves boost dominance so RS quality is the primary signal). **Season/recent min >= 20**. **Minimum 3.5 rating**. **Minimum 6 PPG and 0.22 pts/min** at projection level. **No center penalty**. Wildcard gate: boost >= 2.0, min 15 min, min 7 PPG. Matchup factor from opponent defensive quality. **RS-bypass pathway**: high-RS players (rating >= 5.0, season_min >= 25) bypass the boost floor (`min_card_boost`) even with low boost (>= 0.3), ensuring top scorers always compete for moonshot slots. Config: `moonshot.rs_bypass.enabled`, `moonshot.rs_bypass.min_rating`, `moonshot.rs_bypass.min_season_min`, `moonshot.rs_bypass.min_boost`. **Star anchor pathway** (same as Starting 5): stars with season_pts >= 20, season_min >= 25, rating >= 4.0 bypass the `min_card_boost` gate. Up to 3 stars allowed (`star_anchor.max_count`). Philosophy: projected RS is the foundation; boost amplifies but cannot substitute for real production.
@@ -602,8 +603,6 @@ Key knobs in `moonshot` section of model-config.json:
 - `variance_penalty`: 0.15 — light damping; moonshot wants upside
 - `max_centers`: 3 — Poeltl, Queta, Achiuwa all appear in winning lineups
 - `max_per_team`: 3 — allows team stacks
-- `wildcard_min_minutes`: 15, `wildcard_min_season_pts`: 7 — no garbage-time wildcards
-
 ### Spread Adjustment (continuous, no cliff edges)
 - Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
 - Stars/starters: peak 1.15× at pick'em, continuous decay, floors at 0.70× for heavy favorites.
@@ -1092,6 +1091,8 @@ If slate, line, and/or log all fail to load:
 | Per-game draft strategy redesign (v60) | `api/index.py`, `data/model-config.json`, `index.html` | 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23). 6-step pipeline: game script → per-game strategy adjustments (F1-F6) → eligibility gating → MILP → 5! permutation validation → strategy metadata. New functions: `_per_game_strategy()`, `_per_game_adjust_projections()`, `_validate_slot_assignment()`. Config: `per_game.*` (20 params). Frontend: strategy insight bar, ANCHOR/FAV pills, color-coded strategy badge. Strategy types: Balanced Build / Standard Build / Blowout Lean + Shootout/Grind overlays. Score bounds widened to (20, 42). 38 new tests. |
 | Line engine stress test recalibration | `api/line_engine.py`, `data/model-config.json` | End-of-season analytical review of the 100-point confidence system. **Auto-fade matrix** (`_check_auto_fade`): (1) B2B guard exhaustion — guards/wings on own B2B vetoed for PTS/AST overs (glycogen depletion). (2) Blowout truncation — starters in spread>=10 games vetoed for ALL overs (4th-quarter benching). (3) Rotation squeeze — bench players in tight games (spread<=4) vetoed for overs (shortened rotations). **Percentage-based edge scaling**: Flat 2.5 edge threshold replaced with 18% dynamic scaling for rebounds/assists — `_compute_pct_edge()` makes edge proportional to line volume (2.5 on 5.5 line = 45% improbable; 2.5 on 12.5 line = 20% plausible). **Momentum ratio lowered**: `recent_form_over_ratio` 1.15→1.07 — stops buying at peak variance where sportsbooks have already adjusted. **Juice-as-under-signal**: Heavy over juice (-130+) now generates +8 under confidence bonus instead of vetoing unders — recognizes that juice reflects public bias management, not sharp money signal. **Player B2B signals**: Player's own B2B generates +10 under bonus / -8 over penalty (new signal types). **Relaxed trivial line floors**: `stat_floors_under` (pts 4.0, reb 3.5, ast 1.0) — counting stats accumulate in increments of 1 with hard floor of zero, making low-line unders highly predictable. **Tiered blowout bonus**: Spread 8-10 gives +6, spread 10+ gives +10. **Claude prompt updated** with auto-fade rules, percentage edge guidance, juice-as-friend rule, trivial line under validation, player B2B fatigue context. Config: `line.auto_fade.*`, `line.pct_edge_rebounds`, `line.pct_edge_assists`, `line.juice_under_threshold`, `line.stat_floors_under`. 34 new tests. |
 | Parlay post-mortem v2 optimization | `api/parlay_engine.py`, `api/index.py`, `data/model-config.json` | Quantitative post-mortem of 2024-2026 NBA parlay architectures. **Auto-fade matrix**: (1) Centers rebounds over vs switch-heavy defenses (BOS/CLE/MIN/OKC) auto-faded — paint positioning neutralized by perimeter switching. (2) B2B correlated pair penalty (0.75x) — cognitive/physical fatigue breaks assists→points chain; 57% spread-failure rate on B2B. (3) Perimeter-to-perimeter correlation fade (0.95x penalty) — 3PT-dependent scoring chain is fragile. (4) Fake juice trap — high L5-L10 hit rate (>80%) + low season model_prob (<55%) = regression trap at peak valuation. **Threshold recalibrations**: Spread tightened 6.5→5.0 (blowout mirage — 51.4% of games decided by 10+ pts). Game total floor 225.5 (possession guarantee for correlated pairs). CV-based market match validation (volatile ≠ reliable). Dynamic Leg 1 substitution (rebounds→pts/ast vs elite defense). **Tiered correlation enhancers**: PnR-to-rim (1.20x for C/PF with 7+ reb — most stable conversion), pace asymmetry (1.06x for 232+ total games), rest advantage (1.08x team rested vs opponent B2B). Config: `parlay.auto_fade.*`, `parlay.min_game_total`, `parlay.market_match_max_cv`, `parlay.pnr_rim_boost`, `parlay.pace_boost*`, `parlay.rest_advantage_boost`. 25 new tests (101 total in test_parlay.py). |
+
+| Mar 27 draft review — S5 coverage + RS inflation fix | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | **Problem**: Mar 27 slate — moonshot hit 1/5 (Jenkins #1, but Sasser/McDermott/Alvarado/Carter all missed). S5 blocked top RS performers (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) via 1.5x chalk boost floor. RS over-projection: 4 stacked post-compression multipliers (cascade_rs × role_spike × breakout × archetype = 1.87×) inflated Sasser from RS 3.0 to 6.1. **Fix 1**: `chalk_min_boost_floor` 1.5→0.3, star anchor widened (min_season_pts 20→12, min_rating 4.5→3.5, max_count 2→3) so top RS performers enter chalk pool and MILP (rs_focus=0.75) selects them. **Fix 2**: Post-compression multiplier cap (`max_post_compression_mult: 1.40`) — tracks `_pre_boost_rs` before archetype/cascade/spike/breakout boosts; clamps total inflation to 1.40×. Prevents bench players from inflating from RS 3 to 6+. **Fix 3**: HBR `min_rating: 2.5` (already in config+code from prior session). **Goal**: S5 catches top RS carries (Duren, Knueppel, DeRozan, Banchero), Moonshot catches one-slate-ahead contrarians (Jenkins, Plowden, Huerter); 2-3 "lock" players overlap in both lineups. |
 
 ## Loading audit
 
