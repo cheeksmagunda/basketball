@@ -42,6 +42,10 @@ except ImportError:
 
 from api.shared import SLOT_MULTIPLIERS, SLOT_LABELS
 
+# One-shot diagnostics when PuLP/MILP cannot run (production normally has both).
+_PULP_MISSING_LOGGED = False
+_MILP_FAILURE_LOGGED = False
+
 # Slot multipliers: Real Sports App draft slot values
 
 
@@ -86,7 +90,14 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
         return result
 
     if not PULP_AVAILABLE:
-        return _fallback_sort(projections, n, sort_key)
+        global _PULP_MISSING_LOGGED
+        if not _PULP_MISSING_LOGGED:
+            print(
+                "[WARN] PuLP not installed — lineup optimizer uses greedy sort fallback",
+                flush=True,
+            )
+            _PULP_MISSING_LOGGED = True
+        return _fallback_sort(projections, n, sort_key, max_per_game, player_games)
 
     try:
         selected = _solve_milp(projections, n, min_per_team, max_per_team,
@@ -122,8 +133,15 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
                                max_star_count=0)
 
         return selected
-    except Exception:
-        return _fallback_sort(projections, n, sort_key)
+    except Exception as e:
+        global _MILP_FAILURE_LOGGED
+        if not _MILP_FAILURE_LOGGED:
+            print(
+                f"[WARN] MILP lineup solver failed ({e!r}); using greedy sort fallback",
+                flush=True,
+            )
+            _MILP_FAILURE_LOGGED = True
+        return _fallback_sort(projections, n, sort_key, max_per_game, player_games)
 
 
 def _solve_milp(projections, n, min_per_team, max_per_team, rating_key,

@@ -1285,13 +1285,21 @@ def _lgbm_predict_rs(feat_vec: list) -> Optional[float]:
     _ensure_lgbm_loaded()
     if AI_FEATURES is not None and len(feat_vec) != len(AI_FEATURES):
         raise ValueError(f"Feature mismatch: model expects {len(AI_FEATURES)}, got {len(feat_vec)}")
-    arr = np.array([feat_vec])
+    arr = np.array([feat_vec], dtype=np.float64)
     if AI_MODEL_BASELINE is not None and AI_MODEL_SPIKE is not None:
         base = float(AI_MODEL_BASELINE.predict(arr)[0])
         spike = float(AI_MODEL_SPIKE.predict(arr)[0])
-        return base + max(0.0, spike)
+        out = base + max(0.0, spike)
+        if not math.isfinite(out):
+            print(f"[WARN] LightGBM RS prediction non-finite ({out}) — skipping AI blend for this player")
+            return None
+        return out
     if AI_MODEL is not None:
-        return float(AI_MODEL.predict(arr)[0])
+        out = float(AI_MODEL.predict(arr)[0])
+        if not math.isfinite(out):
+            print(f"[WARN] LightGBM RS prediction non-finite ({out}) — skipping AI blend for this player")
+            return None
+        return out
     return None
 
 
@@ -1353,8 +1361,12 @@ def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
         )
         return None
     try:
-        arr = np.array([feat_vec])
-        return float(BOOST_MODEL.predict(arr)[0])
+        arr = np.array([feat_vec], dtype=np.float64)
+        v = float(BOOST_MODEL.predict(arr)[0])
+        if not math.isfinite(v):
+            print(f"[boost_model] prediction non-finite ({v}) — heuristic boost path")
+            return None
+        return v
     except Exception as e:
         print(f"[boost_model] inference failed: {e}")
         return None
@@ -3134,7 +3146,7 @@ def _est_card_boost(
         # 2. Per-team popularity ceiling (popular franchise role players)
         return min(raw, _team_ceil)
 
-    if ml_pred is not None:
+    if ml_pred is not None and math.isfinite(float(ml_pred)):
         # ML model + additive correction. No prior blending — boost must be
         # predicted purely from player profile (prior data not reliably available).
         correction = float(cb.get("ml_additive_correction", 0.0))
@@ -3515,7 +3527,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         mc_strength = float(rs_cfg.get("mc_strength", 0.5))
         usage_gate = min(usage_rate / 1.0, 1.5)  # caps at 1.5 for elite usage
         s_base_mc = s_base + mc_bonus * mc_strength * usage_gate
-    except Exception:
+    except Exception as _mc_e:
+        if not getattr(project_player, "_mc_path_warned", False):
+            setattr(project_player, "_mc_path_warned", True)
+            print(
+                f"[WARN] Monte Carlo RS path failed (using pre-MC score only): {_mc_e}",
+                flush=True,
+            )
         s_base_mc = s_base  # fallback: pure heuristic if MC fails
 
     raw_linear = s_base_mc / comp_div
@@ -3580,8 +3598,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             close_mult = 1.0 + (c_c - 1.0) * usage_scale * strength
             close_mult = max(0.85, min(close_mult, float(close_cfg.get("max_mult", 1.40))))
             raw_score = min(raw_score * close_mult, rs_cap)
-        except Exception:
-            pass  # non-fatal: real_score.py import or math error
+        except Exception as _ce:
+            if not getattr(project_player, "_close_mult_warned", False):
+                setattr(project_player, "_close_mult_warned", True)
+                print(f"[WARN] closeness multiplier skipped: {_ce}", flush=True)
 
     # ── Cascade RS boost — usage spike from teammate injury ────────────────
     # When a starter is OUT, backups inherit not just minutes but USAGE.
