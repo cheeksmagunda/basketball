@@ -1253,11 +1253,11 @@ class TestPredMinTolerance:
         assert cfg["projection"]["pred_min_tolerance"] == 2.0
 
     def test_moonshot_tolerance_config_exists(self):
-        """moonshot.pred_min_tolerance should be in model-config.json."""
+        """moonshot.pred_min_tolerance should be in model-config.json (tightened to 1.0)."""
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        assert cfg["moonshot"]["pred_min_tolerance"] == 3.0
+        assert cfg["moonshot"]["pred_min_tolerance"] == 1.0
 
     def test_chalk_tolerance_code_reads_config(self):
         """Chalk pool builder should use _cfg for tolerance, not hardcoded 0."""
@@ -2045,7 +2045,7 @@ class TestPerGameFloor:
 # TWO-PASS PIPELINE — watchlist and pass metadata
 # ---------------------------------------------------------------------------
 class TestBoostModelInference:
-    """Card boost: boost_model LightGBM uses direct 7-feature vector."""
+    """Card boost: boost_model LightGBM uses direct 8-feature vector."""
 
     def test_est_card_boost_uses_ml_when_model_returns_value(self):
         """When boost LightGBM returns a float, that value is clamped and returned."""
@@ -2067,16 +2067,19 @@ class TestBoostModelInference:
                 player_pos="G",
             )
 
-        assert len(captured["vec"]) == 7
-        assert captured["vec"][0] == 4.5
-        assert captured["vec"][1] == 14.0
-        assert captured["vec"][2] == 16.0
-        assert captured["vec"][3] == 28.0
-        assert captured["vec"][4] == 28.0
-        assert captured["vec"][5] == 0.0
-        assert captured["vec"][6] == 0.0
-        # ML returns 2.0, plus ml_additive_correction (-0.25) = 1.75, rounded to 1.8
-        assert b == 1.8
+        # 8-feature vector: [projected_rs, season_pts, recent_pts, season_min, pred_min,
+        #                     team_market_score, pos_bucket, ppg_tier]
+        assert len(captured["vec"]) == 8
+        assert captured["vec"][0] == 4.5            # projected_rs
+        assert captured["vec"][1] == 14.0           # season_pts
+        assert captured["vec"][2] == 16.0           # recent_pts
+        assert captured["vec"][3] == 28.0           # season_min
+        assert captured["vec"][4] == 28.0           # pred_min
+        assert captured["vec"][5] == 0.20           # team_market_score (MEM = 0.20)
+        assert captured["vec"][6] == 0.0            # pos_bucket (G = 0)
+        assert captured["vec"][7] == 2.0            # ppg_tier (14.0 PPG → tier 2)
+        # ML returns 2.0, ml_additive_correction=0.0 (no team ceiling in defaults) → 2.0
+        assert b == 2.0
 
     def test_est_card_boost_returns_heuristic_when_ml_none(self):
         """When boost model returns None, fallback must be non-flat heuristic (not 1.0 sentinel)."""
@@ -2099,15 +2102,15 @@ class TestBoostModelInference:
         from api.index import _est_card_boost
         import api.index as idx
 
-        # Patch both ML predict and prior so we isolate the ML-only path.
-        with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost, \
-             patch.object(idx, "_get_boost_prior", return_value=(None, 0)):
+        with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost:
             b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
             mock_boost.assert_called_once()
             args, _ = mock_boost.call_args
-            assert len(args[0]) == 7
-        # ML returns 1.5, plus ml_additive_correction (-0.25) = 1.25, rounded to 1.2
-        assert b == 1.2
+            # 8-feature vector: [rs, season_pts, recent_pts, season_min, pred_min,
+            #                     team_market_score, pos_bucket, ppg_tier]
+            assert len(args[0]) == 8
+        # ML returns 1.5, ml_additive_correction=0.0; no star_ppg_tiers in defaults → 1.5
+        assert b == 1.5
 
 
 class TestWatchlist:

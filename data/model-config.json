@@ -17,7 +17,7 @@
     "ceiling": 3.0,
     "floor": 0.0,
     "big_market_star_ppg_threshold": 10.0,
-    "ml_additive_correction": -0.40,
+    "ml_additive_correction": 0.0,
     "max_prior_weight": 0.0,
     "star_ppg_tiers": [
       {"min_ppg": 26, "boost_cap": 0.2},
@@ -397,7 +397,8 @@
     "role_spike_ratio": 1.4,
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
-    "pred_min_tolerance": 3.0,
+    "pred_min_tolerance": 1.0,
+    "min_proj_pts_ratio": 0.90,
     "high_boost_role": {
       "enabled": true,
       "min_boost": 2.0,

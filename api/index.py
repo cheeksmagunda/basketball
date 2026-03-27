@@ -742,10 +742,8 @@ _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
         "ceiling": 3.5, "floor": 0.2,
-        "big_market_star_ppg_threshold": 15.0,
-        "ml_additive_correction": -0.25,
+        "ml_additive_correction": 0.0,
         "max_prior_weight": 0.0,
-        "big_market_teams": ["LAL","GS","GSW","BOS","NY","NYK","PHI","MIA","DEN","LAC","CHI"],
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1312,6 +1310,38 @@ def _draft_pos_bucket(pos: str) -> int:
     if p[0] in ("G", "P") or p.startswith("PG") or p.startswith("SG"):
         return 0
     return 1
+
+
+# Continuous team market score (0.0–1.0) for all 30 NBA teams.
+# Higher = larger fanbase = player more likely to be drafted = lower expected card boost.
+# Must stay in sync with TEAM_MARKET_SCORES in train_boost_lgbm.py.
+_TEAM_MARKET_SCORES: dict[str, float] = {
+    "LAL": 1.00, "GSW": 0.95, "GS": 0.95, "BOS": 0.90, "NYK": 0.90, "NY": 0.90,
+    "PHI": 0.75, "MIA": 0.75, "LAC": 0.70, "CHI": 0.70,
+    "BKN": 0.65, "DEN": 0.65, "MIL": 0.60, "DAL": 0.60,
+    "HOU": 0.55, "PHX": 0.55, "ATL": 0.50, "TOR": 0.50,
+    "CLE": 0.45, "IND": 0.40, "ORL": 0.35, "POR": 0.35,
+    "DET": 0.30, "MIN": 0.30, "OKC": 0.25, "UTA": 0.25,
+    "SAS": 0.25, "NOP": 0.20, "NO": 0.20, "MEM": 0.20,
+    "CHA": 0.15, "SAC": 0.15, "WSH": 0.10,
+}
+
+
+def _ppg_tier_bucket(season_pts: float) -> int:
+    """Coarse PPG tier (0–4) for player recognition.
+
+    Replaces the binary is_big_market PPG threshold with a smooth gradient.
+    Must stay in sync with _ppg_tier_bucket() in train_boost_lgbm.py.
+    """
+    if season_pts < 8:
+        return 0   # bench/fringe
+    if season_pts < 13:
+        return 1   # role player
+    if season_pts < 18:
+        return 2   # secondary scorer
+    if season_pts < 24:
+        return 3   # main option
+    return 4       # star/franchise
 
 
 def _lgbm_predict_log1p_drafts(feat_vec: list) -> Optional[float]:
@@ -2838,7 +2868,7 @@ def _compute_breakout_probability(player_info, game_info=None):
 
 
 # grep: DRAFT TIER TARGETING
-def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw=0):
+def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw=0, market_score=None):
     """Estimate log10(expected draft count) from player profile.
 
     Calibrated from 578 top-performer entries:
@@ -2846,6 +2876,9 @@ def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw
     - Starters (15-25 PPG): ~150 drafts (log=2.2)
     - Role players (6-15 PPG): ~10-50 drafts (log=1.0-1.7)
     - Deep bench (<6 PPG): ~3 drafts (log=0.5)
+
+    market_score: continuous 0.0–1.0 (new). When provided, scales the market
+    adjustment smoothly. Falls back to binary is_big_market (+0.3) when not provided.
     """
     pts = max(float(season_pts), float(recent_pts))
     if pts >= 25:
@@ -2861,8 +2894,10 @@ def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw
     else:
         base = 0.5
 
-    # Big market teams get ~2x more drafts
-    if is_big_market:
+    # Market popularity adjustment: continuous score scales the ~2x drafts signal.
+    if market_score is not None:
+        base += 0.3 * float(market_score)
+    elif is_big_market:
         base += 0.3
 
     # Trending factor: recent scoring surge draws attention
@@ -2926,8 +2961,12 @@ def _est_card_boost(
 ):
     """Get card boost for Real Sports via LightGBM.
 
-    Direct 7-feature LightGBM (no min_proxy / no drafts-model chain):
-      [projected_rs, season_pts, recent_pts, season_min, pred_min, is_big_market, pos_bucket]
+    Direct 8-feature LightGBM (no min_proxy / no drafts-model chain):
+      [projected_rs, season_pts, recent_pts, season_min, pred_min,
+       team_market_score, pos_bucket, ppg_tier]
+
+    team_market_score (0.0–1.0) replaces the old binary is_big_market flag.
+    ppg_tier (0–4) segments player recognition without a hard PPG threshold cliff.
 
     Primary path is ML. If boost_model.pkl is unavailable/inference fails, falls back
     to a deterministic heuristic estimate (never hard-flattens to +1x across slate).
@@ -2936,20 +2975,6 @@ def _est_card_boost(
     ceiling   = cb.get("ceiling", 3.0)
     floor_val = cb.get("floor", 0.2)
 
-    big_markets = set(
-        cb.get(
-            "big_market_teams",
-            ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "DEN", "LAC", "CHI"],
-        )
-    )
-    # Only penalize big-market teams for stars — role players on NY/LAL are
-    # just as obscure as role players anywhere; applying the market flag to them
-    # systematically under-predicts their boost (observed: Alvarado NY -0.82x miss).
-    bm_star_threshold = float(cb.get("big_market_star_ppg_threshold", 0.0))
-    if bm_star_threshold > 0:
-        is_bm = 1.0 if (team_abbr in big_markets and float(season_pts or pts or 0.0) >= bm_star_threshold) else 0.0
-    else:
-        is_bm = 1.0 if team_abbr in big_markets else 0.0
     _rs  = float(projected_rs) if projected_rs is not None else 0.0
     _pm = float(proj_min) if proj_min is not None else 0.0
     _spts = float(season_pts or pts or 0.0)
@@ -2957,20 +2982,23 @@ def _est_card_boost(
     _smin = float(season_avg_min or _pm or 0.0)
     _pmin = float(_pm or _smin or 0.0)
     _pbucket = float(_draft_pos_bucket(player_pos))
+    _market_score = float(_TEAM_MARKET_SCORES.get((team_abbr or "").upper(), 0.3))
+    _ppg_tier = float(_ppg_tier_bucket(_spts))
 
-    # Runtime compatibility: if a legacy 2-feature boost bundle is loaded in a
-    # warm/stale runtime, keep ML inference alive instead of collapsing to 1.0.
-    # Modern path is 7-feature direct model.
+    # Runtime compatibility: 2-feature legacy, 7-feature old, 8-feature current.
     _ensure_boost_model_loaded()
-    expected_len = len(BOOST_FEATURES) if isinstance(BOOST_FEATURES, list) else 7
+    expected_len = len(BOOST_FEATURES) if isinstance(BOOST_FEATURES, list) else 8
     if expected_len == 2:
         # Legacy model expected [projected_rs, min_proxy].
-        # min_proxy is defined as 12 + 5*log1p(drafts); for inference we
-        # approximate it directly from predicted minutes (the inverse map gives
-        # back pmin, so just pass it through rather than doing a circular round-trip).
         feat_vec = [_rs, _pmin]
+    elif expected_len == 7:
+        # Old 7-feature model: [projected_rs, season_pts, recent_pts, season_min, pred_min, is_big_market, pos_bucket]
+        # Approximate is_big_market from the continuous score using a 0.6 threshold.
+        _is_bm_compat = 1.0 if _market_score >= 0.6 else 0.0
+        feat_vec = [_rs, _spts, _rpts, _smin, _pmin, _is_bm_compat, _pbucket]
     else:
-        feat_vec = [_rs, _spts, _rpts, _smin, _pmin, is_bm, _pbucket]
+        # Current 8-feature model: team_market_score replaces is_big_market, ppg_tier added.
+        feat_vec = [_rs, _spts, _rpts, _smin, _pmin, _market_score, _pbucket, _ppg_tier]
     ml_pred = _lgbm_predict_boost(feat_vec)
 
     # Star PPG tier caps — high-PPG players are nationally popular regardless of
@@ -3013,7 +3041,7 @@ def _est_card_boost(
     _ll = cb.get("log_linear", {})
     _intercept = float(_ll.get("intercept", 3.34))
     _slope = float(_ll.get("slope", -0.71))
-    log_drafts = _estimate_log_drafts(_spts, bool(is_bm), _rpts, _spts)
+    log_drafts = _estimate_log_drafts(_spts, False, _rpts, _spts, market_score=_market_score)
     fallback = _intercept + _slope * float(log_drafts)
     if _spts >= 22:
         fallback -= 0.20
@@ -3021,8 +3049,8 @@ def _est_card_boost(
         fallback += 0.15
     if _pmin < 20:
         fallback += 0.10
-    if is_bm:
-        fallback -= 0.10
+    if _market_score >= 0.6:
+        fallback -= 0.10 * _market_score
     form_ratio = float(_rpts) / max(float(_spts), 1.0)
     if form_ratio >= 1.15:
         fallback -= 0.08
@@ -4942,10 +4970,17 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             continue
 
         # Never draft a moonshot player projected well below their season minute average.
-        # Wider tolerance than chalk (default 3.0 min) — moonshot is contrarian.
-        moon_min_tol = float(moon_cfg.get("pred_min_tolerance", 3.0))
+        # Moonshot = ceiling plays — a downside minutes projection is anti-moonshot.
+        moon_min_tol = float(moon_cfg.get("pred_min_tolerance", 1.0))
         if pred_min < (season_min - moon_min_tol):
             continue
+
+        # Moonshot requires projected pts >= X% of season avg (default 90%).
+        # A player projecting below their own average is a downside scenario, not upside.
+        _min_pts_ratio = float(moon_cfg.get("min_proj_pts_ratio", 0.90))
+        if _min_pts_ratio > 0 and season_pts > 0:
+            if p.get("pts", 0) < season_pts * _min_pts_ratio:
+                continue
 
         # Hard boost floor — with star anchor pathway AND RS-bypass for high-RS scorers.
         is_moonshot_star_anchor = False
