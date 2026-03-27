@@ -2984,17 +2984,28 @@ def _est_card_boost(
         reverse=True,
     )
 
-    def _cap_for_star(raw):
+    # Per-team boost ceiling — GS/CLE/MEM/OKC fans draft their role players at
+    # much higher rates than PPG alone captures. Draymond (8.5 PPG on GS) looks
+    # "obscure" to the ML model but is famous → model predicts 2.8x, actual 1.9x.
+    # A team ceiling stops us from over-predicting popular-franchise role players
+    # without touching small-market teams where boosts are legitimately high.
+    _team_ceilings = cb.get("team_boost_ceiling", {})
+    _team_ceil = float(_team_ceilings.get(team_abbr, ceiling))
+
+    def _apply_caps(raw):
+        # 1. Star PPG tier cap (national stars always low-boost regardless of team)
         for _tier in _star_tiers:
             if _spts >= float(_tier.get("min_ppg", 9999)):
-                return min(raw, float(_tier.get("boost_cap", ceiling)))
-        return raw
+                raw = min(raw, float(_tier.get("boost_cap", ceiling)))
+                break
+        # 2. Per-team popularity ceiling (popular franchise role players)
+        return min(raw, _team_ceil)
 
     if ml_pred is not None:
         # ML model + additive correction. No prior blending — boost must be
         # predicted purely from player profile (prior data not reliably available).
         correction = float(cb.get("ml_additive_correction", 0.0))
-        return _clamp_round_boost(_cap_for_star(float(ml_pred) + correction), floor_val, ceiling)
+        return _clamp_round_boost(_apply_caps(float(ml_pred) + correction), floor_val, ceiling)
 
     # Deterministic fallback: derive boost from projected popularity.
     # Fitted from 909 observations: boost = 3.34 - 0.71 × log10(drafts), R²=0.642.
@@ -3017,7 +3028,7 @@ def _est_card_boost(
         fallback -= 0.08
     elif form_ratio <= 0.90:
         fallback += 0.08
-    out = _clamp_round_boost(_cap_for_star(fallback), floor_val, ceiling)
+    out = _clamp_round_boost(_apply_caps(fallback), floor_val, ceiling)
     print(f"[WARN] boost model unavailable — heuristic fallback for {player_name}: {out}")
     return out
 
