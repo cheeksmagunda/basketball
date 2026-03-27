@@ -1268,6 +1268,69 @@ class TestPredMinTolerance:
 
 
 # ─────────────────────────────────────────────────────────
+# TestPredMinDirectionFactor — EV penalty/bonus by minutes direction
+# ─────────────────────────────────────────────────────────
+class TestPredMinDirectionFactor:
+    """Verify _pred_min_direction_factor rewards above-avg projections and penalises below."""
+
+    def _factor(self, pred_min, season_min, recent_min=0):
+        from api.index import _pred_min_direction_factor
+        return _pred_min_direction_factor(pred_min, season_min, recent_min)
+
+    def test_below_avg_gets_penalty(self):
+        """Merrill-style: 24.6 proj / 26.4 avg → factor < 1."""
+        f = self._factor(24.6, 26.4)
+        assert f < 1.0, f"Expected penalty, got {f}"
+        # ratio = 24.6/26.4 = 0.932; with power=1 factor should be ~0.932
+        assert abs(f - 0.932) < 0.005
+
+    def test_above_avg_gets_bonus_capped(self):
+        """Small-style: 29.8 proj / 19.8 avg → ratio 1.505, capped at 1.10."""
+        f = self._factor(29.8, 19.8)
+        assert f == pytest.approx(1.10, abs=0.01)
+
+    def test_slightly_above_avg_below_cap(self):
+        """Mitchell-style: 36.3 proj / 33.6 avg → ratio 1.08, below cap."""
+        f = self._factor(36.3, 33.6)
+        assert 1.07 < f < 1.10
+
+    def test_large_below_floored(self):
+        """Very low projection ratio is floored at 0.85."""
+        f = self._factor(10.0, 30.0)  # ratio = 0.333 → floored
+        assert f == pytest.approx(0.85, abs=0.01)
+
+    def test_neutral_at_exact_avg(self):
+        """pred_min == season_min → factor == 1.0."""
+        f = self._factor(25.0, 25.0)
+        assert f == pytest.approx(1.0, abs=0.001)
+
+    def test_recent_min_used_as_hurdle(self):
+        """recent_min higher than season_min → tougher hurdle → larger penalty."""
+        f_season = self._factor(25.0, 24.0, recent_min=0)    # ref=24.0 → ratio 1.04 → bonus
+        f_recent = self._factor(25.0, 24.0, recent_min=30.0) # ref=30.0 → ratio 0.833 → penalty
+        assert f_season > 1.0
+        assert f_recent < 1.0
+
+    def test_config_keys_in_model_config(self):
+        """model-config.json should have all four pred_min_upside keys."""
+        import json
+        with open("data/model-config.json") as fh:
+            cfg = json.load(fh)
+        proj = cfg["projection"]
+        assert proj["pred_min_upside_enabled"] is True
+        assert proj["pred_min_upside_power"] == 1.0
+        assert proj["pred_min_upside_cap"] == 1.10
+        assert proj["pred_min_downside_floor"] == 0.85
+
+    def test_chalk_ev_uses_factor(self):
+        """chalk_ev_capped computation should reference _pred_min_direction_factor."""
+        with open("api/index.py") as fh:
+            src = fh.read()
+        assert "_pred_min_direction_factor" in src
+        assert "chalk_ev_capped" in src
+
+
+# ─────────────────────────────────────────────────────────
 # TestMoonshotPtsFloor — separate min_pts for moonshot
 # ─────────────────────────────────────────────────────────
 class TestMoonshotPtsFloor:

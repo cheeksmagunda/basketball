@@ -1,7 +1,7 @@
 {
-  "version": 75,
-  "updated_at": "2026-03-27T18:00:00Z",
-  "updated_by": "v75-boost-correction-rs-floor-no-duds-moonshot-star-anchor",
+  "version": 76,
+  "updated_at": "2026-03-27T20:00:00Z",
+  "updated_by": "v76-pred-min-direction-factor-max-double-teams",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -178,6 +178,10 @@
     "bench_min_threshold": 30.0,
     "chalk_min_boost_floor": 0.3,
     "pred_min_tolerance": 2.0,
+    "pred_min_upside_enabled": true,
+    "pred_min_upside_power": 1.0,
+    "pred_min_upside_cap": 1.10,
+    "pred_min_downside_floor": 0.85,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.0,
     "chalk_hbr_min_season_min": 14.0,

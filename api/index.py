@@ -867,6 +867,13 @@ _CONFIG_DEFAULTS = {
         "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
         "chalk_min_boost_floor": 0.3,   # v75: lowered from 1.5 — Mar 26 winners had boost 0.6-1.0x
                                         # Duren/Knueppel/DeRozan all have boost <1.5 but won every draft
+        # Projected-minutes direction factor: reward players expected to play MORE than their
+        # average tonight; penalise those expected to play FEWER (e.g. Merrill 24.6m < 26.4m avg).
+        # Applied multiplicatively to chalk_ev_capped and moonshot_ev before MILP.
+        "pred_min_upside_enabled": True,
+        "pred_min_upside_power": 1.0,       # linear by default; <1 compresses range, >1 amplifies
+        "pred_min_upside_cap": 1.10,        # max bonus: player projected 10%+ above avg → +10% EV
+        "pred_min_downside_floor": 0.85,    # max penalty: player projected way below avg → -15% EV
         # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
         # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
         "volatility_guard": {
@@ -4562,6 +4569,36 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
     return core_pool
 
 
+def _pred_min_direction_factor(pred_min: float, season_min: float, recent_min: float = 0.0) -> float:
+    """Return a multiplier that rewards players projected above their average minutes
+    and penalises players projected below.
+
+    grep: PRED MIN FACTOR
+
+    Logic:
+      ref   = max(season_min, recent_min)          — use the higher baseline as the hurdle
+      ratio = pred_min / ref                        — >1 means trending up, <1 means trending down
+      factor = clamp(floor, cap, ratio ^ power)     — linear by default (power=1.0)
+
+    Config (projection.*):
+      pred_min_upside_enabled  — master switch (default True)
+      pred_min_upside_power    — exponent on ratio (default 1.0 = linear)
+      pred_min_upside_cap      — maximum bonus factor (default 1.10 = +10%)
+      pred_min_downside_floor  — minimum penalty factor (default 0.85 = -15% max)
+    """
+    _proj_cfg = _cfg("projection", _CONFIG_DEFAULTS.get("projection", {}))
+    if not (isinstance(_proj_cfg, dict) and _proj_cfg.get("pred_min_upside_enabled", True)):
+        return 1.0
+    ref = max(float(season_min or 0), float(recent_min or 0), 1.0)
+    if float(pred_min or 0) <= 0:
+        return 1.0
+    ratio = float(pred_min) / ref
+    power = float(_proj_cfg.get("pred_min_upside_power", 1.0)) if isinstance(_proj_cfg, dict) else 1.0
+    cap   = float(_proj_cfg.get("pred_min_upside_cap", 1.10)) if isinstance(_proj_cfg, dict) else 1.10
+    floor = float(_proj_cfg.get("pred_min_downside_floor", 0.85)) if isinstance(_proj_cfg, dict) else 0.85
+    return max(floor, min(cap, ratio ** power))
+
+
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
     avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
     chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
@@ -4693,7 +4730,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             4,
         )
         # Core value: RS × matchup × (slot + boost). No team motivation — disabled by audit.
-        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost), 2)
+        # Minutes direction factor: reward players projected above their avg, penalise below.
+        # grep: PRED MIN FACTOR
+        _pm_factor = _pred_min_direction_factor(p.get("predMin", 0), p.get("season_min", 0), _recent_min_chalk)
+        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost) * _pm_factor, 2)
         chalk_eligible.append(p)
 
     # Small-slate quality expansion:
@@ -4736,7 +4776,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 p.get("season_pts", 0) >= 20.0 and p.get("season_min", 0) >= 25.0 and p.get("rating", 0) >= 4.5
             )
             p["chalk_milp_boost"] = round((1.0 - _rs_focus) * float(_capped) + _rs_focus * _boost_neutral, 4)
-            p["chalk_ev_capped"] = round(p["rating"] * _matchup * (avg_slot + _capped), 2)
+            _pm_factor_exp = _pred_min_direction_factor(p.get("predMin", 0), p.get("season_min", 0), p.get("recent_min", 0))
+            p["chalk_ev_capped"] = round(p["rating"] * _matchup * (avg_slot + _capped) * _pm_factor_exp, 2)
             chalk_eligible.append(p)
             existing.add(p.get("name"))
         if len(chalk_eligible) < 5:
@@ -4975,8 +5016,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 3,
             )
 
-        # Moonshot EV: MILP will optimize slot assignment on top
-        moonshot_ev = round(adj_ceiling * (avg_slot + est_mult), 2)
+        # Moonshot EV: MILP will optimize slot assignment on top.
+        # Minutes direction factor applied here too — same upside/downside signal.
+        _moon_pm_factor = _pred_min_direction_factor(pred_min, season_min, recent_min)
+        moonshot_ev = round(adj_ceiling * (avg_slot + est_mult) * _moon_pm_factor, 2)
 
         moonshot_pool.append({
             **p,
@@ -5229,7 +5272,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             _relax_boost_power = moon_cfg.get("boost_leverage_power", _moon_defaults["boost_leverage_power"])
             _relax_boost_lev = max(float(p.get("est_mult", 0)), 0.2) ** _relax_boost_power
             _mp["adj_ceiling"] = round(float(p.get("rating", 0)) * _relax_boost_lev, 3)
-            _mp["moonshot_ev"] = round(_mp["adj_ceiling"] * (avg_slot + float(p.get("est_mult", 0))), 2)
+            _relax_pm_factor = _pred_min_direction_factor(p.get("predMin", 0), p.get("season_min", 0), p.get("recent_min", 0))
+            _mp["moonshot_ev"] = round(_mp["adj_ceiling"] * (avg_slot + float(p.get("est_mult", 0))) * _relax_pm_factor, 2)
             relaxed_pool.append(_mp)
         if relaxed_pool:
             moonshot_pool = sorted(relaxed_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
