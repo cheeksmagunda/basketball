@@ -1,13 +1,13 @@
 {
-  "version": 74,
-  "updated_at": "2026-03-27T12:00:00Z",
-  "updated_by": "v72-fix-game-diversity-boost-cap-quality",
+  "version": 75,
+  "updated_at": "2026-03-27T18:00:00Z",
+  "updated_by": "v75-boost-correction-rs-floor-no-duds-moonshot-star-anchor",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
     "min_pts_per_minute": 0.25,
     "min_pts_per_minute_moonshot": 0.22,
-    "min_chalk_rating": 3.0,
+    "min_chalk_rating": 3.5,
     "min_moonshot_rating": 2.5,
     "min_moonshot_pts": 3.0,
     "chalk_boost_cap": 3.0,
@@ -17,7 +17,7 @@
     "ceiling": 3.0,
     "floor": 0.2,
     "big_market_star_ppg_threshold": 15.0,
-    "ml_additive_correction": 0.25,
+    "ml_additive_correction": -0.25,
     "max_prior_weight": 0.0,
     "big_market_teams": [
       "LAL",
@@ -193,11 +193,11 @@
   },
   "star_anchor": {
     "enabled": true,
-    "min_season_pts": 12.0,
-    "min_season_min": 20.0,
-    "min_boost": 1.2,
-    "min_rating": 3.5,
-    "require_count": 0,
+    "min_season_pts": 18.0,
+    "min_season_min": 25.0,
+    "min_boost": 0.2,
+    "min_rating": 4.5,
+    "require_count": 1,
     "max_count": 1
   },
   "context_layer": {
@@ -362,8 +362,8 @@
   "moonshot": {
     "min_minutes_floor": 14,
     "min_recent_minutes_floor": 14,
-    "min_card_boost": 2.0,
-    "min_rating_floor": 4.0,
+    "min_card_boost": 0.5,
+    "min_rating_floor": 3.5,
     "card_boost_weight": 2.5,
     "minutes_weight": 1.0,
     "require_rotowire_clearance": true,
