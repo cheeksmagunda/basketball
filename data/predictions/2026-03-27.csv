@@ -14,8 +14,8 @@ LAC @ IND,the_lineup,1.8x,Pascal Siakam,3149673,IND,F,7.7,0.0,35.8,22.8,6.6,3.8,
 LAC @ IND,the_lineup,1.6x,T.J. McConnell,2530530,IND,G,7.5,0.0,22.0,9.1,2.3,5.1,1.0,0.2
 LAC @ IND,the_lineup,1.4x,Andrew Nembhard,4395712,IND,G,7.2,0.0,31.2,15.9,2.8,7.1,0.9,0.1
 LAC @ IND,the_lineup,1.2x,Brook Lopez,3448,LAC,C,7.1,0.0,23.8,9.4,3.7,1.2,0.6,1.2
-ATL @ BOS,the_lineup,2.0x,Jayson Tatum,4065648,BOS,F,8.7,0.0,33.2,20.0,8.8,3.7,1.3,0.2
-ATL @ BOS,the_lineup,1.8x,Jalen Johnson,4701230,ATL,F,8.1,0.0,28.3,21.0,9.7,7.3,1.2,0.5
+ATL @ BOS,the_lineup,2.0x,Jalen Johnson,4701230,ATL,F,8.9,0.0,29.8,21.0,9.7,7.3,1.2,0.5
+ATL @ BOS,the_lineup,1.8x,Jayson Tatum,4065648,BOS,F,8.7,0.0,33.2,20.0,8.8,3.7,1.3,0.2
 ATL @ BOS,the_lineup,1.6x,Nickeil Alexander-Walker,4278039,ATL,G,7.9,0.0,24.8,18.4,3.2,3.5,1.2,0.5
 ATL @ BOS,the_lineup,1.4x,CJ McCollum,2490149,ATL,G,7.5,0.0,30.1,18.9,3.4,3.8,0.8,0.4
 ATL @ BOS,the_lineup,1.2x,Derrick White,3078576,BOS,G,7.3,0.0,31.0,16.5,4.4,5.3,1.1,1.3
@@ -25,9 +25,9 @@ MIA @ CLE,the_lineup,1.6x,Norman Powell,2595516,MIA,G,11.5,0.0,26.5,20.5,3.4,2.4
 MIA @ CLE,the_lineup,1.4x,Dennis Schroder,3032979,CLE,G,9.5,0.0,28.8,11.5,2.8,4.9,0.8,0.2
 MIA @ CLE,the_lineup,1.2x,Tyler Herro,4395725,MIA,G,8.5,0.0,31.7,20.9,4.8,3.8,0.8,0.3
 HOU @ MEM,the_lineup,2.0x,Cam Spencer,4433083,MEM,G,6.4,0.0,30.9,10.7,2.5,5.2,0.7,0.1
-HOU @ MEM,the_lineup,1.8x,Cedric Coward,4903027,MEM,F,6.3,0.0,35.1,13.3,6.1,2.8,0.6,0.4
-HOU @ MEM,the_lineup,1.6x,GG Jackson,5105550,MEM,F,6.0,0.0,31.2,12.0,4.2,1.4,0.6,0.7
-HOU @ MEM,the_lineup,1.4x,Reed Sheppard,4711272,HOU,G,5.9,0.0,23.3,12.7,2.8,3.2,1.4,0.7
+HOU @ MEM,the_lineup,1.8x,Cedric Coward,4903027,MEM,F,6.2,0.0,35.1,13.3,6.1,2.8,0.6,0.4
+HOU @ MEM,the_lineup,1.6x,GG Jackson,5105550,MEM,F,5.9,0.0,31.2,12.0,4.2,1.4,0.6,0.7
+HOU @ MEM,the_lineup,1.4x,Reed Sheppard,4711272,HOU,G,5.7,0.0,23.3,12.7,2.8,3.2,1.4,0.7
 HOU @ MEM,the_lineup,1.2x,Javon Small,4781746,MEM,G,5.6,0.0,29.8,9.2,3.2,3.7,0.8,0.3
 CHI @ OKC,the_lineup,2.0x,Isaiah Hartenstein,4222252,OKC,C,8.1,0.0,25.6,9.1,8.9,3.5,0.9,0.8
 CHI @ OKC,the_lineup,1.8x,Tre Jones,4395626,CHI,G,7.3,0.0,27.8,12.2,3.0,5.3,1.1,0.2
