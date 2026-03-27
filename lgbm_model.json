@@ -17,13 +17,8 @@
     "l3_vs_l5_pts",
     "min_volatility",
     "starter_proxy",
-    "cascade_signal",
     "opp_pts_allowed",
-    "team_pace_proxy",
-    "usage_share",
-    "teammate_out_count",
-    "game_total",
-    "spread_abs"
+    "team_pace_proxy"
   ],
   "baseline_file": "lgbm_baseline.txt",
   "spike_file": "lgbm_spike.txt"
