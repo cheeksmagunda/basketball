@@ -4750,10 +4750,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if p.get("_is_star_anchor", False)
     ] if sa_enabled else []
 
-    # Lineup quality constraints — per-game cap and boost floors.
+    # Lineup quality constraints — per-game cap, per-team cap, and boost floors.
     _lu_cfg = _cfg("lineup", {})
     _chalk_max_per_game = int(_lu_cfg.get("chalk_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
     _moon_max_per_game = int(_lu_cfg.get("moonshot_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
+    _chalk_max_per_team = int(_lu_cfg.get("chalk_max_per_team", 2)) if isinstance(_lu_cfg, dict) else 2
     _chalk_min_high_boost = int(_lu_cfg.get("chalk_min_high_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
     _chalk_high_boost_thr = float(_lu_cfg.get("chalk_high_boost_threshold", 2.0)) if isinstance(_lu_cfg, dict) else 2.0
     _chalk_min_big_boost = int(_lu_cfg.get("chalk_min_big_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
@@ -4771,7 +4772,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _chalk_elig_games = [_player_game_id(p) for p in chalk_eligible]
         chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
-                                max_per_team=2,
+                                max_per_team=_chalk_max_per_team,
                                 star_indices=chalk_star_indices if chalk_star_indices else None,
                                 min_star_count=sa_require if chalk_star_indices else 0,
                                 max_star_count=sa_max if sa_max > 0 else 0,
@@ -5098,7 +5099,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _chalk_source_games = [_player_game_id(p) for p in chalk_source]
         chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
                                 rating_key="rating", card_boost_key="chalk_milp_boost",
-                                max_per_team=2,
+                                max_per_team=_chalk_max_per_team,
                                 objective_mode="chalk",
                                 variance_penalty=0.5,
                                 star_indices=_core_star_indices if _core_star_indices else None,
