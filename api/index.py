@@ -12347,8 +12347,10 @@ def _fetch_gamelogs_batch(player_ids, num_games=15):
     return result
 
 
-def _run_parlay_engine_sync(today):
-    """Run the full parlay pipeline (blocking). Call via asyncio.to_thread()."""
+def _run_parlay_engine_sync(today, *, allow_synthetic=False):
+    """Run the full parlay pipeline (blocking). Call via asyncio.to_thread().
+    When allow_synthetic=True, falls back to model-only synthetic lines if Odds API
+    returns no data (e.g. post-lock when books have pulled props)."""
     games = fetch_games(today)
     if not games:
         return None, "no_games", {}
@@ -12381,10 +12383,10 @@ def _run_parlay_engine_sync(today):
     if not all_proj:
         return None, "no_projections", {}
 
-    # Fetch odds — required (no synthetic / projection-only substitute).
+    # Fetch odds — required unless allow_synthetic is True.
     has_key = bool(_get_odds_api_key())
     try:
-        player_odds_map = _build_player_odds_map(target_games, require_fresh_book_odds=True)
+        player_odds_map = _build_player_odds_map(target_games, require_fresh_book_odds=not allow_synthetic)
     except OddsApiRequiredError as e:
         print(f"[parlay] Odds API required — {e.code}: {e.detail}")
         debug = {
@@ -12399,8 +12401,29 @@ def _run_parlay_engine_sync(today):
         }
         return None, "no_odds_data", debug
 
-    print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
+    # Synthetic fallback: when Odds API returned empty map and allow_synthetic is on,
+    # build model-only lines from projections (nearest 0.5 snap).
     projection_only = False
+    if not player_odds_map and allow_synthetic:
+        print(f"[parlay] Odds API empty — building synthetic lines from {len(all_proj)} projections")
+        projection_only = True
+        parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
+        for p in all_proj:
+            pname = (p.get("name") or "").lower()
+            for stat_key in ("pts", "reb", "ast"):
+                stat_type = {"pts": "points", "reb": "rebounds", "ast": "assists"}[stat_key]
+                val = p.get(stat_key) or p.get(f"season_{stat_key}") or 0
+                if val and float(val) > 0:
+                    synth_line = round(float(val) * 2) / 2
+                    player_odds_map[(pname, stat_type)] = {
+                        "line": synth_line,
+                        "odds_over": -110,
+                        "odds_under": -110,
+                        "books_consensus": 0,
+                    }
+        print(f"[parlay] built {len(player_odds_map)} synthetic lines")
+
+    print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
 
     rw_statuses = {}
     try:
@@ -12415,6 +12438,12 @@ def _run_parlay_engine_sync(today):
         print(f"[parlay] DvP fetch error (non-fatal): {_pdvp_err}")
 
     parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
+
+    # Loosen thresholds when using synthetic lines (no Vegas signal)
+    if projection_only:
+        parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
+        parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
+        print(f"[parlay] synthetic mode — loosened min_blended_conf={parlay_config['min_blended_conf']}, max_minutes_cv={parlay_config['max_minutes_cv']}")
 
     gamelog_id_list = select_parlay_gamelog_player_ids(
         all_proj, target_games, player_odds_map, rw_statuses, parlay_config, projection_only
@@ -12442,8 +12471,8 @@ def _run_parlay_engine_sync(today):
         "odds_entries": len(player_odds_map),
         "gamelogs": len(gamelogs),
         "gamelog_pool": len(player_ids),
-        "odds_available": True,
-        "projection_only": False,
+        "odds_available": not projection_only,
+        "projection_only": projection_only,
         "fair_value_entries": len(_parlay_fv_data),
         "has_key": has_key,
     }
@@ -12549,6 +12578,14 @@ async def get_parlay(request: Request):
             asyncio.to_thread(_run_parlay_engine_sync, today),
             timeout=150,
         )
+
+        # If real odds failed and slate is locked (books pulled props), retry with synthetic lines
+        if err == "no_odds_data" and slate_locked:
+            print(f"[parlay] real odds failed post-lock — retrying with synthetic lines")
+            result, err, debug = await asyncio.wait_for(
+                asyncio.to_thread(_run_parlay_engine_sync, today, allow_synthetic=True),
+                timeout=150,
+            )
 
         if err or not result:
             no_odds = err == "no_odds_data" or (debug and not debug.get("odds_available"))
@@ -12675,7 +12712,7 @@ async def parlay_force_regenerate(request: Request):
 
     try:
         result, err, debug = await asyncio.wait_for(
-            asyncio.to_thread(_run_parlay_engine_sync, target_date),
+            asyncio.to_thread(_run_parlay_engine_sync, target_date, allow_synthetic=True),
             timeout=150,
         )
     except asyncio.TimeoutError:
