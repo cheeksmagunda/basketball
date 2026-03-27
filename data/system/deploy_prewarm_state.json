@@ -1,1 +1,1 @@
-{"sha": "cb5adee", "status": "running", "started_at": "2026-03-27T21:54:53.708136+00:00"}
+{"sha": "cb5adee", "status": "completed", "started_at": "2026-03-27T21:55:47.306258+00:00", "force_regenerate_status": "regenerated", "prewarm": {"status": "ok", "cache_status": "miss", "generated": true, "current_slate_date": "2026-03-27", "locked": false, "all_complete": false, "draftable_count": 10, "line_status": "error", "parlay_status": "generated", "ts": "2026-03-27T21:55:47.306199"}, "completed_at": "2026-03-27T21:55:47.306264+00:00"}
