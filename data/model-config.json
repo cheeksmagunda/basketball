@@ -1,7 +1,7 @@
 {
-  "version": 78,
-  "updated_at": "2026-03-27T21:30:00Z",
-  "updated_by": "v78-team-boost-ceiling-popular-franchise-fix",
+  "version": 79,
+  "updated_at": "2026-03-27T22:00:00Z",
+  "updated_by": "v79-team-boost-ceiling-tighter-conservative",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -40,14 +40,14 @@
       "slope": -0.71
     },
     "team_boost_ceiling": {
-      "GS": 2.2,
-      "GSW": 2.2,
-      "CLE": 2.0,
-      "MEM": 1.8,
-      "OKC": 2.0,
-      "BOS": 2.0,
-      "DEN": 2.2,
-      "MIL": 2.2
+      "GS": 1.8,
+      "GSW": 1.8,
+      "CLE": 1.7,
+      "MEM": 1.5,
+      "OKC": 1.8,
+      "BOS": 1.8,
+      "DEN": 2.0,
+      "MIL": 2.0
     }
   },
   "game_script": {
@@ -481,6 +481,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 79,
+      "date": "2026-03-27",
+      "change": "TIGHTER TEAM CEILINGS — CONSERVATIVE BIAS (v79). v78 ceilings were still 0.2-0.3x over actuals which kills EV when over: Draymond (GS) 2.2x predicted vs 1.9x actual, Merrill (CLE) 2.0x vs 1.8x, Spencer (MEM) 1.8x vs 1.5x. Being over is worse than being under — over-predicting a boost puts the wrong player in the lineup. Tightened ceilings to aim slightly under actual: GS 2.2→1.8x (Draymond 1.8 vs 1.9 actual, -0.1x under), CLE 2.0→1.7x (Merrill 1.7 vs 1.8, -0.1x under), MEM 1.8→1.5x (Spencer exact match), OKC/BOS 2.0→1.8x, DEN/MIL 2.2→2.0x. Config-only, no code deploy needed."
+    },
     {
       "version": 78,
       "date": "2026-03-27",
