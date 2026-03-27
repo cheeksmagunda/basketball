@@ -1,5 +1,5 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Brandin Podziemski,4709138,GS,G,7.0,1.8,33.0,12.7,5.2,3.8,1.1,0.2
+slate,chalk,2.0x,Brandin Podziemski,4709138,GS,G,7.3,1.8,35.4,12.7,5.2,3.8,1.1,0.2
 slate,chalk,1.8x,Jordan Poole,4277956,NO,G,6.7,2.7,25.4,14.0,2.1,3.1,0.6,0.4
 slate,chalk,1.6x,Klay Thompson,6475,DAL,G,6.7,3.0,27.3,13.2,2.4,1.5,0.6,0.3
 slate,chalk,1.4x,Brice Sensabaugh,5105839,UTAH,F,6.4,2.2,32.4,13.6,3.0,1.7,0.7,0.1
@@ -25,10 +25,10 @@ MIA @ CLE,the_lineup,1.6x,Norman Powell,2595516,MIA,G,10.2,0.0,26.5,20.5,3.4,2.4
 MIA @ CLE,the_lineup,1.4x,Evan Mobley,4432158,CLE,C,9.4,0.0,34.2,17.8,8.9,3.5,0.8,1.8
 MIA @ CLE,the_lineup,1.2x,Bam Adebayo,4066261,MIA,C,8.3,0.0,31.8,19.5,9.6,3.1,1.2,0.7
 HOU @ MEM,the_lineup,2.0x,Cedric Coward,4903027,MEM,F,6.6,0.0,35.1,13.3,6.1,2.8,0.6,0.4
-HOU @ MEM,the_lineup,1.8x,Cam Spencer,4433083,MEM,G,6.4,0.0,30.9,10.7,2.5,5.2,0.7,0.1
-HOU @ MEM,the_lineup,1.6x,Reed Sheppard,4711272,HOU,G,6.3,0.0,23.3,12.7,2.8,3.2,1.4,0.7
+HOU @ MEM,the_lineup,1.8x,Reed Sheppard,4711272,HOU,G,6.4,0.0,23.3,12.7,2.8,3.2,1.4,0.7
+HOU @ MEM,the_lineup,1.6x,Cam Spencer,4433083,MEM,G,6.3,0.0,30.9,10.7,2.5,5.2,0.7,0.1
 HOU @ MEM,the_lineup,1.4x,GG Jackson,5105550,MEM,F,6.2,0.0,31.2,12.0,4.2,1.4,0.6,0.7
-HOU @ MEM,the_lineup,1.2x,Javon Small,4781746,MEM,G,6.0,0.0,29.8,9.2,3.2,3.7,0.8,0.3
+HOU @ MEM,the_lineup,1.2x,Javon Small,4781746,MEM,G,5.9,0.0,29.8,9.2,3.2,3.7,0.8,0.3
 CHI @ OKC,the_lineup,2.0x,Isaiah Hartenstein,4222252,OKC,C,8.5,0.0,25.6,9.1,8.9,3.5,0.9,0.8
 CHI @ OKC,the_lineup,1.8x,Ajay Mitchell,4900671,OKC,G,7.3,0.0,22.9,13.5,3.4,3.4,1.3,0.3
 CHI @ OKC,the_lineup,1.6x,Shai Gilgeous-Alexander,4278073,OKC,G,7.2,0.0,33.3,30.3,4.5,6.3,1.4,0.8
@@ -39,16 +39,16 @@ NO @ TOR,the_lineup,1.8x,Jeremiah Fears,5144091,NO,G,6.2,0.0,25.5,13.1,3.6,3.2,1
 NO @ TOR,the_lineup,1.6x,Scottie Barnes,4433134,TOR,F,6.2,0.0,34.0,18.3,7.7,5.4,1.4,1.4
 NO @ TOR,the_lineup,1.4x,RJ Barrett,4395625,TOR,F,6.1,0.0,30.6,18.9,5.3,3.3,0.8,0.3
 NO @ TOR,the_lineup,1.2x,Zion Williamson,4395628,NO,F,5.9,0.0,27.8,21.9,5.9,3.4,1.0,0.6
-UTAH @ DEN,the_lineup,2.0x,Nikola Jokic,3112335,DEN,C,7.7,0.0,34.2,26.7,12.5,10.1,1.4,0.8
-UTAH @ DEN,the_lineup,1.8x,Brice Sensabaugh,5105839,UTAH,F,7.4,0.0,32.4,13.6,3.0,1.7,0.7,0.1
+UTAH @ DEN,the_lineup,2.0x,Nikola Jokic,3112335,DEN,C,7.6,0.0,34.2,26.7,12.5,10.1,1.4,0.8
+UTAH @ DEN,the_lineup,1.8x,Brice Sensabaugh,5105839,UTAH,F,7.3,0.0,32.4,13.6,3.0,1.7,0.7,0.1
 UTAH @ DEN,the_lineup,1.6x,Peyton Watson,4576087,DEN,G,7.3,0.0,23.7,13.7,4.6,1.9,0.9,1.1
-UTAH @ DEN,the_lineup,1.4x,Ace Bailey,4873138,UTAH,G,6.8,0.0,34.2,13.4,4.1,1.8,0.9,0.6
-UTAH @ DEN,the_lineup,1.2x,Tim Hardaway Jr.,2528210,DEN,G,6.4,0.0,27.0,13.7,2.7,1.5,0.5,0.1
-WSH @ GS,the_lineup,2.0x,Brandin Podziemski,4709138,GS,G,8.8,0.0,33.0,12.7,5.2,3.8,1.1,0.2
-WSH @ GS,the_lineup,1.8x,Kristaps Porzingis,3102531,GS,C,8.6,0.0,33.4,17.3,5.4,2.5,0.6,1.5
-WSH @ GS,the_lineup,1.6x,Draymond Green,6589,GS,F,8.1,0.0,35.3,8.5,5.8,5.4,1.0,0.7
-WSH @ GS,the_lineup,1.4x,Gui Santos,4997536,GS,F,5.8,0.0,26.3,8.1,3.7,2.1,0.8,0.4
-WSH @ GS,the_lineup,1.2x,Bilal Coulibaly,5104155,WSH,G,5.8,0.0,31.4,11.2,4.4,2.7,1.4,0.9
+UTAH @ DEN,the_lineup,1.4x,Ace Bailey,4873138,UTAH,G,6.6,0.0,34.2,13.4,4.1,1.8,0.9,0.6
+UTAH @ DEN,the_lineup,1.2x,Tim Hardaway Jr.,2528210,DEN,G,6.3,0.0,27.0,13.7,2.7,1.5,0.5,0.1
+WSH @ GS,the_lineup,2.0x,Brandin Podziemski,4709138,GS,G,8.2,0.0,35.4,12.7,5.2,3.8,1.1,0.2
+WSH @ GS,the_lineup,1.8x,Kristaps Porzingis,3102531,GS,C,7.8,0.0,33.4,17.3,5.4,2.5,0.6,1.5
+WSH @ GS,the_lineup,1.6x,Draymond Green,6589,GS,F,7.3,0.0,35.3,8.5,5.8,5.4,1.0,0.7
+WSH @ GS,the_lineup,1.4x,Bilal Coulibaly,5104155,WSH,G,6.5,0.0,31.4,11.2,4.4,2.7,1.4,0.9
+WSH @ GS,the_lineup,1.2x,Julian Reese,4683742,WSH,F,6.2,0.0,36.1,12.0,10.7,1.5,1.0,0.5
 DAL @ POR,the_lineup,2.0x,Klay Thompson,6475,DAL,G,8.7,0.0,27.3,13.2,2.4,1.5,0.6,0.3
 DAL @ POR,the_lineup,1.8x,Scoot Henderson,4683678,POR,G,8.4,0.0,27.7,13.8,2.8,4.1,0.7,0.3
 DAL @ POR,the_lineup,1.6x,Khris Middleton,6609,DAL,F,8.3,0.0,29.1,11.8,4.0,3.2,0.8,0.2
