@@ -1,9 +1,9 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Jalen Brunson,3934672,NY,G,14.0,0.78,35.8,24.8,3.4,6.3,0.8,0.1
-slate,chalk,1.8x,Zion Williamson,4395628,NO,F,9.1,1.42,30.0,21.9,5.9,3.5,1.0,0.6
-slate,chalk,1.6x,Mikal Bridges,3147657,NY,G,8.1,2.13,37.9,14.7,4.1,3.7,1.3,0.8
-slate,chalk,1.4x,Malik Monk,4066262,SAC,G,6.7,2.13,29.3,12.6,2.0,3.0,0.6,0.4
-slate,chalk,1.2x,Jalen Suggs,4432165,ORL,G,6.3,2.13,28.9,13.6,3.7,5.0,1.8,0.7
+slate,chalk,2.0x,DeMar DeRozan,3978,SAC,G,12.2,1.24,37.0,18.8,3.3,4.1,1.1,0.3
+slate,chalk,1.8x,Jalen Brunson,3934672,NY,G,14.0,0.78,35.8,24.8,3.4,6.3,0.8,0.1
+slate,chalk,1.6x,LaMelo Ball,4432816,CHA,G,10.5,1.42,28.2,19.9,5.0,7.1,1.2,0.3
+slate,chalk,1.4x,Desmond Bane,4066320,ORL,G,10.1,1.42,33.0,19.9,4.3,4.1,1.0,0.4
+slate,chalk,1.2x,Mikal Bridges,3147657,NY,G,8.1,2.13,37.9,14.7,4.1,3.7,1.3,0.8
 slate,upside,2.0x,Mikal Bridges,3147657,NY,G,8.1,2.13,37.9,14.7,4.1,3.7,1.3,0.8
 slate,upside,1.8x,Jose Alvarado,4277869,NY,G,5.0,2.78,27.5,7.4,2.5,3.4,1.0,0.1
 slate,upside,1.6x,Marcus Sasser,4432107,DET,G,4.8,2.69,16.1,5.8,1.2,2.2,0.7,0.1
