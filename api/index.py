@@ -764,6 +764,7 @@ _CONFIG_DEFAULTS = {
         "ceiling": 3.5, "floor": 0.2,
         "ml_additive_correction": 0.0,
         "max_prior_weight": 0.0,
+        "big_market_teams": ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "LAC", "CHI"],
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1222,15 +1223,26 @@ def _ensure_lgbm_loaded():
                         continue
                     AI_FEATURES = _bundle["features"]
                     if _bundle.get("bundle_version") == 2 and "model_baseline" in _bundle and "model_spike" in _bundle:
-                        AI_MODEL_BASELINE = _bundle["model_baseline"]
-                        AI_MODEL_SPIKE = _bundle["model_spike"]
-                        AI_MODEL = None
-                        break
+                        _mb = _bundle["model_baseline"]
+                        _ms = _bundle["model_spike"]
+                        if callable(getattr(_mb, "predict", None)) and callable(getattr(_ms, "predict", None)):
+                            AI_MODEL_BASELINE = _mb
+                            AI_MODEL_SPIKE = _ms
+                            AI_MODEL = None
+                            break
+                        else:
+                            print(f"[lgbm] bundle_version=2 models not callable — skipping {_p}")
+                            continue
                     if "model" in _bundle:
-                        AI_MODEL = _bundle["model"]
-                        AI_MODEL_BASELINE = None
-                        AI_MODEL_SPIKE = None
-                        break
+                        _m = _bundle["model"]
+                        if callable(getattr(_m, "predict", None)):
+                            AI_MODEL = _m
+                            AI_MODEL_BASELINE = None
+                            AI_MODEL_SPIKE = None
+                            break
+                        else:
+                            print(f"[lgbm] model loaded but predict is not callable — skipping {_p}")
+                            continue
                 except (OSError, pickle.UnpicklingError, KeyError, ValueError, ModuleNotFoundError):
                     # ModuleNotFoundError: e.g. lightgbm not installed in env but pickle references it
                     pass
@@ -1268,9 +1280,13 @@ def _ensure_boost_model_loaded():
                     with open(_p, "rb") as _f:
                         _bundle = pickle.load(_f)
                     if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                        BOOST_MODEL = _bundle["model"]
-                        BOOST_FEATURES = _bundle["features"]
-                        break
+                        _m = _bundle["model"]
+                        if callable(getattr(_m, "predict", None)):
+                            BOOST_MODEL = _m
+                            BOOST_FEATURES = _bundle["features"]
+                            break
+                        else:
+                            print(f"[boost_model] model loaded but predict is not callable — skipping {_p}")
                 except Exception as e:
                     print(f"[boost_model] load failed from {_p}: {e}")
         _BOOST_LOAD_ATTEMPTED = True
