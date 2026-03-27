@@ -9303,7 +9303,12 @@ def _line_live_stat_dict(
 
     ev = data.get("header", {}).get("competitions", [{}])[0]
     game_status = ev.get("status", {})
-    completed = game_status.get("type", {}).get("completed", False)
+    _gst = game_status.get("type", {})
+    completed = (
+        _gst.get("completed", False)
+        or _gst.get("state", "").lower() == "post"
+        or _gst.get("name", "").upper() == "STATUS_FINAL"
+    )
     period = game_status.get("period", 0)
     clock = game_status.get("displayClock", "")
 
@@ -9633,8 +9638,13 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
     data = _espn_get(f"{ESPN}/scoreboard?dates={query_date}")
     team_played_in_final = False
     for ev in data.get("events", []):
-        # Only use completed games
-        completed = ev.get("status", {}).get("type", {}).get("completed", False)
+        # Only use completed games (check all ESPN completion signals)
+        _evt = ev.get("status", {}).get("type", {})
+        completed = (
+            _evt.get("completed", False)
+            or _evt.get("state", "").lower() == "post"
+            or _evt.get("name", "").upper() == "STATUS_FINAL"
+        )
         if not completed:
             continue
         game_id = ev.get("id", "")
@@ -10134,7 +10144,15 @@ def _all_games_final(games):
     def _tally(scoreboard_data):
         fins, rem, latest = 0, 0, None
         for ev in scoreboard_data.get("events", []):
-            completed = ev.get("status", {}).get("type", {}).get("completed", False)
+            _st = ev.get("status", {}).get("type", {})
+            # ESPN has multiple completion signals — `completed` (bool) lags behind
+            # `state` ("post") and `name` ("STATUS_FINAL"). Check all three so we
+            # detect game completion as fast as the NBA app does.
+            completed = (
+                _st.get("completed", False)
+                or _st.get("state", "").lower() == "post"
+                or _st.get("name", "").upper() == "STATUS_FINAL"
+            )
             start = ev.get("date", "")
             if completed:
                 fins += 1
