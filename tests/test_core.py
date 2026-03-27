@@ -1009,48 +1009,60 @@ class TestConfigCoverage:
     via the _cfg() helper. Changing any of these values in the JSON should
     be immediately reflected here (i.e. this test would need to be updated
     if Ben changes a value, which is the correct behavior).
+
+    _load_config() is mocked to return _CONFIG_DEFAULTS so a stale /tmp
+    cache file or missing GITHUB_TOKEN in the test environment can't poison
+    these reads.
     """
 
     def test_chalk_rating_floor_readable(self):
-        from api.index import _cfg
-        val = _cfg("lineup.chalk_rating_floor", None)
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("lineup.chalk_rating_floor", None)
         assert val == 2.0, f"Expected 2.0, got {val}"
 
     def test_game_chalk_rating_floor_readable(self):
-        from api.index import _cfg
-        val = _cfg("lineup.game_chalk_rating_floor", None)
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("lineup.game_chalk_rating_floor", None)
         assert val == 3.5, f"Expected 3.5, got {val}"
 
     def test_avg_slot_multiplier_readable(self):
-        from api.index import _cfg
-        val = _cfg("lineup.avg_slot_multiplier", None)
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("lineup.avg_slot_multiplier", None)
         assert val == 1.6, f"Expected 1.6, got {val}"
 
     def test_slot_multipliers_readable(self):
-        from api.index import _cfg
-        val = _cfg("lineup.slot_multipliers", None)
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("lineup.slot_multipliers", None)
         assert val == [2.0, 1.8, 1.6, 1.4, 1.2], f"Unexpected: {val}"
 
     def test_moonshot_min_rating_floor_readable(self):
-        from api.index import _cfg
-        val = _cfg("moonshot.min_rating_floor", None)
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("moonshot.min_rating_floor", None)
         assert val == 3.0, f"Expected 3.0 (lowered back from 3.5 in v59), got {val}"
 
     def test_line_min_confidence_readable(self):
-        from api.index import _cfg
-        val = _cfg("line.min_confidence", None)
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("line.min_confidence", None)
         assert val == 50, f"Expected 50, got {val}"
 
     def test_cfg_fallback_for_missing_key(self):
         """_cfg must return the fallback value for a key that doesn't exist."""
-        from api.index import _cfg
-        assert _cfg("nonexistent.key.deep", "FALLBACK") == "FALLBACK"
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            assert _cfg("nonexistent.key.deep", "FALLBACK") == "FALLBACK"
 
     def test_cfg_nested_dot_notation(self):
         """_cfg must resolve arbitrary depth dot-notation keys."""
-        from api.index import _cfg
+        from api.index import _cfg, _CONFIG_DEFAULTS
         # card_boost.ceiling is an existing 3rd-level key
-        val = _cfg("card_boost.ceiling", None)
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            val = _cfg("card_boost.ceiling", None)
         assert val == 3.5, f"Expected 3.5, got {val}"
 
     def test_scoring_thresholds_in_config_defaults(self):
@@ -1066,9 +1078,10 @@ class TestConfigCoverage:
 
     def test_scoring_thresholds_readable_via_cfg(self):
         """scoring_thresholds keys must be readable via _cfg() dot notation."""
-        from api.index import _cfg
-        assert _cfg("scoring_thresholds.min_pts_projection", None) == 7.0
-        assert _cfg("scoring_thresholds.min_chalk_rating", None) == 3.5
+        from api.index import _cfg, _CONFIG_DEFAULTS
+        with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
+            assert _cfg("scoring_thresholds.min_pts_projection", None) == 7.0
+            assert _cfg("scoring_thresholds.min_chalk_rating", None) == 3.5
 
 
 # ---------------------------------------------------------------------------
