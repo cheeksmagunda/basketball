@@ -4701,10 +4701,14 @@ class TestLogLinearBoost:
 
 
 class TestLgbmFeatureVector22:
-    """_lgbm_feature_vector returns 22 features matching lgbm_model.pkl schema."""
+    """_lgbm_feature_vector length/order matches loaded lgbm_model.json (17 or 22)."""
 
     def test_returns_22_features(self):
+        import api.index as idx
         from api.index import _lgbm_feature_vector
+
+        idx._ensure_lgbm_loaded()
+        n = len(idx.AI_FEATURES or [])
         vec = _lgbm_feature_vector(
             avg_min=28, pts=18, reb=6, ast=4, stl=1, blk=0.5,
             spread=-3.5, side="home", season_pts=17, recent_pts=19,
@@ -4712,19 +4716,30 @@ class TestLgbmFeatureVector22:
             opp_pts_allowed=115, team_pace=112,
             teammate_out_count=1, game_total=228,
         )
-        assert len(vec) == 22
+        assert len(vec) == n
+        if n == 22:
+            assert idx.AI_FEATURES[16] == "opp_pts_allowed" and vec[16] == 115.0
+            assert idx.AI_FEATURES[20] == "game_total" and vec[20] == 228.0
 
     def test_backward_compatible_16(self):
-        """Without new kwargs, should still return 22 features with defaults."""
+        """Defaults for optional kwargs match _feature_map (tail differs for 17 vs 22)."""
+        import api.index as idx
         from api.index import _lgbm_feature_vector
+
+        idx._ensure_lgbm_loaded()
+        n = len(idx.AI_FEATURES or [])
         vec = _lgbm_feature_vector(
             avg_min=25, pts=15, reb=5, ast=3, stl=1, blk=0.5,
             spread=-2, side="away", season_pts=14, recent_pts=15,
             season_min=24, recent_min=25, cascade_bonus=0,
         )
-        assert len(vec) == 22
-        assert vec[16] == 110.0  # opp_pts_allowed default (index 16)
-        assert vec[20] == 222.0  # game_total default (index 20)
+        assert len(vec) == n
+        if n == 22:
+            assert vec[16] == 110.0  # opp_pts_allowed default
+            assert vec[20] == 222.0  # game_total default
+        else:
+            assert vec[15] == 110.0  # v63 tail: opp_pts_allowed
+            assert vec[16] == 110.0  # team_pace_proxy default
 
 
 class TestConfigV62Defaults:

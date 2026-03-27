@@ -8,7 +8,7 @@ Training objectives:
 - Sample weights up-weight high actual_rs within each game date (top-10 RS days matter more).
 - Evaluation: top-5 RS recall, NDCG@5 RS, MAE (reported on held-out dates).
 
-Feature list must stay aligned with api/index.py::_lgbm_feature_vector().
+Feature list must stay aligned with api/index.py::_lgbm_feature_vector() and lgbm_model.json.
 """
 import os
 import re
@@ -27,10 +27,34 @@ from sklearn.model_selection import train_test_split
 # Pull 3 seasons of NBA game logs
 SEASONS = ["2023-24", "2024-25", "2025-26"]
 
-# Total feature count — must match inference (see api/index.py)
-# v63: removed 5 dead features (cascade_signal, usage_share, teammate_out_count, spread_abs, game_total)
-# 17 features (12 original + 5 new: l3_vs_l5_pts, min_volatility, starter_proxy, opp_pts_allowed, team_pace_proxy)
-N_FEATURES = 17
+# Total feature count — must match inference (see api/index.py::_lgbm_feature_vector + lgbm_model.json)
+# v64: full 22-feature bundle (restores cascade_signal, usage_share, teammate_out_count, game_total, spread_abs)
+N_FEATURES = 22
+
+FEATURES = [
+    "avg_min",
+    "avg_pts",
+    "usage_trend",
+    "opp_def_rating",
+    "home_away",
+    "ast_rate",
+    "def_rate",
+    "pts_per_min",
+    "rest_days",
+    "recent_vs_season",
+    "games_played",
+    "reb_per_min",
+    "l3_vs_l5_pts",
+    "min_volatility",
+    "starter_proxy",
+    "cascade_signal",
+    "opp_pts_allowed",
+    "team_pace_proxy",
+    "usage_share",
+    "teammate_out_count",
+    "game_total",
+    "spread_abs",
+]
 
 
 def _fetch_season_logs_with_retry(season: str, max_attempts: int = 6) -> pd.DataFrame:
@@ -191,8 +215,6 @@ df["min_volatility"] = np.where(
 
 df["starter_proxy"] = (df["avg_min"] >= 26.0).astype(float)
 
-# v63: Removed cascade_signal (dead feature — zero importance, trained on constant 0.0)
-
 # v62: 6 new features from top-performer analysis
 # 1. Opponent points allowed (defensive weakness signal)
 df["opp_pts_allowed"] = df["OPP_TEAM"].map(opp_pts_allowed_map).fillna(110.0)
@@ -202,32 +224,91 @@ team_total = df.groupby(["TEAM_ABBREVIATION", "GAME_DATE"])["PTS"].sum().reset_i
 team_pace = team_total.groupby("TEAM_ABBREVIATION")["PTS"].mean().to_dict()
 df["team_pace_proxy"] = df["TEAM_ABBREVIATION"].map(team_pace).fillna(110.0)
 
-# v63: Removed usage_share (dead feature — zero importance) and teammate_out_count (dead feature)
+# ── v64: Game-context features (pre-game–safe: rolling means use shift(1) only) ─
+# teammate OUT / injury is not in PlayerGameLogs; we use lagged bench-depth + minute-trend proxies.
+if "GAME_ID" not in df.columns:
+    raise RuntimeError("train_lgbm.py requires GAME_ID from nba_api PlayerGameLogs")
 
-# v63: Removed game_total and spread_abs (dead features — zero importance in model)
-
-features = [
-    "avg_min",
-    "avg_pts",
-    "usage_trend",
-    "opp_def_rating",
-    "home_away",
-    "ast_rate",
-    "def_rate",
-    "pts_per_min",
-    "rest_days",
-    "recent_vs_season",
-    "games_played",
-    "reb_per_min",
-    "l3_vs_l5_pts",
-    "min_volatility",
-    "starter_proxy",
-    # v62: 2 viable new features (removed 4 dead: cascade_signal, usage_share, teammate_out, spread_abs)
-    "opp_pts_allowed",
-    "team_pace_proxy",
+_team_game = df.groupby(["GAME_ID", "TEAM_ABBREVIATION"], as_index=False).agg(
+    team_pts_game=("PTS", "sum"),
+    n_players_game=("PLAYER_ID", "count"),
+)
+_tg = _team_game.merge(_team_game, on="GAME_ID", suffixes=("", "_opp"))
+_tg = _tg[_tg["TEAM_ABBREVIATION"] != _tg["TEAM_ABBREVIATION_opp"]].copy()
+_tg["game_total_realized"] = _tg["team_pts_game"] + _tg["team_pts_game_opp"]
+_tg["margin"] = _tg["team_pts_game"] - _tg["team_pts_game_opp"]
+_game_ctx = _tg[
+    [
+        "GAME_ID",
+        "TEAM_ABBREVIATION",
+        "team_pts_game",
+        "game_total_realized",
+        "margin",
+        "n_players_game",
+    ]
 ]
+df = df.merge(_game_ctx, on=["GAME_ID", "TEAM_ABBREVIATION"], how="left")
 
-assert len(features) == N_FEATURES
+# One row per team-game for rolling stats (avoids duplicate player rows in expanding windows)
+_tguniq = (
+    df.groupby(["GAME_ID", "TEAM_ABBREVIATION"], as_index=False)
+    .agg(
+        GAME_DATE=("GAME_DATE", "first"),
+        SEASON=("SEASON", "first"),
+        game_total_realized=("game_total_realized", "first"),
+        margin=("margin", "first"),
+        n_players_game=("n_players_game", "first"),
+        team_pts_game=("team_pts_game", "first"),
+    )
+    .sort_values(["TEAM_ABBREVIATION", "SEASON", "GAME_DATE"])
+    .reset_index(drop=True)
+)
+_gtuni = _tguniq.groupby(["TEAM_ABBREVIATION", "SEASON"], sort=False)
+
+# Pace / competitiveness proxies (inference: Vegas total & abs spread; training: realized priors)
+_tguniq["_gt_lag"] = _gtuni["game_total_realized"].shift(1)
+_tguniq["game_total"] = _gtuni["_gt_lag"].transform(lambda x: x.expanding().mean())
+_tguniq["game_total"] = _tguniq["game_total"].fillna(222.0)
+
+_tguniq["_margin_lag"] = _gtuni["margin"].shift(1)
+_tguniq["spread_abs"] = _gtuni["_margin_lag"].transform(lambda x: x.expanding().mean().abs())
+_tguniq["spread_abs"] = _tguniq["spread_abs"].fillna(0.0)
+
+_tguniq["_tpts_lag"] = _gtuni["team_pts_game"].shift(1)
+_tguniq["_team_avg_pts_pg"] = _gtuni["_tpts_lag"].transform(lambda x: x.expanding().mean())
+
+_tguniq["_np_lag"] = _gtuni["n_players_game"].shift(1)
+_tguniq["_np_med"] = _gtuni["_np_lag"].transform(lambda x: x.shift(1).expanding().median())
+_tguniq["teammate_out_count"] = (
+    (_tguniq["_np_med"] - _tguniq["_np_lag"]).clip(lower=0, upper=8).fillna(0.0).astype(float)
+)
+
+_merge_cols = [
+    "GAME_ID",
+    "TEAM_ABBREVIATION",
+    "game_total",
+    "spread_abs",
+    "teammate_out_count",
+    "_team_avg_pts_pg",
+]
+df = df.merge(_tguniq[_merge_cols], on=["GAME_ID", "TEAM_ABBREVIATION"], how="left", suffixes=("", "_tg"))
+
+df["usage_share"] = np.where(
+    df["_team_avg_pts_pg"] > 1.0,
+    (df["avg_pts"] / df["_team_avg_pts_pg"]).clip(0.0, 0.55),
+    0.0,
+).astype(float)
+
+# Inference: cascade_bonus>0; training: bench-stress proxy or minute uptrend (pre-game safe)
+df["cascade_signal"] = np.where(
+    (df["teammate_out_count"] > 0.5) | (df["recent_min"] > df["avg_min"] * 1.12),
+    1.0,
+    0.0,
+).astype(float)
+
+del df["_team_avg_pts_pg"]
+
+assert len(FEATURES) == N_FEATURES
 
 if actuals_df is not None:
     df = df.merge(
@@ -251,7 +332,7 @@ else:
     )
     target = "actual_base_score"
 
-df = df.dropna(subset=features + [target])
+df = df.dropna(subset=FEATURES + [target])
 print(f"After feature engineering: {len(df)} samples with complete features.")
 
 if len(df) < 80:
@@ -292,7 +373,7 @@ if os.path.exists(top_perf_path):
     except Exception as e:
         print(f"   [WARN] Could not load top_performers.csv for weighting: {e}")
 
-X = df[features].copy()
+X = df[FEATURES].copy()
 y = df[target].astype(float)
 
 (
@@ -318,7 +399,7 @@ y = df[target].astype(float)
 )
 
 print(f"2. Training dual-head LightGBM on {len(X_train)} samples...")
-print(f"   Features ({len(features)}): {features}")
+print(f"   Features ({len(FEATURES)}): {FEATURES}")
 
 base_params = dict(
     n_estimators=900,       # v62: 700→900 for 22 features
@@ -387,7 +468,7 @@ _strip_lgbm_noise_params(SPIKE_TXT)
 meta = {
     "format": "lightgbm_native",
     "bundle_version": 2,
-    "features": features,
+    "features": FEATURES,
     "baseline_file": BASELINE_TXT,
     "spike_file": SPIKE_TXT,
 }
@@ -397,6 +478,6 @@ with open("lgbm_model.json", "w", encoding="utf-8") as f:
 
 print("Done! Feature importances (baseline):")
 for feat, imp in sorted(
-    zip(features, model_baseline.feature_importances_), key=lambda x: -x[1]
+    zip(FEATURES, model_baseline.feature_importances_), key=lambda x: -x[1]
 ):
     print(f"  {feat}: {imp}")
