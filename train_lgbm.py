@@ -13,6 +13,7 @@ Feature list must stay aligned with api/index.py::_lgbm_feature_vector().
 import os
 import re
 import glob
+from pathlib import Path
 import json
 import time
 import math
