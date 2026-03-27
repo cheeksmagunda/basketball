@@ -41,6 +41,36 @@ def _mae(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.mean(np.abs(a - b)))
 
 
+def _load_drafts_predictor(repo: Path):
+    """Return (model with .predict, features) or (None, []) — native JSON+txt first, then pickle."""
+    import json
+    import pickle
+
+    import lightgbm as lgb
+
+    json_path = repo / "drafts_model.json"
+    pkl_path = repo / "drafts_model.pkl"
+    if json_path.exists():
+        try:
+            meta = json.loads(json_path.read_text(encoding="utf-8"))
+            if meta.get("format") == "lightgbm_native":
+                mf = meta.get("model_file", "drafts_model.txt")
+                mpath = json_path.parent / mf
+                if mpath.is_file():
+                    booster = lgb.Booster(model_file=str(mpath.resolve()))
+                    return booster, list(meta.get("features") or [])
+        except Exception:
+            pass
+    if pkl_path.exists():
+        try:
+            with pkl_path.open("rb") as f:
+                bundle = pickle.load(f)
+            return bundle["model"], list(bundle.get("features") or [])
+        except Exception:
+            pass
+    return None, []
+
+
 def main() -> int:
     import train_drafts_lgbm as td
 
@@ -125,9 +155,9 @@ def main() -> int:
             "(~10 players/day), not the full slate — most leaderboard names won't match a row."
         )
 
-    model_path = REPO / "drafts_model.pkl"
-    if not model_path.exists():
-        print("[verify] drafts_model.pkl missing — skip drafts metrics")
+    model, feats = _load_drafts_predictor(REPO)
+    if model is None:
+        print("[verify] drafts_model (native json/txt or pkl) missing — skip drafts metrics")
         draft_mae = float("nan")
         sp = float("nan")
         y_log = np.array([])
@@ -142,12 +172,6 @@ def main() -> int:
         y_log = np.array([])
         pred_log = np.array([])
     else:
-        import pickle
-
-        with model_path.open("rb") as f:
-            bundle = pickle.load(f)
-        model = bundle["model"]
-        feats = bundle.get("features") or []
         if list(feats) != list(td.FEATURES):
             print(f"[verify] WARN: model features {feats!r} != train_drafts_lgbm.FEATURES {td.FEATURES!r}")
 
@@ -176,7 +200,7 @@ def main() -> int:
 
         idx._ensure_boost_model_loaded()
         if idx.BOOST_MODEL is None:
-            print("[verify] boost_model.pkl not loaded — skip boost MAE")
+            print("[verify] boost model not loaded — skip boost MAE")
         for row in rows:
             g = row["game"]
             rs = float(g.get("predicted_rs") or 0.0)

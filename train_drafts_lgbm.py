@@ -14,7 +14,7 @@ min_proxy = 12 + 5 * z  (since z == log1p(drafts) → min_proxy formula matches)
 Actually: if model predicts `log1p(drafts)` directly, then `min_proxy = 12 + 5 * prediction`
 because min_proxy = 12 + 5*log1p(drafts). Yes.
 
-Writes drafts_model.pkl as {"model", "features"}.
+Writes drafts_model.json + drafts_model.txt (native LightGBM; portable across sklearn versions).
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from __future__ import annotations
 import csv
 import json
 import unicodedata
-import pickle
 from collections import defaultdict
 from pathlib import Path
 
@@ -35,7 +34,8 @@ ACTUALS_DIR = REPO / "data" / "actuals"
 MOST_POPULAR_DIR = REPO / "data" / "most_popular"
 PRED_DIR = REPO / "data" / "predictions"
 MODEL_CFG = REPO / "data" / "model-config.json"
-MODEL_OUT = REPO / "drafts_model.pkl"
+MODEL_JSON = REPO / "drafts_model.json"
+MODEL_TXT = REPO / "drafts_model.txt"
 
 FEATURES = ["role_pts", "role_avg_min", "big_market", "pos_bucket"]
 
@@ -266,10 +266,12 @@ def train() -> None:
         verbose=-1,
     )
     model.fit(X, y, sample_weight=weights)
-    bundle = {"model": model, "features": FEATURES}
-    with MODEL_OUT.open("wb") as f:
-        pickle.dump(bundle, f)
-    print(f"[drafts_model] Saved {MODEL_OUT} ({len(X)} samples)")
+    model.booster_.save_model(str(MODEL_TXT))
+    meta = {"format": "lightgbm_native", "features": FEATURES, "model_file": MODEL_TXT.name}
+    with MODEL_JSON.open("w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+        f.write("\n")
+    print(f"[drafts_model] Saved {MODEL_TXT.name} + {MODEL_JSON.name} ({len(X)} samples)")
     # Sanity check: high minute + big market → higher log1p(drafts)
     for label, vec in [
         ("bench_small", [7.0, 14.0, 0.0, 1.0]),

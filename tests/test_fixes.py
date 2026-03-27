@@ -657,6 +657,23 @@ class TestLineConfig:
 
 
 # ─────────────────────────────────────────────────────────
+# Native LightGBM artifacts (lgbm_model.json + .txt) vs pickle fallback
+# ─────────────────────────────────────────────────────────
+class TestLgbmNativeArtifacts:
+    def test_loaders_try_lightgbm_native_first(self):
+        import inspect
+        from api import index
+        for fn in (
+            index._ensure_lgbm_loaded,
+            index._ensure_boost_model_loaded,
+            index._ensure_drafts_model_loaded,
+        ):
+            src = inspect.getsource(fn)
+            assert "lightgbm_native" in src, f"{fn.__name__} must handle native format"
+        assert "_LGBM_JSON_PATHS" in inspect.getsource(index._ensure_lgbm_loaded)
+
+
+# ─────────────────────────────────────────────────────────
 # TestLgbmFeatureAlignment — train vs inference feature list
 # ─────────────────────────────────────────────────────────
 class TestLgbmFeatureAlignment:
@@ -667,7 +684,7 @@ class TestLgbmFeatureAlignment:
         idx._ensure_lgbm_loaded()
         AI_FEATURES = idx.AI_FEATURES
         if AI_FEATURES is None:
-            pytest.skip("No LightGBM bundle loaded (lgbm_model.pkl not present or invalid)")
+            pytest.skip("No LightGBM bundle loaded (lgbm_model.json / .pkl not present or invalid)")
         n = len(AI_FEATURES)
         assert n in (12, 16, 17, 22), (
             f"Expected 12 (legacy), 16 (v2), 17 (v63), or 22 (v62) features, got {n}: {AI_FEATURES}"

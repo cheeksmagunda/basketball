@@ -1,7 +1,7 @@
 """
 Stamp model_retrained_at in data/model-config.json after a successful retrain.
 
-Run by retrain-model.yml only when lgbm_model.pkl changed.
+Run by retrain-model.yml only when model artifacts changed (native .json/.txt or legacy .pkl).
 Bumps version + appends changelog entry so the retrain event is traceable.
 """
 
@@ -35,7 +35,7 @@ def main():
     changelog_entry = {
         "version": new_version,
         "date": date_str,
-        "change": f"Auto-bump after model retrain: lgbm_model.pkl updated on {date_str}",
+        "change": f"Auto-bump after model retrain on {date_str}",
     }
     if "changelog" not in config:
         config["changelog"] = []

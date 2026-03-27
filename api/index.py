@@ -27,6 +27,7 @@ from statistics import mode, mean, StatisticsError
 from typing import Any, Optional, Tuple
 
 import numpy as np
+import lightgbm as lgb
 import requests
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1186,8 +1187,11 @@ def _repo_pickle_paths(filename: str) -> list:
     return [base.parent.parent / filename, base.parent / filename, Path(filename)]
 
 
+_LGBM_JSON_PATHS = _repo_pickle_paths("lgbm_model.json")
 _LGBM_PATHS = _repo_pickle_paths("lgbm_model.pkl")
+_BOOST_JSON_PATHS = _repo_pickle_paths("boost_model.json")
 _BOOST_PATHS = _repo_pickle_paths("boost_model.pkl")
+_DRAFTS_JSON_PATHS = _repo_pickle_paths("drafts_model.json")
 _DRAFTS_PATHS = _repo_pickle_paths("drafts_model.pkl")  # Deprecated: retained for audit/back-compat only.
 
 BOOST_MODEL = None
@@ -1206,46 +1210,71 @@ _BOOST_PRIORS_LOADED = False
 _BOOST_PRIORS_LOCK = threading.Lock()
 
 def _ensure_lgbm_loaded():
-    """Lazy-load the LightGBM model bundle on first use.
-    Supports bundle_version 2 (baseline + spike) or legacy single model."""
+    """Lazy-load the Real Score LightGBM bundle on first use.
+
+    Order: native ``lgb.Booster`` files (``lgbm_model.json`` + .txt heads), then legacy pickle.
+    Native format survives LightGBM / sklearn pickle drift across deploys."""
     global AI_MODEL, AI_MODEL_BASELINE, AI_MODEL_SPIKE, AI_FEATURES, _LGBM_LOAD_ATTEMPTED
     if _LGBM_LOAD_ATTEMPTED:
         return
     with _LGBM_LOAD_LOCK:
         if _LGBM_LOAD_ATTEMPTED:
             return
-        for _p in _LGBM_PATHS:
-            if _p.exists():
-                try:
-                    with open(_p, "rb") as _f:
-                        _bundle = pickle.load(_f)
-                    if not isinstance(_bundle, dict) or "features" not in _bundle:
-                        continue
-                    AI_FEATURES = _bundle["features"]
-                    if _bundle.get("bundle_version") == 2 and "model_baseline" in _bundle and "model_spike" in _bundle:
-                        _mb = _bundle["model_baseline"]
-                        _ms = _bundle["model_spike"]
-                        if callable(getattr(_mb, "predict", None)) and callable(getattr(_ms, "predict", None)):
-                            AI_MODEL_BASELINE = _mb
-                            AI_MODEL_SPIKE = _ms
-                            AI_MODEL = None
-                            break
-                        else:
+        for _p in _LGBM_JSON_PATHS:
+            if not _p.exists():
+                continue
+            try:
+                meta = json.loads(_p.read_text(encoding="utf-8"))
+                if meta.get("format") != "lightgbm_native":
+                    continue
+                _dir = _p.parent
+                bf = _dir / meta.get("baseline_file", "lgbm_baseline.txt")
+                sf = _dir / meta.get("spike_file", "lgbm_spike.txt")
+                if not bf.is_file() or not sf.is_file():
+                    continue
+                if meta.get("bundle_version") != 2 or "features" not in meta:
+                    continue
+                _mb = lgb.Booster(model_file=str(bf.resolve()))
+                _ms = lgb.Booster(model_file=str(sf.resolve()))
+                if callable(getattr(_mb, "predict", None)) and callable(getattr(_ms, "predict", None)):
+                    AI_FEATURES = meta["features"]
+                    AI_MODEL_BASELINE = _mb
+                    AI_MODEL_SPIKE = _ms
+                    AI_MODEL = None
+                    break
+                print(f"[lgbm] native boosters not callable — skipping {_p}")
+            except (OSError, json.JSONDecodeError, KeyError, ValueError, Exception):
+                pass
+        if AI_MODEL_BASELINE is None and AI_MODEL is None:
+            for _p in _LGBM_PATHS:
+                if _p.exists():
+                    try:
+                        with open(_p, "rb") as _f:
+                            _bundle = pickle.load(_f)
+                        if not isinstance(_bundle, dict) or "features" not in _bundle:
+                            continue
+                        AI_FEATURES = _bundle["features"]
+                        if _bundle.get("bundle_version") == 2 and "model_baseline" in _bundle and "model_spike" in _bundle:
+                            _mb = _bundle["model_baseline"]
+                            _ms = _bundle["model_spike"]
+                            if callable(getattr(_mb, "predict", None)) and callable(getattr(_ms, "predict", None)):
+                                AI_MODEL_BASELINE = _mb
+                                AI_MODEL_SPIKE = _ms
+                                AI_MODEL = None
+                                break
                             print(f"[lgbm] bundle_version=2 models not callable — skipping {_p}")
                             continue
-                    if "model" in _bundle:
-                        _m = _bundle["model"]
-                        if callable(getattr(_m, "predict", None)):
-                            AI_MODEL = _m
-                            AI_MODEL_BASELINE = None
-                            AI_MODEL_SPIKE = None
-                            break
-                        else:
+                        if "model" in _bundle:
+                            _m = _bundle["model"]
+                            if callable(getattr(_m, "predict", None)):
+                                AI_MODEL = _m
+                                AI_MODEL_BASELINE = None
+                                AI_MODEL_SPIKE = None
+                                break
                             print(f"[lgbm] model loaded but predict is not callable — skipping {_p}")
                             continue
-                except (OSError, pickle.UnpicklingError, KeyError, ValueError, ModuleNotFoundError):
-                    # ModuleNotFoundError: e.g. lightgbm not installed in env but pickle references it
-                    pass
+                    except (OSError, pickle.UnpicklingError, KeyError, ValueError, ModuleNotFoundError):
+                        pass
         _LGBM_LOAD_ATTEMPTED = True
         if AI_MODEL is None and AI_MODEL_BASELINE is None:
             print("[WARN] LightGBM model not found or invalid bundle — using heuristic fallback for all projections")
@@ -1267,35 +1296,54 @@ def _lgbm_predict_rs(feat_vec: list) -> Optional[float]:
 
 
 def _ensure_boost_model_loaded():
-    """Lazy-load LightGBM card boost model bundle on first use."""
+    """Lazy-load card boost model: native Booster (``boost_model.json`` + .txt) then pickle."""
     global BOOST_MODEL, BOOST_FEATURES, _BOOST_LOAD_ATTEMPTED
     if _BOOST_LOAD_ATTEMPTED:
         return
     with _BOOST_LOAD_LOCK:
         if _BOOST_LOAD_ATTEMPTED:
             return
-        for _p in _BOOST_PATHS:
-            if _p.exists():
-                try:
-                    with open(_p, "rb") as _f:
-                        _bundle = pickle.load(_f)
-                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                        _m = _bundle["model"]
-                        if callable(getattr(_m, "predict", None)):
-                            BOOST_MODEL = _m
-                            BOOST_FEATURES = _bundle["features"]
-                            break
-                        else:
+        for _p in _BOOST_JSON_PATHS:
+            if not _p.exists():
+                continue
+            try:
+                meta = json.loads(_p.read_text(encoding="utf-8"))
+                if meta.get("format") != "lightgbm_native" or "features" not in meta:
+                    continue
+                mf = meta.get("model_file", "boost_model.txt")
+                mpath = _p.parent / mf
+                if not mpath.is_file():
+                    continue
+                _m = lgb.Booster(model_file=str(mpath.resolve()))
+                if callable(getattr(_m, "predict", None)):
+                    BOOST_MODEL = _m
+                    BOOST_FEATURES = meta["features"]
+                    break
+                print(f"[boost_model] native booster not callable — skipping {_p}")
+            except Exception as e:
+                print(f"[boost_model] native load failed from {_p}: {e}")
+        if BOOST_MODEL is None:
+            for _p in _BOOST_PATHS:
+                if _p.exists():
+                    try:
+                        with open(_p, "rb") as _f:
+                            _bundle = pickle.load(_f)
+                        if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
+                            _m = _bundle["model"]
+                            if callable(getattr(_m, "predict", None)):
+                                BOOST_MODEL = _m
+                                BOOST_FEATURES = _bundle["features"]
+                                break
                             print(f"[boost_model] model loaded but predict is not callable — skipping {_p}")
-                except Exception as e:
-                    print(f"[boost_model] load failed from {_p}: {e}")
+                    except Exception as e:
+                        print(f"[boost_model] load failed from {_p}: {e}")
         _BOOST_LOAD_ATTEMPTED = True
         if BOOST_MODEL is None:
             print("[WARN] Boost model not found/invalid — _est_card_boost will use heuristic fallback (non-flat)")
 
 
 def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
-    """Return predicted card boost from boost_model.pkl, or None on fallback."""
+    """Return predicted card boost from loaded boost model (native or pickle), or None."""
     _ensure_boost_model_loaded()
     if BOOST_MODEL is None or BOOST_FEATURES is None:
         return None
@@ -1313,24 +1361,45 @@ def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
 
 
 def _ensure_drafts_model_loaded():
-    """DEPRECATED: Lazy-load estimated draft-count model (kept for back-compat)."""
+    """DEPRECATED: Lazy-load draft-count model — native JSON + Booster, then pickle."""
     global DRAFTS_MODEL, DRAFTS_FEATURES, _DRAFTS_LOAD_ATTEMPTED
     if _DRAFTS_LOAD_ATTEMPTED:
         return
     with _DRAFTS_LOAD_LOCK:
         if _DRAFTS_LOAD_ATTEMPTED:
             return
-        for _p in _DRAFTS_PATHS:
-            if _p.exists():
-                try:
-                    with open(_p, "rb") as _f:
-                        _bundle = pickle.load(_f)
-                    if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                        DRAFTS_MODEL = _bundle["model"]
-                        DRAFTS_FEATURES = _bundle["features"]
-                        break
-                except Exception as e:
-                    print(f"[drafts_model] load failed from {_p}: {e}")
+        for _p in _DRAFTS_JSON_PATHS:
+            if not _p.exists():
+                continue
+            try:
+                meta = json.loads(_p.read_text(encoding="utf-8"))
+                if meta.get("format") != "lightgbm_native" or "features" not in meta:
+                    continue
+                mf = meta.get("model_file", "drafts_model.txt")
+                mpath = _p.parent / mf
+                if not mpath.is_file():
+                    continue
+                _m = lgb.Booster(model_file=str(mpath.resolve()))
+                if callable(getattr(_m, "predict", None)):
+                    DRAFTS_MODEL = _m
+                    DRAFTS_FEATURES = meta["features"]
+                    break
+            except Exception as e:
+                print(f"[drafts_model] native load failed from {_p}: {e}")
+        if DRAFTS_MODEL is None:
+            for _p in _DRAFTS_PATHS:
+                if _p.exists():
+                    try:
+                        with open(_p, "rb") as _f:
+                            _bundle = pickle.load(_f)
+                        if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
+                            _m = _bundle["model"]
+                            if callable(getattr(_m, "predict", None)):
+                                DRAFTS_MODEL = _m
+                                DRAFTS_FEATURES = _bundle["features"]
+                                break
+                    except Exception as e:
+                        print(f"[drafts_model] load failed from {_p}: {e}")
         _DRAFTS_LOAD_ATTEMPTED = True
         if DRAFTS_MODEL is None:
             print("[drafts_model] not found — card boost uses minutes-derived min_proxy fallback")
@@ -1491,7 +1560,7 @@ def _lgbm_feature_vector(
     game_total: Optional[float] = None,
     teammate_out_count: Optional[float] = None,
 ) -> list:
-    """Build feature vector aligned with lgbm_model.pkl.
+    """Build feature vector aligned with the loaded Real Score bundle (native or pickle).
 
     Uses the loaded model's AI_FEATURES list to select and order features,
     so both v63 (17-feature) and legacy (22-feature) bundles work without
@@ -1523,7 +1592,7 @@ def _lgbm_feature_vector(
     teammate_out_    = float(teammate_out_count) if teammate_out_count is not None else 0.0
 
     # Named feature map — superset of all features ever used in training.
-    # Key names MUST match the feature name strings in lgbm_model.pkl bundles.
+    # Key names MUST match the feature name strings in lgbm_model.json / .pkl bundles.
     _feature_map = {
         "avg_min":           avg_min,
         "avg_pts":           season_pts,
@@ -3004,7 +3073,7 @@ def _est_card_boost(
     team_market_score (0.0–1.0) replaces the old binary is_big_market flag.
     ppg_tier (0–4) segments player recognition without a hard PPG threshold cliff.
 
-    Primary path is ML. If boost_model.pkl is unavailable/inference fails, falls back
+    Primary path is ML. If boost_model (native or pickle) is unavailable/inference fails, falls back
     to a deterministic heuristic estimate (never hard-flattens to +1x across slate).
     """
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])

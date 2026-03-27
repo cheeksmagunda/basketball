@@ -20,7 +20,6 @@ Sample weighting:
 
 import csv
 import json
-import pickle
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -34,7 +33,8 @@ ACTUALS_DIR = Path("data/actuals")
 MOST_POPULAR_DIR = Path("data/most_popular")
 PREDICTIONS_DIR = Path("data/predictions")
 MODEL_CONFIG = Path("data/model-config.json")
-MODEL_OUT = Path("boost_model.pkl")
+MODEL_JSON = Path("boost_model.json")
+MODEL_TXT = Path("boost_model.txt")
 
 FEATURES = [
     "projected_rs",
@@ -408,10 +408,12 @@ def train_model() -> None:
     )
     model.fit(X, y, sample_weight=weights)
 
-    bundle = {"model": model, "features": FEATURES}
-    with MODEL_OUT.open("wb") as f:
-        pickle.dump(bundle, f)
-    print(f"Saved {MODEL_OUT}")
+    model.booster_.save_model(str(MODEL_TXT))
+    meta = {"format": "lightgbm_native", "features": FEATURES, "model_file": MODEL_TXT.name}
+    with MODEL_JSON.open("w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+        f.write("\n")
+    print(f"Saved {MODEL_TXT} + {MODEL_JSON}")
     _print_validation_grid(model)
 
 

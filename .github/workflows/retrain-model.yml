@@ -26,11 +26,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-train.txt
 
-      - name: Retrain RS model on 3 seasons
-        id: retrain_rs
-        continue-on-error: true
-        run: python train_lgbm.py
-
+      # Boost + drafts first (local data only). RS last: if RS fails, job fails and nothing is committed.
       - name: Retrain boost model from actuals
         id: retrain_boost
         continue-on-error: true
@@ -41,37 +37,46 @@ jobs:
         continue-on-error: true
         run: python train_drafts_lgbm.py
 
-      - name: Retrain status note (RS)
-        if: steps.retrain_rs.outcome != 'success'
-        run: |
-          echo "::warning::Retrain skipped due to NBA API/network failure. Keeping current lgbm_model.pkl."
-
       - name: Retrain status note (Boost)
         if: steps.retrain_boost.outcome != 'success'
         run: |
-          echo "::warning::Boost retrain skipped due to API/network/data failure. Keeping current boost_model.pkl."
+          echo "::warning::Boost retrain skipped or failed. Keeping tracked boost artifacts."
 
       - name: Retrain status note (Drafts)
         if: steps.retrain_drafts.outcome != 'success'
         run: |
-          echo "::warning::Drafts model retrain skipped or insufficient overlap. Keeping current drafts_model.pkl."
+          echo "::warning::Drafts retrain skipped or insufficient overlap. Keeping tracked drafts artifacts."
 
-      - name: Check if either model changed
-        if: steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success'
+      # Core Real Score model: NBA API can flake — retry before failing the whole workflow.
+      - name: Retrain RS model on 3 seasons
+        id: retrain_rs
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 18
+          max_attempts: 3
+          retry_wait_seconds: 90
+          command: python train_lgbm.py
+
+      - name: Check if model artifacts changed
         id: check
+        if: steps.retrain_rs.outcome == 'success'
         run: |
-          if git diff --quiet lgbm_model.pkl boost_model.pkl drafts_model.pkl 2>/dev/null; then
+          if git diff --quiet \
+            lgbm_model.json lgbm_baseline.txt lgbm_spike.txt \
+            boost_model.json boost_model.txt \
+            drafts_model.json drafts_model.txt \
+            lgbm_model.pkl boost_model.pkl drafts_model.pkl 2>/dev/null; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Stamp model retrain date in config
-        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success') && steps.check.outputs.changed == 'true'
+        if: steps.retrain_rs.outcome == 'success' && steps.check.outputs.changed == 'true'
         run: python scripts/bump_retrain_config.py
 
       - name: Bust today's slate cache on model change via API
-        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success') && steps.check.outputs.changed == 'true'
+        if: steps.retrain_rs.outcome == 'success' && steps.check.outputs.changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
@@ -101,10 +106,35 @@ jobs:
             -d "$PAYLOAD"
 
       - name: Commit and push updated model + config
-        if: (steps.retrain_rs.outcome == 'success' || steps.retrain_boost.outcome == 'success' || steps.retrain_drafts.outcome == 'success') && steps.check.outputs.changed == 'true'
+        if: steps.retrain_rs.outcome == 'success' && steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add lgbm_model.pkl boost_model.pkl drafts_model.pkl data/model-config.json
+          for f in \
+            lgbm_model.json lgbm_baseline.txt lgbm_spike.txt \
+            boost_model.json boost_model.txt \
+            drafts_model.json drafts_model.txt \
+            lgbm_model.pkl boost_model.pkl drafts_model.pkl \
+            data/model-config.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
+          if git diff --staged --quiet; then
+            echo "No staged model changes — skip commit"
+            exit 0
+          fi
           git commit -m "chore: daily models retrain $(date -u +%Y-%m-%d)"
           git push
+
+      - name: Retrain summary
+        if: always()
+        run: |
+          {
+            echo "## Model retrain results"
+            echo "| Step | Outcome |"
+            echo "|------|---------|"
+            echo "| Boost | \`${{ steps.retrain_boost.outcome }}\` |"
+            echo "| Drafts | \`${{ steps.retrain_drafts.outcome }}\` |"
+            echo "| RS (Real Score) | \`${{ steps.retrain_rs.outcome }}\` |"
+            echo ""
+            echo "Auto-commit to \`main\` runs only when **RS retrain succeeds** and artifacts differ from HEAD."
+          } >> "$GITHUB_STEP_SUMMARY"

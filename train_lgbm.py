@@ -16,7 +16,6 @@ import glob
 import json
 import time
 import math
-import pickle
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -368,16 +367,22 @@ print(
     f"MAE: {np.mean(np.abs(test_df[target] - test_df['pred_rs'])):.3f}"
 )
 
-model_bundle = {
-    "bundle_version": 2,
-    "model_baseline": model_baseline,
-    "model_spike": model_spike,
-    "features": features,
-}
+BASELINE_TXT = "lgbm_baseline.txt"
+SPIKE_TXT = "lgbm_spike.txt"
 
-print("4. Saving bundle to lgbm_model.pkl...")
-with open("lgbm_model.pkl", "wb") as f:
-    pickle.dump(model_bundle, f)
+print("4. Saving native LightGBM models + lgbm_model.json...")
+model_baseline.booster_.save_model(BASELINE_TXT)
+model_spike.booster_.save_model(SPIKE_TXT)
+meta = {
+    "format": "lightgbm_native",
+    "bundle_version": 2,
+    "features": features,
+    "baseline_file": BASELINE_TXT,
+    "spike_file": SPIKE_TXT,
+}
+with open("lgbm_model.json", "w", encoding="utf-8") as f:
+    json.dump(meta, f, indent=2)
+    f.write("\n")
 
 print("Done! Feature importances (baseline):")
 for feat, imp in sorted(

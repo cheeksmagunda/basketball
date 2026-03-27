@@ -30,6 +30,7 @@ TOP_PERFORMERS_CSV = os.path.join(REPO_ROOT, "data", "top_performers.csv")
 ACTUALS_DIR = os.path.join(REPO_ROOT, "data", "actuals")
 MODEL_CONFIG_JSON = os.path.join(REPO_ROOT, "data", "model-config.json")
 BOOST_MODEL_PKL = os.path.join(REPO_ROOT, "boost_model.pkl")
+BOOST_MODEL_JSON = os.path.join(REPO_ROOT, "boost_model.json")
 
 
 def _normalize_name(name: str) -> str:
@@ -160,7 +161,7 @@ def main() -> None:
     args = parser.parse_args()
 
     _ = _load_model_config()
-    boost_model_available = os.path.exists(BOOST_MODEL_PKL)
+    boost_model_available = os.path.exists(BOOST_MODEL_JSON) or os.path.exists(BOOST_MODEL_PKL)
 
     top_rows = _load_top_performers(args.top_performers_csv, args.start_date, args.end_date)
     if not args.disable_actuals_fallback:
