@@ -110,6 +110,10 @@ GITHUB_REPO = os.getenv("GITHUB_REPO", "").strip()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 INGEST_SECRET = os.getenv("INGEST_SECRET", "").strip()
 
+def _get_odds_api_key() -> str:
+    """The Odds API key trimmed of whitespace (Railway/dashboard pastes often add newlines)."""
+    return (os.environ.get("ODDS_API_KEY") or "").strip()
+
 # Startup env validation — warn on missing required vars (never crash; app degrades gracefully)
 _REQUIRED_ENV = ["GITHUB_TOKEN", "GITHUB_REPO", "ANTHROPIC_API_KEY"]
 _missing_env = [k for k in _REQUIRED_ENV if not os.getenv(k)]
@@ -8522,7 +8526,7 @@ async def injury_check(request: Request):
 def _fetch_odds_line(player_name: str, stat_type: str, team_abbr: str, opponent_abbr: str):
     """Fetch the current bookmaker consensus line for a player prop from The Odds API.
     Returns {"line", "odds_over", "odds_under", "books_consensus"} or None on failure."""
-    api_key = os.environ.get("ODDS_API_KEY")
+    api_key = _get_odds_api_key()
     if not api_key:
         return None
     market = _STAT_MARKET.get(stat_type, "player_points")
@@ -8606,9 +8610,9 @@ def _build_player_odds_map(games):
     Returns {(player_name_lower, stat_type): {"line", "odds_over", "odds_under",
     "books_consensus"}} or {} on any failure.
     """
-    api_key = os.environ.get("ODDS_API_KEY")
+    api_key = _get_odds_api_key()
     if not api_key:
-        print("[odds_map] ODDS_API_KEY not set — skipping odds fetch")
+        print("[odds_map] ODDS_API_KEY missing or empty after trim — skipping odds fetch")
         return {}
 
     if not games:
@@ -8675,6 +8679,8 @@ def _build_player_odds_map(games):
         used = ev_r.headers.get("x-requests-used", "?")
         if not ev_r.ok:
             print(f"[odds_map] events fetch failed: HTTP {ev_r.status_code} (remaining={remaining}, used={used}) — {ev_r.text[:200]}")
+            if ev_r.status_code == 401:
+                print("[odds_map] hint: 401 usually means invalid/expired ODDS_API_KEY or wrong key pasted (try re-key in Railway)")
             return cached_odds_map or {}
         all_events = ev_r.json()
         print(f"[odds_map] Odds API returned {len(all_events)} events (remaining={remaining}, used={used})")
@@ -8728,6 +8734,8 @@ def _build_player_odds_map(games):
             )
             if not r.ok:
                 print(f"[odds_map] props fetch failed for event {event_id}: HTTP {r.status_code}")
+                if r.status_code == 401:
+                    print("[odds_map] hint: 401 on props — check ODDS_API_KEY")
                 return {}
             data = r.json()
             n_books = len(data.get("bookmakers", []))
@@ -9410,7 +9418,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             combo.get(_dk) and (combo[_dk].get("model_only") or not combo[_dk].get("books_consensus"))
             for _dk in ("over_pick", "under_pick")
         )
-        if _needs_odds and os.environ.get("ODDS_API_KEY"):
+        if _needs_odds and _get_odds_api_key():
             try:
                 _games_for_odds = fetch_games(today)
                 _odds_map = _build_player_odds_map(_games_for_odds) if _games_for_odds else {}
@@ -12183,9 +12191,9 @@ def _run_parlay_engine_sync(today):
     # Fires when: props not yet published (~pre-5pm ET), Odds API down, or no
     # game matching. Thresholds loosened below to compensate for no Vegas signal.
     projection_only = not bool(player_odds_map)
+    has_key = bool(_get_odds_api_key())
     if projection_only:
-        has_key = bool(os.environ.get("ODDS_API_KEY"))
-        print(f"[parlay] no Odds API data (ODDS_API_KEY={'set' if has_key else 'NOT SET'}) — "
+        print(f"[parlay] no Odds API data (ODDS_API_KEY={'set' if has_key else 'empty'}) — "
               f"building synthetic lines from {len(all_proj)} projections")
         player_odds_map = {}
         for _p in all_proj:
@@ -12249,6 +12257,7 @@ def _run_parlay_engine_sync(today):
         "odds_available": not projection_only,
         "projection_only": projection_only,
         "fair_value_entries": len(_parlay_fv_data),
+        "has_key": has_key,
     }
     result = run_parlay_engine(
         all_proj, target_games, player_odds_map, gamelogs,
@@ -12341,7 +12350,7 @@ async def get_parlay(request: Request):
         if err or not result:
             no_odds = err == "no_odds_data" or (debug and not debug.get("odds_available"))
             no_proj = err == "no_projections"
-            has_key = debug.get("has_key", bool(os.environ.get("ODDS_API_KEY"))) if debug else bool(os.environ.get("ODDS_API_KEY"))
+            has_key = debug.get("has_key", bool(_get_odds_api_key())) if debug else bool(_get_odds_api_key())
             if no_proj:
                 narrative = ("Parlay unavailable \u2014 slate projections are rebuilding. "
                              "This usually resolves in a few minutes. Please retry.")
