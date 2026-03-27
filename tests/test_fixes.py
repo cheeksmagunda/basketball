@@ -3304,7 +3304,7 @@ class TestParlayHistoryAndConfigHardening:
         assert "today_games_final = bool(today_all_final)" in src
         assert '_can_resolve = (date_str < today_str) or (date_str == today_str and today_games_final)' in src
         assert "def _parlay_fully_concluded(" in src
-        assert "history_parlays" in src and "date_str > today_str" in src
+        assert "history_parlays" in src and "date_str >= today_str" in src
 
     def test_parlay_live_stream_endpoint(self):
         src = open("api/index.py").read()

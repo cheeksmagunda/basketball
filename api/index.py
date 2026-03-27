@@ -10171,25 +10171,24 @@ def _all_games_final(games):
     # AGGRESSIVE FALLBACK: If ESPN isn't marking games as complete but they've been
     # running for 4.5+ hours, treat as final anyway. This handles ESPN API delays.
     # NBA games max ~3.5h; 4.5h buffer includes OT, 2OT, and processing delays.
-    # KEY: Removed the `finals > 0` requirement. Now fires even if ESPN is completely
-    # lagged on all game statuses. This prevents 6-hour lock ceiling waits when ESPN
-    # is slow during high-traffic periods (evening games on Saturdays).
-    if not all_final and remaining > 0 and latest_remaining:
+    # v72: Also fires when remaining=0 AND we have slate game start times as fallback.
+    # Mar 26 bug: ESPN returned finals=0, remaining=0 for a completed 3-game slate,
+    # keeping the app locked indefinitely. Now uses slate start times when ESPN is empty.
+    _fallback_latest = latest_remaining
+    if not _fallback_latest and games:
+        # ESPN scoreboard empty — use slate game start times as fallback
+        _slate_starts = [g.get("startTime", "") for g in games if g.get("startTime")]
+        if _slate_starts:
+            _fallback_latest = max(_slate_starts)
+    if not all_final and _fallback_latest:
         try:
-            latest_dt = datetime.fromisoformat(latest_remaining.replace("Z", "+00:00"))
+            latest_dt = datetime.fromisoformat(_fallback_latest.replace("Z", "+00:00"))
             hours_since_start = (now_ts - latest_dt.timestamp()) / 3600
             if hours_since_start >= 4.5:
                 all_final = True
-                print(f"[espn fallback] latest_remaining running {hours_since_start:.1f}h — forcing all_final=True (ESPN lagged)")
+                print(f"[espn fallback] latest game started {hours_since_start:.1f}h ago — forcing all_final=True (ESPN lagged/empty)")
         except Exception:
             pass
-
-    # Safety: if ESPN returned no data (both counts 0), we cannot confirm games
-    # are final even if it's past game time. Only lock files and manual override
-    # can force unlock when ESPN is unreachable. This prevents false unlock during
-    # ESPN outages that coincide with off-days or startup delays.
-    if finals == 0 and remaining == 0:
-        all_final = False
 
     result = (all_final, remaining, finals, latest_remaining)
     _GAMES_FINAL_CACHE.update({"result": list(result), "ts": now_ts, "date": today_str})
@@ -11944,6 +11943,15 @@ async def get_parlay(request: Request):
         except Exception as _ge:
             print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
 
+        # Lock guard: once slate is locked, refuse to regenerate. The parlay should
+        # have been generated pre-lock (via cron or first visit). Regenerating during
+        # a live slate produces different results as Odds API drops pre-game props,
+        # causing confusing mid-slate parlay changes. Mar 26 bug: parlay kept changing.
+        if slate_locked:
+            print(f"[parlay] slate locked, no cached/GitHub parlay — returning empty (not regenerating)")
+            return JSONResponse({"error": "parlay_locked", "locked": True,
+                                 "message": "Parlay was not generated before lock. Check back tomorrow."})
+
         result, err, debug = await asyncio.to_thread(_run_parlay_engine_sync, today)
 
         if err or not result:
@@ -12236,9 +12244,10 @@ async def parlay_history(request: Request):
                 print(f"[parlay-history] cache sync after resolve: {_ph_sync_err}")
 
         # Recent history: concluded tickets only (no live/future; backend is source of truth).
+        # Exclude today — today's parlay is already shown as the active ticket card.
         history_parlays = []
         for date_str, parlay in results_with_dates:
-            if date_str > today_str:
+            if date_str >= today_str:
                 continue
             if not _parlay_fully_concluded(parlay):
                 continue
