@@ -13,22 +13,21 @@
 # statistical projection to produce a Real Score estimate.
 #
 # E(RealScore) = S_base × C_c × C_k × M_m
+#
+# grep: REAL SCORE ENGINE — real_score_projection, closeness_coefficient, clutch_factor
 # ─────────────────────────────────────────────────────────────────────────────
 
 import numpy as np
 from datetime import datetime, timezone, timedelta
 import hashlib
+from api.shared import et_date as _shared_et_date
 
 
 def _et_today():
-    """Current date in Eastern Time as ISO string — matches api/index.py logic."""
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo("America/New_York")).date().isoformat()
-    except ImportError:
-        now_utc = datetime.now(timezone.utc)
-        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
-        return (now_utc + offset).date().isoformat()
+    """Current date in Eastern Time as ISO string.
+    Delegates to shared.et_date() for single source of truth.
+    """
+    return _shared_et_date().isoformat()
 
 
 def _make_rng(spread, total, seed_date=None, game_id=None):
@@ -57,7 +56,13 @@ def closeness_coefficient(spread, total, rng=None, n_sims=2000, game_id=None):
     abs_spread = abs(spread or 0)
     t = total or 222
 
-    # Standard deviation: higher-scoring games have more variance
+    # Standard deviation: higher-scoring games have more variance.
+    # NOTE: For very low totals (~180), sigma grows with sqrt(t) but the spread
+    # stays constant, producing wide distributions where p_close becomes
+    # counter-intuitively high (more sims land within 5 pts). This is
+    # mathematically correct — low-scoring games ARE closer on average — but
+    # users should be aware when interpreting closeness coefficients for
+    # unusually low totals.
     sigma = 0.45 * np.sqrt(t)
 
     # Simulate final score differentials

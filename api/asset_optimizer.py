@@ -1,3 +1,4 @@
+# grep: MILP OPTIMIZER — optimize_lineup, _solve_milp, _fallback_sort
 # ─────────────────────────────────────────────────────────────────────────────
 # MILP SLOT OPTIMIZER — Data-Driven Barbell Strategy
 #
@@ -124,13 +125,25 @@ def optimize_lineup(projections, n=5, min_per_team=0, max_per_team=0,
             # Phase 2: re-assign slots using raw RS for optimal placement.
             # In Score = RS × (Slot + Boost), boost is player-constant so
             # highest raw RS must go in highest slot.
+            # Players are already selected (Phase 1 enforced all constraints),
+            # so Phase 2 only needs to find optimal slot assignments.
+            # We still pass max_per_game/player_games for safety — Phase 1
+            # already guarantees the constraint, but this prevents regressions
+            # if Phase 2 is ever extended.
             rr_key = raw_rating_key or rating_key
+            # Rebuild player_games for the selected subset (parallel to selected list)
+            _p2_games = None
+            if max_per_game > 0 and player_games and len(player_games) == len(projections):
+                _proj_to_game = {id(projections[i]): player_games[i] for i in range(len(projections))}
+                _p2_games = [_proj_to_game.get(id(p), "") for p in selected]
             return _solve_milp(selected, n, 0, 0,
                                rr_key, card_boost_key, time_limit,
                                0, 0.0, None, 0.0, 0.0, 0.0,
                                None, 0, overlap_id_key,
                                star_indices=None, min_star_count=0,
-                               max_star_count=0)
+                               max_star_count=0,
+                               max_per_game=max_per_game,
+                               player_games=_p2_games)
 
         return selected
     except Exception as e:

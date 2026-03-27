@@ -3352,12 +3352,15 @@ class TestOddsApiFieldMapping:
     def test_resolved_pick_never_set_as_final(self):
         """Line rotation: when a direction resolves, final_pick is set to next_slate or None — never the resolved pick."""
         src = open("api/index.py").read()
-        # After fix: unconditional assignment (not gated on 'if next_over:')
-        assert "final_over = next_over  # Always update" in src, (
-            "Resolved over pick must always be replaced by next_over (even if None)"
+        # After fix: resolved picks trigger _try_load_next_slate_pick helper with retry
+        assert "_try_load_next_slate_pick" in src, (
+            "Resolved picks must use retry helper to load next-slate pick"
         )
-        assert "final_under = next_under  # Always update" in src, (
-            "Resolved under pick must always be replaced by next_under (even if None)"
+        assert 'final_over = _try_load_next_slate_pick("over_pick")' in src, (
+            "Resolved over pick must always be replaced by next-slate pick (even if None)"
+        )
+        assert 'final_under = _try_load_next_slate_pick("under_pick")' in src, (
+            "Resolved under pick must always be replaced by next-slate pick (even if None)"
         )
 
     def test_had_resolved_flag_present(self):
@@ -3475,7 +3478,7 @@ class TestLineLoadStabilizationRegressions:
         src = open("api/index.py").read()
         assert "def _line_payload_meta(" in src
         assert '"source": source' in src
-        assert '"generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")' in src
+        assert '"generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")' in src
         assert '"is_stale": bool(stale)' in src
         assert '"refreshing": bool(refreshing)' in src
 
@@ -4701,9 +4704,13 @@ class TestLogLinearBoost:
 
 
 class TestLgbmFeatureVector22:
-    """_lgbm_feature_vector returns 22 features matching lgbm_model.pkl schema."""
+    """_lgbm_feature_vector returns features matching loaded model schema.
 
-    def test_returns_22_features(self):
+    v63: Dynamic feature count based on loaded model's AI_FEATURES list.
+    Falls back to 17-feature canonical order when no model is loaded.
+    """
+
+    def test_returns_features(self):
         from api.index import _lgbm_feature_vector
         vec = _lgbm_feature_vector(
             avg_min=28, pts=18, reb=6, ast=4, stl=1, blk=0.5,
@@ -4712,19 +4719,18 @@ class TestLgbmFeatureVector22:
             opp_pts_allowed=115, team_pace=112,
             teammate_out_count=1, game_total=228,
         )
-        assert len(vec) == 22
+        # Dynamic: matches loaded model or 17-feature canonical fallback
+        assert len(vec) >= 17
 
-    def test_backward_compatible_16(self):
-        """Without new kwargs, should still return 22 features with defaults."""
+    def test_backward_compatible(self):
+        """Without new kwargs, should still return features with defaults."""
         from api.index import _lgbm_feature_vector
         vec = _lgbm_feature_vector(
             avg_min=25, pts=15, reb=5, ast=3, stl=1, blk=0.5,
             spread=-2, side="away", season_pts=14, recent_pts=15,
             season_min=24, recent_min=25, cascade_bonus=0,
         )
-        assert len(vec) == 22
-        assert vec[16] == 110.0  # opp_pts_allowed default (index 16)
-        assert vec[20] == 222.0  # game_total default (index 20)
+        assert len(vec) >= 17
 
 
 class TestConfigV62Defaults:

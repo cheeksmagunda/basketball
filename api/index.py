@@ -77,7 +77,7 @@ async def docs_auth_and_log(request, call_next):
     if DOCS_SECRET and request.url.path in ("/docs", "/redoc", "/openapi.json"):
         key = request.query_params.get("docs_key") or request.headers.get("x-docs-key")
         if key != DOCS_SECRET:
-            return JSONResponse({"detail": "Docs require docs_key or X-Docs-Key"}, status_code=401)
+            return _err("Docs require docs_key or X-Docs-Key", 401)
 
     request_id = str(uuid.uuid4())[:8]
     request.state.request_id = request_id
@@ -748,7 +748,7 @@ def _with_response_cache(cache_key, ttl_key, fn, *args, **kwargs):
 def _add_cache_metadata(response_dict, is_hit, cache_key=None):
     """Add cache_status and metadata fields to response."""
     response_dict["cache_status"] = "hit" if is_hit else "miss"
-    response_dict["cached_at"] = datetime.utcnow().isoformat() + "Z"
+    response_dict["cached_at"] = datetime.now(timezone.utc).isoformat() + "Z"
     if cache_key:
         response_dict["_cache_key"] = cache_key
     return response_dict
@@ -1826,12 +1826,26 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
     try: return float(v) if v is not None else default
     except (ValueError, TypeError): return default
 
+def _espn_scoreboard(date_ymd: str) -> str:
+    """Build ESPN scoreboard URL. date_ymd = YYYYMMDD format."""
+    return f"{ESPN}/scoreboard?dates={date_ymd}"
+
 def _espn_get(url):
     try:
         r = requests.get(url, timeout=_T_DEFAULT)
-        if not r.ok: return {}
+        if not r.ok:
+            print(f"[espn] HTTP {r.status_code} for {url[:120]}", flush=True)
+            return {}
         return r.json()
-    except (requests.RequestException, ValueError): return {}
+    except requests.exceptions.Timeout:
+        print(f"[espn] timeout for {url[:120]}", flush=True)
+        return {}
+    except requests.exceptions.ConnectionError as e:
+        print(f"[espn] connection error for {url[:120]}: {e}", flush=True)
+        return {}
+    except (requests.RequestException, ValueError) as e:
+        print(f"[espn] error for {url[:120]}: {e}", flush=True)
+        return {}
 
 def _fetch_b2b_teams():
     """Detect teams on the second night of a back-to-back.
@@ -1845,7 +1859,7 @@ def _fetch_b2b_teams():
     c = _cg(cache_key)
     if c is not None: return set(c)
     yesterday = (_et_date() - timedelta(days=1)).strftime("%Y%m%d")
-    data = _espn_get(f"{ESPN}/scoreboard?dates={yesterday}")
+    data = _espn_get(_espn_scoreboard(yesterday))
     b2b = set()
     for ev in data.get("events", []):
         comp = ev.get("competitions", [{}])[0]
@@ -2371,7 +2385,7 @@ def fetch_games(date=None):
             return c
     b2b_teams = _fetch_b2b_teams()
     date_str = today_et.strftime("%Y%m%d")
-    data = _espn_get(f"{ESPN}/scoreboard?dates={date_str}")
+    data = _espn_get(_espn_scoreboard(date_str))
     games = []
     for ev in data.get("events", []):
         comp = ev.get("competitions", [{}])[0]
@@ -2453,8 +2467,20 @@ def _parse_split(names, split):
         elif k in ("gp", "g", "gamesplayed"): s["gp"]  = _safe_float(val)
     return s
 
+_TTL_ATHLETE = 1800  # 30-min TTL for athlete data (prevents stale injury/status)
+
 def _fetch_athlete(pid):
-    c = _cg(f"ath3_{pid}")
+    _ath_key = f"ath3_{pid}"
+    c = _cg(_ath_key)
+    if c:
+        # Check TTL — athlete data can go stale (e.g., OUT yesterday, active today)
+        _ath_path = _cp(_ath_key)
+        try:
+            if _ath_path.exists() and (time.time() - _ath_path.stat().st_mtime) > _TTL_ATHLETE:
+                _ath_path.unlink(missing_ok=True)
+                c = None  # Force re-fetch
+        except Exception:
+            pass
     if c: return c
     url = (f"https://site.api.espn.com/apis/common/v3/sports/basketball"
            f"/nba/athletes/{pid}/overview")
@@ -2560,7 +2586,7 @@ def _live_scores():
     """Current NBA scoreboard: scores, quarter, time remaining, game IDs."""
     try:
         today_str = _et_date().strftime("%Y%m%d")
-        data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
+        data = _espn_get(_espn_scoreboard(today_str))
         if not data:
             return "ESPN scoreboard unavailable."
         lines = []
@@ -2908,15 +2934,10 @@ def _cascade_minutes(roster, stats_map):
 def _normalize_player_name(name):
     """Normalize player name for consistent joining across datasets.
 
-    AUDIT FIX (v63): Player names with diacritics (é, à, ñ, etc.) were causing join
-    failures across predictions/top_performers/actuals/most_popular CSVs. This function
-    normalizes to ASCII-safe lowercase for reliable key matching.
-
-    Example: "José Altuve" → "jose altuve", "Sébastien Héry" → "sebastian hery"
+    Delegates to shared.normalize_player_name for consistency across all pipelines.
     """
-    import unicodedata as _ud
-    n = _ud.normalize("NFKD", name or "").encode("ASCII", "ignore").decode("ASCII")
-    return n.strip().lower()
+    from api.shared import normalize_player_name
+    return normalize_player_name(name)
 
 
 def _normalize_boost_name(name):
@@ -3165,6 +3186,14 @@ def _est_card_boost(
 
     # Runtime compatibility: 2-feature legacy, 7-feature old, 8-feature current.
     _ensure_boost_model_loaded()
+    # Validate feature alignment — warn once if model features don't match expected order
+    _EXPECTED_BOOST_FEATURES_8 = ["projected_rs", "season_pts", "recent_pts", "season_min",
+                                   "pred_min", "team_market_score", "pos_bucket", "ppg_tier"]
+    if isinstance(BOOST_FEATURES, list) and len(BOOST_FEATURES) == 8:
+        if BOOST_FEATURES != _EXPECTED_BOOST_FEATURES_8:
+            if not getattr(_est_card_boost, "_feat_warn", False):
+                setattr(_est_card_boost, "_feat_warn", True)
+                print(f"[WARN] boost_model features {BOOST_FEATURES} != expected {_EXPECTED_BOOST_FEATURES_8} — predictions may be wrong", flush=True)
     expected_len = len(BOOST_FEATURES) if isinstance(BOOST_FEATURES, list) else 8
     if expected_len == 2:
         # Legacy model expected [projected_rs, min_proxy].
@@ -3429,8 +3458,11 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     minutes = stats.get("min", 0)
 
     # SCORING UPSIDE GATE 1: minimum projected points floor.
-    # Universal floor uses the moonshot minimum (3.0) so low-PPG high-boost players
-    # can enter the moonshot pool. Chalk pool enforces the stricter 7.0 floor separately.
+    # NOTE: Despite the name "moonshot", this is the UNIVERSAL floor applied in
+    # project_player() to ALL candidates (both chalk and moonshot). It is set low
+    # (3.0) so high-boost role players can enter the moonshot pool. Chalk pool
+    # enforces a stricter 7.0 floor separately in _build_lineups().
+    # Rename consideration: "min_pts_projection_universal" would be clearer.
     min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 3.0)
     if pts < min_pts_moonshot:
         return None
@@ -3729,6 +3761,11 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # ── Enforce post-compression multiplier cap ─────────────────────────
     # All post-compression boosts (archetype, close-game, cascade_rs,
     # role_spike, breakout) have now been applied.  Clamp total inflation.
+    # NOTE: This cap is NOT redundant with rs_cap. rs_cap is an absolute ceiling
+    # on the RS value (default 20.0). This cap limits the MULTIPLICATIVE inflation
+    # from stacked post-compression boosts (e.g., archetype 1.1 × cascade 1.15 ×
+    # spike 1.2 = 1.52× total). If rs_cap were raised or removed, this 1.40× cap
+    # independently prevents bench players from inflating RS 3→6+.
     if _pre_boost_rs > 0:
         _actual_mult = raw_score / _pre_boost_rs
         if _actual_mult > _max_post_mult:
@@ -4437,10 +4474,17 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
             messages=[{"role": "user", "content": user_prompt}],
             timeout=timeout_s,
         )
-        raw_text = msg.content[0].text.strip()
+        if not msg.content:
+            print("[context_pass] skipped (empty content array)")
+            return
+        raw_text = (getattr(msg.content[0], "text", None) or "").strip()
+        if not raw_text:
+            print("[context_pass] skipped (empty text in response)")
+            return
         # Strip markdown code fences if present
         if raw_text.startswith("```"):
-            raw_text = raw_text.split("```")[1]
+            parts = raw_text.split("```")
+            raw_text = parts[1] if len(parts) >= 3 else raw_text[3:]
             if raw_text.startswith("json"):
                 raw_text = raw_text[4:]
             raw_text = raw_text.strip()
@@ -4556,12 +4600,16 @@ def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, 
             timeout=timeout_s,
         )
         text = ""
-        for block in msg.content:
+        for block in (msg.content or []):
             if hasattr(block, "text"):
                 text += block.text
         text = text.strip()
+        if not text:
+            print("[lineup_review] skipped (empty response text)")
+            return chalk, upside
         if text.startswith("```"):
-            text = text.split("```")[1]
+            parts = text.split("```")
+            text = parts[1] if len(parts) >= 3 else text[3:]
             if text.startswith("json"):
                 text = text[4:]
             text = text.strip()
@@ -5317,8 +5365,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         eligible_union = []
         # Core pool = players eligible for BOTH chalk and moonshot (intersection),
         # plus chalk-only and moonshot-only with computed cross-EVs.
-        # Both Starting 5 and Moonshot MILP run on the same core pool — one pool,
-        # two configurations (reliability vs ceiling). No separate filtering needed.
+        # Starting 5 runs on the core pool (chalk-eligible players ranked by _core_score).
+        # Moonshot runs on its own moonshot_pool — see comment at line ~5441 for rationale.
         for p in chalk_eligible:
             rec = {**p, "chalk_ev_capped": p["chalk_ev_capped"], "capped_boost": p["capped_boost"]}
             if p["name"] in moonshot_by_name:
@@ -5438,14 +5486,14 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                                 min_big_boost_count=_chalk_min_big_boost,
                                 big_boost_threshold=_chalk_big_boost_thr)
         chalk_ids = [p.get("id") for p in chalk if p.get("id")]
-        # Moonshot uses the full moonshot_pool (boost-ranked contrarians), NOT core_pool.
-        # core_pool is built exclusively from chalk_eligible — it excludes moonshot-only
-        # players (high-boost role players who fail chalk gates like 7 PPG or 20 min floor).
-        # Using core_pool for moonshot caused it to pick the same RS-ranked stars as chalk.
-        # moonshot_pool has its own eligibility gates (boost >= min_card_boost, RS >= 3.0,
-        # high-boost-role pathway for 2.0x+/14min players) and ranks by moonshot_ev which
-        # uses boost_leverage_power to strongly favor 3.0x boost players.
-        # overlap_cap=3 ensures Moonshot differentiates from Starting 5 (max 3 shared players).
+        # ARCHITECTURE: Moonshot uses its own moonshot_pool, NOT core_pool.
+        # core_pool = chalk-eligible players ranked by _core_score → feeds Starting 5 MILP.
+        # moonshot_pool = separate pool with different eligibility gates (boost >= min_card_boost,
+        # RS >= 3.0, high-boost-role pathway for 2.0x+/14min players) ranked by moonshot_ev
+        # which uses boost_leverage_power to strongly favor 3.0x boost players.
+        # Rationale: Using core_pool (chalk-eligible) for moonshot caused it to pick the same
+        # RS-ranked stars as Starting 5. Moonshot needs its own contrarian pool.
+        # overlap_cap=3 ensures some differentiation from Starting 5 (max 3 shared players).
         # Moonshot star indices relative to moonshot_pool
         _moon_star_indices = [
             i for i, p in enumerate(moonshot_pool)
@@ -5530,8 +5578,28 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 
     # Moonshot fallback 2: if MILP returned empty but we have candidates, sort by moonshot_ev.
     # Prevents "No players to display yet" when constraints are unsatisfiable.
+    # Applies max_per_game constraint via greedy selection to avoid over-concentration.
     if not upside and moonshot_pool:
-        upside = sorted(moonshot_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)[:5]
+        _moon_max_pg = int(_cfg("lineup.moonshot_max_per_game", 2))
+        _sorted_pool = sorted(moonshot_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
+        _fallback = []
+        _game_counts = {}
+        for p in _sorted_pool:
+            if len(_fallback) >= 5:
+                break
+            _gid = "_vs_".join(sorted([p.get("team", ""), p.get("opp", "")]))
+            if _moon_max_pg > 0 and _game_counts.get(_gid, 0) >= _moon_max_pg:
+                continue
+            _game_counts[_gid] = _game_counts.get(_gid, 0) + 1
+            _fallback.append(p)
+        # If constraints made it impossible to get 5, relax and fill
+        if len(_fallback) < 5:
+            for p in _sorted_pool:
+                if len(_fallback) >= 5:
+                    break
+                if p not in _fallback:
+                    _fallback.append(p)
+        upside = _fallback[:5]
         for i, p in enumerate(upside):
             p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
         print(f"[build_lineups] moonshot MILP empty — sort fallback used ({len(upside)} players)")
@@ -6140,7 +6208,7 @@ async def get_games():
         return {
             "data": games,
             "cache_status": "hit" if is_hit else "miss",
-            "cached_at": datetime.utcnow().isoformat() + "Z",
+            "cached_at": datetime.now(timezone.utc).isoformat() + "Z",
         }
     except Exception as e:
         print(f"[games] error: {e}")
@@ -7448,9 +7516,13 @@ Return ONLY a JSON array of objects. No markdown, no explanation."""
                 return _err("Claude API rate limited. Please wait a moment and retry.", 429)
             return _err(f"Claude API error (HTTP {r.status_code})", r.status_code)
         resp = r.json()
-        text = resp["content"][0]["text"]
+        content = resp.get("content") or []
+        if not content or not isinstance(content, list):
+            return _err("Claude returned empty content array", 500)
+        text = (content[0].get("text") or "").strip()
+        if not text:
+            return _err("Claude returned empty text in response", 500)
         # Extract JSON from response (may be wrapped in ```json blocks)
-        text = text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
             text = text.rsplit("```", 1)[0]
@@ -7857,7 +7929,7 @@ def _save_slate_results_for_date(date_str: str, skip_if_existing_nonzero: bool =
                 pass
 
     ymd = date_str.replace("-", "")
-    data = _espn_get(f"{ESPN}/scoreboard?dates={ymd}")
+    data = _espn_get(_espn_scoreboard(ymd))
     games = _parse_completed_regular_season_games(data)
     payload = {
         "date": date_str,
@@ -8245,7 +8317,7 @@ def _prewarm_current_slate_sync(force=False, include_slate=True):
                 line_status = f"skip:odds:{line_err.get('code', 'unknown')}"
             elif not line_err and line_result and line_result.get("pick"):
                 line_result.update(_line_payload_meta("prewarm_cron", stale=False, refreshing=False))
-                line_result["_cached_at"] = datetime.utcnow().isoformat()
+                line_result["_cached_at"] = datetime.now(timezone.utc).isoformat()
                 line_result["_cache_date"] = current_slate_date
                 _cs(_CK_LINE, line_result)
                 try:
@@ -8292,7 +8364,7 @@ def _prewarm_current_slate_sync(force=False, include_slate=True):
         if force or (not parlay_cache_ok and not parlay_saved_ok):
             parlay_result, parlay_err, _debug = _run_parlay_engine_sync(parlay_date)
             if not parlay_err and parlay_result:
-                parlay_result["_cached_at"] = datetime.utcnow().isoformat()
+                parlay_result["_cached_at"] = datetime.now(timezone.utc).isoformat()
                 parlay_result["_cache_date"] = parlay_date_str
                 _cs(_CK_PARLAY, parlay_result)
                 try:
@@ -8693,7 +8765,7 @@ def _build_player_odds_map(games, *, require_fresh_book_odds=False):
     # Each call: 1 event fetch + N props fetches (N = # of games, typically 10-14)
     quota_key = f"odds_quota_{_today_str()}"
     quota_file = _cp(quota_key)
-    quota_data = {"calls": 0, "reset_at": datetime.utcnow().isoformat()}
+    quota_data = {"calls": 0, "reset_at": datetime.now(timezone.utc).isoformat()}
     if quota_file.exists():
         try:
             quota_data = json.loads(quota_file.read_text())
@@ -9182,7 +9254,7 @@ def _picks_response(picks, **extra):
 def _line_payload_meta(source, stale=False, refreshing=False):
     return {
         "source": source,
-        "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "is_stale": bool(stale),
         "refreshing": bool(refreshing),
     }
@@ -9333,14 +9405,14 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                     _cached_at = cached.get("_cached_at")
                     if _cached_at:
                         try:
-                            _age_s = (datetime.utcnow() - datetime.fromisoformat(_cached_at)).total_seconds()
+                            _age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(_cached_at)).total_seconds()
                             if _age_s > 1800:  # 30 min — was 2h; fresher line picks
                                 cached = None
                         except Exception:
                             pass
                     if cached:
                         cached.setdefault("source", "tmp_cache")
-                        cached.setdefault("generated_at", _cached_at or datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
+                        cached.setdefault("generated_at", _cached_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
                         cached.setdefault("is_stale", False)
                         cached.setdefault("refreshing", False)
                         return JSONResponse(cached)
@@ -9395,7 +9467,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             except Exception as _save_err:
                 print(f"[line-of-the-day] auto-save err: {_save_err}")
             eng_result.update(_line_payload_meta("generated_fast_path", stale=False, refreshing=False))
-            eng_result["_cached_at"] = datetime.utcnow().isoformat()
+            eng_result["_cached_at"] = datetime.now(timezone.utc).isoformat()
             eng_result["_cache_date"] = today_str
             _cs(_CK_LINE, eng_result)
             return JSONResponse(eng_result)
@@ -9470,29 +9542,27 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
 
         _had_resolved = over_resolved or under_resolved
 
+        def _try_load_next_slate_pick(direction_key):
+            """Try to load next-slate pick with a single retry on failure."""
+            for attempt in range(2):
+                try:
+                    ns = _find_next_slate_date(today + timedelta(days=1))
+                    if ns:
+                        np_ = _load_line_pick_for_date(ns.isoformat()) or {}
+                        pick = np_.get(direction_key)
+                        if pick:
+                            return pick
+                except Exception as _e:
+                    print(f"[line-of-the-day] next-slate {direction_key} attempt {attempt+1} failed: {_e}")
+                    if attempt == 0:
+                        import time; time.sleep(1)  # Brief retry delay
+            return None
+
         if over_resolved:
-            try:
-                next_slate = _find_next_slate_date(today + timedelta(days=1))
-                next_over = None
-                if next_slate:
-                    next_picks = _load_line_pick_for_date(next_slate.isoformat()) or {}
-                    next_over = next_picks.get("over_pick")
-            except Exception as _next_err:
-                print(f"[line-of-the-day] next-slate over generation failed (non-fatal): {_next_err}")
-                next_over = None
-            final_over = next_over  # Always update — resolved picks must never show as active
+            final_over = _try_load_next_slate_pick("over_pick")
 
         if under_resolved:
-            try:
-                next_slate = _find_next_slate_date(today + timedelta(days=1))
-                next_under = None
-                if next_slate:
-                    next_picks = _load_line_pick_for_date(next_slate.isoformat()) or {}
-                    next_under = next_picks.get("under_pick")
-            except Exception as _next_err:
-                print(f"[line-of-the-day] next-slate under generation failed (non-fatal): {_next_err}")
-                next_under = None
-            final_under = next_under  # Always update — resolved picks must never show as active
+            final_under = _try_load_next_slate_pick("under_pick")
 
         # If no fresh picks remain, return next_slate_pending.
         # Use _had_resolved to catch the case where both directions were resolved
@@ -9551,7 +9621,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                                 _pk["edge"] = round(_proj - _line, 1)
                             else:
                                 _pk["edge"] = round(_line - _proj, 1)
-                            _pk["line_updated_at"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                            _pk["line_updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                             _odds_updated = True
                     if _odds_updated:
                         try:
@@ -9567,7 +9637,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                 print(f"[line-of-the-day] inline odds enrichment failed (non-fatal): {_oe}")
 
         result = _picks_response(combo, from_github=True, slate_summary=None, **_line_payload_meta("github_saved", stale=False, refreshing=False))
-        result["_cached_at"] = datetime.utcnow().isoformat()
+        result["_cached_at"] = datetime.now(timezone.utc).isoformat()
         result["_cache_date"] = today_str
         _cs(_CK_LINE, result)
         return JSONResponse(result)
@@ -9605,7 +9675,7 @@ async def line_force_regenerate():
         _github_write_file(f"data/lines/{today_str}.csv", _line_pick_to_csv(primary, today_str), f"force regenerate line csv {today_str}")
 
     out = _picks_response(saves, from_github=False, slate_summary=eng_result.get("slate_summary"))
-    out["_cached_at"] = datetime.utcnow().isoformat()
+    out["_cached_at"] = datetime.now(timezone.utc).isoformat()
     out["_cache_date"] = today_str
     _cs(_CK_LINE, out)
 
@@ -10079,15 +10149,19 @@ async def resolve_line(payload: dict = Body(...)):
 
 
 def _strip_name_suffix(n: str) -> str:
-    """Strip common name suffixes (Jr., Sr., III, II, IV) for fuzzy matching."""
-    return re.sub(r'\s+(jr\.?|sr\.?|iii|ii|iv)\s*$', '', n, flags=re.IGNORECASE).strip()
+    """Strip common name suffixes (Jr., Sr., III, II, IV) for fuzzy matching.
+    Uses shared normalize_player_name for consistent suffix stripping.
+    """
+    from api.shared import normalize_player_name
+    return normalize_player_name(n)
 
 def _name_matches(player_lower: str, espn_name_lower: str) -> bool:
-    """Check if player name matches ESPN name, with suffix-stripped fallback."""
+    """Check if player name matches ESPN name, with normalized fallback."""
     if player_lower in espn_name_lower or espn_name_lower in player_lower:
         return True
-    stripped_player = _strip_name_suffix(player_lower)
-    stripped_espn = _strip_name_suffix(espn_name_lower)
+    from api.shared import normalize_player_name
+    stripped_player = normalize_player_name(player_lower)
+    stripped_espn = normalize_player_name(espn_name_lower)
     if stripped_player and stripped_espn:
         return stripped_player in stripped_espn or stripped_espn in stripped_player
     return False
@@ -10111,7 +10185,7 @@ def _fetch_player_final_stat(player_name: str, stat_type: str, date_str: str = N
     player_lower = player_name.lower().strip()
 
     query_date = date_str if date_str else _et_date().strftime("%Y%m%d")
-    data = _espn_get(f"{ESPN}/scoreboard?dates={query_date}")
+    data = _espn_get(_espn_scoreboard(query_date))
     team_played_in_final = False
     for ev in data.get("events", []):
         # Only use completed games (check all ESPN completion signals)
@@ -10649,14 +10723,14 @@ def _all_games_final(games):
                         latest = start
         return fins, rem, latest
 
-    data = _espn_get(f"{ESPN}/scoreboard?dates={today_str}")
+    data = _espn_get(_espn_scoreboard(today_str))
     finals, remaining, latest_remaining = _tally(data)
 
     # Midnight rollover: if today has no started or completed games yet,
     # check yesterday — late games may still be running past midnight ET.
     if finals == 0 and remaining == 0:
         yesterday_str = (_et_date() - timedelta(days=1)).strftime("%Y%m%d")
-        ydata = _espn_get(f"{ESPN}/scoreboard?dates={yesterday_str}")
+        ydata = _espn_get(_espn_scoreboard(yesterday_str))
         finals, remaining, latest_remaining = _tally(ydata)
 
     # All done when no started games are still in progress AND we actually saw
@@ -11791,7 +11865,7 @@ def _save_most_popular_style_csv(payload: dict, gh_prefix: str, commit_msg: str)
 async def save_most_popular(request: Request, payload: dict = Body(...)):
     """Save parsed Most Popular list to data/most_popular/{date}.csv (developer ingest)."""
     if not _ingest_secret_ok(request):
-        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+        return _err("Invalid or missing ingest key", 401)
     out = _save_most_popular_style_csv(payload, MOST_POPULAR_GH_PREFIX, "most_popular")
     if isinstance(out, JSONResponse):
         return out
@@ -11806,7 +11880,7 @@ async def save_ownership(request: Request, payload: dict = Body(...)):
            actual_card_boost, avg_finish, rank}] }
     """
     if not _ingest_secret_ok(request):
-        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+        return _err("Invalid or missing ingest key", 401)
     out = _save_most_popular_style_csv(payload, MOST_POPULAR_GH_PREFIX, "most_popular")
     if isinstance(out, JSONResponse):
         return out
@@ -11817,7 +11891,7 @@ async def save_ownership(request: Request, payload: dict = Body(...)):
 async def save_most_drafted_3x(request: Request, payload: dict = Body(...)):
     """High-boost popular sub-list → data/most_drafted_3x/{date}.csv (same columns as most_popular)."""
     if not _ingest_secret_ok(request):
-        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+        return _err("Invalid or missing ingest key", 401)
     out = _save_most_popular_style_csv(payload, MOST_DRAFTED_3X_GH_PREFIX, "most_drafted_3x")
     if isinstance(out, JSONResponse):
         return out
@@ -11829,7 +11903,7 @@ async def save_most_drafted_3x(request: Request, payload: dict = Body(...)):
 async def save_winning_drafts(request: Request, payload: dict = Body(...)):
     """Long-format winning lineups → data/winning_drafts/{date}.csv (max 4 winners × 5 slots)."""
     if not _ingest_secret_ok(request):
-        return JSONResponse({"detail": "Invalid or missing ingest key"}, status_code=401)
+        return _err("Invalid or missing ingest key", 401)
     date_str = payload.get("date", _today_str())
     bad = _validate_date(date_str)
     if bad:
@@ -12415,7 +12489,7 @@ async def get_parlay(request: Request):
             cached_at = cached.get("_cached_at")
             if cached_at:
                 try:
-                    age_s = (datetime.utcnow() - datetime.fromisoformat(cached_at)).total_seconds()
+                    age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
                     if age_s < 1800:
                         if slate_all_final and cached.get("result") == "pending":
                             print("[parlay] bypassing /tmp cache — slate final, re-sync from GitHub")
@@ -12437,7 +12511,7 @@ async def get_parlay(request: Request):
                 elif gh_parlay.get("legs") and len(gh_parlay["legs"]) == 3:
                         gh_parlay["locked"] = slate_locked
                         gh_parlay["_from_github"] = True
-                        gh_parlay["_cached_at"] = datetime.utcnow().isoformat()
+                        gh_parlay["_cached_at"] = datetime.now(timezone.utc).isoformat()
                         gh_parlay["_cache_date"] = today_str
                         _cs(_CK_PARLAY, gh_parlay)
                         _proj_note = " (projection-only)" if gh_parlay.get("projection_only") else ""
@@ -12446,11 +12520,15 @@ async def get_parlay(request: Request):
         except Exception as _ge:
             print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
 
-        # Lock guard: once slate is locked, refuse to regenerate. The parlay should
-        # have been generated pre-lock (via cron or first visit). Regenerating during
-        # a live slate produces different results as Odds API drops pre-game props,
-        # causing confusing mid-slate parlay changes. Mar 26 bug: parlay kept changing.
-        if slate_locked:
+        # Lock guard: once slate is locked, refuse to regenerate for TODAY's slate.
+        # But if the request is for a future date (e.g., Sunday request while Saturday
+        # is still locked), allow generation — that slate hasn't started yet.
+        # Mar 26 bug: regenerating during a live slate caused confusing mid-slate changes.
+        _parlay_target_date = _et_date()
+        _parlay_target_games = fetch_games(_parlay_target_date)
+        _parlay_target_starts = [g["startTime"] for g in (_parlay_target_games or []) if g.get("startTime")]
+        _parlay_target_locked = bool(_parlay_target_starts) and any(_is_locked(st) for st in _parlay_target_starts)
+        if _parlay_target_locked:
             print(f"[parlay] slate locked, no cached/GitHub parlay — returning empty (not regenerating)")
             return JSONResponse({"error": "parlay_locked", "locked": True, "legs": [],
                                  "narrative": "Today's parlay wasn't generated before tip-off. Check back tomorrow for a fresh pick.",
@@ -12502,7 +12580,7 @@ async def get_parlay(request: Request):
         result["date"] = today_str
         result["locked"] = slate_locked
 
-        result["_cached_at"] = datetime.utcnow().isoformat()
+        result["_cached_at"] = datetime.now(timezone.utc).isoformat()
         result["_cache_date"] = today_str
         _cs(_CK_PARLAY, result)
 
@@ -12638,7 +12716,7 @@ async def parlay_force_regenerate(request: Request):
     # Populate /tmp cache (only for today)
     if is_today:
         result["locked"] = slate_locked
-        result["_cached_at"] = datetime.utcnow().isoformat()
+        result["_cached_at"] = datetime.now(timezone.utc).isoformat()
         result["_cache_date"] = target_str
         _cs(_CK_PARLAY, result)
 
@@ -12771,9 +12849,14 @@ async def parlay_history(request: Request):
                 print(f"[parlay-history] write-back failed for {ds}: {e}")
 
         if write_back_queue:
+            # Write to GitHub first and wait for all writes to complete BEFORE syncing cache.
+            # This prevents the race condition where a concurrent /api/parlay call reads
+            # stale /tmp cache (still "pending") while GitHub write is in-flight.
+            _write_results = []
             with ThreadPoolExecutor(max_workers=_W_LIGHT * 2) as pool:
-                list(pool.map(_write_back, write_back_queue))
+                _write_results = list(pool.map(_write_back, write_back_queue))
             # Keep /api/parlay /tmp cache aligned with GitHub after same-day resolve
+            # (runs only after all GitHub writes have completed above)
             try:
                 for _ds, _pd in write_back_queue:
                     if _ds != today_str or not _parlay_fully_concluded(_pd):
@@ -12783,7 +12866,7 @@ async def parlay_history(request: Request):
                     _sync_locked = bool(_sync_st) and any(_is_locked(st) for st in _sync_st)
                     _sync_payload = json.loads(json.dumps(_pd))
                     _sync_payload["locked"] = _sync_locked
-                    _sync_payload["_cached_at"] = datetime.utcnow().isoformat()
+                    _sync_payload["_cached_at"] = datetime.now(timezone.utc).isoformat()
                     _sync_payload["_cache_date"] = today_str
                     _cs(_CK_PARLAY, _sync_payload)
                     break

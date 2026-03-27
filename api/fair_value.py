@@ -1,4 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
+# grep: FAIR VALUE ENGINE — project_player_fv, compute_fv_hit_probs
 # FAIR VALUE ENGINE — Pure deterministic projections + EV vs books
 # No I/O, no HTTP. Callers pass gamelog arrays, DvP dicts, odds slices, config.
 # ─────────────────────────────────────────────────────────────────────────────

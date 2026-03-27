@@ -1,3 +1,4 @@
+# grep: ROTOWIRE MODULE — fetch_rotowire_lineups, check_player_status
 # ─────────────────────────────────────────────────────────────────────────────
 # ROTOWIRE LINEUP INTELLIGENCE — Free-Tier Scraper
 #
@@ -25,7 +26,7 @@ import unicodedata
 import requests
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from api.shared import et_date as _shared_et_date
+from api.shared import et_date as _shared_et_date, normalize_player_name as _shared_normalize
 
 # Cache directory — same pattern as index.py
 ROTOWIRE_CACHE_DIR = Path("/tmp/nba_rotowire_v1")
@@ -66,19 +67,10 @@ def _cache_path():
 
 def _normalize_name(name):
     """Normalize player name for fuzzy matching.
-    Strips accents, periods, suffixes, lowercases.
-    'Nikola Jokić' → 'nikola jokic'
-    'P.J. Washington' → 'pj washington'
-    'Marcus Morris Sr.' → 'marcus morris'
+    Delegates to shared normalize_player_name for consistency across
+    ESPN, RotoWire, and CSV pipelines.
     """
-    n = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode()
-    n = n.lower().strip()
-    n = n.replace(".", "").replace("'", "").replace("-", " ")
-    # Remove common suffixes
-    for suffix in [" jr", " sr", " iii", " ii", " iv"]:
-        if n.endswith(suffix):
-            n = n[:-len(suffix)].strip()
-    return n
+    return _shared_normalize(name)
 
 
 def fetch_rotowire_lineups():
