@@ -3515,7 +3515,9 @@ class TestParlayMidnightHandoff:
         })
 
         with patch("api.index._et_date", return_value=today), \
-             patch("api.index._github_get_file", return_value=(y_json, "sha")):
+             patch("api.index._github_get_file", return_value=(y_json, "sha")), \
+             patch("api.index.fetch_games", return_value=[{"gameId": "1"}]), \
+             patch("api.index._all_games_final", return_value=(False, 0, 0, None)):
             picked = _parlay_active_date()
 
         assert picked == today

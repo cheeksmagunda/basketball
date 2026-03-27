@@ -296,11 +296,11 @@ def _github_delete_file(path, sha, message="auto-delete"):
     return r.status_code in (200, 204)
 
 
-def _slate_backup_to_github(slate_data: dict):
+def _slate_backup_to_github(slate_data: dict, date_str: str = None):
     """Write slate response to GitHub as a locked-state backup (deduped by date).
     Called once when we promote reg_cache -> lock_cache so cold-start instances can recover."""
     try:
-        today = _today_str()
+        today = date_str or slate_data.get("date") or _today_str()
         path = f"data/locks/{today}_slate.json"
         existing, _ = _github_get_file(path)
         if existing:
@@ -337,12 +337,12 @@ def _slate_restore_from_github():
 # Railway instances serve the same picks without re-running the prediction engine.
 # Pattern mirrors data/locks/ and data/lines/ — date-keyed JSON files on GitHub.
 
-def _slate_cache_to_github(slate_data: dict):
+def _slate_cache_to_github(slate_data: dict, date_str: str = None):
     """Persist today's generated slate to GitHub for cold-start recovery.
     Deduped by date — overwrites same-day file on regeneration (injury/config change).
     Embeds deploy_sha for Scenario 1 auto-detection (dev ships model update mid-slate)."""
     try:
-        today = _today_str()
+        today = date_str or slate_data.get("date") or _today_str()
         path = f"data/slate/{today}_slate.json"
         # Stamp deploy SHA so /api/slate can detect when a new deploy invalidates cached picks
         sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
@@ -353,11 +353,11 @@ def _slate_cache_to_github(slate_data: dict):
     except Exception as e:
         print(f"[slate-cache] write err: {e}")
 
-def _slate_cache_from_github():
-    """Load today's cached slate from GitHub. Returns dict or None.
+def _slate_cache_from_github(date_str: str = None):
+    """Load today's (or a specific date's) cached slate from GitHub. Returns dict or None.
     Checks bust sentinel first (data branch and main so retrain workflow bust is seen)."""
     try:
-        today = _today_str()
+        today = date_str or _today_str()
         bust_path = f"data/slate/{today}_bust.json"
         for ref in (None, "main"):  # data branch first, then main (retrain writes bust to main)
             bust_content, _ = _github_get_file(bust_path, ref_override=ref)
@@ -411,21 +411,21 @@ def _clear_local_slate_tmp_caches():
         pass
 
 
-def _games_cache_to_github(all_game_projections: dict):
+def _games_cache_to_github(all_game_projections: dict, date_str: str = None):
     """Persist per-game projections {gameId: [players...]} to GitHub.
     Allows /api/picks to serve from cache without re-running _run_game()."""
     try:
-        today = _today_str()
+        today = date_str or _today_str()
         path = f"data/slate/{today}_games.json"
         content = json.dumps(all_game_projections, default=str)
         _github_write_file(path, content, f"game projections {today}")
     except Exception as e:
         print(f"[games-cache] write err: {e}")
 
-def _games_cache_from_github():
+def _games_cache_from_github(date_str: str = None):
     """Load per-game projections from GitHub. Returns {gameId: [...]} or None."""
     try:
-        today = _today_str()
+        today = date_str or _today_str()
         path = f"data/slate/{today}_games.json"
         content, _ = _github_get_file(path)
         if content:
@@ -5885,9 +5885,28 @@ _DEPLOY_PREWARM_STATE_PATH = "data/system/deploy_prewarm_state.json"
 
 def _get_slate_impl():
     """Inner slate computation; get_slate() wraps this in try/except so we never return 500."""
-    # Fast path: if today's locked slate is already in memory, skip ALL external calls.
+    # Determine the active slate date. Normally this is today ET, but when today's slate
+    # has ended before midnight (same-day rollover), we serve the next slate instead so
+    # the frontend transitions immediately rather than waiting until midnight.
     today_str = _today_str()
-    _lk_pre = _lg(_CK_SLATE_LOCKED)
+    today_et = _et_date()
+    try:
+        _lk_rollover = _lg(_CK_SLATE_LOCKED)
+        if (_lk_rollover
+                and _lk_rollover.get("date") == today_str
+                and _lk_rollover.get("all_complete")):
+            _next_d = _find_next_slate_date(today_et + timedelta(days=1))
+            if _next_d:
+                _next_g = fetch_games(_next_d)
+                if _next_g:
+                    print(f"[slate] same-day rollover: {today_str} all_complete → {_next_d}")
+                    today_str = _next_d.isoformat()
+                    today_et = _next_d
+    except Exception as _ro_err:
+        print(f"[slate] same-day rollover check err (non-fatal): {_ro_err}")
+
+    # Fast path: if today's locked slate is already in memory, skip ALL external calls.
+    _lk_pre = _lg(_CK_SLATE_LOCKED, today_str)
     if _lk_pre and _lk_pre.get("date") == today_str:
         # Guard: validate games have actually started before serving the cached lock state.
         # force-regenerate may have written a lock file with locked=True before tip-off.
@@ -5903,7 +5922,7 @@ def _get_slate_impl():
     # Running both concurrently saves 1-2s vs sequential on every cold start.
     with ThreadPoolExecutor(max_workers=_W_LIGHT) as _pre_pool:
         _gh_pre_fut = _pre_pool.submit(_slate_restore_from_github)
-        _games_fut  = _pre_pool.submit(fetch_games)
+        _games_fut  = _pre_pool.submit(fetch_games, today_et)
         _gh_pre = _gh_pre_fut.result()
         games   = _games_fut.result()
     if _gh_pre and _gh_pre.get("date") == today_str and _gh_pre.get("locked"):
@@ -6075,7 +6094,6 @@ def _get_slate_impl():
             # Cold-start Lambdas handling the follow-up /api/save-predictions won't
             # have the slate cache — write slate rows to GitHub now while we have them.
             try:
-                today_str = _today_str()
                 pred_path = f"data/predictions/{today_str}.csv"
                 pred_existing, _ = _github_get_file(pred_path)
                 if not pred_existing:
@@ -6115,7 +6133,7 @@ def _get_slate_impl():
         print(f"[slate] github bust check err (unlocked): {_bust_chk_err}")
 
     # ── Layer 1: /tmp cache (warm Railway instance) ──
-    cached = _cg(_CK_SLATE)
+    cached = _cg(_CK_SLATE, today_str)
     if cached:
         # Discard cached result if it has empty lineups but we have draftable games.
         has_players = cached.get("lineups", {}).get("chalk") or cached.get("lineups", {}).get("upside")
@@ -6125,7 +6143,7 @@ def _get_slate_impl():
             return cached
 
     # ── Layer 2: GitHub persistent cache (cold-start recovery) ──
-    gh_cached = _slate_cache_from_github()
+    gh_cached = _slate_cache_from_github(today_str)
     if gh_cached:
         has_players = gh_cached.get("lineups", {}).get("chalk") or gh_cached.get("lineups", {}).get("upside")
         if has_players or not draftable_games:
@@ -6134,10 +6152,10 @@ def _get_slate_impl():
             if lock_time and not gh_cached.get("lock_time"):
                 gh_cached["lock_time"] = lock_time
             # Warm /tmp cache for subsequent requests on this instance
-            _cs(_CK_SLATE, gh_cached)
+            _cs(_CK_SLATE, gh_cached, today_str)
             # Also warm per-game /tmp caches from GitHub
             try:
-                gh_games = _games_cache_from_github()
+                gh_games = _games_cache_from_github(today_str)
                 if gh_games:
                     for gid, projs in gh_games.items():
                         _cs(_ck_game_proj(gid), projs)
@@ -6162,7 +6180,7 @@ def _get_slate_impl():
         # Poll /tmp cache until the other thread finishes (max ~90s).
         for _ in range(45):
             time.sleep(2)
-            _warm = _cg(_CK_SLATE)
+            _warm = _cg(_CK_SLATE, today_str)
             if _warm:
                 _warm["locked"] = locked
                 _warm.setdefault("draftable_count", len(draftable_games))
@@ -6234,7 +6252,7 @@ def _get_slate_impl():
         except Exception as _wl_err:
             print(f"[watchlist] build error: {_wl_err}")
         _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
-        result = {"date": _today_str(), "games": games,
+        result = {"date": today_str, "games": games,
                   "lineups": lineups, "locked": locked,
                   "all_complete": False, "draftable_count": len(draftable_games),
                   "lock_time": lock_time,
@@ -6243,17 +6261,17 @@ def _get_slate_impl():
                   "score_bounds": _score_bounds_for_lineups(lineups),
                   "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
         if chalk or upside:  # Don't cache empty results — allow retry on next request
-            _cs(_CK_SLATE, result)
+            _cs(_CK_SLATE, result, today_str)
             # GitHub writes are fire-and-forget: store to /tmp first so any concurrent
             # request is served immediately, then persist to GitHub in the background.
             # This removes 2-3s of blocking I/O from the hot path — the user gets
             # the slate response as soon as the pipeline finishes, not after writes.
             _bg_result       = result
             _bg_game_proj    = game_proj_map
-            _bg_today        = _today_str()
+            _bg_today        = today_str
             def _slate_persist_bg():
                 try:
-                    _slate_cache_to_github(_bg_result)
+                    _slate_cache_to_github(_bg_result, _bg_today)
                 except Exception as _e:
                     print(f"[slate-cache] bg write err: {_e}")
                 try:
@@ -6262,25 +6280,24 @@ def _get_slate_impl():
                     print(f"[slate-cache] bg clear bust err: {_e}")
                 if _bg_game_proj:
                     try:
-                        _games_cache_to_github(_bg_game_proj)
+                        _games_cache_to_github(_bg_game_proj, _bg_today)
                     except Exception as _e:
                         print(f"[slate-cache] bg games write err: {_e}")
                 try:
-                    _slate_backup_to_github(_bg_result)
+                    _slate_backup_to_github(_bg_result, _bg_today)
                 except Exception as _e:
                     print(f"[slate-cache] bg backup err: {_e}")
             threading.Thread(target=_slate_persist_bg, daemon=True).start()
         if locked:
-            _ls(_CK_SLATE_LOCKED, result)
+            _ls(_CK_SLATE_LOCKED, result, today_str)
         # Sync-clear bust so other Railway instances stop dropping /tmp on every
         # locked request (bg-only clear races multi-instance).
         if chalk or upside:
             try:
-                _st = _today_str()
                 _github_write_file(
-                    f"data/slate/{_st}_bust.json",
+                    f"data/slate/{today_str}_bust.json",
                     "{}",
-                    f"clear bust sync after slate gen {_st}",
+                    f"clear bust sync after slate gen {today_str}",
                 )
             except Exception as _e:
                 print(f"[slate-cache] sync clear bust err: {_e}")
@@ -6302,6 +6319,13 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
         today = _today_str()
         cache_key = _CACHE_KEYS["slate"].format(today)
         result, is_hit = _with_response_cache(cache_key, "slate", _get_slate_impl)
+        # Same-day rollover: when _get_slate_impl switched to a future date, also cache
+        # the result under the correct date key so subsequent calls serve from there.
+        result_date = result.get("date", today) if isinstance(result, dict) else today
+        if result_date != today:
+            next_key = _CACHE_KEYS["slate"].format(result_date)
+            if not _RESPONSE_CACHE.get(next_key)[1]:  # only set if not already cached
+                _RESPONSE_CACHE.set(next_key, result, _CACHE_TTLS.get("slate", 60))
         result = _add_cache_metadata(result, is_hit, cache_key)
         return result
     except Exception as e:
@@ -9403,6 +9427,10 @@ def _parlay_active_date():
 
     After midnight ET, yesterday's ticket can still be live while games are in progress.
     Prefer yesterday when it has an unresolved ticket and those games are not all final.
+
+    Same-day rollover: when today's games are all final before midnight, switch to the
+    next slate date so the parlay endpoint generates tomorrow's ticket instead of
+    re-serving today's completed one.
     """
     today = _et_date()
     yesterday = today - timedelta(days=1)
@@ -9422,6 +9450,19 @@ def _parlay_active_date():
                 y_all_final = bool(y_games) and bool(y_all_final)
                 if not y_all_final:
                     return yesterday
+    except Exception:
+        pass
+    # Same-day rollover: if today's games are all final (slate ended before midnight),
+    # return the next slate date so tomorrow's parlay gets generated.
+    try:
+        t_games = fetch_games(today)
+        if t_games:
+            t_all_final, _, t_finals, _ = _all_games_final(t_games)
+            if t_all_final and t_finals > 0:
+                next_slate = _find_next_slate_date(today + timedelta(days=1))
+                if next_slate:
+                    print(f"[parlay-active-date] same-day rollover: {today} all_complete → {next_slate}")
+                    return next_slate
     except Exception:
         pass
     return today
