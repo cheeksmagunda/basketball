@@ -5830,20 +5830,26 @@ def _slate_has_flat_boosts(slate_obj: dict) -> bool:
 
 
 def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
-    """Trigger background full regeneration when locked cache is stale/suspicious."""
+    """Trigger background full regeneration when locked cache is stale/suspicious.
+    IMPORTANT: Only triggers for flat-boost anomalies. Deploy SHA mismatches are
+    intentionally suppressed during locked slates — changing picks mid-game is worse
+    than serving slightly stale model output. The new model will be used on the next
+    unlocked slate automatically."""
     _current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()
     _cached_sha = str((cached_slate or {}).get("deploy_sha", "") or "").strip()
     _sha_mismatch = bool(_current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7])
     _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
-    if not (_sha_mismatch or _flat_boosts):
+    if _sha_mismatch and not _flat_boosts:
+        # Deploy SHA mismatch alone is not worth regenerating during a locked slate.
+        # Users have already drafted based on the locked picks. Log and skip.
+        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — skipping regen (slate locked, picks preserved)")
+        return
+    if not _flat_boosts:
         return
     if getattr(_force_regenerate_bg, "_in_flight", False):
         return
     _force_regenerate_bg._in_flight = True
-    if _sha_mismatch:
-        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — background regeneration triggered")
-    elif _flat_boosts:
-        print(f"[{reason_prefix}] suspicious flat +1x boosts detected — background regeneration triggered")
+    print(f"[{reason_prefix}] suspicious flat +1x boosts detected — background regeneration triggered")
     threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
 
 
@@ -6658,6 +6664,18 @@ def _force_regenerate_sync(scope: str):
 
     # Step 5: Build the slate cache object and persist to all layers
     deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+    # Calculate lock_time from earliest game start (same logic as normal slate path)
+    _fr_lock_time = None
+    _fr_start_times = [g.get("startTime") for g in games if g.get("startTime")]
+    if _fr_start_times:
+        try:
+            _fr_earliest = min(_fr_start_times)
+            _fr_lock_buf = _cfg("projection.lock_buffer_minutes", 5)
+            _fr_gs = datetime.fromisoformat(_fr_earliest.replace("Z", "+00:00")).astimezone(timezone.utc)
+            _fr_lock_dt = _fr_gs - timedelta(minutes=_fr_lock_buf)
+            _fr_lock_time = _fr_lock_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass
     result = {
         "date": today_str, "games": games,
         "lineups": lineups, "locked": True,
@@ -6665,6 +6683,7 @@ def _force_regenerate_sync(scope: str):
         "score_bounds": _score_bounds_for_lineups(lineups),
         "deploy_sha": deploy_sha[:7] if deploy_sha else "",
         "watchlist": _fr_watchlist,
+        "lock_time": _fr_lock_time,
         "pass": 2,
     }
     if chalk or upside:
