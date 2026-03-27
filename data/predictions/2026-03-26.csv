@@ -2,7 +2,7 @@ scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boos
 slate,chalk,2.0x,Jalen Brunson,3934672,NY,G,14.0,0.78,35.8,24.8,3.4,6.3,0.8,0.1
 slate,chalk,1.8x,Zion Williamson,4395628,NO,F,9.1,1.42,30.0,21.9,5.9,3.5,1.0,0.6
 slate,chalk,1.6x,Mikal Bridges,3147657,NY,G,8.1,2.13,37.9,14.7,4.1,3.7,1.3,0.8
-slate,chalk,1.4x,Malik Monk,4066262,SAC,G,6.8,2.13,31.9,12.6,2.0,3.0,0.6,0.4
+slate,chalk,1.4x,Malik Monk,4066262,SAC,G,6.7,2.13,29.3,12.6,2.0,3.0,0.6,0.4
 slate,chalk,1.2x,Jalen Suggs,4432165,ORL,G,6.3,2.13,28.9,13.6,3.7,5.0,1.8,0.7
 slate,upside,2.0x,Mikal Bridges,3147657,NY,G,8.1,2.13,37.9,14.7,4.1,3.7,1.3,0.8
 slate,upside,1.8x,Jose Alvarado,4277869,NY,G,5.0,2.78,27.5,7.4,2.5,3.4,1.0,0.1
@@ -10,7 +10,7 @@ slate,upside,1.6x,Marcus Sasser,4432107,DET,G,4.8,2.69,16.1,5.8,1.2,2.2,0.7,0.1
 slate,upside,1.4x,Devin Carter,4433188,SAC,G,4.8,2.86,23.5,7.1,2.6,2.1,0.8,0.2
 slate,upside,1.2x,Precious Achiuwa,4431679,SAC,PF,4.6,2.86,31.0,9.0,6.4,1.2,0.8,0.7
 NY @ CHA,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,14.3,0.0,35.8,24.8,3.4,6.3,0.8,0.1
-NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,11.6,0.0,28.9,19.9,5.0,7.1,1.2,0.3
+NY @ CHA,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,11.1,0.0,28.2,19.9,5.0,7.1,1.2,0.3
 NY @ CHA,the_lineup,1.6x,Brandon Miller,4433287,CHA,F,10.2,0.0,31.2,20.0,4.9,3.4,1.1,0.7
 NY @ CHA,the_lineup,1.4x,Karl-Anthony Towns,3136195,NY,C,9.2,0.0,31.6,20.7,11.8,2.9,0.9,0.7
 NY @ CHA,the_lineup,1.2x,Mikal Bridges,3147657,NY,G,9.0,0.0,37.9,14.7,4.1,3.7,1.3,0.8
@@ -19,8 +19,8 @@ NO @ DET,the_lineup,1.8x,Jalen Duren,4433621,DET,C,7.6,0.0,25.2,18.1,10.5,1.8,0.
 NO @ DET,the_lineup,1.6x,Saddiq Bey,4397136,NO,G,7.5,0.0,32.1,16.9,5.6,2.5,0.9,0.1
 NO @ DET,the_lineup,1.4x,Jordan Poole,4277956,NO,G,6.9,0.0,26.1,14.0,2.1,3.1,0.6,0.4
 NO @ DET,the_lineup,1.2x,Kevin Huerter,4066372,DET,G,5.7,0.0,22.8,10.0,3.5,2.6,0.9,0.5
-SAC @ ORL,the_lineup,2.0x,DeMar DeRozan,3978,SAC,G,13.3,0.0,38.8,18.8,3.3,4.1,1.1,0.3
+SAC @ ORL,the_lineup,2.0x,DeMar DeRozan,3978,SAC,G,12.8,0.0,37.0,18.8,3.3,4.1,1.1,0.3
 SAC @ ORL,the_lineup,1.8x,Desmond Bane,4066320,ORL,G,10.6,0.0,33.0,19.9,4.3,4.1,1.0,0.4
 SAC @ ORL,the_lineup,1.6x,Paolo Banchero,4432573,ORL,F,10.3,0.0,37.0,22.7,8.2,5.0,0.7,0.6
-SAC @ ORL,the_lineup,1.4x,Malik Monk,4066262,SAC,G,7.8,0.0,31.9,12.6,2.0,3.0,0.6,0.4
+SAC @ ORL,the_lineup,1.4x,Malik Monk,4066262,SAC,G,7.7,0.0,29.3,12.6,2.0,3.0,0.6,0.4
 SAC @ ORL,the_lineup,1.2x,Jalen Suggs,4432165,ORL,G,7.2,0.0,28.9,13.6,3.7,5.0,1.8,0.7
