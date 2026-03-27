@@ -12520,19 +12520,30 @@ async def get_parlay(request: Request):
         except Exception as _ge:
             print(f"[parlay] GitHub fallback failed (non-fatal): {_ge}")
 
-        # Lock guard: once slate is locked, refuse to regenerate for TODAY's slate.
-        # But if the request is for a future date (e.g., Sunday request while Saturday
-        # is still locked), allow generation — that slate hasn't started yet.
-        # Mar 26 bug: regenerating during a live slate caused confusing mid-slate changes.
+        # Lock guard: once slate is locked, refuse to RE-generate for TODAY's slate.
+        # But allow FIRST-TIME generation even when locked — if neither /tmp nor GitHub
+        # has a parlay, the user shouldn't be stuck with "check back tomorrow" just
+        # because the cron missed or the container restarted. The guard above already
+        # checked cache + GitHub; if we reach here, there's no existing parlay to corrupt.
+        # Mar 26 bug: regenerating OVER an existing parlay caused confusing mid-slate changes.
+        # Future-date requests (e.g., Sunday while Saturday locked) always allowed.
         _parlay_target_date = _et_date()
+        _parlay_is_future = today > _parlay_target_date
         _parlay_target_games = fetch_games(_parlay_target_date)
         _parlay_target_starts = [g["startTime"] for g in (_parlay_target_games or []) if g.get("startTime")]
         _parlay_target_locked = bool(_parlay_target_starts) and any(_is_locked(st) for st in _parlay_target_starts)
-        if _parlay_target_locked:
-            print(f"[parlay] slate locked, no cached/GitHub parlay — returning empty (not regenerating)")
+        # Allow generation if: (a) target date is in the future, or (b) no existing parlay found
+        # Block only if: slate is locked AND a parlay already existed (would be re-generation)
+        # Since we already checked cache + GitHub above and found nothing, reaching here means
+        # this is a first-time generation — allow it.
+        _parlay_already_exists = False  # We reached here = no cache/GitHub parlay found
+        if _parlay_target_locked and _parlay_already_exists and not _parlay_is_future:
+            print(f"[parlay] slate locked, existing parlay — blocking re-generation")
             return JSONResponse({"error": "parlay_locked", "locked": True, "legs": [],
-                                 "narrative": "Today's parlay wasn't generated before tip-off. Check back tomorrow for a fresh pick.",
-                                 "message": "Parlay was not generated before lock. Check back tomorrow."})
+                                 "narrative": "Today's parlay was already generated. Refresh to see it.",
+                                 "message": "Parlay was already generated. Refresh to see it."})
+        if _parlay_target_locked:
+            print(f"[parlay] slate locked but no existing parlay — allowing first-time generation")
 
         result, err, debug = await asyncio.wait_for(
             asyncio.to_thread(_run_parlay_engine_sync, today),
