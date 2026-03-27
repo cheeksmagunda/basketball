@@ -2600,6 +2600,7 @@ class TestHighBoostRolePathway:
         assert "is_high_boost_role" in src, "Moonshot must have is_high_boost_role pathway"
         assert "hbr_min_boost" in src, "Moonshot must read hbr_min_boost from config"
         assert "hbr_min_recent" in src, "Moonshot must read hbr_min_recent from config"
+        assert "hbr_min_rating" in src, "Moonshot must read hbr_min_rating from config"
 
     def test_chalk_code_has_pathway(self):
         """Chalk pool must contain is_chalk_high_boost_role pathway."""
@@ -2617,6 +2618,20 @@ class TestHighBoostRolePathway:
         assert hbr.get("min_boost", 0) >= 1.5, "min_boost should be high enough to gate quality"
         assert hbr.get("min_recent_min", 0) >= 10.0, "min_recent_min should require real minutes"
         assert hbr.get("min_pred_min", 0) >= 10.0, "min_pred_min should require real minutes today"
+        assert hbr.get("min_rating", 0) >= 2.0, "min_rating should gate out RS busts"
+
+    def test_hbr_rating_floor_in_eligibility(self):
+        """HBR pathway must check rating in the is_high_boost_role conditional."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        # hbr_min_rating must appear near is_high_boost_role assignment
+        idx_start = src.index("is_high_boost_role = (")
+        # Find the next line that starts a new statement (not indented continuation)
+        hbr_block = src[idx_start:idx_start + 500]
+        assert "hbr_min_rating" in hbr_block, \
+            "is_high_boost_role conditional must include hbr_min_rating check"
+        assert "rating" in hbr_block, \
+            "is_high_boost_role conditional must check player rating"
 
     def test_chalk_config_present(self):
         """model-config.json must have chalk HBR keys under projection."""
@@ -2654,6 +2669,21 @@ class TestHighBoostRolePathway:
         src = open(idx.__file__).read()
         assert "is_spot_starter or is_chalk_high_boost_role" in src, \
             "Chalk eligibility must include is_chalk_high_boost_role in OR chain"
+
+    def test_wildcard_dead_code_removed(self):
+        """Wildcard gate variables were never used — must be removed."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "wildcard_boost" not in src, "Dead wildcard_boost variable should be removed"
+        assert "wildcard_min " not in src, "Dead wildcard_min variable should be removed"
+        assert "wildcard_min_pts" not in src, "Dead wildcard_min_pts variable should be removed"
+
+    def test_relaxed_pool_rating_floor(self):
+        """Small-slate relaxed pool must use 2.5 rating floor (not 2.2)."""
+        import api.index as idx
+        src = open(idx.__file__).read()
+        assert "relaxed_min_rating = 2.5" in src, \
+            "Small-slate relaxation should use 2.5 rating floor to match HBR"
 
 
 class TestRsCalibrationWeights:

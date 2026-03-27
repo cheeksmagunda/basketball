@@ -369,9 +369,6 @@
     "boost_leverage_power": 0.5,
     "variance_penalty": 0,
     "max_per_team": 3,
-    "wildcard_min_boost": 2.0,
-    "wildcard_min_minutes": 10.0,
-    "wildcard_min_season_pts": 5.0,
     "role_spike_ratio": 1.4,
     "role_spike_recent_floor": 20.0,
     "role_spike_season_floor": 8.0,
@@ -380,7 +377,8 @@
       "enabled": true,
       "min_boost": 2.0,
       "min_recent_min": 14.0,
-      "min_pred_min": 14.0
+      "min_pred_min": 14.0,
+      "min_rating": 2.5
     },
     "scoring_pts_bias_threshold": 10.0,
     "scoring_pts_bias_scale": 0.0,

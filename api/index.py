@@ -885,7 +885,6 @@ _CONFIG_DEFAULTS = {
         "max_centers":99, "boost_leverage_power":0.5,
         "require_rotowire_clearance":True, "max_ownership_pct":3.0,
         "variance_penalty": 0.0,       # zero damping — moonshot wants maximum upside
-        "wildcard_min_boost": 2.0, "wildcard_min_minutes": 15.0, "wildcard_min_season_pts": 7.0,
         "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
         # RS-bypass DISABLED: stars with 0.0-0.3x boost are a trap (Jokic TV 16-18 vs rotation TV 20+)
         "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
@@ -4785,11 +4784,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     min_recent_floor = moon_cfg.get("min_recent_minutes_floor", _moon_defaults["min_recent_minutes_floor"])
     min_boost        = moon_cfg.get("min_card_boost", _moon_defaults["min_card_boost"])
 
-    # Wildcard thresholds — read once outside the loop
-    # Wildcard gate: ultra-high-boost deep bench players bypass season/recent min floors.
-    wildcard_boost        = moon_cfg.get("wildcard_min_boost", _moon_defaults["wildcard_min_boost"])
-    wildcard_min          = moon_cfg.get("wildcard_min_minutes", _moon_defaults["wildcard_min_minutes"])
-    wildcard_min_pts      = moon_cfg.get("wildcard_min_season_pts", _moon_defaults["wildcard_min_season_pts"])
     variance_penalty_coef = moon_cfg.get("variance_penalty", _moon_defaults["variance_penalty"])
     # Matchup intel from Claude Layer 1.5 (pre-fetched, passed in)
     _matchup_intel = matchup_intel or {}
@@ -4834,17 +4828,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         # High-boost role player pathway: consistent rotation player whose value comes
         # from a high card boost + real RS projection, not from minutes volume.
         # Example: 16 min/game player with +2.5x boost and RS 4.5 → chalk_ev 18.45 —
-        # beats many starters on EV. The boost floor IS the quality gate here.
+        # beats many starters on EV. Boost + minimum RS rating gate quality here.
         hbr_cfg = moon_cfg.get("high_boost_role", {})
         hbr_enabled     = hbr_cfg.get("enabled", True)
         hbr_min_boost   = float(hbr_cfg.get("min_boost", 2.0))
         hbr_min_recent  = float(hbr_cfg.get("min_recent_min", 14.0))
         hbr_min_pred    = float(hbr_cfg.get("min_pred_min", 14.0))
+        hbr_min_rating  = float(hbr_cfg.get("min_rating", 2.5))
         is_high_boost_role = (
             hbr_enabled
             and est_mult >= hbr_min_boost
             and recent_min >= hbr_min_recent
             and pred_min >= hbr_min_pred
+            and p.get("rating", 0) >= hbr_min_rating
         )
         if not (is_moonshot_regular or is_moonshot_spot_starter
                 or is_role_spike or is_high_boost_role):
@@ -5144,7 +5140,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     if len(moonshot_pool) < 5:
         relaxed_pool = []
         # Keep this conservative: only relax when the strict pool is too thin.
-        relaxed_min_rating = 2.2
+        relaxed_min_rating = 2.5
         relaxed_min_pred_min = 12.0
         relaxed_min_boost = max(1.0, float(min_boost) - 0.5)
         for p in projections:

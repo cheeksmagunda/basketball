@@ -403,7 +403,7 @@ Mar 18 leaderboard analysis: winners are **rotation players with 20+ minutes AND
 
 ### Projection-level gates (project_player)
 
-- **Minimum 6 projected pts** (moonshot floor) — universal floor in `project_player()` uses `min_pts_projection_moonshot` (default 6.0); filters out deep bench players (Missi 5.5, Matkovic 5.7) who never produce
+- **Minimum 5 projected pts** (moonshot floor) — universal floor in `project_player()` uses `min_pts_projection_moonshot` (default 5.0); filters out deep bench players who never produce
 - **Minimum 0.22 pts/min** (moonshot floor) — `min_pts_per_minute_moonshot` (default 0.22); chalk enforces stricter 0.28 separately
 - **Scoring bias multiplier** — players whose pts drive their base score (scorers)
   receive a mild upside boost (up to 1.15×) over balanced accumulators
@@ -420,8 +420,7 @@ Mar 18 leaderboard analysis: winners are **rotation players with 20+ minutes AND
 - **Minimum 3.0 rating** — Mar 18 winners all had RS 2.8+ actual; 2.0 floor let in RS 0.7-1.5 players
 - **Minimum 1.5 card boost** — moonshot is contrarian; this is the core filter
 - **Season/recent min >= 20** — proven rotation players (Sensabaugh 22min, GP2 20min, Clingan 23min pass; Missi 19min, Jackson 16min, Matkovic 14min filtered)
-- **Minimum 6 projected PPG** and **0.22 pts/min** — require real scoring production
-- **Wildcard gate**: boost >= 2.0, min 15 min, min 7 PPG — no garbage-time wildcards
+- **Minimum 5 projected PPG** and **0.22 pts/min** — require real scoring production
 - **Boost leverage power 1.2** (down from 1.6) — reduces +3x boost dominance from 5.8x to 3.7x
 - **No center penalty** — Poeltl, Queta, Achiuwa all appear in winning lineups
 - **Light variance damping** (0.15, down from 0.45) — moonshot wants upside
@@ -473,11 +472,10 @@ Team incentive gates in `team_motivation`: `enabled`, `start_date`, `seeding_gap
 
 Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
 `min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
-`wildcard_min_boost`, `wildcard_min_minutes`, `wildcard_min_season_pts`,
 `max_centers`, `max_per_team`, `dev_team_pts_floor`, `pred_min_tolerance` (default 3.0),
 `rs_bypass.enabled`, `rs_bypass.min_rating`, `rs_bypass.min_season_min`, `rs_bypass.min_boost`,
 `high_boost_role.enabled`, `high_boost_role.min_boost`, `high_boost_role.min_recent_min`,
-`high_boost_role.min_pred_min`, `scorer_upside.enabled`, `scorer_upside.min_pts_per_min`,
+`high_boost_role.min_pred_min`, `high_boost_role.min_rating`, `scorer_upside.enabled`, `scorer_upside.min_pts_per_min`,
 `scorer_upside.min_season_pts`, `scorer_upside.multiplier`,
 `roto_confirmed_min_rating`, `roto_confirmed_min_boost`.
 
@@ -602,8 +600,6 @@ Key knobs in `moonshot` section of model-config.json:
 - `variance_penalty`: 0.15 — light damping; moonshot wants upside
 - `max_centers`: 3 — Poeltl, Queta, Achiuwa all appear in winning lineups
 - `max_per_team`: 3 — allows team stacks
-- `wildcard_min_minutes`: 15, `wildcard_min_season_pts`: 7 — no garbage-time wildcards
-
 ### Spread Adjustment (continuous, no cliff edges)
 - Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
 - Stars/starters: peak 1.15× at pick'em, continuous decay, floors at 0.70× for heavy favorites.
