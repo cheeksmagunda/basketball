@@ -3838,7 +3838,7 @@ async function initLogPage() {
       LOG._datesLoadedAt = Date.now();
       try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
       buildLogDateStrip();
-    }).catch(function() {});
+    }).catch(function(e) { console.warn('[log/dates] failed to load date strip:', e); });
     return;
   }
 
@@ -4486,7 +4486,9 @@ async function fetchLineOfTheDay(nocache = false, background = false) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pick: data.pick, over_pick: data.over_pick, under_pick: data.under_pick }),
-          }, 10000).catch(function(e) { console.warn('[save-line] background save failed:', e); });
+          }, 10000).then(function(r) {
+            if (!r.ok) console.warn('[save-line] server error:', r.status);
+          }).catch(function(e) { console.warn('[save-line] background save failed:', e); });
         }
         // Auto-resolve is cron-driven (0 * * * * — hourly). _startLineLivePoll detects
         // when a game finishes and re-fetches line-of-the-day for per-direction rotation.

@@ -12073,21 +12073,29 @@ def _run_parlay_engine_sync(today):
     player_odds_map = _build_player_odds_map(target_games)
     print(f"[parlay] projections={len(all_proj)} odds_entries={len(player_odds_map)} games={len(target_games)}")
 
-    # No synthetic fallback — parlay requires real sportsbook lines.
-    # If Odds API returns nothing, fail explicitly so the user knows.
-    projection_only = False
-    if not player_odds_map:
+    # Synthetic fallback when Odds API unavailable: build model-only lines from
+    # projections (nearest 0.5 snap) so the parlay engine can still run.
+    # Fires when: props not yet published (~pre-5pm ET), Odds API down, or no
+    # game matching. Thresholds loosened below to compensate for no Vegas signal.
+    projection_only = not bool(player_odds_map)
+    if projection_only:
         has_key = bool(os.environ.get("ODDS_API_KEY"))
-        print(f"[parlay] no Odds API data — ODDS_API_KEY={'set' if has_key else 'NOT SET'}, "
-              f"games={len(target_games)}, projections={len(all_proj)}. "
-              f"Returning error (no synthetic fallback).")
-        return None, "no_odds_data", {
-            "projections": len(all_proj),
-            "odds_entries": 0,
-            "odds_available": False,
-            "projection_only": True,
-            "has_key": has_key,
-        }
+        print(f"[parlay] no Odds API data (ODDS_API_KEY={'set' if has_key else 'NOT SET'}) — "
+              f"building synthetic lines from {len(all_proj)} projections")
+        player_odds_map = {}
+        for _p in all_proj:
+            _name_lower = (_p.get("name") or "").lower()
+            if not _name_lower:
+                continue
+            for _stat_type, _key in (("points", "pts"), ("rebounds", "reb"), ("assists", "ast")):
+                _proj_val = float(_p.get(_key) or 0)
+                if _proj_val > 0.5:
+                    player_odds_map[(_name_lower, _stat_type)] = {
+                        "line": round(_proj_val * 2) / 2,
+                        "odds_over": -110,
+                        "odds_under": -110,
+                        "books_consensus": 0,
+                    }
 
     rw_statuses = {}
     try:
@@ -12102,6 +12110,10 @@ def _run_parlay_engine_sync(today):
         print(f"[parlay] DvP fetch error (non-fatal): {_pdvp_err}")
 
     parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
+    if projection_only:
+        # Loosen thresholds when running on synthetic lines (no Vegas signal)
+        parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
+        parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
 
     gamelog_id_list = select_parlay_gamelog_player_ids(
         all_proj, target_games, player_odds_map, rw_statuses, parlay_config, projection_only
