@@ -1910,21 +1910,21 @@ function switchTab(tab) {
     closeLogDrilldown();  // always return to grid view on tab entry
     // Staleness guard: only re-init if never loaded or > 5 min old
     const _logStale = LOG_LOADED_AT > 0 && (Date.now() - LOG_LOADED_AT) > 5 * 60 * 1000;
-    if (!LOG.selectedDate || _logStale) initLogPage();
+    try { if (!LOG.selectedDate || _logStale) initLogPage(); } catch(e) { console.error('[switchTab] log init err', e); }
   }
   if (tab === 'predictions') {
     let stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
     let dateStale = SLATE && SLATE.locked && SLATE.date && SLATE.date !== _etToday();
-    if (stale || dateStale) loadSlate();
+    try { if (stale || dateStale) loadSlate(); } catch(e) { console.error('[switchTab] predict init err', e); }
   }
   if (tab === 'line') {
     // Keep Line cache ownership in the Line page initializer only.
     // Do not bust LINE_LOADED_DATE from unrelated SLATE staleness, or hydrated
     // picks can briefly render and then regress to skeleton loading.
-    initLinePage();  // has its own cache guard (LINE_LOADED_DATE === todayET)
+    try { initLinePage(); } catch(e) { console.error('[switchTab] line init err', e); }  // has its own cache guard (LINE_LOADED_DATE === todayET)
   }
-  if (tab === 'parlay') initParlayPage();  // has its own staleness guard
-  if (tab === 'lab') initLabPage();  // has its own staleness guard
+  try { if (tab === 'parlay') initParlayPage(); } catch(e) { console.error('[switchTab] parlay init err', e); }  // has its own staleness guard
+  try { if (tab === 'lab') initLabPage(); } catch(e) { console.error('[switchTab] lab init err', e); }  // has its own staleness guard
   // Resume live poll on returning to Line tab if picks already loaded and no poll running
   if (tab === 'line' && (LINE_OVER_PICK || LINE_UNDER_PICK) && !LINE_LIVE_POLL) {
     _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
@@ -3361,7 +3361,15 @@ async function fetchParlay(background = false) {
     if (data.error && (!data.legs || data.legs.length === 0)) {
       PARLAY_STATE = asyncStateError(PARLAY_STATE, data.error);
       _labSyncParlayContext(data);
-      if (empty) { empty.style.display = 'block'; const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = data.narrative || 'No valid parlay found.'; }
+      if (empty) {
+        empty.style.display = 'block';
+        const msg = _el('parlayEmptyMsg'); if (msg) msg.textContent = data.narrative || 'No valid parlay found.';
+        // Highlight the Generate button when locked so user knows it's the action to take
+        const genBtn = _el('parlayForceBtn');
+        if (genBtn && data.error === 'parlay_locked') {
+          genBtn.style.cssText += ';background:rgba(217,70,239,0.18);border-color:rgba(217,70,239,0.5);color:#d946ef;font-weight:700';
+        }
+      }
       return;
     }
 
@@ -5709,6 +5717,103 @@ async function labSend() {
   appendLabMessage('user', displayText, false, false, img?.dataUrl);
   await labCallClaude(img);
 }
+
+// ─── GLOBAL ERROR BOUNDARY ───────────────────────────────────────────────────
+// Catches unhandled JS errors and promise rejections so the app never silently
+// goes blank. Shows a dismissible toast so the user knows something went wrong
+// and can tap Reload to recover.
+(function _installErrorBoundary() {
+  let _errToastShown = false;
+  let _errCount = 0;
+  const _MAX_TOASTS = 1; // only one toast at a time
+
+  function _showErrorToast(msg) {
+    if (_errToastShown) return;
+    _errToastShown = true;
+    let toast = document.getElementById('_globalErrToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = '_globalErrToast';
+      toast.setAttribute('role', 'alert');
+      toast.style.cssText = [
+        'position:fixed', 'bottom:90px', 'left:50%', 'transform:translateX(-50%)',
+        'background:rgba(30,30,35,0.97)', 'border:1px solid rgba(217,70,239,0.35)',
+        'color:#e2e8f0', 'padding:10px 16px', 'border-radius:12px',
+        'font-size:0.78rem', 'z-index:2000', 'max-width:320px', 'text-align:center',
+        'box-shadow:0 4px 20px rgba(0,0,0,0.5)', 'cursor:pointer',
+        'display:flex', 'align-items:center', 'gap:10px',
+      ].join(';');
+      document.body.appendChild(toast);
+    }
+    toast.innerHTML = '<span style="flex:1">Something went wrong. <a href="javascript:location.reload()" style="color:#d946ef;text-decoration:underline">Reload</a> to recover.</span>'
+      + '<button onclick="document.getElementById(\'_globalErrToast\').style.display=\'none\';_errToastShown=false" style="background:none;border:none;color:#8A96A3;font-size:1rem;cursor:pointer;padding:0">✕</button>';
+    toast.style.display = 'flex';
+    // Auto-dismiss after 12 s
+    setTimeout(function() { if (toast) toast.style.display = 'none'; _errToastShown = false; }, 12000);
+  }
+
+  window.onerror = function(msg, src, line, col, err) {
+    // Filter noise: ResizeObserver / extension errors
+    if (typeof msg === 'string' && (msg.includes('ResizeObserver') || msg.includes('Script error'))) return false;
+    _errCount++;
+    console.error('[global-error]', msg, src, line, col, err);
+    _showErrorToast(msg);
+    return false; // don't suppress default browser logging
+  };
+
+  window.addEventListener('unhandledrejection', function(e) {
+    const reason = e.reason;
+    // Ignore AbortError (our fetchWithTimeout intentionally aborts)
+    if (reason && reason.name === 'AbortError') return;
+    _errCount++;
+    console.error('[unhandled-rejection]', reason);
+    _showErrorToast(reason && reason.message ? reason.message : 'Unexpected error');
+  });
+})();
+
+// ─── ONLINE / OFFLINE RECOVERY ───────────────────────────────────────────────
+// Shows a small banner when the device goes offline; auto-reloads the active
+// tab's data when connectivity is restored so the user never has to manually
+// refresh after a network blip.
+(function _installConnectivityWatcher() {
+  let _offlineBanner = null;
+
+  function _getOrCreateBanner() {
+    if (_offlineBanner) return _offlineBanner;
+    _offlineBanner = document.createElement('div');
+    _offlineBanner.id = '_offlineBanner';
+    _offlineBanner.setAttribute('role', 'status');
+    _offlineBanner.style.cssText = [
+      'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:3000',
+      'background:#1e1e24', 'border-bottom:1px solid rgba(217,70,239,0.3)',
+      'color:#e2e8f0', 'font-size:0.75rem', 'text-align:center',
+      'padding:7px 16px', 'display:none',
+    ].join(';');
+    document.body.appendChild(_offlineBanner);
+    return _offlineBanner;
+  }
+
+  window.addEventListener('offline', function() {
+    const b = _getOrCreateBanner();
+    b.textContent = '📡  No internet connection — data will refresh when you\'re back online.';
+    b.style.display = 'block';
+  });
+
+  window.addEventListener('online', function() {
+    const b = _getOrCreateBanner();
+    b.textContent = '✓  Connection restored — refreshing…';
+    setTimeout(function() { b.style.display = 'none'; }, 3000);
+    // Reload the currently-visible tab's data
+    try {
+      const activeTab = document.querySelector('.bnav-icon-btn.active');
+      const tab = activeTab && activeTab.dataset.tab;
+      if (tab === 'predictions' || !tab) { _cancelSlateRetry(); loadSlate(); }
+      else if (tab === 'line') initLinePage();
+      else if (tab === 'parlay') { PARLAY_STATE = asyncStateInitial(); PARLAY_LOADED_DATE = ''; initParlayPage(); }
+      else if (tab === 'log') { LOG_LOADED_AT = 0; initLogPage(); }
+    } catch(e) { console.warn('[connectivity] reload err', e); }
+  });
+})();
 
 </script>
 </body>

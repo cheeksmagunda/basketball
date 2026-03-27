@@ -12176,8 +12176,8 @@ async def get_parlay(request: Request):
         if slate_locked:
             print(f"[parlay] slate locked, no cached/GitHub parlay — returning empty (not regenerating)")
             return JSONResponse({"error": "parlay_locked", "locked": True, "legs": [],
-                                 "narrative": "Today's parlay wasn't generated before tip-off. Check back tomorrow for a fresh pick.",
-                                 "message": "Parlay was not generated before lock. Check back tomorrow."})
+                                 "narrative": "Today's parlay wasn't generated before tip-off. Tap Generate Parlay to try with live odds, or check back tomorrow.",
+                                 "message": "Parlay was not generated before lock."})
 
         result, err, debug = await asyncio.wait_for(
             asyncio.to_thread(_run_parlay_engine_sync, today),
