@@ -1,0 +1,37 @@
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Anfernee Simons,BOS,4.2,2.1,6,1,17.4,highest_value
+Luka Garza,BOS,3.4,3.0,1,1,17.2,highest_value
+Rudy Gobert,MIN,4.7,1.6,67,1,16.8,highest_value
+Andre Drummond,PHI,3.5,2.6,37,1,16.3,highest_value
+Jalen Suggs,ORL,3.6,2.0,6,1,14.3,highest_value
+Kevin Durant,HOU,5.0,0.8,141,1,14.0,highest_value
+Andrew Nembhard,IND,2.8,3.0,296,1,13.9,highest_value
+Bobby Portis,MIL,2.6,3.0,2,1,13.1,highest_value
+Quinten Post,GSW,2.6,3.0,7,1,12.9,highest_value
+Jimmy Butler III,GSW,4.7,0.7,502,1,12.7,highest_value
+Jay Huff,IND,2.5,3.0,5,1,12.5,highest_value
+Ajay Mitchell,OKC,3.9,1.0,227,1,11.7,highest_value
+Jaden McDaniels,MIN,4.0,0.9,69,1,11.6,highest_value
+Reed Sheppard,HOU,3.0,1.9,7,1,11.6,highest_value
+Karl-Anthony Towns,NYK,4.2,0.7,267,1,11.2,highest_value
+Caris LeVert,DET,2.3,3.0,1,2,11.2,highest_value
+Jaren Jackson Jr.,MEM,3.3,1.3,31,1,11.0,highest_value
+Shai Gilgeous-Alexander,OKC,5.2,0,9900,1,10.4,most_popular
+Anthony Edwards,MIN,4.1,0.6,4600,1,10.66,most_popular
+Giannis Antetokounmpo,MIL,4.6,0,8500,1,9.2,most_popular
+Tyrese Maxey,PHI,4.6,0,7100,1,9.2,most_popular
+Jalen Duren,DET,3.9,0.6,3700,3,8.58,most_popular
+Cade Cunningham,DET,4.1,0.3,7100,2,8.61,most_popular
+Franz Wagner,ORL,3.5,0.7,2200,4,7.35,most_popular
+Julius Randle,MIN,3.4,0.2,2700,2,6.8,most_popular
+Alperen Sengun,HOU,3.7,0.3,2400,4,6.29,most_popular
+Jalen Brunson,NYK,2.5,0.3,4200,2,5.25,most_popular
+Paolo Banchero,ORL,2.9,0.6,3300,4,5.8,most_popular
+Jaylen Brown,BOS,2.8,0.4,4100,3,5.6,most_popular
+Ja Morant,MEM,2.0,0.8,2100,5,4.0,most_popular
+VJ Edgecombe,PHI,1.4,0.8,2800,5,2.8,most_popular
+Russell Westbrook,NYK,0.6,0.8,4000,4,1.32,most_popular
+Josh Hart,NYK,2.3,2.1,,1,9.43,winning_drafts
+Isaiah Jackson,IND,1.9,2.8,,1,9.12,winning_drafts
+Noah Clowney,BKN,1.0,3.0,1000,5,4.2,winning_drafts
+Neemias Queta,BOS,1.5,1.5,,5,4.05,winning_drafts
