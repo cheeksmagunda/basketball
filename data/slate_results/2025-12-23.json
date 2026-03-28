@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "CHA",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 126,
       "away_score": 109,
       "winner": "CHA",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 126,
       "loser_score": 109
     },
@@ -34,11 +34,11 @@
     },
     {
       "home": "CLE",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 141,
       "away_score": 118,
       "winner": "CLE",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 141,
       "loser_score": 118
     },
@@ -74,20 +74,20 @@
     },
     {
       "home": "MIN",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 115,
       "away_score": 104,
       "winner": "MIN",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 115,
       "loser_score": 104
     },
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "OKC",
       "home_score": 130,
       "away_score": 110,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "OKC",
       "winner_score": 130,
       "loser_score": 110
@@ -103,12 +103,12 @@
       "loser_score": 108
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "MEM",
       "home_score": 128,
       "away_score": 137,
       "winner": "MEM",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 137,
       "loser_score": 128
     },

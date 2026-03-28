@@ -14,11 +14,11 @@
     },
     {
       "home": "DET",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 118,
       "away_score": 80,
       "winner": "DET",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 118,
       "loser_score": 80
     },
@@ -34,10 +34,10 @@
     },
     {
       "home": "MIN",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 115,
       "away_score": 119,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "MIN",
       "winner_score": 119,
       "loser_score": 115

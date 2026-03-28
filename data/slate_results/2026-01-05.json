@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "DET",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 121,
       "away_score": 90,
       "winner": "DET",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 121,
       "loser_score": 90
     },
@@ -64,21 +64,21 @@
     },
     {
       "home": "LAC",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 103,
       "away_score": 102,
       "winner": "LAC",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 103,
       "loser_score": 102
     },
     {
       "home": "POR",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 137,
       "away_score": 117,
       "winner": "POR",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 137,
       "loser_score": 117
     }

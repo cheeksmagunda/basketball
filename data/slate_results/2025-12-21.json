@@ -23,22 +23,22 @@
       "loser_score": 81
     },
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "MIA",
       "home_score": 132,
       "away_score": 125,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "MIA",
       "winner_score": 132,
       "loser_score": 125
     },
     {
-      "home": "WSH",
-      "away": "SA",
+      "home": "WAS",
+      "away": "SAS",
       "home_score": 113,
       "away_score": 124,
-      "winner": "SA",
-      "loser": "WSH",
+      "winner": "SAS",
+      "loser": "WAS",
       "winner_score": 124,
       "loser_score": 113
     },

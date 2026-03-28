@@ -13,22 +13,22 @@
       "loser_score": 122
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "TOR",
       "home_score": 122,
       "away_score": 111,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "TOR",
       "winner_score": 122,
       "loser_score": 111
     },
     {
-      "home": "UTAH",
-      "away": "NY",
+      "home": "UTA",
+      "away": "NYK",
       "home_score": 117,
       "away_score": 134,
-      "winner": "NY",
-      "loser": "UTAH",
+      "winner": "NYK",
+      "loser": "UTA",
       "winner_score": 134,
       "loser_score": 117
     },

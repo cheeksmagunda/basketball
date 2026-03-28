@@ -3,31 +3,31 @@
   "game_count": 5,
   "games": [
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "CLE",
       "home_score": 126,
       "away_score": 124,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "CLE",
       "winner_score": 126,
       "loser_score": 124
     },
     {
       "home": "OKC",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 102,
       "away_score": 117,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "OKC",
       "winner_score": 117,
       "loser_score": 102
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "DAL",
       "home_score": 126,
       "away_score": 116,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "DAL",
       "winner_score": 126,
       "loser_score": 116

@@ -24,11 +24,11 @@
     },
     {
       "home": "ORL",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 136,
       "away_score": 131,
       "winner": "ORL",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 136,
       "loser_score": 131
     },
@@ -63,12 +63,12 @@
       "loser_score": 112
     },
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "DEN",
       "home_score": 131,
       "away_score": 136,
       "winner": "DEN",
-      "loser": "SA",
+      "loser": "SAS",
       "winner_score": 136,
       "loser_score": 131
     },

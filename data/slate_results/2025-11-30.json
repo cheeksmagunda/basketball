@@ -3,12 +3,12 @@
   "game_count": 8,
   "games": [
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "HOU",
       "home_score": 101,
       "away_score": 129,
       "winner": "HOU",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 129,
       "loser_score": 101
     },
@@ -23,11 +23,11 @@
       "loser_score": 115
     },
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "TOR",
       "home_score": 116,
       "away_score": 94,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "TOR",
       "winner_score": 116,
       "loser_score": 94
@@ -54,11 +54,11 @@
     },
     {
       "home": "MIN",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 125,
       "away_score": 112,
       "winner": "MIN",
-      "loser": "SA",
+      "loser": "SAS",
       "winner_score": 125,
       "loser_score": 112
     },
@@ -74,11 +74,11 @@
     },
     {
       "home": "LAL",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 133,
       "away_score": 121,
       "winner": "LAL",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 133,
       "loser_score": 121
     }

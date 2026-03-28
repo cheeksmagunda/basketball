@@ -4,20 +4,20 @@
   "games": [
     {
       "home": "IND",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 113,
       "away_score": 123,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "IND",
       "winner_score": 123,
       "loser_score": 113
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "BKN",
       "home_score": 119,
       "away_score": 99,
-      "winner": "WSH",
+      "winner": "WAS",
       "loser": "BKN",
       "winner_score": 119,
       "loser_score": 99
@@ -33,12 +33,12 @@
       "loser_score": 108
     },
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "ATL",
       "home_score": 99,
       "away_score": 111,
       "winner": "ATL",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 111,
       "loser_score": 99
     },
@@ -63,12 +63,12 @@
       "loser_score": 121
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "POR",
       "home_score": 109,
       "away_score": 122,
       "winner": "POR",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 122,
       "loser_score": 109
     },
@@ -83,12 +83,12 @@
       "loser_score": 102
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "OKC",
       "home_score": 94,
       "away_score": 131,
       "winner": "OKC",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 131,
       "loser_score": 94
     },

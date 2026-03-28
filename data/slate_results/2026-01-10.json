@@ -34,10 +34,10 @@
     },
     {
       "home": "BOS",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 95,
       "away_score": 100,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "BOS",
       "winner_score": 100,
       "loser_score": 95
@@ -53,12 +53,12 @@
       "loser_score": 107
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "CHA",
       "home_score": 95,
       "away_score": 150,
       "winner": "CHA",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 150,
       "loser_score": 95
     }

@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "TOR",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 141,
       "away_score": 127,
       "winner": "TOR",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 141,
       "loser_score": 127
     },
@@ -23,11 +23,11 @@
       "loser_score": 104
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "MEM",
       "home_score": 116,
       "away_score": 112,
-      "winner": "WSH",
+      "winner": "WAS",
       "loser": "MEM",
       "winner_score": 116,
       "loser_score": 112

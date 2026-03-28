@@ -24,10 +24,10 @@
     },
     {
       "home": "ORL",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 112,
       "away_score": 114,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "ORL",
       "winner_score": 114,
       "loser_score": 112
@@ -43,11 +43,11 @@
       "loser_score": 92
     },
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "CHA",
       "home_score": 119,
       "away_score": 104,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "CHA",
       "winner_score": 119,
       "loser_score": 104

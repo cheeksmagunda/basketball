@@ -4,30 +4,30 @@
   "games": [
     {
       "home": "PHI",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 99,
       "away_score": 98,
       "winner": "PHI",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 99,
       "loser_score": 98
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "BOS",
       "home_score": 101,
       "away_score": 146,
       "winner": "BOS",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 146,
       "loser_score": 101
     },
     {
       "home": "BKN",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 110,
       "away_score": 123,
-      "winner": "UTAH",
+      "winner": "UTA",
       "loser": "BKN",
       "winner_score": 123,
       "loser_score": 110
@@ -43,12 +43,12 @@
       "loser_score": 120
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "MIN",
       "home_score": 116,
       "away_score": 125,
       "winner": "MIN",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 125,
       "loser_score": 116
     }

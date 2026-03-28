@@ -1,11 +1,11 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
 slate,chalk,2.0x,Jalen Green,4437244,PHX,G,3.8,1.4,27.3,18.1,3.6,2.9,1.0,0.1
-slate,chalk,1.8x,Derik Queen,4869780,NO,C,3.3,1.7,24.6,11.4,6.8,3.8,1.0,0.9
+slate,chalk,1.8x,Derik Queen,4869780,NOP,C,3.3,1.7,24.6,11.4,6.8,3.8,1.0,0.9
 slate,chalk,1.6x,Maxime Raynaud,4898371,SAC,C,3.2,1.9,25.7,11.9,7.3,1.3,0.5,0.6
 slate,chalk,1.4x,Malik Monk,4066262,SAC,G,3.2,2.0,22.2,12.7,2.0,2.9,0.6,0.4
 slate,chalk,1.2x,Tim Hardaway Jr.,2528210,DEN,G,3.0,1.9,27.1,13.8,2.7,1.5,0.5,0.1
 slate,upside,2.0x,Dennis Schroder,3032979,CLE,G,3.3,1.6,25.4,11.7,2.7,4.9,0.8,0.2
-slate,upside,1.8x,Derik Queen,4869780,NO,C,3.3,1.7,24.6,11.4,6.8,3.8,1.0,0.9
+slate,upside,1.8x,Derik Queen,4869780,NOP,C,3.3,1.7,24.6,11.4,6.8,3.8,1.0,0.9
 slate,upside,1.6x,Malik Monk,4066262,SAC,G,3.2,2.0,22.2,12.7,2.0,2.9,0.6,0.4
 slate,upside,1.4x,Maxime Raynaud,4898371,SAC,C,3.2,1.9,25.7,11.9,7.3,1.3,0.5,0.6
 slate,upside,1.2x,Tim Hardaway Jr.,2528210,DEN,G,3.0,1.9,27.1,13.8,2.7,1.5,0.5,0.1
@@ -14,11 +14,11 @@ SAC @ CHA,the_lineup,1.0x,Brandon Miller,4433287,CHA,F,3.4,0.0,30.4,20.1,4.9,3.4
 SAC @ CHA,the_lineup,1.0x,Coby White,4395651,CHA,G,3.2,0.0,27.2,17.2,3.6,4.4,0.6,0.1
 SAC @ CHA,the_lineup,1.0x,Miles Bridges,4066383,CHA,F,3.2,0.0,31.5,17.0,5.9,3.2,0.6,0.5
 SAC @ CHA,the_lineup,1.0x,Ryan Kalkbrenner,4576060,CHA,C,3.0,0.0,21.9,8.0,5.7,0.8,0.5,1.4
-NO @ NY,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,4.3,0.0,30.9,24.7,3.4,6.3,0.8,0.1
-NO @ NY,the_lineup,1.8x,Karl-Anthony Towns,3136195,NY,C,4.0,0.0,31.6,20.7,11.8,2.9,0.9,0.7
-NO @ NY,the_lineup,1.6x,Trey Murphy III,4397688,NO,F,3.8,0.0,30.3,20.5,5.4,3.5,1.4,0.3
-NO @ NY,the_lineup,1.4x,Zion Williamson,4395628,NO,F,3.8,0.0,30.0,21.8,5.9,3.5,1.0,0.5
-NO @ NY,the_lineup,1.2x,Dejounte Murray,3907497,NO,G,3.7,0.0,27.9,18.1,5.2,6.0,1.6,0.2
+NO @ NY,the_lineup,2.0x,Jalen Brunson,3934672,NYK,G,4.3,0.0,30.9,24.7,3.4,6.3,0.8,0.1
+NO @ NY,the_lineup,1.8x,Karl-Anthony Towns,3136195,NYK,C,4.0,0.0,31.6,20.7,11.8,2.9,0.9,0.7
+NO @ NY,the_lineup,1.6x,Trey Murphy III,4397688,NOP,F,3.8,0.0,30.3,20.5,5.4,3.5,1.4,0.3
+NO @ NY,the_lineup,1.4x,Zion Williamson,4395628,NOP,F,3.8,0.0,30.0,21.8,5.9,3.5,1.0,0.5
+NO @ NY,the_lineup,1.2x,Dejounte Murray,3907497,NOP,G,3.7,0.0,27.9,18.1,5.2,6.0,1.6,0.2
 ORL @ CLE,the_lineup,2.0x,Donovan Mitchell,3908809,CLE,G,4.0,0.0,33.6,27.4,4.5,5.6,1.5,0.3
 ORL @ CLE,the_lineup,1.8x,James Harden,3992,CLE,G,3.9,0.0,35.0,24.1,5.1,7.9,1.2,0.4
 ORL @ CLE,the_lineup,1.0x,Paolo Banchero,4432573,ORL,F,3.5,0.0,30.6,22.5,8.2,5.0,0.7,0.6

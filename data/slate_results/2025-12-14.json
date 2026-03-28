@@ -4,10 +4,10 @@
   "games": [
     {
       "home": "IND",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 89,
       "away_score": 108,
-      "winner": "WSH",
+      "winner": "WAS",
       "loser": "IND",
       "winner_score": 108,
       "loser_score": 89
@@ -54,10 +54,10 @@
     },
     {
       "home": "CHI",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 104,
       "away_score": 114,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "CHI",
       "winner_score": 114,
       "loser_score": 104
@@ -74,11 +74,11 @@
     },
     {
       "home": "POR",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 136,
       "away_score": 131,
       "winner": "POR",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 136,
       "loser_score": 131
     }

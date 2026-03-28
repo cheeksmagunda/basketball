@@ -4,10 +4,10 @@
   "games": [
     {
       "home": "DET",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 103,
       "away_score": 114,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "DET",
       "winner_score": 114,
       "loser_score": 103
@@ -24,11 +24,11 @@
     },
     {
       "home": "HOU",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 125,
       "away_score": 105,
       "winner": "HOU",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 125,
       "loser_score": 105
     }

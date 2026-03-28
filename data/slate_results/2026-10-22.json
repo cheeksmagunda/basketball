@@ -2,16 +2,106 @@
   "date": "2026-10-22",
   "game_count": 10,
   "games": [
-    {"home": "MEM", "away": "MIN", "home_score": 118, "away_score": 111, "winner": "MEM", "loser": "MIN", "winner_score": 118, "loser_score": 111},
-    {"home": "DET", "away": "PHI", "home_score": 115, "away_score": 111, "winner": "DET", "loser": "PHI", "winner_score": 115, "loser_score": 111},
-    {"home": "SAC", "away": "LAL", "home_score": 116, "away_score": 120, "winner": "LAL", "loser": "SAC", "winner_score": 120, "loser_score": 116},
-    {"home": "NOP", "away": "LAC", "home_score": 122, "away_score": 128, "winner": "LAC", "loser": "NOP", "winner_score": 128, "loser_score": 122},
-    {"home": "SA", "away": "GSW", "home_score": 125, "away_score": 92, "winner": "SA", "loser": "GSW", "winner_score": 125, "loser_score": 92},
-    {"home": "WAS", "away": "MIL", "home_score": 120, "away_score": 133, "winner": "MIL", "loser": "WAS", "winner_score": 133, "loser_score": 120},
-    {"home": "TOR", "away": "UTA", "home_score": 108, "away_score": 129, "winner": "UTA", "loser": "TOR", "winner_score": 129, "loser_score": 108},
-    {"home": "CLE", "away": "BOS", "home_score": 111, "away_score": 117, "winner": "BOS", "loser": "CLE", "winner_score": 117, "loser_score": 111},
-    {"home": "ATL", "away": "MIA", "home_score": 138, "away_score": 146, "winner": "MIA", "loser": "ATL", "winner_score": 146, "loser_score": 138},
-    {"home": "CHI", "away": "NYK", "home_score": 118, "away_score": 119, "winner": "NYK", "loser": "CHI", "winner_score": 119, "loser_score": 118}
+    {
+      "home": "MEM",
+      "away": "MIN",
+      "home_score": 118,
+      "away_score": 111,
+      "winner": "MEM",
+      "loser": "MIN",
+      "winner_score": 118,
+      "loser_score": 111
+    },
+    {
+      "home": "DET",
+      "away": "PHI",
+      "home_score": 115,
+      "away_score": 111,
+      "winner": "DET",
+      "loser": "PHI",
+      "winner_score": 115,
+      "loser_score": 111
+    },
+    {
+      "home": "SAC",
+      "away": "LAL",
+      "home_score": 116,
+      "away_score": 120,
+      "winner": "LAL",
+      "loser": "SAC",
+      "winner_score": 120,
+      "loser_score": 116
+    },
+    {
+      "home": "NOP",
+      "away": "LAC",
+      "home_score": 122,
+      "away_score": 128,
+      "winner": "LAC",
+      "loser": "NOP",
+      "winner_score": 128,
+      "loser_score": 122
+    },
+    {
+      "home": "SAS",
+      "away": "GSW",
+      "home_score": 125,
+      "away_score": 92,
+      "winner": "SAS",
+      "loser": "GSW",
+      "winner_score": 125,
+      "loser_score": 92
+    },
+    {
+      "home": "WAS",
+      "away": "MIL",
+      "home_score": 120,
+      "away_score": 133,
+      "winner": "MIL",
+      "loser": "WAS",
+      "winner_score": 133,
+      "loser_score": 120
+    },
+    {
+      "home": "TOR",
+      "away": "UTA",
+      "home_score": 108,
+      "away_score": 129,
+      "winner": "UTA",
+      "loser": "TOR",
+      "winner_score": 129,
+      "loser_score": 108
+    },
+    {
+      "home": "CLE",
+      "away": "BOS",
+      "home_score": 111,
+      "away_score": 117,
+      "winner": "BOS",
+      "loser": "CLE",
+      "winner_score": 117,
+      "loser_score": 111
+    },
+    {
+      "home": "ATL",
+      "away": "MIA",
+      "home_score": 138,
+      "away_score": 146,
+      "winner": "MIA",
+      "loser": "ATL",
+      "winner_score": 146,
+      "loser_score": 138
+    },
+    {
+      "home": "CHI",
+      "away": "NYK",
+      "home_score": 118,
+      "away_score": 119,
+      "winner": "NYK",
+      "loser": "CHI",
+      "winner_score": 119,
+      "loser_score": 118
+    }
   ],
   "season_stage": "regular-season",
   "source": "screenshot_ingest",

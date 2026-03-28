@@ -14,31 +14,31 @@
     },
     {
       "home": "ORL",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 133,
       "away_score": 121,
       "winner": "ORL",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 133,
       "loser_score": 121
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "ATL",
       "home_score": 98,
       "away_score": 115,
       "winner": "ATL",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 115,
       "loser_score": 98
     },
     {
       "home": "CHI",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 121,
       "away_score": 120,
       "winner": "CHI",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 121,
       "loser_score": 120
     },

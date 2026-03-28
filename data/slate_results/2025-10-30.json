@@ -14,30 +14,30 @@
     },
     {
       "home": "MIL",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 120,
       "away_score": 110,
       "winner": "MIL",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 120,
       "loser_score": 110
     },
     {
       "home": "OKC",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 127,
       "away_score": 108,
       "winner": "OKC",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 127,
       "loser_score": 108
     },
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "MIA",
       "home_score": 107,
       "away_score": 101,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "MIA",
       "winner_score": 107,
       "loser_score": 101

@@ -3,11 +3,11 @@
   "game_count": 9,
   "games": [
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "BKN",
       "home_score": 118,
       "away_score": 107,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "BKN",
       "winner_score": 118,
       "loser_score": 107
@@ -34,21 +34,21 @@
     },
     {
       "home": "MIA",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 115,
       "away_score": 107,
       "winner": "MIA",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 115,
       "loser_score": 107
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "CHA",
       "home_score": 113,
       "away_score": 139,
       "winner": "CHA",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 139,
       "loser_score": 113
     },

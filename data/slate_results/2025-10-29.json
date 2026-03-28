@@ -64,21 +64,21 @@
     },
     {
       "home": "DEN",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 122,
       "away_score": 88,
       "winner": "DEN",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 122,
       "loser_score": 88
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "POR",
       "home_score": 134,
       "away_score": 136,
       "winner": "POR",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 136,
       "loser_score": 134
     },

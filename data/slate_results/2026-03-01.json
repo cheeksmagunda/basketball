@@ -3,12 +3,12 @@
   "game_count": 11,
   "games": [
     {
-      "home": "NY",
-      "away": "SA",
+      "home": "NYK",
+      "away": "SAS",
       "home_score": 114,
       "away_score": 89,
-      "winner": "NY",
-      "loser": "SA",
+      "winner": "NYK",
+      "loser": "SAS",
       "winner_score": 114,
       "loser_score": 89
     },
@@ -94,11 +94,11 @@
     },
     {
       "home": "LAC",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 137,
       "away_score": 117,
       "winner": "LAC",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 137,
       "loser_score": 117
     },

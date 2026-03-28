@@ -44,10 +44,10 @@
     },
     {
       "home": "MEM",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 127,
       "away_score": 133,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "MEM",
       "winner_score": 133,
       "loser_score": 127

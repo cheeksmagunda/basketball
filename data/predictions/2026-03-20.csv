@@ -1,13 +1,13 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-NY @ BKN,the_lineup,2.0x,Jalen Brunson,3934672,NY,G,8.3,0.0,33.9,24.9,3.4,6.3,0.8,0.1
-NY @ BKN,the_lineup,1.8x,Mikal Bridges,3147657,NY,G,7.4,0.0,36.1,14.8,4.1,3.7,1.4,0.8
-NY @ BKN,the_lineup,1.6x,OG Anunoby,3934719,NY,F,6.6,0.0,32.6,16.2,5.1,2.1,1.6,0.7
+NY @ BKN,the_lineup,2.0x,Jalen Brunson,3934672,NYK,G,8.3,0.0,33.9,24.9,3.4,6.3,0.8,0.1
+NY @ BKN,the_lineup,1.8x,Mikal Bridges,3147657,NYK,G,7.4,0.0,36.1,14.8,4.1,3.7,1.4,0.8
+NY @ BKN,the_lineup,1.6x,OG Anunoby,3934719,NYK,F,6.6,0.0,32.6,16.2,5.1,2.1,1.6,0.7
 NY @ BKN,the_lineup,1.4x,Ziaire Williams,4433137,BKN,F,4.8,0.0,25.5,9.4,2.5,1.0,1.1,0.4
 NY @ BKN,the_lineup,1.2x,Nic Claxton,4278067,BKN,C,4.6,0.0,31.0,11.6,7.2,3.5,0.7,1.3
-GS @ DET,the_lineup,2.0x,Kristaps Porzingis,3102531,GS,C,8.6,0.0,28.0,17.5,5.4,2.5,0.7,1.6
-GS @ DET,the_lineup,1.8x,De'Anthony Melton,4066436,GS,G,6.0,0.0,25.8,12.4,3.1,2.5,1.6,0.4
+GS @ DET,the_lineup,2.0x,Kristaps Porzingis,3102531,GSW,C,8.6,0.0,28.0,17.5,5.4,2.5,0.7,1.6
+GS @ DET,the_lineup,1.8x,De'Anthony Melton,4066436,GSW,G,6.0,0.0,25.8,12.4,3.1,2.5,1.6,0.4
 GS @ DET,the_lineup,1.6x,Jalen Duren,4433621,DET,C,5.9,0.0,25.6,17.9,10.5,1.8,0.9,0.8
-GS @ DET,the_lineup,1.4x,Brandin Podziemski,4709138,GS,G,5.7,0.0,30.9,12.6,5.2,3.8,1.1,0.2
+GS @ DET,the_lineup,1.4x,Brandin Podziemski,4709138,GSW,G,5.7,0.0,30.9,12.6,5.2,3.8,1.1,0.2
 GS @ DET,the_lineup,1.2x,Caris LeVert,2991043,DET,G,4.9,0.0,21.1,8.6,2.2,2.9,0.9,0.6
 slate,chalk,2.0x,Alperen Sengun,4871144,HOU,C,10.3,0.6,32.3,19.6,8.8,5.8,1.2,1.1
 slate,chalk,1.8x,Jrue Holiday,3995,POR,G,9.2,0.9,32.3,16.1,4.4,6.2,1.2,0.2

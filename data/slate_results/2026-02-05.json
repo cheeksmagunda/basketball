@@ -4,10 +4,10 @@
   "games": [
     {
       "home": "DET",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 117,
       "away_score": 126,
-      "winner": "WSH",
+      "winner": "WAS",
       "loser": "DET",
       "winner_score": 126,
       "loser_score": 117
@@ -24,11 +24,11 @@
     },
     {
       "home": "ATL",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 121,
       "away_score": 119,
       "winner": "ATL",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 121,
       "loser_score": 119
     },
@@ -54,20 +54,20 @@
     },
     {
       "home": "DAL",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 123,
       "away_score": 135,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "DAL",
       "winner_score": 135,
       "loser_score": 123
     },
     {
       "home": "PHX",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 97,
       "away_score": 101,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "PHX",
       "winner_score": 101,
       "loser_score": 97

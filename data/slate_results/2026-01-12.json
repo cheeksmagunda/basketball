@@ -4,10 +4,10 @@
   "games": [
     {
       "home": "CLE",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 112,
       "away_score": 123,
-      "winner": "UTAH",
+      "winner": "UTA",
       "loser": "CLE",
       "winner_score": 123,
       "loser_score": 112

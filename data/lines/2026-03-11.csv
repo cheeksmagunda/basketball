@@ -1,2 +1,2 @@
 date,player_name,player_id,team,opponent,stat_type,line,direction,projection,edge,confidence,narrative,result,actual_stat
-2026-03-11,Kevin Love,3449,UTAH,NY,rebounds,6,over,7.8,1.8,80,Model projects 7.8 rebounds — a 1.8 edge vs the 6.0 season baseline.,miss,6.0
+2026-03-11,Kevin Love,3449,UTA,NY,rebounds,6,over,7.8,1.8,80,Model projects 7.8 rebounds — a 1.8 edge vs the 6.0 season baseline.,miss,6.0

@@ -4,21 +4,21 @@
   "games": [
     {
       "home": "BOS",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 89,
       "away_score": 111,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "BOS",
       "winner_score": 111,
       "loser_score": 89
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "MIA",
       "home_score": 101,
       "away_score": 132,
       "winner": "MIA",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 132,
       "loser_score": 101
     },

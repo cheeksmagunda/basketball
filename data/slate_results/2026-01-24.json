@@ -4,20 +4,20 @@
   "games": [
     {
       "home": "CHA",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 119,
       "away_score": 115,
       "winner": "CHA",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 119,
       "loser_score": 115
     },
     {
       "home": "PHI",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 109,
       "away_score": 112,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "PHI",
       "winner_score": 112,
       "loser_score": 109
@@ -53,12 +53,12 @@
       "loser_score": 110
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "MIA",
       "home_score": 116,
       "away_score": 147,
       "winner": "MIA",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 147,
       "loser_score": 116
     }

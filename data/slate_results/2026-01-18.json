@@ -24,11 +24,11 @@
     },
     {
       "home": "HOU",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 119,
       "away_score": 110,
       "winner": "HOU",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 119,
       "loser_score": 110
     },

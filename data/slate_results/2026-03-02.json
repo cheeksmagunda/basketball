@@ -3,12 +3,12 @@
   "game_count": 4,
   "games": [
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "HOU",
       "home_score": 118,
       "away_score": 123,
       "winner": "HOU",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 123,
       "loser_score": 118
     },
@@ -23,22 +23,22 @@
       "loser_score": 81
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "DEN",
       "home_score": 125,
       "away_score": 128,
       "winner": "DEN",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 128,
       "loser_score": 125
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "LAC",
       "home_score": 101,
       "away_score": 114,
       "winner": "LAC",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 114,
       "loser_score": 101
     }

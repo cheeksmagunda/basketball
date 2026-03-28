@@ -1,24 +1,24 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
 slate,chalk,2.0x,Nikola Jokic,3112335,DEN,C,11.7,0.4,29.3,25.4,11.8,8.9,1.3,0.8
-slate,chalk,1.8x,Josh Hart,3062679,NY,G,6.5,2.5,31.3,11.2,7.2,4.3,1.1,0.3
-slate,chalk,1.6x,Mitchell Robinson,4351852,NY,C,5.9,3.0,21.4,6.2,8.3,0.8,0.8,1.4
+slate,chalk,1.8x,Josh Hart,3062679,NYK,G,6.5,2.5,31.3,11.2,7.2,4.3,1.1,0.3
+slate,chalk,1.6x,Mitchell Robinson,4351852,NYK,C,5.9,3.0,21.4,6.2,8.3,0.8,0.8,1.4
 slate,chalk,1.4x,T.J. McConnell,2530530,IND,G,5.2,3.0,21.9,8.6,2.5,4.9,1.1,0.2
-slate,chalk,1.2x,DeAndre Jordan,3442,NO,C,5.0,3.0,18.2,6.5,8.3,0.8,0.5,1.1
-slate,upside,2.0x,OG Anunoby,3934719,NY,F,6.7,1.8,31.8,14.7,4.8,1.9,1.5,0.7
-slate,upside,1.8x,Dejounte Murray,3907497,NO,G,6.4,1.9,23.9,15.5,5.2,5.8,1.6,0.4
-slate,upside,1.6x,Jordan Clarkson,2528426,NY,G,5.7,2.4,24.0,12.2,2.5,2.0,0.6,0.2
-slate,upside,1.4x,Derik Queen,4869780,NO,C,5.6,2.5,22.5,12.0,7.2,4.0,1.0,0.9
-slate,upside,1.2x,Herbert Jones,4277813,NO,F,5.1,2.8,25.9,9.3,3.7,2.6,1.6,0.6
+slate,chalk,1.2x,DeAndre Jordan,3442,NOP,C,5.0,3.0,18.2,6.5,8.3,0.8,0.5,1.1
+slate,upside,2.0x,OG Anunoby,3934719,NYK,F,6.7,1.8,31.8,14.7,4.8,1.9,1.5,0.7
+slate,upside,1.8x,Dejounte Murray,3907497,NOP,G,6.4,1.9,23.9,15.5,5.2,5.8,1.6,0.4
+slate,upside,1.6x,Jordan Clarkson,2528426,NYK,G,5.7,2.4,24.0,12.2,2.5,2.0,0.6,0.2
+slate,upside,1.4x,Derik Queen,4869780,NOP,C,5.6,2.5,22.5,12.0,7.2,4.0,1.0,0.9
+slate,upside,1.2x,Herbert Jones,4277813,NOP,F,5.1,2.8,25.9,9.3,3.7,2.6,1.6,0.6
 NY @ DEN,chalk,2.0x,Nikola Jokic,3112335,DEN,C,12.0,0.4,29.3,25.4,11.8,8.9,1.3,0.8
 NY @ DEN,chalk,1.8x,Aaron Gordon,3064290,DEN,F,7.0,1.3,25.1,15.7,6.2,2.6,0.7,0.4
-NY @ DEN,chalk,1.6x,OG Anunoby,3934719,NY,F,6.9,1.8,31.8,14.7,4.8,1.9,1.5,0.7
-NY @ DEN,chalk,1.4x,Josh Hart,3062679,NY,G,6.7,2.5,31.3,11.2,7.2,4.3,1.1,0.3
-NY @ DEN,chalk,1.2x,Mitchell Robinson,4351852,NY,C,6.0,3.0,21.4,6.2,8.3,0.8,0.8,1.4
-NY @ DEN,upside,2.0x,Jordan Clarkson,2528426,NY,G,5.9,2.4,24.0,12.2,2.5,2.0,0.6,0.2
-NY @ DEN,upside,1.8x,Mikal Bridges,3147657,NY,G,7.0,1.7,34.6,15.2,4.0,3.4,1.4,0.7
-NY @ DEN,upside,1.6x,Jose Alvarado,4277869,NY,G,4.6,3.0,22.2,8.0,2.5,3.2,1.1,0.1
+NY @ DEN,chalk,1.6x,OG Anunoby,3934719,NYK,F,6.9,1.8,31.8,14.7,4.8,1.9,1.5,0.7
+NY @ DEN,chalk,1.4x,Josh Hart,3062679,NYK,G,6.7,2.5,31.3,11.2,7.2,4.3,1.1,0.3
+NY @ DEN,chalk,1.2x,Mitchell Robinson,4351852,NYK,C,6.0,3.0,21.4,6.2,8.3,0.8,0.8,1.4
+NY @ DEN,upside,2.0x,Jordan Clarkson,2528426,NYK,G,5.9,2.4,24.0,12.2,2.5,2.0,0.6,0.2
+NY @ DEN,upside,1.8x,Mikal Bridges,3147657,NYK,G,7.0,1.7,34.6,15.2,4.0,3.4,1.4,0.7
+NY @ DEN,upside,1.6x,Jose Alvarado,4277869,NYK,G,4.6,3.0,22.2,8.0,2.5,3.2,1.1,0.1
 NY @ DEN,upside,1.4x,Bruce Brown,4065670,DEN,G,4.4,2.8,23.1,8.2,4.1,2.3,1.0,0.3
-NY @ DEN,upside,1.2x,Landry Shamet,3914044,NY,G,3.9,2.9,23.3,9.3,1.8,1.6,0.6,0.1
+NY @ DEN,upside,1.2x,Landry Shamet,3914044,NYK,G,3.9,2.9,23.3,9.3,1.8,1.6,0.6,0.1
 POR @ HOU,chalk,2.0x,Jrue Holiday,3995,POR,G,7.7,1.6,33.1,16.2,4.4,6.2,1.3,0.3
 POR @ HOU,chalk,1.8x,Amen Thompson,4684740,HOU,G,6.7,1.7,29.7,15.5,7.6,4.5,1.4,0.8
 POR @ HOU,chalk,1.6x,Toumani Camara,4431736,POR,F,6.5,2.3,35.0,11.7,5.3,2.3,1.1,0.5
@@ -49,23 +49,23 @@ DAL @ BOS,upside,1.8x,Naji Marshall,4278594,DAL,F,5.0,1.9,24.2,12.6,4.5,2.8,0.9,
 DAL @ BOS,upside,1.6x,Sam Hauser,4065804,BOS,F,3.7,2.7,24.3,8.4,3.4,1.2,0.5,0.3
 DAL @ BOS,upside,1.4x,Payton Pritchard,4066354,BOS,G,5.0,1.7,24.1,13.5,3.5,4.2,0.7,0.1
 DAL @ BOS,upside,1.2x,Max Christie,4432582,DAL,G,3.6,2.3,23.1,10.4,3.1,1.8,0.5,0.3
-NO @ PHX,chalk,2.0x,Dejounte Murray,3907497,NO,G,7.4,1.9,23.9,15.5,5.2,5.8,1.6,0.4
+NO @ PHX,chalk,2.0x,Dejounte Murray,3907497,NOP,G,7.4,1.9,23.9,15.5,5.2,5.8,1.6,0.4
 NO @ PHX,chalk,1.8x,Jalen Green,4437244,PHX,G,6.9,1.2,24.6,16.6,3.6,2.7,1.1,0.2
-NO @ PHX,chalk,1.6x,Derik Queen,4869780,NO,C,6.0,2.5,22.5,12.0,7.2,4.0,1.0,0.9
-NO @ PHX,chalk,1.4x,Herbert Jones,4277813,NO,F,5.9,2.8,25.9,9.3,3.7,2.6,1.6,0.6
+NO @ PHX,chalk,1.6x,Derik Queen,4869780,NOP,C,6.0,2.5,22.5,12.0,7.2,4.0,1.0,0.9
+NO @ PHX,chalk,1.4x,Herbert Jones,4277813,NOP,F,5.9,2.8,25.9,9.3,3.7,2.6,1.6,0.6
 NO @ PHX,chalk,1.2x,Royce O'Neale,2583632,PHX,F,5.5,2.6,27.0,8.6,4.8,2.6,0.9,0.3
-NO @ PHX,upside,2.0x,Jeremiah Fears,5144091,NO,G,5.9,2.3,22.5,13.3,3.8,3.3,1.2,0.4
-NO @ PHX,upside,1.8x,Saddiq Bey,4397136,NO,G,6.6,1.7,26.9,16.0,5.5,2.2,0.9,0.1
-NO @ PHX,upside,1.6x,Jordan Poole,4277956,NO,G,6.1,1.9,22.8,15.2,2.4,3.4,0.7,0.3
+NO @ PHX,upside,2.0x,Jeremiah Fears,5144091,NOP,G,5.9,2.3,22.5,13.3,3.8,3.3,1.2,0.4
+NO @ PHX,upside,1.8x,Saddiq Bey,4397136,NOP,G,6.6,1.7,26.9,16.0,5.5,2.2,0.9,0.1
+NO @ PHX,upside,1.6x,Jordan Poole,4277956,NOP,G,6.1,1.9,22.8,15.2,2.4,3.4,0.7,0.3
 NO @ PHX,upside,1.4x,Oso Ighodaro,4601023,PHX,F,4.2,3.0,20.1,5.5,4.5,1.8,0.8,0.6
 NO @ PHX,upside,1.2x,Ryan Dunn,4888725,PHX,F,3.9,3.0,20.0,6.2,4.1,1.3,0.8,0.5
-LAC @ SA,chalk,2.0x,Victor Wembanyama,5104157,SA,F,10.4,0.5,28.1,23.3,11.1,3.2,1.1,3.2
-LAC @ SA,chalk,1.8x,Stephon Castle,4845367,SA,G,7.3,1.8,25.3,15.9,4.5,6.0,1.2,0.3
+LAC @ SA,chalk,2.0x,Victor Wembanyama,5104157,SAS,F,10.4,0.5,28.1,23.3,11.1,3.2,1.1,3.2
+LAC @ SA,chalk,1.8x,Stephon Castle,4845367,SAS,G,7.3,1.8,25.3,15.9,4.5,6.0,1.2,0.3
 LAC @ SA,chalk,1.6x,Brook Lopez,3448,LAC,C,6.5,2.0,27.2,11.4,4.5,1.2,0.6,1.4
 LAC @ SA,chalk,1.4x,Bogdan Bogdanovic,3037789,LAC,G,5.8,2.2,27.9,10.8,3.1,3.0,0.8,0.1
 LAC @ SA,chalk,1.2x,Nicolas Batum,3416,LAC,F,5.1,3.0,26.3,6.9,3.6,1.9,0.8,0.5
-LAC @ SA,upside,2.0x,Devin Vassell,4395630,SA,G,6.0,2.0,25.8,14.3,3.9,2.5,0.9,0.4
-LAC @ SA,upside,1.8x,Keldon Johnson,4395723,SA,F,5.7,2.1,24.6,14.1,5.5,1.6,0.7,0.1
+LAC @ SA,upside,2.0x,Devin Vassell,4395630,SAS,G,6.0,2.0,25.8,14.3,3.9,2.5,0.9,0.4
+LAC @ SA,upside,1.8x,Keldon Johnson,4395723,SAS,F,5.7,2.1,24.6,14.1,5.5,1.6,0.7,0.1
 LAC @ SA,upside,1.6x,Kris Dunn,2991139,LAC,G,4.7,2.8,28.2,7.8,3.2,3.8,1.5,0.2
 LAC @ SA,upside,1.4x,Bennedict Mathurin,4683634,LAC,G,6.6,1.0,33.0,17.1,5.1,2.1,0.7,0.2
 LAC @ SA,upside,1.2x,Kobe Sanders,4702352,LAC,G,3.3,3.0,23.9,7.0,2.4,1.7,0.5,0.1

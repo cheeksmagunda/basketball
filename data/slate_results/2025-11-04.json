@@ -33,21 +33,21 @@
       "loser_score": 111
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "CHA",
       "home_score": 116,
       "away_score": 112,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "CHA",
       "winner_score": 116,
       "loser_score": 112
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "PHX",
       "home_score": 118,
       "away_score": 107,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "PHX",
       "winner_score": 118,
       "loser_score": 107

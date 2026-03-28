@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "CHA",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 102,
       "away_score": 95,
       "winner": "CHA",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 102,
       "loser_score": 95
     },

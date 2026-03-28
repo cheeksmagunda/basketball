@@ -14,20 +14,20 @@
     },
     {
       "home": "TOR",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 107,
       "away_score": 110,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "TOR",
       "winner_score": 110,
       "loser_score": 107
     },
     {
       "home": "MEM",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 112,
       "away_score": 133,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "MEM",
       "winner_score": 133,
       "loser_score": 112

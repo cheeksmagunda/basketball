@@ -1,19 +1,19 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
-slate,chalk,2.0x,Yves Missi,5061589,NO,C,6.1,3.0,21.2,6.5,6.3,1.2,0.3,1.4
+slate,chalk,2.0x,Yves Missi,5061589,NOP,C,6.1,3.0,21.2,6.5,6.3,1.2,0.3,1.4
 slate,chalk,1.8x,Isaiah Jackson,4432170,LAC,F,5.2,3.0,17.0,6.7,4.9,0.8,0.7,1.1
-slate,chalk,1.6x,Karlo Matkovic,4997538,NO,F,4.6,3.0,15.2,6.0,3.9,0.9,0.4,0.9
+slate,chalk,1.6x,Karlo Matkovic,4997538,NOP,F,4.6,3.0,15.2,6.0,3.9,0.9,0.4,0.9
 slate,chalk,1.4x,Luke Kennard,3913174,LAL,G,4.2,3.0,22.1,8.9,2.5,2.1,0.7,0.1
 slate,chalk,1.2x,Taylor Hendricks,4684806,MEM,F,3.8,3.0,20.8,7.0,3.9,0.9,0.7,0.5
 slate,upside,2.0x,Brook Lopez,3448,LAC,C,7.6,3.0,25.8,11.5,4.5,1.2,0.6,1.4
-slate,upside,1.8x,Yves Missi,5061589,NO,C,6.1,3.0,21.2,6.5,6.3,1.2,0.3,1.4
+slate,upside,1.8x,Yves Missi,5061589,NOP,C,6.1,3.0,21.2,6.5,6.3,1.2,0.3,1.4
 slate,upside,1.6x,Isaiah Jackson,4432170,LAC,F,5.2,3.0,17.0,6.7,4.9,0.8,0.7,1.1
-slate,upside,1.4x,Karlo Matkovic,4997538,NO,F,4.6,3.0,15.2,6.0,3.9,0.9,0.4,0.9
+slate,upside,1.4x,Karlo Matkovic,4997538,NOP,F,4.6,3.0,15.2,6.0,3.9,0.9,0.4,0.9
 slate,upside,1.2x,Ziaire Williams,4433137,BKN,F,3.8,3.0,24.1,9.1,2.7,1.1,1.0,0.3
-GS @ BOS,the_lineup,2.0x,De'Anthony Melton,4066436,GS,G,5.5,0.0,24.9,11.4,3.4,2.5,1.5,0.5
-GS @ BOS,the_lineup,1.8x,Draymond Green,6589,GS,F,5.2,0.0,29.9,8.6,6.2,5.5,1.1,0.8
+GS @ BOS,the_lineup,2.0x,De'Anthony Melton,4066436,GSW,G,5.5,0.0,24.9,11.4,3.4,2.5,1.5,0.5
+GS @ BOS,the_lineup,1.8x,Draymond Green,6589,GSW,F,5.2,0.0,29.9,8.6,6.2,5.5,1.1,0.8
 GS @ BOS,the_lineup,1.6x,Jaylen Brown,3917376,BOS,G,5.1,0.0,32.5,24.1,6.3,4.0,1.0,0.4
 GS @ BOS,the_lineup,1.4x,Jayson Tatum,4065648,BOS,F,5.0,0.0,33.7,21.8,7.8,4.1,1.1,0.3
-GS @ BOS,the_lineup,1.2x,Kristaps Porzingis,3102531,GS,C,4.7,0.0,29.1,18.4,6.2,2.3,0.7,1.6
+GS @ BOS,the_lineup,1.2x,Kristaps Porzingis,3102531,GSW,C,4.7,0.0,29.1,18.4,6.2,2.3,0.7,1.6
 OKC @ BKN,the_lineup,2.0x,Nic Claxton,4278067,BKN,C,5.8,0.0,29.4,11.3,7.3,3.0,0.7,1.4
 OKC @ BKN,the_lineup,1.8x,Ziaire Williams,4433137,BKN,F,3.9,0.0,24.1,9.1,2.7,1.1,1.0,0.3
 OKC @ BKN,the_lineup,1.6x,Danny Wolf,5107173,BKN,F,3.9,0.0,22.9,9.0,4.9,2.3,0.5,0.6
@@ -24,9 +24,9 @@ POR @ IND,the_lineup,1.8x,Donovan Clingan,5105565,POR,C,7.7,0.0,24.8,10.6,10.7,1
 POR @ IND,the_lineup,1.6x,Caleb Love,4433144,POR,G,4.1,0.0,24.2,11.3,2.5,2.7,0.6,0.1
 POR @ IND,the_lineup,1.4x,Toumani Camara,4431736,POR,F,3.5,0.0,31.9,11.6,5.3,2.3,1.1,0.5
 POR @ IND,the_lineup,1.2x,Jrue Holiday,3995,POR,G,4.2,0.0,32.9,16.1,4.4,6.2,1.2,0.3
-UTAH @ MIN,the_lineup,2.0x,Isaiah Collier,4683766,UTAH,G,5.2,0.0,27.8,10.8,2.8,7.0,1.1,0.3
+UTAH @ MIN,the_lineup,2.0x,Isaiah Collier,4683766,UTA,G,5.2,0.0,27.8,10.8,2.8,7.0,1.1,0.3
 UTAH @ MIN,the_lineup,1.8x,Rudy Gobert,3032976,MIN,C,5.1,0.0,28.0,11.7,11.6,1.6,0.8,1.8
-UTAH @ MIN,the_lineup,1.6x,Kyle Filipowski,4684793,UTAH,F,5.1,0.0,24.4,10.2,6.8,2.2,0.9,0.5
+UTAH @ MIN,the_lineup,1.6x,Kyle Filipowski,4684793,UTA,F,5.1,0.0,24.4,10.2,6.8,2.2,0.9,0.5
 UTAH @ MIN,the_lineup,1.4x,Donte DiVincenzo,3934673,MIN,G,4.8,0.0,26.3,11.7,4.3,3.5,1.3,0.3
 UTAH @ MIN,the_lineup,1.2x,Julius Randle,3064514,MIN,F,4.0,0.0,29.3,20.2,7.9,4.5,0.9,0.3
 TOR @ CHI,the_lineup,2.0x,Scottie Barnes,4433134,TOR,F,6.7,0.0,35.4,18.1,7.8,5.2,1.3,1.4
@@ -34,8 +34,8 @@ TOR @ CHI,the_lineup,1.8x,Josh Giddey,4871145,CHI,G,6.7,0.0,32.9,16.2,8.2,7.7,1.
 TOR @ CHI,the_lineup,1.6x,Jakob Poeltl,3134908,TOR,C,6.0,0.0,25.1,9.6,7.3,1.9,0.7,0.9
 TOR @ CHI,the_lineup,1.4x,Matas Buzelis,4711294,CHI,F,5.8,0.0,27.4,14.1,5.0,1.8,0.6,1.4
 TOR @ CHI,the_lineup,1.2x,Immanuel Quickley,4395724,TOR,G,5.5,0.0,29.1,15.8,3.8,5.0,1.1,0.1
-LAC @ NO,the_lineup,2.0x,Zion Williamson,4395628,NO,F,9.3,0.0,30.4,22.8,6.2,3.7,1.0,0.6
-LAC @ NO,the_lineup,1.8x,Dejounte Murray,3907497,NO,G,9.2,0.0,29.2,17.7,5.7,5.3,1.6,0.3
+LAC @ NO,the_lineup,2.0x,Zion Williamson,4395628,NOP,F,9.3,0.0,30.4,22.8,6.2,3.7,1.0,0.6
+LAC @ NO,the_lineup,1.8x,Dejounte Murray,3907497,NOP,G,9.2,0.0,29.2,17.7,5.7,5.3,1.6,0.3
 LAC @ NO,the_lineup,1.6x,Darius Garland,4396907,LAC,G,7.9,0.0,33.2,18.6,2.5,6.8,1.0,0.1
 LAC @ NO,the_lineup,1.4x,John Collins,3908845,LAC,F,7.8,0.0,29.0,14.8,6.5,1.2,0.8,0.9
 LAC @ NO,the_lineup,1.2x,Brook Lopez,3448,LAC,C,7.7,0.0,25.8,11.5,4.5,1.2,0.6,1.4
