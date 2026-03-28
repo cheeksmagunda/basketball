@@ -1,4 +1,41 @@
 date,player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+2025-10-21,Luka Doncic,LAL,7.0,0,12500,1,13.9,highest_value
+2025-10-21,Alperen Sengun,HOU,6.2,0,969,1,12.4,highest_value
+2025-10-21,Shai Gilgeous-Alexander,OKC,5.7,0,11000,1,11.4,highest_value
+2025-10-21,Chet Holmgren,OKC,4.3,0,55,1,8.6,highest_value
+2025-10-21,Jimmy Butler III,OKC,4.2,0,740,1,8.4,highest_value
+2025-10-21,Austin Reaves,LAL,3.8,0,992,1,7.6,highest_value
+2025-10-21,Stephen Curry,GSW,3.7,0,5300,1,7.4,highest_value
+2025-10-21,Jonathan Kuminga,GSW,3.2,0,136,1,6.5,highest_value
+2025-10-21,Cason Wallace,OKC,3.2,0,104,1,6.5,highest_value
+2025-10-21,Draymond Green,GSW,2.7,0,244,1,5.4,highest_value
+2025-10-21,Amen Thompson,HOU,2.7,0,1100,1,5.3,highest_value
+2025-10-21,Ajay Mitchell,OKC,2.6,0,2,1,5.3,highest_value
+2025-10-21,Kevin Durant,OKC,2.6,0,2700,1,5.1,highest_value
+2025-10-22,Victor Wembanyama,SAS,6.9,0,2900,1,13.8,highest_value
+2025-10-22,Tyrese Maxey,PHI,6.9,0,144,1,13.8,highest_value
+2025-10-22,DeMar DeRozan,SAC,6.4,0,528,1,12.8,highest_value
+2025-10-22,Giannis Antetokounmpo,MIL,6.2,0,16200,1,12.4,highest_value
+2025-10-22,Nikola Vucevic,CHI,5.4,0,41,1,10.9,highest_value
+2025-10-22,Walker Kessler,UTA,5.4,0,2,1,10.9,highest_value
+2025-10-22,Zion Williamson,NOP,5.2,0,88,1,10.4,highest_value
+2025-10-22,Jerami Grant,POR,4.9,0,28,1,9.8,highest_value
+2025-10-22,VJ Edgecombe,PHI,4.8,0,82,1,9.7,highest_value
+2025-10-22,Davion Mitchell,TOR,4.8,0,8,1,9.6,highest_value
+2025-10-22,Mikal Bridges,NYK,4.7,0,13,1,9.4,highest_value
+2025-10-22,Donovan Mitchell,CLE,4.7,0,552,1,9.3,highest_value
+2025-10-22,Franz Wagner,ORL,4.6,0,47,1,9.2,highest_value
+2025-10-22,Ja Morant,MEM,4.5,0,183,1,8.9,highest_value
+2025-10-23,Aaron Gordon,DEN,11.1,0.0,112,1,22.3,highest_value
+2025-10-23,Stephen Curry,GSW,7.1,0.5,4100,1,17.7,highest_value
+2025-10-23,Aaron Wiggins,OKC,3.0,3.0,548,1,14.9,highest_value
+2025-10-23,Shai Gilgeous-Alexander,OKC,7.2,0.0,7500,1,14.3,highest_value
+2025-10-23,Nikola Jokic,DEN,5.7,0.0,13400,1,11.4,highest_value
+2025-10-23,Ajay Mitchell,OKC,3.5,1.1,168,1,10.8,highest_value
+2025-10-23,Pascal Siakam,IND,5.3,0.0,202,1,10.5,highest_value
+2025-10-23,Jimmy Butler III,OKC,4.6,0.3,1500,1,10.5,highest_value
+2025-10-23,Draymond Green,GSW,3.4,1.1,426,1,10.4,highest_value
+2025-10-23,Al Horford,OKC,2.0,3.0,403,1,10.0,highest_value
 2025-11-20,Bobby Portis,MIL,3.1,2.8,88,1,14.9,highest_value
 2025-11-20,David Jones-Garcia,SAS,3.5,3.0,1,1,17.5,highest_value
 2025-11-20,De'Aaron Fox,SAS,5.5,0.5,746,1,13.7,highest_value
