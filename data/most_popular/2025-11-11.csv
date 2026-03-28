@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Nikola Jokic,DEN,18700,8.3,0,1,1,2025-11-11T12:00:00+00:00
+Shai Gilgeous-Alexander,OKC,14300,6.0,0,1,2,2025-11-11T12:00:00+00:00
+Tyrese Maxey,PHI,9800,4.7,0,3,3,2025-11-11T12:00:00+00:00
+Stephen Curry,GSW,8000,1.2,0.4,3,4,2025-11-11T12:00:00+00:00
+Karl-Anthony Towns,NYK,5700,4.7,0.6,3,5,2025-11-11T12:00:00+00:00
+Jalen Brunson,NYK,5300,4.7,0.3,4,6,2025-11-11T12:00:00+00:00
+Jaylen Brown,BOS,5100,3.3,0.4,4,7,2025-11-11T12:00:00+00:00
+Lauri Markkanen,UTA,4200,5.6,0.5,3,8,2025-11-11T12:00:00+00:00
+Russell Westbrook,DEN,3600,3.6,1.0,5,9,2025-11-11T12:00:00+00:00
+Pascal Siakam,IND,3600,3.7,0.4,4,10,2025-11-11T12:00:00+00:00
+VJ Edgecombe,PHI,3300,2.0,0.9,5,11,2025-11-11T12:00:00+00:00
+Scottie Barnes,TOR,3200,3.2,0.4,3,12,2025-11-11T12:00:00+00:00
+Andrew Nembhard,IND,2900,4.0,2.1,2,13,2025-11-11T12:00:00+00:00
+Isaiah Hartenstein,OKC,2700,1.6,0.8,4,14,2025-11-11T12:00:00+00:00
