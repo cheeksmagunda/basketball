@@ -1,5 +1,7 @@
 # Historical ingest — three steps
 
+**No server.** You do not need `uvicorn`, Railway, or `parse-screenshot`. Rasterize the PDF, read the PNGs (yourself or in any chat tool), and write CSV/JSON straight into `data/`. The optional commands at the bottom only rebuild rollup files from what you already saved.
+
 ## 1. Rasterize the PDFs
 
 - Put source PDFs in this folder (or keep them wherever you work).
@@ -17,7 +19,7 @@
 
 | Screen | What to capture |
 |--------|------------------|
-| **Games / scoreboard** | Each **Final** game: both teams, final scores, who won. Prefer **NBA 3-letter abbreviations** (ESPN-style: `GS`, `NY`, `NO`, etc.) even if the app shows nicknames. Note `Final/OT` or `Final/2OT` in a field if you add one, or only include truly final lines. |
+| **Games / scoreboard** | Each **Final** game: both teams, final scores, winner. Use **3-letter NBA abbreviations** (ESPN-style: `GS`, `NY`, `NO`). Only include completed games (including `Final/OT` if shown). |
 | Most popular | Full list + drafts / RS / boost / avg as shown |
 | Most drafted 3x | Same style as most popular |
 | Highest value | Top-performer rows |
@@ -26,8 +28,6 @@
 **Skip:** blank pages only.
 
 Player / CSV column details: **`docs/HISTORICAL_DATA.md`**.
-
-Slate results JSON shape (must match other files in `data/slate_results/`): see step 3.
 
 ---
 
@@ -71,22 +71,14 @@ Use the same structure as existing slate result files (regular season, finals on
 
 - `game_count` = length of `games`.
 - Off days or no games on that screenshot: `"game_count": 0`, `"games": []`.
-- After adding/updating JSON files, optionally rebuild the flat rollup:
 
-```bash
-python scripts/fetch_slate_results_espn.py --manifest-only --start 2025-10-21 --end 2026-03-27
-```
+Then **commit and push** `data/` as you normally do.
 
-(Adjust `--start` / `--end` to cover the dates you touched; this only merges existing JSON → `data/slate_results/regular_season_games_flat.csv`, no HTTP.)
+### Optional: rebuild derived files (local Python only)
 
-### Other datasets
+| Goal | Command (from repo root) |
+|------|---------------------------|
+| Flatten slate JSON → `regular_season_games_flat.csv` | `python scripts/fetch_slate_results_espn.py --manifest-only --start YYYY-MM-DD --end YYYY-MM-DD` (range must cover dates you edited; **no network**) |
+| Merge `data/actuals/*.csv` → mega | `python scripts/rebuild_top_performers_mega.py` |
 
-If you use the top-performers mega file:
-
-```bash
-python scripts/rebuild_top_performers_mega.py
-```
-
-Then commit and push `data/` as usual.
-
-**Reference:** `docs/HISTORICAL_DATA.md` for ingest shapes and columns; existing `data/slate_results/*.json` for score file examples.
+**Reference:** `docs/HISTORICAL_DATA.md` (column shapes); copy an existing `data/slate_results/*.json` if you want a template.

@@ -58,7 +58,7 @@ The backend leverages two autonomous LightGBM models trained nightly via GitHub 
 1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance.
 2. **`boost_model.pkl` (Card Boost Prediction)**: LightGBM on projected RS + `min_proxy` (from `drafts_model.pkl` when loaded). **Training labels** (`actual_card_boost`, `drafts`) come from `data/top_performers.csv`, `data/actuals/`, and `data/most_popular/` (merged, de-duped)—not from ESPN alone. Optional: retrain boost after `drafts_model.pkl` stabilizes so inference matches training-time `min_proxy` definition.
 
-**Historical outcomes** for Log/audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. Developer ingestion for new rows: **`docs/HISTORICAL_DATA.md`** (parse-screenshot + `save-*` POSTs, optional **`INGEST_SECRET`**). `data/predictions/` supplies pre-game features for training joins.
+**Historical outcomes** for Log/audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
@@ -122,7 +122,7 @@ grep: PARLAY LIVE SSE          — /api/parlay-live-stream, _parlay_live_tick_pa
 grep: PARLAY ENGINE MODULE     — api/parlay_engine.py (run_parlay_engine; HTTP grep: PARLAY ENGINE in index)
 grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildLabSystemPrompt
 grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts, slate_results
-grep: PDF INGEST PLAYBOOK      — Assistant playbook: user uploads PDFs (screenshots inside); rasterize, parse-screenshot, save-*, rebuild_top_performers_mega
+grep: PDF INGEST PLAYBOOK      — docs/historical-ingest/INSTRUCTIONS.md (file-only); or rasterize + parse-screenshot + save-* + rebuild mega
 grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
 grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega, migrate_historical_add_team, fetch_slate_results_espn
 grep: github_storage           — _github_get_file, _github_write_file
@@ -287,14 +287,16 @@ Ben is a **pure chat interface** — no quick-action buttons. The user types nat
 - The chat prompt includes full system context (briefing data, config state, backtest capability)
 
 ### Historical data (developer-only this season)
-- No in-app Ben upload banner. Ingest new rows via **`docs/HISTORICAL_DATA.md`** (`parse-screenshot` + `save-most-popular`, `save-most-drafted-3x`, `save-winning-drafts`; optional **`INGEST_SECRET`**).
+- No in-app Ben upload banner. **Default:** **`docs/historical-ingest/INSTRUCTIONS.md`** (write `data/` directly; includes `slate_results`). **Optional API path:** **`docs/HISTORICAL_DATA.md`** (`parse-screenshot` + `save-*`; optional **`INGEST_SECRET`**).
 - `/api/lab/briefing` returns **`pending_upload_date`** / **`pending_historical_date`**: most recent prediction date (excluding today) with **no rows in `data/top_performers.csv` for that date** (primary signal for “missing historical outcomes”).
 - `POST /api/save-actuals` remains for rare manual merges; audit still auto-writes when `real_scores` is present in the merged upload.
 - `/api/lab/skip-uploads` kept for API compatibility.
 
 ### Assistant playbook: user uploads PDFs (screenshots inside)
 
-Use this when the user drops **PDFs** (or multi-page exports) that contain Real Sports app screenshots. The backend **`POST /api/parse-screenshot` accepts images only**: `image/png`, `image/jpeg`, `image/gif`, `image/webp` (max 10MB). **Do not POST the PDF** to parse-screenshot.
+**Prefer** **`docs/historical-ingest/INSTRUCTIONS.md`**: rasterize → transcribe → write `data/` (no backend required).
+
+**API alternative** (when the user wants automated OCR through this repo’s backend): **`POST /api/parse-screenshot` accepts images only** — `image/png`, `image/jpeg`, `image/gif`, `image/webp` (max 10MB). **Do not POST the PDF** to parse-screenshot.
 
 1. **Rasterize first** — Export each screenshot page to PNG or JPEG (one file per screen the model should read). Options: macOS Preview (File → Export), `pdftoppm -png file.pdf page`, ImageMagick `convert -density 200 file.pdf page-%02d.png`, or ask the user to save each page as an image. Crop so one Real Sports screen dominates the image if the PDF has margins.
 

@@ -2,6 +2,8 @@
 
 This season, **Log** and **audit** treat `data/top_performers.csv` as the **primary** source of per-player outcomes (filtered by `date`). Legacy `data/actuals/{date}.csv` is still read when a date has no rows in the mega file.
 
+**File-only ingest (no API):** **`docs/historical-ingest/INSTRUCTIONS.md`** — where to put CSV/JSON, including **`data/slate_results/`** finals.
+
 Six on-disk historical structures (mega rollup + per-date files):
 
 | Dataset | Path | Role |
@@ -11,7 +13,7 @@ Six on-disk historical structures (mega rollup + per-date files):
 | Most drafted (high boost) | `data/most_drafted_3x/{date}.csv` | Same columns as most popular (`player`, `team`, …) |
 | Winning drafts | `data/winning_drafts/{date}.csv` | Long format: `winner_rank`, `drafter_label`, `total_score`, `slot_index`, `player_name`, **`team`**, `actual_rs`, `slot_mult`, `card_boost`, `saved_at` |
 | Per-day actuals (legacy) | `data/actuals/{date}.csv` | Same shape as mega minus `date`: `player_name`, **`team`**, `actual_rs`, … |
-| Slate results | `data/slate_results/{date}.json` | **Regular-season** finals only: `game_count`, `games[]` each with `home`, `away`, `home_score`, `away_score`, `winner`, `loser`, `winner_score`, `loser_score`, plus `season_stage`, `source` (`espn_scoreboard_api`). One file **per calendar day** from **2025-10-21** (first 25-26 RS slate) through ingested end date; off-days use `game_count: 0`. Flattened copy: `data/slate_results/regular_season_games_flat.csv` (one row per completed RS game). **Abbreviations follow ESPN** (e.g. `NO`, `NY`, `GS` — not always identical to prediction CSV tokens). Regenerate: `python scripts/fetch_slate_results_espn.py`. **Not wired into live `/api` yet** — analytics / future features. |
+| Slate results | `data/slate_results/{date}.json` | **Regular-season** finals only: `game_count`, `games[]` each with `home`, `away`, `home_score`, `away_score`, `winner`, `loser`, `winner_score`, `loser_score`, plus `season_stage`, `source` (often `espn_scoreboard_api`; manual screenshot fills may use `screenshot_ingest`). One file **per calendar day**; off-days use `game_count: 0`. Flattened copy: `data/slate_results/regular_season_games_flat.csv`. **Abbreviations follow ESPN** (`NO`, `NY`, `GS`, …). ESPN fetch: `python scripts/fetch_slate_results_espn.py`; flatten JSON only (no HTTP): same script with `--manifest-only`. **Not wired into live `/api` yet** — analytics / future features. |
 
 **Team column:** Use 3-letter NBA abbr when known. Parser prompts ask Haiku for `team` on `actuals` / `top_performers` / `winning_drafts`. Backfill: `python scripts/migrate_historical_add_team.py` (fills blanks from `data/predictions/{date}.csv` when player names match). Legacy CSVs without `team` still load via `_parse_actuals_rows` / `_parse_top_performers_mega_rows`.
 
