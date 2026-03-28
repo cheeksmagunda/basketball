@@ -621,6 +621,7 @@ _CK_SLATE = "slate_v5"
 _CK_SLATE_LOCKED = "slate_v5_locked"
 _CK_LINE = "line_v1"
 _CK_LINE_HISTORY = "line_history_v1"
+_CK_LINE_ODDS_CLAUDE = "line_odds_claude_v1"  # Claude web_search prop lines (replaces Odds API for Line+Parlay)
 _CK_LOG_DATES = "log_dates_v1"
 _CK_PARLAY = "parlay_v1"
 _CK_PARLAY_HISTORY = "parlay_history_v1"
@@ -9170,6 +9171,130 @@ def _find_next_slate_date(start_date, max_days=30):
     return None
 
 
+def _fetch_lines_via_claude(all_proj: list, games: list, date=None, force_refresh: bool = False) -> dict:
+    """Fetch NBA player prop lines (pts/reb/ast) via Claude web_search.
+
+    Replaces The Odds API for Line of the Day and Parlay pipelines.
+    Returns player_odds_map: {(player_name_lower, stat_type): {"line", "odds_over", "odds_under", "books_consensus"}}
+    Returns empty dict on any failure — callers fall back to model-only mode.
+    grep: LINE ODDS CLAUDE
+    """
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        print("[lines-claude] ANTHROPIC_API_KEY not set — returning empty map")
+        return {}
+
+    today = (date or _et_date()).isoformat()
+    cache_path = _cp(_CK_LINE_ODDS_CLAUDE, today)
+
+    if not force_refresh and cache_path.exists():
+        try:
+            age_s = time.time() - cache_path.stat().st_mtime
+            if age_s < _TTL_ODDS_FRESH:
+                cached = _cg(_CK_LINE_ODDS_CLAUDE, today)
+                if cached and "serialized" in cached:
+                    result = {}
+                    for k, v in cached["serialized"].items():
+                        parts = k.split("|", 1)
+                        if len(parts) == 2:
+                            result[(parts[0], parts[1])] = v
+                    if result:
+                        print(f"[lines-claude] serving {len(result)} lines from /tmp cache (age {age_s:.0f}s)")
+                        return result
+        except Exception:
+            pass
+
+    # Build candidate list — top 30 players by projected pts
+    candidates = sorted(all_proj, key=lambda p: float(p.get("pts") or 0), reverse=True)[:30]
+    if not candidates:
+        print("[lines-claude] no projections provided — returning empty map")
+        return {}
+
+    player_rows = []
+    for p in candidates:
+        name = p.get("name", "")
+        team = p.get("team", "")
+        pts  = float(p.get("pts") or 0)
+        reb  = float(p.get("reb") or 0)
+        ast  = float(p.get("ast") or 0)
+        if name:
+            player_rows.append(f"- {name} ({team}): ~{pts:.1f}pts / {reb:.1f}reb / {ast:.1f}ast")
+
+    player_list = "\n".join(player_rows)
+    timeout_s = float(_cfg("context_layer.timeout_seconds", 30))
+    web_search_model = _cfg("context_layer.web_search_model", "claude-sonnet-4-6-20250514")
+
+    prompt = (
+        f"Today is {today}. Search for current NBA player prop betting lines on DraftKings or FanDuel "
+        f"for these players playing tonight:\n\n{player_list}\n\n"
+        f"Search for 'NBA player props {today}', 'DraftKings NBA props tonight', or each player by name.\n\n"
+        "Return ONLY a raw JSON object (no markdown fences, no explanation):\n"
+        '{"lines": [\n'
+        '  {"player": "Exact Player Name", "stat": "points", "line": 24.5, "odds_over": -115, "odds_under": -105},\n'
+        '  {"player": "Exact Player Name", "stat": "rebounds", "line": 7.5, "odds_over": -110, "odds_under": -110},\n'
+        "  ...\n"
+        "]}\n\n"
+        'Rules:\n'
+        '- "stat" must be exactly one of: "points", "rebounds", "assists"\n'
+        '- "line" is the number from the sportsbook, rounded to nearest 0.5\n'
+        '- "odds_over" and "odds_under" are American odds integers (e.g. -110, +105)\n'
+        '- Only include lines you actually found in a search result. Do NOT guess.\n'
+        '- Include all three stats for each player where available.'
+    )
+
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=anthropic_key, max_retries=0)
+        msg = client.messages.create(
+            model=web_search_model,
+            max_tokens=4000,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}],
+            messages=[{"role": "user", "content": prompt}],
+            timeout=timeout_s,
+        )
+        text_parts = [block.text.strip() for block in msg.content if hasattr(block, "text")]
+        text = "\n".join(text_parts).strip()
+
+        # Strip any accidental markdown fences then extract JSON
+        import re as _re
+        text = _re.sub(r"^```(?:json)?\s*", "", text)
+        text = _re.sub(r"\s*```$", "", text)
+        json_match = _re.search(r'\{[\s\S]*"lines"[\s\S]*\}', text)
+        if not json_match:
+            print(f"[lines-claude] no JSON found in response ({len(text)} chars)")
+            return {}
+
+        data = json.loads(json_match.group(0))
+        player_odds_map = {}
+        for entry in data.get("lines", []):
+            player = (entry.get("player") or "").lower().strip()
+            stat   = entry.get("stat", "")
+            line   = entry.get("line")
+            if not player or stat not in ("points", "rebounds", "assists") or line is None:
+                continue
+            try:
+                line_f = float(line)
+            except (TypeError, ValueError):
+                continue
+            player_odds_map[(player, stat)] = {
+                "line":            line_f,
+                "odds_over":       int(entry.get("odds_over",  -110)),
+                "odds_under":      int(entry.get("odds_under", -110)),
+                "books_consensus": 1,
+            }
+
+        print(f"[lines-claude] fetched {len(player_odds_map)} prop lines for {today}")
+
+        # Cache with serialized string keys for JSON storage
+        serialized = {f"{k[0]}|{k[1]}": v for k, v in player_odds_map.items()}
+        _cs(_CK_LINE_ODDS_CLAUDE, {"serialized": serialized, "fetched_at": today}, today)
+
+        return player_odds_map
+    except Exception as e:
+        print(f"[lines-claude] failed: {e}")
+        return {}
+
+
 def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False):
     """Run the full line engine pipeline for a given date (datetime.date).
     Blocking — call via asyncio.to_thread() from async endpoints."""
@@ -9203,12 +9328,11 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
     if not all_proj:
         return None, "no_projections"
     line_config = sanitize_line_config(_cfg("line", _CONFIG_DEFAULTS.get("line", {})))
-    # Fetch bookmaker lines from Odds API — required for Line of the Day (no stale-map / model-only substitute).
-    try:
-        player_odds_map = _build_player_odds_map(target_games, require_fresh_book_odds=True)
-    except OddsApiRequiredError as e:
-        print(f"[line] Odds API required — {e.code}: {e.detail}")
-        return None, {"type": "odds_required", "code": e.code, "detail": e.detail}
+    # Fetch bookmaker lines via Claude web_search (replaces Odds API for LOTD).
+    player_odds_map = _fetch_lines_via_claude(all_proj, target_games, date=date)
+    if not player_odds_map:
+        print("[line] Claude lines fetch returned no lines — proceeding with model-only fallback")
+        prefer_fallback = True
     news_context = ""
     dvp_data = {}
     fv_edge_map = {}
@@ -9596,10 +9720,18 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
             combo.get(_dk) and (combo[_dk].get("model_only") or not combo[_dk].get("books_consensus"))
             for _dk in ("over_pick", "under_pick")
         )
-        if _needs_odds and _get_odds_api_key():
+        if _needs_odds:
             try:
                 _games_for_odds = fetch_games(today)
-                _odds_map = _build_player_odds_map(_games_for_odds) if _games_for_odds else {}
+                # Load cached projections so Claude knows which players to search for
+                _proj_for_odds = []
+                for _g in (_games_for_odds or []):
+                    _gp = _cg(_ck_game_proj(_g["gameId"]))
+                    if _gp:
+                        _proj_for_odds.extend(_gp)
+                if not _proj_for_odds:
+                    _proj_for_odds = _hydrate_game_projs_from_github(_games_for_odds or [])
+                _odds_map = _fetch_lines_via_claude(_proj_for_odds, _games_for_odds) if _games_for_odds else {}
                 if _odds_map:
                     _odds_updated = False
                     for _dk in ("over_pick", "under_pick"):
@@ -9751,15 +9883,23 @@ async def refresh_line_odds():
     if not picks:
         return {"status": "no_pick"}
 
-    try:
-        player_odds_map = _build_player_odds_map(games, require_fresh_book_odds=True)
-    except OddsApiRequiredError as e:
+    # Load projections so Claude knows which players to search for
+    all_proj_refresh = []
+    for g in games:
+        gp = _cg(_ck_game_proj(g["gameId"]))
+        if gp:
+            all_proj_refresh.extend(gp)
+    if not all_proj_refresh:
+        all_proj_refresh = _hydrate_game_projs_from_github(games)
+
+    # Fetch fresh lines via Claude (force_refresh busts the /tmp cache)
+    player_odds_map = _fetch_lines_via_claude(all_proj_refresh, games, force_refresh=True)
+    if not player_odds_map:
         return JSONResponse(
             {
                 "status": "odds_unavailable",
-                "error": e.code,
-                "message": _odds_required_hint(e.code),
-                "odds_detail": (e.detail or "")[:500],
+                "error": "claude_lines_empty",
+                "message": "Claude web search returned no prop lines for today's slate",
                 "updated": False,
             },
             status_code=503,
@@ -9780,8 +9920,6 @@ async def refresh_line_odds():
         pk = _pick_odds_key(pick)
         if pk not in odds_cache:
             book = _lookup_player_odds(player_odds_map, pick.get("player_name", ""), pick.get("stat_type", "points")) if use_bulk else None
-            if not book:
-                book = _fetch_odds_line(pick.get("player_name", ""), pick.get("stat_type", "points"), pick.get("team", ""), pick.get("opponent", ""))
             odds_cache[pk] = book
         result = odds_cache[pk]
         if result:
@@ -12383,18 +12521,17 @@ def _run_parlay_engine_sync(today, *, allow_synthetic=False):
     if not all_proj:
         return None, "no_projections", {}
 
-    # Fetch odds — required unless allow_synthetic is True.
-    has_key = bool(_get_odds_api_key())
-    try:
-        player_odds_map = _build_player_odds_map(target_games, require_fresh_book_odds=not allow_synthetic)
-    except OddsApiRequiredError as e:
-        print(f"[parlay] Odds API required — {e.code}: {e.detail}")
+    # Fetch lines via Claude web_search (replaces Odds API for Parlay).
+    has_key = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
+    player_odds_map = _fetch_lines_via_claude(all_proj, target_games)
+    if not player_odds_map and not allow_synthetic:
+        print("[parlay] Claude lines fetch returned empty — returning no_odds_data error")
         debug = {
             "projections": len(all_proj),
             "odds_entries": 0,
             "odds_unavailable": True,
-            "odds_error_code": e.code,
-            "odds_message": e.detail,
+            "odds_error_code": "claude_lines_empty",
+            "odds_message": "Claude web search returned no prop lines",
             "has_key": has_key,
             "odds_available": False,
             "projection_only": False,
