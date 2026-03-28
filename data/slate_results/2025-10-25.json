@@ -10,7 +10,9 @@
       "winner": "CHI",
       "loser": "ORL",
       "winner_score": 110,
-      "loser_score": 98
+      "loser_score": 98,
+      "views": 194900,
+      "rs_threshold": 5.0
     },
     {
       "home": "ATL",
@@ -20,7 +22,9 @@
       "winner": "OKC",
       "loser": "ATL",
       "winner_score": 117,
-      "loser_score": 100
+      "loser_score": 100,
+      "views": 212000,
+      "rs_threshold": 5.3
     },
     {
       "home": "PHI",
@@ -30,7 +34,9 @@
       "winner": "PHI",
       "loser": "CHA",
       "winner_score": 125,
-      "loser_score": 121
+      "loser_score": 121,
+      "views": 233800,
+      "rs_threshold": 7.8
     },
     {
       "home": "MEM",
@@ -40,7 +46,9 @@
       "winner": "MEM",
       "loser": "IND",
       "winner_score": 128,
-      "loser_score": 103
+      "loser_score": 103,
+      "views": 196900,
+      "rs_threshold": 5.7
     },
     {
       "home": "DEN",
@@ -50,7 +58,9 @@
       "winner": "DEN",
       "loser": "PHX",
       "winner_score": 133,
-      "loser_score": 111
+      "loser_score": 111,
+      "views": 225100,
+      "rs_threshold": 5.3
     }
   ],
   "season_stage": "regular-season",
