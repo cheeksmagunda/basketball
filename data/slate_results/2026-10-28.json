@@ -1,86 +1,56 @@
 {
   "date": "2026-10-28",
-  "game_count": 8,
+  "game_count": 5,
   "games": [
     {
-      "home": "LAL",
-      "away": "PHX",
-      "home_score": 113,
-      "away_score": 110,
-      "winner": "LAL",
-      "loser": "PHX",
-      "winner_score": 113,
-      "loser_score": 110
-    },
-    {
-      "home": "PHI",
-      "away": "BOS",
-      "home_score": 116,
-      "away_score": 114,
-      "winner": "PHI",
-      "loser": "BOS",
-      "winner_score": 116,
-      "loser_score": 114
-    },
-    {
-      "home": "WAS",
+      "home": "GSW",
       "away": "LAC",
-      "home_score": 110,
-      "away_score": 107,
-      "winner": "WAS",
+      "home_score": 98,
+      "away_score": 79,
+      "winner": "GSW",
       "loser": "LAC",
-      "winner_score": 110,
-      "loser_score": 107
+      "winner_score": 98,
+      "loser_score": 79
+    },
+    {
+      "home": "MIA",
+      "away": "CHA",
+      "home_score": 144,
+      "away_score": 117,
+      "winner": "MIA",
+      "loser": "CHA",
+      "winner_score": 144,
+      "loser_score": 117
     },
     {
       "home": "MIL",
-      "away": "GSW",
-      "home_score": 115,
-      "away_score": 114,
-      "winner": "MIL",
-      "loser": "GSW",
-      "winner_score": 115,
-      "loser_score": 114
-    },
-    {
-      "home": "SAC",
-      "away": "LAL",
-      "home_score": 139,
-      "away_score": 127,
-      "winner": "SAC",
-      "loser": "LAL",
-      "winner_score": 139,
-      "loser_score": 127
-    },
-    {
-      "home": "BOS",
-      "away": "CLE",
-      "home_score": 113,
-      "away_score": 120,
-      "winner": "CLE",
-      "loser": "BOS",
-      "winner_score": 120,
-      "loser_score": 113
-    },
-    {
-      "home": "HOU",
       "away": "NYK",
-      "home_score": 113,
-      "away_score": 129,
-      "winner": "NYK",
-      "loser": "HOU",
-      "winner_score": 129,
-      "loser_score": 113
+      "home_score": 121,
+      "away_score": 111,
+      "winner": "MIL",
+      "loser": "NYK",
+      "winner_score": 121,
+      "loser_score": 111
     },
     {
-      "home": "ATL",
-      "away": "MIA",
-      "home_score": 119,
+      "home": "WAS",
+      "away": "PHI",
+      "home_score": 134,
       "away_score": 139,
-      "winner": "MIA",
-      "loser": "ATL",
+      "winner": "PHI",
+      "loser": "WAS",
       "winner_score": 139,
-      "loser_score": 119
+      "loser_score": 134
+    },
+    {
+      "home": "OKC",
+      "away": "SAC",
+      "home_score": 107,
+      "away_score": 101,
+      "winner": "OKC",
+      "loser": "SAC",
+      "winner_score": 107,
+      "loser_score": 101
     }
   ],
   "season_stage": "regular-season",

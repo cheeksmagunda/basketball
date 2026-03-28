@@ -1,15 +1,15 @@
 player,team,draft_count,slot_position,source
-Giannis Antetokounmpo,MIL,12200,1st,most_popular
-Victor Wembanyama,SAS,11600,1st,most_popular
-Anthony Edwards,MIN,10100,2nd,most_popular
-Giannis Antetokounmpo,MIL,10000,2nd,most_popular
-Stephen Curry,GSW,8200,3rd,most_popular
-Alperen Sengun,HOU,6000,4th,most_popular
-Jalen Brunson,NYK,4600,5th,most_popular
-Kawhi Leonard,LAC,3900,4th,most_popular
-Anthony Davis,LAL,3800,4th,most_popular
-Donovan Mitchell,CLE,3600,5th,most_popular
-Devin Booker,PHX,3600,5th,most_popular
-Paolo Banchero,ORL,3500,5th,most_popular
-Cade Cunningham,DET,3400,5th,most_popular
-Cooper Flagg,MEM,3400,5th,most_popular
+Giannis Antetokounmpo,MIL,20500,1st,most_popular
+Shai Gilgeous-Alexander,OKC,18300,2nd,most_popular
+Tyrese Maxey,PHI,12200,1st,most_popular
+Stephen Curry,GSW,11500,1st,most_popular
+Jalen Brunson,NYK,10300,4th,most_popular
+VJ Edgecombe,PHI,7600,2nd,most_popular
+LaMelo Ball,CHA,6200,4th,most_popular
+Zach LaVine,CHA,6100,5th,most_popular
+Kawhi Leonard,LAC,5800,3rd,most_popular
+James Harden,CLE,5700,3rd,most_popular
+Jimmy Butler III,MIA,5500,3rd,most_popular
+Jonathan Kuminga,GSW,3600,5th,most_popular
+Bam Adebayo,MIA,3400,5th,most_popular
+Ivica Zubac,LAC,2900,5th,most_popular
