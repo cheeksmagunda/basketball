@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-31",
+  "game_count": 7,
+  "games": [
+    {
+      "home": "MIA",
+      "away": "NYK",
+      "home_score": 125,
+      "away_score": 124,
+      "winner": "MIA",
+      "loser": "NYK",
+      "winner_score": 125,
+      "loser_score": 124
+    },
+    {
+      "home": "BKN",
+      "away": "BOS",
+      "home_score": 135,
+      "away_score": 126,
+      "winner": "BKN",
+      "loser": "BOS",
+      "winner_score": 135,
+      "loser_score": 126
+    },
+    {
+      "home": "BOS",
+      "away": "WAS",
+      "home_score": 112,
+      "away_score": 96,
+      "winner": "BOS",
+      "loser": "WAS",
+      "winner_score": 112,
+      "loser_score": 96
+    },
+    {
+      "home": "OKC",
+      "away": "LAC",
+      "home_score": 128,
+      "away_score": 118,
+      "winner": "OKC",
+      "loser": "LAC",
+      "winner_score": 128,
+      "loser_score": 118
+    },
+    {
+      "home": "DEN",
+      "away": "NOP",
+      "home_score": 108,
+      "away_score": 109,
+      "winner": "NOP",
+      "loser": "DEN",
+      "winner_score": 109,
+      "loser_score": 108
+    },
+    {
+      "home": "DEN",
+      "away": "LAL",
+      "home_score": 109,
+      "away_score": 117,
+      "winner": "LAL",
+      "loser": "DEN",
+      "winner_score": 117,
+      "loser_score": 109
+    },
+    {
+      "home": "CLE",
+      "away": "BKN",
+      "home_score": 108,
+      "away_score": 112,
+      "winner": "BKN",
+      "loser": "CLE",
+      "winner_score": 112,
+      "loser_score": 108
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}

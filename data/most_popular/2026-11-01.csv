@@ -1,0 +1,15 @@
+player,team,draft_count,slot_position,source
+Cade Cunningham,DET,11500,1st,most_popular
+Stephen Curry,GSW,9700,1st,most_popular
+Kevin Durant,PHX,7900,3rd,most_popular
+Jalen Brown,BOS,7600,2nd,most_popular
+Paolo Banchero,ORL,6000,4th,most_popular
+Donovan Mitchell,CLE,5700,1st,most_popular
+Giannis Antetokounmpo,MIL,5000,1st,most_popular
+Cooper Flagg,MEM,4500,3rd,most_popular
+Pascal Siakam,TOR,4400,3rd,most_popular
+Franz Wagner,ORL,3600,3rd,most_popular
+Jimmy Butler III,MIA,3600,3rd,most_popular
+Julius Randle,NYK,3100,2nd,most_popular
+Jonathan Kuminga,GSW,2600,5th,most_popular
+Ryan Rollins,SAS,2600,1st,most_popular

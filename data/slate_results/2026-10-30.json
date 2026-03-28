@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-30",
+  "game_count": 4,
+  "games": [
+    {
+      "home": "LAL",
+      "away": "MEM",
+      "home_score": 108,
+      "away_score": 101,
+      "winner": "LAL",
+      "loser": "MEM",
+      "winner_score": 108,
+      "loser_score": 101
+    },
+    {
+      "home": "DEN",
+      "away": "SAS",
+      "home_score": 127,
+      "away_score": 107,
+      "winner": "DEN",
+      "loser": "SAS",
+      "winner_score": 127,
+      "loser_score": 107
+    },
+    {
+      "home": "SAC",
+      "away": "GSW",
+      "home_score": 123,
+      "away_score": 110,
+      "winner": "SAC",
+      "loser": "GSW",
+      "winner_score": 123,
+      "loser_score": 110
+    },
+    {
+      "home": "LAC",
+      "away": "NOP",
+      "home_score": 107,
+      "away_score": 120,
+      "winner": "NOP",
+      "loser": "LAC",
+      "winner_score": 120,
+      "loser_score": 107
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}

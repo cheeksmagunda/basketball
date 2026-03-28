@@ -1,0 +1,15 @@
+player,team,draft_count,slot_position,source
+Giannis Antetokounmpo,MIL,26500,1st,most_popular
+Anthony Davis,LAL,16400,2nd,most_popular
+Victor Wembanyama,SAS,14700,2nd,most_popular
+James Harden,LAC,10000,2nd,most_popular
+Joel Embiid,PHI,8500,3rd,most_popular
+Cade Cunningham,DET,8300,3rd,most_popular
+Anthony Edwards,MIN,7700,3rd,most_popular
+Jalen Brunson,NYK,7000,4th,most_popular
+Devin Booker,PHX,5500,5th,most_popular
+Kawhi Leonard,LAC,5100,4th,most_popular
+Donovan Mitchell,CLE,4200,5th,most_popular
+DeMar DeRozan,CHI,4200,5th,most_popular
+Cooper Flagg,CHA,3200,5th,most_popular
+Klay Thompson,GSW,2800,5th,most_popular

@@ -4,30 +4,30 @@
   "games": [
     {
       "home": "BKN",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 119,
       "away_score": 101,
       "winner": "BKN",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 119,
       "loser_score": 101
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "ATL",
       "home_score": 116,
       "away_score": 131,
       "winner": "ATL",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 131,
       "loser_score": 116
     },
     {
       "home": "CLE",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 94,
       "away_score": 99,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "CLE",
       "winner_score": 99,
       "loser_score": 94

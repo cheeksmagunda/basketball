@@ -33,22 +33,22 @@
       "loser_score": 126
     },
     {
-      "home": "UTAH",
-      "away": "GS",
+      "home": "UTA",
+      "away": "GSW",
       "home_score": 119,
       "away_score": 116,
-      "winner": "UTAH",
-      "loser": "GS",
+      "winner": "UTA",
+      "loser": "GSW",
       "winner_score": 119,
       "loser_score": 116
     },
     {
       "home": "LAC",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 126,
       "away_score": 118,
       "winner": "LAC",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 126,
       "loser_score": 118
     }

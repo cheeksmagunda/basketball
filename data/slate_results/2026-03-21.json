@@ -3,12 +3,12 @@
   "game_count": 10,
   "games": [
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "OKC",
       "home_score": 111,
       "away_score": 132,
       "winner": "OKC",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 132,
       "loser_score": 111
     },
@@ -33,22 +33,22 @@
       "loser_score": 104
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "CLE",
       "home_score": 106,
       "away_score": 111,
       "winner": "CLE",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 111,
       "loser_score": 106
     },
     {
       "home": "ATL",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 126,
       "away_score": 110,
       "winner": "ATL",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 126,
       "loser_score": 110
     },
@@ -63,11 +63,11 @@
       "loser_score": 122
     },
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "IND",
       "home_score": 134,
       "away_score": 119,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "IND",
       "winner_score": 134,
       "loser_score": 119
@@ -83,12 +83,12 @@
       "loser_score": 131
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "PHI",
       "home_score": 116,
       "away_score": 126,
       "winner": "PHI",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 126,
       "loser_score": 116
     },

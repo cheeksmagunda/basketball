@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-23",
+  "game_count": 2,
+  "games": [
+    {
+      "home": "DEN",
+      "away": "GSW",
+      "home_score": 131,
+      "away_score": 137,
+      "winner": "GSW",
+      "loser": "DEN",
+      "winner_score": 137,
+      "loser_score": 131
+    },
+    {
+      "home": "OKC",
+      "away": "IND",
+      "home_score": 141,
+      "away_score": 135,
+      "winner": "OKC",
+      "loser": "IND",
+      "winner_score": 141,
+      "loser_score": 135
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}

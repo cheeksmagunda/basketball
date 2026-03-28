@@ -3,12 +3,12 @@
   "game_count": 6,
   "games": [
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "OKC",
       "home_score": 100,
       "away_score": 103,
       "winner": "OKC",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 103,
       "loser_score": 100
     },
@@ -24,11 +24,11 @@
     },
     {
       "home": "PHI",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 106,
       "away_score": 102,
       "winner": "PHI",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 106,
       "loser_score": 102
     },

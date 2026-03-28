@@ -3,12 +3,12 @@
   "game_count": 5,
   "games": [
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "PHI",
       "home_score": 134,
       "away_score": 139,
       "winner": "PHI",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 139,
       "loser_score": 134
     },
@@ -24,11 +24,11 @@
     },
     {
       "home": "MIL",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 121,
       "away_score": 111,
       "winner": "MIL",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 121,
       "loser_score": 111
     },
@@ -43,11 +43,11 @@
       "loser_score": 101
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "LAC",
       "home_score": 98,
       "away_score": 79,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "LAC",
       "winner_score": 98,
       "loser_score": 79

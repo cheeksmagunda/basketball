@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-27",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "DEN",
+      "away": "OKC",
+      "home_score": 127,
+      "away_score": 101,
+      "winner": "DEN",
+      "loser": "OKC",
+      "winner_score": 127,
+      "loser_score": 101
+    },
+    {
+      "home": "TOR",
+      "away": "MIL",
+      "home_score": 122,
+      "away_score": 123,
+      "winner": "MIL",
+      "loser": "TOR",
+      "winner_score": 123,
+      "loser_score": 122
+    },
+    {
+      "home": "LAL",
+      "away": "LAC",
+      "home_score": 108,
+      "away_score": 118,
+      "winner": "LAC",
+      "loser": "LAL",
+      "winner_score": 118,
+      "loser_score": 108
+    },
+    {
+      "home": "GSW",
+      "away": "UTA",
+      "home_score": 131,
+      "away_score": 127,
+      "winner": "GSW",
+      "loser": "UTA",
+      "winner_score": 131,
+      "loser_score": 127
+    },
+    {
+      "home": "MEM",
+      "away": "HOU",
+      "home_score": 134,
+      "away_score": 138,
+      "winner": "HOU",
+      "loser": "MEM",
+      "winner_score": 138,
+      "loser_score": 134
+    },
+    {
+      "home": "NYK",
+      "away": "SAS",
+      "home_score": 103,
+      "away_score": 116,
+      "winner": "SAS",
+      "loser": "NYK",
+      "winner_score": 116,
+      "loser_score": 103
+    },
+    {
+      "home": "BOS",
+      "away": "WAS",
+      "home_score": 122,
+      "away_score": 109,
+      "winner": "BOS",
+      "loser": "WAS",
+      "winner_score": 122,
+      "loser_score": 109
+    },
+    {
+      "home": "ATL",
+      "away": "MIA",
+      "home_score": 123,
+      "away_score": 128,
+      "winner": "MIA",
+      "loser": "ATL",
+      "winner_score": 128,
+      "loser_score": 123
+    },
+    {
+      "home": "CHI",
+      "away": "DET",
+      "home_score": 109,
+      "away_score": 137,
+      "winner": "DET",
+      "loser": "CHI",
+      "winner_score": 137,
+      "loser_score": 109
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}

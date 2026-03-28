@@ -13,12 +13,12 @@
       "loser_score": 115
     },
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "PHI",
       "home_score": 119,
       "away_score": 130,
       "winner": "PHI",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 130,
       "loser_score": 119
     },
@@ -43,12 +43,12 @@
       "loser_score": 99
     },
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "POR",
       "home_score": 110,
       "away_score": 115,
       "winner": "POR",
-      "loser": "SA",
+      "loser": "SAS",
       "winner_score": 115,
       "loser_score": 110
     },
@@ -63,12 +63,12 @@
       "loser_score": 104
     },
     {
-      "home": "GS",
-      "away": "UTAH",
+      "home": "GSW",
+      "away": "UTA",
       "home_score": 123,
       "away_score": 114,
-      "winner": "GS",
-      "loser": "UTAH",
+      "winner": "GSW",
+      "loser": "UTA",
       "winner_score": 123,
       "loser_score": 114
     },

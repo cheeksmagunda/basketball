@@ -13,12 +13,12 @@
       "loser_score": 112
     },
     {
-      "home": "WSH",
-      "away": "GS",
+      "home": "WAS",
+      "away": "GSW",
       "home_score": 117,
       "away_score": 125,
-      "winner": "GS",
-      "loser": "WSH",
+      "winner": "GSW",
+      "loser": "WAS",
       "winner_score": 125,
       "loser_score": 117
     },
@@ -53,11 +53,11 @@
       "loser_score": 107
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "DAL",
       "home_score": 129,
       "away_score": 111,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "DAL",
       "winner_score": 129,
       "loser_score": 111
@@ -74,10 +74,10 @@
     },
     {
       "home": "LAC",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 115,
       "away_score": 119,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "LAC",
       "winner_score": 119,
       "loser_score": 115

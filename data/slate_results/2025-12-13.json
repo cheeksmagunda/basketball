@@ -4,20 +4,20 @@
   "games": [
     {
       "home": "ORL",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 120,
       "away_score": 132,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "ORL",
       "winner_score": 132,
       "loser_score": 120
     },
     {
       "home": "OKC",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 109,
       "away_score": 111,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "OKC",
       "winner_score": 111,
       "loser_score": 109

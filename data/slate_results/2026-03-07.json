@@ -44,21 +44,21 @@
     },
     {
       "home": "MIL",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 113,
       "away_score": 99,
       "winner": "MIL",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 113,
       "loser_score": 99
     },
     {
       "home": "OKC",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 104,
       "away_score": 97,
       "winner": "OKC",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 104,
       "loser_score": 97
     }

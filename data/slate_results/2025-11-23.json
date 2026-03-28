@@ -64,21 +64,21 @@
     },
     {
       "home": "PHX",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 111,
       "away_score": 102,
       "winner": "PHX",
-      "loser": "SA",
+      "loser": "SAS",
       "winner_score": 111,
       "loser_score": 102
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "LAL",
       "home_score": 106,
       "away_score": 108,
       "winner": "LAL",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 108,
       "loser_score": 106
     }

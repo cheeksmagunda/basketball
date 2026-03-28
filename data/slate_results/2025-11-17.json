@@ -34,11 +34,11 @@
     },
     {
       "home": "MIA",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 115,
       "away_score": 113,
       "winner": "MIA",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 115,
       "loser_score": 113
     },
@@ -63,12 +63,12 @@
       "loser_score": 96
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "OKC",
       "home_score": 109,
       "away_score": 126,
       "winner": "OKC",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 126,
       "loser_score": 109
     },

@@ -3,11 +3,11 @@
   "game_count": 9,
   "games": [
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "MIA",
       "home_score": 140,
       "away_score": 132,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "MIA",
       "winner_score": 140,
       "loser_score": 132
@@ -63,12 +63,12 @@
       "loser_score": 110
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "LAL",
       "home_score": 104,
       "away_score": 118,
       "winner": "LAL",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 118,
       "loser_score": 104
     },
@@ -83,12 +83,12 @@
       "loser_score": 127
     },
     {
-      "home": "SA",
-      "away": "GS",
+      "home": "SAS",
+      "away": "GSW",
       "home_score": 108,
       "away_score": 109,
-      "winner": "GS",
-      "loser": "SA",
+      "winner": "GSW",
+      "loser": "SAS",
       "winner_score": 109,
       "loser_score": 108
     }

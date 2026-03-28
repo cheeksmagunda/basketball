@@ -4,21 +4,21 @@
   "games": [
     {
       "home": "BKN",
-      "away": "NY",
+      "away": "NYK",
       "home_score": 92,
       "away_score": 93,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "BKN",
       "winner_score": 93,
       "loser_score": 92
     },
     {
       "home": "DET",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 115,
       "away_score": 101,
       "winner": "DET",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 115,
       "loser_score": 101
     },

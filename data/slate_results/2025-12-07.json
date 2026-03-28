@@ -3,11 +3,11 @@
   "game_count": 7,
   "games": [
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "ORL",
       "home_score": 106,
       "away_score": 100,
-      "winner": "NY",
+      "winner": "NYK",
       "loser": "ORL",
       "winner_score": 106,
       "loser_score": 100
@@ -44,10 +44,10 @@
     },
     {
       "home": "CHI",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 91,
       "away_score": 123,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "CHI",
       "winner_score": 123,
       "loser_score": 91
@@ -63,12 +63,12 @@
       "loser_score": 108
     },
     {
-      "home": "UTAH",
+      "home": "UTA",
       "away": "OKC",
       "home_score": 101,
       "away_score": 131,
       "winner": "OKC",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 131,
       "loser_score": 101
     }

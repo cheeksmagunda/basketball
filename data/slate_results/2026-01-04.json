@@ -34,21 +34,21 @@
     },
     {
       "home": "MIA",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 125,
       "away_score": 106,
       "winner": "MIA",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 125,
       "loser_score": 106
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "MIN",
       "home_score": 115,
       "away_score": 141,
       "winner": "MIN",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 141,
       "loser_score": 115
     },

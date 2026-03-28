@@ -1,0 +1,312 @@
+================================================================================
+BASKETBALL HISTORICAL DATA — COMPLETE TRANSCRIPTION
+Dates: 2026-10-21 through 2026-10-27 (6 dates with data)
+Format: Plain text structured for CSV/JSON ingest
+================================================================================
+
+================================================================================
+DATE: 2026-10-21
+================================================================================
+
+--- GAMES/SLATE RESULTS (JSON) ---
+game_count: 2
+games:
+  LAL vs GS: LAL 109, GS 119 (GS wins)
+  HOU vs OKC: HOU 124, OKC 125 (OKC wins)
+
+--- ACTUALS/HIGHEST VALUE (CSV) ---
+Luka Doncic,DAL,7,12500,13.9
+Alperen Sengun,HOU,6.2,969,12.4
+Shai Gilgeous-Alexander,OKC,5.7,11000,11.4
+Chet Holmgren,OKC,4.3,55,8.6
+Jimmy Butler III,MIA,4.2,740,8.4
+Austin Reaves,LAL,3.8,992,7.6
+Stephen Curry,GS,3.7,5300,7.4
+Jonathan Kuminga,GS,3.2,136,6.5
+Cason Wallace,OKC,3.2,104,6.5
+Draymond Green,GS,2.7,244,5.4
+Amen Thompson,HOU,2.7,1100,5.3
+Ajay Mitchell,OKC,2.6,2,5.3
+Kevin Durant,PHO,2.6,2700,5.1
+Isaiah Hartenstein,LAL,2.4,167,4.9
+
+--- MOST POPULAR (CSV) ---
+N/A — not available for 2026-10-21
+
+--- MOST DRAFTED 3X (CSV) ---
+N/A — not available for 2026-10-21
+
+================================================================================
+DATE: 2026-10-22
+================================================================================
+
+--- GAMES/SLATE RESULTS (JSON) ---
+game_count: 10
+games:
+  MEM vs MIN: MEM 118, MIN 111 (MEM wins)
+  DET vs PHI: DET 115, PHI 111 (DET wins)
+  SAC vs LAL: SAC 116, LAL 120 (LAL wins)
+  NOP vs LAC: NOP 122, LAC 128 (LAC wins)
+  SA vs GSW: SA 125, GSW 92 (SA wins)
+  WAS vs MIL: WAS 120, MIL 133 (MIL wins)
+  TOR vs UTA: TOR 108, UTA 129 (UTA wins)
+  CLE vs BOS: CLE 111, BOS 117 (BOS wins)
+  ATL vs MIA: ATL 138, MIA 146 (MIA wins)
+  CHI vs NYK: CHI 118, NYK 119 (NYK wins)
+
+--- ACTUALS/HIGHEST VALUE (CSV) ---
+Victor Wembanyama,SA,6.9,2900,13.8
+Tyrese Maxey,PHI,6.9,144,13.8
+DeMar DeRozan,CHI,6.4,528,12.8
+Giannis Antetokounmpo,MIL,6.2,16200,12.4
+Nikola Vucevic,CHI,5.4,41,10.9
+Walker Kessler,UTA,5.4,2,10.9
+Zion Williamson,NOP,5.2,88,10.4
+Jerami Grant,POR,4.9,28,9.8
+VJ Edgecombe,NOP,4.8,82,9.7
+Davion Mitchell,SAC,4.8,8,9.6
+Mikal Bridges,BKN,4.7,13,9.4
+Donovan Mitchell,CLE,4.7,552,9.3
+Franz Wagner,ORL,4.6,47,9.2
+
+--- MOST POPULAR (CSV) ---
+Luka Doncic,DAL,32700,1st
+Stephen Curry,GS,30100,3rd
+Shai Gilgeous-Alexander,OKC,27200,1st
+Kevin Durant,PHO,24500,4th
+Alperen Sengun,HOU,13000,5th
+Austin Reaves,LAL,11500,5th
+Jimmy Butler III,MIA,10200,5th
+Amen Thompson,HOU,9700,5th
+Deandre Ayton,POR,3500,5th
+Chet Holmgren,OKC,2800,5th
+Buddy Hield,GSW,2600,5th
+Draymond Green,GS,2500,5th
+Rui Hachimura,LAL,1800,5th
+
+--- MOST DRAFTED 3X (CSV) ---
+N/A — not available for 2026-10-22
+
+================================================================================
+DATE: 2026-10-23
+================================================================================
+
+--- GAMES/SLATE RESULTS (JSON) ---
+game_count: 2
+games:
+  DEN vs GS: DEN 131, GS 137 (GS wins)
+  OKC vs IND: OKC 141, IND 135 (OKC wins)
+
+--- ACTUALS/HIGHEST VALUE (CSV) ---
+Aaron Gordon,DEN,11.1,112,22.3
+Stephen Curry,GS,7.1,4100,17.7
+Aaron Wiggins,GS,3,548,14.9
+Shai Gilgeous-Alexander,OKC,7.2,7500,14.3
+Nikola Jokic,DEN,5.7,13400,11.4
+Ajay Mitchell,OKC,3.5,168,10.8
+Pascal Siakam,IND,5.3,202,10.5
+Jimmy Butler III,MIA,4.6,1500,10.5
+Draymond Green,GSW,3.4,426,10.4
+Al Horford,PHO,2,403,10
+
+--- MOST POPULAR (CSV) ---
+Giannis Antetokounmpo,MIL,26500,1st
+Anthony Davis,LAL,16400,2nd
+Victor Wembanyama,SA,14700,2nd
+James Harden,LAC,10000,2nd
+Joel Embiid,PHI,8500,3rd
+Cade Cunningham,DET,8300,3rd
+Anthony Edwards,MIN,7700,3rd
+Jalen Brunson,NYK,7000,4th
+Devin Booker,PHO,5500,5th
+Kawhi Leonard,LAC,5100,4th
+Donovan Mitchell,CLE,4200,5th
+DeMar DeRozan,CHI,4200,5th
+Cooper Flagg,CHA,3200,5th
+Klay Thompson,GS,2800,5th
+
+--- MOST DRAFTED 3X (CSV) ---
+N/A — not available for 2026-10-23
+
+================================================================================
+DATE: 2026-10-24
+================================================================================
+
+--- GAMES/SLATE RESULTS (JSON) ---
+game_count: 9
+games:
+  MIN vs SA: MIN 110, SA 128 (SA wins)
+  LAL vs LAC: LAL 128, LAC 102 (LAL wins)
+  PHO vs SAC: PHO 120, SAC 105 (PHO wins)
+  DET vs PHI: DET 115, PHI 111 (DET wins)
+  MIL vs MIA: MIL 146, MIA 144 (MIL wins)
+  MEM vs GS: MEM 119, GS 139 (GS wins)
+  CLE vs LAL: CLE 104, LAL 108 (LAL wins)
+  NYK vs SA: NYK 105, SA 116 (SA wins)
+  UTA vs NYK: UTA 120, NYK 116 (UTA wins)
+
+--- ACTUALS/HIGHEST VALUE (CSV) ---
+Kawhi Leonard,LAC,5.1,311,25.6
+Jarrett Allen,MIA,4.8,21,23.8
+Stephen Curry,GS,6,1900,20.9
+Nikola Jokic,DEN,4.2,1,20.9
+Kyshawn George,PHO,7.3,31,20.6
+Luke Kornet,UTA,4.1,1,20.3
+Ziaire Williams,UTA,4,1,20
+Cam Thomas,BKN,4.3,28,19.4
+James Harden,LAC,5.6,111,18
+Cole Anthony,ORL,4.7,1,17.6
+Kel'el Ware,PHO,3.4,13,16.8
+Luka Doncic,DAL,8.3,5000,16.5
+Kevin Durant,PHO,5.1,611,16.2
+Trey Murphy III,NOP,4.7,4,15.9
+
+--- MOST POPULAR (CSV) ---
+Nikola Jokic,DEN,25900,1st
+Stephen Curry,GS,24600,3rd
+Shai Gilgeous-Alexander,OKC,21900,2nd
+Jimmy Butler III,MIA,15500,3rd
+Chet Holmgren,OKC,11300,4th
+Pascal Siakam,IND,7900,5th
+Buddy Hield,GSW,6500,5th
+Brandin Podziemski,GS,6300,5th
+Jonathan Kuminga,GS,6000,4th
+Aaron Wiggins,GS,5400,5th
+Isaiah Hartenstein,LAL,5000,5th
+Jamal Murray,DEN,4200,5th
+Draymond Green,GS,3600,5th
+Al Horford,PHO,2800,5th
+
+--- MOST DRAFTED 3X (CSV) ---
+Aaron Wiggins,GS,5400,5th
+Al Horford,PHO,2800,5th
+Jaylin Williams,CHR,1700,5th
+Gary Payton II,PHO,1600,5th
+Quinten Post,UTA,1100,5th
+
+================================================================================
+DATE: 2026-10-25
+================================================================================
+
+--- GAMES/SLATE RESULTS (JSON) ---
+game_count: 6
+games:
+  PHO vs NOP: PHO 111, NOP 133 (NOP wins)
+  IND vs DEN: IND 103, DEN 128 (DEN wins)
+  OKC vs MEM: OKC 117, MEM 100 (OKC wins)
+  ATL vs MIL: ATL 98, MIL 121 (MIL wins)
+  ORL vs NYK: ORL 125, NYK 110 (ORL wins)
+  NYH vs TON: NYH 117, TON 100 (NYH wins)
+
+--- ACTUALS/HIGHEST VALUE (CSV) ---
+Cedric Coward,PHI,5.4,154,24.7
+Quentin Grimes,DAL,4.2,22,21.2
+Javon Small,OKC,3.6,1,17.9
+Joel Embiid,PHI,3.3,294,16.6
+Paolo Banchero,ORL,3.3,1100,16
+Collin Sexton,UTA,3.8,4,15.6
+Chet Holmgren,OKC,5.7,177,14.8
+LaMelo Ball,CHA,5.1,302,14.8
+Christian Braun,DEN,2.7,77,13.7
+Kelly Oubre Jr.,NYK,2.7,3,13.4
+Andre Drummond,PHI,2.7,1,12.6
+Onyeka Okongwu,ATL,2.9,285,11.8
+Grayson Allen,PHO,2.9,186,11.6
+
+--- MOST POPULAR (CSV) ---
+Victor Wembanyama,SA,18000,1st
+Luka Doncic,DAL,16100,1st
+Anthony Edwards,MIN,12300,2nd
+Giannis Antetokounmpo,MIL,10000,2nd
+Stephen Curry,GS,8200,1st
+Alperen Sengun,HOU,5000,4th
+Jalen Brunson,NYK,4600,5th
+Kawhi Leonard,LAC,3900,4th
+Anthony Davis,LAL,3800,4th
+Donovan Mitchell,CLE,3600,4th
+Devin Booker,PHO,3600,5th
+Paolo Banchero,ORL,3500,5th
+Cade Cunningham,DET,3400,5th
+Cooper Flagg,CHA,3400,5th
+
+--- MOST DRAFTED 3X (CSV) ---
+Kawhi Leonard,LAC,3900,4th
+Cooper Flagg,CHA,3400,5th
+Jarrett Allen,MIA,1400,5th
+Dyson Daniels,LAL,419,5th
+Dylan Harper,NYK,149,5th
+
+================================================================================
+DATE: 2026-10-27
+================================================================================
+
+--- GAMES/SLATE RESULTS (JSON) ---
+game_count: 9
+games:
+  DEN vs OKC: DEN 127, OKC 101 (DEN wins)
+  TOR vs MIL: TOR 122, MIL 123 (MIL wins)
+  LAL vs LAC: LAL 108, LAC 118 (LAC wins)
+  GS vs UTA: GS 131, UTA 127 (GS wins)
+  MEM vs HOU: MEM 134, HOU 138 (HOU wins)
+  NYK vs SA: NYK 103, SA 116 (SA wins)
+  BOS vs WAS: BOS 122, WAS 109 (BOS wins)
+  ATL vs MIA: ATL 123, MIA 128 (MIA wins)
+  CHI vs DET: CHI 109, DET 137 (DET wins)
+
+--- ACTUALS/HIGHEST VALUE (CSV) ---
+Brandin Podziemski,GS,4.6,12,22.6
+Tari Eason,HOU,4.4,1,22.2
+Kelly Oubre Jr.,NYK,5,6,19.6
+Mark Williams,LAC,3.8,1,18.9
+Collin Gillespie,UTA,4,2,18.7
+Day'Ron Sharpe,BKN,3.6,1,18.2
+Royce O'Neale,UTA,4.2,1,17.8
+Reed Sheppard,LAC,3.5,15,17.3
+Lauri Markkanen,UTA,7.1,21,17
+Moses Moody,GS,3.3,3,16.6
+Anfernee Simons,POR,3.4,16,15.6
+Josh Minott,MIN,3.1,1,15.4
+Terance Mann,LAC,3.2,2,15.4
+Tim Hardaway Jr.,DAL,3.1,1,14.7
+
+--- MOST POPULAR (CSV) ---
+Giannis Antetokounmpo,MIL,12200,1st
+Victor Wembanyama,SA,11600,1st
+Anthony Edwards,MIN,10100,2nd
+Jalen Brunson,NYK,6000,4th
+Anthony Davis,LAL,5000,3rd
+Cade Cunningham,DET,4900,5th
+Austin Reaves,LAL,4900,1st
+Donovan Mitchell,CLE,4800,3rd
+Pascal Siakam,IND,3900,3rd
+James Harden,LAC,3800,3rd
+Cooper Flagg,CHA,3700,5th
+Luka Doncic,DAL,3300,1st
+Domantas Sabonis,SAC,2900,2nd
+
+--- MOST DRAFTED 3X (CSV) ---
+Aaron Nesmith,BOS,366,5th
+Gabe Vincent,CHI,331,5th
+Rudy Gobert,MIN,319,5th
+Russell Westbrook,LAL,241,5th
+Naz Reid,MIN,211,5th
+
+================================================================================
+SUMMARY OF AVAILABLE DATA
+================================================================================
+
+Dates with complete data (6 dates):
+- 2026-10-21: Games + Actuals (2 games)
+- 2026-10-22: Games + Actuals + Most Popular (10 games)
+- 2026-10-23: Games + Actuals + Most Popular (2 games)
+- 2026-10-24: Games + Actuals + Most Popular + Most Drafted 3x (9 games)
+- 2026-10-25: Games + Actuals + Most Popular + Most Drafted 3x (6 games)
+- 2026-10-27: Games + Actuals + Most Popular + Most Drafted 3x (9 games)
+
+Missing dates (noted as requested):
+- 2026-10-26: No data available
+- 2026-10-28 through 2026-11-01: No data available
+
+================================================================================
+EOF
+================================================================================

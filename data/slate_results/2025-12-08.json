@@ -23,12 +23,12 @@
       "loser_score": 105
     },
     {
-      "home": "NO",
-      "away": "SA",
+      "home": "NOP",
+      "away": "SAS",
       "home_score": 132,
       "away_score": 135,
-      "winner": "SA",
-      "loser": "NO",
+      "winner": "SAS",
+      "loser": "NOP",
       "winner_score": 135,
       "loser_score": 132
     }

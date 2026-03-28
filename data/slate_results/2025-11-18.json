@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "ORL",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 121,
       "away_score": 113,
       "winner": "ORL",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 121,
       "loser_score": 113
     },
@@ -33,22 +33,22 @@
       "loser_score": 112
     },
     {
-      "home": "SA",
+      "home": "SAS",
       "away": "MEM",
       "home_score": 111,
       "away_score": 101,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "MEM",
       "winner_score": 111,
       "loser_score": 101
     },
     {
       "home": "LAL",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 140,
       "away_score": 126,
       "winner": "LAL",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 140,
       "loser_score": 126
     },

@@ -24,21 +24,21 @@
     },
     {
       "home": "IND",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 114,
       "away_score": 109,
       "winner": "IND",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 114,
       "loser_score": 109
     },
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "ORL",
       "home_score": 94,
       "away_score": 125,
       "winner": "ORL",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 125,
       "loser_score": 94
     },

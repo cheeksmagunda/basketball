@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "CHA",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 111,
       "away_score": 106,
       "winner": "CHA",
-      "loser": "SA",
+      "loser": "SAS",
       "winner_score": 111,
       "loser_score": 106
     },
@@ -24,11 +24,11 @@
     },
     {
       "home": "PHI",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 124,
       "away_score": 114,
       "winner": "PHI",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 124,
       "loser_score": 114
     },

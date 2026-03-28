@@ -3,12 +3,12 @@
   "game_count": 4,
   "games": [
     {
-      "home": "NY",
+      "home": "NYK",
       "away": "IND",
       "home_score": 134,
       "away_score": 137,
       "winner": "IND",
-      "loser": "NY",
+      "loser": "NYK",
       "winner_score": 137,
       "loser_score": 134
     },
@@ -34,10 +34,10 @@
     },
     {
       "home": "LAL",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 108,
       "away_score": 136,
-      "winner": "SA",
+      "winner": "SAS",
       "loser": "LAL",
       "winner_score": 136,
       "loser_score": 108

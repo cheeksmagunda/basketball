@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "BOS",
-      "away": "GS",
+      "away": "GSW",
       "home_score": 120,
       "away_score": 99,
       "winner": "BOS",
-      "loser": "GS",
+      "loser": "GSW",
       "winner_score": 120,
       "loser_score": 99
     },
@@ -44,20 +44,20 @@
     },
     {
       "home": "MIN",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 147,
       "away_score": 111,
       "winner": "MIN",
-      "loser": "UTAH",
+      "loser": "UTA",
       "winner_score": 147,
       "loser_score": 111
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "LAC",
       "home_score": 124,
       "away_score": 109,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "LAC",
       "winner_score": 124,
       "loser_score": 109

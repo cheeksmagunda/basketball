@@ -33,22 +33,22 @@
       "loser_score": 106
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "DEN",
       "home_score": 116,
       "away_score": 122,
       "winner": "DEN",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 122,
       "loser_score": 116
     },
     {
       "home": "OKC",
-      "away": "SA",
+      "away": "SAS",
       "home_score": 119,
       "away_score": 98,
       "winner": "OKC",
-      "loser": "SA",
+      "loser": "SAS",
       "winner_score": 119,
       "loser_score": 98
     },
@@ -63,11 +63,11 @@
       "loser_score": 116
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "POR",
       "home_score": 119,
       "away_score": 97,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "POR",
       "winner_score": 119,
       "loser_score": 97

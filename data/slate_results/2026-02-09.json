@@ -24,10 +24,10 @@
     },
     {
       "home": "MIA",
-      "away": "UTAH",
+      "away": "UTA",
       "home_score": 111,
       "away_score": 115,
-      "winner": "UTAH",
+      "winner": "UTA",
       "loser": "MIA",
       "winner_score": 115,
       "loser_score": 111
@@ -53,11 +53,11 @@
       "loser_score": 116
     },
     {
-      "home": "NO",
+      "home": "NOP",
       "away": "SAC",
       "home_score": 120,
       "away_score": 94,
-      "winner": "NO",
+      "winner": "NOP",
       "loser": "SAC",
       "winner_score": 120,
       "loser_score": 94
@@ -73,11 +73,11 @@
       "loser_score": 117
     },
     {
-      "home": "GS",
+      "home": "GSW",
       "away": "MEM",
       "home_score": 114,
       "away_score": 113,
-      "winner": "GS",
+      "winner": "GSW",
       "loser": "MEM",
       "winner_score": 114,
       "loser_score": 113

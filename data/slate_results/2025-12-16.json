@@ -3,12 +3,12 @@
   "game_count": 1,
   "games": [
     {
-      "home": "NY",
-      "away": "SA",
+      "home": "NYK",
+      "away": "SAS",
       "home_score": 124,
       "away_score": 113,
-      "winner": "NY",
-      "loser": "SA",
+      "winner": "NYK",
+      "loser": "SAS",
       "winner_score": 124,
       "loser_score": 113
     }

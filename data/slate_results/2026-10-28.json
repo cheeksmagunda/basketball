@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-28",
+  "game_count": 5,
+  "games": [
+    {
+      "home": "GSW",
+      "away": "LAC",
+      "home_score": 98,
+      "away_score": 79,
+      "winner": "GSW",
+      "loser": "LAC",
+      "winner_score": 98,
+      "loser_score": 79
+    },
+    {
+      "home": "MIA",
+      "away": "CHA",
+      "home_score": 144,
+      "away_score": 117,
+      "winner": "MIA",
+      "loser": "CHA",
+      "winner_score": 144,
+      "loser_score": 117
+    },
+    {
+      "home": "MIL",
+      "away": "NYK",
+      "home_score": 121,
+      "away_score": 111,
+      "winner": "MIL",
+      "loser": "NYK",
+      "winner_score": 121,
+      "loser_score": 111
+    },
+    {
+      "home": "WAS",
+      "away": "PHI",
+      "home_score": 134,
+      "away_score": 139,
+      "winner": "PHI",
+      "loser": "WAS",
+      "winner_score": 139,
+      "loser_score": 134
+    },
+    {
+      "home": "OKC",
+      "away": "SAC",
+      "home_score": 107,
+      "away_score": 101,
+      "winner": "OKC",
+      "loser": "SAC",
+      "winner_score": 107,
+      "loser_score": 101
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}

@@ -4,11 +4,11 @@
   "games": [
     {
       "home": "IND",
-      "away": "NO",
+      "away": "NOP",
       "home_score": 127,
       "away_score": 119,
       "winner": "IND",
-      "loser": "NO",
+      "loser": "NOP",
       "winner_score": 127,
       "loser_score": 119
     },
@@ -54,11 +54,11 @@
     },
     {
       "home": "SAC",
-      "away": "WSH",
+      "away": "WAS",
       "home_score": 128,
       "away_score": 115,
       "winner": "SAC",
-      "loser": "WSH",
+      "loser": "WAS",
       "winner_score": 128,
       "loser_score": 115
     }

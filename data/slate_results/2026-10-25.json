@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-25",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "PHX",
+      "away": "NOP",
+      "home_score": 111,
+      "away_score": 133,
+      "winner": "NOP",
+      "loser": "PHX",
+      "winner_score": 133,
+      "loser_score": 111
+    },
+    {
+      "home": "IND",
+      "away": "DEN",
+      "home_score": 103,
+      "away_score": 128,
+      "winner": "DEN",
+      "loser": "IND",
+      "winner_score": 128,
+      "loser_score": 103
+    },
+    {
+      "home": "OKC",
+      "away": "MEM",
+      "home_score": 117,
+      "away_score": 100,
+      "winner": "OKC",
+      "loser": "MEM",
+      "winner_score": 117,
+      "loser_score": 100
+    },
+    {
+      "home": "ATL",
+      "away": "MIL",
+      "home_score": 98,
+      "away_score": 121,
+      "winner": "MIL",
+      "loser": "ATL",
+      "winner_score": 121,
+      "loser_score": 98
+    },
+    {
+      "home": "ORL",
+      "away": "NYK",
+      "home_score": 125,
+      "away_score": 110,
+      "winner": "ORL",
+      "loser": "NYK",
+      "winner_score": 125,
+      "loser_score": 110
+    },
+    {
+      "home": "NYK",
+      "away": "NOP",
+      "home_score": 117,
+      "away_score": 100,
+      "winner": "NYK",
+      "loser": "NOP",
+      "winner_score": 117,
+      "loser_score": 100
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}

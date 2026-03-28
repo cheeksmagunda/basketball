@@ -1,0 +1,15 @@
+player,team,draft_count,slot_position,source
+Nikola Jokic,DEN,14400,1st,most_popular
+Tyrese Maxey,PHI,8000,1st,most_popular
+Austin Reaves,LAL,7400,1st,most_popular
+Devin Booker,PHX,6300,2nd,most_popular
+Jamal Murray,DEN,5700,1st,most_popular
+Luka Doncic,DAL,5100,1st,most_popular
+Jalen Brunson,NYK,5100,2nd,most_popular
+Ja Morant,MEM,4900,4th,most_popular
+Lauri Markkanen,UTA,3900,4th,most_popular
+Tyrell Adams,LAL,3900,4th,most_popular
+James Harden,LAC,2900,3rd,most_popular
+Pascal Siakam,TOR,2800,4th,most_popular
+Deni Adija,WAS,2800,5th,most_popular
+Evan Mobley,CLE,2800,3rd,most_popular

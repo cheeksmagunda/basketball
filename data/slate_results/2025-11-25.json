@@ -3,11 +3,11 @@
   "game_count": 3,
   "games": [
     {
-      "home": "WSH",
+      "home": "WAS",
       "away": "ATL",
       "home_score": 132,
       "away_score": 113,
-      "winner": "WSH",
+      "winner": "WAS",
       "loser": "ATL",
       "winner_score": 132,
       "loser_score": 113
