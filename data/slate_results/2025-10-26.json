@@ -10,7 +10,9 @@
       "winner": "SAS",
       "loser": "BKN",
       "winner_score": 118,
-      "loser_score": 107
+      "loser_score": 107,
+      "views": 201000,
+      "rs_threshold": 5.8
     },
     {
       "home": "DET",
@@ -20,7 +22,9 @@
       "winner": "DET",
       "loser": "BOS",
       "winner_score": 119,
-      "loser_score": 113
+      "loser_score": 113,
+      "views": 208600,
+      "rs_threshold": 6.7
     },
     {
       "home": "CLE",
@@ -30,7 +34,9 @@
       "winner": "CLE",
       "loser": "MIL",
       "winner_score": 118,
-      "loser_score": 113
+      "loser_score": 113,
+      "views": 214000,
+      "rs_threshold": 6.9
     },
     {
       "home": "MIA",
@@ -40,7 +46,9 @@
       "winner": "MIA",
       "loser": "NYK",
       "winner_score": 115,
-      "loser_score": 107
+      "loser_score": 107,
+      "views": 183100,
+      "rs_threshold": 6.8
     },
     {
       "home": "WAS",
@@ -50,7 +58,9 @@
       "winner": "CHA",
       "loser": "WAS",
       "winner_score": 139,
-      "loser_score": 113
+      "loser_score": 113,
+      "views": 171900,
+      "rs_threshold": 6.3
     },
     {
       "home": "MIN",
@@ -60,7 +70,9 @@
       "winner": "MIN",
       "loser": "IND",
       "winner_score": 114,
-      "loser_score": 110
+      "loser_score": 110,
+      "views": 197100,
+      "rs_threshold": 7.6
     },
     {
       "home": "DAL",
@@ -70,7 +82,9 @@
       "winner": "DAL",
       "loser": "TOR",
       "winner_score": 139,
-      "loser_score": 129
+      "loser_score": 129,
+      "views": 212000,
+      "rs_threshold": 7.9
     },
     {
       "home": "LAC",
@@ -80,7 +94,9 @@
       "winner": "LAC",
       "loser": "POR",
       "winner_score": 114,
-      "loser_score": 107
+      "loser_score": 107,
+      "views": 187500,
+      "rs_threshold": 6.4
     },
     {
       "home": "SAC",
@@ -90,7 +106,9 @@
       "winner": "LAL",
       "loser": "SAC",
       "winner_score": 127,
-      "loser_score": 120
+      "loser_score": 120,
+      "views": 264300,
+      "rs_threshold": 7.7
     }
   ],
   "season_stage": "regular-season",
