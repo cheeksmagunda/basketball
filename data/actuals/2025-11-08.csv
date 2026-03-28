@@ -1,0 +1,35 @@
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Mouhamed Gueye,ATL,5.5,3.0,5,1,27.7,highest_value
+Naji Marshall,NOP,5.7,2.8,2,1,27.2,highest_value
+Nikola Jovic,MIA,5.2,2.7,2,1,24.3,highest_value
+Trey Murphy III,NOP,6.8,1.1,169,1,21.1,highest_value
+Trendon Watford,PHI,5.7,1.5,1,1,20.0,highest_value
+Jalen Smith,ATL,4.2,2.7,1,2,18.4,highest_value
+CJ McCollum,NOP,4.2,1.9,4,1,16.5,highest_value
+Jaylon Tyson,CLE,4.0,2.1,6,1,16.5,highest_value
+Asa Newell,ATL,3.2,3.0,1,1,16.0,highest_value
+Brandon Williams,NOP,3.0,3.0,2,1,15.0,highest_value
+Derik Queen,NOP,3.2,2.7,7,1,14.9,highest_value
+Deni Avdija,POR,5.5,0.7,420,1,14.9,highest_value
+Peyton Watson,DEN,3.0,3.0,4,1,14.8,highest_value
+De'Andre Hunter,ATL,4.1,1.2,5,1,14.0,highest_value
+Dyson Daniels,ATL,4.0,1.4,108,1,14.0,highest_value
+John Collins,ATL,3.2,2.3,64,1,13.8,highest_value
+Keaton Wallace,ATL,2.7,3.0,5,1,13.6,highest_value
+Luka Doncic,LAL,3.4,0.0,14900,1,6.8,most_popular
+Nikola Jokic,DEN,5.7,0.0,12400,1,11.4,most_popular
+Victor Wembanyama,SAS,3.9,0.2,10400,2,7.8,most_popular
+Tyrese Maxey,PHI,4.8,0.0,7100,3,7.68,most_popular
+Josh Giddey,CHI,3.5,0.2,5700,3,6.3,most_popular
+Devin Booker,PHX,3.7,0.3,5500,2,7.77,most_popular
+Donovan Mitchell,CLE,4.0,0.1,5000,4,6.0,most_popular
+Cooper Flagg,DAL,2.5,1.6,3500,5,7.0,most_popular
+James Harden,CLE,3.0,0.4,3500,3,6.0,most_popular
+Pascal Siakam,IND,2.2,0.4,3000,3,4.4,most_popular
+VJ Edgecombe,PHI,2.4,0.8,2800,5,4.8,most_popular
+Alexandre Sarr,WAS,3.5,0.7,2300,4,7.35,most_popular
+Evan Mobley,CLE,4.7,0.5,2000,3,9.87,most_popular
+Ivica Zubac,LAC,4.2,1.0,1900,5,9.24,most_popular
+Scottie Barnes,TOR,4.0,0.4,1900,4,7.2,most_popular
+Zaccharie Risacher,ATL,3.3,1.9,,1,7.44,winning_drafts
+Herb Jones,NOP,2.6,2.5,,1,11.7,winning_drafts
