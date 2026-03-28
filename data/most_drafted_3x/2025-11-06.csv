@@ -1,0 +1,6 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Bradley Beal,PHX,9600,0.3,3.0,5,1,2025-11-06T12:00:00+00:00
+Chris Paul,PHX,6400,0.7,3.0,5,2,2025-11-06T12:00:00+00:00
+Brook Lopez,LAC,5800,0.6,3.0,2,3,2025-11-06T12:00:00+00:00
+Kris Dunn,LAC,4600,1.7,3.0,5,4,2025-11-06T12:00:00+00:00
+Bogdan Bogdanovic,PHX,3500,2.2,3.0,4,5,2025-11-06T12:00:00+00:00
