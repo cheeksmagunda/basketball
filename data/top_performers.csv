@@ -467,6 +467,35 @@ date,player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,
 2025-11-14,Stephon Castle,SAS,2.7,0.6,3600,3,5.94,most_popular
 2025-11-14,Tyrese Maxey,PHI,4.1,0,6400,2,7.38,most_popular
 2025-11-14,Victor Wembanyama,SAS,4.5,0.1,11600,1,9.45,most_popular
+2025-11-15,Aaron Gordon,DEN,4.2,0.7,155,1,11.4,highest_value
+2025-11-15,Andrew Nembhard,IND,3.8,1.3,72,1,12.5,highest_value
+2025-11-15,Anthony Edwards,MIN,4.1,0.4,518,1,10.5,highest_value
+2025-11-15,Austin Reaves,LAL,4.6,0.2,576,1,10.5,highest_value
+2025-11-15,Brandon Ingram,TOR,2.7,0.8,2300,4,5.94,most_popular
+2025-11-15,Bronny James Jr.,LAL,0.5,3.0,277,5,2.1,most_drafted_3x
+2025-11-15,Bruce Brown,DEN,1.5,3.0,668,5,6.3,most_drafted_3x
+2025-11-15,Dalton Knecht,LAL,2.3,3.0,3,1,11.6,highest_value
+2025-11-15,Deandre Ayton,POR,3.3,1.2,65,1,10.5,highest_value
+2025-11-15,Donovan Mitchell,CLE,4,0.1,4500,5,5.2,most_popular
+2025-11-15,Giannis Antetokounmpo,MIL,4.2,0,12700,1,8.4,most_popular
+2025-11-15,Gradey Dick,TOR,1.7,3.0,,4,7.48,winning_drafts
+2025-11-15,Jabari Walker,POR,1.2,2.5,,5,4.44,winning_drafts
+2025-11-15,Jakob Poeltl,TOR,4.1,1.5,8,1,14.3,highest_value
+2025-11-15,Jamal Murray,DEN,4.7,0.5,388,1,11.6,highest_value
+2025-11-15,Jeremiah Robinson-Earl,NOP,0.4,3.0,337,4,1.76,most_drafted_3x
+2025-11-15,Julius Randle,MIN,4.3,0.2,2400,4,6.88,most_popular
+2025-11-15,Kon Knueppel,CHA,1,1.2,4200,5,2.4,most_popular
+2025-11-15,Luka Doncic,LAL,6.2,0,4100,1,12.3,highest_value
+2025-11-15,Naz Reid,MIN,3.5,1.7,65,1,12.8,highest_value
+2025-11-15,Nikola Jokic,DEN,5.2,0,7300,1,10.4,most_popular
+2025-11-15,Pascal Siakam,IND,5.2,0.5,369,1,13,highest_value
+2025-11-15,Peyton Watson,DEN,1.8,3.0,297,5,7.56,most_drafted_3x
+2025-11-15,Ryan Rollins,MIL,1.1,0.7,2400,3,2.53,most_popular
+2025-11-15,Sandro Mamukelashvili,TOR,2.5,2.5,9,1,11.1,highest_value
+2025-11-15,Scottie Barnes,TOR,3.4,0.4,4100,3,6.8,most_popular
+2025-11-15,Shai Gilgeous-Alexander,OKC,5.4,0,4200,1,10.7,highest_value
+2025-11-15,T.J. McConnell,IND,1.5,3.0,181,5,6.3,most_drafted_3x
+2025-11-15,Tim Hardaway Jr.,DET,3.8,2.4,17,1,16.7,highest_value
 2025-11-20,Bobby Portis,MIL,3.1,2.8,88,1,14.9,highest_value
 2025-11-20,David Jones-Garcia,SAS,3.5,3.0,1,1,17.5,highest_value
 2025-11-20,De'Aaron Fox,SAS,5.5,0.5,746,1,13.7,highest_value
