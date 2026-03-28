@@ -1,0 +1,626 @@
+
+==========================================================================================
+2026-10-21 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (2 games)
+------------------------------------------------------------------------------------------
+   1. GSW @ LAL  →  119-109  [W: GSW]
+   2. OKC @ HOU  →  125-124  [W: OKC]
+
+>>> HIGHEST VALUE (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Luka Doncic                  DAL   7.0    12.5k    13.9  
+2   Alperen Sengun               HOU   6.2    969      12.4  
+3   Shai Gilgeous-Alexander      OKC   5.7    11.0k    11.4  
+4   Chet Holmgren                OKC   4.3    55       8.6   
+5   Jimmy Butler III             MIA   4.2    740      8.4   
+6   Austin Reaves                LAL   3.8    992      7.6   
+7   Stephen Curry                GSW   3.7    5.3k     7.4   
+8   Jonathan Kuminga             GSW   3.2    136      6.5   
+9   Cason Wallace                OKC   3.2    104      6.5   
+10  Draymond Green               GSW   2.7    244      5.4   
+11  Amen Thompson                HOU   2.7    1.1k     5.3   
+12  Ajay Mitchell                OKC   2.6    2        5.3   
+13  Kevin Durant                 PHX   2.6    2.7k     5.1   
+14  Isaiah Hartenstein           LAL   2.4    167      4.9   
+
+==========================================================================================
+2026-10-22 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (10 games)
+------------------------------------------------------------------------------------------
+   1. MIN @ MEM  →  111-118  [W: MEM]
+   2. PHI @ DET  →  111-115  [W: DET]
+   3. LAL @ SAC  →  120-116  [W: LAL]
+   4. LAC @ NOP  →  128-122  [W: LAC]
+   5. GSW @ SAS  →   92-125  [W: SAS]
+   6. MIL @ WAS  →  133-120  [W: MIL]
+   7. UTA @ TOR  →  129-108  [W: UTA]
+   8. BOS @ CLE  →  117-111  [W: BOS]
+   9. MIA @ ATL  →  146-138  [W: MIA]
+  10. NYK @ CHI  →  119-118  [W: NYK]
+
+>>> HIGHEST VALUE (13 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Victor Wembanyama            SAS   6.9    2.9k     13.8  
+2   Tyrese Maxey                 PHI   6.9    144      13.8  
+3   DeMar DeRozan                CHI   6.4    528      12.8  
+4   Giannis Antetokounmpo        MIL   6.2    16.2k    12.4  
+5   Nikola Vucevic               CHI   5.4    41       10.9  
+6   Walker Kessler               UTA   5.4    2        10.9  
+7   Zion Williamson              NOP   5.2    88       10.4  
+8   Jerami Grant                 POR   4.9    28       9.8   
+9   VJ Edgecombe                 NOP   4.8    82       9.7   
+10  Davion Mitchell              SAC   4.8    8        9.6   
+11  Mikal Bridges                BKN   4.7    13       9.4   
+12  Donovan Mitchell             CLE   4.7    552      9.3   
+13  Franz Wagner                 ORL   4.6    47       9.2   
+
+>>> MOST POPULAR (13 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Luka Doncic                  DAL   32.7k    1st     
+2   Stephen Curry                GSW   30.1k    3rd     
+3   Shai Gilgeous-Alexander      OKC   27.2k    1st     
+4   Kevin Durant                 PHX   24.5k    4th     
+5   Alperen Sengun               HOU   13.0k    5th     
+6   Austin Reaves                LAL   11.5k    5th     
+7   Jimmy Butler III             MIA   10.2k    5th     
+8   Amen Thompson                HOU   9.7k     5th     
+9   Deandre Ayton                POR   3.5k     5th     
+10  Chet Holmgren                OKC   2.8k     5th     
+11  Buddy Hield                  GSW   2.6k     5th     
+12  Draymond Green               GSW   2.5k     5th     
+13  Rui Hachimura                LAL   1.8k     5th     
+
+==========================================================================================
+2026-10-23 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (2 games)
+------------------------------------------------------------------------------------------
+   1. GSW @ DEN  →  137-131  [W: GSW]
+   2. IND @ OKC  →  135-141  [W: OKC]
+
+>>> HIGHEST VALUE (10 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Aaron Gordon                 DEN   11.1   112      22.3  
+2   Stephen Curry                GSW   7.1    4.1k     17.7  
+3   Aaron Wiggins                GSW   3.0    548      14.9  
+4   Shai Gilgeous-Alexander      OKC   7.2    7.5k     14.3  
+5   Nikola Jokic                 DEN   5.7    13.4k    11.4  
+6   Ajay Mitchell                OKC   3.5    168      10.8  
+7   Pascal Siakam                IND   5.3    202      10.5  
+8   Jimmy Butler III             MIA   4.6    1.5k     10.5  
+9   Draymond Green               GSW   3.4    426      10.4  
+10  Al Horford                   PHX   2.0    403      10.0  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Giannis Antetokounmpo        MIL   26.5k    1st     
+2   Anthony Davis                LAL   16.4k    2nd     
+3   Victor Wembanyama            SAS   14.7k    2nd     
+4   James Harden                 LAC   10.0k    2nd     
+5   Joel Embiid                  PHI   8.5k     3rd     
+6   Cade Cunningham              DET   8.3k     3rd     
+7   Anthony Edwards              MIN   7.7k     3rd     
+8   Jalen Brunson                NYK   7.0k     4th     
+9   Devin Booker                 PHX   5.5k     5th     
+10  Kawhi Leonard                LAC   5.1k     4th     
+11  Donovan Mitchell             CLE   4.2k     5th     
+12  DeMar DeRozan                CHI   4.2k     5th     
+13  Cooper Flagg                 CHA   3.2k     5th     
+14  Klay Thompson                GSW   2.8k     5th     
+
+==========================================================================================
+2026-10-24 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (9 games)
+------------------------------------------------------------------------------------------
+   1. SAS @ MIN  →  128-110  [W: SAS]
+   2. LAC @ LAL  →  102-128  [W: LAL]
+   3. SAC @ PHX  →  105-120  [W: PHX]
+   4. PHI @ DET  →  111-115  [W: DET]
+   5. MIA @ MIL  →  144-146  [W: MIL]
+   6. GSW @ MEM  →  139-119  [W: GSW]
+   7. LAL @ CLE  →  108-104  [W: LAL]
+   8. SAS @ NYK  →  116-105  [W: SAS]
+   9. NYK @ UTA  →  116-120  [W: UTA]
+
+>>> HIGHEST VALUE (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Kawhi Leonard                LAC   5.1    311      25.6  
+2   Jarrett Allen                MIA   4.8    21       23.8  
+3   Stephen Curry                GSW   6.0    1.9k     20.9  
+4   Nikola Jokic                 DEN   4.2    1        20.9  
+5   Kyshawn George               PHX   7.3    31       20.6  
+6   Luke Kornet                  UTA   4.1    1        20.3  
+7   Ziaire Williams              UTA   4.0    1        20.0  
+8   Cam Thomas                   BKN   4.3    28       19.4  
+9   James Harden                 LAC   5.6    111      18.0  
+10  Cole Anthony                 ORL   4.7    1        17.6  
+11  Kel'el Ware                  PHX   3.4    13       16.8  
+12  Luka Doncic                  DAL   8.3    5.0k     16.5  
+13  Kevin Durant                 PHX   5.1    611      16.2  
+14  Trey Murphy III              NOP   4.7    4        15.9  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Nikola Jokic                 DEN   25.9k    1st     
+2   Stephen Curry                GSW   24.6k    3rd     
+3   Shai Gilgeous-Alexander      OKC   21.9k    2nd     
+4   Jimmy Butler III             MIA   15.5k    3rd     
+5   Chet Holmgren                OKC   11.3k    4th     
+6   Pascal Siakam                IND   7.9k     5th     
+7   Buddy Hield                  GSW   6.5k     5th     
+8   Brandin Podziemski           GSW   6.3k     5th     
+9   Jonathan Kuminga             GSW   6.0k     4th     
+10  Aaron Wiggins                GSW   5.4k     5th     
+11  Isaiah Hartenstein           LAL   5.0k     5th     
+12  Jamal Murray                 DEN   4.2k     5th     
+13  Draymond Green               GSW   3.6k     5th     
+14  Al Horford                   PHX   2.8k     5th     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Aaron Wiggins                GSW   5.4k     5th     
+2   Al Horford                   PHX   2.8k     5th     
+3   Jaylin Williams              CHA   1.7k     5th     
+4   Gary Payton II               PHX   1.6k     5th     
+5   Quinten Post                 UTA   1.1k     5th     
+
+==========================================================================================
+2026-10-25 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (6 games)
+------------------------------------------------------------------------------------------
+   1. NOP @ PHX  →  133-111  [W: NOP]
+   2. DEN @ IND  →  128-103  [W: DEN]
+   3. MEM @ OKC  →  100-117  [W: OKC]
+   4. MIL @ ATL  →  121- 98  [W: MIL]
+   5. NYK @ ORL  →  110-125  [W: ORL]
+   6. NOP @ NYK  →  100-117  [W: NYK]
+
+>>> HIGHEST VALUE (13 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Cedric Coward                PHI   5.4    154      24.7  
+2   Quentin Grimes               DAL   4.2    22       21.2  
+3   Javon Small                  OKC   3.6    1        17.9  
+4   Joel Embiid                  PHI   3.3    294      16.6  
+5   Paolo Banchero               ORL   3.3    1.1k     16.0  
+6   Collin Sexton                UTA   3.8    4        15.6  
+7   Chet Holmgren                OKC   5.7    177      14.8  
+8   LaMelo Ball                  CHA   5.1    302      14.8  
+9   Christian Braun              DEN   2.7    77       13.7  
+10  Kelly Oubre Jr.              NYK   2.7    3        13.4  
+11  Andre Drummond               PHI   2.7    1        12.6  
+12  Onyeka Okongwu               ATL   2.9    285      11.8  
+13  Grayson Allen                PHX   2.9    186      11.6  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Victor Wembanyama            SAS   18.0k    1st     
+2   Luka Doncic                  DAL   16.1k    1st     
+3   Anthony Edwards              MIN   12.3k    2nd     
+4   Giannis Antetokounmpo        MIL   10.0k    2nd     
+5   Stephen Curry                GSW   8.2k     1st     
+6   Alperen Sengun               HOU   5.0k     4th     
+7   Jalen Brunson                NYK   4.6k     5th     
+8   Kawhi Leonard                LAC   3.9k     4th     
+9   Anthony Davis                LAL   3.8k     4th     
+10  Donovan Mitchell             CLE   3.6k     4th     
+11  Devin Booker                 PHX   3.6k     5th     
+12  Paolo Banchero               ORL   3.5k     5th     
+13  Cade Cunningham              DET   3.4k     5th     
+14  Cooper Flagg                 CHA   3.4k     5th     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Kawhi Leonard                LAC   3.9k     4th     
+2   Cooper Flagg                 CHA   3.4k     5th     
+3   Jarrett Allen                MIA   1.4k     5th     
+4   Dyson Daniels                LAL   419      5th     
+5   Dylan Harper                 NYK   149      5th     
+
+==========================================================================================
+2026-10-27 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (9 games)
+------------------------------------------------------------------------------------------
+   1. OKC @ DEN  →  101-127  [W: DEN]
+   2. MIL @ TOR  →  123-122  [W: MIL]
+   3. LAC @ LAL  →  118-108  [W: LAC]
+   4. UTA @ GSW  →  127-131  [W: GSW]
+   5. HOU @ MEM  →  138-134  [W: HOU]
+   6. SAS @ NYK  →  116-103  [W: SAS]
+   7. WAS @ BOS  →  109-122  [W: BOS]
+   8. MIA @ ATL  →  128-123  [W: MIA]
+   9. DET @ CHI  →  137-109  [W: DET]
+
+>>> HIGHEST VALUE (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Brandin Podziemski           GSW   4.6    12       22.6  
+2   Tari Eason                   HOU   4.4    1        22.2  
+3   Kelly Oubre Jr.              NYK   5.0    6        19.6  
+4   Mark Williams                LAC   3.8    1        18.9  
+5   Collin Gillespie             UTA   4.0    2        18.7  
+6   Day'Ron Sharpe               BKN   3.6    1        18.2  
+7   Royce O'Neale                UTA   4.2    1        17.8  
+8   Reed Sheppard                LAC   3.5    15       17.3  
+9   Lauri Markkanen              UTA   7.1    21       17.0  
+10  Moses Moody                  GSW   3.3    3        16.6  
+11  Anfernee Simons              POR   3.4    16       15.6  
+12  Josh Minott                  MIN   3.1    1        15.4  
+13  Terance Mann                 LAC   3.2    2        15.4  
+14  Tim Hardaway Jr.             DAL   3.1    1        14.7  
+
+>>> MOST POPULAR (13 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Giannis Antetokounmpo        MIL   12.2k    1st     
+2   Victor Wembanyama            SAS   11.6k    1st     
+3   Anthony Edwards              MIN   10.1k    2nd     
+4   Jalen Brunson                NYK   6.0k     4th     
+5   Anthony Davis                LAL   5.0k     3rd     
+6   Cade Cunningham              DET   4.9k     5th     
+7   Austin Reaves                LAL   4.9k     1st     
+8   Donovan Mitchell             CLE   4.8k     3rd     
+9   Pascal Siakam                IND   3.9k     3rd     
+10  James Harden                 LAC   3.8k     3rd     
+11  Cooper Flagg                 CHA   3.7k     5th     
+12  Luka Doncic                  DAL   3.3k     1st     
+13  Domantas Sabonis             SAC   2.9k     2nd     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Aaron Nesmith                BOS   366      5th     
+2   Gabe Vincent                 CHI   331      5th     
+3   Rudy Gobert                  MIN   319      5th     
+4   Russell Westbrook            LAL   241      5th     
+5   Naz Reid                     MIN   211      5th     
+
+==========================================================================================
+2026-10-28 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (8 games)
+------------------------------------------------------------------------------------------
+   1. PHX @ LAL  →  110-113  [W: LAL]
+   2. BOS @ PHI  →  114-116  [W: PHI]
+   3. LAC @ WAS  →  107-110  [W: WAS]
+   4. GSW @ MIL  →  114-115  [W: MIL]
+   5. LAL @ SAC  →  127-139  [W: SAC]
+   6. CLE @ BOS  →  120-113  [W: CLE]
+   7. NYK @ HOU  →  129-113  [W: NYK]
+   8. MIA @ ATL  →  139-119  [W: MIA]
+
+>>> HIGHEST VALUE (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   LaMelo Ball                  CHA   2.9    588      28.7  
+2   Dylan Harper                 POR   2.4    13       22.1  
+3   Russell Westbrook            LAC   2.5    40       20.4  
+4   Deandre Ayton                POR   2.2    6        20.0  
+5   D'Angelo Russell             LAL   1.0    4        20.0  
+6   Jaylen Brown                 BOS   2.0    121      19.2  
+7   Rudy Gobert                  MIN   1.8    14       18.1  
+8   Austin Reaves                LAL   1.7    1.3k     17.8  
+9   Cole Anthony                 ORL   2.6    277      17.2  
+10  Pascal Siakam                TOR   1.6    709      16.0  
+11  Jalen Duran                  MEM   1.5    13       15.5  
+12  Giannis Antetokounmpo        MIL   1.5    4.6k     15.4  
+13  Dennis Schroder              TOR   1.5    58       15.3  
+14  CJ McCollum                  NOP   1.5    9        15.3  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Giannis Antetokounmpo        MIL   12.2k    1st     
+2   Victor Wembanyama            SAS   11.6k    1st     
+3   Anthony Edwards              MIN   10.1k    2nd     
+4   Giannis Antetokounmpo        MIL   10.0k    2nd     
+5   Stephen Curry                GSW   8.2k     3rd     
+6   Alperen Sengun               HOU   6.0k     4th     
+7   Jalen Brunson                NYK   4.6k     5th     
+8   Kawhi Leonard                LAC   3.9k     4th     
+9   Anthony Davis                LAL   3.8k     4th     
+10  Donovan Mitchell             CLE   3.6k     5th     
+11  Devin Booker                 PHX   3.6k     5th     
+12  Paolo Banchero               ORL   3.5k     5th     
+13  Cade Cunningham              DET   3.4k     5th     
+14  Cooper Flagg                 MEM   3.4k     5th     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Kawhi Leonard                LAC   3.0k     4th     
+2   Cooper Flagg                 MEM   3.4k     5th     
+3   Jarrett Allen                CLE   1.6k     5th     
+4   Evan Bouchard                EDM   411      5th     
+5   OG Anunoby                   TOR   149      5th     
+
+==========================================================================================
+2026-10-29 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (8 games)
+------------------------------------------------------------------------------------------
+   1. GSW @ LAL  →  116-105  [W: GSW]
+   2. BKN @ DEN  →  115-107  [W: BKN]
+   3. LAC @ LAL  →  114-113  [W: LAC]
+   4. LAL @ DEN  →  113-126  [W: DEN]
+   5. LAC @ WAS  →   89-117  [W: WAS]
+   6. MIL @ HOU  →  122-112  [W: MIL]
+   7. OKC @ MEM  →  136-105  [W: OKC]
+   8. CHI @ DEN  →  134-125  [W: CHI]
+
+>>> HIGHEST VALUE (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Jalo Latazia                 UTA   3.5    9        27.9  
+2   Cade Cunningham              DET   3.2    1.2k     20.5  
+3   Jabari Smith Jr.             HOU   3.1    6        19.5  
+4   Sam Hauser                   BOS   2.9    2        17.7  
+5   Cole Anthony                 ORL   2.8    23       17.3  
+6   Matas Buzelis                CHA   2.5    8        16.7  
+7   Randon Williams              CHI   2.4    1        16.2  
+8   Darius Garland               CLE   2.2    15       15.8  
+9   Jeremiah Fears               GSW   2.2    6        15.8  
+10  Brandon Ingram               NOP   1.7    105      15.1  
+11  Jarace Walker                GSW   1.6    6        15.1  
+12  Jalen Johnson                ATL   1.5    742      15.1  
+13  Jaylen Tyson                 GSW   1.5    1        14.9  
+14  Mike Conley                  UTA   1.5    2        14.8  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Nikola Jokic                 DEN   16.3k    1st     
+2   Austin Reaves                LAL   10.1k    1st     
+3   Devin Booker                 PHX   7.5k     2nd     
+4   Cade Cunningham              DET   7.2k     2nd     
+5   Donovan Mitchell             CLE   6.6k     2nd     
+6   Anthony Davis                LAL   4.6k     2nd     
+7   Paolo Banchero               ORL   4.6k     3rd     
+8   Kevin Durant                 PHX   4.5k     3rd     
+9   Pascal Siakam                TOR   4.4k     4th     
+10  Alperen Sengun               HOU   4.3k     2nd     
+11  Ja Morant                    MEM   4.3k     4th     
+12  Jaylen Brown                 BOS   4.3k     3rd     
+13  Lauri Markkanen              UTA   3.0k     3rd     
+14  Trae Young                   ATL   3.3k     4th     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Brady Hield                  IND   935      5th     
+2   Devin Paul                   DEN   603      5th     
+3   AJ Hoford                    DEN   498      5th     
+4   Brook Lopez                  MIL   446      5th     
+5   Bob Carrington               LAC   303      5th     
+
+==========================================================================================
+2026-10-30 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (4 games)
+------------------------------------------------------------------------------------------
+   1. MEM @ LAL  →  101-108  [W: LAL]
+   2. SAS @ DEN  →  107-127  [W: DEN]
+   3. GSW @ SAC  →  110-123  [W: SAC]
+   4. NOP @ LAC  →  120-107  [W: NOP]
+
+>>> HIGHEST VALUE (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Anthony Black                SAS   2.3    67       16.2  
+2   Ryan Rollins                 SAS   2.5    292      16.1  
+3   Davidson Carter Jr.          LAL   2.6    32       16.0  
+4   Paolo Banchero               ORL   2.3    126      14.3  
+5   Brogan Castle                CLE   2.1    235      14.3  
+6   Jaylin Williams              OKC   2.0    9        13.2  
+7   Cason Wallace                OKC   1.9    27       12.0  
+8   Bam Adebayo                  MIA   1.9    489      12.2  
+9   Andrew Wiggins               LAL   1.7    78       11.8  
+10  Myles Turner                 IND   1.6    80       11.8  
+11  Bobby Portis                 MIL   1.6    79       11.6  
+12  Tristan da Silva             CLE   1.5    20       11.4  
+13  Victor Wembanyama            SAS   1.5    10.5k    11.1  
+14  Jonathan Kuminga             GSW   1.5    476      10.9  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Victor Wembanyama            SAS   21.6k    1st     
+2   Sha'Carri Alexis-Alexander   BOS   16.1k    2nd     
+3   Stephen Curry                GSW   12.5k    3rd     
+4   Giannis Antetokounmpo        MIL   11.9k    1st     
+5   Paolo Banchero               ORL   8.5k     5th     
+6   LaMelo Ball                  CHA   7.4k     5th     
+7   Jimmy Butler III             MIA   5.4k     3rd     
+8   Bam Adebayo                  MIA   4.9k     5th     
+9   Aaron Wiggins                LAL   3.1k     4th     
+10  Stephen Castle               CLE   4.1k     5th     
+11  Jonathan Kuminga             GSW   3.1k     4th     
+12  Alexander Sarr               WAS   3.1k     4th     
+13  Dylan Harper                 POR   3.0k     5th     
+14  Jaime Jequez Jr.             HOU   2.9k     4th     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Anthony Black                MEM   1.3k     5th     
+2   Bobby Portis                 MIL   794      3rd     
+3   Pelle Larsson                PHX   727      4th     
+4   Kyle Kuzma                   WAS   206      5th     
+5   Cole Williams                DEN   199      5th     
+
+==========================================================================================
+2026-10-31 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (7 games)
+------------------------------------------------------------------------------------------
+   1. NYK @ MIA  →  124-125  [W: MIA]
+   2. BOS @ BKN  →  126-135  [W: BKN]
+   3. WAS @ BOS  →   96-112  [W: BOS]
+   4. LAC @ OKC  →  118-128  [W: OKC]
+   5. NOP @ DEN  →  109-108  [W: NOP]
+   6. LAL @ DEN  →  117-109  [W: LAL]
+   7. BKN @ CLE  →  112-108  [W: BKN]
+
+>>> HIGHEST VALUE (15 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Keshi Leccardi               MIA   2.9    174      20.2  
+2   Dyson Daniels                ORL   2.8    85       19.5  
+3   Jaylen Tyson                 GSW   2.5    13       18.2  
+4   Donovan Clingan              POR   2.4    5        18.2  
+5   Josh Giddey                  OKC   2.2    129      18.2  
+6   Devin Booker                 PHX   2.0    858      16.6  
+7   Jeremiah Fears               GSW   2.0    29       16.1  
+8   Derrick Jones Jr.            CHI   1.9    3        15.9  
+9   OG Anunoby                   TOR   1.9    6        15.9  
+10  JG Landale                   PHX   1.8    2        14.4  
+11  Keaton Wallace               LAC   1.6    578      13.1  
+12  Jaylen Brown                 BOS   1.5    638      13.1  
+13  Jalen Johnson                ATL   1.5    116      13.2  
+14  Luka Doncic                  DAL   1.5    1.8k     13.1  
+15  James Harden                 LAC   1.5    243      13.1  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Nikola Jokic                 DEN   14.4k    1st     
+2   Tyrese Maxey                 PHI   8.0k     1st     
+3   Austin Reaves                LAL   7.4k     1st     
+4   Devin Booker                 PHX   6.3k     2nd     
+5   Jamal Murray                 DEN   5.7k     1st     
+6   Luka Doncic                  DAL   5.1k     1st     
+7   Jalen Brunson                NYK   5.1k     2nd     
+8   Ja Morant                    MEM   4.9k     4th     
+9   Lauri Markkanen              UTA   3.9k     4th     
+10  Tyrell Adams                 LAL   3.9k     4th     
+11  James Harden                 LAC   2.9k     3rd     
+12  Pascal Siakam                TOR   2.8k     4th     
+13  Deni Adija                   WAS   2.8k     5th     
+14  Evan Mobley                  CLE   2.8k     3rd     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Jaylen Tyson                 GSW   317      4th     
+2   Donovan                      DEN   305      5th     
+3   Dalton Knecht                POR   203      5th     
+4   Peyton Watson                DEN   145      5th     
+5   Luke Kennard                 PHX   143      5th     
+
+==========================================================================================
+2026-11-01 — COMPLETE DATA
+==========================================================================================
+
+>>> GAMES (7 games)
+------------------------------------------------------------------------------------------
+   1. PHI @ BOS  →  122-109  [W: PHI]
+   2. DEN @ PHX  →  105-114  [W: PHX]
+   3. BKN @ BOS  →  110-125  [W: BOS]
+   4. NYK @ MIA  →  122- 94  [W: NYK]
+   5. BOS @ CLE  →  128-135  [W: CLE]
+   6. OKC @ WAS  →  101-133  [W: WAS]
+   7. LAL @ GSW  →  118-109  [W: LAL]
+
+>>> HIGHEST VALUE (15 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  RS     Drafts   Value 
+------------------------------------------------------------------------------------------
+1   Quenton Jackson              NYK   3.0    2        28.2  
+2   Aaron Nesmith                BOS   2.8    39       20.4  
+3   Jalen Duran                  MEM   2.7    164      20.2  
+4   Mikal Bridges                BKN   2.6    36       18.6  
+5   OG Anunoby                   TOR   2.5    6        18.5  
+6   Rudy Gobert                  MIN   2.3    98       17.1  
+7   Grayson Allen                MEM   2.1    186      17.1  
+8   D'Angelo Russell             LAL   1.7    31       17.0  
+9   Kyle Kuzma                   WAS   1.7    3        14.9  
+10  AJ Green                     GSW   1.6    6        14.7  
+11  Donovan Mitchell             CLE   1.6    40       14.7  
+12  Tre Mann                     OKC   1.6    1        14.3  
+13  Max Christie                 LAL   1.5    78       13.9  
+14  Russell Westbrook            LAC   1.5    64       12.8  
+15  Dennis Schroder              TOR   1.5    17       12.5  
+
+>>> MOST POPULAR (14 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Cade Cunningham              DET   11.5k    1st     
+2   Stephen Curry                GSW   9.7k     1st     
+3   Kevin Durant                 PHX   7.9k     3rd     
+4   Jalen Brown                  BOS   7.6k     2nd     
+5   Paolo Banchero               ORL   6.0k     4th     
+6   Donovan Mitchell             CLE   5.7k     1st     
+7   Giannis Antetokounmpo        MIL   5.0k     1st     
+8   Cooper Flagg                 MEM   4.5k     3rd     
+9   Pascal Siakam                TOR   4.4k     3rd     
+10  Franz Wagner                 ORL   3.6k     3rd     
+11  Jimmy Butler III             MIA   3.6k     3rd     
+12  Julius Randle                NYK   3.1k     2nd     
+13  Jonathan Kuminga             GSW   2.6k     5th     
+14  Ryan Rollins                 SAS   2.6k     1st     
+
+>>> HIGH BOOST / 3X (5 players)
+------------------------------------------------------------------------------------------
+#   Player                       Team  Drafts   Slot    
+------------------------------------------------------------------------------------------
+1   Klay Thompson                GSW   797      5th     
+2   Dwight Powell                DAL   640      5th     
+3   Nate Marshall                HOU   451      5th     
+4   Brandon Williams             LAL   398      5th     
+5   Quinton Jackson              NYK   233      3rd     
+
+==========================================================================================
+END OF DATA — 11 DATES (Oct 21 - Nov 1, 2026)
+==========================================================================================
