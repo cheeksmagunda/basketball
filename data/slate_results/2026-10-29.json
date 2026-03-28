@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-29",
+  "game_count": 8,
+  "games": [
+    {
+      "home": "LAL",
+      "away": "GSW",
+      "home_score": 105,
+      "away_score": 116,
+      "winner": "GSW",
+      "loser": "LAL",
+      "winner_score": 116,
+      "loser_score": 105
+    },
+    {
+      "home": "DEN",
+      "away": "BKN",
+      "home_score": 107,
+      "away_score": 115,
+      "winner": "BKN",
+      "loser": "DEN",
+      "winner_score": 115,
+      "loser_score": 107
+    },
+    {
+      "home": "LAL",
+      "away": "LAC",
+      "home_score": 113,
+      "away_score": 114,
+      "winner": "LAC",
+      "loser": "LAL",
+      "winner_score": 114,
+      "loser_score": 113
+    },
+    {
+      "home": "DEN",
+      "away": "LAL",
+      "home_score": 126,
+      "away_score": 113,
+      "winner": "DEN",
+      "loser": "LAL",
+      "winner_score": 126,
+      "loser_score": 113
+    },
+    {
+      "home": "WAS",
+      "away": "LAC",
+      "home_score": 117,
+      "away_score": 89,
+      "winner": "WAS",
+      "loser": "LAC",
+      "winner_score": 117,
+      "loser_score": 89
+    },
+    {
+      "home": "HOU",
+      "away": "MIL",
+      "home_score": 112,
+      "away_score": 122,
+      "winner": "MIL",
+      "loser": "HOU",
+      "winner_score": 122,
+      "loser_score": 112
+    },
+    {
+      "home": "MEM",
+      "away": "OKC",
+      "home_score": 105,
+      "away_score": 136,
+      "winner": "OKC",
+      "loser": "MEM",
+      "winner_score": 136,
+      "loser_score": 105
+    },
+    {
+      "home": "DEN",
+      "away": "CHI",
+      "home_score": 125,
+      "away_score": 134,
+      "winner": "CHI",
+      "loser": "DEN",
+      "winner_score": 134,
+      "loser_score": 125
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}
