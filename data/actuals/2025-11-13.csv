@@ -1,0 +1,31 @@
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Jalen Johnson,ATL,7.9,0.6,1200,1,22,highest_value
+Vit Krejci,ATL,4.5,2.3,39,1,21.5,highest_value
+Onyeka Okongwu,ATL,6,1.3,387,1,20.5,highest_value
+Ace Bailey,UTA,3.7,3.0,400,1,18.4,highest_value
+Oso Ighodaro,PHX,3.7,3.0,1,1,18.3,highest_value
+Dillon Brooks,PHX,4.2,1.4,57,1,15.2,highest_value
+Scottie Barnes,TOR,6.1,0.4,888,1,14.5,highest_value
+Lauri Markkanen,UTA,6,0.4,1900,1,14.4,highest_value
+Nae'Qwan Tomlin,CLE,3.1,2.7,1,2,14,highest_value
+Jakob Poeltl,TOR,3.7,1.8,34,1,13.9,highest_value
+Immanuel Quickley,TOR,4.7,0.9,462,1,13.8,highest_value
+Jordan Goodwin,PHX,3,2.5,2,1,13.5,highest_value
+Devin Booker,PHX,5.1,0.4,4600,1,12.8,highest_value
+Jusuf Nurkic,PHX,3,2.2,108,1,12.8,highest_value
+Donovan Mitchell,CLE,3.5,0.1,10400,1,7.35,most_popular
+Pascal Siakam,IND,2,0.4,8000,2,4.4,most_popular
+Dyson Daniels,ATL,1.2,1.3,6100,2,3.72,most_popular
+Grayson Allen,PHX,2.1,0.8,4700,4,4.62,most_popular
+Brandon Ingram,TOR,1.5,0.7,4400,4,3.15,most_popular
+Evan Mobley,CLE,1.8,0.4,4400,3,3.6,most_popular
+Keyonte George,UTA,3.7,0.8,3200,4,8.14,most_popular
+Andrew Nembhard,IND,2.6,1.4,3200,3,7.8,most_popular
+Aaron Nesmith,IND,1.3,1.4,3000,4,3.64,most_popular
+Kyle Filipowski,UTA,2.3,3.0,945,5,9.66,most_drafted_3x
+Mouhamed Gueye,ATL,1.1,3.0,797,5,4.62,most_drafted_3x
+Nick Richards,LAC,0.6,3.0,724,3,2.76,most_drafted_3x
+Jeremiah Robinson-Earl,NOP,1.4,3.0,421,5,5.88,most_drafted_3x
+Sani Mamukelashvili,TOR,2,2.6,,3,8.4,winning_drafts
+Craig Porter Jr.,CLE,2.5,2.8,,5,10.0,winning_drafts
+Isaiah Collier,UTA,2.6,1.7,,4,8.06,winning_drafts
