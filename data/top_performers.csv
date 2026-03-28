@@ -1,4 +1,17 @@
 date,player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+2025-10-21,Luka Doncic,LAL,7.0,0,12500,1,13.9,highest_value
+2025-10-21,Alperen Sengun,HOU,6.2,0,969,1,12.4,highest_value
+2025-10-21,Shai Gilgeous-Alexander,OKC,5.7,0,11000,1,11.4,highest_value
+2025-10-21,Chet Holmgren,OKC,4.3,0,55,1,8.6,highest_value
+2025-10-21,Jimmy Butler III,HOU,4.2,0,740,1,8.4,highest_value
+2025-10-21,Austin Reaves,LAL,3.8,0,992,1,7.6,highest_value
+2025-10-21,Stephen Curry,GSW,3.7,0,5300,1,7.4,highest_value
+2025-10-21,Jonathan Kuminga,GSW,3.2,0,136,1,6.5,highest_value
+2025-10-21,Cason Wallace,OKC,3.2,0,104,1,6.5,highest_value
+2025-10-21,Draymond Green,GSW,2.7,0,244,1,5.4,highest_value
+2025-10-21,Amen Thompson,HOU,2.7,0,1100,1,5.3,highest_value
+2025-10-21,Ajay Mitchell,OKC,2.6,0,2,1,5.3,highest_value
+2025-10-21,Kevin Durant,OKC,2.6,0,2700,1,5.1,highest_value
 2025-11-20,Bobby Portis,MIL,3.1,2.8,88,1,14.9,highest_value
 2025-11-20,David Jones-Garcia,SAS,3.5,3.0,1,1,17.5,highest_value
 2025-11-20,De'Aaron Fox,SAS,5.5,0.5,746,1,13.7,highest_value
