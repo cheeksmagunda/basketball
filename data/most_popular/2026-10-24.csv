@@ -1,0 +1,15 @@
+player,team,draft_count,slot_position,source
+Nikola Jokic,DEN,25900,1st,most_popular
+Stephen Curry,GS,24600,3rd,most_popular
+Shai Gilgeous-Alexander,OKC,21900,2nd,most_popular
+Jimmy Butler III,MIA,15500,3rd,most_popular
+Chet Holmgren,OKC,11300,4th,most_popular
+Pascal Siakam,IND,7900,5th,most_popular
+Buddy Hield,GSW,6500,5th,most_popular
+Brandin Podziemski,GS,6300,5th,most_popular
+Jonathan Kuminga,GS,6000,4th,most_popular
+Aaron Wiggins,GS,5400,5th,most_popular
+Isaiah Hartenstein,LAL,5000,5th,most_popular
+Jamal Murray,DEN,4200,5th,most_popular
+Draymond Green,GS,3600,5th,most_popular
+Al Horford,PHO,2800,5th,most_popular

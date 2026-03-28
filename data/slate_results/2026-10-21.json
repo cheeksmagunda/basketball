@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-21",
+  "game_count": 2,
+  "games": [
+    {
+      "home": "LAL",
+      "away": "GS",
+      "home_score": 109,
+      "away_score": 119,
+      "winner": "GS",
+      "loser": "LAL",
+      "winner_score": 119,
+      "loser_score": 109
+    },
+    {
+      "home": "HOU",
+      "away": "OKC",
+      "home_score": 124,
+      "away_score": 125,
+      "winner": "OKC",
+      "loser": "HOU",
+      "winner_score": 125,
+      "loser_score": 124
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-03-28T00:00:00Z"
+}
