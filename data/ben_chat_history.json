@@ -2,5 +2,9 @@
   {
     "role": "user",
     "content": "Hi ben"
+  },
+  {
+    "role": "assistant",
+    "content": "What's up! How can I help you today? Whether it's tonight's slate, picks, parlay breakdown, model tuning, or digging into historical data \u2014 I'm ready. What do you need?"
   }
 ]
