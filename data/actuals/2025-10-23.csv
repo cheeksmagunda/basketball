@@ -1,0 +1,11 @@
+player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,source
+Aaron Gordon,DEN,11.1,0.0,112,1,22.3,highest_value
+Stephen Curry,GSW,7.1,0.5,4100,1,17.7,highest_value
+Aaron Wiggins,OKC,3.0,3.0,548,1,14.9,highest_value
+Shai Gilgeous-Alexander,OKC,7.2,0.0,7500,1,14.3,highest_value
+Nikola Jokic,DEN,5.7,0.0,13400,1,11.4,highest_value
+Ajay Mitchell,OKC,3.5,1.1,168,1,10.8,highest_value
+Pascal Siakam,IND,5.3,0.0,202,1,10.5,highest_value
+Jimmy Butler III,OKC,4.6,0.3,1500,1,10.5,highest_value
+Draymond Green,GSW,3.4,1.1,426,1,10.4,highest_value
+Al Horford,OKC,2.0,3.0,403,1,10.0,highest_value
