@@ -10,7 +10,9 @@
       "winner": "MIL",
       "loser": "TOR",
       "winner_score": 122,
-      "loser_score": 116
+      "loser_score": 116,
+      "views": 259900,
+      "rs_threshold": 7.7
     },
     {
       "home": "ORL",
@@ -20,7 +22,9 @@
       "winner": "ATL",
       "loser": "ORL",
       "winner_score": 111,
-      "loser_score": 107
+      "loser_score": 107,
+      "views": 233900,
+      "rs_threshold": 6.9
     },
     {
       "home": "BKN",
@@ -30,7 +34,9 @@
       "winner": "CLE",
       "loser": "BKN",
       "winner_score": 131,
-      "loser_score": 124
+      "loser_score": 124,
+      "views": 218200,
+      "rs_threshold": 6.7
     },
     {
       "home": "NYK",
@@ -40,7 +46,9 @@
       "winner": "NYK",
       "loser": "BOS",
       "winner_score": 105,
-      "loser_score": 95
+      "loser_score": 95,
+      "views": 248200,
+      "rs_threshold": 4.6
     },
     {
       "home": "HOU",
@@ -50,7 +58,9 @@
       "winner": "DET",
       "loser": "HOU",
       "winner_score": 115,
-      "loser_score": 111
+      "loser_score": 111,
+      "views": 260700,
+      "rs_threshold": 7.6
     },
     {
       "home": "MEM",
@@ -60,7 +70,9 @@
       "winner": "MIA",
       "loser": "MEM",
       "winner_score": 146,
-      "loser_score": 114
+      "loser_score": 114,
+      "views": 216100,
+      "rs_threshold": 6.6
     },
     {
       "home": "NOP",
@@ -70,7 +82,10 @@
       "winner": "SAS",
       "loser": "NOP",
       "winner_score": 120,
-      "loser_score": 116
+      "loser_score": 116,
+      "overtime": true,
+      "views": 286100,
+      "rs_threshold": 8.0
     },
     {
       "home": "DAL",
@@ -80,7 +95,9 @@
       "winner": "WAS",
       "loser": "DAL",
       "winner_score": 117,
-      "loser_score": 107
+      "loser_score": 107,
+      "views": 243200,
+      "rs_threshold": 5.3
     },
     {
       "home": "LAL",
@@ -90,7 +107,9 @@
       "winner": "LAL",
       "loser": "MIN",
       "winner_score": 128,
-      "loser_score": 110
+      "loser_score": 110,
+      "views": 308300,
+      "rs_threshold": 5.7
     },
     {
       "home": "POR",
@@ -100,7 +119,9 @@
       "winner": "POR",
       "loser": "GSW",
       "winner_score": 139,
-      "loser_score": 119
+      "loser_score": 119,
+      "views": 258800,
+      "rs_threshold": 6.3
     },
     {
       "home": "SAC",
@@ -110,7 +131,9 @@
       "winner": "SAC",
       "loser": "UTA",
       "winner_score": 105,
-      "loser_score": 104
+      "loser_score": 104,
+      "views": 188400,
+      "rs_threshold": 8.4
     },
     {
       "home": "LAC",
@@ -120,7 +143,9 @@
       "winner": "LAC",
       "loser": "PHX",
       "winner_score": 129,
-      "loser_score": 102
+      "loser_score": 102,
+      "views": 201700,
+      "rs_threshold": 6.0
     }
   ],
   "season_stage": "regular-season",
