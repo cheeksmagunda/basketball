@@ -1861,6 +1861,50 @@ let SLATE_STATE = asyncStateInitial();  // Predict slate AsyncState
 let PICKS_STATE = asyncStateInitial();  // Per-game picks AsyncState
 
 // ════════════════════════════════════════════════════════════════════
+// ZERO-TRUST GATEWAYS — enforce guaranteed shapes before UI sees data
+// ════════════════════════════════════════════════════════════════════
+
+/** Enforces the exact structure required by the Predict Tab. */
+function TransformSlateData(raw) {
+  if (!raw || typeof raw !== 'object') raw = {};
+  return {
+    date:         typeof raw.date === 'string' ? raw.date : _etToday(),
+    locked:       Boolean(raw.locked),
+    all_complete: Boolean(raw.all_complete),
+    lock_time:    typeof raw.lock_time === 'string' ? raw.lock_time : null,
+    error:        typeof raw.error === 'string' ? raw.error : null,
+    games:        Array.isArray(raw.games) ? raw.games : [],
+    lineups: {
+      chalk:  Array.isArray(raw.lineups?.chalk)  ? raw.lineups.chalk  : [],
+      upside: Array.isArray(raw.lineups?.upside) ? raw.lineups.upside : []
+    }
+  };
+}
+
+/** Enforces the exact structure required by the Per-Game Analysis. */
+function TransformPicksData(raw) {
+  if (!raw || typeof raw !== 'object') raw = {};
+  return {
+    locked:     Boolean(raw.locked),
+    gameScript: typeof raw.gameScript === 'string' ? raw.gameScript : '',
+    strategy: {
+      label:        typeof raw.strategy?.label       === 'string' ? raw.strategy.label       : '',
+      description:  typeof raw.strategy?.description === 'string' ? raw.strategy.description : '',
+      type:         typeof raw.strategy?.type        === 'string' ? raw.strategy.type        : 'standard',
+      total_mult:   typeof raw.strategy?.total_mult  === 'number' ? raw.strategy.total_mult  : 0,
+      favored_team: typeof raw.strategy?.favored_team=== 'string' ? raw.strategy.favored_team: ''
+    },
+    lineups: {
+      the_lineup: Array.isArray(raw.lineups?.the_lineup) ? raw.lineups.the_lineup : []
+    },
+    game: {
+      total:  typeof raw.game?.total  === 'number' ? raw.game.total  : null,
+      spread: typeof raw.game?.spread === 'number' ? raw.game.spread : null
+    }
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════
 // TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
@@ -2140,7 +2184,7 @@ async function _hydrateApp() {
 
       // Store in appropriate global
       if (ep.name === 'slate') {
-        SLATE = data;
+        SLATE = TransformSlateData(data);
         SLATE_LOADED_AT = Date.now();
       } else if (ep.name === 'games') {
         if (ep.init) ep.init(data);
@@ -2565,7 +2609,7 @@ async function loadSlate() {
     const r = await fetchWithTimeout('/api/slate', {}, 30000);
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
-    const slateData = await r.json();
+    const slateData = TransformSlateData(await r.json());
     SLATE_STATE = asyncStateSuccess(SLATE_STATE, slateData);
     if (slateData.error === 'slate_failed') {
       const tabs = _el('slateTabs');
@@ -2825,7 +2869,7 @@ async function runAnalysis() {
       const errMsg = err.error || (r.status === 503 ? 'Server warming up — tap Retry' : r.status === 429 ? 'Too many requests — wait a moment' : `Couldn't load picks (${r.status})`);
       throw new Error(errMsg);
     }
-    const picksData = await r.json();
+    const picksData = TransformPicksData(await r.json());
     PICKS_STATE = asyncStateSuccess(PICKS_STATE, picksData);
     if (picksData.locked && !picksData.lineups?.the_lineup?.length && PICKS_DATA) {
       PICKS_DATA.locked = true;
