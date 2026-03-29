@@ -5,7 +5,7 @@ winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot
 1,nachoo26,77.55,4,Bobby Portis,MIL,3.1,1.4,2.8,2025-11-20T00:00:00+00:00
 1,nachoo26,77.55,5,Julian Champagnie,SAS,3.1,1.2,2.7,2025-11-20T00:00:00+00:00
 2,aypee,74.20,1,Tyrese Maxey,PHI,9.4,2.0,0.0,2025-11-20T00:00:00+00:00
-2,aypee,74.20,2,De'Aaron Fox,SAS,5.5,1.8,0.5,2025-11-20T00:00:00+00:00
+2,aypee,74.20,2,De'Aaron Fox,SAC,5.5,1.8,0.5,2025-11-20T00:00:00+00:00
 2,aypee,74.20,3,Ryan Rollins,MIL,5.5,1.6,0.8,2025-11-20T00:00:00+00:00
 2,aypee,74.20,4,Santi Aldama,MEM,5.0,1.4,1.6,2025-11-20T00:00:00+00:00
 2,aypee,74.20,5,Vince Williams Jr.,MEM,3.7,1.2,2.8,2025-11-20T00:00:00+00:00
@@ -34,7 +34,7 @@ winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot
 7,tootion,70.96,3,Nickeil Alexander-Walker,ATL,6.5,1.6,1.2,2025-11-20T00:00:00+00:00
 7,tootion,70.96,4,Santi Aldama,MEM,5.0,1.4,1.6,2025-11-20T00:00:00+00:00
 7,tootion,70.96,5,Bobby Portis,MIL,3.1,1.2,2.8,2025-11-20T00:00:00+00:00
-8,anandalukmanr,70.41,1,De'Aaron Fox,SAS,5.5,2.0,0.5,2025-11-20T00:00:00+00:00
+8,anandalukmanr,70.41,1,De'Aaron Fox,SAC,5.5,2.0,0.5,2025-11-20T00:00:00+00:00
 8,anandalukmanr,70.41,2,Nickeil Alexander-Walker,ATL,6.5,1.8,1.2,2025-11-20T00:00:00+00:00
 8,anandalukmanr,70.41,3,Santi Aldama,MEM,5.0,1.6,1.6,2025-11-20T00:00:00+00:00
 8,anandalukmanr,70.41,4,Keldon Johnson,SAS,4.2,1.4,1.6,2025-11-20T00:00:00+00:00
