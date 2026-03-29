@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,redwarrior,58.83,1,Kyle Filipowski,UTA,3.4,2.0,2.3,2025-12-07T00:00:00+00:00
+1,redwarrior,58.83,2,J. Wells,,2.7,1.8,2.1,2025-12-07T00:00:00+00:00
+1,redwarrior,58.83,3,Pat Spencer,GSW,2.2,1.6,2.7,2025-12-07T00:00:00+00:00
+1,redwarrior,58.83,4,KJ Simpson,DEN,2.5,1.4,3.0,2025-12-07T00:00:00+00:00
+1,redwarrior,58.83,5,Quinten Post,GSW,3.1,1.2,3.0,2025-12-07T00:00:00+00:00
+2,chiicago,58.73,1,Jalen Williams,OKC,4.3,2.0,0.8,2025-12-07T00:00:00+00:00
+2,chiicago,58.73,2,Chet Holmgren,OKC,4.1,1.8,0.8,2025-12-07T00:00:00+00:00
+2,chiicago,58.73,3,Cason Wallace,OKC,2.3,1.6,2.2,2025-12-07T00:00:00+00:00
+2,chiicago,58.73,4,Kyle Filipowski,UTA,3.4,1.4,2.3,2025-12-07T00:00:00+00:00
+2,chiicago,58.73,5,Walter Clayton Jr.,GSW,3.5,1.2,3.0,2025-12-07T00:00:00+00:00
+3,kaii122,58.14,1,Pat Spencer,GSW,2.2,2.0,2.7,2025-12-07T00:00:00+00:00
+3,kaii122,58.14,2,Quinten Post,GSW,3.1,1.8,3.0,2025-12-07T00:00:00+00:00
+3,kaii122,58.14,3,Jordan Walsh,BOS,2.0,1.6,2.0,2025-12-07T00:00:00+00:00
+3,kaii122,58.14,4,Walter Clayton Jr.,GSW,3.5,1.4,3.0,2025-12-07T00:00:00+00:00
+3,kaii122,58.14,5,KJ Simpson,DEN,2.5,1.2,3.0,2025-12-07T00:00:00+00:00
+4,keo,57.40,1,Nikola Jokić,DEN,5.8,2.0,0.0,2025-12-07T00:00:00+00:00
+4,keo,57.40,2,Andrew Wiggins,GSW,2.4,1.8,1.7,2025-12-07T00:00:00+00:00
+4,keo,57.40,3,Kyle Filipowski,UTA,3.4,1.6,2.3,2025-12-07T00:00:00+00:00
+4,keo,57.40,4,KJ Simpson,DEN,2.5,1.4,3.0,2025-12-07T00:00:00+00:00
+4,keo,57.40,5,Quinten Post,GSW,3.1,1.2,3.0,2025-12-07T00:00:00+00:00
+5,kds_right_ankle,57.14,1,Chet Holmgren,OKC,4.1,2.0,0.8,2025-12-07T00:00:00+00:00
+5,kds_right_ankle,57.14,2,Jalen Williams,OKC,4.3,1.8,0.8,2025-12-07T00:00:00+00:00
+5,kds_right_ankle,57.14,3,Walter Clayton Jr.,GSW,3.5,1.6,3.0,2025-12-07T00:00:00+00:00
+5,kds_right_ankle,57.14,4,Kyle Filipowski,UTA,3.4,1.4,2.3,2025-12-07T00:00:00+00:00
+5,kds_right_ankle,57.14,5,Amari Bailey,LAL,1.5,1.2,2.7,2025-12-07T00:00:00+00:00
+6,tktooshiesty,56.36,1,LeBron James,LAL,5.5,2.0,0.9,2025-12-07T00:00:00+00:00
+6,tktooshiesty,56.36,2,Quinten Post,GSW,3.1,1.8,3.0,2025-12-07T00:00:00+00:00
+6,tktooshiesty,56.36,3,J. Butler III,MIA,3.8,1.6,0.5,2025-12-07T00:00:00+00:00
+6,tktooshiesty,56.36,4,Chet Holmgren,OKC,4.1,1.4,0.8,2025-12-07T00:00:00+00:00
+6,tktooshiesty,56.36,5,Jalen Williams,OKC,4.3,1.2,0.8,2025-12-07T00:00:00+00:00
+7,joaojoao,56.35,1,Luka Dončić,LAL,5.8,2.0,0.0,2025-12-07T00:00:00+00:00
+7,joaojoao,56.35,2,LeBron James,LAL,5.5,1.8,0.9,2025-12-07T00:00:00+00:00
+7,joaojoao,56.35,3,Pat Spencer,GSW,2.2,1.6,2.7,2025-12-07T00:00:00+00:00
+7,joaojoao,56.35,4,Jalen Suggs,ORL,2.8,1.4,1.2,2025-12-07T00:00:00+00:00
+7,joaojoao,56.35,5,Quinten Post,GSW,3.1,1.2,3.0,2025-12-07T00:00:00+00:00
+8,yukikimura,55.89,1,Luka Dončić,LAL,5.8,2.0,0.0,2025-12-07T00:00:00+00:00
+8,yukikimura,55.89,2,J. Butler III,MIA,3.8,1.8,0.5,2025-12-07T00:00:00+00:00
+8,yukikimura,55.89,3,Kyle Filipowski,UTA,3.4,1.6,2.3,2025-12-07T00:00:00+00:00
+8,yukikimura,55.89,4,Quinten Post,GSW,3.1,1.4,3.0,2025-12-07T00:00:00+00:00
+8,yukikimura,55.89,5,Pat Spencer,GSW,2.2,1.2,2.7,2025-12-07T00:00:00+00:00
