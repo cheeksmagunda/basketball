@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,jamalien,70.95,1,Nikola Jokic,DEN,7.5,2.0,0,2026-03-29T00:00:00+00:00
+1,jamalien,70.95,2,James Harden,CLE,10.1,1.8,0.2,2026-03-29T00:00:00+00:00
+1,jamalien,70.95,3,Franz Wagner,ORL,6.6,1.6,0.6,2026-03-29T00:00:00+00:00
+1,jamalien,70.95,4,Derik Queen,HOU,3.0,1.4,1.6,2026-03-29T00:00:00+00:00
+1,jamalien,70.95,5,Cameron Johnson,BKN,3.0,1.2,2.9,2026-03-29T00:00:00+00:00
+2,garrett_,69.75,1,James Harden,CLE,10.1,2.0,0.2,2026-03-29T00:00:00+00:00
+2,garrett_,69.75,2,Nikola Jokic,DEN,7.5,1.8,0,2026-03-29T00:00:00+00:00
+2,garrett_,69.75,3,Vince Williams Jr,MEM,2.6,1.6,2.3,2026-03-29T00:00:00+00:00
+2,garrett_,69.75,4,Brandon Williams,DAL,3.2,1.4,2.3,2026-03-29T00:00:00+00:00
+2,garrett_,69.75,5,Bobby Portis,MIL,3.1,1.2,2.6,2026-03-29T00:00:00+00:00
+3,breakoutszn,69.50,1,Nikola Jokic,DEN,7.5,2.0,0,2026-03-29T00:00:00+00:00
+3,breakoutszn,69.50,2,James Harden,CLE,10.1,1.8,0.2,2026-03-29T00:00:00+00:00
+3,breakoutszn,69.50,3,Derik Queen,HOU,3.0,1.6,1.6,2026-03-29T00:00:00+00:00
+3,breakoutszn,69.50,4,Bobby Portis,MIL,3.1,1.4,2.6,2026-03-29T00:00:00+00:00
+3,breakoutszn,69.50,5,Cameron Johnson,BKN,3.0,1.2,2.9,2026-03-29T00:00:00+00:00
+4,louiemoo,69.23,1,James Harden,CLE,10.1,2.0,0.2,2026-03-29T00:00:00+00:00
+4,louiemoo,69.23,2,Cade Cunningham,DET,5.4,1.8,0.2,2026-03-29T00:00:00+00:00
+4,louiemoo,69.23,3,Nikola Jokic,DEN,7.5,1.6,0,2026-03-29T00:00:00+00:00
+4,louiemoo,69.23,4,Franz Wagner,ORL,6.6,1.4,0.6,2026-03-29T00:00:00+00:00
+4,louiemoo,69.23,5,Santi Aldama,MEM,4.2,1.2,1.4,2026-03-29T00:00:00+00:00
+5,bk921,67.93,1,James Harden,CLE,10.1,2.0,0.2,2026-03-29T00:00:00+00:00
+5,bk921,67.93,2,Nikola Jokic,DEN,7.5,1.8,0,2026-03-29T00:00:00+00:00
+5,bk921,67.93,3,Jalen Brunson,NYK,5.6,1.6,0.3,2026-03-29T00:00:00+00:00
+5,bk921,67.93,4,Kon Knueppel,BKN,3.8,1.4,1.1,2026-03-29T00:00:00+00:00
+5,bk921,67.93,5,Franz Wagner,ORL,6.6,1.2,0.6,2026-03-29T00:00:00+00:00
+6,froggies,67.61,1,James Harden,CLE,10.1,2.0,0.2,2026-03-29T00:00:00+00:00
+6,froggies,67.61,2,Derik Queen,HOU,3.0,1.8,1.6,2026-03-29T00:00:00+00:00
+6,froggies,67.61,3,Vince Williams Jr,MEM,2.6,1.6,2.3,2026-03-29T00:00:00+00:00
+6,froggies,67.61,4,Bobby Portis,MIL,3.1,1.4,2.6,2026-03-29T00:00:00+00:00
+6,froggies,67.61,5,Keegan Murray,SAC,3.0,1.2,3.0,2026-03-29T00:00:00+00:00
+7,matrixmic,67.61,1,James Harden,CLE,10.1,2.0,0.2,2026-03-29T00:00:00+00:00
+7,matrixmic,67.61,2,Nikola Jokic,DEN,7.5,1.8,0,2026-03-29T00:00:00+00:00
+7,matrixmic,67.61,3,Cade Cunningham,DET,5.4,1.6,0.2,2026-03-29T00:00:00+00:00
+7,matrixmic,67.61,4,Franz Wagner,ORL,6.6,1.4,0.6,2026-03-29T00:00:00+00:00
+7,matrixmic,67.61,5,Nikola Vucevic,BOS,4.7,1.2,0.7,2026-03-29T00:00:00+00:00
+8,brandonshellman,67.33,1,Nikola Jokic,DEN,7.5,2.0,0,2026-03-29T00:00:00+00:00
+8,brandonshellman,67.33,2,James Harden,CLE,10.1,1.8,0.2,2026-03-29T00:00:00+00:00
+8,brandonshellman,67.33,3,Franz Wagner,ORL,6.6,1.6,0.6,2026-03-29T00:00:00+00:00
+8,brandonshellman,67.33,4,Jalen Johnson,ATL,3.8,1.4,0.3,2026-03-29T00:00:00+00:00
+8,brandonshellman,67.33,5,Santi Aldama,MEM,4.2,1.2,1.4,2026-03-29T00:00:00+00:00
