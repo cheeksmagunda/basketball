@@ -688,6 +688,7 @@ class ResponseCache:
                 if age < ttl:
                     self.hits += 1
                     return data, True
+                del self.store[key]  # evict expired entry to prevent unbounded growth
             self.misses += 1
             return None, False
 
@@ -1910,10 +1911,14 @@ def _et_date() -> str:
     try:
         from zoneinfo import ZoneInfo
         return datetime.now(ZoneInfo("America/New_York")).date()
-    except ImportError:
-        # Fallback: EST=UTC-5 (Nov–Mar), EDT=UTC-4 (Mar–Nov)
+    except (ImportError, KeyError):
+        # Fallback when tzdata is unavailable: approximate DST transitions.
+        # US DST starts 2nd Sunday of March (~Mar 8–14) and ends 1st Sunday of Nov (~Nov 1–7).
+        # Using month 3 day>=8 through month 11 day<8 covers all transition weeks correctly.
         now_utc = datetime.now(timezone.utc)
-        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
+        m, d = now_utc.month, now_utc.day
+        is_dst = (m == 3 and d >= 8) or (4 <= m <= 10) or (m == 11 and d < 8)
+        offset = timedelta(hours=-4 if is_dst else -5)
         return (now_utc + offset).date()
 
 def _err(msg: str, code: int = 400) -> JSONResponse:
@@ -6646,9 +6651,11 @@ def _get_slate_impl():
     try:
         from zoneinfo import ZoneInfo as _ZI
         _et_hour = datetime.now(_ZI("America/New_York")).hour
-    except ImportError:
+    except (ImportError, KeyError):
         now_utc = datetime.now(timezone.utc)
-        _et_hour = (now_utc + timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)).hour
+        m, d = now_utc.month, now_utc.day
+        is_dst = (m == 3 and d >= 8) or (4 <= m <= 10) or (m == 11 and d < 8)
+        _et_hour = (now_utc + timedelta(hours=-4 if is_dst else -5)).hour
     any_today_started = any(_is_past_lock_window(g.get("startTime", "")) for g in games)
     if not any_today_started and _et_hour < 6:
         _, remaining_yesterday, _, _ = _all_games_final(games)

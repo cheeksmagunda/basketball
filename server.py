@@ -12,7 +12,7 @@ grep: DEV SERVER — PORT, static routes (manifest/favicon/svg), SPA index.html 
 from pathlib import Path
 
 from fastapi import Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 
 print("[boot] importing api.index...", flush=True)
 from api.index import app  # noqa: F401 – re-export for uvicorn
@@ -48,8 +48,11 @@ async def serve_oracle_ball():
 # Catch-all: serve index.html for any non-API route (SPA pattern).
 # This MUST be last — FastAPI routes explicit /api/* handlers first; this
 # only fires when no other route matched (i.e. real SPA navigation paths).
+# Guard against /api/* typos that would otherwise return 200+HTML silently.
 @app.get("/{full_path:path}")
 async def serve_frontend(request: Request, full_path: str = ""):
+    if full_path.startswith("api/"):
+        return JSONResponse({"error": "Endpoint not found"}, status_code=404)
     html_path = ROOT / "index.html"
     return HTMLResponse(
         content=html_path.read_text(),

@@ -1,3 +1,4 @@
+tzdata>=2024.1  # ensures ZoneInfo("America/New_York") works on slim Docker images
 fastapi>=0.115.6,<0.116
 uvicorn==0.34.0
 requests>=2.32.5
