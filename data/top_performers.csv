@@ -1649,3 +1649,31 @@ date,player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,
 2025-11-30,Brandon Ingram,TOR,1.0,0.7,2900,4,1.7,most_popular
 2025-11-30,Karl-Anthony Towns,NYK,2.5,0.5,2800,3,5.75,most_popular
 2025-11-30,Scottie Barnes,TOR,3.4,0.4,2400,3,6.8,most_popular
+2025-12-01,Ryan Nembhard,SAS,6.5,3.0,4,1,32.7,highest_value
+2025-12-01,Spencer Jones,DEN,5.1,3.0,2,1,25.6,highest_value
+2025-12-01,Kevin Porter Jr.,MIL,6.4,1.2,219,1,20.4,highest_value
+2025-12-01,Jaylon Tyson,CLE,5.6,1.6,19,1,20.2,highest_value
+2025-12-01,Bam Adebayo,MIA,6.4,0.9,14,1,18.6,highest_value
+2025-12-01,Desmond Bane,MEM,6.2,1.0,91,1,18.5,highest_value
+2025-12-01,Marvin Bagley III,WSH,3.6,3.0,7,1,18.1,highest_value
+2025-12-01,Alperen Sengun,HOU,7.1,0.3,387,1,17.1,highest_value
+2025-12-01,Davion Mitchell,TOR,5.2,1.2,7,1,16.7,highest_value
+2025-12-01,Matas Buzelis,CHI,4.3,1.8,8,1,16.4,highest_value
+2025-12-01,Collin Gillespie,OKC,4.7,1.3,97,1,15.5,highest_value
+2025-12-01,Donovan Mitchell,CLE,6.8,0.2,515,1,15.0,highest_value
+2025-12-01,Noah Clowney,BKN,3.3,2.3,20,1,14.3,highest_value
+2025-12-01,Ron Holland II,DET,2.8,3.0,1,1,14.2,highest_value
+2025-12-01,Luka Doncic,LAL,4.6,0.0,12900,1,9.2,most_popular
+2025-12-01,Nikola Jokic,DEN,7.1,0.0,11600,1,14.2,most_popular
+2025-12-01,Giannis Antetokounmpo,MIL,3.7,0.0,7200,3,5.9,most_popular
+2025-12-01,Cade Cunningham,DET,4.0,0.1,6000,4,6.0,most_popular
+2025-12-01,Austin Reaves,LAL,1.3,0.2,4800,2,2.6,most_popular
+2025-12-01,Jalen Johnson,ATL,5.3,0.3,3900,2,11.1,most_popular
+2025-12-01,Devin Booker,PHX,1.4,0.5,3700,3,2.9,most_popular
+2025-12-01,James Harden,LAC,0.6,0.1,3500,4,0.9,most_popular
+2025-12-01,Donovan Mitchell,CLE,6.8,0.2,3200,4,10.9,most_popular
+2025-12-01,Cooper Flagg,DAL,3.4,1.1,3200,5,7.8,most_popular
+2025-12-01,Kon Knueppel,CHA,2.3,1.1,2900,5,5.3,most_popular
+2025-12-01,Alperen Sengun,HOU,7.1,0.3,2900,2,14.9,most_popular
+2025-12-01,Josh Giddey,CHI,3.7,0.3,2700,2,7.8,most_popular
+2025-12-01,Lauri Markkanen,UTA,3.7,0.4,2600,3,7.4,most_popular
