@@ -1,0 +1,21 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,vini_pa,68.83,1,Jamal Murray,DEN,11.4,2.0,0.4,2025-12-03T00:00:00+00:00
+1,vini_pa,68.83,2,Karl-Anthony Towns,NYK,6.1,1.8,0.5,2025-12-03T00:00:00+00:00
+1,vini_pa,68.83,3,Nikola Jokic,DEN,6.1,1.6,0.0,2025-12-03T00:00:00+00:00
+1,vini_pa,68.83,4,James Harden,LAC,4.9,1.4,0.2,2025-12-03T00:00:00+00:00
+1,vini_pa,68.83,5,Michael Porter Jr.,DEN,5.6,1.2,0.6,2025-12-03T00:00:00+00:00
+2,bloopfranklin,65.33,1,Nikola Jokic,DEN,6.1,2.0,0.0,2025-12-03T00:00:00+00:00
+2,bloopfranklin,65.33,2,Jamal Murray,DEN,11.4,1.8,0.4,2025-12-03T00:00:00+00:00
+2,bloopfranklin,65.33,3,Karl-Anthony Towns,NYK,6.1,1.6,0.5,2025-12-03T00:00:00+00:00
+2,bloopfranklin,65.33,4,Cooper Flagg,DAL,3.2,1.4,1.1,2025-12-03T00:00:00+00:00
+2,bloopfranklin,65.33,5,Josh Hart,NYK,3.2,1.2,1.1,2025-12-03T00:00:00+00:00
+3,nozzledozzle,63.41,1,Jamal Murray,DEN,11.4,2.0,0.4,2025-12-03T00:00:00+00:00
+3,nozzledozzle,63.41,2,De'Aaron Fox,SAS,4.1,1.8,0.4,2025-12-03T00:00:00+00:00
+3,nozzledozzle,63.41,3,Karl-Anthony Towns,NYK,6.1,1.6,0.5,2025-12-03T00:00:00+00:00
+3,nozzledozzle,63.41,4,Kevin Durant,SAC,3.8,1.4,0.7,2025-12-03T00:00:00+00:00
+3,nozzledozzle,63.41,5,Amen Thompson,HOU,2.4,1.2,1.4,2025-12-03T00:00:00+00:00
+4,slayskii,62.73,1,Jamal Murray,DEN,11.4,2.0,0.4,2025-12-03T00:00:00+00:00
+4,slayskii,62.73,2,Josh Giddey,CHI,4.5,1.8,0.3,2025-12-03T00:00:00+00:00
+4,slayskii,62.73,3,Karl-Anthony Towns,NYK,6.1,1.6,0.5,2025-12-03T00:00:00+00:00
+4,slayskii,62.73,4,Franz Wagner,ORL,4.2,1.4,0.6,2025-12-03T00:00:00+00:00
+4,slayskii,62.73,5,Miles Bridges,NYK,2.8,1.2,0.5,2025-12-03T00:00:00+00:00
