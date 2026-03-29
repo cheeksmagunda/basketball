@@ -6523,9 +6523,9 @@ def _force_regenerate_bg(*_args):
     pass
 
 def _force_regenerate_bg_worker():
-    """Background thread: runs _force_regenerate_sync("full") after deploy SHA mismatch.
-    Sets _force_regenerate_bg._in_flight = False when done (so a subsequent deploy
-    can re-trigger if needed)."""
+    """Background thread: runs _force_regenerate_sync("full") when flat-boost anomaly detected.
+    This is a safety check for data corruption (all boosts collapsed to +1x).
+    Sets _force_regenerate_bg._in_flight = False when done."""
     try:
         print("[force-regen-bg] starting background regeneration (deploy SHA mismatch)")
         result = _force_regenerate_sync("full")
@@ -6561,20 +6561,16 @@ def _slate_has_flat_boosts(slate_obj: dict) -> bool:
 
 
 def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
-    """Trigger background full regeneration when locked cache is stale/suspicious.
-    IMPORTANT: Only triggers for flat-boost anomalies. Deploy SHA mismatches are
-    intentionally suppressed during locked slates — changing picks mid-game is worse
-    than serving slightly stale model output. The new model will be used on the next
-    unlocked slate automatically."""
-    _current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()
-    _cached_sha = str((cached_slate or {}).get("deploy_sha", "") or "").strip()
-    _sha_mismatch = bool(_current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7])
+    """Trigger background full regeneration ONLY for flat-boost anomalies.
+
+    IMPORTANT: Deploy SHA mismatches NO LONGER trigger regeneration. The system
+    now gracefully serves cached data from prior commits until /api/refresh is
+    manually called or natural slate turnover occurs. This prevents unintended
+    cache busts from deployments.
+
+    The ONLY legitimate cache busting mechanism is /api/refresh.
+    """
     _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
-    if _sha_mismatch and not _flat_boosts:
-        # Deploy SHA mismatch alone is not worth regenerating during a locked slate.
-        # Users have already drafted based on the locked picks. Log and skip.
-        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — skipping regen (slate locked, picks preserved)")
-        return
     if not _flat_boosts:
         return
     if getattr(_force_regenerate_bg, "_in_flight", False):
@@ -6584,12 +6580,6 @@ def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "
     threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
 
 
-def _deploy_prewarm_bg(*_args):
-    """Sentinel function used as attribute namespace for deploy prewarm state."""
-    pass
-
-
-_DEPLOY_PREWARM_STATE_PATH = "data/system/deploy_prewarm_state.json"
 
 
 def _get_slate_impl():
@@ -8571,25 +8561,6 @@ async def save_slate_results(request: Request, date: Optional[str] = None):
     return out
 
 
-def _load_deploy_prewarm_state():
-    try:
-        raw, _ = _github_get_file(_DEPLOY_PREWARM_STATE_PATH)
-        if raw:
-            return json.loads(raw)
-    except Exception:
-        pass
-    return {}
-
-
-def _save_deploy_prewarm_state(payload: dict):
-    try:
-        _github_write_file(
-            _DEPLOY_PREWARM_STATE_PATH,
-            json.dumps(payload, default=str),
-            "update deploy prewarm state",
-        )
-    except Exception as e:
-        print(f"[deploy-prewarm] state write err: {e}")
 
 
 def _prewarm_current_slate_sync(force=False, include_slate=True):
@@ -8710,36 +8681,6 @@ def _prewarm_current_slate_sync(force=False, include_slate=True):
     }
 
 
-def _deploy_prewarm_worker(current_sha: str):
-    try:
-        print(f"[deploy-prewarm] starting for sha={current_sha}")
-        _save_deploy_prewarm_state({
-            "sha": current_sha,
-            "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        })
-        force_result = _force_regenerate_sync("full")
-        prewarm_result = _prewarm_current_slate_sync(force=True, include_slate=False)
-        _save_deploy_prewarm_state({
-            "sha": current_sha,
-            "status": "completed",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "force_regenerate_status": force_result.get("status"),
-            "prewarm": prewarm_result,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
-        print(f"[deploy-prewarm] done for sha={current_sha}: force={force_result.get('status')}")
-    except Exception as e:
-        print(f"[deploy-prewarm] error: {e}")
-        traceback.print_exc()
-        _save_deploy_prewarm_state({
-            "sha": current_sha,
-            "status": "error",
-            "error": str(e),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
-    finally:
-        _deploy_prewarm_bg._in_flight = False
 
 
 @app.get("/api/prewarm-current-slate")
@@ -8755,23 +8696,45 @@ async def prewarm_current_slate(request: Request):
 
 
 @app.on_event("startup")
-async def _deploy_startup_prewarm():
-    """On deploy, auto-trigger full regenerate + prewarm once per SHA."""
-    current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()[:7]
-    if not current_sha:
-        return
+async def _deploy_startup_safe_prewarm():
+    """On deploy/restart, safely re-warm /tmp cache from GitHub without busting persistent cache.
+
+    CRITICAL: This NEVER calls _bust_slate_cache() or _force_regenerate_sync().
+    It only reads existing GitHub cache files into /tmp. The ONLY legitimate
+    cache busting mechanism is /api/refresh (user or cron triggered).
+
+    If GitHub cache is missing, the app gracefully falls back to full pipeline
+    regeneration on first /api/slate request. This is correct behavior — new
+    containers should only regenerate when explicitly requested or on natural
+    slate turnover.
+    """
+    today = _today_str()
     try:
-        st = _load_deploy_prewarm_state()
-        last_sha = (st.get("sha") or "").strip()
-        if last_sha == current_sha and st.get("status") in ("completed", "error"):
-            return  # Don't retry a failed prewarm on restart — it would bust cache again
-        if getattr(_deploy_prewarm_bg, "_in_flight", False):
-            return
-        _deploy_prewarm_bg._in_flight = True
-        threading.Thread(target=_deploy_prewarm_worker, args=(current_sha,), daemon=True).start()
-        print(f"[deploy-prewarm] queued for new sha={current_sha}")
+        # Safely hydrate /tmp cache from GitHub (read-only, no regeneration)
+        gh_slate, _ = _github_get_file(f"data/slate/{today}_slate.json")
+        if gh_slate:
+            try:
+                slate_data = json.loads(gh_slate)
+                if not slate_data.get("_busted"):  # Skip if marked for bust
+                    _cs(_CK_SLATE, slate_data)
+                    print(f"[startup-prewarm] hydrated /tmp slate cache from GitHub for {today}")
+            except Exception as e:
+                print(f"[startup-prewarm] hydration error: {e}")
+
+        # Also prewarm per-game projections if available
+        gh_games, _ = _github_get_file(f"data/slate/{today}_games.json")
+        if gh_games:
+            try:
+                games_data = json.loads(gh_games)
+                if not games_data.get("_busted"):
+                    _cs(f"{_CK_SLATE}_games", games_data)
+                    print(f"[startup-prewarm] hydrated /tmp games cache from GitHub for {today}")
+            except Exception as e:
+                print(f"[startup-prewarm] games hydration error: {e}")
+
+        print(f"[startup-prewarm] safe cache rehydration completed")
     except Exception as e:
-        print(f"[deploy-prewarm] startup check failed: {e}")
+        print(f"[startup-prewarm] initialization failed (non-fatal, will regenerate on first request): {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
