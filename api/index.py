@@ -48,6 +48,7 @@ try:
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
     from api.fair_value import project_player_fv, dvp_binary_from_nba_com
+    from api.cache import rcg, rcs, rflush, redis_ok
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
@@ -55,6 +56,7 @@ except ImportError:
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
     from .fair_value import project_player_fv, dvp_binary_from_nba_com
+    from .cache import rcg, rcs, rflush, redis_ok
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -1771,14 +1773,103 @@ def _cp(k, date_str=None):
     """Cache path for key k. date_str: optional slate date (YYYY-MM-DD) for midnight-rollover correctness."""
     d = date_str or _today_str()
     return CACHE_DIR / f"{hashlib.md5(f'{d}:{k}'.encode()).hexdigest()}.json"
-def _cg(k, date_str=None): return json.loads(_cp(k, date_str).read_text()) if _cp(k, date_str).exists() else None
-def _cs(k, v, date_str=None): _cp(k, date_str).write_text(json.dumps(v))
+
+# ── Redis TTL map — maps cache key prefixes/names to TTL in seconds ──────────
+# Keys not in the map get a default 24h TTL in Redis.
+_REDIS_TTL_MAP = {
+    # Lock caches — very short TTL (1 min)
+    "slate_v5_locked": _TTL_LOCKED,
+    "picks_locked_": _TTL_LOCKED,
+    # Game data — 5 min
+    "games_": _TTL_GAMES,
+    "log_get_": _TTL_CONFIG,
+    # Log / history — 10 min
+    "log_dates_v1": _TTL_LOG,
+    "line_history_v1": _TTL_LOG,
+    "parlay_history_v1": _TTL_LOG,
+    # Athlete / player data — 30 min
+    "ath3_": _TTL_L5,
+    "team_pstats_": _TTL_L5,
+    "gamelog_v2_": _TTL_L5,
+    # Odds — 30 min
+    "odds_fresh_map_v1": _TTL_ODDS_FRESH,
+    "line_odds_claude_v1": _TTL_ODDS_FRESH,
+    # Odds fallback — 1 hour
+    "odds_last_success_map_v1": _TTL_HOUR,
+    # Slate / picks / line / parlay — day-scoped, 6h default (cleared by refresh)
+    "slate_v5": 21600,
+    "line_v1": 21600,
+    "parlay_v1": 21600,
+    "picks_": 21600,
+    "game_proj_": 21600,
+}
+
+def _redis_ttl_for_key(k):
+    """Look up Redis TTL for a cache key. Returns seconds or 86400 (24h) default."""
+    for prefix, ttl in _REDIS_TTL_MAP.items():
+        if k.startswith(prefix) or k == prefix:
+            return ttl
+    return 86400  # 24h default for unrecognised keys
+
+def _cg(k, date_str=None):
+    """Cache GET: try Redis first, fall back to /tmp file."""
+    d = date_str or _today_str()
+    # Try Redis
+    val = rcg(k, d)
+    if val is not None:
+        return val
+    # Fall back to file
+    p = _cp(k, date_str)
+    if p.exists():
+        try:
+            data = json.loads(p.read_text())
+            # Backfill Redis from file hit (async-safe, best-effort)
+            rcs(k, data, d, ttl=_redis_ttl_for_key(k))
+            return data
+        except Exception:
+            return None
+    return None
+
+def _cs(k, v, date_str=None):
+    """Cache SET: write to both Redis (with TTL) and /tmp file."""
+    d = date_str or _today_str()
+    # Write to Redis with mapped TTL
+    rcs(k, v, d, ttl=_redis_ttl_for_key(k))
+    # Write to /tmp file (fallback layer)
+    try:
+        _cp(k, date_str).write_text(json.dumps(v))
+    except Exception:
+        pass
+
 def _lp(k, date_str=None):
     """Lock path for key k. date_str: optional slate date for midnight-rollover correctness."""
     d = date_str or _today_str()
     return LOCK_DIR / f"{hashlib.md5(f'{d}:{k}'.encode()).hexdigest()}.json"
-def _lg(k, date_str=None): return json.loads(_lp(k, date_str).read_text()) if _lp(k, date_str).exists() else None
-def _ls(k, v, date_str=None): _lp(k, date_str).write_text(json.dumps(v))
+
+def _lg(k, date_str=None):
+    """Lock GET: try Redis first, fall back to /tmp lock file."""
+    d = date_str or _today_str()
+    val = rcg(f"lock:{k}", d)
+    if val is not None:
+        return val
+    p = _lp(k, date_str)
+    if p.exists():
+        try:
+            data = json.loads(p.read_text())
+            rcs(f"lock:{k}", data, d, ttl=_TTL_LOCKED)
+            return data
+        except Exception:
+            return None
+    return None
+
+def _ls(k, v, date_str=None):
+    """Lock SET: write to both Redis and /tmp lock file."""
+    d = date_str or _today_str()
+    rcs(f"lock:{k}", v, d, ttl=_TTL_LOCKED)
+    try:
+        _lp(k, date_str).write_text(json.dumps(v))
+    except Exception:
+        pass
 
 
 
@@ -6327,6 +6418,8 @@ async def health() -> dict:
         out["github"] = "ok" if c is not None else "unreachable"
     else:
         out["github"] = "skipped"
+    # Redis health probe
+    out["redis"] = "ok" if redis_ok() else "unavailable"
     return out
 
 
@@ -8363,6 +8456,12 @@ async def refresh(request: Request):
     # Clear in-memory response cache first (Level 0) — must happen before file cache clears
     # so that _bust_slate_cache() called below doesn't double-count the invalidation.
     _RESPONSE_CACHE.invalidate()
+    # Flush Redis cache (Level 0.5) — all oracle:* keys
+    redis_cleared = 0
+    try:
+        redis_cleared = rflush()
+    except Exception as e:
+        print(f"[refresh] Redis flush error: {e}")
     try:
         for f in CACHE_DIR.glob("*.json"):
             f.unlink(); cleared += 1
@@ -8402,7 +8501,7 @@ async def refresh(request: Request):
             print(f"[refresh] background regeneration failed: {e}")
     threading.Thread(target=_bg_prewarm_after_refresh, daemon=True).start()
 
-    return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
+    return {"status": "ok", "cleared": cleared, "redis_cleared": redis_cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
 @app.get("/api/save-slate-results")
