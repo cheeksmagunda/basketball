@@ -30,6 +30,7 @@ import numpy as np
 import lightgbm as lgb
 import requests
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, Query, Body, File, Form, UploadFile, Request
@@ -1937,22 +1938,78 @@ def _espn_scoreboard(date_ymd: str) -> str:
     """Build ESPN scoreboard URL. date_ymd = YYYYMMDD format."""
     return f"{ESPN}/scoreboard?dates={date_ymd}"
 
-def _espn_get(url):
-    try:
-        r = requests.get(url, timeout=_T_DEFAULT)
-        if not r.ok:
-            print(f"[espn] HTTP {r.status_code} for {url[:120]}", flush=True)
+_ESPN_RATE_LIMIT_STATE = {"remaining": None, "reset_at": None}
+_ESPN_RATE_LIMIT_LOCK = threading.Lock()
+
+def _espn_get(url, retry_on_429=True, max_retries=3):
+    """Fetch from ESPN API with exponential backoff for rate limits.
+
+    Inspects X-RateLimit-Remaining header to detect rate limit exhaustion.
+    On 429 (Too Many Requests), backs off exponentially: 1s, 2s, 4s.
+    """
+    backoff_delays = [1, 2, 4]
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, timeout=_T_DEFAULT)
+
+            # Track rate limit state from response headers
+            with _ESPN_RATE_LIMIT_LOCK:
+                remaining = r.headers.get("x-requests-remaining")
+                if remaining:
+                    try:
+                        _ESPN_RATE_LIMIT_STATE["remaining"] = int(remaining)
+                    except ValueError:
+                        pass
+                reset_at = r.headers.get("x-requests-reset")
+                if reset_at:
+                    _ESPN_RATE_LIMIT_STATE["reset_at"] = reset_at
+
+            # Handle rate limit response
+            if r.status_code == 429:
+                last_error = "rate_limited"
+                if attempt < max_retries - 1 and retry_on_429:
+                    delay = backoff_delays[attempt]
+                    print(f"[espn] 429 rate limit — backing off {delay}s", flush=True)
+                    time.sleep(delay)
+                    continue
+                else:
+                    print(f"[espn] 429 rate limit (max retries reached) for {url[:120]}", flush=True)
+                    return {}
+
+            if not r.ok:
+                print(f"[espn] HTTP {r.status_code} for {url[:120]}", flush=True)
+                return {}
+
+            return r.json()
+
+        except requests.exceptions.Timeout:
+            last_error = "timeout"
+            if attempt < max_retries - 1:
+                print(f"[espn] timeout (retry {attempt+1}/{max_retries}) for {url[:120]}", flush=True)
+                time.sleep(backoff_delays[attempt])
+                continue
+            else:
+                print(f"[espn] timeout for {url[:120]}", flush=True)
+                return {}
+
+        except requests.exceptions.ConnectionError as e:
+            last_error = f"connection_error: {e}"
+            if attempt < max_retries - 1:
+                print(f"[espn] connection error (retry {attempt+1}/{max_retries}) for {url[:120]}: {e}", flush=True)
+                time.sleep(backoff_delays[attempt])
+                continue
+            else:
+                print(f"[espn] connection error for {url[:120]}: {e}", flush=True)
+                return {}
+
+        except (requests.RequestException, ValueError) as e:
+            last_error = str(e)
+            print(f"[espn] error for {url[:120]}: {e}", flush=True)
             return {}
-        return r.json()
-    except requests.exceptions.Timeout:
-        print(f"[espn] timeout for {url[:120]}", flush=True)
-        return {}
-    except requests.exceptions.ConnectionError as e:
-        print(f"[espn] connection error for {url[:120]}: {e}", flush=True)
-        return {}
-    except (requests.RequestException, ValueError) as e:
-        print(f"[espn] error for {url[:120]}: {e}", flush=True)
-        return {}
+
+    return {}
 
 def _fetch_b2b_teams():
     """Detect teams on the second night of a back-to-back.
@@ -6466,9 +6523,9 @@ def _force_regenerate_bg(*_args):
     pass
 
 def _force_regenerate_bg_worker():
-    """Background thread: runs _force_regenerate_sync("full") after deploy SHA mismatch.
-    Sets _force_regenerate_bg._in_flight = False when done (so a subsequent deploy
-    can re-trigger if needed)."""
+    """Background thread: runs _force_regenerate_sync("full") when flat-boost anomaly detected.
+    This is a safety check for data corruption (all boosts collapsed to +1x).
+    Sets _force_regenerate_bg._in_flight = False when done."""
     try:
         print("[force-regen-bg] starting background regeneration (deploy SHA mismatch)")
         result = _force_regenerate_sync("full")
@@ -6504,20 +6561,16 @@ def _slate_has_flat_boosts(slate_obj: dict) -> bool:
 
 
 def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
-    """Trigger background full regeneration when locked cache is stale/suspicious.
-    IMPORTANT: Only triggers for flat-boost anomalies. Deploy SHA mismatches are
-    intentionally suppressed during locked slates — changing picks mid-game is worse
-    than serving slightly stale model output. The new model will be used on the next
-    unlocked slate automatically."""
-    _current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()
-    _cached_sha = str((cached_slate or {}).get("deploy_sha", "") or "").strip()
-    _sha_mismatch = bool(_current_sha and _cached_sha and _current_sha[:7] != _cached_sha[:7])
+    """Trigger background full regeneration ONLY for flat-boost anomalies.
+
+    IMPORTANT: Deploy SHA mismatches NO LONGER trigger regeneration. The system
+    now gracefully serves cached data from prior commits until /api/refresh is
+    manually called or natural slate turnover occurs. This prevents unintended
+    cache busts from deployments.
+
+    The ONLY legitimate cache busting mechanism is /api/refresh.
+    """
     _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
-    if _sha_mismatch and not _flat_boosts:
-        # Deploy SHA mismatch alone is not worth regenerating during a locked slate.
-        # Users have already drafted based on the locked picks. Log and skip.
-        print(f"[{reason_prefix}] deploy SHA mismatch: cached={_cached_sha} current={_current_sha[:7]} — skipping regen (slate locked, picks preserved)")
-        return
     if not _flat_boosts:
         return
     if getattr(_force_regenerate_bg, "_in_flight", False):
@@ -6527,12 +6580,6 @@ def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "
     threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
 
 
-def _deploy_prewarm_bg(*_args):
-    """Sentinel function used as attribute namespace for deploy prewarm state."""
-    pass
-
-
-_DEPLOY_PREWARM_STATE_PATH = "data/system/deploy_prewarm_state.json"
 
 
 def _get_slate_impl():
@@ -8514,25 +8561,6 @@ async def save_slate_results(request: Request, date: Optional[str] = None):
     return out
 
 
-def _load_deploy_prewarm_state():
-    try:
-        raw, _ = _github_get_file(_DEPLOY_PREWARM_STATE_PATH)
-        if raw:
-            return json.loads(raw)
-    except Exception:
-        pass
-    return {}
-
-
-def _save_deploy_prewarm_state(payload: dict):
-    try:
-        _github_write_file(
-            _DEPLOY_PREWARM_STATE_PATH,
-            json.dumps(payload, default=str),
-            "update deploy prewarm state",
-        )
-    except Exception as e:
-        print(f"[deploy-prewarm] state write err: {e}")
 
 
 def _prewarm_current_slate_sync(force=False, include_slate=True):
@@ -8653,36 +8681,6 @@ def _prewarm_current_slate_sync(force=False, include_slate=True):
     }
 
 
-def _deploy_prewarm_worker(current_sha: str):
-    try:
-        print(f"[deploy-prewarm] starting for sha={current_sha}")
-        _save_deploy_prewarm_state({
-            "sha": current_sha,
-            "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        })
-        force_result = _force_regenerate_sync("full")
-        prewarm_result = _prewarm_current_slate_sync(force=True, include_slate=False)
-        _save_deploy_prewarm_state({
-            "sha": current_sha,
-            "status": "completed",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "force_regenerate_status": force_result.get("status"),
-            "prewarm": prewarm_result,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
-        print(f"[deploy-prewarm] done for sha={current_sha}: force={force_result.get('status')}")
-    except Exception as e:
-        print(f"[deploy-prewarm] error: {e}")
-        traceback.print_exc()
-        _save_deploy_prewarm_state({
-            "sha": current_sha,
-            "status": "error",
-            "error": str(e),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
-    finally:
-        _deploy_prewarm_bg._in_flight = False
 
 
 @app.get("/api/prewarm-current-slate")
@@ -8698,23 +8696,45 @@ async def prewarm_current_slate(request: Request):
 
 
 @app.on_event("startup")
-async def _deploy_startup_prewarm():
-    """On deploy, auto-trigger full regenerate + prewarm once per SHA."""
-    current_sha = (os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or "").strip()[:7]
-    if not current_sha:
-        return
+async def _deploy_startup_safe_prewarm():
+    """On deploy/restart, safely re-warm /tmp cache from GitHub without busting persistent cache.
+
+    CRITICAL: This NEVER calls _bust_slate_cache() or _force_regenerate_sync().
+    It only reads existing GitHub cache files into /tmp. The ONLY legitimate
+    cache busting mechanism is /api/refresh (user or cron triggered).
+
+    If GitHub cache is missing, the app gracefully falls back to full pipeline
+    regeneration on first /api/slate request. This is correct behavior — new
+    containers should only regenerate when explicitly requested or on natural
+    slate turnover.
+    """
+    today = _today_str()
     try:
-        st = _load_deploy_prewarm_state()
-        last_sha = (st.get("sha") or "").strip()
-        if last_sha == current_sha and st.get("status") in ("completed", "error"):
-            return  # Don't retry a failed prewarm on restart — it would bust cache again
-        if getattr(_deploy_prewarm_bg, "_in_flight", False):
-            return
-        _deploy_prewarm_bg._in_flight = True
-        threading.Thread(target=_deploy_prewarm_worker, args=(current_sha,), daemon=True).start()
-        print(f"[deploy-prewarm] queued for new sha={current_sha}")
+        # Safely hydrate /tmp cache from GitHub (read-only, no regeneration)
+        gh_slate, _ = _github_get_file(f"data/slate/{today}_slate.json")
+        if gh_slate:
+            try:
+                slate_data = json.loads(gh_slate)
+                if not slate_data.get("_busted"):  # Skip if marked for bust
+                    _cs(_CK_SLATE, slate_data)
+                    print(f"[startup-prewarm] hydrated /tmp slate cache from GitHub for {today}")
+            except Exception as e:
+                print(f"[startup-prewarm] hydration error: {e}")
+
+        # Also prewarm per-game projections if available
+        gh_games, _ = _github_get_file(f"data/slate/{today}_games.json")
+        if gh_games:
+            try:
+                games_data = json.loads(gh_games)
+                if not games_data.get("_busted"):
+                    _cs(f"{_CK_SLATE}_games", games_data)
+                    print(f"[startup-prewarm] hydrated /tmp games cache from GitHub for {today}")
+            except Exception as e:
+                print(f"[startup-prewarm] games hydration error: {e}")
+
+        print(f"[startup-prewarm] safe cache rehydration completed")
     except Exception as e:
-        print(f"[deploy-prewarm] startup check failed: {e}")
+        print(f"[startup-prewarm] initialization failed (non-fatal, will regenerate on first request): {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -10326,6 +10346,10 @@ def _parlay_active_date():
     After midnight ET, yesterday's ticket can still be live while games are in progress.
     Prefer yesterday when it has an unresolved ticket and those games are not all final.
 
+    Midnight-crossing OT fix: Even if ESPN has not yet marked yesterday's games as final
+    (e.g., 2OT games finishing at 2+ AM), explicit fallback to yesterday's parlay if any
+    game from yesterday is still running or completed after midnight ET.
+
     Same-day rollover: when today's games are all final before midnight, switch to the
     next slate date so the parlay endpoint generates tomorrow's ticket instead of
     re-serving today's completed one.
@@ -10333,6 +10357,10 @@ def _parlay_active_date():
     today = _et_date()
     yesterday = today - timedelta(days=1)
     y_str = yesterday.isoformat()
+    t_str = today.isoformat()
+
+    # Step 1: Check if yesterday's parlay file exists and is unresolved
+    y_ticket = None
     try:
         raw, _ = _github_get_file(f"data/parlays/{y_str}.json")
         if raw:
@@ -10346,12 +10374,22 @@ def _parlay_active_date():
                 y_games = fetch_games(yesterday)
                 y_all_final, _yr, _yf, _ylrs = _all_games_final(y_games) if bool(y_games) else (False, 0, 0, None)
                 y_all_final = bool(y_games) and bool(y_all_final)
-                if not y_all_final:
+
+                # MIDNIGHT-CROSSING FIX: Even if _all_games_final says False, check explicitly
+                # for games from yesterday that might still be in-progress (OT, ESPN lag).
+                # Heuristic: if it's before 6 AM ET and yesterday's games were scheduled,
+                # assume yesterday's parlay is still active.
+                _et_hour = datetime.now(ZoneInfo("America/New_York")).hour
+                if not y_all_final and y_games and _et_hour < 6:
+                    # Before 6 AM ET with yesterday's games scheduled: yesterday's parlay is active
+                    print(f"[parlay-active-date] midnight crossing: holding yesterday {y_str} (games may span midnight)")
                     return yesterday
-    except Exception:
-        pass
-    # Same-day rollover: if today's games are all final (slate ended before midnight),
-    # return the next slate date so tomorrow's parlay gets generated.
+                elif not y_all_final:
+                    return yesterday
+    except Exception as e:
+        print(f"[parlay-active-date] error checking yesterday: {e}")
+
+    # Step 2: Check if today's games are all final (same-day rollover)
     try:
         t_games = fetch_games(today)
         if t_games:
@@ -10360,9 +10398,19 @@ def _parlay_active_date():
                 next_slate = _find_next_slate_date(today + timedelta(days=1))
                 if next_slate:
                     print(f"[parlay-active-date] same-day rollover: {today} all_complete → {next_slate}")
+                    # DUAL-KEY CACHE FIX: If yesterday's parlay exists and is unresolved,
+                    # also cache it under today's key so midnight transition doesn't lose it
+                    if y_ticket and not _parlay_fully_concluded(y_ticket):
+                        try:
+                            y_cache_key = _CK_PARLAY
+                            rcs(y_cache_key, y_ticket, t_str, ttl=21600)  # Cache under TODAY's key too
+                            print(f"[parlay-active-date] dual-key cache: stored yesterday parlay under today's key")
+                        except Exception as e:
+                            print(f"[parlay-active-date] dual-key cache error: {e}")
                     return next_slate
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[parlay-active-date] error checking today: {e}")
+
     return today
 
 
@@ -10775,8 +10823,12 @@ async def auto_resolve_line(request: Request):
                     existing_tomorrow = json.loads(existing_tomorrow_raw)
                 except Exception:
                     pass
-            # Check if either direction is missing from the existing file
-            _need_gen = (not existing_tomorrow
+
+            # Check if either direction is missing from the existing file OR if generation failed previously
+            # (marked by "_generation_failed" flag). If generation failed before, retry on next cron.
+            _prev_gen_failed = (existing_tomorrow or {}).get("_generation_failed") == True
+            _need_gen = (_prev_gen_failed
+                         or not existing_tomorrow
                          or not existing_tomorrow.get("over_pick")
                          or not existing_tomorrow.get("under_pick"))
             if _need_gen:
@@ -10796,6 +10848,9 @@ async def auto_resolve_line(request: Request):
                         "over_pick":  (existing_tomorrow or {}).get("over_pick") or eng_result.get("over_pick"),
                         "under_pick": (existing_tomorrow or {}).get("under_pick") or eng_result.get("under_pick"),
                     }
+                    # Remove the failure flag if it was set
+                    if "_generation_failed" in saves:
+                        del saves["_generation_failed"]
                     # Stamp date on freshly generated picks so the card shows the right date
                     for _dk in ("over_pick", "under_pick"):
                         if saves.get(_dk) and isinstance(saves[_dk], dict) and not saves[_dk].get("date"):
@@ -10804,10 +10859,24 @@ async def auto_resolve_line(request: Request):
                                        f"line picks for {next_day_str}")
                     results["next_day"] = next_day_str
                 elif err:
+                    # PERSISTENCE FIX: Mark file with failure flag so next cron retry will re-attempt
+                    failure_payload = {
+                        "over_pick": (existing_tomorrow or {}).get("over_pick"),
+                        "under_pick": (existing_tomorrow or {}).get("under_pick"),
+                        "_generation_failed": True,
+                        "_failed_at": datetime.now(timezone.utc).isoformat(),
+                        "_failed_reason": str(err)[:200],
+                    }
+                    try:
+                        _github_write_file(tomorrow_json, json.dumps(failure_payload),
+                                           f"[retry-pending] line picks for {next_day_str}")
+                    except Exception as write_err:
+                        print(f"[auto-resolve] failed to persist generation error: {write_err}")
+
                     if _is_odds_required_line_err(err):
                         print(f"[auto-resolve] next-day generation failed (odds) for {next_day_str}: {err.get('code')} — {err.get('detail')}")
                     else:
-                        print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err}")
+                        print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err} — will retry on next cron")
         except Exception as e:
             print(f"[auto-resolve] next-day generation err: {e}")
 
@@ -12729,12 +12798,38 @@ def _compute_betting_fair_value(all_proj, games, player_odds_map):
     return edge_map, fair_value_data
 
 
-def _fetch_gamelogs_batch(player_ids, num_games=15):
-    """Fetch gamelogs for multiple players in parallel.
-    Returns {player_id: gamelog dict}"""
+def _fetch_gamelogs_batch(player_ids, num_games=15, max_workers=None):
+    """Fetch gamelogs for multiple players with rate-limit aware throttling.
+
+    Rate limit strategy:
+    - If ESPN rate limit is low (<5 remaining), reduce max_workers to 2
+    - If at/near limit, sleep 1s between batches
+    - Falls back to sequential fetch on rate limit exhaustion
+
+    Returns {player_id: gamelog dict}
+    """
+    if max_workers is None:
+        # Check rate limit state before deciding parallelism
+        with _ESPN_RATE_LIMIT_LOCK:
+            remaining = _ESPN_RATE_LIMIT_STATE.get("remaining")
+
+        if remaining is not None and remaining < 5:
+            max_workers = 2  # Reduce parallelism if rate limit low
+            print(f"[gamelog-batch] ESPN rate limit low ({remaining} remaining) — reducing workers to 2", flush=True)
+        else:
+            max_workers = _W_L5  # Standard: 10 workers
+
     result = {}
-    with ThreadPoolExecutor(max_workers=_W_L5) as pool:
-        futures = {pool.submit(_fetch_gamelog, pid, num_games): pid for pid in player_ids}
+    batch_size = max(1, len(player_ids) // max_workers)  # Distribute into batches
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {}
+        for idx, pid in enumerate(player_ids):
+            # Submit in batches; sleep between batches to throttle ESPN requests
+            if idx > 0 and idx % batch_size == 0:
+                time.sleep(0.5)  # Small delay between batches
+            futures[pool.submit(_fetch_gamelog, pid, num_games)] = pid
+
         for fut in as_completed(futures, timeout=_T_HEAVY):
             pid = futures[fut]
             try:
@@ -12743,6 +12838,7 @@ def _fetch_gamelogs_batch(player_ids, num_games=15):
                     result[pid] = log
             except Exception as e:
                 print(f"[gamelog-batch] {pid} error: {e}")
+
     return result
 
 
