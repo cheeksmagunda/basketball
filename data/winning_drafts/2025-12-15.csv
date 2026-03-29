@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,mcgriffin,81.27,1,Nikola Jokic,DEN,7.1,2.0,0.0,2025-12-15T00:00:00
+1,mcgriffin,81.27,2,Cooper Flagg,CHA,5.9,1.8,1.0,2025-12-15T00:00:00
+1,mcgriffin,81.27,3,Jaren Jackson Jr.,MEM,7.0,1.6,1.4,2025-12-15T00:00:00
+1,mcgriffin,81.27,4,Cam Spencer,MEM,5.9,1.4,1.9,2025-12-15T00:00:00
+1,mcgriffin,81.27,5,Ryan Nembhard,DAL,3.0,1.2,2.1,2025-12-15T00:00:00
+2,flagg.32,81.15,1,Nikola Jokic,DEN,7.1,2.0,0.0,2025-12-15T00:00:00
+2,flagg.32,81.15,2,Lauri Markkanen,UTA,6.2,1.8,0.4,2025-12-15T00:00:00
+2,flagg.32,81.15,3,Cooper Flagg,CHA,5.9,1.6,1.0,2025-12-15T00:00:00
+2,flagg.32,81.15,4,Jaren Jackson Jr.,MEM,7.0,1.4,1.4,2025-12-15T00:00:00
+2,flagg.32,81.15,5,Cam Spencer,MEM,5.9,1.2,1.9,2025-12-15T00:00:00
+2,leafbottle88,81.15,1,Nikola Jokic,DEN,7.1,2.0,0.0,2025-12-15T00:00:00
+2,leafbottle88,81.15,2,Lauri Markkanen,UTA,6.2,1.8,0.4,2025-12-15T00:00:00
+2,leafbottle88,81.15,3,Cooper Flagg,CHA,5.9,1.6,1.0,2025-12-15T00:00:00
+2,leafbottle88,81.15,4,Jaren Jackson Jr.,MEM,7.0,1.4,1.4,2025-12-15T00:00:00
+2,leafbottle88,81.15,5,Cam Spencer,MEM,5.9,1.2,1.9,2025-12-15T00:00:00
+4,carteropp1,80.66,1,Nikola Jokic,DEN,7.1,2.0,0.0,2025-12-15T00:00:00
+4,carteropp1,80.66,2,Cooper Flagg,CHA,5.9,1.8,1.0,2025-12-15T00:00:00
+4,carteropp1,80.66,3,Cam Spencer,MEM,5.9,1.6,1.9,2025-12-15T00:00:00
+4,carteropp1,80.66,4,Keyonte George,UTA,5.7,1.4,0.5,2025-12-15T00:00:00
+4,carteropp1,80.66,5,Jaren Jackson Jr.,MEM,7.0,1.2,1.4,2025-12-15T00:00:00
+5,rebate,78.98,1,Jaylen Brown,BOS,5.4,2.0,0.3,2025-12-15T00:00:00
+5,rebate,78.98,2,Keyonte George,UTA,5.7,1.8,0.5,2025-12-15T00:00:00
+5,rebate,78.98,3,Cooper Flagg,CHA,5.9,1.6,1.0,2025-12-15T00:00:00
+5,rebate,78.98,4,Jaren Jackson Jr.,MEM,7.0,1.4,1.4,2025-12-15T00:00:00
+5,rebate,78.98,5,Cam Spencer,MEM,5.9,1.2,1.9,2025-12-15T00:00:00
+6,williameklund72,78.16,1,Nikola Jokic,DEN,7.1,2.0,0.0,2025-12-15T00:00:00
+6,williameklund72,78.16,2,Cooper Flagg,CHA,5.9,1.8,1.0,2025-12-15T00:00:00
+6,williameklund72,78.16,3,Jaren Jackson Jr.,MEM,7.0,1.6,1.4,2025-12-15T00:00:00
+6,williameklund72,78.16,4,Cam Spencer,MEM,5.9,1.4,1.9,2025-12-15T00:00:00
+6,williameklund72,78.16,5,Cameron Johnson,BKN,2.0,1.2,2.2,2025-12-15T00:00:00
+7,penta.27,76.98,1,Nikola Jokic,DEN,7.1,2.0,0.0,2025-12-15T00:00:00
+7,penta.27,76.98,2,Cooper Flagg,CHA,5.9,1.8,1.0,2025-12-15T00:00:00
+7,penta.27,76.98,3,Lauri Markkanen,UTA,6.2,1.6,0.4,2025-12-15T00:00:00
+7,penta.27,76.98,4,Cam Spencer,MEM,5.9,1.4,1.9,2025-12-15T00:00:00
+7,penta.27,76.98,5,Kyle Filipowski,UTA,4.1,1.2,2.3,2025-12-15T00:00:00
+8,joethesith,76.71,1,Jaren Jackson Jr.,MEM,7.0,2.0,1.4,2025-12-15T00:00:00
+8,joethesith,76.71,2,Nikola Jokic,DEN,7.1,1.8,0.0,2025-12-15T00:00:00
+8,joethesith,76.71,3,Cooper Flagg,CHA,5.9,1.6,1.0,2025-12-15T00:00:00
+8,joethesith,76.71,4,Amen Thompson,HOU,3.0,1.4,0.7,2025-12-15T00:00:00
+8,joethesith,76.71,5,Cam Spencer,MEM,5.9,1.2,1.9,2025-12-15T00:00:00

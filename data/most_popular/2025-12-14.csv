@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Luka Doncic,LAL,12900,3.1,0.0,1,1,2025-12-14T00:00:00
+Stephen Curry,GSW,8100,10.5,0.2,2,2,2025-12-14T00:00:00
+Jalen Johnson,ATL,6400,4.3,0.2,2,3,2025-12-14T00:00:00
+Donovan Mitchell,CLE,5000,3.0,0.1,2,4,2025-12-14T00:00:00
+Deni Avdija,POR,4400,3.8,0.4,3,5,2025-12-14T00:00:00
+Michael Porter Jr.,DEN,4300,1.8,0.4,3,6,2025-12-14T00:00:00
+Josh Giddey,CHI,4100,1.9,0.4,3,7,2025-12-14T00:00:00
+Derik Queen,NOP,3900,1.2,1.4,3,8,2025-12-14T00:00:00
+Julius Randle,MIN,3200,3.6,0.4,3,9,2025-12-14T00:00:00
+Kon Knueppel,CHA,2800,4.2,1.0,5,10,2025-12-14T00:00:00
+Jimmy Butler III,GSW,2500,2.9,0.5,3,11,2025-12-14T00:00:00
+Trey Murphy III,NOP,2400,3.5,0.7,4,12,2025-12-14T00:00:00
+Pascal Siakam,IND,2200,2.1,0.5,4,13,2025-12-14T00:00:00
+Russell Westbrook,DEN,2200,2.5,1.0,5,14,2025-12-14T00:00:00
