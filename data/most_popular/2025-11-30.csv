@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Luka Doncic,LAL,13400,5.9,0.0,1,1,2025-11-30T00:00:00+00:00
+Shai Gilgeous-Alexander,OKC,10000,3.7,0.0,1,2,2025-11-30T00:00:00+00:00
+Anthony Edwards,MIN,6200,4.8,0.3,2,3,2025-11-30T00:00:00+00:00
+Austin Reaves,LAL,5600,5.2,0.2,2,4,2025-11-30T00:00:00+00:00
+Tyrese Maxey,PHI,5400,5.5,0.0,3,5,2025-11-30T00:00:00+00:00
+Donovan Mitchell,CLE,4100,3.4,0.2,3,6,2025-11-30T00:00:00+00:00
+Jaylen Brown,BOS,3600,4.4,0.3,2,7,2025-11-30T00:00:00+00:00
+Jalen Johnson,ATL,3500,6.1,0.3,2,8,2025-11-30T00:00:00+00:00
+Jalen Brunson,NYK,3300,3.1,0.3,5,9,2025-11-30T00:00:00+00:00
+Deni Avdija,POR,3000,6.3,0.5,3,10,2025-11-30T00:00:00+00:00
+Derik Queen,HOU,2900,2.1,1.6,4,11,2025-11-30T00:00:00+00:00
+Brandon Ingram,TOR,2900,1.0,0.7,4,12,2025-11-30T00:00:00+00:00
+Karl-Anthony Towns,NYK,2800,2.5,0.5,3,13,2025-11-30T00:00:00+00:00
+Scottie Barnes,TOR,2400,3.4,0.4,3,14,2025-11-30T00:00:00+00:00
