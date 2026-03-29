@@ -2,6 +2,12 @@
 
 **No server.** You do not need `uvicorn`, Railway, or `parse-screenshot`. Rasterize the PDF, read the PNGs (yourself or in any chat tool), and write CSV/JSON straight into `data/`. The optional commands at the bottom only rebuild rollup files from what you already saved.
 
+## Current coverage gap (priority)
+
+**Nov 30, 2025 – Jan 16, 2026 is missing** (49 days). This is the largest hole in the 2025-26 training corpus. Source PDFs: `docs/historical-ingest/historical-data-input-pt-1.pdf` and `historical-data-input-pt-2.pdf`.
+
+Full coverage map: `docs/HISTORICAL_DATA.md` → Data Coverage table.
+
 ## 1. Rasterize the PDFs
 
 - Put source PDFs in this folder (or keep them wherever you work).
