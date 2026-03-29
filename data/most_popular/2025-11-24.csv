@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Nikola Jokic,DEN,14500,4.8,,1,1,2026-03-29T00:00:00+00:00
+Stephen Curry,GSW,7500,4.3,0.2,2,2,2026-03-29T00:00:00+00:00
+Cade Cunningham,DET,7500,3.7,0.2,2,3,2026-03-29T00:00:00+00:00
+Alperen Sengun,HOU,4500,2.6,0.3,2,4,2026-03-29T00:00:00+00:00
+Donovan Mitchell,CLE,4300,2.9,0.1,2,5,2026-03-29T00:00:00+00:00
+Josh Giddey,CHI,4100,2.6,0.3,2,6,2026-03-29T00:00:00+00:00
+Anthony Edwards,MIN,4100,7.2,0.5,5,7,2026-03-29T00:00:00+00:00
+Lauri Markkanen,UTA,4000,2.3,0.3,2,8,2026-03-29T00:00:00+00:00
+Devin Booker,PHX,3600,2.2,0.4,3,9,2026-03-29T00:00:00+00:00
+Jalen Brunson,NYK,3600,3.9,0.3,2,10,2026-03-29T00:00:00+00:00
+Ryan Rollins,MIL,3200,1.9,0.7,4,11,2026-03-29T00:00:00+00:00
+Deni Avdija,POR,3000,3.3,0.5,3,12,2026-03-29T00:00:00+00:00
+Karl-Anthony Towns,NYK,2900,6.3,0.5,3,13,2026-03-29T00:00:00+00:00
+Derik Queen,HOU,2600,2.0,1.6,2,14,2026-03-29T00:00:00+00:00

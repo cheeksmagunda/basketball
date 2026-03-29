@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,tadabrot,71.60,1,Jaylon Tyson,CLE,2.6,2.0,1.7,2026-03-29T00:00:00+00:00
+1,tadabrot,71.60,2,Bobby Portis,MIL,4.2,1.8,2.4,2026-03-29T00:00:00+00:00
+1,tadabrot,71.60,3,Noah Clowney,BKN,4.3,1.6,2.5,2026-03-29T00:00:00+00:00
+1,tadabrot,71.60,4,Jaylen Wells,MEM,3.9,1.4,2.9,2026-03-29T00:00:00+00:00
+1,tadabrot,71.60,5,Ace Bailey,UTA,2.5,1.2,2.8,2026-03-29T00:00:00+00:00
+2,shadowss,70.61,1,Kel'el Ware,MIA,3.8,2.0,1.2,2026-03-29T00:00:00+00:00
+2,shadowss,70.61,2,Peyton Watson,DEN,4.1,1.8,2.4,2026-03-29T00:00:00+00:00
+2,shadowss,70.61,3,Jaylen Wells,MEM,3.9,1.6,2.9,2026-03-29T00:00:00+00:00
+2,shadowss,70.61,4,Jamal Shead,TOR,2.1,1.4,2.6,2026-03-29T00:00:00+00:00
+2,shadowss,70.61,5,Bobby Portis,MIL,4.2,1.2,2.4,2026-03-29T00:00:00+00:00
+3,member5102964,68.51,1,Nikola Jokic,DEN,4.8,2.0,0,2026-03-29T00:00:00+00:00
+3,member5102964,68.51,2,Anthony Edwards,MIN,7.2,1.8,0.5,2026-03-29T00:00:00+00:00
+3,member5102964,68.51,3,Bobby Portis,MIL,4.2,1.6,2.4,2026-03-29T00:00:00+00:00
+3,member5102964,68.51,4,Peyton Watson,DEN,4.1,1.4,2.4,2026-03-29T00:00:00+00:00
+3,member5102964,68.51,5,Cameron Johnson,BKN,2.5,1.2,2.7,2026-03-29T00:00:00+00:00
+4,gb0i_0513,68.10,1,Bobby Portis,MIL,4.2,2.0,2.4,2026-03-29T00:00:00+00:00
+4,gb0i_0513,68.10,2,Santi Aldama,MEM,2.8,1.8,1.3,2026-03-29T00:00:00+00:00
+4,gb0i_0513,68.10,3,Noah Clowney,BKN,4.3,1.6,2.5,2026-03-29T00:00:00+00:00
+4,gb0i_0513,68.10,4,Josh Hart,NYK,3.2,1.4,1.6,2026-03-29T00:00:00+00:00
+4,gb0i_0513,68.10,5,Saddiq Bey,NOP,4.2,1.2,2.1,2026-03-29T00:00:00+00:00
+5,koolfromdiscord,66.99,1,Nikola Jokic,DEN,4.8,2.0,0,2026-03-29T00:00:00+00:00
+5,koolfromdiscord,66.99,2,Anthony Edwards,MIN,7.2,1.8,0.5,2026-03-29T00:00:00+00:00
+5,koolfromdiscord,66.99,3,Vince Williams Jr,MEM,2.6,1.6,2.2,2026-03-29T00:00:00+00:00
+5,koolfromdiscord,66.99,4,Peyton Watson,DEN,4.1,1.4,2.4,2026-03-29T00:00:00+00:00
+5,koolfromdiscord,66.99,5,Bobby Portis,MIL,4.2,1.2,2.4,2026-03-29T00:00:00+00:00
+6,wenyen,66.70,1,Anthony Edwards,MIN,7.2,2.0,0.5,2026-03-29T00:00:00+00:00
+6,wenyen,66.70,2,Deni Avdija,POR,3.3,1.8,0.5,2026-03-29T00:00:00+00:00
+6,wenyen,66.70,3,Peyton Watson,DEN,4.1,1.6,2.4,2026-03-29T00:00:00+00:00
+6,wenyen,66.70,4,Bobby Portis,MIL,4.2,1.4,2.4,2026-03-29T00:00:00+00:00
+6,wenyen,66.70,5,Caleb Love,CLE,2.0,1.2,3.0,2026-03-29T00:00:00+00:00
+7,aho4mvp,65.67,1,Vince Williams Jr,MEM,2.6,2.0,2.2,2026-03-29T00:00:00+00:00
+7,aho4mvp,65.67,2,Bobby Portis,MIL,4.2,1.8,2.4,2026-03-29T00:00:00+00:00
+7,aho4mvp,65.67,3,Peyton Watson,DEN,4.1,1.6,2.4,2026-03-29T00:00:00+00:00
+7,aho4mvp,65.67,4,Cameron Johnson,BKN,2.5,1.4,2.7,2026-03-29T00:00:00+00:00
+7,aho4mvp,65.67,5,Ace Bailey,UTA,2.5,1.2,2.8,2026-03-29T00:00:00+00:00
+8,donat_,65.65,1,Vince Williams Jr,MEM,2.6,2.0,2.2,2026-03-29T00:00:00+00:00
+8,donat_,65.65,2,Peyton Watson,DEN,4.1,1.8,2.4,2026-03-29T00:00:00+00:00
+8,donat_,65.65,3,Bobby Portis,MIL,4.2,1.6,2.4,2026-03-29T00:00:00+00:00
+8,donat_,65.65,4,Cameron Johnson,BKN,2.5,1.4,2.7,2026-03-29T00:00:00+00:00
+8,donat_,65.65,5,Ace Bailey,UTA,2.5,1.2,2.8,2026-03-29T00:00:00+00:00
