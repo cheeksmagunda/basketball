@@ -30,6 +30,7 @@ import json
 import os
 import hashlib
 import time
+import threading
 
 _REDIS_URL = os.getenv("REDIS_URL", "")
 _PREFIX = "oracle:"  # namespace prefix to avoid key collisions
@@ -38,6 +39,7 @@ _r = None  # redis.Redis client (lazy-init)
 _r_available = None  # tri-state: None = not tried, True/False = last probe result
 _r_last_check = 0.0
 _RECONNECT_INTERVAL = 30  # seconds between reconnect attempts after failure
+_r_lock = threading.Lock()  # guards reconnect cooldown check + state mutation
 
 
 def _redis_client():
@@ -48,33 +50,38 @@ def _redis_client():
         _r_available = False
         return None
 
-    # If we already have a healthy client, return it
+    # Fast path: healthy client already exists (no lock needed for read)
     if _r is not None and _r_available:
         return _r
 
-    # Rate-limit reconnect attempts
-    now = time.time()
-    if _r_available is False and (now - _r_last_check) < _RECONNECT_INTERVAL:
-        return None
+    with _r_lock:
+        # Re-check inside the lock to avoid redundant reconnects from concurrent threads
+        if _r is not None and _r_available:
+            return _r
 
-    try:
-        import redis as _redis_mod
-        _r = _redis_mod.from_url(
-            _REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=3,
-            socket_timeout=3,
-            retry_on_timeout=True,
-        )
-        _r.ping()
-        _r_available = True
-        _r_last_check = now
-        return _r
-    except Exception as e:
-        print(f"[cache] Redis unavailable: {e}")
-        _r_available = False
-        _r_last_check = now
-        return None
+        # Rate-limit reconnect attempts
+        now = time.time()
+        if _r_available is False and (now - _r_last_check) < _RECONNECT_INTERVAL:
+            return None
+
+        try:
+            import redis as _redis_mod
+            _r = _redis_mod.from_url(
+                _REDIS_URL,
+                decode_responses=True,
+                socket_connect_timeout=3,
+                socket_timeout=3,
+                retry_on_timeout=True,
+            )
+            _r.ping()
+            _r_available = True
+            _r_last_check = now
+            return _r
+        except Exception as e:
+            print(f"[cache] Redis unavailable: {e}")
+            _r_available = False
+            _r_last_check = now
+            return None
 
 
 def _make_key(k: str, date_str: str | None = None) -> str:
