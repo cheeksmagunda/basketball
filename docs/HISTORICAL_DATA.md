@@ -1,5 +1,23 @@
 # Historical data (developer ingestion)
 
+## Data Coverage (2025-26 season)
+
+| Period | Status | Notes |
+|--------|--------|-------|
+| Oct 21 – Nov 11, 2025 | ✅ Complete | Season open through early November |
+| Nov 12–15, 2025 | — | No games (off days) |
+| Nov 16–29, 2025 | ✅ Complete | Nov 27 = Thanksgiving (no games) |
+| **Nov 30, 2025 – Jan 16, 2026** | ❌ **Missing** | **Largest gap — 49 days; priority ingest target** |
+| Jan 17 – Feb 11, 2026 | ✅ Complete | |
+| Feb 12–18, 2026 | — | All-Star break (no games) |
+| Feb 19 – Mar 25, 2026 | ✅ Complete | |
+
+All four dataset types (`top_performers`, `most_popular`, `most_drafted_3x`, `winning_drafts`) track the same coverage windows above.
+
+**Next to ingest:** Nov 30, 2025 → Jan 16, 2026 (screenshots from PDFs in `docs/historical-ingest/`).
+
+---
+
 This season, **Log** and **audit** treat `data/top_performers.csv` as the **primary** source of per-player outcomes (filtered by `date`). Legacy `data/actuals/{date}.csv` is still read when a date has no rows in the mega file.
 
 **File-only ingest (no API):** **`docs/historical-ingest/INSTRUCTIONS.md`** — where to put CSV/JSON, including **`data/slate_results/`** finals.
