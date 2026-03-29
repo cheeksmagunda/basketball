@@ -1,6 +1,6 @@
-player,team,draft_count,slot_position,source
-Spencer Jones,DEN,1800,5th,most_drafted_3x
-Mouhamed Gueye,ATL,680,5th,most_drafted_3x
-Danny Wolf,BKN,120,5th,most_drafted_3x
-Gary Trent Jr.,MIL,70,5th,most_drafted_3x
-Jaden Ivey,DET,54,5th,most_drafted_3x
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Spencer Jones,NYK,1800,0.3,3.0,5,1,2025-12-03T00:00:00+00:00
+Mouhamed Gueye,ATL,680,0.3,3.0,5,2,2025-12-03T00:00:00+00:00
+Danny Wolf,BKN,120,0.8,3.0,5,3,2025-12-03T00:00:00+00:00
+Gary Trent Jr.,MIL,70,0.6,3.0,5,4,2025-12-03T00:00:00+00:00
+Jaden Ivey,DET,54,2.1,3.0,5,5,2025-12-03T00:00:00+00:00

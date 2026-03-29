@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,aantonn9,66.26,1,Austin Reaves,LAL,6.9,2.0,0.2,2025-12-04T00:00:00+00:00
+1,aantonn9,66.26,2,Kyle Filipowski,UTA,3.4,1.8,2.5,2025-12-04T00:00:00+00:00
+1,aantonn9,66.26,3,Noah Clowney,BKN,4.2,1.6,2.0,2025-12-04T00:00:00+00:00
+1,aantonn9,66.26,4,Marvin Bagley III,WAS,0.8,1.4,2.5,2025-12-04T00:00:00+00:00
+1,aantonn9,66.26,5,Jordan Walsh,BOS,4.8,1.2,2.6,2025-12-04T00:00:00+00:00
+2,sixtysevenrhodes,65.84,1,Austin Reaves,LAL,6.9,2.0,0.2,2025-12-04T00:00:00+00:00
+2,sixtysevenrhodes,65.84,2,Derik Queen,BKN,2.2,1.8,1.6,2025-12-04T00:00:00+00:00
+2,sixtysevenrhodes,65.84,3,Noah Clowney,BKN,4.2,1.6,2.0,2025-12-04T00:00:00+00:00
+2,sixtysevenrhodes,65.84,4,Jordan Walsh,BOS,4.8,1.4,2.6,2025-12-04T00:00:00+00:00
+2,sixtysevenrhodes,65.84,5,Pat Spencer,GSW,2.1,1.2,3.0,2025-12-04T00:00:00+00:00
+3,nuggets,64.53,1,Tyrese Maxey,PHI,4.6,2.0,0.0,2025-12-04T00:00:00+00:00
+3,nuggets,64.53,2,Jordan Walsh,BOS,4.8,1.8,2.6,2025-12-04T00:00:00+00:00
+3,nuggets,64.53,3,Kyle Filipowski,UTA,3.4,1.6,2.5,2025-12-04T00:00:00+00:00
+3,nuggets,64.53,4,Ziaire Williams,OKC,2.7,1.4,3.0,2025-12-04T00:00:00+00:00
+3,nuggets,64.53,5,Sadiq Bey,ATL,3.0,1.2,1.5,2025-12-04T00:00:00+00:00
+4,brazimamba,64.09,1,Noah Clowney,BKN,4.2,2.0,2.0,2025-12-04T00:00:00+00:00
+4,brazimamba,64.09,2,Sam Hauser,BOS,1.5,1.8,3.0,2025-12-04T00:00:00+00:00
+4,brazimamba,64.09,3,Anfernee Simons,POR,2.7,1.6,1.8,2025-12-04T00:00:00+00:00
+4,brazimamba,64.09,4,Jordan Walsh,BOS,4.8,1.4,2.6,2025-12-04T00:00:00+00:00
+4,brazimamba,64.09,5,Ziaire Williams,OKC,2.7,1.2,3.0,2025-12-04T00:00:00+00:00
+5,wcpg,63.76,1,Derrick White,BOS,5.2,2.0,0.8,2025-12-04T00:00:00+00:00
+5,wcpg,63.76,2,Deandre Ayton,POR,2.8,1.8,1.1,2025-12-04T00:00:00+00:00
+5,wcpg,63.76,3,Austin Reaves,LAL,6.9,1.6,0.2,2025-12-04T00:00:00+00:00
+5,wcpg,63.76,4,Danny Wolf,BKN,2.3,1.4,3.0,2025-12-04T00:00:00+00:00
+5,wcpg,63.76,5,Jordan Walsh,BOS,4.8,1.2,2.6,2025-12-04T00:00:00+00:00
+6,run_cmc,63.67,1,Noah Clowney,BKN,4.2,2.0,2.0,2025-12-04T00:00:00+00:00
+6,run_cmc,63.67,2,Kyle Filipowski,UTA,3.4,1.8,2.5,2025-12-04T00:00:00+00:00
+6,run_cmc,63.67,3,Sandro Mamukelashvili,MIL,2.7,1.6,2.3,2025-12-04T00:00:00+00:00
+6,run_cmc,63.67,4,Buddy Hield,PHI,3.0,1.4,3.0,2025-12-04T00:00:00+00:00
+6,run_cmc,63.67,5,Pat Spencer,GSW,2.1,1.2,3.0,2025-12-04T00:00:00+00:00
+7,chosen,63.48,1,Austin Reaves,LAL,6.9,2.0,0.2,2025-12-04T00:00:00+00:00
+7,chosen,63.48,2,Noah Clowney,BKN,4.2,1.8,2.0,2025-12-04T00:00:00+00:00
+7,chosen,63.48,3,Jordan Walsh,BOS,4.8,1.6,2.6,2025-12-04T00:00:00+00:00
+7,chosen,63.48,4,Pat Spencer,GSW,2.1,1.4,3.0,2025-12-04T00:00:00+00:00
+7,chosen,63.48,5,Marvin Bagley III,WAS,0.8,1.2,2.5,2025-12-04T00:00:00+00:00
+8,pjatm,63.07,1,Austin Reaves,LAL,6.9,2.0,0.2,2025-12-04T00:00:00+00:00
+8,pjatm,63.07,2,Derrick White,BOS,5.2,1.8,0.8,2025-12-04T00:00:00+00:00
+8,pjatm,63.07,3,Kyle Filipowski,UTA,3.4,1.6,2.5,2025-12-04T00:00:00+00:00
+8,pjatm,63.07,4,Noah Clowney,BKN,4.2,1.4,2.0,2025-12-04T00:00:00+00:00
+8,pjatm,63.07,5,Justin Champagnie,TOR,1.5,1.2,3.0,2025-12-04T00:00:00+00:00
