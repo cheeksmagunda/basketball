@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,typeshxt,64.87,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+1,typeshxt,64.87,2,Desmond Bane,MEM,5.9,1.8,0.9,2025-12-09T00:00:00+00:00
+1,typeshxt,64.87,3,Josh Hart,NYK,4.8,1.6,1.0,2025-12-09T00:00:00+00:00
+1,typeshxt,64.87,4,Anthony Black,ORL,2.4,1.4,1.7,2025-12-09T00:00:00+00:00
+1,typeshxt,64.87,5,Jamal Shead,TOR,3.2,1.2,2.7,2025-12-09T00:00:00+00:00
+2,nicknevalackin,63.92,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+2,nicknevalackin,63.92,2,Josh Hart,NYK,4.8,1.8,1.0,2025-12-09T00:00:00+00:00
+2,nicknevalackin,63.92,3,Desmond Bane,MEM,5.9,1.6,0.9,2025-12-09T00:00:00+00:00
+2,nicknevalackin,63.92,4,Wendell Carter Jr.,ORL,3.6,1.4,1.7,2025-12-09T00:00:00+00:00
+2,nicknevalackin,63.92,5,Mitchell Robinson,NYK,2.0,1.2,2.7,2025-12-09T00:00:00+00:00
+3,wetbananassss,63.91,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+3,wetbananassss,63.91,2,Desmond Bane,MEM,5.9,1.8,0.9,2025-12-09T00:00:00+00:00
+3,wetbananassss,63.91,3,Anthony Black,ORL,2.4,1.6,1.7,2025-12-09T00:00:00+00:00
+3,wetbananassss,63.91,4,Wendell Carter Jr.,ORL,3.6,1.4,1.7,2025-12-09T00:00:00+00:00
+3,wetbananassss,63.91,5,Jamal Shead,TOR,3.2,1.2,2.7,2025-12-09T00:00:00+00:00
+4,artemium,63.87,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+4,artemium,63.87,2,Desmond Bane,MEM,5.9,1.8,0.9,2025-12-09T00:00:00+00:00
+4,artemium,63.87,3,Josh Hart,NYK,4.8,1.6,1.0,2025-12-09T00:00:00+00:00
+4,artemium,63.87,4,Jamal Shead,TOR,3.2,1.4,2.7,2025-12-09T00:00:00+00:00
+4,artemium,63.87,5,Jalen Suggs,ORL,2.4,1.2,1.2,2025-12-09T00:00:00+00:00
+5,carter_5,63.47,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+5,carter_5,63.47,2,Brandon Ingram,TOR,4.8,1.8,0.9,2025-12-09T00:00:00+00:00
+5,carter_5,63.47,3,Josh Hart,NYK,4.8,1.6,1.0,2025-12-09T00:00:00+00:00
+5,carter_5,63.47,4,Desmond Bane,MEM,5.9,1.4,0.9,2025-12-09T00:00:00+00:00
+5,carter_5,63.47,5,Mitchell Robinson,NYK,2.0,1.2,2.7,2025-12-09T00:00:00+00:00
+6,sieben,62.84,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+6,sieben,62.84,2,Brandon Ingram,TOR,4.8,1.8,0.9,2025-12-09T00:00:00+00:00
+6,sieben,62.84,3,Josh Hart,NYK,4.8,1.6,1.0,2025-12-09T00:00:00+00:00
+6,sieben,62.84,4,Jamal Shead,TOR,3.2,1.4,2.7,2025-12-09T00:00:00+00:00
+6,sieben,62.84,5,Mitchell Robinson,NYK,2.0,1.2,2.7,2025-12-09T00:00:00+00:00
+7,oliverondrugs,62.56,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+7,oliverondrugs,62.56,2,Desmond Bane,MEM,5.9,1.8,0.9,2025-12-09T00:00:00+00:00
+7,oliverondrugs,62.56,3,Josh Hart,NYK,4.8,1.6,1.0,2025-12-09T00:00:00+00:00
+7,oliverondrugs,62.56,4,Anthony Black,ORL,2.4,1.4,1.7,2025-12-09T00:00:00+00:00
+7,oliverondrugs,62.56,5,Brandon Ingram,TOR,4.8,1.2,0.9,2025-12-09T00:00:00+00:00
+8,cjg11,62.48,1,Jalen Brunson,NYK,7.2,2.0,0.3,2025-12-09T00:00:00+00:00
+8,cjg11,62.48,2,Brandon Ingram,TOR,4.8,1.8,0.9,2025-12-09T00:00:00+00:00
+8,cjg11,62.48,3,Josh Hart,NYK,4.8,1.6,1.0,2025-12-09T00:00:00+00:00
+8,cjg11,62.48,4,Jamal Shead,TOR,3.2,1.4,2.7,2025-12-09T00:00:00+00:00
+8,cjg11,62.48,5,Collin Murray-Boyles,MIA,1.8,1.2,3.0,2025-12-09T00:00:00+00:00

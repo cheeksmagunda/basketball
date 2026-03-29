@@ -1719,3 +1719,73 @@ date,player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,
 2025-12-04,Scottie Barnes,TOR,5.5,0.4,767,1,13.2,highest_value
 2025-12-04,Neemias Queta,BOS,3.6,1.5,42,1,12.6,highest_value
 2025-12-04,Keyonte George,UTA,4.9,0.5,362,1,12.2,highest_value
+2025-12-05,Tidjane Salaun,CHA,4.0,3.0,1,1,20.1,highest_value
+2025-12-05,Jay Huff,IND,4.2,2.4,24,1,18.5,highest_value
+2025-12-05,Dean Wade,CLE,3.2,3.0,2,1,15.8,highest_value
+2025-12-05,Miles McBride,NYK,4.0,1.9,7,1,15.7,highest_value
+2025-12-05,Jaylon Tyson,CLE,4.6,1.4,8,1,15.6,highest_value
+2025-12-05,Jordan Clarkson,UTA,3.1,2.9,5,1,15.3,highest_value
+2025-12-05,Jalen Johnson,ATL,6.6,0.3,200,1,15.3,highest_value
+2025-12-05,Devin Vassell,SAS,4.5,1.3,4,1,14.7,highest_value
+2025-12-05,Cedric Coward,,4.1,1.7,5,2,14.4,highest_value
+2025-12-05,Jabari Walker,POR,2.8,3.0,2,1,14.1,highest_value
+2025-12-05,Cam Spencer,BOS,3.4,2.1,4,1,13.8,highest_value
+2025-12-05,Robert Williams III,POR,2.7,3.0,3,1,13.6,highest_value
+2025-12-05,Jordan Walsh,BOS,3.6,2.1,45,3,13.5,highest_value
+2025-12-05,Paul George,PHI,3.9,1.4,5,1,13.1,highest_value
+2025-12-06,Zach LaVine,SAC,7.0,1.2,18,1,22.4,highest_value
+2025-12-06,Pat Spencer,GSW,3.6,3.0,141,1,17.9,highest_value
+2025-12-06,Kevin Porter Jr.,MIL,6.8,0.5,80,1,17.0,highest_value
+2025-12-06,Justin Champagnie,TOR,3.4,3.0,4,1,17.0,highest_value
+2025-12-06,Brandon Williams,,3.6,2.1,10,1,14.7,highest_value
+2025-12-06,Michael Porter Jr.,DEN,5.8,0.5,595,1,14.5,highest_value
+2025-12-06,Bub Carrington,WAS,2.9,3.0,5,1,14.5,highest_value
+2025-12-06,Luke Kennard,MEM,3.0,3.0,1,2,14.2,highest_value
+2025-12-06,Simone Fontecchio,DET,2.9,2.9,1,1,14.0,highest_value
+2025-12-06,Jalen Johnson,ATL,6.1,0.2,2900,1,14.0,highest_value
+2025-12-06,Onyeka Okongwu,ATL,4.6,1.0,244,1,13.9,highest_value
+2025-12-06,Tristan Vukcevic,WAS,2.8,3.0,2,2,13.7,highest_value
+2025-12-06,Quinten Post,GSW,2.7,3.0,9,1,13.5,highest_value
+2025-12-06,Jaden McDaniels,MIN,4.3,1.1,17,1,13.3,highest_value
+2025-12-07,Walter Clayton Jr.,GSW,3.5,3.0,16,1,17.3,highest_value
+2025-12-07,Brandin Podziemski,GSW,4.6,1.7,36,1,17.2,highest_value
+2025-12-07,LeBron James,LAL,5.5,0.9,30,1,15.9,highest_value
+2025-12-07,Quinten Post,GSW,3.1,3.0,13,1,15.5,highest_value
+2025-12-07,Kyle Filipowski,UTA,3.4,2.3,23,1,14.7,highest_value
+2025-12-07,Jamal Murray,DEN,6.3,0.2,406,1,13.8,highest_value
+2025-12-07,Kenrich Williams,OKC,2.8,3.0,2,2,13.6,highest_value
+2025-12-07,Mitchell Robinson,NYK,2.7,2.9,11,1,13.5,highest_value
+2025-12-07,Ousmane Dieng,OKC,2.9,3.0,1,3,13.5,highest_value
+2025-12-07,Kentavious Caldwell-Pope,ORL,2.8,3.0,1,3,12.8,highest_value
+2025-12-07,KJ Simpson,DEN,2.5,3.0,10,1,12.7,highest_value
+2025-12-07,OG Anunoby,NYK,3.9,1.2,3,1,12.6,highest_value
+2025-12-07,Jock Landale,HOU,3.0,2.1,11,1,12.2,highest_value
+2025-12-07,Deandre Ayton,POR,3.9,1.1,64,1,12.0,highest_value
+2025-12-08,Derik Queen,NOP,5.8,1.6,934,1,20.7,highest_value
+2025-12-08,Herbert Jones,NOP,3.7,2.6,19,1,16.8,highest_value
+2025-12-08,Russell Westbrook,SAC,5.4,1.1,796,1,16.8,highest_value
+2025-12-08,Julian Champagnie,TOR,3.9,2.2,60,1,16.3,highest_value
+2025-12-08,Dylan Harper,NOP,4.2,1.7,101,1,15.5,highest_value
+2025-12-08,Andrew Nembhard,IND,5.0,1.1,196,1,15.5,highest_value
+2025-12-08,Anthony Edwards,MIN,6.2,0.4,4600,1,15.0,highest_value
+2025-12-08,Mark Williams,CHA,4.4,1.3,42,1,14.4,highest_value
+2025-12-08,Precious Achiuwa,PHX,2.7,3.0,54,1,13.4,highest_value
+2025-12-08,Harrison Barnes,SAC,3.4,1.7,96,1,12.7,highest_value
+2025-12-08,Royce O'Neale,PHX,3.1,1.8,39,1,11.8,highest_value
+2025-12-08,Jay Huff,IND,2.7,2.2,233,1,11.4,highest_value
+2025-12-08,Trey Murphy III,NOP,4.0,0.7,718,1,10.8,highest_value
+2025-12-08,Bennedict Mathurin,IND,3.4,1.1,142,1,10.7,highest_value
+2025-12-09,Desmond Bane,MEM,5.9,0.9,711,1,17.1,highest_value
+2025-12-09,Jalen Brunson,NYK,7.2,0.3,8100,1,16.6,highest_value
+2025-12-09,Jamal Shead,TOR,3.2,2.7,86,1,14.8,highest_value
+2025-12-09,Josh Hart,NYK,4.8,1.0,991,1,14.5,highest_value
+2025-12-09,Brandon Ingram,TOR,4.8,0.9,1200,1,13.8,highest_value
+2025-12-09,Wendell Carter Jr.,ORL,3.6,1.7,234,1,13.3,highest_value
+2025-12-09,Mitchell Robinson,NYK,2.0,2.7,165,1,9.4,highest_value
+2025-12-09,Collin Murray-Boyles,MIA,1.8,3.0,76,1,8.8,highest_value
+2025-12-09,Anthony Black,ORL,2.4,1.7,567,1,8.8,highest_value
+2025-12-09,Bam Adebayo,MIA,3.2,0.7,779,1,8.8,highest_value
+2025-12-09,Norman Powell,LAC,3.4,0.6,920,1,8.7,highest_value
+2025-12-09,Mikal Bridges,NYK,3.3,0.6,808,1,8.6,highest_value
+2025-12-09,Davion Mitchell,ORL,2.6,1.2,243,1,8.4,highest_value
+2025-12-09,Jakob Poeltl,TOR,2.4,1.5,103,1,8.3,highest_value
