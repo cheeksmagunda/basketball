@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,sheluvsmadic,59.29,1,Shai Gilgeous-Alexander,OKC,5.3,2.0,0.0,2025-12-05T00:00:00+00:00
+1,sheluvsmadic,59.29,2,Bobby Portis,MIL,2.8,1.8,2.2,2025-12-05T00:00:00+00:00
+1,sheluvsmadic,59.29,3,J. Wells,,2.8,1.6,2.1,2025-12-05T00:00:00+00:00
+1,sheluvsmadic,59.29,4,Jay Huff,IND,4.2,1.4,2.4,2025-12-05T00:00:00+00:00
+1,sheluvsmadic,59.29,5,Robert Williams III,POR,2.7,1.2,3.0,2025-12-05T00:00:00+00:00
+2,machado,58.46,1,Shai Gilgeous-Alexander,OKC,5.3,2.0,0.0,2025-12-05T00:00:00+00:00
+2,machado,58.46,2,J. Wells,,2.8,1.8,2.1,2025-12-05T00:00:00+00:00
+2,machado,58.46,3,Jay Huff,IND,4.2,1.6,2.4,2025-12-05T00:00:00+00:00
+2,machado,58.46,4,Bobby Portis,MIL,2.8,1.4,2.2,2025-12-05T00:00:00+00:00
+2,machado,58.46,5,Jamaree Bouyea,GSW,2.5,1.2,3.0,2025-12-05T00:00:00+00:00
+3,chandler,57.35,1,Nikola Jokic,DEN,5.5,2.0,0.0,2025-12-05T00:00:00+00:00
+3,chandler,57.35,2,Shai Gilgeous-Alexander,OKC,5.3,1.8,0.0,2025-12-05T00:00:00+00:00
+3,chandler,57.35,3,Jalen Suggs,ORL,3.8,1.6,1.2,2025-12-05T00:00:00+00:00
+3,chandler,57.35,4,Jay Huff,IND,4.2,1.4,2.4,2025-12-05T00:00:00+00:00
+3,chandler,57.35,5,Jamaree Bouyea,GSW,2.5,1.2,3.0,2025-12-05T00:00:00+00:00
+4,giggzy,57.35,1,Bobby Portis,MIL,2.8,2.0,2.2,2025-12-05T00:00:00+00:00
+4,giggzy,57.35,2,J. Wells,,2.8,1.8,2.1,2025-12-05T00:00:00+00:00
+4,giggzy,57.35,3,Jay Huff,IND,4.2,1.6,2.4,2025-12-05T00:00:00+00:00
+4,giggzy,57.35,4,Robert Williams III,POR,2.7,1.4,3.0,2025-12-05T00:00:00+00:00
+4,giggzy,57.35,5,Steven Adams,MEM,2.0,1.2,1.9,2025-12-05T00:00:00+00:00
+5,amorimm,57.34,1,Austin Reaves,LAL,3.9,2.0,0.2,2025-12-05T00:00:00+00:00
+5,amorimm,57.34,2,Bobby Portis,MIL,2.8,1.8,2.2,2025-12-05T00:00:00+00:00
+5,amorimm,57.34,3,J. Wells,,2.8,1.6,2.1,2025-12-05T00:00:00+00:00
+5,amorimm,57.34,4,Jay Huff,IND,4.2,1.4,2.4,2025-12-05T00:00:00+00:00
+5,amorimm,57.34,5,Robert Williams III,POR,2.7,1.2,3.0,2025-12-05T00:00:00+00:00
+6,fwaesss,57.34,1,Austin Reaves,LAL,3.9,2.0,0.2,2025-12-05T00:00:00+00:00
+6,fwaesss,57.34,2,Bobby Portis,MIL,2.8,1.8,2.2,2025-12-05T00:00:00+00:00
+6,fwaesss,57.34,3,J. Wells,,2.8,1.6,2.1,2025-12-05T00:00:00+00:00
+6,fwaesss,57.34,4,Jay Huff,IND,4.2,1.4,2.4,2025-12-05T00:00:00+00:00
+6,fwaesss,57.34,5,Robert Williams III,POR,2.7,1.2,3.0,2025-12-05T00:00:00+00:00
+7,angusmueller,57.16,1,Austin Reaves,LAL,3.9,2.0,0.2,2025-12-05T00:00:00+00:00
+7,angusmueller,57.16,2,Robert Williams III,POR,2.7,1.8,3.0,2025-12-05T00:00:00+00:00
+7,angusmueller,57.16,3,Jaylon Tyson,CLE,4.6,1.6,1.4,2025-12-05T00:00:00+00:00
+7,angusmueller,57.16,4,Peyton Watson,DEN,2.0,1.4,1.9,2025-12-05T00:00:00+00:00
+7,angusmueller,57.16,5,Jay Huff,IND,4.2,1.2,2.4,2025-12-05T00:00:00+00:00
+8,txalex,56.69,1,Peyton Watson,DEN,2.0,2.0,1.9,2025-12-05T00:00:00+00:00
+8,txalex,56.69,2,Bobby Portis,MIL,2.8,1.8,2.2,2025-12-05T00:00:00+00:00
+8,txalex,56.69,3,Jay Huff,IND,4.2,1.6,2.4,2025-12-05T00:00:00+00:00
+8,txalex,56.69,4,J. Wells,,2.8,1.4,2.1,2025-12-05T00:00:00+00:00
+8,txalex,56.69,5,Robert Williams III,POR,2.7,1.2,3.0,2025-12-05T00:00:00+00:00
