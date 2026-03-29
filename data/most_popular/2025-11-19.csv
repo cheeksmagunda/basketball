@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Nikola Jokic,DEN,15100,4.6,0.0,1,1,2025-11-19T00:00:00+00:00
+Shai Gilgeous-Alexander,OKC,10700,4.3,0.0,2,2,2025-11-19T00:00:00+00:00
+Tyrese Maxey,PHI,6200,5.1,0.0,3,3,2025-11-19T00:00:00+00:00
+Karl-Anthony Towns,NYK,5900,3.2,0.5,3,4,2025-11-19T00:00:00+00:00
+Josh Giddey,CHI,5800,3.3,0.2,2,5,2025-11-19T00:00:00+00:00
+Donovan Mitchell,CLE,4900,2.5,0.1,4,6,2025-11-19T00:00:00+00:00
+Alperen Sengun,HOU,3800,4.5,0.2,2,7,2025-11-19T00:00:00+00:00
+Kevin Durant,PHX,3800,2.2,0.6,4,8,2025-11-19T00:00:00+00:00
+Anthony Edwards,MIN,3600,2.4,0.5,5,9,2025-11-19T00:00:00+00:00
+Deni Avdija,POR,3600,5.3,0.5,3,10,2025-11-19T00:00:00+00:00
+Kon Knueppel,BKN,2500,4.4,1.2,5,11,2025-11-19T00:00:00+00:00
+Scottie Barnes,TOR,2400,2.6,0.4,3,12,2025-11-19T00:00:00+00:00
+Pascal Siakam,IND,2300,4.4,0.5,4,13,2025-11-19T00:00:00+00:00
+Mikal Bridges,NYK,2300,3.8,0.6,2,14,2025-11-19T00:00:00+00:00
