@@ -253,6 +253,21 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
     return {"error": "GitHub write failed after maximum retries"}
 
 
+def _github_write_file_bg(path: str, content: str, message: str = "auto-update"):
+    """Fire-and-forget GitHub write in a background thread.
+    Use for non-critical persistence where the caller doesn't need confirmation
+    (e.g., audit JSON, resolve-line JSON, save-line secondary JSON).
+    Logs errors but never raises — the HTTP response has already been returned."""
+    def _bg():
+        try:
+            result = _github_write_file(path, content, message)
+            if result.get("error"):
+                print(f"[github-bg] write failed {path}: {result['error']}")
+        except Exception as e:
+            print(f"[github-bg] exception {path}: {e}")
+    threading.Thread(target=_bg, daemon=True).start()
+
+
 def _github_write_batch(files: list, message: str = "auto-update") -> dict:
     """Write multiple files in a single commit using the Git Trees API.
     files: list of {"path": str, "content": str}.
@@ -2579,6 +2594,123 @@ def _fetch_athlete(pid):
     return blended
 
 # ─────────────────────────────────────────────────────────────────────────────
+# BULK TEAM STATS FETCHER — reduces N+1 ESPN athlete fetches to 2 per game
+# grep: _fetch_team_player_stats, BULK_ESPN
+# ─────────────────────────────────────────────────────────────────────────────
+def _fetch_team_player_stats(team_id: str) -> dict:
+    """Fetch all player stats for a team in one ESPN API call.
+    Returns {player_id: blended_stats_dict} matching _fetch_athlete output shape.
+    Uses the athlete overview endpoint per-team via the roster, but caches at
+    team level so a cold start fetches 2 team bundles instead of ~30 individual athletes.
+    Falls back gracefully — callers should use _fetch_athlete for any missing players."""
+    cache_key = f"team_pstats_{team_id}"
+    # Check cache with TTL
+    cached_path = _cp(cache_key)
+    if cached_path.exists():
+        try:
+            if (time.time() - cached_path.stat().st_mtime) < _TTL_ATHLETE:
+                c = _cg(cache_key)
+                if c:
+                    return c
+            else:
+                cached_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    # Fetch team statistics page — returns per-player season stats in one call
+    url = (f"https://site.api.espn.com/apis/site/v2/sports/basketball"
+           f"/nba/teams/{team_id}/statistics")
+    data = _espn_get(url)
+    if not data:
+        return {}
+
+    result = {}
+    try:
+        # ESPN team stats structure: { splits: { categories: [...] }, athletes: [...] }
+        # athletes[] has { athlete: {id, displayName}, categories: [{name, stats}] }
+        athletes = data.get("athletes", [])
+        if not athletes:
+            # Fallback: some ESPN responses nest under "results" or "splits"
+            splits = data.get("splits", {})
+            athletes = splits.get("athletes", []) if splits else []
+
+        for ath_entry in athletes:
+            try:
+                athlete_info = ath_entry.get("athlete", {})
+                pid = str(athlete_info.get("id", ""))
+                if not pid:
+                    continue
+
+                # Build stats dict from categories
+                s = {"min": 0.0, "pts": 0.0, "reb": 0.0, "ast": 0.0,
+                     "stl": 0.0, "blk": 0.0, "tov": 0.0}
+
+                for cat in ath_entry.get("categories", []):
+                    cat_name = cat.get("name", "").lower()
+                    # Map category stats to our keys
+                    for stat_entry in cat.get("stats", []):
+                        stat_name = stat_entry.get("name", "").lower() if isinstance(stat_entry, dict) else ""
+                        stat_val = stat_entry.get("value", 0) if isinstance(stat_entry, dict) else 0
+
+                        if "min" in stat_name:    s["min"] = _safe_float(stat_val)
+                        elif "pts" in stat_name or "point" in stat_name:  s["pts"] = _safe_float(stat_val)
+                        elif "reb" in stat_name:  s["reb"] = _safe_float(stat_val)
+                        elif "ast" in stat_name:  s["ast"] = _safe_float(stat_val)
+                        elif "stl" in stat_name:  s["stl"] = _safe_float(stat_val)
+                        elif "blk" in stat_name:  s["blk"] = _safe_float(stat_val)
+                        elif "tov" in stat_name:  s["tov"] = _safe_float(stat_val)
+
+                    # Alternative: stats as flat array with labels
+                    labels = cat.get("labels", [])
+                    values = cat.get("totals", cat.get("stats", []))
+                    if labels and isinstance(values, list) and len(values) == len(labels):
+                        for lbl, val in zip(labels, values):
+                            lk = lbl.lower()
+                            if "min" in lk:    s["min"] = _safe_float(val)
+                            elif "pts" in lk or "point" in lk:  s["pts"] = _safe_float(val)
+                            elif "reb" in lk:  s["reb"] = _safe_float(val)
+                            elif "ast" in lk:  s["ast"] = _safe_float(val)
+                            elif "stl" in lk:  s["stl"] = _safe_float(val)
+                            elif "blk" in lk:  s["blk"] = _safe_float(val)
+                            elif "tov" in lk:  s["tov"] = _safe_float(val)
+
+                if s["min"] <= 0:
+                    continue
+
+                # Build blended output matching _fetch_athlete format
+                blended = dict(s)
+                blended["season_min"] = s["min"]
+                blended["recent_min"] = s["min"]  # Team stats endpoint only has season
+                blended["season_pts"] = s["pts"]
+                blended["recent_pts"] = s["pts"]
+                blended["season_reb"] = s["reb"]
+                blended["recent_reb"] = s["reb"]
+                blended["season_ast"] = s["ast"]
+                blended["recent_ast"] = s["ast"]
+                blended["season_stl"] = s["stl"]
+                blended["recent_stl"] = s["stl"]
+                blended["season_blk"] = s["blk"]
+                blended["recent_blk"] = s["blk"]
+
+                result[pid] = blended
+                # Also populate the individual athlete cache so _fetch_athlete
+                # gets a cache hit if called later for this player
+                _cs(f"ath3_{pid}", blended)
+
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    except Exception as e:
+        print(f"[team-stats] parse error team={team_id}: {e}")
+        return {}
+
+    if result:
+        _cs(cache_key, result)
+        print(f"[team-stats] loaded {len(result)} players for team {team_id}")
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LIVE NBA DATA FETCHERS — used by Ben tool use
 # grep: _live_scores, _live_boxscore, _live_player_stats, BEN_TOOL
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4673,18 +4805,35 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
         [(p, game["away"]["abbr"], "away") for p in away_r]
     )
 
-    # Fetch all athlete stats first
+    # Bulk fetch: get all player stats per team in 2 calls instead of ~30 individual
+    # _fetch_athlete calls. Falls back to individual fetches for any missing players.
     stats_map = {}
-    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-        futs = {pool.submit(_fetch_athlete, p["id"]): p for p, _, _ in players_in}
-        for fut in as_completed(futs):
-            p = futs[fut]
-            try:
-                stats = fut.result()
-                if stats:
-                    stats_map[p["id"]] = stats
-            except Exception as e:
-                print(f"fetch err {p['name']}: {e}")
+    home_bulk = _fetch_team_player_stats(game["home"]["id"])
+    away_bulk = _fetch_team_player_stats(game["away"]["id"])
+    bulk_stats = {**home_bulk, **away_bulk}
+
+    # Populate stats_map from bulk results
+    missing_players = []
+    for p, _, _ in players_in:
+        pid = p["id"]
+        if pid in bulk_stats:
+            stats_map[pid] = bulk_stats[pid]
+        else:
+            missing_players.append(p)
+
+    # Fallback: fetch individually for players missing from bulk results
+    if missing_players:
+        print(f"[run-game] {len(missing_players)} players missing from bulk, fetching individually")
+        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
+            futs = {pool.submit(_fetch_athlete, p["id"]): p for p in missing_players}
+            for fut in as_completed(futs):
+                p = futs[fut]
+                try:
+                    stats = fut.result()
+                    if stats:
+                        stats_map[p["id"]] = stats
+                except Exception as e:
+                    print(f"fetch err {p['name']}: {e}")
 
     # Run cascade engine to redistribute minutes from OUT players
     cascade_flags = _cascade_minutes(all_roster, stats_map)
@@ -7691,7 +7840,7 @@ async def save_actuals(payload: dict = Body(...)):
         audit = _compute_audit(date_str)
         if audit:
             audit_path = f"data/audit/{date_str}.json"
-            _github_write_file(audit_path, json.dumps(audit, indent=2), f"audit for {date_str}")
+            _github_write_file_bg(audit_path, json.dumps(audit, indent=2), f"audit for {date_str}")
 
     return {"status": "saved", "path": path, "rows": len(merged), "audit": audit}
 
@@ -9527,18 +9676,31 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                 _c_date = cached["pick"].get("date", today_str)
                 if _c_date >= today_str:
                     _cached_at = cached.get("_cached_at")
+                    _is_stale = False
                     if _cached_at:
                         try:
                             _age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(_cached_at)).total_seconds()
-                            if _age_s > 1800:  # 30 min — was 2h; fresher line picks
-                                cached = None
+                            if _age_s > 1800:  # 30 min — stale
+                                _is_stale = True
                         except Exception:
                             pass
                     if cached:
                         cached.setdefault("source", "tmp_cache")
                         cached.setdefault("generated_at", _cached_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-                        cached.setdefault("is_stale", False)
-                        cached.setdefault("refreshing", False)
+                        if _is_stale:
+                            # Stale-while-revalidate: serve expired cache instantly,
+                            # trigger background regeneration so next request gets fresh data.
+                            cached["is_stale"] = True
+                            cached["refreshing"] = True
+                            def _regen_line_bg():
+                                try:
+                                    _run_line_engine_for_date(today_str)
+                                except Exception as e:
+                                    print(f"[line] stale-while-revalidate regen failed: {e}")
+                            threading.Thread(target=_regen_line_bg, daemon=True).start()
+                        else:
+                            cached["is_stale"] = False
+                            cached["refreshing"] = False
                         return JSONResponse(cached)
 
         # ── Load today's picks ──
@@ -9857,7 +10019,7 @@ async def save_line(payload: dict = Body(...)):
     _over  = over_pick  or (pick if pick and pick.get("direction") == "over"  else None)
     _under = under_pick or (pick if pick and pick.get("direction") == "under" else None)
     saves = {"over_pick": _over, "under_pick": _under}
-    _github_write_file(json_path, json.dumps(saves), f"line picks json for {today}")
+    _github_write_file_bg(json_path, json.dumps(saves), f"line picks json for {today}")
 
     return {"status": "saved", "path": json_path}
 
@@ -10250,9 +10412,9 @@ async def resolve_line(payload: dict = Body(...)):
 
     new_row = ",".join(_csv_escape(str(updated_row.get(k, ""))) for k in fields_out)
     csv_content = LINE_CSV_HEADER + "\n" + new_row + "\n"
-    _github_write_file(path, csv_content, f"line result for {date_str}: {result}")
+    _github_write_file_bg(path, csv_content, f"line result for {date_str}: {result}")
 
-    # Also update the _pick.json so rotation logic sees the result
+    # Also update the _pick.json so rotation logic sees the result (background)
     try:
         json_p = f"data/lines/{date_str}_pick.json"
         pick_raw, _ = _github_get_file(json_p)
@@ -10271,8 +10433,8 @@ async def resolve_line(payload: dict = Body(...)):
                 other_res = "hit" if (actual_f > other_line if other_dir == "over" else actual_f < other_line) else "miss"
                 pick_data[other_key]["result"] = other_res
                 pick_data[other_key]["actual_stat"] = str(actual_f)
-            _github_write_file(json_p, json.dumps(pick_data),
-                               f"resolve line json {date_str}: {result}")
+            _github_write_file_bg(json_p, json.dumps(pick_data),
+                                  f"resolve line json {date_str}: {result}")
     except Exception as e:
         print(f"[resolve-line] json update err: {e}")
 
@@ -12662,6 +12824,20 @@ async def get_parlay(request: Request):
                         else:
                             cached["locked"] = slate_locked
                             return JSONResponse(cached)
+                    else:
+                        # Stale-while-revalidate: serve expired cache instantly,
+                        # trigger background regeneration for next request.
+                        cached["locked"] = slate_locked
+                        cached["is_stale"] = True
+                        cached["refreshing"] = True
+                        _parlay_date_for_regen = today_str
+                        def _regen_parlay_bg():
+                            try:
+                                _run_parlay_engine_sync(_parlay_date_for_regen, allow_synthetic=True)
+                            except Exception as e:
+                                print(f"[parlay] stale-while-revalidate regen failed: {e}")
+                        threading.Thread(target=_regen_parlay_bg, daemon=True).start()
+                        return JSONResponse(cached)
                 except Exception:
                     pass
 

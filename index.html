@@ -1530,6 +1530,7 @@
         <div class="empty-state"><span class="icon">📊</span><p id="lineEmptyMsg">No line pick available yet.</p><button type="button" class="secondary-btn" style="margin-top:10px;font-size:0.72rem" onclick="retryLineOfTheDay()">Retry</button></div>
       </div>
       <div id="linePickWrap" style="display:none">
+        <div id="lineStaleIndicator" style="display:none;text-align:center;font-size:0.68rem;color:var(--muted);padding:4px 0;letter-spacing:0.04em">Updating picks in background...</div>
         <div id="lineNoPickMsg" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:center;font-size:0.78rem;color:var(--muted)"></div>
         <div id="linePickCard"></div>
         <div id="lineSlateSummary" style="margin-top:16px"></div>
@@ -1572,6 +1573,7 @@
         </div></div>
       </div>
       <div id="parlayLoading" style="display:none" role="status" aria-label="Loading parlay"></div>
+      <div id="parlayStaleIndicator" style="display:none;text-align:center;font-size:0.68rem;color:var(--muted);padding:4px 0;letter-spacing:0.04em">Updating parlay in background...</div>
       <div id="parlayTicket" style="display:none"></div>
     </div>
     <!-- Parlay History -->
@@ -2178,26 +2180,36 @@ async function _hydrateApp() {
     }
   };
 
-  // Critical-first hydration: unblock app once slate + games are done.
-  // Non-critical tabs (Line/Log/Parlay) continue hydrating in background.
-  const _criticalNames = new Set(['slate', 'games']);
-  const _critical = _HYDRATION_ENDPOINTS.filter(ep => _criticalNames.has(ep.name));
-  const _deferred = _HYDRATION_ENDPOINTS.filter(ep => !_criticalNames.has(ep.name));
+  // Tiered hydration waterfall: prevent thundering herd on cold backend.
+  // Tier 1 (critical, blocks first paint): slate + games
+  // Tier 2 (after Tier 1): line + line_history + log_dates + log_get — lightweight reads
+  // Tier 3 (after Tier 2): parlay — heaviest endpoint, runs last when backend is free
+  const _tier1Names = new Set(['slate', 'games']);
+  const _tier2Names = new Set(['line', 'line_history', 'log_dates', 'log_get']);
+  const _tier1 = _HYDRATION_ENDPOINTS.filter(ep => _tier1Names.has(ep.name));
+  const _tier2 = _HYDRATION_ENDPOINTS.filter(ep => _tier2Names.has(ep.name));
+  const _tier3 = _HYDRATION_ENDPOINTS.filter(ep => !_tier1Names.has(ep.name) && !_tier2Names.has(ep.name));
 
-  const criticalResults = await Promise.allSettled(_critical.map(_fetchHydrationEndpoint));
+  // Tier 1: slate + games — must complete before app is interactive
+  const criticalResults = await Promise.allSettled(_tier1.map(_fetchHydrationEndpoint));
   _HydrationState.completedAt = Date.now();
   const critical_ms = _HydrationState.completedAt - _HydrationState.startedAt;
-  console.log(`[hydrate] critical complete in ${critical_ms}ms:`, _HydrationState);
+  console.log(`[hydrate] tier1 (critical) complete in ${critical_ms}ms`);
 
   hideLoader();
   _postHydrateRender();
 
-  // Continue hydrating non-critical endpoints without blocking first paint.
-  Promise.allSettled(_deferred.map(_fetchHydrationEndpoint)).then(function(results) {
+  // Tier 2: line + log — lightweight reads, won't compete with slate generation
+  Promise.allSettled(_tier2.map(_fetchHydrationEndpoint)).then(function(t2results) {
+    const t2_ms = Date.now() - _HydrationState.startedAt;
+    console.log(`[hydrate] tier2 (line+log) complete in ${t2_ms}ms`);
+
+    // Tier 3: parlay — heaviest endpoint, only after tier 2 frees up backend workers
+    return Promise.allSettled(_tier3.map(_fetchHydrationEndpoint));
+  }).then(function(t3results) {
     _HydrationState.deferredCompletedAt = Date.now();
     const total_ms = _HydrationState.deferredCompletedAt - _HydrationState.startedAt;
-    console.log(`[hydrate] deferred complete in ${total_ms}ms`);
-    return results;
+    console.log(`[hydrate] tier3 (parlay) complete in ${total_ms}ms — all tiers done`);
   }).catch(function() {});
 
   return criticalResults;
@@ -2483,20 +2495,27 @@ let _PARLAY_PREWARMED_DATE = '';
 
 function _prewarmLineAndParlay(todayET) {
   // Run at most once per ET date to avoid repeated background churn.
+  // Skip endpoints already loaded by _hydrateApp() to prevent duplicate requests.
   if (!todayET) return;
   if (_LINE_PREWARMED_DATE !== todayET) {
     _LINE_PREWARMED_DATE = todayET;
-    _fetchJson('/api/line-of-the-day', 90000)
-      .then(function(data) {
-        LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
-      })
-      .catch(function() {});
-    _fetchJson('/api/line-history', 25000)
-      .then(function(hist) {
-        LINE_HIST_DATA = hist;
-        LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
-      })
-      .catch(function() {});
+    // Skip line fetch if hydration already loaded it
+    if (!_HydrationState.loaded['line']) {
+      _fetchJson('/api/line-of-the-day', 90000)
+        .then(function(data) {
+          LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
+        })
+        .catch(function() {});
+    }
+    // Skip line_history fetch if hydration already loaded it
+    if (!_HydrationState.loaded['line_history']) {
+      _fetchJson('/api/line-history', 25000)
+        .then(function(hist) {
+          LINE_HIST_DATA = hist;
+          LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
+        })
+        .catch(function() {});
+    }
   }
   if (_PARLAY_PREWARMED_DATE !== todayET) {
     _PARLAY_PREWARMED_DATE = todayET;
@@ -3274,6 +3293,11 @@ function renderParlayLeg(leg, index, total, forTicket) {
 function renderParlayTicket(data) {
   const wrap = _el('parlayTicket');
   if (!wrap) return;
+  // Stale-while-revalidate indicator
+  const _parlayStale = _el('parlayStaleIndicator');
+  if (_parlayStale) {
+    _parlayStale.style.display = (data.is_stale || data.refreshing) ? 'block' : 'none';
+  }
   const legs = data.legs || [];
   if (!legs.length) {
     wrap.style.display = 'none';
@@ -4441,6 +4465,11 @@ function _renderLineLOTDFromState() {
     }
     linePickWrap.style.display = 'block';
     lineSlateSummary.innerHTML = data.slate_summary ? renderLineSummary(data.slate_summary) : '';
+    // Stale-while-revalidate indicator: show subtle "Updating..." when backend is refreshing
+    const _staleIndicator = document.getElementById('lineStaleIndicator');
+    if (_staleIndicator) {
+      _staleIndicator.style.display = (data.is_stale || data.refreshing) ? 'block' : 'none';
+    }
     // Auto-correct direction: if the selected direction has no pick but the other does, switch
     if (!LINE_OVER_PICK && LINE_UNDER_PICK && LINE_DIR === 'over') LINE_DIR = 'under';
     else if (!LINE_UNDER_PICK && LINE_OVER_PICK && LINE_DIR === 'under') LINE_DIR = 'over';
