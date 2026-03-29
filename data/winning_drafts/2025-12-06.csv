@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,her.bernardez,65.60,1,Anthony Davis,LAL,5.1,2.0,0.5,2025-12-06T00:00:00+00:00
+1,her.bernardez,65.60,2,DeMar DeRozan,CHI,3.8,1.8,1.0,2025-12-06T00:00:00+00:00
+1,her.bernardez,65.60,3,Zach LaVine,SAC,7.0,1.6,1.2,2025-12-06T00:00:00+00:00
+1,her.bernardez,65.60,4,Naz Reid,MIN,3.0,1.4,1.2,2025-12-06T00:00:00+00:00
+1,her.bernardez,65.60,5,Pat Spencer,GSW,3.6,1.2,3.0,2025-12-06T00:00:00+00:00
+2,dmkys,62.10,1,Jalen Johnson,ATL,6.1,2.0,0.2,2025-12-06T00:00:00+00:00
+2,dmkys,62.10,2,Michael Porter Jr.,DEN,5.8,1.8,0.5,2025-12-06T00:00:00+00:00
+2,dmkys,62.10,3,Kevin Porter Jr.,MIL,6.8,1.6,0.5,2025-12-06T00:00:00+00:00
+2,dmkys,62.10,4,Trey Murphy III,NOP,2.9,1.4,0.7,2025-12-06T00:00:00+00:00
+2,dmkys,62.10,5,Pat Spencer,GSW,3.6,1.2,3.0,2025-12-06T00:00:00+00:00
+3,karinabluu,61.60,1,Noah Clowney,BKN,1.4,2.0,1.9,2025-12-06T00:00:00+00:00
+3,karinabluu,61.60,2,Pat Spencer,GSW,3.6,1.8,3.0,2025-12-06T00:00:00+00:00
+3,karinabluu,61.60,3,Maxime Raynaud,SAC,2.5,1.6,3.0,2025-12-06T00:00:00+00:00
+3,karinabluu,61.60,4,Justin Champagnie,TOR,3.4,1.4,3.0,2025-12-06T00:00:00+00:00
+3,karinabluu,61.60,5,Day'Ron Sharpe,BKN,2.9,1.2,3.0,2025-12-06T00:00:00+00:00
+4,gtlover101,61.08,1,Bryce McGowens,POR,2.2,2.0,3.0,2025-12-06T00:00:00+00:00
+4,gtlover101,61.08,2,Jalen Johnson,ATL,6.1,1.8,0.2,2025-12-06T00:00:00+00:00
+4,gtlover101,61.08,3,Justin Champagnie,TOR,3.4,1.6,3.0,2025-12-06T00:00:00+00:00
+4,gtlover101,61.08,4,Quinten Post,GSW,2.7,1.4,3.0,2025-12-06T00:00:00+00:00
+4,gtlover101,61.08,5,Maxime Raynaud,SAC,2.5,1.2,3.0,2025-12-06T00:00:00+00:00
+5,bucksfan3,61.04,1,Jalen Johnson,ATL,6.1,2.0,0.2,2025-12-06T00:00:00+00:00
+5,bucksfan3,61.04,2,Michael Porter Jr.,DEN,5.8,1.8,0.5,2025-12-06T00:00:00+00:00
+5,bucksfan3,61.04,3,Pat Spencer,GSW,3.6,1.6,3.0,2025-12-06T00:00:00+00:00
+5,bucksfan3,61.04,4,Quinten Post,GSW,2.7,1.4,3.0,2025-12-06T00:00:00+00:00
+5,bucksfan3,61.04,5,Gary Trent Jr.,MIL,1.4,1.2,3.0,2025-12-06T00:00:00+00:00
+6,fazojacob,60.90,1,Kevin Porter Jr.,MIL,6.8,2.0,0.5,2025-12-06T00:00:00+00:00
+6,fazojacob,60.90,2,Ryan Rollins,ATL,2.3,1.8,0.8,2025-12-06T00:00:00+00:00
+6,fazojacob,60.90,3,Jaden McDaniels,MIN,4.3,1.6,1.1,2025-12-06T00:00:00+00:00
+6,fazojacob,60.90,4,Zach LaVine,SAC,7.0,1.4,1.2,2025-12-06T00:00:00+00:00
+6,fazojacob,60.90,5,Cooper Flagg,DAL,3.5,1.2,1.1,2025-12-06T00:00:00+00:00
+7,carlstar,60.86,1,Jalen Johnson,ATL,6.1,2.0,0.2,2025-12-06T00:00:00+00:00
+7,carlstar,60.86,2,Michael Porter Jr.,DEN,5.8,1.8,0.5,2025-12-06T00:00:00+00:00
+7,carlstar,60.86,3,Quinten Post,GSW,2.7,1.6,3.0,2025-12-06T00:00:00+00:00
+7,carlstar,60.86,4,Pat Spencer,GSW,3.6,1.4,3.0,2025-12-06T00:00:00+00:00
+7,carlstar,60.86,5,Gary Trent Jr.,MIL,1.4,1.2,3.0,2025-12-06T00:00:00+00:00
+8,bpp17,60.43,1,Jalen Johnson,ATL,6.1,2.0,0.2,2025-12-06T00:00:00+00:00
+8,bpp17,60.43,2,James Harden,LAC,5.3,1.8,0.2,2025-12-06T00:00:00+00:00
+8,bpp17,60.43,3,Cade Cunningham,DET,4.7,1.6,0.2,2025-12-06T00:00:00+00:00
+8,bpp17,60.43,4,Onyeka Okongwu,ATL,4.6,1.4,1.0,2025-12-06T00:00:00+00:00
+8,bpp17,60.43,5,Zach LaVine,SAC,7.0,1.2,1.2,2025-12-06T00:00:00+00:00
