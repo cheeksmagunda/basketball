@@ -924,7 +924,10 @@ _CONFIG_DEFAULTS = {
         "min_gate_minutes": 15, "lock_buffer_minutes": 5, "b2b_minute_penalty": 0.88,
         # DNP / reliability guards
         "gtd_minute_penalty": 0.75,
-        "dnp_risk_min_threshold": 5.0,
+        "dnp_risk_min_threshold": 8.0,
+        # Gamelog-based projection: use per-game data from last N days instead of
+        # ESPN averaged splits. Fixes rotation-loss blindness (e.g. Payne 17→2 min).
+        "gamelog_window_days": 7,
     },
     "matchup": {
         "enabled": True,
@@ -2363,6 +2366,173 @@ def _fetch_team_player_stats(team_id: str) -> dict:
         result["_cached_ts"] = time.time()
         _cs(cache_key, result)
         print(f"[team-stats] loaded {len(result)} players for team {team_id}")
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GAMELOG-BASED PROJECTION STATS — replaces ESPN averaged-split blending
+# grep: GAMELOG PROJECTION, _gamelog_to_stats
+# Uses per-game data from last 7 days (configurable) with recency weighting.
+# Fixes the architectural blindness where ESPN L5/L10 split averages dilute
+# sudden rotation changes (e.g. Payne 17 avg → 2 min last game → L5 still ~14).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_gamelog_date(raw_date_str):
+    """Parse ESPN gamelog date string into a Python date object. Returns None on failure."""
+    if not raw_date_str:
+        return None
+    try:
+        s = str(raw_date_str).strip()
+        # ESPN formats: "2026-03-28T00:00Z", "2026-03-28T19:30:00Z", epoch millis
+        if "T" in s:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+        # Epoch milliseconds (ESPN sometimes uses this)
+        if s.isdigit() and len(s) >= 10:
+            ts = int(s)
+            if ts > 1e12:
+                ts = ts / 1000  # millis → seconds
+            return datetime.fromtimestamp(ts, tz=timezone.utc).date()
+        # YYYYMMDD
+        if len(s) == 8 and s.isdigit():
+            return datetime.strptime(s, "%Y%m%d").date()
+        # YYYY-MM-DD (no time)
+        if len(s) == 10 and s[4] == "-":
+            return datetime.strptime(s, "%Y-%m-%d").date()
+    except (ValueError, TypeError, OSError):
+        pass
+    return None
+
+
+def _gamelog_to_stats(gamelog, season_stats, window_days=None):
+    """Build projection stats from per-game gamelog data (last N days).
+
+    Primary window: last `window_days` days (default 7, configurable via
+    projection.gamelog_window_days). If <2 games in that window, falls back
+    to last 3 games. If still insufficient, returns season_stats unchanged.
+
+    Recency weighting: most recent game = 2x, second-most = 1.5x, rest = 1x.
+    This ensures sudden changes (benching, injury return, role change) are
+    reflected immediately rather than diluted over 5-10 game averages.
+
+    Returns a stats dict matching the shape expected by project_player():
+      min, pts, reb, ast, stl, blk, tov, season_*, recent_*, dnp_risk, etc.
+    """
+    if window_days is None:
+        proj_cfg = _cfg("projection", _CONFIG_DEFAULTS.get("projection", {}))
+        window_days = int(proj_cfg.get("gamelog_window_days", 7))
+
+    if not gamelog or not gamelog.get("minutes"):
+        return season_stats
+
+    minutes = gamelog["minutes"]
+    if not minutes:
+        return season_stats
+
+    # Parse game dates to find games within the window
+    raw_dates = gamelog.get("game_dates", [])
+    today = _et_date()
+    parsed_dates = [_parse_gamelog_date(d) for d in raw_dates] if raw_dates else []
+
+    # Find indices of games within the window
+    if parsed_dates and any(d is not None for d in parsed_dates):
+        window_indices = []
+        for i, d in enumerate(parsed_dates):
+            if d is not None and (today - d).days <= window_days:
+                window_indices.append(i)
+    else:
+        # No dates available — use last 3 games as proxy for ~7 days
+        window_indices = list(range(max(0, len(minutes) - 3), len(minutes)))
+
+    # If <2 games in the window, widen to last 3 games
+    if len(window_indices) < 2:
+        window_indices = list(range(max(0, len(minutes) - 3), len(minutes)))
+
+    # If still nothing, return season stats
+    if not window_indices:
+        return season_stats
+
+    # Helper to safely extract values from gamelog arrays
+    def _get_vals(key):
+        arr = gamelog.get(key, [])
+        return [arr[i] if i < len(arr) else 0.0 for i in window_indices]
+
+    w_min = _get_vals("minutes")
+    w_pts = _get_vals("points")
+    w_reb = _get_vals("rebounds")
+    w_ast = _get_vals("assists")
+    w_stl = _get_vals("steals")
+    w_blk = _get_vals("blocks")
+    w_tov = _get_vals("turnovers")
+
+    # Recency weights: most recent game = 2x, second-most = 1.5x, rest = 1x
+    n = len(window_indices)
+    weights = []
+    for i in range(n):
+        if i == n - 1:
+            weights.append(2.0)   # Most recent game
+        elif i == n - 2:
+            weights.append(1.5)   # Second most recent
+        else:
+            weights.append(1.0)
+    total_w = sum(weights)
+
+    def _wavg(values):
+        return sum(v * w for v, w in zip(values, weights)) / total_w
+
+    proj_min = _wavg(w_min)
+    proj_pts = _wavg(w_pts)
+    proj_reb = _wavg(w_reb)
+    proj_ast = _wavg(w_ast)
+    proj_stl = _wavg(w_stl)
+    proj_blk = _wavg(w_blk)
+    proj_tov = _wavg(w_tov)
+
+    # Season stats preserved for LightGBM features and reference
+    s_min = season_stats.get("season_min", season_stats.get("min", 0))
+    s_pts = season_stats.get("season_pts", season_stats.get("pts", 0))
+    s_reb = season_stats.get("season_reb", season_stats.get("reb", 0))
+    s_ast = season_stats.get("season_ast", season_stats.get("ast", 0))
+    s_stl = season_stats.get("season_stl", season_stats.get("stl", 0))
+    s_blk = season_stats.get("season_blk", season_stats.get("blk", 0))
+
+    result = {
+        # Primary projection stats — gamelog-derived
+        "min":  round(proj_min, 2),
+        "pts":  round(proj_pts, 2),
+        "reb":  round(proj_reb, 2),
+        "ast":  round(proj_ast, 2),
+        "stl":  round(proj_stl, 2),
+        "blk":  round(proj_blk, 2),
+        "tov":  round(proj_tov, 2),
+        # Season stats — preserved for LightGBM features and card display
+        "season_min": s_min,
+        "season_pts": s_pts,
+        "season_reb": s_reb,
+        "season_ast": s_ast,
+        "season_stl": s_stl,
+        "season_blk": s_blk,
+        # Recent stats = gamelog-derived (used by LightGBM + decline penalty)
+        "recent_min": round(proj_min, 2),
+        "recent_pts": round(proj_pts, 2),
+        "recent_reb": round(proj_reb, 2),
+        "recent_ast": round(proj_ast, 2),
+        "recent_stl": round(proj_stl, 2),
+        "recent_blk": round(proj_blk, 2),
+        # Gamelog metadata
+        "games_in_window": n,
+        "last_game_min": round(w_min[-1], 1) if w_min else 0,
+        # Preserve gp from season stats
+        "gp": season_stats.get("gp"),
+    }
+
+    # DNP risk: based on LAST GAME minutes, not averaged split.
+    # A single 2-minute garbage-time appearance is a clear signal the player
+    # is out of the rotation — regardless of what their L5 average says.
+    dnp_thresh = float(_cfg("projection.dnp_risk_min_threshold", 8.0))
+    last_min = w_min[-1] if w_min else 0
+    if last_min < dnp_thresh:
+        result["dnp_risk"] = True
+
     return result
 
 
@@ -3910,6 +4080,27 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
                         stats_map[p["id"]] = stats
                 except Exception as e:
                     print(f"fetch err {p['name']}: {e}")
+
+    # ── Gamelog-based projection stats (grep: GAMELOG PROJECTION) ──────────
+    # Fetch per-game data and overlay onto season stats. This replaces the old
+    # ESPN averaged-split blending with actual game-by-game data from last 7 days.
+    # Players who lost their rotation (e.g. 17 avg → 2 min last game) are now
+    # correctly reflected instead of being diluted by L5/L10 averages.
+    all_pids_for_gamelog = [str(p["id"]) for p, _, _ in players_in
+                           if p["id"] in stats_map or str(p["id"]) in stats_map]
+    game_gamelogs = {}
+    if all_pids_for_gamelog:
+        game_gamelogs = _fetch_gamelogs_batch(all_pids_for_gamelog, num_games=15)
+
+    gamelog_overlay_count = 0
+    for pid in list(stats_map.keys()):
+        gl = game_gamelogs.get(pid) or game_gamelogs.get(str(pid))
+        if gl and gl.get("minutes"):
+            stats_map[pid] = _gamelog_to_stats(gl, stats_map[pid])
+            gamelog_overlay_count += 1
+
+    if gamelog_overlay_count:
+        print(f"[run-game] gamelog overlay applied to {gamelog_overlay_count}/{len(stats_map)} players")
 
     # Run cascade engine to redistribute minutes from OUT players
     cascade_flags = _cascade_minutes(all_roster, stats_map)
@@ -10662,7 +10853,7 @@ def _fetch_gamelog(pid, num_games=15):
     Caches in /tmp per player per date.
 
     Returns: points/rebounds/assists/minutes plus steals/blocks/threes/tov/fga when labels exist,
-             and opponent_abbr[] parallel to games (best-effort).
+             opponent_abbr[] and game_dates[] (ISO date strings) parallel to games (best-effort).
              or {} on failure.
     """
     cache_key = f"gamelog_v2_{pid}"
@@ -10687,6 +10878,7 @@ def _fetch_gamelog(pid, num_games=15):
             "field_goals_attempted": [],
         }
         opponent_abbr = []
+        game_dates = []  # ISO date strings parallel to stat arrays
 
         # Build index map from top-level labels (display names)
         top_labels = [lbl.lower() for lbl in data.get("labels", [])]
@@ -10718,6 +10910,9 @@ def _fetch_gamelog(pid, num_games=15):
                     if not stats:
                         continue
                     opponent_abbr.append(_gamelog_opponent_abbr(event))
+                    # Extract game date from ESPN event (gameDate, date, or eventDate)
+                    raw_date = event.get("gameDate") or event.get("date") or event.get("eventDate") or ""
+                    game_dates.append(str(raw_date) if raw_date else "")
                     for stat_name in stat_arrays.keys():
                         idx = idx_map.get(stat_name)
                         if idx is not None and idx < len(stats):
@@ -10736,11 +10931,15 @@ def _fetch_gamelog(pid, num_games=15):
             stat_arrays[k] = stat_arrays[k][-num_games:]
         opponent_abbr.reverse()
         opponent_abbr = opponent_abbr[-num_games:]
+        game_dates.reverse()
+        game_dates = game_dates[-num_games:]
 
         if opponent_abbr:
             stat_arrays["opponent_abbr"] = opponent_abbr
+        if game_dates:
+            stat_arrays["game_dates"] = game_dates
 
-        if any(len(v) > 0 for k, v in stat_arrays.items() if k != "opponent_abbr"):
+        if any(len(v) > 0 for k, v in stat_arrays.items() if k not in ("opponent_abbr", "game_dates")):
             _cs(cache_key, stat_arrays)
             return stat_arrays
         return {}
