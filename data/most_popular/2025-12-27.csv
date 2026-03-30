@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Nikola Jokic,DEN,12500,6.9,0.0,1,1,2025-12-27T00:00:00+00:00
+Cooper Flagg,DAL,7100,2.5,0.7,2,2,2025-12-27T00:00:00+00:00
+Jalen Brunson,NYK,5300,4.3,0.2,2,3,2025-12-27T00:00:00+00:00
+Jalen Johnson,ATL,5000,4.1,0.2,2,4,2025-12-27T00:00:00+00:00
+Donovan Mitchell,CLE,4700,2.8,0.2,2,5,2025-12-27T00:00:00+00:00
+Anthony Edwards,MIN,4500,3.1,0.3,2,6,2025-12-27T00:00:00+00:00
+Devin Booker,PHX,2800,2.0,0.5,3,7,2025-12-27T00:00:00+00:00
+Victor Wembanyama,SAS,2800,4.3,0.3,5,8,2025-12-27T00:00:00+00:00
+Keyonte George,UTA,2700,4.7,0.4,3,9,2025-12-27T00:00:00+00:00
+Karl-Anthony Towns,NYK,2700,5.0,0.6,2,10,2025-12-27T00:00:00+00:00
+Kevin Durant,PHX,2600,4.8,0.6,4,11,2025-12-27T00:00:00+00:00
+Amen Thompson,HOU,2500,2.5,0.7,4,12,2025-12-27T00:00:00+00:00
+Jamal Murray,DEN,2400,3.1,0.2,2,13,2025-12-27T00:00:00+00:00
+Anthony Black,ORL,2300,6.1,1.4,3,14,2025-12-27T00:00:00+00:00
