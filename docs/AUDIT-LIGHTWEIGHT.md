@@ -31,7 +31,7 @@
 ## 3. Pipeline / caching
 
 - **Cache helpers:** `_cp(k, date_str=None)`, `_lp(k, date_str=None)` key by `(date_str or _et_date(), k)`. Slate and picks use default date (today ET); lock restore uses `yesterday` where needed. Line uses `_cg("line_v1")` for "current" pick; `_cp("line_v1", date_str)` used for invalidation and midnight rollover.
-- **Refresh:** `/api/refresh` clears all `CACHE_DIR` and `LOCK_DIR` files, plus config cache and RotoWire cache. Auto-save runs before clear when slate is locked.
+- **Cold reset:** `/api/cold-reset` runs global cache bust + regeneration (slate + LOTD + parlay), including config cache and RotoWire clear.
 - **Midnight:** Slate endpoint holds yesterday’s locked slate when no today games started and yesterday games still in progress; uses `_lg("slate_v5_locked", yesterday)` and GitHub `data/locks/{yesterday}_slate.json`.
 
 **Finding:** None. No changes.

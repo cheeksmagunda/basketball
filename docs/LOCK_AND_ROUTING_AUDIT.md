@@ -23,7 +23,7 @@
 | `/api/slate` | `any(_is_locked(st))` for full slate; midnight rollover uses yesterday cache/backup; promotes to lock cache and writes GitHub backup at lock time. |
 | `/api/picks` | Per-game `_is_locked(start_time)`; serves lock cache when locked. |
 | `/api/save-predictions` | 409 if `_start_times and not any(_is_locked(st))`. |
-| `/api/refresh` (cron) | Calls save_predictions only when `any(_is_locked(st))`. |
+| `/api/cold-reset` | Runs global cold reset; pre-save runs when `any(_is_locked(st))`. |
 | `/api/lab/status` | Uses `fetch_games()`, `any(_is_locked(st))`, `_all_games_final(games)`; returns locked/unlocked + reason. |
 | `/api/refresh-line-odds` | No-op when `_is_locked(earliest)` (earliest game only). |
 
@@ -53,11 +53,11 @@
 | API routing | FastAPI app | Endpoints are defined in `api/index.py` under `/api/*`. |
 | Frontend | `index.html` | SPA served by backend/static hosting. |
 
-Crons and schedules are maintained in `railway.toml` (game-window cadence for odds/auto-resolve, plus refresh/auto-improve/injury-check/MAE drift/parlay pre-generation).
+Crons and schedules are maintained in `railway.toml` (game-window cadence for odds/auto-resolve, plus auto-improve/injury-check/MAE drift/parlay pre-generation; global reset via `/api/cold-reset`).
 
 ### 2.2 FastAPI routes (api/index.py)
 
-All under `/api/`. No path overlap; order does not affect matching. Health/version first; then games, slate, picks; then save/parse/save-actuals; log, audit, hindsight; refresh; line-of-the-day, save-line, refresh-line-odds, line-live-stat, resolve-line, auto-resolve-line, line-history; lab/status, lab/briefing, lab/update-config, lab/config-history, lab/rollback, lab/backtest, lab/auto-improve, lab/chat, lab/skip-uploads.
+All under `/api/`. No path overlap; order does not affect matching. Health/version first; then games, slate, picks; then save/parse/save-actuals; log, audit, hindsight; cold-reset; line-of-the-day, save-line, refresh-line-odds, line-live-stat, resolve-line, auto-resolve-line, line-history; lab/status, lab/briefing, lab/update-config, lab/config-history, lab/rollback, lab/backtest, lab/auto-improve, lab/chat, lab/skip-uploads.
 
 ### 2.3 Frontend
 

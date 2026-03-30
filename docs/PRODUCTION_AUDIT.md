@@ -40,7 +40,7 @@
 
 ### 1.3 Security recommendations
 
-1. **Cron authentication (implemented):** `CRON_SECRET` env is checked on `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`, `/api/mae-drift-check`, and `/api/force-regenerate?scope=full`. Railway cron jobs send it as `Authorization: Bearer <CRON_SECRET>`. `/api/refresh` and `/api/refresh-line-odds` are intentionally unprotected.
+1. **Cron authentication (implemented):** `CRON_SECRET` env is checked on `/api/cold-reset`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`, `/api/mae-drift-check`, and `/api/force-regenerate?scope=full`. Railway cron jobs send it as `Authorization: Bearer <CRON_SECRET>`.
 2. **Request size limits:** Enforce max body size for `parse_screenshot` (e.g. 10MB already documented) and `lab_chat` (e.g. 100KB for JSON body) to avoid abuse.
 3. **Known limitation:** `parse-screenshot` trusts `screenshot_type` and image content — validate out-of-band for untrusted clients. Prefer `INGEST_SECRET` on `save-*` writers in production.
 
@@ -107,7 +107,6 @@
 
 - **watchPatterns:** `railway.toml` watchPatterns excludes `data/` and `.github/` — only code changes trigger Docker rebuilds.
 - **Crons (current, Railway):**
-  - `/api/refresh` at 19:00 UTC — daily cache clear + auto-save.
   - `/api/lab/auto-improve` at 09:00 UTC — daily auto-tune.
   - `/api/refresh-line-odds` at :55 during game-window hours (19-06 UTC).
   - `/api/auto-resolve-line` at :00 during game-window hours (20-07 UTC).

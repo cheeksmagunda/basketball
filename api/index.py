@@ -462,9 +462,9 @@ def _slate_cache_from_github(date_str: str = None):
 
 
 def _github_slate_bust_active() -> bool:
-    """True if today's slate bust sentinel is active on GitHub (/api/refresh, lab config).
+    """True if today's slate bust sentinel is active on GitHub (cold reset, lab config).
 
-    Railway runs multiple instances; /api/refresh only clears /tmp on one container.
+    Railway runs multiple instances; local /tmp clearing is instance-scoped.
     Without this check, locked slates keep serving stale lineups from slate_v5_locked.
 
     Uses only data/slate/{date}_bust.json (not data/locks/*): the lock backup may still
@@ -565,7 +565,7 @@ def _odds_map_fingerprint(games):
 
 def _bust_slate_cache():
     """Clear today's slate cache from Redis + /tmp + GitHub so next request regenerates.
-    Called by /api/refresh, /api/lab/update-config, and version-aware startup."""
+    Called by cold reset, /api/lab/update-config, and version-aware startup."""
     today = _today_str()
     # Clear in-memory response cache (Level 0)
     _RESPONSE_CACHE.invalidate()
@@ -669,9 +669,9 @@ _TTL_ODDS_FRESH = 1800   # 30 min — reuse bulk Odds API map across slate/line/
 
 # ── Response Cache for App-Level Hydration ──
 # Level 0: In-memory response cache — serves cached JSON to frontend hydration.
-# Reduces pipeline execution from 7 per session to 1 per day (at midnight or refresh).
+# Reduces pipeline execution from 7 per session to 1 per day (at midnight or cold reset).
 # Cache keys: endpoint + date (where applicable) + hash of params.
-# TTLs override per-endpoint defaults. Cache invalidated by /api/refresh, injury checks, config changes.
+# TTLs override per-endpoint defaults. Cache invalidated by cold reset, injury checks, config changes.
 
 class ResponseCache:
     """In-memory response cache with TTL, hit tracking, and thread-safe invalidation."""
@@ -5446,7 +5446,7 @@ def _get_injuries(game):
 
 # ═════════════════════════════════════════════════════════════════════════════
 # CORE API ENDPOINTS
-# grep: /api/games, /api/slate, /api/picks, /api/save-predictions, /api/refresh
+# grep: /api/games, /api/slate, /api/picks, /api/save-predictions, /api/cold-reset
 # /api/hindsight, /api/log, /api/parse-screenshot, /api/save-actuals, /api/health
 # ═════════════════════════════════════════════════════════════════════════════
 CRON_SECRET = os.getenv("CRON_SECRET", "")
@@ -5482,8 +5482,8 @@ def _check_rate_limit(request: Request, path_key: str):
 
 def _require_cron_secret(request: Request):
     """Return True if request is authorized (cron or no CRON_SECRET set). Used by cron-only endpoints.
-    Accepts Authorization: Bearer <CRON_SECRET> or ?key=<CRON_SECRET> so manual GET /api/refresh works
-    (e.g. myurl/api/refresh?key=SECRET). Keep the URL private — it is sensitive."""
+    Accepts Authorization: Bearer <CRON_SECRET> or ?key=<CRON_SECRET> so manual cron/admin
+    calls can be authenticated (e.g. myurl/api/cold-reset?key=SECRET)."""
     if not CRON_SECRET:
         return True  # backward compat: no secret configured => allow
     auth = request.headers.get("authorization", "")
@@ -5597,12 +5597,8 @@ def _slate_has_flat_boosts(slate_obj: dict) -> bool:
 def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
     """Trigger background full regeneration ONLY for flat-boost anomalies.
 
-    IMPORTANT: Deploy SHA mismatches NO LONGER trigger regeneration. The system
-    now gracefully serves cached data from prior commits until /api/refresh is
-    manually called or natural slate turnover occurs. This prevents unintended
-    cache busts from deployments.
-
-    The ONLY legitimate cache busting mechanism is /api/refresh.
+    Trigger is limited to known flat-boost anomalies to avoid unnecessary full
+    recompute while serving locked artifacts.
     """
     _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
     if not _flat_boosts:
@@ -5628,6 +5624,7 @@ def _get_slate_impl():
         if (_lk_rollover
                 and _lk_rollover.get("date") == today_str
                 and _lk_rollover.get("all_complete")):
+            _trigger_cold_pipeline_once("slate_change", today_str)
             _next_d = _find_next_slate_date(today_et + timedelta(days=1))
             if _next_d:
                 _next_g = fetch_games(_next_d)
@@ -5860,7 +5857,7 @@ def _get_slate_impl():
         # filter change). The pipeline runs with draftable games still in progress.
 
     # ── Bust check (unlocked path) — multi-instance: another container may have
-    # busted via /api/refresh or config change; clear stale /tmp before serving.
+    # busted via cold reset or config change; clear stale /tmp before serving.
     try:
         if _github_slate_bust_active():
             _clear_local_slate_tmp_caches()
@@ -6303,7 +6300,7 @@ async def save_predictions():
 
     # Merge with existing CSV — on split-window days, later-locking games need to be
     # appended without overwriting earlier predictions (e.g. 5 PM game saved first,
-    # 7:30 PM game locks later and gets added by /api/refresh cron).
+    # 7:30 PM game locks later and gets added by cold-reset/injury-check flow).
     existing, _ = _github_get_file(path)
     if existing:
         existing_scopes = set()
@@ -7518,55 +7515,101 @@ async def hindsight(payload: dict = Body(...)):
     return {"lineup": [_normalize_player(p) for p in lineup]}
 
 
-@app.get("/api/refresh")
-async def refresh(request: Request):
-    # No auth required — cache clearing is non-destructive and user-facing.
-    # Auto-save predictions BEFORE clearing cache, if the slate is currently locked.
-    # Cron safety net: ensures predictions persist even if no user visits at lock time.
-    # Must run first — save_predictions() reads from _cg(_CK_SLATE) which gets wiped below.
-    auto_saved = False
-    try:
-        games = fetch_games()
-        draftable = [g for g in games if g.get("startTime")]
-        start_times = [g["startTime"] for g in draftable]
-        if start_times and any(_is_locked(st) for st in start_times):
-            await save_predictions()
-            auto_saved = True
-    except Exception as e:
-        print(f"[refresh] auto-save skipped: {e}")
+_COLD_PIPELINE_LOCK = threading.Lock()
+_COLD_PIPELINE_IN_FLIGHT = False
 
-    cleared = 0
-    # _bust_slate_cache() handles all layers: in-memory + Redis + /tmp + GitHub tombstones
-    try:
-        _bust_slate_cache()
-    except Exception: pass
-    # Clear lock cache (LOCK_DIR) — stale lock files must not survive a manual refresh
-    try:
-        for f in LOCK_DIR.glob("*.json"):
-            f.unlink(missing_ok=True); cleared += 1
-    except Exception: pass
-    # Also clear config cache on refresh
-    try:
-        cfg_cache = CONFIG_CACHE_DIR / "model_config.json"
-        if cfg_cache.exists():
-            cfg_cache.unlink()
-    except Exception: pass
-    # Clear RotoWire cache so next slate load gets fresh lineup data
-    try:
-        _rw_clear()
-    except Exception: pass
 
-    # Full regeneration in background (ESPN → LightGBM → card boost → sort-based builder).
-    # One of 3 cold pipeline triggers: (1) /api/refresh cron, (2) deploy SHA change, (3) prewarm cron.
-    def _bg_prewarm_after_refresh():
+def _run_cold_pipeline(trigger: str) -> dict:
+    """Single global cold reset + regenerate pipeline for slate/line/parlay."""
+    global _COLD_PIPELINE_IN_FLIGHT
+    with _COLD_PIPELINE_LOCK:
+        if _COLD_PIPELINE_IN_FLIGHT:
+            return {"status": "in_progress", "trigger": trigger, "ts": datetime.now(timezone.utc).isoformat()}
+        _COLD_PIPELINE_IN_FLIGHT = True
+    try:
+        auto_saved = False
+        cleared = 0
         try:
-            _prewarm_current_slate_sync(force=True, include_slate=True)
-            print("[refresh] background full regeneration completed")
+            games = fetch_games()
+            starts = [g["startTime"] for g in games if g.get("startTime")]
+            if starts and any(_is_locked(st) for st in starts):
+                try:
+                    _sp = asyncio.run(save_predictions())
+                    auto_saved = bool(isinstance(_sp, dict) and _sp.get("status") in ("ok", "unchanged"))
+                except Exception as _se:
+                    print(f"[cold-reset] save-predictions skipped: {_se}")
         except Exception as e:
-            print(f"[refresh] background regeneration failed: {e}")
-    threading.Thread(target=_bg_prewarm_after_refresh, daemon=True).start()
+            print(f"[cold-reset] pre-save check skipped: {e}")
 
-    return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
+        try:
+            _bust_slate_cache()
+        except Exception as e:
+            print(f"[cold-reset] bust err: {e}")
+        try:
+            for f in LOCK_DIR.glob("*.json"):
+                f.unlink(missing_ok=True)
+                cleared += 1
+        except Exception:
+            pass
+        try:
+            cfg_cache = CONFIG_CACHE_DIR / "model_config.json"
+            if cfg_cache.exists():
+                cfg_cache.unlink()
+        except Exception:
+            pass
+        try:
+            _rw_clear()
+        except Exception:
+            pass
+
+        prewarm = _prewarm_current_slate_sync(force=True, include_slate=True)
+        return {
+            "status": "ok",
+            "trigger": trigger,
+            "auto_saved": auto_saved,
+            "cleared_locks": cleared,
+            "slate_date": prewarm.get("current_slate_date"),
+            "slate_status": prewarm.get("status"),
+            "line_status": prewarm.get("line_status"),
+            "parlay_status": prewarm.get("parlay_status"),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+    finally:
+        with _COLD_PIPELINE_LOCK:
+            _COLD_PIPELINE_IN_FLIGHT = False
+
+
+def _trigger_cold_pipeline_once(trigger: str, marker: str) -> None:
+    """Run cold pipeline in background once per trigger+marker key."""
+    try:
+        key = f"cold_reset:{trigger}:{marker}"
+        if rcg(key, "global"):
+            return
+        rcs(key, "1", "global", ttl=21600)
+    except Exception:
+        # Best-effort dedupe only; still allow trigger.
+        pass
+
+    def _bg():
+        try:
+            out = _run_cold_pipeline(trigger)
+            print(f"[cold-reset] trigger={trigger} marker={marker} status={out.get('status')}")
+        except Exception as e:
+            print(f"[cold-reset] trigger={trigger} marker={marker} err={e}")
+
+    threading.Thread(target=_bg, daemon=True).start()
+
+
+@app.get("/api/cold-reset")
+async def cold_reset(request: Request):
+    """Secured manual/cron cold reset; full pipeline regeneration for current slate."""
+    if not _require_cron_secret(request):
+        return _err("Unauthorized", 401)
+    try:
+        return await asyncio.to_thread(_run_cold_pipeline, "manual_redeploy")
+    except Exception as e:
+        print(f"[cold-reset] error: {e}")
+        return {"status": "error", "trigger": "manual_redeploy", "message": str(e)}
 
 
 @app.get("/api/save-slate-results")
@@ -7735,21 +7778,15 @@ async def _deploy_startup_safe_prewarm():
         print(f"[startup] new deploy detected: {previous_sha or 'none'} → {current_sha[:7]}")
         # Store the new SHA so subsequent restarts skip regeneration
         rcs("deploy_sha", current_sha, "global", ttl=604800)  # 7-day TTL
-        # Bust all caches — Redis + /tmp + GitHub tombstones
-        try:
-            _bust_slate_cache()
-            print("[startup] all caches busted for new deploy")
-        except Exception as e:
-            print(f"[startup] cache bust error (non-fatal): {e}")
-        # Background regenerate so the slate is ready before first user request
+        # Background cold reset so deploys always run the full pipeline once.
         def _bg_deploy_regen():
             try:
-                _prewarm_current_slate_sync(force=True, include_slate=True)
+                _run_cold_pipeline("deploy_sha_change")
                 # Re-store SHA after rflush inside prewarm may have cleared it
                 rcs("deploy_sha", current_sha, "global", ttl=604800)
-                print("[startup] background deploy regeneration completed")
+                print("[startup] background deploy cold-reset completed")
             except Exception as e:
-                print(f"[startup] background deploy regeneration failed: {e}")
+                print(f"[startup] background deploy cold-reset failed: {e}")
         threading.Thread(target=_bg_deploy_regen, daemon=True).start()
         return
 
@@ -7909,55 +7946,15 @@ async def injury_check(request: Request):
              for p in cached_slate["lineups"].get(lt, [])])}
 
     print(f"[injury-check] {len(injured_games)} games affected by injuries: {affected_players}")
-
-    # Load existing per-game projections from GitHub
-    all_game_projs = _games_cache_from_github() or {}
-
-    # Regenerate only affected games
-    games_map = {g["gameId"]: g for g in games}
-    affected_games = [games_map[gid] for gid in injured_games if gid in games_map]
-    for gid in injured_games:
-        game = games_map.get(gid)
-        if not game:
-            continue
-        _cd(_ck_game_proj(gid))
-        try:
-            projections = _run_game(game)
-            if projections:
-                all_game_projs[gid] = projections
-                _cs(_ck_game_proj(gid), projections)
-        except Exception as e:
-            print(f"[injury-check] game {gid} regen err: {e}")
-
-    # Rebuild full slate lineups with updated projections
-    all_proj = []
-    for gid, projs in all_game_projs.items():
-        all_proj.extend(projs)
-
-    if not all_proj:
-        return {"status": "regen_failed", "injuries_found": len(injured_games)}
-
-    _inj_starts = [g["startTime"] for g in games if g.get("startTime")]
-    _inj_locked = bool(_inj_starts) and any(_is_locked(st) for st in _inj_starts)
-    _apply_post_lock_rs_calibration(all_proj, slate_locked=_inj_locked)
-    chalk, upside, core_pool = _build_lineups(all_proj)
-    draftable_for_review = cached_slate.get("games", [])
-    try:
-        chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_for_review, core_pool=core_pool)
-    except Exception as _rev_err:
-        print(f"[lineup_review] call-site error: {_rev_err}")
-    result = {**cached_slate, "lineups": {"chalk": chalk, "upside": upside}}
-
-    # Persist updated slate to /tmp + GitHub
-    _cs(_CK_SLATE, result)
-    _slate_cache_to_github(result)
-    _games_cache_to_github(all_game_projs)
-    # Clear in-memory response cache so next /api/slate serves the updated lineups
-    _RESPONSE_CACHE.invalidate("slate")
-
-    return {"status": "ok", "injuries_found": len(injured_games),
-            "affected_players": affected_players,
-            "regenerated_games": list(injured_games)}
+    cold = await asyncio.to_thread(_run_cold_pipeline, "injury_check")
+    return {
+        "status": cold.get("status", "ok"),
+        "trigger": "injury_check",
+        "injuries_found": len(injured_games),
+        "affected_players": affected_players,
+        "regenerated_games": list(injured_games),
+        "cold_reset": cold,
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -8795,8 +8792,7 @@ async def _get_or_generate_next_slate_pick(today, direction: str):
 
 @app.get("/api/line-of-the-day")
 async def get_line_of_the_day(request: Request, mock: bool = Query(False, description="Return deterministic mock picks for testing"), nocache: bool = Query(False, description="Bypass /tmp cache and inline-resolve finished picks (sent by frontend after game-final detection)")):
-    """Best player prop picks (over + under), with per-direction independent rotation.
-    Each direction rotates to the next slate independently when its game finishes.
+    """Best player prop picks (over + under), slate-bound until global slate reset.
     Never returns 500."""
     if mock:
         return _get_mock_line_picks()
@@ -8963,50 +8959,13 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                 except Exception as _ie:
                     print(f"[line-of-the-day] inline-resolve persist error: {_ie}")
 
-        # ── Per-direction independent rotation ──
-        # Check each direction: if resolved, swap in next-slate pick for that direction.
+        # ── Slate-bound behavior ──
+        # Keep today's picks fixed for the active slate. Resolved picks remain visible
+        # until the global cold-reset pipeline advances the slate.
         over_pick  = today_picks.get("over_pick")
         under_pick = today_picks.get("under_pick")
-        over_resolved  = _is_pick_resolved(over_pick)
-        under_resolved = _is_pick_resolved(under_pick)
-
         final_over  = over_pick
         final_under = under_pick
-
-        _had_resolved = over_resolved or under_resolved
-
-        def _try_load_next_slate_pick(direction_key):
-            """Try to load next-slate pick with a single retry on failure."""
-            for attempt in range(2):
-                try:
-                    ns = _find_next_slate_date(today + timedelta(days=1))
-                    if ns:
-                        np_ = _load_line_pick_for_date(ns.isoformat()) or {}
-                        pick = np_.get(direction_key)
-                        if pick:
-                            return pick
-                except Exception as _e:
-                    print(f"[line-of-the-day] next-slate {direction_key} attempt {attempt+1} failed: {_e}")
-                    if attempt == 0:
-                        import time; time.sleep(1)  # Brief retry delay
-            return None
-
-        if over_resolved:
-            final_over = _try_load_next_slate_pick("over_pick")
-
-        if under_resolved:
-            final_under = _try_load_next_slate_pick("under_pick")
-
-        # If no fresh picks remain, return next_slate_pending.
-        # Use _had_resolved to catch the case where both directions were resolved
-        # but both next-slate generations failed (final_over and final_under are both None).
-        _has_fresh = (final_over and not _is_pick_resolved(final_over)) or \
-                     (final_under and not _is_pick_resolved(final_under))
-        if not _has_fresh and (_had_resolved or final_over or final_under):
-            print(f"[line-of-the-day] all picks resolved, next-slate not ready — returning next_slate_pending")
-            _pending = {"pick": None, "over_pick": None, "under_pick": None, "error": "next_slate_pending"}
-            _pending.update(_line_payload_meta("next_slate_pending", stale=False, refreshing=False))
-            return JSONResponse(_pending, status_code=200)
 
         # ── Enrich if needed ──
         combo = {"over_pick": final_over, "under_pick": final_under}
@@ -9359,77 +9318,11 @@ def _parlay_leg_result_preview(snap_status: str, stat_current, line, direction: 
 
 
 def _parlay_active_date():
-    """Choose the currently active parlay date.
+    """Parlay is slate-bound and anchored to the current ET date.
 
-    After midnight ET, yesterday's ticket can still be live while games are in progress.
-    Prefer yesterday when it has an unresolved ticket and those games are not all final.
-
-    Midnight-crossing OT fix: Even if ESPN has not yet marked yesterday's games as final
-    (e.g., 2OT games finishing at 2+ AM), explicit fallback to yesterday's parlay if any
-    game from yesterday is still running or completed after midnight ET.
-
-    Same-day rollover: when today's games are all final before midnight, switch to the
-    next slate date so the parlay endpoint generates tomorrow's ticket instead of
-    re-serving today's completed one.
+    Ticket rollover to the next slate is handled only by the unified cold-reset flow.
     """
-    today = _et_date()
-    yesterday = today - timedelta(days=1)
-    y_str = yesterday.isoformat()
-    t_str = today.isoformat()
-
-    # Step 1: Check if yesterday's parlay file exists and is unresolved
-    y_ticket = None
-    try:
-        raw, _ = _github_get_file(f"data/parlays/{y_str}.json")
-        if raw:
-            y_ticket = json.loads(raw)
-            if (
-                isinstance(y_ticket, dict)
-                and y_ticket.get("legs")
-                and not y_ticket.get("_busted")
-                and not _parlay_fully_concluded(y_ticket)
-            ):
-                y_games = fetch_games(yesterday)
-                y_all_final, _yr, _yf, _ylrs = _all_games_final(y_games) if bool(y_games) else (False, 0, 0, None)
-                y_all_final = bool(y_games) and bool(y_all_final)
-
-                # MIDNIGHT-CROSSING FIX: Even if _all_games_final says False, check explicitly
-                # for games from yesterday that might still be in-progress (OT, ESPN lag).
-                # Heuristic: if it's before 6 AM ET and yesterday's games were scheduled,
-                # assume yesterday's parlay is still active.
-                _et_hour = datetime.now(ZoneInfo("America/New_York")).hour
-                if not y_all_final and y_games and _et_hour < 6:
-                    # Before 6 AM ET with yesterday's games scheduled: yesterday's parlay is active
-                    print(f"[parlay-active-date] midnight crossing: holding yesterday {y_str} (games may span midnight)")
-                    return yesterday
-                elif not y_all_final:
-                    return yesterday
-    except Exception as e:
-        print(f"[parlay-active-date] error checking yesterday: {e}")
-
-    # Step 2: Check if today's games are all final (same-day rollover)
-    try:
-        t_games = fetch_games(today)
-        if t_games:
-            t_all_final, _, t_finals, _ = _all_games_final(t_games)
-            if t_all_final and t_finals > 0:
-                next_slate = _find_next_slate_date(today + timedelta(days=1))
-                if next_slate:
-                    print(f"[parlay-active-date] same-day rollover: {today} all_complete → {next_slate}")
-                    # DUAL-KEY CACHE FIX: If yesterday's parlay exists and is unresolved,
-                    # also cache it under today's key so midnight transition doesn't lose it
-                    if y_ticket and not _parlay_fully_concluded(y_ticket):
-                        try:
-                            y_cache_key = _CK_PARLAY
-                            rcs(y_cache_key, y_ticket, t_str, ttl=21600)  # Cache under TODAY's key too
-                            print(f"[parlay-active-date] dual-key cache: stored yesterday parlay under today's key")
-                        except Exception as e:
-                            print(f"[parlay-active-date] dual-key cache error: {e}")
-                    return next_slate
-    except Exception as e:
-        print(f"[parlay-active-date] error checking today: {e}")
-
-    return today
+    return _et_date()
 
 
 def _parlay_live_tick_payload() -> dict:
@@ -9807,82 +9700,6 @@ async def auto_resolve_line(request: Request):
         _cd(_CK_LINE, _bust_date)
     _cd(_CK_LINE_HISTORY)
 
-    # Pre-generate next day's picks when any pick resolves.
-    # Runs the engine if: (a) no next-day file exists, OR (b) file exists but is missing
-    # a direction (partial generation from an earlier resolve). This ensures both
-    # directions are always available for per-direction independent rotation.
-    over_done  = pick_data.get("over_pick", {}).get("result") not in (None, "", "pending")
-    under_done = pick_data.get("under_pick", {}).get("result") not in (None, "", "pending")
-    if over_done or under_done or resolved_any:
-        try:
-            _next_candidate = (datetime.strptime(pick_date, "%Y-%m-%d") + timedelta(days=1)).date()
-            next_day = _find_next_slate_date(_next_candidate) or _next_candidate
-            next_day_str = next_day.isoformat()
-            tomorrow_json = f"data/lines/{next_day_str}_pick.json"
-            existing_tomorrow_raw, _ = _github_get_file(tomorrow_json)
-            existing_tomorrow = None
-            if existing_tomorrow_raw:
-                try:
-                    existing_tomorrow = json.loads(existing_tomorrow_raw)
-                except Exception:
-                    pass
-
-            # Check if either direction is missing from the existing file OR if generation failed previously
-            # (marked by "_generation_failed" flag). If generation failed before, retry on next cron.
-            _prev_gen_failed = (existing_tomorrow or {}).get("_generation_failed") == True
-            _need_gen = (_prev_gen_failed
-                         or not existing_tomorrow
-                         or not existing_tomorrow.get("over_pick")
-                         or not existing_tomorrow.get("under_pick"))
-            if _need_gen:
-                try:
-                    eng_result, err = await asyncio.wait_for(
-                        asyncio.to_thread(_run_line_engine_for_date, next_day),
-                        timeout=_T_LINE_ENGINE
-                    )
-                except asyncio.TimeoutError:
-                    err = "timeout"
-                    eng_result = None
-                    print(f"[auto-resolve] next-day generation TIMEOUT for {next_day_str}")
-
-                if not err and eng_result and eng_result.get("pick"):
-                    # Merge with existing file (preserve any direction already saved)
-                    saves = {
-                        "over_pick":  (existing_tomorrow or {}).get("over_pick") or eng_result.get("over_pick"),
-                        "under_pick": (existing_tomorrow or {}).get("under_pick") or eng_result.get("under_pick"),
-                    }
-                    # Remove the failure flag if it was set
-                    if "_generation_failed" in saves:
-                        del saves["_generation_failed"]
-                    # Stamp date on freshly generated picks so the card shows the right date
-                    for _dk in ("over_pick", "under_pick"):
-                        if saves.get(_dk) and isinstance(saves[_dk], dict) and not saves[_dk].get("date"):
-                            saves[_dk]["date"] = next_day_str
-                    _github_write_file(tomorrow_json, json.dumps(saves),
-                                       f"line picks for {next_day_str}")
-                    results["next_day"] = next_day_str
-                elif err:
-                    # PERSISTENCE FIX: Mark file with failure flag so next cron retry will re-attempt
-                    failure_payload = {
-                        "over_pick": (existing_tomorrow or {}).get("over_pick"),
-                        "under_pick": (existing_tomorrow or {}).get("under_pick"),
-                        "_generation_failed": True,
-                        "_failed_at": datetime.now(timezone.utc).isoformat(),
-                        "_failed_reason": str(err)[:200],
-                    }
-                    try:
-                        _github_write_file(tomorrow_json, json.dumps(failure_payload),
-                                           f"[retry-pending] line picks for {next_day_str}")
-                    except Exception as write_err:
-                        print(f"[auto-resolve] failed to persist generation error: {write_err}")
-
-                    if _is_odds_required_line_err(err):
-                        print(f"[auto-resolve] next-day generation failed (odds) for {next_day_str}: {err.get('code')} — {err.get('detail')}")
-                    else:
-                        print(f"[auto-resolve] next-day generation failed for {next_day_str}: {err} — will retry on next cron")
-        except Exception as e:
-            print(f"[auto-resolve] next-day generation err: {e}")
-
     # ── Backfill: resolve pending picks from past 7 days ──
     # auto_resolve_line only checks today/yesterday. Picks that couldn't be resolved
     # (ESPN lag, rate limit, midnight rollover) stay pending forever and never appear
@@ -9931,7 +9748,7 @@ async def auto_resolve_line(request: Request):
 
     # ── Piggyback: save predictions for any newly-locked games ──
     # This cron runs every 30 min. On split-window days (e.g. 1 PM + 7 PM games),
-    # the /api/refresh cron (once at 2 PM EST) misses late-locking games.
+    # a single daily reset could miss late-locking games.
     # By calling save_predictions here, later games get their predictions written
     # to the CSV as soon as they lock, within the next 30-min window.
     try:

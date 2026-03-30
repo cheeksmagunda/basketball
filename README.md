@@ -111,7 +111,7 @@ Late-season (`team_motivation.start_date` onward), Starting 5 applies a soft tea
 
 ## Line of the Day
 
-Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku when the API key is set, plus an algorithmic fallback). Best over and best under are stored separately with per-direction rotation. The pick card uses a zoned layout: header (matchup, game time), play row, 5-column data row (Baseline, Edge, Target stat, Minutes, L5), and a **Conclusion** box at the bottom. Line behavior is tuned via the `line` section of `data/model-config.json` (`min_confidence`, `min_edge_pct`, etc.).
+Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku when the API key is set, plus an algorithmic fallback). Picks are slate-bound and stay on the active slate until a cold-reset trigger advances the slate. The pick card uses a zoned layout: header (matchup, game time), play row, 5-column data row (Baseline, Edge, Target stat, Minutes, L5), and a **Conclusion** box at the bottom. Line behavior is tuned via the `line` section of `data/model-config.json` (`min_confidence`, `min_edge_pct`, etc.).
 
 **Bookmaker odds sync**: Railway runs `/api/refresh-line-odds` on a **game-window schedule** (see [`railway.toml`](railway.toml)), not 24×/day. The endpoint uses a bulk Odds API map + per-pick lookup. Odds freeze once the slate is locked (5 min before first tip). Pick cards show "Odds · [time] CT" when `line_updated_at` is set.
 
@@ -140,7 +140,7 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded in the backgroun
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope (backend only) |
 | `/api/log/actuals-stats?date=X` | GET | ESPN box score stats per player for completed games (backend only) |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear `/tmp` caches + config cache + bust GitHub slate cache; optional auto-save if locked. **No auth required** (non-destructive; used by daily cron). |
+| `/api/cold-reset` | GET | Secured full cold pipeline reset (slate + LOTD + parlay) using `CRON_SECRET` auth. |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
 | `/api/force-regenerate?scope=full\|remaining` | GET | Force-regenerate predictions mid-slate. `scope=full`: all games (deploy/model refresh; CRON_SECRET-gated). `scope=remaining`: unlocked games only (Late Draft banner; user-facing). |
 | `/api/slate-check` | GET | Pass 2 trigger monitor: injury changes, watchlist activation, or Vegas total movement; returns `{changed, triggers, recommendation}` |
@@ -184,11 +184,10 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded in the backgroun
 
 ## Cron Schedule (UTC)
 
-Source of truth: [`railway.toml`](railway.toml). When `CRON_SECRET` is set, protected crons send `Authorization: Bearer <CRON_SECRET>` (Railway injects via cron commands). `/api/refresh` is intentionally unauthenticated.
+Source of truth: [`railway.toml`](railway.toml). When `CRON_SECRET` is set, protected crons send `Authorization: Bearer <CRON_SECRET>` (Railway injects via cron commands).
 
 | Schedule | Endpoint | Purpose |
 |----------|----------|---------|
-| `0 19 * * *` | `/api/refresh` | Daily cache clear + auto-save locked predictions |
 | `0 9 * * 0,3` | `/api/lab/auto-improve` | Auto-tune model (Wed + Sun only; requires CRON_SECRET when set) |
 | `55 19,20,21,22,23,0,1,2,3,4,5,6 * * *` | `/api/refresh-line-odds` | Odds sync during game-window hours (UTC) |
 | `0 20,21,22,23,0,1,2,3,4,5,6,7 * * *` | `/api/auto-resolve-line` | Resolve line picks (game-window hours; CRON_SECRET when set) |
@@ -210,9 +209,9 @@ Source of truth: [`railway.toml`](railway.toml). When `CRON_SECRET` is set, prot
 
 **GitHub Write Retry**: Exponential backoff (1s, 2s, 4s) on concurrent write conflicts (HTTP 422 SHA mismatch). Fresh SHA fetch on each retry.
 
-**Cache TTLs**: Single source of truth for backend durations is [`api/index.py`](api/index.py) (`_TTL_*` constants) — see **Production: DRY rules and cache inventory** in [CLAUDE.md](CLAUDE.md). Includes: ESPN games list (5 min), model config (5 min), Odds bulk map fresh reuse (10 min) + 1 h degraded snapshot on failure, parlay/line `/tmp` (30 min), game-final polling (60s locked / 180s pre-slate), GitHub-persisted slate. Explicit invalidation via `GET /api/refresh` or `_bust_slate_cache()`.
+**Cache TTLs**: Single source of truth for backend durations is [`api/index.py`](api/index.py) (`_TTL_*` constants) — see **Production: DRY rules and cache inventory** in [CLAUDE.md](CLAUDE.md). Includes: ESPN games list (5 min), model config (5 min), Odds bulk map fresh reuse (10 min) + 1 h degraded snapshot on failure, parlay/line `/tmp` (30 min), game-final polling (60s locked / 180s pre-slate), GitHub-persisted slate. Explicit invalidation uses the unified cold-reset flow.
 
-**If caches look stale after a deploy or config change:** (1) **`/api/refresh` is unauthenticated** — it always runs when hit; it clears `/tmp`, lock files, config cache, busts GitHub slate (and today’s parlay file), and clears RotoWire cache. (2) **Multi-instance** — `/api/refresh` only clears `/tmp` on the container that receives the request; other Railway instances still have their own `/tmp` until they cycle or miss cache. GitHub tombstones from `_bust_slate_cache()` align all instances on the next slate read. (3) **Tombstones** — `data/slate/{date}_games.json` with `_busted` is treated as a miss so picks regenerate.
+**If caches look stale after a deploy or config change:** call the secured cold reset endpoint: `GET /api/cold-reset` with `Authorization: Bearer <CRON_SECRET>`.
 
 **Midnight Rollover Handling**: Auto-resolve line picks correctly track `pick_date` separately from ET date, preventing data loss on multi-day slates.
 
@@ -235,7 +234,7 @@ All secrets and config live in **environment variables only** — never hardcode
 | `CRON_SECRET` | (optional) Secures cron-only endpoints; Railway injects via cron commands in railway.toml |
 | `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
 
-**Cache refresh:** `GET /api/refresh` requires **no secret** (non-destructive). For GitHub slate bust + full regen after model/config changes, use Lab `update-config` (auto-busts) or call refresh then wait for next slate request. Repository secrets like `CRON_SECRET` are for **protected** crons only (auto-improve, injury-check, auto-resolve-line, MAE drift), not for `/api/refresh`.
+**Cold reset:** `GET /api/cold-reset` requires `CRON_SECRET` and runs a full slate+line+parlay cold pipeline.
 
 ## Production readiness
 
@@ -327,6 +326,12 @@ Push to `main` to deploy to production. Railway auto-deploys when `watchPatterns
 git push -u origin your-branch
 # Then: GitHub → Pull requests → New PR (base: main, compare: your-branch) → Merge
 # Or push main directly: git checkout main && git merge your-branch && git push origin main
+```
+
+Manual redeploy cold reset command (Railway):
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" "https://the-oracle.up.railway.app/api/cold-reset"
 ```
 
 ## Monitoring / Health check

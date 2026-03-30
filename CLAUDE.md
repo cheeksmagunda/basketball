@@ -172,7 +172,7 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 | `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope (backend only) |
 | `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) for all players on a date's completed games (backend only) |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
-| `/api/refresh` | GET | Clear cache + config cache (cron at 7pm UTC; no auth required — non-destructive) |
+| `/api/cold-reset` | GET | Secured global cold reset for slate + LOTD + parlay (CRON_SECRET required) |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only (requires CRON_SECRET when set) |
 | `/api/force-regenerate?scope=X` | GET | **Force-regenerate predictions mid-slate.** `scope=full`: all games (dev deploy/model refresh; CRON_SECRET-gated). `scope=remaining`: only unlocked games (late draft, user-facing). Updates `data/predictions/` CSV and all cache layers. |
 | `/api/mae-drift-check` | GET | **Weekly cron** (Monday 6am UTC): compute 7-day rolling MAE, write backend flag if > 2.5 threshold. CRON_SECRET-gated. Returns `{status, computed_mae, triggered, per_date}` |
@@ -180,11 +180,11 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 ### Line of the Day
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/line-of-the-day` | GET | **Both** Over + Under picks with **per-direction independent rotation** — each direction rotates to the next slate when its game finishes, without waiting for the other; returns `{over_pick, under_pick, pick}` |
+| `/api/line-of-the-day` | GET | **Both** Over + Under picks, slate-bound until global cold reset; returns `{over_pick, under_pick, pick}` |
 | `/api/refresh-line-odds` | GET | **Game-window cron** — bulk Odds API map + lookup; updates `line`, `odds_over`, `odds_under`, `books_consensus`, `line_updated_at` on today's pick JSON. No-op if slate is locked. Returns `{status, updated, timestamp}` |
 | `/api/save-line` | POST | Save `{over_pick, under_pick}` JSON + primary pick to CSV; backward-compat with legacy single-pick |
 | `/api/resolve-line` | POST | Mark pick hit/miss given actual stat |
-| `/api/auto-resolve-line` | GET | **Cron** — resolves each pick when its game ends; generates next-day picks when both resolve (requires CRON_SECRET when set) |
+| `/api/auto-resolve-line` | GET | **Cron** — resolves each pick when its game ends (requires CRON_SECRET when set) |
 | `/api/line-live-stat` | GET | Fetch live in-game stat value for pick tracking (single-game lock check) |
 | `/api/line-history` | GET | Recent picks with streak + hit rate (only resolved picks — never pending) |
 | `/api/line-force-regenerate` | GET | Force-generate today's line picks (overwrites stale artifacts, busts cache) |
@@ -231,7 +231,7 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 - `ANTHROPIC_API_KEY` — Claude Haiku (screenshot OCR) + claude-opus-4-6 (Ben/Lab chat)
 - `ODDS_API_KEY` — The Odds API for player prop lines (Line of the Day + draft pipeline enrichment)
 - `INGEST_SECRET` — (optional) When set, `POST /api/save-most-popular`, `save-ownership`, `save-most-drafted-3x`, and `save-winning-drafts` require `X-Ingest-Key` or `Authorization: Bearer <INGEST_SECRET>`. See `docs/HISTORICAL_DATA.md`.
-- `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Railway injects this via the cron commands in railway.toml. `/api/refresh` is intentionally unprotected (non-destructive, user-facing).
+- `CRON_SECRET` — (optional) When set, protected endpoints (`/api/cold-reset`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Railway injects this via cron commands in `railway.toml`.
 - `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
 - `REDIS_URL` — (recommended) Full `redis://` connection string. Auto-injected by Railway Redis plugin. When set, all cache reads/writes go through Redis (sub-ms latency) with `/tmp` file fallback. Without it, the system works but relies on ephemeral `/tmp` files that don't survive container restarts. Setup: Railway dashboard → "+ New" → "Database" → "Redis". Verify: `GET /api/health` returns `"redis": "ok"`.
 
@@ -245,11 +245,11 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 - **No redeploy needed** to tune parameters — changes take effect within 5 minutes
 - **Fallback to defaults** if GitHub is unreachable — app never breaks
 - Use `_cfg("dot.path", default)` helper anywhere in `api/index.py` to read config
-- `/api/refresh` also clears the config cache for immediate effect
+- `/api/cold-reset` clears config/cache layers and regenerates slate + LOTD + parlay
 
 ## 4-Layer Cache Architecture (Generate Once, Serve from Redis)
 
-The cold pipeline runs **exactly twice per day**: (1) daily `/api/refresh` cron at 2pm ET, (2) `/api/injury-check` cron in the afternoon. All other requests are served instantly from Redis. On new deploys, the version-aware startup hook detects the SHA change and forces a one-time regeneration.
+The cold pipeline runs from three triggers only: (1) deploy SHA change startup hook, (2) `/api/injury-check` when injuries affect cached lineups, (3) manual `/api/cold-reset`. All picks are slate-bound and regenerated together.
 
 ### Cache Layers (read order)
 0. **Layer 0 — In-memory `ResponseCache`**: Thread-safe dict with TTL. Cleared on every request to `_bust_slate_cache()`.
@@ -266,8 +266,8 @@ The cold pipeline runs **exactly twice per day**: (1) daily `/api/refresh` cron 
 
 ### Cache Invalidation
 - **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → busts all layers → next request regenerates
-- **Daily refresh** (`/api/refresh` cron, 2pm ET): calls `_bust_slate_cache()` → background regeneration (cold run #1)
-- **Injury check** (`/api/injury-check` cron, afternoon): regenerates only affected games, updates all layers (cold run #2)
+- **Manual cold reset** (`/api/cold-reset`): calls global cold pipeline and regenerates slate + LOTD + parlay
+- **Injury check** (`/api/injury-check` cron, afternoon): invokes the same global cold pipeline when injuries hit cached lineups
 - **New deploy**: startup hook detects SHA mismatch → `_bust_slate_cache()` → background regeneration
 
 ### Version-Aware Startup (grep: deploy_sha)
@@ -389,20 +389,20 @@ All slate-level lock checks use `any(_is_locked(st) for st in start_times)` — 
 This applies to:
 - `/api/slate`: `any(_is_locked(st))` before computing predictions
 - `/api/save-predictions`: `any(_is_locked(...))` guard prevents pre-lock saves
-- `/api/refresh`: `any(_is_locked(...))` gate for auto-save
+- `/api/cold-reset`: secured trigger for global bust+regen; pre-save runs if slate is locked
 - `/api/lab/status`: `any(_is_locked(st))` determines locked state
 
 Per-game checks (e.g. `/api/picks`, `/api/line-live-stat`) correctly use single-game `_is_locked(game_start)`.
 
 ### Triple-Gated Save Pipeline
 Predictions are saved to `data/predictions/` through exactly two code paths, both strictly post-lock:
-1. **`/api/save-predictions`** — called by frontend `savePredictions()` + `/api/refresh` cron
+1. **`/api/save-predictions`** — called by frontend `savePredictions()` and pre-save within the cold-reset pipeline
 2. **Inline at lock-promotion** in `/api/slate` — first locked request promotes cache and writes CSV
 
 Three independent gates prevent pre-lock saves:
 - **Frontend guard**: `if (!SLATE || !SLATE.locked) return;` in `savePredictions()`
 - **Backend guard**: `if not any(_is_locked(st) ...)` → HTTP 409 in `/api/save-predictions`
-- **Cron guard**: `/api/refresh` only calls `save_predictions()` if `any(_is_locked(...))`
+- **Cold-reset guard**: global cold pipeline pre-saves predictions when `any(_is_locked(...))`
 
 ## Player Eligibility & RS Projection (v82 — Strategy-Report-Aligned)
 
@@ -536,7 +536,7 @@ The following systems were removed or replaced in the strategy-report-aligned ar
 The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
 
 - `switchLineDir(dir)`: renders the appropriate pick (`LINE_OVER_PICK` or `LINE_UNDER_PICK`) via `renderLinePickCard()`
-- **Per-direction independent rotation** — over and under rotate independently. When one direction's game finishes, that direction immediately shows the next-slate pick; the other direction stays live. The main card always shows the currently active (unresolved) pick for each direction.
+- **Slate-bound picks** — over and under stay tied to the active slate. Resolved picks remain visible until the global cold-reset pipeline advances to the next slate.
 - Resolved picks appear only in Recent Picks history.
 - Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
 - Pick cards display `"Odds · [time] CT"` when `line_updated_at` is present (stamped by `/api/refresh-line-odds`)
@@ -594,7 +594,6 @@ Crons and frontend poll intervals are tuned to minimize Railway compute and ESPN
 
 | Schedule (UTC) | Endpoint | Purpose |
 |----------------|----------|---------|
-| `0 19 * * *` | `/api/refresh` | Cache clear + auto-save locked predictions |
 | `0 9 * * 0,3` | `/api/lab/auto-improve` | Auto-tune model if ≥3% MAE improvement (Wed + Sun only — 2×/week) |
 | `55 19,20,21,22,23,0,1,2,3,4,5,6 * * *` | `/api/refresh-line-odds` | Bookmaker odds sync — game-window hours only |
 | `0 20,21,22,23,0,1,2,3,4,5,6,7 * * *` | `/api/auto-resolve-line` | Resolve line picks — game-window hours only |
@@ -700,19 +699,19 @@ Explicit TTLs protect against stale data while minimizing API calls:
 
 | Cache | TTL | Purpose | Invalidation |
 |-------|-----|---------|--------------|
-| Game final status (`_all_games_final`) | 60s when locked, 180s pre-slate | Detects when ALL games reach Final status | `/api/refresh` endpoint clears |
-| Model config (`data/model-config.json`) | 5 min | Runtime tuning parameters | `/api/refresh` clears; Lab writes bypass cache |
+| Game final status (`_all_games_final`) | 60s when locked, 180s pre-slate | Detects when ALL games reach Final status | global cold reset clears |
+| Model config (`data/model-config.json`) | 5 min | Runtime tuning parameters | global cold reset clears; Lab writes bypass cache |
 | RotoWire lineups | 30 min | Player availability (OUT, questionable, etc.) | 30 min expiration; manual refresh via app |
 | Lock status per game | 6 hours | 5 min before tip to 6h after (ceiling) | Natural expiration |
 | Line odds (`books_consensus`) | 1 hour | Bookmaker consensus line (refreshed by cron) | Game-window cron runs; slate-lock freeze |
 | Parlay ESPN gamelog (`_fetch_gamelog`, `_TTL_L5`) | 30 min | Last games for volatility / Z-score (ESPN `site.api.espn.com` athlete gamelog) | Per-player cache key `gamelog_{pid}` in `/tmp` |
-| Odds bulk map fresh cache (`odds_fresh_map_v1`) | 10 min | Reuse `_build_player_odds_map` across slate / line / parlay | `/api/refresh` clears `/tmp` |
-| Slate cache (`data/slate/`) | 1 day | GitHub-persisted predictions (full slate + per-game) | `_bust_slate_cache()` via refresh, config change, or injury check |
-| Log dates (`log_dates_v1`) | 10 min | Dates with stored prediction/actual data (backend only) | `/api/refresh` clears all /tmp caches |
-| Log get (`log_get_{date}`) | 5 min | Per-date predictions + actuals from GitHub (backend only) | `/api/refresh` clears all /tmp caches |
-| Parlay history (`parlay_history_v1`) | 10 min | Recent parlay results from `data/parlays/` | `/api/refresh` clears all /tmp caches |
+| Odds bulk map fresh cache (`odds_fresh_map_v1`) | 10 min | Reuse `_build_player_odds_map` across slate / line / parlay | global cold reset clears `/tmp` |
+| Slate cache (`data/slate/`) | 1 day | GitHub-persisted predictions (full slate + per-game) | `_bust_slate_cache()` via cold reset, config change, or injury check |
+| Log dates (`log_dates_v1`) | 10 min | Dates with stored prediction/actual data (backend only) | global cold reset clears all `/tmp` caches |
+| Log get (`log_get_{date}`) | 5 min | Per-date predictions + actuals from GitHub (backend only) | global cold reset clears all `/tmp` caches |
+| Parlay history (`parlay_history_v1`) | 10 min | Recent parlay results from `data/parlays/` | global cold reset clears all `/tmp` caches |
 | Line `/tmp` (`line_v1`) | 30 min max age (inline check) | Fast path for `/api/line-of-the-day` | Rotation / odds refresh unlinks cache file |
-| Parlay `/tmp` (`parlay_v1`) | 30 min | Today's parlay JSON | `/api/refresh` or next-day |
+| Parlay `/tmp` (`parlay_v1`) | 30 min | Today's parlay JSON | cold reset or next-slate regeneration |
 | ESPN scoreboard (`fetch_games`) | 5 min (`_TTL_GAMES`) | Schedule + spreads; shared `_GAMES_CACHE_TS` | New fetch resets TS |
 | Odds API degraded snapshot | 1 h | `odds_last_success_map_v1` when live bulk fetch fails | Superseded by next successful fetch |
 
@@ -728,7 +727,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 
 **GitHub vs `/tmp`** — Slate: Layer 1 `/tmp` → Layer 2 `data/slate/*` → Layer 3 pipeline. Line/parlay enrichment: `_hydrate_game_projs_from_github()` before `_run_game()` when `/tmp` is cold. Single read replaces N× ESPN/LGBM for the same ET day when a prior instance already wrote `data/slate/{date}_games.json`.
 
-**Bust / refresh** — `_bust_slate_cache()` tombstones GitHub slate + games + locks and clears local `/tmp` JSON. `GET /api/refresh` clears caches and config reload path; Railway cron runs refresh daily (see `railway.toml`).
+**Bust / reset** — `_bust_slate_cache()` tombstones GitHub slate + games + locks and clears local `/tmp` JSON. `GET /api/cold-reset` runs the global bust+regen pipeline and reloads config/cache layers.
 
 ### Midnight Rollover Handling
 `auto_resolve_line()` correctly handles games finishing after midnight ET:
@@ -944,7 +943,7 @@ If slate and/or line fail to load:
 | `auto_improve_threshold_pct` externalized | `api/index.py`, `data/model-config.json` | `IMPROVEMENT_THRESHOLD` reads from `_cfg("lab.auto_improve_threshold_pct", 3.0)`. Tunable via Ben without code deploy. |
 | Line engine stat floors externalized | `api/line_engine.py`, `data/model-config.json` | `_STAT_META` and `stat_configs` min_season floors now read from `line_config.get("stat_floors", {})`. Tunable via `line.stat_floors` in model-config. No behavior change — defaults match prior hardcoded values. |
 | Cron schedule restored | `railway.toml` | `/api/refresh-line-odds` cron fixed from `0 */3 * * *` (every 3h) to `55 * * * *` (hourly at :55). **Superseded:** now game-window-only — see **Cron Schedule** table. |
-| `line_history` parallel fetch + 3-min cache | `api/index.py` | CSV + JSON files fetched in parallel via `ThreadPoolExecutor(8)`; 3-min result cache (`line_history_v1`) avoids repeated cold-start GitHub round-trips; cache cleared by `/api/refresh` |
+| `line_history` parallel fetch + 3-min cache | `api/index.py` | CSV + JSON files fetched in parallel via `ThreadPoolExecutor(8)`; 3-min result cache (`line_history_v1`) avoids repeated cold-start GitHub round-trips; cache cleared by global cold reset |
 | 3-layer slate cache (generate once per day) | `api/index.py` | `/tmp` → GitHub `data/slate/` → full pipeline. First request generates and persists; all subsequent requests serve from cache. Reduces API calls from N per visit to ~6-8 per day |
 | `/api/injury-check` cron endpoint | `api/index.py`, `railway.toml` | Every 2h: bust RotoWire cache, check cached players, regenerate only affected games. Lock-guarded, CRON_SECRET-protected |
 | GitHub cache removed from line engine | `api/index.py` | `_games_cache_from_github()` removed from `_run_line_engine_for_date()` and `_get_projections_for_date()` — added latency without benefit for line paths |
@@ -1017,7 +1016,7 @@ If slate and/or line fail to load:
 
 ## Production audit
 
-Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: GitHub error sanitization (no leak to client), `GET /api/health`, `GET /api/version`, cron secret on `/api/refresh`, `/api/auto-resolve-line`, `/api/lab/auto-improve`, and `fetchWithTimeout` for lab/backtest and lab/update-config.
+Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: GitHub error sanitization (no leak to client), `GET /api/health`, `GET /api/version`, cron secret on protected endpoints (including `/api/cold-reset`), and `fetchWithTimeout` for lab/backtest and lab/update-config.
 
 **Lock & routing audit:** [docs/LOCK_AND_ROUTING_AUDIT.md](docs/LOCK_AND_ROUTING_AUDIT.md). Covers all lock usage (slate, picks, save-predictions, lab status, line odds) and Railway/FastAPI routing. Fixes applied: `/api/lab/status` wrapped in try/except — on any exception returns 200 with `locked: true` and reason "Server temporarily unavailable — try again" so the frontend shows a retry instead of a generic fetch failure; ESPN-down GitHub lock check now uses `lock_content, _ = _github_get_file(...)` and `if lock_content:` (was incorrectly checking the tuple).
 
@@ -1085,5 +1084,5 @@ Provide the following to the new session to orient it quickly:
 3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push to main; verify on `the-oracle.up.railway.app`.
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
 5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LAB`, `LINE_DIR`, `LINE_OVER_PICK`, `LINE_UNDER_PICK`, `LINE_LOADED_DATE`
-6. **Cache**: 3-layer: `/tmp` (ephemeral) → GitHub `data/slate/` (persistent) → full pipeline. Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/refresh` clears all caches + config. `_bust_slate_cache()` invalidates both layers.
+6. **Cache**: 3-layer: `/tmp` (ephemeral) → GitHub `data/slate/` (persistent) → full pipeline. Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/cold-reset` clears/regenerates caches + config. `_bust_slate_cache()` invalidates both layers.
 7. **Config**: `data/model-config.json` on GitHub — Ben/Lab writes here, backend reads with 5-min TTL.

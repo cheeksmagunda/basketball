@@ -3875,24 +3875,13 @@ function _renderLineLOTDFromState() {
     // Extract directional picks first — they may exist even when primary pick is null
     LINE_OVER_PICK  = data.over_pick  || (data.pick && data.pick.direction === 'over'  ? data.pick : null);
     LINE_UNDER_PICK = data.under_pick || (data.pick && data.pick.direction === 'under' ? data.pick : null);
-    _lineLastLiveKey = ''; // so next live poll can update card (avoids stale "no update" after rotation)
+    _lineLastLiveKey = ''; // reset live snapshot key for fresh card updates
     // If pick exists but no directional picks, populate from primary
     if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick) {
       if (data.pick.direction === 'over') LINE_OVER_PICK = data.pick;
       else LINE_UNDER_PICK = data.pick;
     }
     if (!data.pick && !LINE_OVER_PICK && !LINE_UNDER_PICK) {
-      // Today's picks resolved, tomorrow's not ready yet — show pending card
-      if (data.error === 'next_slate_pending') {
-        linePickWrap.style.display = 'block';
-        if (lineEmptyEl) lineEmptyEl.style.display = 'none';
-        if (linePickCard) {
-          linePickCard.style.display = '';
-          linePickCard.innerHTML = renderNextSlatePending();
-        }
-        LINE_LOADED_DATE = ''; // reset so next tab visit re-fetches fresh picks
-        return;
-      }
       const msgs = {
         no_api_key:       'Odds API key not configured — contact admin.',
         no_games:         'No NBA games on the slate today.',

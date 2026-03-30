@@ -177,7 +177,7 @@ echo "INGEST_AUTOMATION_ENABLED=false" >> .env
 ### Run completed but data not in Log tab
 The backend caches log data. Run:
 ```bash
-curl -X GET http://localhost:8000/api/refresh
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:8000/api/cold-reset
 ```
 Or wait for the 5-minute cache TTL to expire.
 

@@ -10,16 +10,9 @@ restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
 [crons]
-# Daily cache clear + auto-save locked predictions (7pm UTC / 2pm ET)
-[[crons.jobs]]
-schedule = "0 19 * * *"
-command = "python -c \"import requests,os; requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/refresh')\""
-
-# Slate transition prewarm (every 5 min): uses existing global slate logic to
-# warm the CURRENT slate cache when the app transitions (including midnight bleed).
-[[crons.jobs]]
-schedule = "*/5 * * * *"
-command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/prewarm-current-slate',headers=h)\""
+# Manual/scheduled cold reset endpoint (disabled by default; trigger manually or add a schedule here).
+# Example command:
+# python -c "import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/cold-reset',headers=h)"
 
 # Auto-tune model if ≥3% MAE improvement (Wed + Sun, 9am UTC)
 # Reduced from daily to 2x/week — model changes don't need daily evaluation
@@ -40,7 +33,7 @@ schedule = "0 20,21,22,23,0,1,2,3,4,5,6,7 * * *"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/auto-resolve-line',headers=h)\""
 
 # Injury check — reduced to 3 key windows (pre-tip + mid-evening + late)
-# Reduced from 6/day to 3/day — saves 50% cron compute; user can check manually via Predict tab
+# Triggers the same global cold-reset pipeline when injuries impact cached lineups
 [[crons.jobs]]
 schedule = "0 18,22,2 * * *"
 command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/injury-check',headers=h)\""
