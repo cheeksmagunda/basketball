@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Nikola Jokic,DEN,11300,5.0,,1,1,2026-03-30T00:00:00+00:00
+Shai Gilgeous-Alexander,OKC,7700,3.1,,1,2,2026-03-30T00:00:00+00:00
+Jamal Murray,DEN,4700,3.7,0.2,2,3,2026-03-30T00:00:00+00:00
+Kon Knueppel,CHA,4500,1.5,0.8,3,4,2026-03-30T00:00:00+00:00
+Kawhi Leonard,LAC,4400,3.3,0.2,3,5,2026-03-30T00:00:00+00:00
+Kevin Durant,HOU,4200,2.9,0.5,3,6,2026-03-30T00:00:00+00:00
+Jalen Brunson,NYK,4100,4.3,0.4,3,7,2026-03-30T00:00:00+00:00
+Gui Santos,GSW,4100,1.8,2.2,2,8,2026-03-30T00:00:00+00:00
+LaMelo Ball,CHA,3400,2.0,0.5,3,9,2026-03-30T00:00:00+00:00
+Paolo Banchero,ORL,3100,0.8,0.6,4,10,2026-03-30T00:00:00+00:00
+Payton Pritchard,BOS,2600,4.0,0.8,2,11,2026-03-30T00:00:00+00:00
+Karl-Anthony Towns,NYK,2400,3.1,0.6,4,12,2026-03-30T00:00:00+00:00
+Bam Adebayo,MIA,2400,2.7,0.5,3,13,2026-03-30T00:00:00+00:00
+Scottie Barnes,TOR,2300,5.7,0.5,3,14,2026-03-30T00:00:00+00:00
