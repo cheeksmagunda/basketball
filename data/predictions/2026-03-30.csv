@@ -1,0 +1,16 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Tyler Burton,4431914,MEM,F,4.2,1.5,34.9,10.2,4.3,1.1,1.0,0.4
+slate,chalk,1.6x,Cameron Payne,3064230,PHI,PG,4.0,2.8,17.6,7.9,1.9,2.9,1.1,0.3
+slate,chalk,1.6x,Blake Hinson,4396963,UTAH,F,3.9,2.7,29.5,10.6,2.2,0.8,0.1,0.2
+slate,chalk,1.4x,Bez Mbeng,4898237,UTAH,G,3.9,2.9,36.2,4.8,3.7,3.3,1.7,0.4
+slate,chalk,1.2x,Ryan Nembhard,4433629,DAL,G,3.8,2.9,23.0,6.2,1.9,4.9,0.4,0.0
+slate,upside,2.0x,Klay Thompson,6475,DAL,G,4.5,2.3,27.2,13.2,2.4,1.6,0.6,0.3
+slate,upside,1.8x,Andre Drummond,6585,PHI,C,4.4,2.3,21.2,7.5,9.1,1.1,0.7,0.9
+slate,upside,1.6x,Cameron Payne,3064230,PHI,PG,4.0,2.8,17.6,7.9,1.9,2.9,1.1,0.3
+slate,upside,1.4x,Bez Mbeng,4898237,UTAH,G,3.9,2.9,36.2,4.8,3.7,3.3,1.7,0.4
+slate,upside,1.2x,Ryan Nembhard,4433629,DAL,G,3.8,2.9,23.0,6.2,1.9,4.9,0.4,0.0
+PHI @ MIA,the_lineup,2.0x,Joel Embiid,3059318,PHI,C,7.6,0.0,31.6,27.0,8.2,3.9,0.7,1.2
+PHI @ MIA,the_lineup,1.8x,Tyrese Maxey,4431678,PHI,G,7.3,0.0,34.1,27.3,4.0,6.3,1.8,0.7
+PHI @ MIA,the_lineup,1.6x,Bam Adebayo,4066261,MIA,C,6.8,0.0,28.0,19.3,9.7,3.1,1.2,0.7
+PHI @ MIA,the_lineup,1.4x,Andrew Wiggins,3059319,MIA,F,6.5,0.0,27.5,16.1,4.9,2.6,1.1,0.9
+PHI @ MIA,the_lineup,1.2x,Paul George,4251,PHI,F,6.1,0.0,31.4,17.5,5.6,3.7,1.7,0.5
