@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Tyrese Maxey,PHI,7100,5.0,0.1,1,1,2026-01-16T23:59:00Z
+Donovan Mitchell,CLE,6200,3.7,0.2,1,2,2026-01-16T23:59:00Z
+Kevin Durant,PHX,5900,5.8,0.5,3,3,2026-01-16T23:59:00Z
+James Harden,LAC,5500,4.5,0.3,1,4,2026-01-16T23:59:00Z
+Julius Randle,MIN,4800,4.2,0.5,2,5,2026-01-16T23:59:00Z
+Scottie Barnes,TOR,4400,3.6,0.5,2,6,2026-01-16T23:59:00Z
+Michael Porter Jr.,DEN,4300,3.4,0.4,2,7,2026-01-16T23:59:00Z
+Trey Murphy III,NOP,4200,4.0,0.6,1,8,2026-01-16T23:59:00Z
+Russell Westbrook,DEN,3700,4.0,1.0,5,9,2026-01-16T23:59:00Z
+Alperen Sengun,HOU,3400,3.4,0.4,2,10,2026-01-16T23:59:00Z
+DeMar DeRozan,SAC,3400,2.5,0.8,4,11,2026-01-16T23:59:00Z
+Collin Murray-Boyles,SAS,3400,2.0,2.5,3,12,2026-01-16T23:59:00Z
+Amen Thompson,HOU,3100,2.1,0.6,3,13,2026-01-16T23:59:00Z
+Brandon Ingram,NOP,3000,2.5,0.7,4,14,2026-01-16T23:59:00Z

@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,aust1n_,65.73,1,Luka Doncic,DAL,5.0,2.0,0.0,2025-12-28T23:59:00Z
+1,aust1n_,65.73,2,Kawhi Leonard,LAC,10.8,1.8,0.3,2025-12-28T23:59:00Z
+1,aust1n_,65.73,3,Cade Cunningham,DET,3.7,1.6,0.2,2025-12-28T23:59:00Z
+1,aust1n_,65.73,4,LeBron James,LAL,4.7,1.4,0.6,2025-12-28T23:59:00Z
+1,aust1n_,65.73,5,Nick Smith Jr.,CHA,4.0,1.2,3.0,2025-12-28T23:59:00Z
+2,biglukas,64.04,1,Kawhi Leonard,LAC,10.8,2.0,0.3,2025-12-28T23:59:00Z
+2,biglukas,64.04,2,Scottie Barnes,TOR,6.3,1.8,0.5,2025-12-28T23:59:00Z
+2,biglukas,64.04,3,Jaren Jackson Jr.,MEM,4.5,1.6,1.1,2025-12-28T23:59:00Z
+2,biglukas,64.04,4,Donovan Clingan,POR,3.9,1.4,1.2,2025-12-28T23:59:00Z
+2,biglukas,64.04,5,Isaiah Hartenstein,OKC,1.1,1.2,1.1,2025-12-28T23:59:00Z
+3,jacobwilson,63.88,1,Kawhi Leonard,LAC,10.8,2.0,0.3,2025-12-28T23:59:00Z
+3,jacobwilson,63.88,2,Scottie Barnes,TOR,6.3,1.8,0.5,2025-12-28T23:59:00Z
+3,jacobwilson,63.88,3,Brandon Ingram,NOP,3.7,1.6,0.8,2025-12-28T23:59:00Z
+3,jacobwilson,63.88,4,Derrick White,BOS,2.6,1.4,0.7,2025-12-28T23:59:00Z
+3,jacobwilson,63.88,5,Jaren Jackson Jr.,MEM,4.5,1.2,1.1,2025-12-28T23:59:00Z
+4,wolvesofficial,63.23,1,Brandon Ingram,NOP,3.7,2.0,0.8,2025-12-28T23:59:00Z
+4,wolvesofficial,63.23,2,Kawhi Leonard,LAC,10.8,1.8,0.3,2025-12-28T23:59:00Z
+4,wolvesofficial,63.23,3,Jaren Jackson Jr.,MEM,4.5,1.6,1.1,2025-12-28T23:59:00Z
+4,wolvesofficial,63.23,4,Immanuel Quickley,TOR,3.4,1.4,0.8,2025-12-28T23:59:00Z
+4,wolvesofficial,63.23,5,Scottie Barnes,TOR,6.3,1.2,0.5,2025-12-28T23:59:00Z
+5,tursi,62.95,1,Luka Doncic,DAL,5.0,2.0,0.0,2025-12-28T23:59:00Z
+5,tursi,62.95,2,Kawhi Leonard,LAC,10.8,1.8,0.3,2025-12-28T23:59:00Z
+5,tursi,62.95,3,Jaylen Brown,BOS,4.3,1.6,0.3,2025-12-28T23:59:00Z
+5,tursi,62.95,4,Scottie Barnes,TOR,6.3,1.4,0.5,2025-12-28T23:59:00Z
+5,tursi,62.95,5,Jaren Jackson Jr.,MEM,4.5,1.2,1.1,2025-12-28T23:59:00Z
+6,bradyjax,62.81,1,Kawhi Leonard,LAC,10.8,2.0,0.3,2025-12-28T23:59:00Z
+6,bradyjax,62.81,2,Chet Holmgren,OKC,4.8,1.8,0.8,2025-12-28T23:59:00Z
+6,bradyjax,62.81,3,Shaedon Sharpe,POR,3.0,1.6,0.9,2025-12-28T23:59:00Z
+6,bradyjax,62.81,4,Jaren Jackson Jr.,MEM,4.5,1.4,1.1,2025-12-28T23:59:00Z
+6,bradyjax,62.81,5,Santi Aldama,MEM,3.0,1.2,1.1,2025-12-28T23:59:00Z
+7,contretemps,62.11,1,Luka Doncic,DAL,5.0,2.0,0.0,2025-12-28T23:59:00Z
+7,contretemps,62.11,2,Kawhi Leonard,LAC,10.8,1.8,0.3,2025-12-28T23:59:00Z
+7,contretemps,62.11,3,Jalen Duren,DET,3.7,1.6,0.7,2025-12-28T23:59:00Z
+7,contretemps,62.11,4,Chet Holmgren,OKC,4.8,1.4,0.8,2025-12-28T23:59:00Z
+7,contretemps,62.11,5,Bilal Coulibaly,WAS,3.1,1.2,2.2,2025-12-28T23:59:00Z
+8,robertkelso1,62.07,1,Kawhi Leonard,LAC,10.8,2.0,0.3,2025-12-28T23:59:00Z
+8,robertkelso1,62.07,2,Jaren Jackson Jr.,MEM,4.5,1.8,1.1,2025-12-28T23:59:00Z
+8,robertkelso1,62.07,3,Jaylen Brown,BOS,4.3,1.6,0.3,2025-12-28T23:59:00Z
+8,robertkelso1,62.07,4,Scottie Barnes,TOR,6.3,1.4,0.5,2025-12-28T23:59:00Z
+8,robertkelso1,62.07,5,Payton Pritchard,BOS,2.1,1.2,0.8,2025-12-28T23:59:00Z

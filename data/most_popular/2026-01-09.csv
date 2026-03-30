@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Luka Doncic,DAL,9400,4.2,0.0,1,1,2026-01-09T23:59:00Z
+Giannis Antetokounmpo,MIL,8000,4.6,0.0,1,2,2026-01-09T23:59:00Z
+Stephen Curry,GSW,5500,5.1,0.2,1,3,2026-01-09T23:59:00Z
+Kevin Durant,PHX,5300,5.0,0.5,3,4,2026-01-09T23:59:00Z
+Tyrese Maxey,PHI,5300,3.2,0.0,1,5,2026-01-09T23:59:00Z
+Jalen Johnson,ATL,5300,5.7,0.2,2,6,2026-01-09T23:59:00Z
+Deni Avdija,POR,4800,2.7,0.3,2,7,2026-01-09T23:59:00Z
+Jaylen Brown,BOS,4500,3.9,0.2,2,8,2026-01-09T23:59:00Z
+Jalen Brunson,NYK,3900,3.6,0.2,2,9,2026-01-09T23:59:00Z
+Devin Booker,PHX,3300,4.9,0.5,3,10,2026-01-09T23:59:00Z
+James Harden,LAC,2400,5.0,0.3,2,11,2026-01-09T23:59:00Z
+Karl-Anthony Towns,NYK,2400,2.4,0.5,3,12,2026-01-09T23:59:00Z
+Ajay Mitchell,CLE,2200,2.9,1.2,2,13,2026-01-09T23:59:00Z
+Aaron Wiggins,OKC,2100,2.3,2.4,3,14,2026-01-09T23:59:00Z

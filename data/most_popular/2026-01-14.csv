@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Cooper Flagg,NOP,8000,1.1,0.7,3,1,2026-01-14T23:59:00Z
+Tyrese Maxey,PHI,7600,2.1,0.0,1,2,2026-01-14T23:59:00Z
+Peyton Watson,DEN,7100,2.4,1.5,1,3,2026-01-14T23:59:00Z
+Jalen Brunson,NYK,6500,0.3,0.3,1,4,2026-01-14T23:59:00Z
+James Harden,LAC,5600,3.7,0.3,2,5,2026-01-14T23:59:00Z
+Donovan Mitchell,CLE,4700,6.1,0.2,2,6,2026-01-14T23:59:00Z
+Keyonte George,UTA,4600,3.5,0.5,2,7,2026-01-14T23:59:00Z
+Jamal Murray,DEN,3600,4.2,0.2,1,8,2026-01-14T23:59:00Z
+Karl-Anthony Towns,NYK,3600,1.8,0.6,2,9,2026-01-14T23:59:00Z
+Scottie Barnes,TOR,3500,5.6,0.5,2,10,2026-01-14T23:59:00Z
+Collin Murray-Boyles,SAS,3300,2.4,2.5,4,11,2026-01-14T23:59:00Z
+Trey Murphy III,NOP,3200,5.9,0.6,2,12,2026-01-14T23:59:00Z
+Michael Porter Jr.,DEN,2600,2.7,0.4,3,13,2026-01-14T23:59:00Z
+Brandon Ingram,NOP,2600,4.3,0.8,2,14,2026-01-14T23:59:00Z

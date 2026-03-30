@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Cooper Flagg,NOP,10100,0.8,0.7,1,1,2026-01-10T23:59:00Z
+Jaylen Brown,BOS,7800,4.5,0.3,1,2,2026-01-10T23:59:00Z
+Victor Wembanyama,SAS,7300,3.4,0.3,1,3,2026-01-10T23:59:00Z
+Kon Knueppel,NOP,6500,3.0,0.9,4,4,2026-01-10T23:59:00Z
+Keyonte George,UTA,5800,0.6,0.5,2,5,2026-01-10T23:59:00Z
+LaMelo Ball,CHA,4700,2.2,0.5,3,6,2026-01-10T23:59:00Z
+James Harden,LAC,4500,3.0,0.3,2,7,2026-01-10T23:59:00Z
+Donovan Mitchell,CLE,3800,4.7,0.2,1,8,2026-01-10T23:59:00Z
+Kawhi Leonard,LAC,3600,4.3,0.2,1,9,2026-01-10T23:59:00Z
+Norman Powell,LAC,3300,0.4,0.6,2,10,2026-01-10T23:59:00Z
+Pascal Siakam,IND,3200,1.7,0.5,3,11,2026-01-10T23:59:00Z
+Anthony Edwards,MIN,2900,3.6,0.3,1,12,2026-01-10T23:59:00Z
+Derrick White,BOS,2200,5.1,0.6,2,13,2026-01-10T23:59:00Z
+Nikola Vucevic,CHI,2200,3.3,0.8,5,14,2026-01-10T23:59:00Z

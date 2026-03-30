@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Shai Gilgeous-Alexander,OKC,9000,3.0,0.0,1,1,2026-01-04T00:00:00+00:00
+Luka Doncic,DAL,8700,5.5,0.0,1,2,2026-01-04T00:00:00+00:00
+Anthony Edwards,MIN,6600,5.6,0.3,2,3,2026-01-04T00:00:00+00:00
+Giannis Antetokounmpo,MIL,6300,5.4,0.0,1,4,2026-01-04T00:00:00+00:00
+Jamal Murray,DEN,4700,4.5,0.2,2,5,2026-01-04T00:00:00+00:00
+Cade Cunningham,DET,4700,5.1,0.2,2,6,2026-01-04T00:00:00+00:00
+Ryan Rollins,ATL,3600,2.2,0.8,2,7,2026-01-04T00:00:00+00:00
+Devin Booker,PHX,3500,4.6,0.5,3,8,2026-01-04T00:00:00+00:00
+Donovan Mitchell,CLE,3100,4.2,0.2,2,9,2026-01-04T00:00:00+00:00
+Russell Westbrook,DEN,2900,3.3,1.1,5,10,2026-01-04T00:00:00+00:00
+Michael Porter Jr.,DEN,2600,3.9,0.4,3,11,2026-01-04T00:00:00+00:00
+Norman Powell,LAC,2500,6.7,0.7,4,12,2026-01-04T00:00:00+00:00
+Anthony Black,ORL,2200,5.6,1.2,2,13,2026-01-04T00:00:00+00:00
+Chet Holmgren,OKC,1900,3.6,0.8,4,14,2026-01-04T00:00:00+00:00

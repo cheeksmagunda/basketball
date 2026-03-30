@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,certifiedivicazubachater,84.16,1,Donte DiVincenzo,MIN,2.1,2.0,1.2,2026-01-16T23:59:00Z
+1,certifiedivicazubachater,84.16,2,Jaylon Tyson,CLE,6.6,1.8,1.4,2026-01-16T23:59:00Z
+1,certifiedivicazubachater,84.16,3,Jay Huff,WAS,6.3,1.6,2.2,2026-01-16T23:59:00Z
+1,certifiedivicazubachater,84.16,4,Jamal Shead,HOU,3.6,1.4,2.5,2026-01-16T23:59:00Z
+1,certifiedivicazubachater,84.16,5,Jordan Miller,MIA,4.4,1.2,3.0,2026-01-16T23:59:00Z
+2,botathan,79.82,1,Jaylon Tyson,CLE,6.6,2.0,1.4,2026-01-16T23:59:00Z
+2,botathan,79.82,2,Jay Huff,WAS,6.3,1.8,2.2,2026-01-16T23:59:00Z
+2,botathan,79.82,3,Collin Murray-Boyles,SAS,2.0,1.6,2.5,2026-01-16T23:59:00Z
+2,botathan,79.82,4,Jordan Miller,MIA,4.4,1.4,3.0,2026-01-16T23:59:00Z
+2,botathan,79.82,5,Bones Hyland,LAC,1.2,1.2,3.0,2026-01-16T23:59:00Z
+3,77mvp,79.35,1,Noah Clowney,BKN,3.3,2.0,1.8,2026-01-16T23:59:00Z
+3,77mvp,79.35,2,Jordan Miller,MIA,4.4,1.8,3.0,2026-01-16T23:59:00Z
+3,77mvp,79.35,3,Jamal Shead,HOU,3.6,1.6,2.5,2026-01-16T23:59:00Z
+3,77mvp,79.35,4,Jay Huff,WAS,6.3,1.4,2.2,2026-01-16T23:59:00Z
+3,77mvp,79.35,5,Craig Porter Jr.,CLE,2.2,1.2,2.7,2026-01-16T23:59:00Z
+4,rafix9,75.78,1,Nikola Vucevic,CHI,3.7,2.0,0.7,2026-01-16T23:59:00Z
+4,rafix9,75.78,2,Jay Huff,WAS,6.3,1.8,2.2,2026-01-16T23:59:00Z
+4,rafix9,75.78,3,Collin Murray-Boyles,SAS,2.0,1.6,2.5,2026-01-16T23:59:00Z
+4,rafix9,75.78,4,Precious Achiuwa,NYK,3.4,1.4,2.7,2026-01-16T23:59:00Z
+4,rafix9,75.78,5,Jordan Miller,MIA,4.4,1.2,3.0,2026-01-16T23:59:00Z
+5,mafiasaadi,75.44,1,Precious Achiuwa,NYK,3.4,2.0,2.7,2026-01-16T23:59:00Z
+5,mafiasaadi,75.44,2,Jordan Miller,MIA,4.4,1.8,3.0,2026-01-16T23:59:00Z
+5,mafiasaadi,75.44,3,Craig Porter Jr.,CLE,2.2,1.6,2.7,2026-01-16T23:59:00Z
+5,mafiasaadi,75.44,4,Collin Murray-Boyles,SAS,2.0,1.4,2.5,2026-01-16T23:59:00Z
+5,mafiasaadi,75.44,5,Jay Huff,WAS,6.3,1.2,2.2,2026-01-16T23:59:00Z
+6,dzs_,75.06,1,Jamal Shead,HOU,3.6,2.0,2.5,2026-01-16T23:59:00Z
+6,dzs_,75.06,2,Jay Huff,WAS,6.3,1.8,2.2,2026-01-16T23:59:00Z
+6,dzs_,75.06,3,Collin Murray-Boyles,SAS,2.0,1.6,2.5,2026-01-16T23:59:00Z
+6,dzs_,75.06,4,Justin Champagnie,WAS,3.0,1.4,2.6,2026-01-16T23:59:00Z
+6,dzs_,75.06,5,Precious Achiuwa,NYK,3.4,1.2,2.7,2026-01-16T23:59:00Z
+7,lexacution,74.86,1,Jaylon Tyson,CLE,6.6,2.0,1.4,2026-01-16T23:59:00Z
+7,lexacution,74.86,2,Jay Huff,WAS,6.3,1.8,2.2,2026-01-16T23:59:00Z
+7,lexacution,74.86,3,Kevin Durant,PHX,5.8,1.6,0.5,2026-01-16T23:59:00Z
+7,lexacution,74.86,4,Rudy Gobert,MIN,2.7,1.4,1.0,2026-01-16T23:59:00Z
+7,lexacution,74.86,5,Russell Westbrook,DEN,4.0,1.2,1.0,2026-01-16T23:59:00Z
+8,valwee,74.78,1,Kevin Durant,PHX,5.8,2.0,0.5,2026-01-16T23:59:00Z
+8,valwee,74.78,2,DeMar DeRozan,SAC,2.5,1.8,0.8,2026-01-16T23:59:00Z
+8,valwee,74.78,3,Jaylon Tyson,CLE,6.6,1.6,1.4,2026-01-16T23:59:00Z
+8,valwee,74.78,4,Jay Huff,WAS,6.3,1.4,2.2,2026-01-16T23:59:00Z
+8,valwee,74.78,5,Justin Champagnie,WAS,3.0,1.2,2.6,2026-01-16T23:59:00Z

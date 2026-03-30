@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Shai Gilgeous-Alexander,OKC,7100,2.7,0.0,1,1,2026-01-05T23:59:00Z
+Tyrese Maxey,PHI,7000,5.3,0.0,1,2,2026-01-05T23:59:00Z
+Jaylen Brown,BOS,5900,2.0,0.2,1,3,2026-01-05T23:59:00Z
+Stephen Curry,GSW,5200,4.1,0.2,1,4,2026-01-05T23:59:00Z
+Cade Cunningham,DET,5000,6.2,0.2,2,5,2026-01-05T23:59:00Z
+Jalen Johnson,ATL,4900,2.4,0.2,2,6,2026-01-05T23:59:00Z
+Deni Avdija,POR,4900,5.1,0.4,1,7,2026-01-05T23:59:00Z
+Keyonte George,UTA,3800,1.4,0.4,2,8,2026-01-05T23:59:00Z
+Kawhi Leonard,LAC,3600,3.6,0.2,2,9,2026-01-05T23:59:00Z
+Jalen Brunson,NYK,3500,1.7,0.2,2,10,2026-01-05T23:59:00Z
+Peyton Watson,DEN,3400,3.9,1.9,3,11,2026-01-05T23:59:00Z
+Devin Booker,PHX,3000,2.6,0.5,2,12,2026-01-05T23:59:00Z
+Kevin Durant,PHX,2800,4.1,0.5,3,13,2026-01-05T23:59:00Z
+Scottie Barnes,TOR,2800,3.5,0.5,3,14,2026-01-05T23:59:00Z

@@ -1,0 +1,41 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,yb171,62.23,1,Ryan Rollins,ATL,7.1,2.0,0.8,2026-01-02T00:00:00+00:00
+1,yb171,62.23,2,Onyeka Okongwu,ATL,4.5,1.8,0.9,2026-01-02T00:00:00+00:00
+1,yb171,62.23,3,Donovan Mitchell,CLE,5.6,1.6,0.2,2026-01-02T00:00:00+00:00
+1,yb171,62.23,4,Jamal Murray,DEN,6.3,1.4,0.2,2026-01-02T00:00:00+00:00
+1,yb171,62.23,5,Deni Avdija,POR,6.2,1.2,0.4,2026-01-02T00:00:00+00:00
+2,srglnjk,61.38,1,Stephon Castle,SAS,4.0,2.0,0.8,2026-01-02T00:00:00+00:00
+2,srglnjk,61.38,2,De'Aaron Fox,SAC,3.4,1.8,0.5,2026-01-02T00:00:00+00:00
+2,srglnjk,61.38,3,Justin Champagnie,BOS,3.3,1.6,2.9,2026-01-02T00:00:00+00:00
+2,srglnjk,61.38,4,Caleb Love,POR,2.7,1.4,3.0,2026-01-02T00:00:00+00:00
+2,srglnjk,61.38,5,Jake LaRavia,MEM,4.6,1.2,2.1,2026-01-02T00:00:00+00:00
+3,grandpajared,60.73,1,Craig Porter Jr.,CLE,2.6,2.0,2.8,2026-01-02T00:00:00+00:00
+3,grandpajared,60.73,2,Deni Avdija,POR,6.2,1.8,0.4,2026-01-02T00:00:00+00:00
+3,grandpajared,60.73,3,Ryan Rollins,ATL,7.1,1.6,0.8,2026-01-02T00:00:00+00:00
+3,grandpajared,60.73,4,Onyeka Okongwu,ATL,4.5,1.4,0.9,2026-01-02T00:00:00+00:00
+3,grandpajared,60.73,5,Nickeil Alexander-Walker,MIN,3.5,1.2,0.9,2026-01-02T00:00:00+00:00
+4,adri1,60.44,1,Zion Williamson,NOP,5.2,2.0,0.6,2026-01-02T00:00:00+00:00
+4,adri1,60.44,2,Jamal Murray,DEN,6.3,1.8,0.2,2026-01-02T00:00:00+00:00
+4,adri1,60.44,3,Ryan Rollins,ATL,7.1,1.6,0.8,2026-01-02T00:00:00+00:00
+4,adri1,60.44,4,Devin Booker,PHX,4.0,1.4,0.5,2026-01-02T00:00:00+00:00
+4,adri1,60.44,5,Onyeka Okongwu,ATL,4.5,1.2,0.9,2026-01-02T00:00:00+00:00
+5,andrikouu,60.14,1,Deni Avdija,POR,6.2,2.0,0.4,2026-01-02T00:00:00+00:00
+5,andrikouu,60.14,2,Paolo Banchero,ORL,5.4,1.8,0.7,2026-01-02T00:00:00+00:00
+5,andrikouu,60.14,3,Zion Williamson,NOP,5.2,1.6,0.6,2026-01-02T00:00:00+00:00
+5,andrikouu,60.14,4,Jalen Johnson,ATL,3.8,1.4,0.2,2026-01-02T00:00:00+00:00
+5,andrikouu,60.14,5,Ryan Rollins,ATL,7.1,1.2,0.8,2026-01-02T00:00:00+00:00
+6,jaquansmithjr,60.03,1,Onyeka Okongwu,ATL,4.5,2.0,0.9,2026-01-02T00:00:00+00:00
+6,jaquansmithjr,60.03,2,Ryan Rollins,ATL,7.1,1.8,0.8,2026-01-02T00:00:00+00:00
+6,jaquansmithjr,60.03,3,Paolo Banchero,ORL,5.4,1.6,0.7,2026-01-02T00:00:00+00:00
+6,jaquansmithjr,60.03,4,Desmond Bane,MEM,2.7,1.4,0.8,2026-01-02T00:00:00+00:00
+6,jaquansmithjr,60.03,5,Deni Avdija,POR,6.2,1.2,0.4,2026-01-02T00:00:00+00:00
+7,dmvshaan,59.50,1,LeBron James,LAL,4.8,2.0,0.6,2026-01-02T00:00:00+00:00
+7,dmvshaan,59.50,2,Ryan Rollins,ATL,7.1,1.8,0.8,2026-01-02T00:00:00+00:00
+7,dmvshaan,59.50,3,Kon Knueppel,MIL,3.7,1.6,0.9,2026-01-02T00:00:00+00:00
+7,dmvshaan,59.50,4,Chet Holmgren,OKC,4.1,1.4,0.8,2026-01-02T00:00:00+00:00
+7,dmvshaan,59.50,5,Paolo Banchero,ORL,5.4,1.2,0.7,2026-01-02T00:00:00+00:00
+8,jordannworafan1,59.37,1,DaRon Holmes II,DEN,1.9,2.0,3.0,2026-01-02T00:00:00+00:00
+8,jordannworafan1,59.37,2,Ryan Rollins,ATL,7.1,1.8,0.8,2026-01-02T00:00:00+00:00
+8,jordannworafan1,59.37,3,Matas Buzelis,CHI,3.9,1.6,1.6,2026-01-02T00:00:00+00:00
+8,jordannworafan1,59.37,4,Pat Spencer,NOP,2.0,1.4,3.0,2026-01-02T00:00:00+00:00
+8,jordannworafan1,59.37,5,Spencer Jones,DEN,2.4,1.2,3.0,2026-01-02T00:00:00+00:00
