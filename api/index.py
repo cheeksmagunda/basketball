@@ -838,10 +838,18 @@ BLACKLISTED_PLAYERS = {
 _CONFIG_DEFAULTS = {
     "version": 1,
     "card_boost": {
-        "ceiling": 3.5, "floor": 0.2,
-        "ml_additive_correction": 0.0,
-        "max_prior_weight": 0.0,
+        "ceiling": 3.0, "floor": 0.0,
         "big_market_teams": ["LAL", "GS", "GSW", "BOS", "NY", "NYK", "PHI", "MIA", "LAC", "CHI"],
+        "star_ppg_tiers": [
+            {"min_ppg": 26, "boost_cap": 0.2},
+            {"min_ppg": 22, "boost_cap": 0.4},
+            {"min_ppg": 19, "boost_cap": 0.8},
+        ],
+        "team_boost_ceiling": {
+            "GS": 1.8, "GSW": 1.8, "CLE": 1.7,
+            "MEM": 1.5, "OKC": 1.8, "BOS": 1.8,
+            "DEN": 2.0, "MIL": 2.0,
+        },
     },
     "game_script": {
         "defensive_grind_ceiling": 220, "balanced_ceiling": 235, "fast_paced_ceiling": 245,
@@ -1278,25 +1286,8 @@ def _repo_pickle_paths(filename: str) -> list:
 
 _LGBM_JSON_PATHS = _repo_pickle_paths("lgbm_model.json")
 _LGBM_PATHS = _repo_pickle_paths("lgbm_model.pkl")
-_BOOST_JSON_PATHS = _repo_pickle_paths("boost_model.json")
-_BOOST_PATHS = _repo_pickle_paths("boost_model.pkl")
-_DRAFTS_JSON_PATHS = _repo_pickle_paths("drafts_model.json")
-_DRAFTS_PATHS = _repo_pickle_paths("drafts_model.pkl")  # Deprecated: retained for audit/back-compat only.
-
-BOOST_MODEL = None
-BOOST_FEATURES = None
-_BOOST_LOAD_ATTEMPTED = False
-_BOOST_LOAD_LOCK = threading.Lock()
-
-DRAFTS_MODEL = None  # Deprecated: no longer used by _est_card_boost direct-7f path.
-DRAFTS_FEATURES = None
-_DRAFTS_LOAD_ATTEMPTED = False
-_DRAFTS_LOAD_LOCK = threading.Lock()
-
-# Player-level historical boost priors (loaded once from local data files).
-_BOOST_PRIORS = None
-_BOOST_PRIORS_LOADED = False
-_BOOST_PRIORS_LOCK = threading.Lock()
+# Boost/drafts LightGBM models removed — replaced by 3-tier cascade in api/boost_model.py.
+# grep: BOOST CASCADE MODEL
 
 def _ensure_lgbm_loaded():
     """Lazy-load the Real Score LightGBM bundle on first use.
@@ -1392,143 +1383,15 @@ def _lgbm_predict_rs(feat_vec: list) -> Optional[float]:
     return None
 
 
-def _ensure_boost_model_loaded():
-    """Lazy-load card boost model: native Booster (``boost_model.json`` + .txt) then pickle."""
-    global BOOST_MODEL, BOOST_FEATURES, _BOOST_LOAD_ATTEMPTED
-    if _BOOST_LOAD_ATTEMPTED:
-        return
-    with _BOOST_LOAD_LOCK:
-        if _BOOST_LOAD_ATTEMPTED:
-            return
-        for _p in _BOOST_JSON_PATHS:
-            if not _p.exists():
-                continue
-            try:
-                meta = json.loads(_p.read_text(encoding="utf-8"))
-                if meta.get("format") != "lightgbm_native" or "features" not in meta:
-                    continue
-                mf = meta.get("model_file", "boost_model.txt")
-                mpath = _p.parent / mf
-                if not mpath.is_file():
-                    continue
-                _m = lgb.Booster(model_file=str(mpath.resolve()))
-                if callable(getattr(_m, "predict", None)):
-                    BOOST_MODEL = _m
-                    BOOST_FEATURES = meta["features"]
-                    break
-                print(f"[boost_model] native booster not callable — skipping {_p}")
-            except Exception as e:
-                print(f"[boost_model] native load failed from {_p}: {e}")
-        if BOOST_MODEL is None:
-            for _p in _BOOST_PATHS:
-                if _p.exists():
-                    try:
-                        with open(_p, "rb") as _f:
-                            _bundle = pickle.load(_f)
-                        if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                            _m = _bundle["model"]
-                            if callable(getattr(_m, "predict", None)):
-                                BOOST_MODEL = _m
-                                BOOST_FEATURES = _bundle["features"]
-                                break
-                            print(f"[boost_model] model loaded but predict is not callable — skipping {_p}")
-                    except Exception as e:
-                        print(f"[boost_model] load failed from {_p}: {e}")
-        _BOOST_LOAD_ATTEMPTED = True
-        if BOOST_MODEL is None:
-            print("[WARN] Boost model not found/invalid — _est_card_boost will use heuristic fallback (non-flat)")
+
+# _ensure_boost_model_loaded / _lgbm_predict_boost removed — see api/boost_model.py
 
 
-def _lgbm_predict_boost(feat_vec: list) -> Optional[float]:
-    """Return predicted card boost from loaded boost model (native or pickle), or None."""
-    _ensure_boost_model_loaded()
-    if BOOST_MODEL is None or BOOST_FEATURES is None:
-        return None
-    if len(feat_vec) != len(BOOST_FEATURES):
-        print(
-            f"[boost_model] feature mismatch: expected {len(BOOST_FEATURES)}, got {len(feat_vec)}"
-        )
-        return None
-    try:
-        arr = np.array([feat_vec], dtype=np.float64)
-        v = float(BOOST_MODEL.predict(arr)[0])
-        if not math.isfinite(v):
-            print(f"[boost_model] prediction non-finite ({v}) — heuristic boost path")
-            return None
-        return v
-    except Exception as e:
-        print(f"[boost_model] inference failed: {e}")
-        return None
 
+# _ensure_drafts_model_loaded / _lgbm_predict_log1p_drafts removed — see api/boost_model.py
 
-def _ensure_drafts_model_loaded():
-    """DEPRECATED: Lazy-load draft-count model — native JSON + Booster, then pickle."""
-    global DRAFTS_MODEL, DRAFTS_FEATURES, _DRAFTS_LOAD_ATTEMPTED
-    if _DRAFTS_LOAD_ATTEMPTED:
-        return
-    with _DRAFTS_LOAD_LOCK:
-        if _DRAFTS_LOAD_ATTEMPTED:
-            return
-        for _p in _DRAFTS_JSON_PATHS:
-            if not _p.exists():
-                continue
-            try:
-                meta = json.loads(_p.read_text(encoding="utf-8"))
-                if meta.get("format") != "lightgbm_native" or "features" not in meta:
-                    continue
-                mf = meta.get("model_file", "drafts_model.txt")
-                mpath = _p.parent / mf
-                if not mpath.is_file():
-                    continue
-                _m = lgb.Booster(model_file=str(mpath.resolve()))
-                if callable(getattr(_m, "predict", None)):
-                    DRAFTS_MODEL = _m
-                    DRAFTS_FEATURES = meta["features"]
-                    break
-            except Exception as e:
-                print(f"[drafts_model] native load failed from {_p}: {e}")
-        if DRAFTS_MODEL is None:
-            for _p in _DRAFTS_PATHS:
-                if _p.exists():
-                    try:
-                        with open(_p, "rb") as _f:
-                            _bundle = pickle.load(_f)
-                        if isinstance(_bundle, dict) and "model" in _bundle and "features" in _bundle:
-                            _m = _bundle["model"]
-                            if callable(getattr(_m, "predict", None)):
-                                DRAFTS_MODEL = _m
-                                DRAFTS_FEATURES = _bundle["features"]
-                                break
-                    except Exception as e:
-                        print(f"[drafts_model] load failed from {_p}: {e}")
-        _DRAFTS_LOAD_ATTEMPTED = True
-        if DRAFTS_MODEL is None:
-            print("[drafts_model] not found — card boost uses minutes-derived min_proxy fallback")
-
-
-# _draft_pos_bucket, _TEAM_MARKET_SCORES, _ppg_tier_bucket — imported from api.features
-# Aliases for backward compatibility with internal call sites:
-_draft_pos_bucket = pos_bucket
+# _TEAM_MARKET_SCORES alias — still used by _estimate_log_drafts and draft tier system
 _TEAM_MARKET_SCORES = TEAM_MARKET_SCORES
-_ppg_tier_bucket = ppg_tier_bucket
-
-
-def _lgbm_predict_log1p_drafts(feat_vec: list) -> Optional[float]:
-    """DEPRECATED: Predict log1p(drafts) from drafts_model.pkl, or None if unavailable."""
-    _ensure_drafts_model_loaded()
-    if DRAFTS_MODEL is None or DRAFTS_FEATURES is None:
-        return None
-    if len(feat_vec) != len(DRAFTS_FEATURES):
-        print(
-            f"[drafts_model] feature mismatch: expected {len(DRAFTS_FEATURES)}, got {len(feat_vec)}"
-        )
-        return None
-    try:
-        arr = np.array([feat_vec])
-        return float(DRAFTS_MODEL.predict(arr)[0])
-    except Exception as e:
-        print(f"[drafts_model] inference failed: {e}")
-        return None
 
 
 # grep: LEADERBOARD CLASSIFIER
@@ -3239,61 +3102,8 @@ def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
     return round(min(max(float(x), floor_val), ceiling), 1)
 
 
-def _ensure_boost_priors_loaded():
-    """Build player->(mean_boost,count) priors from local historical datasets."""
-    global _BOOST_PRIORS, _BOOST_PRIORS_LOADED
-    if _BOOST_PRIORS_LOADED:
-        return
-    with _BOOST_PRIORS_LOCK:
-        if _BOOST_PRIORS_LOADED:
-            return
-        rows_by_name = {}
 
-        def _add_row(name_raw: str, boost_raw):
-            n = _normalize_player_name(name_raw or "")
-            b = _safe_float(boost_raw, 0.0)
-            if not n or b <= 0:
-                return
-            rows_by_name.setdefault(n, []).append(b)
-
-        try:
-            tp = Path("data/top_performers.csv")
-            if tp.exists():
-                with tp.open("r", encoding="utf-8") as f:
-                    for r in csv.DictReader(f):
-                        _add_row(r.get("player_name", ""), r.get("actual_card_boost"))
-        except Exception as e:
-            print(f"[boost_priors] top_performers read failed: {e}")
-
-        for d in ("data/actuals", "data/most_popular"):
-            try:
-                pdir = Path(d)
-                if not pdir.exists():
-                    continue
-                for p in pdir.glob("*.csv"):
-                    with p.open("r", encoding="utf-8") as f:
-                        for r in csv.DictReader(f):
-                            name = r.get("player_name") or r.get("player") or ""
-                            _add_row(name, r.get("actual_card_boost"))
-            except Exception as e:
-                print(f"[boost_priors] {d} read failed: {e}")
-
-        _BOOST_PRIORS = {
-            name: {"mean": float(np.mean(v)), "count": int(len(v))}
-            for name, v in rows_by_name.items() if v
-        }
-        _BOOST_PRIORS_LOADED = True
-
-
-def _get_boost_prior(player_name: str) -> tuple[Optional[float], int]:
-    _ensure_boost_priors_loaded()
-    if not _BOOST_PRIORS:
-        return None, 0
-    key = _normalize_player_name(player_name or "")
-    rec = (_BOOST_PRIORS or {}).get(key)
-    if not rec:
-        return None, 0
-    return float(rec.get("mean", 0.0) or 0.0), int(rec.get("count", 0) or 0)
+# _ensure_boost_priors_loaded / _get_boost_prior removed — replaced by api/boost_model.py cascade
 
 
 # grep: BREAKOUT DETECTOR
@@ -3445,115 +3255,71 @@ def _est_card_boost(
     projected_rs=None,
     season_avg_min=0.0,
     player_pos="",
+    season_reb=0.0,
+    season_ast=0.0,
 ):
-    """Get card boost for Real Sports via LightGBM.
+    """Predict card boost via 3-tier cascade (api/boost_model.py).
 
-    Direct 8-feature LightGBM (no min_proxy / no drafts-model chain):
-      [projected_rs, season_pts, recent_pts, season_min, pred_min,
-       team_market_score, pos_bucket, ppg_tier]
+    # grep: CARD BOOST
 
-    team_market_score (0.0–1.0) replaces the old binary is_big_market flag.
-    ppg_tier (0–4) segments player recognition without a hard PPG threshold cliff.
+    Tier 1 — Returning player (appeared on a slate within 14 days).
+             Uses prev_boost + adjustment factors. MAE ~0.10–0.15.
+    Tier 2 — Known player, stale (>14 days since last appearance).
+             Blends historical mean with API-derived estimate.
+    Tier 3 — Cold start (never seen on Real Sports).
+             Player Quality Index from season stats.
 
-    Primary path is ML. If boost_model (native or pickle) is unavailable/inference fails, falls back
-    to a deterministic heuristic estimate (never hard-flattens to +1x across slate).
+    Post-prediction caps:
+      - Star PPG tier caps (national stars always low boost)
+      - Per-team boost ceilings (popular franchise role players)
     """
+    from api.boost_model import predict_boost
+
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
-    floor_val = cb.get("floor", 0.2)
+    floor_val = cb.get("floor", 0.0)
 
-    _rs  = float(projected_rs) if projected_rs is not None else 0.0
-    _pm = float(proj_min) if proj_min is not None else 0.0
     _spts = float(season_pts or pts or 0.0)
-    _rpts = float(recent_pts or _spts or 0.0)
-    _smin = float(season_avg_min or _pm or 0.0)
-    _pmin = float(_pm or _smin or 0.0)
-    _pbucket = float(_draft_pos_bucket(player_pos))
-    _market_score = float(_TEAM_MARKET_SCORES.get((team_abbr or "").upper(), 0.3))
-    _ppg_tier = float(_ppg_tier_bucket(_spts))
 
-    # Runtime compatibility: 2-feature legacy, 7-feature old, 8-feature current.
-    _ensure_boost_model_loaded()
-    # Validate feature alignment — warn once if model features don't match expected order
-    _EXPECTED_BOOST_FEATURES_8 = ["projected_rs", "season_pts", "recent_pts", "season_min",
-                                   "pred_min", "team_market_score", "pos_bucket", "ppg_tier"]
-    if isinstance(BOOST_FEATURES, list) and len(BOOST_FEATURES) == 8:
-        if BOOST_FEATURES != _EXPECTED_BOOST_FEATURES_8:
-            if not getattr(_est_card_boost, "_feat_warn", False):
-                setattr(_est_card_boost, "_feat_warn", True)
-                print(f"[WARN] boost_model features {BOOST_FEATURES} != expected {_EXPECTED_BOOST_FEATURES_8} — predictions may be wrong", flush=True)
-    expected_len = len(BOOST_FEATURES) if isinstance(BOOST_FEATURES, list) else 8
-    if expected_len == 2:
-        # Legacy model expected [projected_rs, min_proxy].
-        feat_vec = [_rs, _pmin]
-    elif expected_len == 7:
-        # Old 7-feature model: [projected_rs, season_pts, recent_pts, season_min, pred_min, is_big_market, pos_bucket]
-        # Approximate is_big_market from the continuous score using a 0.6 threshold.
-        _is_bm_compat = 1.0 if _market_score >= 0.6 else 0.0
-        feat_vec = [_rs, _spts, _rpts, _smin, _pmin, _is_bm_compat, _pbucket]
-    else:
-        # Current 8-feature model: team_market_score replaces is_big_market, ppg_tier added.
-        feat_vec = [_rs, _spts, _rpts, _smin, _pmin, _market_score, _pbucket, _ppg_tier]
-    ml_pred = _lgbm_predict_boost(feat_vec)
+    # Get today's date string for gap calculation
+    today_str = str(_et_date())
+
+    # Run 3-tier cascade
+    result = predict_boost(
+        player_name=player_name or "",
+        today_str=today_str,
+        season_ppg=_spts,
+        season_rpg=float(season_reb or 0.0),
+        season_apg=float(season_ast or 0.0),
+        season_mpg=float(season_avg_min or proj_min or 0.0),
+        recent_ppg=float(recent_pts or _spts or 0.0),
+        team=team_abbr or "",
+        ceiling=ceiling,
+        floor=floor_val,
+    )
+
+    raw_boost = result["boost"]
 
     # Star PPG tier caps — high-PPG players are nationally popular regardless of
-    # team market size, so the ML model (which uses is_big_market as a proxy) will
-    # systematically over-predict their boost. These hard caps apply after ML
-    # correction so a 26 PPG player like Mitchell cannot get predicted at 1.0x+
-    # when his actual boost is 0.2x.  Configurable via card_boost.star_ppg_tiers.
+    # team market size. These hard caps prevent over-prediction for stars.
     _star_tiers = sorted(
         cb.get("star_ppg_tiers", []),
         key=lambda t: float(t.get("min_ppg", 0)),
         reverse=True,
     )
 
-    # Per-team boost ceiling — GS/CLE/MEM/OKC fans draft their role players at
-    # much higher rates than PPG alone captures. Draymond (8.5 PPG on GS) looks
-    # "obscure" to the ML model but is famous → model predicts 2.8x, actual 1.9x.
-    # A team ceiling stops us from over-predicting popular-franchise role players
-    # without touching small-market teams where boosts are legitimately high.
+    # Per-team boost ceiling — popular franchise role players get capped.
     _team_ceilings = cb.get("team_boost_ceiling", {})
     _team_ceil = float(_team_ceilings.get(team_abbr, ceiling))
 
-    def _apply_caps(raw):
-        # 1. Star PPG tier cap (national stars always low-boost regardless of team)
-        for _tier in _star_tiers:
-            if _spts >= float(_tier.get("min_ppg", 9999)):
-                raw = min(raw, float(_tier.get("boost_cap", ceiling)))
-                break
-        # 2. Per-team popularity ceiling (popular franchise role players)
-        return min(raw, _team_ceil)
+    # Apply caps
+    for _tier in _star_tiers:
+        if _spts >= float(_tier.get("min_ppg", 9999)):
+            raw_boost = min(raw_boost, float(_tier.get("boost_cap", ceiling)))
+            break
+    raw_boost = min(raw_boost, _team_ceil)
 
-    if ml_pred is not None and math.isfinite(float(ml_pred)):
-        # ML model + additive correction. No prior blending — boost must be
-        # predicted purely from player profile (prior data not reliably available).
-        correction = float(cb.get("ml_additive_correction", 0.0))
-        return _clamp_round_boost(_apply_caps(float(ml_pred) + correction), floor_val, ceiling)
-
-    # Deterministic fallback: derive boost from projected popularity.
-    # Fitted from 909 observations: boost = 3.34 - 0.71 × log10(drafts), R²=0.642.
-    # Configurable via card_boost.log_linear in model-config.json.
-    _ll = cb.get("log_linear", {})
-    _intercept = float(_ll.get("intercept", 3.34))
-    _slope = float(_ll.get("slope", -0.71))
-    log_drafts = _estimate_log_drafts(_spts, False, _rpts, _spts, market_score=_market_score)
-    fallback = _intercept + _slope * float(log_drafts)
-    if _spts >= 22:
-        fallback -= 0.20
-    if _spts <= 10:
-        fallback += 0.15
-    if _pmin < 20:
-        fallback += 0.10
-    if _market_score >= 0.6:
-        fallback -= 0.10 * _market_score
-    form_ratio = float(_rpts) / max(float(_spts), 1.0)
-    if form_ratio >= 1.15:
-        fallback -= 0.08
-    elif form_ratio <= 0.90:
-        fallback += 0.08
-    out = _clamp_round_boost(_apply_caps(fallback), floor_val, ceiling)
-    print(f"[WARN] boost model unavailable — heuristic fallback for {player_name}: {out}")
-    return out
+    return _clamp_round_boost(raw_boost, floor_val, ceiling)
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
@@ -4080,6 +3846,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         projected_rs=raw_score,
         season_avg_min=float(avg_min or 0.0),
         player_pos=str(pinfo.get("pos") or ""),
+        season_reb=float(stats.get("season_reb", reb)),
+        season_ast=float(stats.get("season_ast", ast)),
     )
 
     # EV score — card-adjusted expected value using additive formula

@@ -41,22 +41,19 @@ data/slate/            — GitHub-persisted prediction cache ({date}_slate.json,
 data/locks/            — Cold-start recovery: {date}_slate.json written at lock-promotion time
 data/skipped-uploads.json — Dates where `save-actuals` no-ops (optional; `POST /api/lab/skip-uploads`)
 lgbm_model.pkl         — LightGBM model bundle {model, features} for Real Score projections
-boost_model.pkl        — LightGBM model bundle {model, features} for Card Boost prediction
-drafts_model.pkl       — LightGBM draft-count (popularity) bundle; labels from top_performers + actuals
+api/boost_model.py     — 3-Tier Cascade Boost Prediction (replaces boost_model.pkl + drafts_model.pkl)
 train_lgbm.py          — Training script (12 features, run locally or via GitHub Actions)
-train_boost_lgbm.py    — Card Boost training (labels: top_performers + actuals + most_popular)
-train_drafts_lgbm.py   — Draft-count training; joins top_performers/actuals/most_popular to predictions for features
 scripts/verify_top_performers.py — Backtest drafts + boost vs leaderboard labels + predictions overlap
 railway.toml          — Railway config (crons, health check, watchPatterns for deploy)
 vercel.json            — Legacy (unused in production; Railway replaced Vercel)
 server.py              — Local dev server (uvicorn)
 ```
 
-## Dual-Model Machine Learning Architecture
+## Machine Learning + Cascade Architecture
 
-The backend leverages two autonomous LightGBM models trained nightly via GitHub Actions:
-1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance.
-2. **`boost_model.pkl` (Card Boost Prediction)**: LightGBM on projected RS + `min_proxy` (from `drafts_model.pkl` when loaded). **Training labels** (`actual_card_boost`, `drafts`) come from `data/top_performers.csv`, `data/actuals/`, and `data/most_popular/` (merged, de-duped)—not from ESPN alone. Optional: retrain boost after `drafts_model.pkl` stabilizes so inference matches training-time `min_proxy` definition.
+The backend uses:
+1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature LightGBM model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance. Trained nightly via GitHub Actions.
+2. **`api/boost_model.py` (3-Tier Cascade Boost Prediction)**: Deterministic cascade that predicts card boost (0.0–3.0) from historical Real Sports data. **Tier 1** (returning player, ≤14 days): uses prev_boost + adjustments for RS, drafts, trend, gap, mean reversion (MAE ~0.10–0.15). **Tier 2** (stale, >14 days): blends historical boost mean with API-derived estimate. **Tier 3** (cold start): Player Quality Index from season stats. Replaces the prior `boost_model.pkl` + `drafts_model.pkl` LightGBM chain. Historical labels from `data/top_performers.csv` + `data/actuals/` loaded at startup.
 
 **Historical outcomes** for audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
@@ -124,13 +121,13 @@ grep: LAB PAGE                 — initLabPage, LAB state, labCallClaude, buildL
 grep: HISTORICAL DATA          — TOP_PERFORMERS_GH_PATH, _load_player_actuals_for_date, save-most-popular, winning_drafts, slate_results
 grep: PDF INGEST PLAYBOOK      — docs/historical-ingest/INSTRUCTIONS.md (file-only); or rasterize + parse-screenshot + save-* + rebuild mega
 grep: DEV SERVER               — server.py, uvicorn, PORT, SPA index catch-all
-grep: DATA / TRAINING SCRIPTS  — train_lgbm, train_boost_lgbm, train_drafts_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega, migrate_historical_add_team, fetch_slate_results_espn
+grep: DATA / TRAINING SCRIPTS  — train_lgbm; scripts/verify_top_performers, verify_historical_datasets, sync_actuals_from_top_performers, rebuild_top_performers_mega, migrate_historical_add_team, fetch_slate_results_espn
 grep: github_storage           — _github_get_file, _github_write_file
 grep: SLATE CACHE GITHUB       — _slate_cache_to_github, _games_cache_from_github, _bust_slate_cache
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
 grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
 grep: INJURY CASCADE           — _cascade_minutes, _pos_group
-grep: CARD BOOST               — _est_card_boost, _dfs_score
+grep: CARD BOOST               — _est_card_boost, _dfs_score (cascade in api/boost_model.py grep: BOOST CASCADE MODEL)
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
 grep: FAIR VALUE ENGINE        — project_player_fv in api/fair_value.py (pure functions, no I/O)
@@ -583,13 +580,18 @@ Features: `avg_min, avg_pts, usage_trend, opp_def_rating, home_away, ast_rate, d
 - `rest_days` and `games_played` default to `2.0` / `40.0` at inference (not in ESPN splits). `recent_vs_season` = recent scoring vs season average (training: recent_5g_pts/avg_pts; inference: recent_pts/season_pts).
 - Retrained nightly by GitHub Actions (`retrain-model.yml`). Retrain manually: `python train_lgbm.py`.
 
-### Card Boost (`_est_card_boost`) — drafts estimate + 2-feature ML + sigmoid fallback
-No pre-game boost uploads or per-player overrides at inference. Pipeline:
-- **`drafts_model.pkl`** (optional): predicts `log1p(drafts)` from role/market/pos features; **`min_proxy = 12 + 5 × log1p(drafts)`** (clamped in config). If missing, `min_proxy` is derived from projected minutes (legacy inverse map).
-- **`boost_model.pkl`**: 2-feature LightGBM on **`[projected_rs, min_proxy]`** (`train_boost_lgbm.py`). Training targets **`actual_card_boost`** with **`min_proxy`** built from **true historical `drafts`** in **`data/top_performers.csv`** + **`data/actuals/`** (~2 months leaderboard corpus — **primary historical dataset**).
-- **Sigmoid fallback** when RS/minutes unavailable for ML: PPG tier curve + big-market discount from config.
+### Card Boost (`_est_card_boost`) — 3-Tier Cascade (api/boost_model.py)
+No pre-game boost uploads or per-player overrides at inference. Pipeline uses a deterministic cascade calibrated from 2,234 player-date records across 148 dates:
 
-Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed formula tweaks), not for live `_est_card_boost`.
+- **Tier 1 — Returning Player** (appeared on a slate within 14 days): `predicted_boost = prev_boost + adjustments`. Adjustments: RS performance decay (high RS → -0.1, bust → +0.1), draft popularity (heavily drafted → -0.05, ignored → +0.05), 5% mean reversion toward tier baseline, 15% trend continuation, gap-day blend toward baseline, boundary persistence (3.0 stays 3.0 in ~75% of cases; 0.0 stars stay at 0.0). Expected MAE ~0.10–0.15.
+- **Tier 2 — Known Player, Stale** (>14 days since last appearance): Blends historical boost mean with API-derived estimate, weighted by staleness (0% at 14 days, 50% at 44+ days).
+- **Tier 3 — Cold Start** (never seen on Real Sports): Player Quality Index (PQI) from season stats (PPG×1.0 + RPG×0.4 + APG×0.6 + MPG×0.2) maps to boost. Default high (3.0) for unknown players.
+- **Post-prediction caps**: Star PPG tier caps (26+ PPG → 0.2x, 22+ → 0.4x, 19+ → 0.8x), per-team boost ceilings (GS/CLE/MEM/OKC fans draft at higher rates).
+- **Data source**: `data/top_performers.csv` + `data/actuals/*.csv`, loaded once at startup, indexed per-player by date.
+
+`boost_model.pkl` and `drafts_model.pkl` are no longer used at inference. `train_boost_lgbm.py` and `train_drafts_lgbm.py` are retained for reference but no longer required for production.
+
+Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed formula tweaks).
 
 ### Moonshot Formula (v7 — quality over quantity)
 `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)`
@@ -1090,6 +1092,8 @@ If slate and/or line fail to load:
 | Parlay post-mortem v2 optimization | `api/parlay_engine.py`, `api/index.py`, `data/model-config.json` | Quantitative post-mortem of 2024-2026 NBA parlay architectures. **Auto-fade matrix**: (1) Centers rebounds over vs switch-heavy defenses (BOS/CLE/MIN/OKC) auto-faded — paint positioning neutralized by perimeter switching. (2) B2B correlated pair penalty (0.75x) — cognitive/physical fatigue breaks assists→points chain; 57% spread-failure rate on B2B. (3) Perimeter-to-perimeter correlation fade (0.95x penalty) — 3PT-dependent scoring chain is fragile. (4) Fake juice trap — high L5-L10 hit rate (>80%) + low season model_prob (<55%) = regression trap at peak valuation. **Threshold recalibrations**: Spread tightened 6.5→5.0 (blowout mirage — 51.4% of games decided by 10+ pts). Game total floor 225.5 (possession guarantee for correlated pairs). CV-based market match validation (volatile ≠ reliable). Dynamic Leg 1 substitution (rebounds→pts/ast vs elite defense). **Tiered correlation enhancers**: PnR-to-rim (1.20x for C/PF with 7+ reb — most stable conversion), pace asymmetry (1.06x for 232+ total games), rest advantage (1.08x team rested vs opponent B2B). Config: `parlay.auto_fade.*`, `parlay.min_game_total`, `parlay.market_match_max_cv`, `parlay.pnr_rim_boost`, `parlay.pace_boost*`, `parlay.rest_advantage_boost`. 25 new tests (101 total in test_parlay.py). |
 
 | Mar 27 draft review — S5 coverage + RS inflation fix | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | **Problem**: Mar 27 slate — moonshot hit 1/5 (Jenkins #1, but Sasser/McDermott/Alvarado/Carter all missed). S5 blocked top RS performers (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) via 1.5x chalk boost floor. RS over-projection: 4 stacked post-compression multipliers (cascade_rs × role_spike × breakout × archetype = 1.87×) inflated Sasser from RS 3.0 to 6.1. **Fix 1**: `chalk_min_boost_floor` 1.5→0.3, star anchor widened (min_season_pts 20→12, min_rating 4.5→3.5, max_count 2→3) so top RS performers enter chalk pool and MILP (rs_focus=0.75) selects them. **Fix 2**: Post-compression multiplier cap (`max_post_compression_mult: 1.40`) — tracks `_pre_boost_rs` before archetype/cascade/spike/breakout boosts; clamps total inflation to 1.40×. Prevents bench players from inflating from RS 3 to 6+. **Fix 3**: HBR `min_rating: 2.5` (already in config+code from prior session). **Goal**: S5 catches top RS carries (Duren, Knueppel, DeRozan, Banchero), Moonshot catches one-slate-ahead contrarians (Jenkins, Plowden, Huerter); 2-3 "lock" players overlap in both lineups. |
+
+| 3-Tier Cascade Boost Prediction | `api/boost_model.py` (new), `api/index.py`, `tests/test_fixes.py`, `tests/test_core.py` | **Architecture**: Replaced LightGBM `boost_model.pkl` + `drafts_model.pkl` with deterministic 3-tier cascade calibrated from 2,234 player-date records. **Tier 1** (returning, ≤14d): prev_boost + 6 adjustment factors (RS decay, draft popularity, mean reversion, trend, gap blend, boundary persistence). **Tier 2** (stale, >14d): staleness-weighted blend of historical mean and API-derived PQI estimate. **Tier 3** (cold start): Player Quality Index from season stats. Post-prediction star PPG caps and per-team ceilings. Key insight: prev_boost correlates +0.957 with actual boost; 88.2% of day-over-day changes are within ±0.3. Removed: `_ensure_boost_model_loaded()`, `_lgbm_predict_boost()`, `_ensure_drafts_model_loaded()`, `_lgbm_predict_log1p_drafts()`, `_ensure_boost_priors_loaded()`, `_get_boost_prior()`, `BOOST_MODEL/FEATURES` globals, `DRAFTS_MODEL/FEATURES` globals. Updated `_CONFIG_DEFAULTS.card_boost` (ceiling 3.5→3.0, floor 0.2→0.0, removed `ml_additive_correction`/`max_prior_weight`, added `star_ppg_tiers`/`team_boost_ceiling`). 17 new tests (13 cascade + 4 integration). 693 tests pass. |
 
 ## Loading audit
 
