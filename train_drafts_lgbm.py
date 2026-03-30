@@ -29,6 +29,9 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
+# Import shared helpers from api.features — single source of truth
+from api.features import pos_bucket as _pos_bucket
+
 REPO = Path(__file__).resolve().parent
 TOP_PERFORMERS = REPO / "data" / "top_performers.csv"
 ACTUALS_DIR = REPO / "data" / "actuals"
@@ -64,17 +67,6 @@ def _safe_float(v, default: float = 0.0) -> float:
         return float(v)
     except Exception:
         return default
-
-
-def _pos_bucket(pos: str) -> int:
-    p = (pos or "").strip().upper()
-    if not p:
-        return 3
-    if p.startswith("C"):
-        return 2
-    if p[0] in ("G", "P") or p.startswith("PG") or p.startswith("SG"):
-        return 0
-    return 1
 
 
 def _load_prediction_index() -> dict[str, dict[str, dict]]:

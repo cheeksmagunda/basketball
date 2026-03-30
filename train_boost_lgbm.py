@@ -29,6 +29,14 @@ from typing import Optional
 import lightgbm as lgb
 import numpy as np
 
+# Import shared helpers from api.features — single source of truth
+from api.features import (
+    TEAM_MARKET_SCORES,
+    get_team_market_score as _get_team_market_score,
+    pos_bucket as _pos_bucket,
+    ppg_tier_bucket as _ppg_tier_bucket,
+)
+
 TOP_PERFORMERS = Path("data/top_performers.csv")
 ACTUALS_DIR = Path("data/actuals")
 MOST_POPULAR_DIR = Path("data/most_popular")
@@ -48,20 +56,6 @@ FEATURES = [
     "ppg_tier",
 ]
 
-# Continuous team market score (0.0–1.0) covering all 30 teams.
-# Reflects fanbase size + franchise recognition + playoff relevance.
-# Higher score = more fans drafting from that team = lower expected card boost.
-# Must stay in sync with TEAM_MARKET_SCORES in api/index.py.
-TEAM_MARKET_SCORES = {
-    "LAL": 1.00, "GSW": 0.95, "GS": 0.95, "BOS": 0.90, "NYK": 0.90, "NY": 0.90,
-    "PHI": 0.75, "MIA": 0.75, "LAC": 0.70, "CHI": 0.70,
-    "BKN": 0.65, "DEN": 0.65, "MIL": 0.60, "DAL": 0.60,
-    "HOU": 0.55, "PHX": 0.55, "ATL": 0.50, "TOR": 0.50,
-    "CLE": 0.45, "IND": 0.40, "ORL": 0.35, "POR": 0.35,
-    "DET": 0.30, "MIN": 0.30, "OKC": 0.25, "UTA": 0.25,
-    "SAS": 0.25, "NOP": 0.20, "NO": 0.20, "MEM": 0.20,
-    "CHA": 0.15, "SAC": 0.15, "WSH": 0.10,
-}
 LOOKBACK_DAYS = 14
 SILVER_SINGLE_MIN_RS = 4.0
 
@@ -78,45 +72,6 @@ def _parse_date(s: str) -> Optional[datetime]:
         return datetime.strptime((s or "").strip(), "%Y-%m-%d")
     except Exception:
         return None
-
-
-def _pos_bucket(pos: str) -> int:
-    """Must match _draft_pos_bucket() logic in api/index.py."""
-    p = (pos or "").strip().upper()
-    if not p:
-        return 3
-    if p.startswith("C"):
-        return 2
-    if p[0] in ("G", "P") or p.startswith("PG") or p.startswith("SG"):
-        return 0
-    return 1
-
-
-def _get_team_market_score(team: str) -> float:
-    """Return continuous market score (0.0–1.0) for a team abbreviation.
-
-    Higher = larger/more engaged fanbase = player more likely to be drafted
-    regardless of their stats = lower expected card boost.
-    Defaults to 0.3 for unknown teams (small-market neutral).
-    """
-    return TEAM_MARKET_SCORES.get((team or "").strip().upper(), 0.3)
-
-
-def _ppg_tier_bucket(season_pts: float) -> int:
-    """Coarse PPG tier (0–4) for player recognition.
-
-    Segments players into popularity tiers without a hard threshold cliff.
-    Must stay in sync with _ppg_tier_bucket() in api/index.py.
-    """
-    if season_pts < 8:
-        return 0   # bench/fringe — truly obscure
-    if season_pts < 13:
-        return 1   # role player — recognizable but not star
-    if season_pts < 18:
-        return 2   # secondary scorer
-    if season_pts < 24:
-        return 3   # main option
-    return 4       # star/franchise — nationally known, heavily drafted
 
 
 def _load_prediction_index() -> tuple[dict, dict]:
