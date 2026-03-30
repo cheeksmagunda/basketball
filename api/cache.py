@@ -126,6 +126,17 @@ def rcs(key: str, value, date_str: str | None = None, ttl: int | None = None):
         print(f"[cache] Redis SET error for {key}: {e}")
 
 
+def rcd(key: str, date_str: str | None = None):
+    """Redis Cache DELETE — remove a single key. Safe no-op if Redis is down."""
+    client = _redis_client()
+    if client is None:
+        return False
+    try:
+        return bool(client.delete(_make_key(key, date_str)))
+    except Exception:
+        return False
+
+
 def rflush():
     """Flush all keys under our namespace prefix. Safe no-op if Redis is down."""
     client = _redis_client()

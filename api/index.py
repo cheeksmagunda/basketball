@@ -48,7 +48,7 @@ try:
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
     from api.fair_value import project_player_fv, dvp_binary_from_nba_com
-    from api.cache import rcg, rcs, rflush, redis_ok
+    from api.cache import rcg, rcs, rcd, rflush, redis_ok
     from api.features import (
         RS_FEATURES, compute_rs_features, rs_feature_vector,
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
@@ -59,7 +59,7 @@ except ImportError:
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
     from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
     from .fair_value import project_player_fv, dvp_binary_from_nba_com
-    from .cache import rcg, rcs, rflush, redis_ok
+    from .cache import rcg, rcs, rcd, rflush, redis_ok
     from .features import (
         RS_FEATURES, compute_rs_features, rs_feature_vector,
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
@@ -493,15 +493,12 @@ def _github_slate_bust_active() -> bool:
 
 
 def _clear_local_slate_tmp_caches():
-    """Remove today's slate + lock JSON from this instance's /tmp (hashed paths)."""
+    """Remove today's slate + lock JSON from this instance's /tmp + Redis (hashed paths)."""
     try:
         _lp(_CK_SLATE_LOCKED).unlink(missing_ok=True)
     except Exception:
         pass
-    try:
-        _cp(_CK_SLATE).unlink(missing_ok=True)
-    except Exception:
-        pass
+    _cd(_CK_SLATE)
 
 
 def _games_cache_to_github(all_game_projections: dict, date_str: str = None):
@@ -779,9 +776,12 @@ def _add_cache_metadata(response_dict, is_hit, cache_key=None):
     return response_dict
 
 def _invalidate_response_cache(pattern=None):
-    """Clear response cache. pattern=None clears all; pattern='slate' clears 'slate:*'."""
+    """Clear response cache + Redis + /tmp files."""
     _RESPONSE_CACHE.invalidate(pattern)
-    # Also bust file caches (Levels 1-2) as before
+    try:
+        rflush()
+    except Exception:
+        pass
     for f in CACHE_DIR.glob("*.json"):
         try:
             f.unlink(missing_ok=True)
@@ -1674,11 +1674,18 @@ def _cg(k, date_str=None):
 def _cs(k, v, date_str=None):
     """Cache SET: write to both Redis (with TTL) and /tmp file."""
     d = date_str or _today_str()
-    # Write to Redis with mapped TTL
     rcs(k, v, d, ttl=_redis_ttl_for_key(k))
-    # Write to /tmp file (fallback layer)
     try:
         _cp(k, date_str).write_text(json.dumps(v))
+    except Exception:
+        pass
+
+def _cd(k, date_str=None):
+    """Cache DELETE: remove from Redis AND /tmp file."""
+    d = date_str or _today_str()
+    rcd(k, d)
+    try:
+        _cp(k, date_str).unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -2516,14 +2523,10 @@ def _fetch_athlete(pid):
     _ath_key = f"ath3_{pid}"
     c = _cg(_ath_key)
     if c:
-        # Check TTL — athlete data can go stale (e.g., OUT yesterday, active today)
-        _ath_path = _cp(_ath_key)
-        try:
-            if _ath_path.exists() and (time.time() - _ath_path.stat().st_mtime) > _TTL_ATHLETE:
-                _ath_path.unlink(missing_ok=True)
-                c = None  # Force re-fetch
-        except Exception:
-            pass
+        ts = c.get("_cached_ts", 0) if isinstance(c, dict) else 0
+        if ts and (time.time() - ts) > _TTL_ATHLETE:
+            _cd(_ath_key)
+            c = None
     if c: return c
     url = (f"https://site.api.espn.com/apis/common/v3/sports/basketball"
            f"/nba/athletes/{pid}/overview")
@@ -2617,6 +2620,7 @@ def _fetch_athlete(pid):
     except Exception as e:
         print(f"Stat parse error pid={pid}: {e}")
         return None
+    blended["_cached_ts"] = time.time()
     _cs(f"ath3_{pid}", blended)
     return blended
 
@@ -2631,18 +2635,12 @@ def _fetch_team_player_stats(team_id: str) -> dict:
     team level so a cold start fetches 2 team bundles instead of ~30 individual athletes.
     Falls back gracefully — callers should use _fetch_athlete for any missing players."""
     cache_key = f"team_pstats_{team_id}"
-    # Check cache with TTL
-    cached_path = _cp(cache_key)
-    if cached_path.exists():
-        try:
-            if (time.time() - cached_path.stat().st_mtime) < _TTL_ATHLETE:
-                c = _cg(cache_key)
-                if c:
-                    return c
-            else:
-                cached_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+    c = _cg(cache_key)
+    if c:
+        ts = c.get("_cached_ts", 0) if isinstance(c, dict) else 0
+        if ts and (time.time() - ts) < _TTL_ATHLETE:
+            return c
+        _cd(cache_key)
 
     # Fetch team statistics page — returns per-player season stats in one call
     url = (f"https://site.api.espn.com/apis/site/v2/sports/basketball"
@@ -2721,9 +2719,8 @@ def _fetch_team_player_stats(team_id: str) -> dict:
                 blended["season_blk"] = s["blk"]
                 blended["recent_blk"] = s["blk"]
 
+                blended["_cached_ts"] = time.time()
                 result[pid] = blended
-                # Also populate the individual athlete cache so _fetch_athlete
-                # gets a cache hit if called later for this player
                 _cs(f"ath3_{pid}", blended)
 
             except (KeyError, TypeError, ValueError):
@@ -2734,6 +2731,7 @@ def _fetch_team_player_stats(team_id: str) -> dict:
         return {}
 
     if result:
+        result["_cached_ts"] = time.time()
         _cs(cache_key, result)
         print(f"[team-stats] loaded {len(result)} players for team {team_id}")
     return result
@@ -7922,11 +7920,7 @@ async def injury_check(request: Request):
         game = games_map.get(gid)
         if not game:
             continue
-        # Clear per-game /tmp cache to force fresh computation
-        try:
-            _cp(_ck_game_proj(gid)).unlink()
-        except Exception:
-            pass
+        _cd(_ck_game_proj(gid))
         try:
             projections = _run_game(game)
             if projections:
@@ -8079,51 +8073,43 @@ def _build_player_odds_map(games, *, require_fresh_book_odds=False):
             raise OddsApiRequiredError("odds_no_games", "No games list for Odds API match")
         return {}
 
-    # Track daily quota usage to prevent waste (500 requests/day = ~30 full slates)
-    # Each call: 1 event fetch + N props fetches (N = # of games, typically 10-14)
     quota_key = f"odds_quota_{_today_str()}"
-    quota_file = _cp(quota_key)
-    quota_data = {"calls": 0, "reset_at": datetime.now(timezone.utc).isoformat()}
-    if quota_file.exists():
-        try:
-            quota_data = json.loads(quota_file.read_text())
-        except:
-            pass
-    est_calls = 1 + len(games)  # 1 events + N props calls
+    quota_data = _cg(quota_key) or {"calls": 0, "reset_at": datetime.now(timezone.utc).isoformat()}
+    est_calls = 1 + len(games)
     quota_data["calls"] = quota_data.get("calls", 0) + est_calls
     quota_data["estimated_total"] = quota_data.get("calls", 0)
     print(f"[odds_map] estimated quota usage: +{est_calls} calls (total today: {quota_data.get('calls', 0)}/500)")
+    try:
+        _cs(quota_key, quota_data)
+    except Exception:
+        pass
 
     fp = _odds_map_fingerprint(games)
     fresh_ck = "odds_fresh_map_v1"
     try:
-        cp_f = _cp(fresh_ck)
-        if cp_f.exists():
-            age = time.time() - cp_f.stat().st_mtime
+        obj = _cg(fresh_ck)
+        if isinstance(obj, dict) and obj.get("fingerprint") == fp:
+            ts = obj.get("ts", 0)
+            age = time.time() - ts
             if age < _TTL_ODDS_FRESH:
-                obj = json.loads(cp_f.read_text()) if cp_f.read_text() else {}
-                if isinstance(obj, dict) and obj.get("fingerprint") == fp:
-                    data = obj.get("data")
-                    if isinstance(data, dict) and data:
-                        print(f"[odds_map] fresh cache hit fp={fp[:8]}… age={age:.0f}s entries={len(data)}")
-                        return data
+                data = obj.get("data")
+                if isinstance(data, dict) and data:
+                    print(f"[odds_map] fresh cache hit fp={fp[:8]}… age={age:.0f}s entries={len(data)}")
+                    return data
     except Exception:
         pass
 
-    # Degraded mode (draft odds enrichment only): reuse last successful map (~1h) when
-    # the live Odds API fails. Line/Parlay never use this when require_fresh_book_odds.
     cache_key = "odds_last_success_map_v1"
     cached_odds_map = {}
     if not require_fresh_book_odds:
         try:
-            cp = _cp(cache_key)
-            if cp.exists():
-                age = time.time() - cp.stat().st_mtime
-                if age < 3600:  # 1h
-                    obj = json.loads(cp.read_text()) if cp.read_text() else {}
-                    if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
-                        cached_odds_map = obj.get("data") or {}
-                        print(f"[odds_map] loaded {len(cached_odds_map)} cached entries (age={age:.0f}s)")
+            obj = _cg(cache_key)
+            if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
+                ts = obj.get("ts", 0)
+                age = time.time() - ts
+                if age < 3600:
+                    cached_odds_map = obj.get("data") or {}
+                    print(f"[odds_map] loaded {len(cached_odds_map)} cached entries (age={age:.0f}s)")
         except Exception:
             cached_odds_map = {}
 
@@ -8305,12 +8291,11 @@ def _build_player_odds_map(games, *, require_fresh_book_odds=False):
     if result_map:
         try:
             _ock = f"opening_odds_v1_{_today_str()}"
-            ocp = _cp(_ock)
-            if not ocp.exists():
+            prev = _cg(_ock)
+            if not prev:
                 serial = {f"{a}||{b}": dict(v) for (a, b), v in result_map.items()}
                 _cs(_ock, {"data": serial, "fingerprint": fp})
             else:
-                prev = _cg(_ock)
                 if isinstance(prev, dict) and isinstance(prev.get("data"), dict):
                     for (a, b), v in result_map.items():
                         sk = f"{a}||{b}"
@@ -8502,21 +8487,21 @@ def _fetch_lines_via_claude(all_proj: list, games: list, date=None, force_refres
         return {}
 
     today = (date or _et_date()).isoformat()
-    cache_path = _cp(_CK_LINE_ODDS_CLAUDE, today)
 
-    if not force_refresh and cache_path.exists():
+    if not force_refresh:
         try:
-            age_s = time.time() - cache_path.stat().st_mtime
-            if age_s < _TTL_ODDS_FRESH:
-                cached = _cg(_CK_LINE_ODDS_CLAUDE, today)
-                if cached and "serialized" in cached:
+            cached = _cg(_CK_LINE_ODDS_CLAUDE, today)
+            if cached and "serialized" in cached:
+                ts = cached.get("ts", 0)
+                age_s = time.time() - ts if ts else _TTL_ODDS_FRESH + 1
+                if age_s < _TTL_ODDS_FRESH:
                     result = {}
                     for k, v in cached["serialized"].items():
                         parts = k.split("|", 1)
                         if len(parts) == 2:
                             result[(parts[0], parts[1])] = v
                     if result:
-                        print(f"[lines-claude] serving {len(result)} lines from /tmp cache (age {age_s:.0f}s)")
+                        print(f"[lines-claude] serving {len(result)} lines from cache (age {age_s:.0f}s)")
                         return result
         except Exception:
             pass
@@ -8604,7 +8589,7 @@ def _fetch_lines_via_claude(all_proj: list, games: list, date=None, force_refres
 
         # Cache with serialized string keys for JSON storage
         serialized = {f"{k[0]}|{k[1]}": v for k, v in player_odds_map.items()}
-        _cs(_CK_LINE_ODDS_CLAUDE, {"serialized": serialized, "fetched_at": today}, today)
+        _cs(_CK_LINE_ODDS_CLAUDE, {"serialized": serialized, "fetched_at": today, "ts": time.time()}, today)
 
         return player_odds_map
     except Exception as e:
@@ -8973,14 +8958,8 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                 try:
                     _github_write_file(f"data/lines/{today_str}_pick.json", json.dumps(today_picks),
                                        f"inline-resolve line {today_str}")
-                    try:
-                        _lc = _cp(_CK_LINE, today_str)
-                        if _lc.exists(): _lc.unlink()
-                    except Exception: pass
-                    try:
-                        _hc = _cp(_CK_LINE_HISTORY)
-                        if _hc.exists(): _hc.unlink()
-                    except Exception: pass
+                    _cd(_CK_LINE, today_str)
+                    _cd(_CK_LINE_HISTORY)
                 except Exception as _ie:
                     print(f"[line-of-the-day] inline-resolve persist error: {_ie}")
 
@@ -9141,13 +9120,7 @@ async def line_force_regenerate():
     out["_cache_date"] = today_str
     _cs(_CK_LINE, out)
 
-    # Bust history cache so the fresh pick card is immediately reflected.
-    try:
-        _hc = _cp(_CK_LINE_HISTORY)
-        if _hc.exists():
-            _hc.unlink()
-    except Exception:
-        pass
+    _cd(_CK_LINE_HISTORY)
 
     return {"status": "ok", "forced": True, "date": today_str, "pick": out.get("pick")}
 
@@ -9263,12 +9236,8 @@ async def refresh_line_odds():
         write_result = _github_write_file(json_path, json.dumps(picks), f"odds refresh {today_str}")
         if write_result.get("error"):
             return JSONResponse({"status": "error", "message": write_result["error"]}, status_code=500)
-        # Clear /tmp line cache so next /api/line-of-the-day reloads from GitHub (fresh odds).
-        # Also clear line_history cache — it embeds books_consensus and odds_* fields.
-        for _cache_key in (_CK_LINE, _CK_LINE_HISTORY):
-            _cf = _cp(_cache_key, today_str)
-            if _cf.exists():
-                _cf.unlink()
+        _cd(_CK_LINE, today_str)
+        _cd(_CK_LINE_HISTORY)
 
     return {"status": "ok", "updated": updated, "timestamp": now_utc}
 
@@ -9635,11 +9604,7 @@ async def resolve_line(payload: dict = Body(...)):
         print(f"[resolve-line] json update err: {e}")
 
     # Bust the line cache for this date
-    try:
-        lc = _cp(_CK_LINE, date_str)
-        if lc.exists():
-            lc.unlink()
-    except Exception: pass
+    _cd(_CK_LINE, date_str)
 
     return {"status": "resolved", "result": result, "actual": actual_f}
 
@@ -9838,20 +9803,9 @@ async def auto_resolve_line(request: Request):
                 _github_write_file(csv_path, LINE_CSV_HEADER + "\n" + new_row + "\n",
                                    f"auto-resolve line csv {pick_date}")
 
-    # Bust the line cache so /api/line-of-the-day sees the resolution and rotates.
-    # Bust both pick_date and today (they differ on midnight rollover).
     for _bust_date in set([pick_date, today]):
-        try:
-            line_cache = _cp(_CK_LINE, _bust_date)
-            if line_cache.exists():
-                line_cache.unlink()
-        except Exception: pass
-    # Bust history cache so resolved picks appear immediately in /api/line-history
-    try:
-        hist_cache = _cp(_CK_LINE_HISTORY)
-        if hist_cache.exists():
-            hist_cache.unlink()
-    except Exception: pass
+        _cd(_CK_LINE, _bust_date)
+    _cd(_CK_LINE_HISTORY)
 
     # Pre-generate next day's picks when any pick resolves.
     # Runs the engine if: (a) no next-day file exists, OR (b) file exists but is missing
@@ -9969,11 +9923,7 @@ async def auto_resolve_line(request: Request):
             if _back_changed:
                 try:
                     _github_write_file(_back_json, json.dumps(_back_data), f"backfill resolve {_back_date}")
-                    # Bust history cache so resolved picks appear immediately
-                    try:
-                        _hc2 = _cp(_CK_LINE_HISTORY)
-                        if _hc2.exists(): _hc2.unlink()
-                    except Exception: pass
+                    _cd(_CK_LINE_HISTORY)
                 except Exception as _be:
                     print(f"[auto-resolve] backfill write err {_back_date}: {_be}")
     except Exception as _backfill_err:
@@ -12258,14 +12208,8 @@ async def parlay_force_regenerate(request: Request):
     except Exception:
         slate_locked = False
 
-    # Clear /tmp parlay cache so the engine runs fresh (only for today)
     if is_today:
-        try:
-            _pc = _cp(_CK_PARLAY)
-            if _pc.exists():
-                _pc.unlink()
-        except Exception:
-            pass
+        _cd(_CK_PARLAY)
 
     try:
         result, err, debug = await asyncio.wait_for(
@@ -12325,13 +12269,7 @@ async def parlay_force_regenerate(request: Request):
         result["_cache_date"] = target_str
         _cs(_CK_PARLAY, result)
 
-    # Bust history cache so the new entry shows up
-    try:
-        _hc = _cp(_CK_PARLAY_HISTORY)
-        if _hc.exists():
-            _hc.unlink()
-    except Exception:
-        pass
+    _cd(_CK_PARLAY_HISTORY)
 
     print(f"[parlay-force-regen] done date={target_str} projection_only={result.get('projection_only')} legs={len(result.get('legs',[]))}")
     return JSONResponse({"status": "ok", "forced": True, "date": target_str, **result})
