@@ -54,6 +54,8 @@ try:
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
     )
     from api.nba_api_feed import prefetch_enrichment as _nba_api_prefetch, enrich_stats_map as _nba_api_enrich
+    from api.injury_feed import is_available as _injury_available, fetch_espn_injuries as _espn_injuries_fetch
+    from api.dfs_salary_feed import get_anti_popularity_adjustment as _dfs_pop_adj, save_dfs_salaries as _save_dfs_sal, compute_popularity_scores as _dfs_pop_scores
 except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
@@ -66,6 +68,8 @@ except ImportError:
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
     )
     from .nba_api_feed import prefetch_enrichment as _nba_api_prefetch, enrich_stats_map as _nba_api_enrich
+    from .injury_feed import is_available as _injury_available, fetch_espn_injuries as _espn_injuries_fetch
+    from .dfs_salary_feed import get_anti_popularity_adjustment as _dfs_pop_adj, save_dfs_salaries as _save_dfs_sal, compute_popularity_scores as _dfs_pop_scores
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -916,11 +920,18 @@ _CONFIG_DEFAULTS = {
         },
     },
     "odds_enrichment": {
-        "enabled": False,
+        "enabled": True,
         "blend_weight": 0.2,
         "min_divergence_pct": 0.15,
         "upward_only": True,
         "bidirectional": False,
+    },
+    "dfs_popularity": {
+        "weight": 0.7,
+        "max_penalty": 0.5,
+        "max_bonus": 0.2,
+        "decay_days": 3,
+        "confidence_threshold": 0.4,
     },
     "projection": {
         "min_gate_minutes": 15, "lock_buffer_minutes": 5, "b2b_minute_penalty": 0.88,
@@ -1390,6 +1401,116 @@ _STAT_MARKET = {
     "threes":   "player_threes",
     "points_rebounds_assists": "player_points_rebounds_assists",
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GAME-LEVEL ODDS SNAPSHOT (spreads + totals from The Odds API)
+# grep: GAME ODDS SNAPSHOT
+# Fetches consensus spreads and totals near lock window — more accurate than
+# ESPN's stale odds. One API call per slate, cached for 30 minutes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_game_odds_snapshot(games: list) -> dict:
+    """Fetch game-level spreads/totals from The Odds API.
+
+    Returns {(home_abbr, away_abbr): {"spread": float, "total": float}}
+    Falls back to empty dict on any failure — callers keep ESPN data.
+    """
+    api_key = _get_odds_api_key()
+    if not api_key or not games:
+        return {}
+
+    cache_key = f"game_odds_snapshot_{_today_str()}"
+    cached = _cg(cache_key)
+    if cached and isinstance(cached, dict) and cached.get("data"):
+        age = time.time() - cached.get("_ts", 0)
+        if age < 1800:  # 30 min cache
+            print(f"[game-odds] cache hit ({len(cached['data'])} games, {age:.0f}s old)")
+            return cached["data"]
+
+    try:
+        r = requests.get(
+            f"{ODDS_API_BASE}/sports/basketball_nba/odds/",
+            params={
+                "apiKey": api_key,
+                "regions": "us",
+                "markets": "spreads,totals",
+                "oddsFormat": "american",
+                "bookmakers": "pinnacle,draftkings,fanduel,betmgm",
+            },
+            timeout=15,
+        )
+        remaining = r.headers.get("x-requests-remaining", "?")
+        if not r.ok:
+            print(f"[game-odds] fetch failed: HTTP {r.status_code} (remaining={remaining})")
+            return {}
+        events = r.json()
+        print(f"[game-odds] fetched {len(events)} events (remaining={remaining})")
+    except Exception as e:
+        print(f"[game-odds] fetch error: {e}")
+        return {}
+
+    result = {}
+    for ev in events:
+        ev_home = ev.get("home_team", "")
+        ev_away = ev.get("away_team", "")
+        home_abbr = away_abbr = ""
+        for g in games:
+            ha = g.get("home", {}).get("abbr", "")
+            aa = g.get("away", {}).get("abbr", "")
+            if (_abbr_matches(ha, ev_home) and _abbr_matches(aa, ev_away)):
+                home_abbr, away_abbr = ha, aa
+                break
+            if (_abbr_matches(ha, ev_away) and _abbr_matches(aa, ev_home)):
+                home_abbr, away_abbr = ha, aa
+                break
+        if not home_abbr:
+            continue
+
+        spread_val = total_val = None
+        for book in ev.get("bookmakers", []):
+            for mkt in book.get("markets", []):
+                if mkt["key"] == "spreads":
+                    for out in mkt.get("outcomes", []):
+                        if _abbr_matches(home_abbr, out.get("name", "")):
+                            spread_val = spread_val or out.get("point")
+                elif mkt["key"] == "totals":
+                    for out in mkt.get("outcomes", []):
+                        if out.get("name", "").lower() == "over":
+                            total_val = total_val or out.get("point")
+
+        if spread_val is not None or total_val is not None:
+            result[(home_abbr, away_abbr)] = {
+                "spread": spread_val,
+                "total": total_val,
+            }
+
+    if result:
+        _cs(cache_key, {"data": result, "_ts": time.time()})
+        print(f"[game-odds] snapshot: {len(result)} games with spreads/totals")
+    return result
+
+
+def _apply_odds_snapshot_to_games(games: list) -> int:
+    """Overlay Odds API spreads/totals onto games in-place. Returns count updated."""
+    snapshot = _fetch_game_odds_snapshot(games)
+    if not snapshot:
+        return 0
+    updated = 0
+    for g in games:
+        ha = g.get("home", {}).get("abbr", "")
+        aa = g.get("away", {}).get("abbr", "")
+        odds = snapshot.get((ha, aa))
+        if not odds:
+            continue
+        if odds.get("spread") is not None:
+            g["spread"] = odds["spread"]
+            g["_odds_source"] = "odds_api"
+        if odds.get("total") is not None:
+            g["total"] = odds["total"]
+            g["_odds_source"] = "odds_api"
+        updated += 1
+    return updated
 
 def _cp(k, date_str=None):
     """Cache path for key k. date_str: optional slate date (YYYY-MM-DD) for midnight-rollover correctness."""
@@ -3974,8 +4095,17 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "Reserve 1.35x+ for rare cases: confirmed starter OUT → backup inherits 30+ min, "
         "or a blowout star sitting early with projection still inflated.\n\n"
 
+        "OVERRIDE PROTOCOL — Each adjustment MUST include:\n"
+        "- player: exact name from the list\n"
+        "- rs_multiplier: between 0.6 and 1.4\n"
+        "- reason: brief explanation citing specific today-signal\n"
+        "- reason_class: one of: availability, role_change, minutes_risk, game_script, "
+        "injury_cascade, blowout_risk, matchup, news, b2b, rest\n\n"
+        "STRICT CAPS: max 8 adjustments per slate. Each reason must cite a specific signal "
+        "(news item, cascade_bonus value, spread, roto_status). No generic team-style reasons.\n\n"
         "Return ONLY valid JSON:\n"
-        '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "reason": "brief"}]}\n'
+        '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, '
+        '"reason": "Star X out — inherits 30+ min", "reason_class": "injury_cascade"}]}\n'
         "Keep multipliers between 0.6 and 1.4. Omit players with multiplier 1.0."
     )
     # Include web search results in the user prompt if available (Layer 1 output)
@@ -4034,22 +4164,94 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     if not adjustments:
         return
 
-    # Apply multipliers to all matching players, capped at ±max_adj
+    # ── Guardrailed application with reason codes and audit trail ────────
+    _VALID_REASON_CLASSES = {
+        "availability", "role_change", "minutes_risk", "game_script",
+        "injury_cascade", "blowout_risk", "matchup", "news", "b2b", "rest",
+    }
+    max_slate_adjustments = int(_cfg("context_layer.max_slate_adjustments", 8))
+    max_total_impact = float(_cfg("context_layer.max_total_impact", 2.0))
+
     adj_count = 0
+    total_impact = 0.0
+    audit_entries = []
     name_map = {p["name"]: p for p in all_proj}
-    for player_name, multiplier in adjustments.items():
+
+    # Parse full adjustment objects with reason codes
+    raw_adj_list = data.get("adjustments", [])
+    for adj_entry in raw_adj_list:
+        if adj_count >= max_slate_adjustments:
+            print(f"[context_pass] hit slate cap ({max_slate_adjustments}) — skipping remaining")
+            break
+
+        player_name = adj_entry.get("player", "")
+        multiplier = adj_entry.get("rs_multiplier", 1.0)
+        reason = adj_entry.get("reason", "")
+        reason_class = adj_entry.get("reason_class", "")
+
         p = name_map.get(player_name)
         if not p:
             continue
+
         # Clamp to [1-max_adj, 1+max_adj]
         clamped = max(1.0 - max_adj, min(1.0 + max_adj, float(multiplier)))
-        p["rating"]        = round(p.get("rating", 0) * clamped, 1)
+
+        # Track cumulative slate impact
+        impact = abs(clamped - 1.0) * p.get("rating", 3.0)
+        if total_impact + impact > max_total_impact:
+            print(f"[context_pass] total impact cap ({max_total_impact}) — skipping {player_name}")
+            continue
+
+        old_rating = p.get("rating", 0)
+        p["rating"]        = round(old_rating * clamped, 1)
         p["chalk_ev"]      = round(p.get("chalk_ev", 0) * clamped, 2)
         p["ceiling_score"] = round(p.get("ceiling_score", 0) * clamped, 1)
         p["_context_adj"]  = round(clamped, 3)
+        p["_context_reason"] = reason[:100]
+        p["_context_reason_class"] = reason_class if reason_class in _VALID_REASON_CLASSES else "other"
+
+        audit_entries.append({
+            "player": player_name,
+            "team": p.get("team", ""),
+            "multiplier": round(clamped, 3),
+            "old_rating": round(old_rating, 1),
+            "new_rating": p["rating"],
+            "reason": reason[:200],
+            "reason_class": p["_context_reason_class"],
+        })
+
+        total_impact += impact
         adj_count += 1
 
-    print(f"[context_pass] applied {adj_count} adjustments via {model_id}")
+    print(f"[context_pass] applied {adj_count} adjustments via {model_id} "
+          f"(total_impact={total_impact:.2f})")
+
+    # Persist audit artifact for post-slate analysis
+    if audit_entries:
+        try:
+            audit_data = {
+                "date": str(_et_date()),
+                "model": model_id,
+                "adjustments": audit_entries,
+                "total_impact": round(total_impact, 3),
+                "news_available": bool(news_text),
+                "signals": {
+                    "cascade": has_cascade,
+                    "b2b": has_b2b,
+                },
+            }
+            _cs(f"context_audit_{_today_str()}", audit_data)
+            # Also persist to GitHub for long-term analysis
+            try:
+                _github_write_file(
+                    f"data/audit/context_{_today_str()}.json",
+                    json.dumps(audit_data, indent=2),
+                    f"context pass audit {_today_str()}",
+                )
+            except Exception:
+                pass
+        except Exception as _audit_err:
+            print(f"[context_pass] audit write error: {_audit_err}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4351,6 +4553,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             continue
         if p.get("injury_status", "").upper() == "OUT":
             continue
+        try:
+            _avail, _ = _injury_available(p.get("name", ""))
+            if not _avail:
+                continue
+        except Exception:
+            pass
         candidate_pool.append(p)
 
     if len(candidate_pool) < 5:
@@ -4738,17 +4946,36 @@ def _build_game_lineups(projections, game):
     strategy = _per_game_strategy(game)
     adjusted = _per_game_adjust_projections(rescored, game, strategy)
 
-    # Step 3: Eligibility gating
+    # Step 3: Eligibility gating (unified injury check — matches _build_lineups)
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
     game_min_floor = _cfg("lineup.game_recent_min_floor", 15.0)
     min_game_pts = _cfg("scoring_thresholds.min_game_pts", 8.0)
-    eligible_pool = [
-        p for p in adjusted
-        if p.get("recent_min", 0) >= game_min_floor
-        and p["rating"] >= game_chalk_floor
-        and p.get("pts", 0) >= min_game_pts
-        and p.get("name") not in BLACKLISTED_PLAYERS
-    ]
+    rw_statuses = {}
+    try:
+        rw_statuses = get_all_statuses()
+    except Exception:
+        pass
+    eligible_pool = []
+    for p in adjusted:
+        if p.get("recent_min", 0) < game_min_floor:
+            continue
+        if p["rating"] < game_chalk_floor:
+            continue
+        if p.get("pts", 0) < min_game_pts:
+            continue
+        if p.get("name") in BLACKLISTED_PLAYERS:
+            continue
+        if p.get("injury_status", "").upper() == "OUT":
+            continue
+        if rw_statuses and not is_safe_to_draft(p.get("name", "")):
+            continue
+        try:
+            avail, _reason = _injury_available(p.get("name", ""))
+            if not avail:
+                continue
+        except Exception:
+            pass
+        eligible_pool.append(p)
 
     # Step 4: MILP optimization
     # Per-game: card boost is irrelevant — zero out est_mult.
@@ -5115,19 +5342,15 @@ def _slate_has_flat_boosts(slate_obj: dict) -> bool:
 
 
 def _maybe_trigger_locked_slate_regen(cached_slate: dict, reason_prefix: str = "slate") -> None:
-    """Trigger background full regeneration ONLY for flat-boost anomalies.
+    """Disabled: locked predictions must never be regenerated.
 
-    Trigger is limited to known flat-boost anomalies to avoid unnecessary full
-    recompute while serving locked artifacts.
+    Previously triggered background full regeneration for flat-boost anomalies,
+    but this violated the lock contract — predictions must be immutable once locked.
+    Flat-boost issues are a pre-lock data quality problem, not something to fix mid-lock.
     """
     _flat_boosts = _slate_has_flat_boosts(cached_slate or {})
-    if not _flat_boosts:
-        return
-    if getattr(_force_regenerate_bg, "_in_flight", False):
-        return
-    _force_regenerate_bg._in_flight = True
-    print(f"[{reason_prefix}] suspicious flat +1x boosts detected — background regeneration triggered")
-    threading.Thread(target=_force_regenerate_bg_worker, daemon=True).start()
+    if _flat_boosts:
+        print(f"[{reason_prefix}] flat +1x boosts detected but regeneration BLOCKED — slate is locked")
 
 
 
@@ -5290,10 +5513,17 @@ def _get_slate_impl():
             _ls(_CK_SLATE_LOCKED, gh_backup)
             _maybe_trigger_locked_slate_regen(gh_backup, "slate-prebackup")
             return gh_backup
-        # All caches empty — forced regeneration after config bust during a locked slate.
-        # (e.g. model config changed post-lock, user hit Refresh to get new picks)
-        # Fall through to the full pipeline using all today's games.
-        draftable_games = games
+        # All caches empty during lock. Return locked empty response rather than
+        # regenerating — locked predictions must never change.
+        print(f"[slate] all games past lock window, all caches empty — returning empty locked response")
+        return {
+            "date": today_str,
+            "games": games,
+            "lineups": {"chalk": [], "upside": []},
+            "locked": True,
+            "all_complete": all_complete,
+            "draftable_count": 0,
+        }
 
     # lock_time and locked status both use the FIRST game of the entire day (all games,
     # not just draftable ones). Once the 6 PM game locks at 5:55 PM, the slate stays
@@ -5371,10 +5601,19 @@ def _get_slate_impl():
             _ls(_CK_SLATE_LOCKED, gh_backup)
             _maybe_trigger_locked_slate_regen(gh_backup, "slate-backup")
             return gh_backup
-        # Lock file missing or busted (tombstoned by _bust_slate_cache) — fall through
-        # to the full pipeline for forced regeneration. This handles the case where an
-        # admin bust was requested to fix bad lineups in the lock file (e.g. predMin
-        # filter change). The pipeline runs with draftable games still in progress.
+        # All caches empty during lock. Return a locked empty response rather than
+        # regenerating — locked predictions must never change. The frontend will
+        # attempt to restore from localStorage (cold-start recovery path).
+        print(f"[slate] locked but no cache available — returning empty locked response")
+        return {
+            "date": today_str,
+            "games": games,
+            "lineups": {"chalk": [], "upside": []},
+            "locked": True,
+            "all_complete": False,
+            "draftable_count": 0,
+            "lock_time": lock_time,
+        }
 
     # ── Bust check (unlocked path) — multi-instance: another container may have
     # busted via cold reset or config change; clear stale /tmp before serving.
@@ -5451,6 +5690,20 @@ def _get_slate_impl():
             _nba_api_prefetch(today_str)
         except Exception as _nba_err:
             print(f"[nba-api-feed] prefetch error (non-fatal): {_nba_err}")
+
+        # Pre-fetch ESPN injury report (secondary source alongside RotoWire)
+        try:
+            _espn_injuries_fetch()
+        except Exception:
+            pass
+
+        # Overlay Odds API game-level spreads/totals onto games (more accurate than ESPN)
+        try:
+            _odds_updated = _apply_odds_snapshot_to_games(draftable_games)
+            if _odds_updated:
+                print(f"[slate] odds snapshot: {_odds_updated}/{len(draftable_games)} games updated")
+        except Exception as _odds_snap_err:
+            print(f"[game-odds] snapshot error (non-fatal): {_odds_snap_err}")
 
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {
@@ -5916,6 +6169,10 @@ def _force_regenerate_sync(scope: str):
         _nba_api_prefetch(today_str)
     except Exception:
         pass
+    try:
+        _apply_odds_snapshot_to_games(game_pool)
+    except Exception:
+        pass
     all_proj = []
     game_proj_map = {}
     # DFS draft path — per-game projections (no fair_value prefetch)
@@ -6179,11 +6436,25 @@ async def slate_check(request: Request):
 async def force_regenerate(request: Request, scope: str = Query("full")):
     """Force-regenerate predictions mid-slate.
 
-    scope=full: Re-run ALL games (dev shipped model update mid-slate). User-facing, no auth.
+    scope=full: Re-run ALL games. Requires CRON_SECRET and slate must NOT be locked.
     scope=remaining: Only games not yet started (user woke up late). User-facing, no auth.
     """
     if scope not in ("full", "remaining"):
         return _err("scope must be 'full' or 'remaining'", 400)
+
+    # scope=full requires CRON_SECRET — prevents accidental full regen
+    if scope == "full" and not _require_cron_secret(request):
+        return _err("Unauthorized — scope=full requires CRON_SECRET", 401)
+
+    # Lock guard for scope=full: refuse to regenerate locked predictions
+    if scope == "full":
+        try:
+            _fg_games = fetch_games()
+            _fg_starts = [g["startTime"] for g in _fg_games if g.get("startTime")]
+            if _fg_starts and any(_is_locked(st) for st in _fg_starts):
+                return _err("Slate is locked — predictions are frozen. Use scope=remaining for late draft.", 423)
+        except Exception:
+            pass
 
     try:
         result = await asyncio.to_thread(_force_regenerate_sync, scope)
@@ -7038,13 +7309,37 @@ _COLD_PIPELINE_IN_FLIGHT = False
 
 
 def _run_cold_pipeline(trigger: str) -> dict:
-    """Single global cold reset + regenerate pipeline for slate/line/parlay."""
+    """Single global cold reset + regenerate pipeline for slate/line/parlay.
+    Refuses to bust/regenerate when the slate is locked — locked predictions are immutable."""
     global _COLD_PIPELINE_IN_FLIGHT
     with _COLD_PIPELINE_LOCK:
         if _COLD_PIPELINE_IN_FLIGHT:
             return {"status": "in_progress", "trigger": trigger, "ts": datetime.now(timezone.utc).isoformat()}
         _COLD_PIPELINE_IN_FLIGHT = True
     try:
+        # Lock guard: refuse to bust/regenerate when slate is locked.
+        # Locked predictions must never change. The only exception is manual
+        # cold-reset (which requires CRON_SECRET and explicit intent).
+        if trigger != "manual_redeploy":
+            try:
+                _cp_games = fetch_games()
+                _cp_starts = [g["startTime"] for g in _cp_games if g.get("startTime")]
+                if _cp_starts and any(_is_locked(st) for st in _cp_starts):
+                    print(f"[cold-pipeline] BLOCKED — slate is locked, trigger={trigger}")
+                    return {
+                        "status": "locked",
+                        "trigger": trigger,
+                        "message": "Slate is locked — predictions are frozen",
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    }
+            except Exception as _lk_err:
+                print(f"[cold-pipeline] lock check failed ({_lk_err}) — blocking to be safe")
+                return {
+                    "status": "lock_check_failed",
+                    "trigger": trigger,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                }
+
         auto_saved = False
         cleared = 0
         try:
@@ -7296,7 +7591,20 @@ async def _deploy_startup_safe_prewarm():
         print(f"[startup] new deploy detected: {previous_sha or 'none'} → {current_sha[:7]}")
         # Store the new SHA so subsequent restarts skip regeneration
         rcs("deploy_sha", current_sha, "global", ttl=604800)  # 7-day TTL
-        # Background cold reset so deploys always run the full pipeline once.
+
+        # Lock guard: if slate is locked, do NOT bust cache or regenerate.
+        # Locked predictions must never change — even on a new deploy.
+        # The new code will take effect on the next slate.
+        try:
+            _deploy_games = fetch_games()
+            _deploy_starts = [g["startTime"] for g in _deploy_games if g.get("startTime")]
+            if _deploy_starts and any(_is_locked(st) for st in _deploy_starts):
+                print(f"[startup] slate is LOCKED — skipping cold pipeline to preserve predictions")
+                return
+        except Exception as _lk_err:
+            print(f"[startup] lock check failed ({_lk_err}) — skipping regen to be safe")
+            return
+
         def _bg_deploy_regen():
             try:
                 _run_cold_pipeline("deploy_sha_change")
@@ -10698,6 +11006,31 @@ async def save_ownership(request: Request, payload: dict = Body(...)):
     if isinstance(out, JSONResponse):
         return out
     return out
+
+
+@app.post("/api/save-dfs-salaries")
+async def save_dfs_salaries(request: Request, payload: dict = Body(...)):
+    """Save DFS salary CSV for popularity proxy. Body: {date, csv_content, platform?}"""
+    if not _ingest_secret_ok(request):
+        return _err("Invalid or missing ingest key", 401)
+    date_str = payload.get("date", "")
+    csv_content = payload.get("csv_content", "")
+    platform = payload.get("platform", "draftkings")
+    if not date_str or not csv_content:
+        return _err("date and csv_content required")
+    try:
+        result = _save_dfs_sal(date_str, csv_content, platform)
+        if result.get("error"):
+            return _err(result["error"])
+        # Also persist to GitHub
+        gh_path = f"data/dfs_salaries/{date_str}.csv"
+        try:
+            _github_write_file(gh_path, csv_content, f"DFS salaries {date_str} ({platform})")
+        except Exception as _gh_e:
+            print(f"[dfs-salaries] GitHub write error: {_gh_e}")
+        return result
+    except Exception as e:
+        return _err(f"Failed to save DFS salaries: {e}")
 
 
 @app.post("/api/save-most-drafted-3x")
