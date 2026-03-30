@@ -1,0 +1,15 @@
+player,team,draft_count,actual_rs,actual_card_boost,avg_finish,rank,saved_at
+Donovan Mitchell,CLE,13400,3.3,0.2,1,1,2025-12-17T00:00:00
+Josh Giddey,CHI,9900,5.0,0.4,2,2,2025-12-17T00:00:00
+Julius Randle,MIN,8600,2.7,0.4,2,3,2025-12-17T00:00:00
+Jaren Jackson Jr.,MEM,6400,4.3,1.2,3,4,2025-12-17T00:00:00
+Naz Reid,MIN,4800,2.5,1.2,4,5,2025-12-17T00:00:00
+Nikola Vucevic,CHI,4300,4.2,0.9,4,6,2025-12-17T00:00:00
+Donte DiVincenzo,MIN,4300,4.3,1.3,3,7,2025-12-17T00:00:00
+Jaden McDaniels,MIN,4000,2.9,1.1,4,8,2025-12-17T00:00:00
+Darius Garland,CLE,4000,2.9,1.2,2,9,2025-12-17T00:00:00
+Jaylen Wells,MEM,3900,3.2,1.9,4,10,2025-12-17T00:00:00
+Cedric Coward,MEM,3900,1.7,1.5,4,11,2025-12-17T00:00:00
+Rudy Gobert,MIN,3600,4.1,1.1,4,12,2025-12-17T00:00:00
+Matas Buzelis,CHI,3500,1.1,1.7,5,13,2025-12-17T00:00:00
+Jaylon Tyson,CLE,2800,3.3,1.2,3,14,2025-12-17T00:00:00
