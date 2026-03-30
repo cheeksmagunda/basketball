@@ -11,9 +11,9 @@
 | Dec 29, 2025 | ✅ Complete | |
 | Dec 30, 2025 – Jan 2, 2026 | ❌ Missing | |
 | Jan 3, 2026 | ✅ Complete | |
-| Jan 4–6, 2026 | ❌ Missing | |
-| Jan 7, 2026 | ✅ Complete | |
-| **Jan 8–16, 2026** | ❌ **Missing** | **~14 days total remaining across all gaps** |
+| Jan 4–5, 2026 | ❌ Missing | |
+| Jan 6–7, 2026 | ✅ Complete | |
+| **Jan 8–16, 2026** | ❌ **Missing** | **~13 days total remaining across all gaps** |
 | Jan 17 – Feb 11, 2026 | ✅ Complete | |
 | Feb 12–18, 2026 | — | All-Star break (no games) |
 | Feb 19 – Mar 25, 2026 | ✅ Complete | |
