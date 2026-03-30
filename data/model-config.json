@@ -20,9 +20,18 @@
     "ml_additive_correction": 0.0,
     "max_prior_weight": 0.0,
     "star_ppg_tiers": [
-      {"min_ppg": 26, "boost_cap": 0.2},
-      {"min_ppg": 22, "boost_cap": 0.4},
-      {"min_ppg": 19, "boost_cap": 0.8}
+      {
+        "min_ppg": 26,
+        "boost_cap": 0.2
+      },
+      {
+        "min_ppg": 22,
+        "boost_cap": 0.4
+      },
+      {
+        "min_ppg": 19,
+        "boost_cap": 0.8
+      }
     ],
     "big_market_teams": [
       "LAL",
@@ -91,7 +100,7 @@
     "blowout_pts_penalty": 0.9,
     "blowout_ast_penalty": 0.9,
     "blowout_reb_penalty": 0.94,
-    "starter_blowout_floor": 0.70
+    "starter_blowout_floor": 0.7
   },
   "real_score": {
     "dfs_weights": {
@@ -114,10 +123,10 @@
     },
     "mc_strength": 0.5,
     "compression_divisor": 5.5,
-    "compression_power": 0.80,
+    "compression_power": 0.8,
     "rs_cap": 25.0,
     "ai_blend_weight": 0.35,
-    "max_post_compression_mult": 1.40,
+    "max_post_compression_mult": 1.4,
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -132,7 +141,7 @@
         "star": 0.95,
         "starter": 1.0,
         "wing_role": 1.05,
-        "bench_microwave": 1.10,
+        "bench_microwave": 1.1,
         "big": 0.95,
         "pure_rebounder": 0.88,
         "scorer": 1.12
@@ -141,14 +150,14 @@
     "post_lock_calibration": {
       "enabled": true,
       "require_locked_slate": true,
-      "recency_strength": 0.20,
-      "max_nudge": 0.20,
-      "cascade_weight": 0.10
+      "recency_strength": 0.2,
+      "max_nudge": 0.2,
+      "cascade_weight": 0.1
     },
     "closeness": {
       "enabled": false,
       "strength": 0.5,
-      "max_mult": 1.40
+      "max_mult": 1.4
     },
     "cascade_rs": {
       "enabled": true,
@@ -195,7 +204,7 @@
     "pred_min_tolerance": 2.0,
     "pred_min_upside_enabled": true,
     "pred_min_upside_power": 1.0,
-    "pred_min_upside_cap": 1.10,
+    "pred_min_upside_cap": 1.1,
     "pred_min_downside_floor": 0.85,
     "chalk_hbr_enabled": true,
     "chalk_hbr_min_boost": 2.0,
@@ -231,57 +240,6 @@
     "enabled": false,
     "model": "claude-sonnet-4-6-20250514",
     "timeout_seconds": 30
-  },
-  "core_pool": {
-    "enabled": true,
-    "size": 30,
-    "size_per_game": 3.0,
-    "metric": "ev_weighted",
-    "tv_floor_min_rs": 3.8,
-    "blend_weight": 0.5,
-    "per_game_carry": 0,
-    "rs_exponent": 1.0
-  },
-  "breakout": {
-    "enabled": true,
-    "min_prob": 0.3,
-    "max_mult": 0.5,
-    "cascade_high": 0.25,
-    "cascade_low": 0.12,
-    "cascade_high_threshold": 8,
-    "cascade_low_threshold": 4,
-    "pace_up_bonus": 0.15,
-    "pace_up_total": 230,
-    "pace_up_spread": 5,
-    "pace_moderate_bonus": 0.08,
-    "pace_moderate_total": 225,
-    "opp_weak_bonus": 0.15,
-    "opp_weak_threshold": 115,
-    "opp_moderate_bonus": 0.08,
-    "opp_moderate_threshold": 113,
-    "hot_streak_bonus": 0.10,
-    "hot_streak_ratio": 1.20,
-    "rest_bonus": 0.10,
-    "rest_days_threshold": 3,
-    "dvp_bonus": 0.10,
-    "prob_cap": 0.75
-  },
-  "draft_tier": {
-    "enabled": true,
-    "tier_a_max_log_drafts": 1.3,
-    "tier_b_max_log_drafts": 2.0,
-    "tier_c_max_log_drafts": 2.7,
-    "tier_a_bonus": 1.08,
-    "tier_b_mult": 1.00,
-    "tier_c_penalty": 0.95,
-    "tier_d_penalty": 0.85,
-    "tier_d_rs_override": 7.0
-  },
-  "leaderboard_clf": {
-    "enabled": true,
-    "weight": 0.6,
-    "min_score": 0.7,
-    "max_score": 1.3
   },
   "odds_enrichment": {
     "enabled": false,
@@ -348,7 +306,7 @@
   },
   "parlay": {
     "max_spread": 8.5,
-    "max_minutes_cv": 0.30,
+    "max_minutes_cv": 0.3,
     "min_blended_conf": 0.52,
     "min_season_minutes": 20.0,
     "min_games_played": 10,
@@ -369,60 +327,28 @@
     "min_game_total": 225.5,
     "market_match_max_cv": 0.25,
     "auto_fade": {
-      "switch_heavy_teams": ["BOS", "CLE", "MIN", "OKC"],
-      "rebound_fade_teams": ["OKC", "CLE", "MIN", "HOU", "BOS"],
+      "switch_heavy_teams": [
+        "BOS",
+        "CLE",
+        "MIN",
+        "OKC"
+      ],
+      "rebound_fade_teams": [
+        "OKC",
+        "CLE",
+        "MIN",
+        "HOU",
+        "BOS"
+      ],
       "b2b_correlated_pair_penalty": 0.75,
       "perimeter_scorer_reb_floor": 4.0,
-      "fake_juice_recent_threshold": 0.80,
+      "fake_juice_recent_threshold": 0.8,
       "fake_juice_season_ceiling": 0.55
     },
-    "pnr_rim_boost": 1.20,
+    "pnr_rim_boost": 1.2,
     "pace_boost_total_threshold": 232.0,
     "pace_boost": 1.06,
     "rest_advantage_boost": 1.08
-  },
-  "moonshot": {
-    "min_minutes_floor": 14,
-    "min_recent_minutes_floor": 14,
-    "min_card_boost": 0.5,
-    "min_rating_floor": 3.5,
-    "card_boost_weight": 2.5,
-    "minutes_weight": 1.0,
-    "require_rotowire_clearance": true,
-    "max_ownership_pct": 3.0,
-    "max_centers": 2,
-    "boost_leverage_power": 0.5,
-    "variance_penalty": 0,
-    "max_per_team": 1,
-    "role_spike_ratio": 1.4,
-    "role_spike_recent_floor": 20.0,
-    "role_spike_season_floor": 8.0,
-    "pred_min_tolerance": 1.0,
-    "min_proj_pts_ratio": 0.90,
-    "high_boost_role": {
-      "enabled": true,
-      "min_boost": 2.0,
-      "min_recent_min": 14.0,
-      "min_pred_min": 14.0,
-      "min_rating": 2.5
-    },
-    "scoring_pts_bias_threshold": 10.0,
-    "scoring_pts_bias_scale": 0.0,
-    "scorer_upside": {
-      "enabled": true,
-      "min_pts_per_min": 0.48,
-      "min_season_pts": 12.0,
-      "multiplier": 1.10
-    },
-    "rs_bypass": {
-      "enabled": true,
-      "min_rating": 5.0,
-      "min_season_min": 25.0,
-      "min_boost": 0.3
-    },
-    "roto_confirmed_min_rating": 2.2,
-    "roto_confirmed_min_boost": 2.5,
-    "ev_rating_blend": 0.12
   },
   "matchup": {
     "enabled": true,
@@ -434,24 +360,8 @@
     "chalk_adj_min": 0.92,
     "chalk_adj_max": 1.1,
     "moonshot_adj_min": 0.92,
-    "moonshot_adj_max": 1.10,
+    "moonshot_adj_max": 1.1,
     "claude_timeout_seconds": 25
-  },
-  "team_motivation": {
-    "enabled": false,
-    "start_date": "2026-03-01",
-    "seeding_gap_games": 2.0,
-    "playin_gap_games": 2.0,
-    "elimination_buffer_games": 3.0,
-    "tier_a_mult_chalk": 1.08,
-    "tier_b_mult_chalk": 1.0,
-    "tier_c_mult_chalk": 0.9,
-    "tier_a_mult_moonshot": 1.0,
-    "tier_b_mult_moonshot": 1.0,
-    "tier_c_mult_moonshot": 1.0,
-    "min_mult": 0.88,
-    "max_mult": 1.12,
-    "team_overrides": {}
   },
   "signals": {
     "hot_streak_ratio": 1.15,
@@ -486,32 +396,32 @@
     {
       "version": 81,
       "date": "2026-03-27",
-      "change": "FIX BOOST FLOOR: 0.2→0.0. Real Sports actual floor is 0.0x not 0.2x. The 0.2 floor was artificially clamping all predictions so superstars could never be predicted below 0.2x even when their actual is lower. Config-only."
+      "change": "FIX BOOST FLOOR: 0.2\u21920.0. Real Sports actual floor is 0.0x not 0.2x. The 0.2 floor was artificially clamping all predictions so superstars could never be predicted below 0.2x even when their actual is lower. Config-only."
     },
     {
       "version": 80,
       "date": "2026-03-27",
-      "change": "STAR TIER EXACT CALIBRATION (v80). Mitchell (27.7 PPG, CLE) showing 0.4x but actual 0.2x — 24+ tier cap too high. Tatum (19.1 PPG season avg, BOS) showing 0.9x but actual 0.8x — 20+ threshold too high, 19.1 doesn't hit it. Fix: (1) Split 24+ into 26+→0.2x (matches Mitchell floor, also catches SGA/Jokic level stars) and 22+→0.4x. (2) Lower 20+ threshold to 19+ so Tatum (19.1 PPG) triggers the cap and lands at 0.8x. Config-only."
+      "change": "STAR TIER EXACT CALIBRATION (v80). Mitchell (27.7 PPG, CLE) showing 0.4x but actual 0.2x \u2014 24+ tier cap too high. Tatum (19.1 PPG season avg, BOS) showing 0.9x but actual 0.8x \u2014 20+ threshold too high, 19.1 doesn't hit it. Fix: (1) Split 24+ into 26+\u21920.2x (matches Mitchell floor, also catches SGA/Jokic level stars) and 22+\u21920.4x. (2) Lower 20+ threshold to 19+ so Tatum (19.1 PPG) triggers the cap and lands at 0.8x. Config-only."
     },
     {
       "version": 79,
       "date": "2026-03-27",
-      "change": "TIGHTER TEAM CEILINGS — CONSERVATIVE BIAS (v79). v78 ceilings were still 0.2-0.3x over actuals which kills EV when over: Draymond (GS) 2.2x predicted vs 1.9x actual, Merrill (CLE) 2.0x vs 1.8x, Spencer (MEM) 1.8x vs 1.5x. Being over is worse than being under — over-predicting a boost puts the wrong player in the lineup. Tightened ceilings to aim slightly under actual: GS 2.2→1.8x (Draymond 1.8 vs 1.9 actual, -0.1x under), CLE 2.0→1.7x (Merrill 1.7 vs 1.8, -0.1x under), MEM 1.8→1.5x (Spencer exact match), OKC/BOS 2.0→1.8x, DEN/MIL 2.2→2.0x. Config-only, no code deploy needed."
+      "change": "TIGHTER TEAM CEILINGS \u2014 CONSERVATIVE BIAS (v79). v78 ceilings were still 0.2-0.3x over actuals which kills EV when over: Draymond (GS) 2.2x predicted vs 1.9x actual, Merrill (CLE) 2.0x vs 1.8x, Spencer (MEM) 1.8x vs 1.5x. Being over is worse than being under \u2014 over-predicting a boost puts the wrong player in the lineup. Tightened ceilings to aim slightly under actual: GS 2.2\u21921.8x (Draymond 1.8 vs 1.9 actual, -0.1x under), CLE 2.0\u21921.7x (Merrill 1.7 vs 1.8, -0.1x under), MEM 1.8\u21921.5x (Spencer exact match), OKC/BOS 2.0\u21921.8x, DEN/MIL 2.2\u21922.0x. Config-only, no code deploy needed."
     },
     {
       "version": 78,
       "date": "2026-03-27",
-      "change": "PER-TEAM BOOST CEILING (v78). Global corrections can't fix popular-franchise role players: Draymond (GS, 8.5 PPG) predicts 2.8x but actual 1.9x because model sees low PPG as obscure, Merrill (CLE, 12 PPG) 2.2x vs 1.8x actual, Spencer (MEM, 10.7 PPG) 2.2x vs 1.5x actual. The same penalty that fixes Draymond would destroy Sensabaugh (UTAH, actual 2.1x). Fix: team_boost_ceiling dict caps predictions per franchise without lowering small-market teams. GS→2.2x, CLE→2.0x, MEM→1.8x, OKC/BOS→2.0x, DEN/MIL→2.2x. Expected outcomes: Draymond 2.8→2.2x (actual 1.9x, 0.3x gap vs prior 0.9x), Merrill 2.2→2.0x (actual 1.8x, 0.2x gap), Spencer 2.2→1.8x (actual 1.5x, 0.3x gap), Sensabaugh unchanged 2.2x (actual 2.1x). Code: _apply_caps() replaces _cap_for_star(), applies both star-tier and team-ceiling in sequence."
+      "change": "PER-TEAM BOOST CEILING (v78). Global corrections can't fix popular-franchise role players: Draymond (GS, 8.5 PPG) predicts 2.8x but actual 1.9x because model sees low PPG as obscure, Merrill (CLE, 12 PPG) 2.2x vs 1.8x actual, Spencer (MEM, 10.7 PPG) 2.2x vs 1.5x actual. The same penalty that fixes Draymond would destroy Sensabaugh (UTAH, actual 2.1x). Fix: team_boost_ceiling dict caps predictions per franchise without lowering small-market teams. GS\u21922.2x, CLE\u21922.0x, MEM\u21921.8x, OKC/BOS\u21922.0x, DEN/MIL\u21922.2x. Expected outcomes: Draymond 2.8\u21922.2x (actual 1.9x, 0.3x gap vs prior 0.9x), Merrill 2.2\u21922.0x (actual 1.8x, 0.2x gap), Spencer 2.2\u21921.8x (actual 1.5x, 0.3x gap), Sensabaugh unchanged 2.2x (actual 2.1x). Code: _apply_caps() replaces _cap_for_star(), applies both star-tier and team-ceiling in sequence."
     },
     {
       "version": 77,
       "date": "2026-03-27",
-      "change": "STAR BOOST CAP + BIG MARKET THRESHOLD FIX (v77). Observed Mar 27: Podz 2.2x predicted vs 1.4x actual, Mitchell far off (actual 0.2x), Melton/McConnell wrong direction, Javon Small 2.0x actual. Root causes: (1) High-PPG national stars (Mitchell 26PPG on CLE) get no big-market penalty since CLE not in big_market_teams — model has no signal he's massively popular. Fixed via new star_ppg_tiers hard cap: 24+PPG→cap 0.4x, 20+PPG→cap 0.8x. Applied after ML correction in both ML and fallback paths. (2) big_market_star_ppg_threshold 15.0→10.0 so GS role players like Podz (13PPG) now get is_bm=1, which feeds the ML model better signal for Warriors popularity. (3) ml_additive_correction -0.25→-0.40 to correct systematic overestimation across all players. Code: _cap_for_star() inner function in _est_card_boost, applied to both ML and fallback return paths."
+      "change": "STAR BOOST CAP + BIG MARKET THRESHOLD FIX (v77). Observed Mar 27: Podz 2.2x predicted vs 1.4x actual, Mitchell far off (actual 0.2x), Melton/McConnell wrong direction, Javon Small 2.0x actual. Root causes: (1) High-PPG national stars (Mitchell 26PPG on CLE) get no big-market penalty since CLE not in big_market_teams \u2014 model has no signal he's massively popular. Fixed via new star_ppg_tiers hard cap: 24+PPG\u2192cap 0.4x, 20+PPG\u2192cap 0.8x. Applied after ML correction in both ML and fallback paths. (2) big_market_star_ppg_threshold 15.0\u219210.0 so GS role players like Podz (13PPG) now get is_bm=1, which feeds the ML model better signal for Warriors popularity. (3) ml_additive_correction -0.25\u2192-0.40 to correct systematic overestimation across all players. Code: _cap_for_star() inner function in _est_card_boost, applied to both ML and fallback return paths."
     },
     {
       "version": 69,
       "date": "2026-03-26",
-      "change": "DATA-FITTED BOOST FORMULA (v71). 909-observation regression: boost = 3.34 - 0.71×log10(drafts), R²=0.642. Replaces v70 PPG correction hack and prior blending. Changes: (1) Fallback log-linear intercept 2.8→3.34, slope -0.75→-0.71 (fitted from actual data). (2) Remove ppg_boost_correction — was a bandaid for wrong intercept. (3) max_prior_weight 0.30→0.0 — never trust prior data, predict from profile only. (4) Remove prior blending code path from _est_card_boost. (5) Boost persistence analysis: 57% unchanged slate-to-slate, 93% change ≤0.2 — but we predict from scratch each time per user requirement."
+      "change": "DATA-FITTED BOOST FORMULA (v71). 909-observation regression: boost = 3.34 - 0.71\u00d7log10(drafts), R\u00b2=0.642. Replaces v70 PPG correction hack and prior blending. Changes: (1) Fallback log-linear intercept 2.8\u21923.34, slope -0.75\u2192-0.71 (fitted from actual data). (2) Remove ppg_boost_correction \u2014 was a bandaid for wrong intercept. (3) max_prior_weight 0.30\u21920.0 \u2014 never trust prior data, predict from profile only. (4) Remove prior blending code path from _est_card_boost. (5) Boost persistence analysis: 57% unchanged slate-to-slate, 93% change \u22640.2 \u2014 but we predict from scratch each time per user requirement."
     },
     {
       "version": 70,
@@ -521,12 +431,12 @@
     {
       "version": 69,
       "date": "2026-03-26",
-      "change": "RS-FIRST ELITE HYBRID CALIBRATION (v69). Corrected winning drafts analysis (20 drafts, 5 dates): display_mult = slot + boost, NOT just boost. Corrected findings: RS correlates r=0.651 with score (1.67x > boost r=0.391). 50% of winning drafts have a star RS>=6. Avg per-player boost 2.27 (not 3.59). 25% of winner slots are Elite Hybrids (RS 4-6, Boost>=2). Changes: (1) REVERT production_anchor — wrong approach based on incorrect data assumption. (2) chalk_milp_rs_focus 0.55->0.75 — RS is the primary driver of winning score. (3) chalk_min_big_boost_count 2->3 at threshold 2.0 — 69% of winning slots have boost>=2.0, targeting 3/5. (4) Keep rs_bypass enabled — 50% of winning drafts have RS>=6 star, can't block them. (5) Keep scoring floors from v68 (chalk 7.0, moonshot 5.0, HBR 14min) — RS matters."
+      "change": "RS-FIRST ELITE HYBRID CALIBRATION (v69). Corrected winning drafts analysis (20 drafts, 5 dates): display_mult = slot + boost, NOT just boost. Corrected findings: RS correlates r=0.651 with score (1.67x > boost r=0.391). 50% of winning drafts have a star RS>=6. Avg per-player boost 2.27 (not 3.59). 25% of winner slots are Elite Hybrids (RS 4-6, Boost>=2). Changes: (1) REVERT production_anchor \u2014 wrong approach based on incorrect data assumption. (2) chalk_milp_rs_focus 0.55->0.75 \u2014 RS is the primary driver of winning score. (3) chalk_min_big_boost_count 2->3 at threshold 2.0 \u2014 69% of winning slots have boost>=2.0, targeting 3/5. (4) Keep rs_bypass enabled \u2014 50% of winning drafts have RS>=6 star, can't block them. (5) Keep scoring floors from v68 (chalk 7.0, moonshot 5.0, HBR 14min) \u2014 RS matters."
     },
     {
       "version": 68,
       "date": "2026-03-26",
-      "change": "PRODUCTION ANCHOR + SCORING FLOORS (v68). Mar 26 moonshot had 0 players projecting >8.3 pts — all high-boost low-production. Historical winners were role players who SCORED A LOT that night. Changes: (1) NEW moonshot.production_anchor — MILP constraint forces at least 1 player with pts>=12.0 into moonshot lineup (configurable min_count/min_pts). (2) min_pts_projection 5.0->7.0 (chalk must project 7+ pts). (3) min_pts_projection_moonshot 3.0->5.0 (prevent sub-5pt players). (4) HBR min_recent/pred_min 10->14 (require real rotation role). (5) chalk_milp_rs_focus 0.35->0.55 (RS drives slot assignment more). (6) chalk_season/recent_min 14->16."
+      "change": "PRODUCTION ANCHOR + SCORING FLOORS (v68). Mar 26 moonshot had 0 players projecting >8.3 pts \u2014 all high-boost low-production. Historical winners were role players who SCORED A LOT that night. Changes: (1) NEW moonshot.production_anchor \u2014 MILP constraint forces at least 1 player with pts>=12.0 into moonshot lineup (configurable min_count/min_pts). (2) min_pts_projection 5.0->7.0 (chalk must project 7+ pts). (3) min_pts_projection_moonshot 3.0->5.0 (prevent sub-5pt players). (4) HBR min_recent/pred_min 10->14 (require real rotation role). (5) chalk_milp_rs_focus 0.35->0.55 (RS drives slot assignment more). (6) chalk_season/recent_min 14->16."
     },
     {
       "version": 67,
@@ -536,42 +446,42 @@
     {
       "version": 65,
       "date": "2026-03-26",
-      "change": "DATA-DRIVEN BOOST MILP (v65) — 62-date top_performers analysis (865 rows). #1 daily value winner: median boost 2.55x, 52% have boost>2.5x, only 6% have boost<1.0x. Top-5 value spots: 59% held by boost>=2.0x players; 88% of dates have 2+ such players in top-5. S5 constraint updated: chalk_min_big_boost_count 1→2, chalk_big_boost_threshold 2.5→2.0 — guarantees 2 players with boost>=2.0x in Starting 5, matching the data-verified winning formula. Also: boost model retrained (boost_model.pkl + drafts_model.pkl — scikit-learn 1.5.2 + LightGBM 4.3.0 compatible); sigmoid fallback removed entirely from _est_card_boost (ML-only path); 22-feature RS vector restored in _lgbm_feature_vector (opp_pts_allowed, team_pace, cascade_signal, teammate_out_count, game_total at indices 15-20 — these were silently bypassing AI RS predictions)."
+      "change": "DATA-DRIVEN BOOST MILP (v65) \u2014 62-date top_performers analysis (865 rows). #1 daily value winner: median boost 2.55x, 52% have boost>2.5x, only 6% have boost<1.0x. Top-5 value spots: 59% held by boost>=2.0x players; 88% of dates have 2+ such players in top-5. S5 constraint updated: chalk_min_big_boost_count 1\u21922, chalk_big_boost_threshold 2.5\u21922.0 \u2014 guarantees 2 players with boost>=2.0x in Starting 5, matching the data-verified winning formula. Also: boost model retrained (boost_model.pkl + drafts_model.pkl \u2014 scikit-learn 1.5.2 + LightGBM 4.3.0 compatible); sigmoid fallback removed entirely from _est_card_boost (ML-only path); 22-feature RS vector restored in _lgbm_feature_vector (opp_pts_allowed, team_pace, cascade_signal, teammate_out_count, game_total at indices 15-20 \u2014 these were silently bypassing AI RS predictions)."
     },
     {
       "version": 62,
       "date": "2026-03-25",
-      "change": "TOP PERFORMER ANALYSIS OVERHAUL (v62) — 578-entry leaderboard analysis (44 dates, Jan 17–Mar 22). R²=0.9951 regression: value = 2.0×RS + 1.0×RS×Boost. RS has 5x the correlation with total_value vs boost (0.542 vs 0.102). 8 changes: (1) GATE RECALIBRATION: chalk_min_boost_floor 1.0→1.5, chalk_season/recent_min 20→18, moonshot min_minutes 18→16, moonshot min_card_boost 1.5→1.8. (2) EV FORMULA: boost_leverage_power 0.8→0.5, chalk_milp_rs_focus 0.2→0.6, new core_pool.metric='ev_weighted' with rs_exponent=1.3 — RS^1.3 × (2.0 + boost) amplifies RS dominance. (3) BREAKOUT DETECTOR: _compute_breakout_probability() — 6 signals (cascade, pace-up, opp weakness, hot streak, rest, DvP) → spike_prob → RS multiplier. (4) LOG-LINEAR BOOST: card_boost.log_linear layer — estimated_boost = 3.2 - 0.75×log10(predicted_drafts) from r=-0.660 drafts-boost relationship. (5) LGBM FEATURES: 6 new features (opp_pts_allowed, team_pace, usage_share, teammate_out, game_total, spread_abs), sample weighting from top_performers.csv. (6) LEADERBOARD CLASSIFIER: binary P(leaderboard) model trained on top_performers.csv as positive, non-leaderboard as negative. (7) DRAFT TIERS: A(1-20 drafts)=1.08x, B(21-100)=neutral, C(101-500)=0.95x, D(500+)=0.85x penalty. (8) DFS WEIGHT CALIBRATION from actuals regression."
+      "change": "TOP PERFORMER ANALYSIS OVERHAUL (v62) \u2014 578-entry leaderboard analysis (44 dates, Jan 17\u2013Mar 22). R\u00b2=0.9951 regression: value = 2.0\u00d7RS + 1.0\u00d7RS\u00d7Boost. RS has 5x the correlation with total_value vs boost (0.542 vs 0.102). 8 changes: (1) GATE RECALIBRATION: chalk_min_boost_floor 1.0\u21921.5, chalk_season/recent_min 20\u219218, moonshot min_minutes 18\u219216, moonshot min_card_boost 1.5\u21921.8. (2) EV FORMULA: boost_leverage_power 0.8\u21920.5, chalk_milp_rs_focus 0.2\u21920.6, new core_pool.metric='ev_weighted' with rs_exponent=1.3 \u2014 RS^1.3 \u00d7 (2.0 + boost) amplifies RS dominance. (3) BREAKOUT DETECTOR: _compute_breakout_probability() \u2014 6 signals (cascade, pace-up, opp weakness, hot streak, rest, DvP) \u2192 spike_prob \u2192 RS multiplier. (4) LOG-LINEAR BOOST: card_boost.log_linear layer \u2014 estimated_boost = 3.2 - 0.75\u00d7log10(predicted_drafts) from r=-0.660 drafts-boost relationship. (5) LGBM FEATURES: 6 new features (opp_pts_allowed, team_pace, usage_share, teammate_out, game_total, spread_abs), sample weighting from top_performers.csv. (6) LEADERBOARD CLASSIFIER: binary P(leaderboard) model trained on top_performers.csv as positive, non-leaderboard as negative. (7) DRAFT TIERS: A(1-20 drafts)=1.08x, B(21-100)=neutral, C(101-500)=0.95x, D(500+)=0.85x penalty. (8) DFS WEIGHT CALIBRATION from actuals regression."
     },
     {
       "version": 61,
       "date": "2026-03-25",
-      "change": "FAIR VALUE EXCISION + BARBELL OPTIMIZER — see v61 changelog in previous version."
+      "change": "FAIR VALUE EXCISION + BARBELL OPTIMIZER \u2014 see v61 changelog in previous version."
     },
     {
       "version": 60,
       "date": "2026-03-24",
-      "change": "PER-GAME DRAFT STRATEGY REDESIGN (v60) — 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23). Six findings implemented: (F1) 2x slot is conviction slot — 61% of winners had highest scorer NOT at 2.0x; variance shaping now adjusts which player rises to 2.0x based on game context. (F2) Value anchor pattern — winning lineups have 3.5+ RS players at 1.2x-1.4x (Spencer 5.5, Gafford 4.5, Champagnie 4.2); value_anchor_bonus=0.08 lifts these candidates. (F3) Game total ceiling correlation — 250+ games avg 32.1 winning score vs 25.7 for <210; total_mult scales projections ±12% based on O/U. (F4) Spread-based composition — close games (≤5pt) reward balanced builds (floor_bonus for low-variance); blowouts (13+pt) reward top-heavy (favored team lean). (F5) Razor-thin margins (<1.5pt 1st-4th gap in 8/18 games) — added 5! permutation validation on slot assignment. (F6) Favored team role player effect — blowout_favored_role_bonus=1.12, underdog_role_penalty=0.88; blowout_min_per_team=1 allows 4-1 team split. New per_game config section with 20 tunable parameters. Strategy label displayed on frontend (Balanced Build / Blowout Lean / Shootout). Does NOT touch full-slate, line, or parlay."
+      "change": "PER-GAME DRAFT STRATEGY REDESIGN (v60) \u2014 18-game / 76-lineup empirical analysis (Jan 6 \u2013 Mar 23). Six findings implemented: (F1) 2x slot is conviction slot \u2014 61% of winners had highest scorer NOT at 2.0x; variance shaping now adjusts which player rises to 2.0x based on game context. (F2) Value anchor pattern \u2014 winning lineups have 3.5+ RS players at 1.2x-1.4x (Spencer 5.5, Gafford 4.5, Champagnie 4.2); value_anchor_bonus=0.08 lifts these candidates. (F3) Game total ceiling correlation \u2014 250+ games avg 32.1 winning score vs 25.7 for <210; total_mult scales projections \u00b112% based on O/U. (F4) Spread-based composition \u2014 close games (\u22645pt) reward balanced builds (floor_bonus for low-variance); blowouts (13+pt) reward top-heavy (favored team lean). (F5) Razor-thin margins (<1.5pt 1st-4th gap in 8/18 games) \u2014 added 5! permutation validation on slot assignment. (F6) Favored team role player effect \u2014 blowout_favored_role_bonus=1.12, underdog_role_penalty=0.88; blowout_min_per_team=1 allows 4-1 team split. New per_game config section with 20 tunable parameters. Strategy label displayed on frontend (Balanced Build / Blowout Lean / Shootout). Does NOT touch full-slate, line, or parlay."
     },
     {
       "version": 59,
       "date": "2026-03-24",
-      "change": "SWEET SPOT TARGETING (v59) — 229-entry leaderboard analysis proves RS × (1+boost) is optimal ranking (avg 87.7, floor 74.5). Model was failing at 13.3% hit rate due to (A) star obsession (Jokic/Harden 0.0-0.3x boost = TV cap 16-18) and (B) deep bench trap (Missi/Jordan/Plumlee projected RS 5-6, deliver 1.5). Root cause: 7+ stacked inflation layers compounding RS over-projection. Changes: (1) NEW core_pool.metric='rs_x_boost' — RS × (1+boost) ranking, weights boost more than TV formula (1.6 base). Example: RS 4.0 + boost 3.0 = 16.0 beats RS 8.0 + boost 0.3 = 10.4. (2) DISABLED 7 inflation layers: archetype_calibration (scorers 1.12x), context_layer (±40% Claude RS), odds_enrichment (upward-only blend), stat_stuffer (1.08-1.15x), closeness (up to 1.40x), cascade_rs, role_spike_rs, scorer_upside (1.10x), scoring_pts_bias. (3) RS compression increased: divisor 4.5→5.5, power 0.78→0.70, ai_blend 0.35→0.30 — deflates over-projected bench players. (4) star_anchor DISABLED — stars with 0.0-0.3x boost are a trap; no more forcing them. (5) rs_bypass DISABLED — same reason. (6) Boost floors: chalk 0.7→1.0, moonshot 1.0→1.5 — sweet spot is boost 1.5-3.0. (7) boost_leverage_power 0.75→1.0 — stronger boost signal in moonshot (boost is 47% of total value). (8) chalk_milp_rs_focus 0.40→0.20 — let boost drive MILP selection. (9) min_rating_floor 3.5→3.0 (moonshot), min_chalk_rating 3.5→3.0 — lower RS gate since RS compression deflates all projections. (10) min_minutes_floor 20→18 — recurring winners (Cody Williams, GP2, Sensabaugh) average 18-28 min. (11) matchup range tightened [0.92, 1.10] for moonshot — less noise. (12) core_pool.size 14→15, per_game_carry 2→0. Target: sweet spot rotation players (RS 3-6, boost 1.5-3.0) that make up 50% of all daily winners."
+      "change": "SWEET SPOT TARGETING (v59) \u2014 229-entry leaderboard analysis proves RS \u00d7 (1+boost) is optimal ranking (avg 87.7, floor 74.5). Model was failing at 13.3% hit rate due to (A) star obsession (Jokic/Harden 0.0-0.3x boost = TV cap 16-18) and (B) deep bench trap (Missi/Jordan/Plumlee projected RS 5-6, deliver 1.5). Root cause: 7+ stacked inflation layers compounding RS over-projection. Changes: (1) NEW core_pool.metric='rs_x_boost' \u2014 RS \u00d7 (1+boost) ranking, weights boost more than TV formula (1.6 base). Example: RS 4.0 + boost 3.0 = 16.0 beats RS 8.0 + boost 0.3 = 10.4. (2) DISABLED 7 inflation layers: archetype_calibration (scorers 1.12x), context_layer (\u00b140% Claude RS), odds_enrichment (upward-only blend), stat_stuffer (1.08-1.15x), closeness (up to 1.40x), cascade_rs, role_spike_rs, scorer_upside (1.10x), scoring_pts_bias. (3) RS compression increased: divisor 4.5\u21925.5, power 0.78\u21920.70, ai_blend 0.35\u21920.30 \u2014 deflates over-projected bench players. (4) star_anchor DISABLED \u2014 stars with 0.0-0.3x boost are a trap; no more forcing them. (5) rs_bypass DISABLED \u2014 same reason. (6) Boost floors: chalk 0.7\u21921.0, moonshot 1.0\u21921.5 \u2014 sweet spot is boost 1.5-3.0. (7) boost_leverage_power 0.75\u21921.0 \u2014 stronger boost signal in moonshot (boost is 47% of total value). (8) chalk_milp_rs_focus 0.40\u21920.20 \u2014 let boost drive MILP selection. (9) min_rating_floor 3.5\u21923.0 (moonshot), min_chalk_rating 3.5\u21923.0 \u2014 lower RS gate since RS compression deflates all projections. (10) min_minutes_floor 20\u219218 \u2014 recurring winners (Cody Williams, GP2, Sensabaugh) average 18-28 min. (11) matchup range tightened [0.92, 1.10] for moonshot \u2014 less noise. (12) core_pool.size 14\u219215, per_game_carry 2\u21920. Target: sweet spot rotation players (RS 3-6, boost 1.5-3.0) that make up 50% of all daily winners."
     },
     {
       "version": 58,
       "date": "2026-03-24",
-      "change": "18-date audit (v58) — draft score optimization targeting 60-70+ total. Root causes: (1) Archetype penalties too harsh on bigs: big 0.88→0.95, pure_rebounder 0.78→0.88. Actual winners (Achiuwa RS 5.4, Kel'el Ware RS 5.3, Clingan RS 5.2) were being dropped below gating floors by 12-22% penalty. (2) core_pool.metric tv→tv_floor (size 12→14): new metric gates on RS >= 3.8 before TV ranking — prevents RS 2.5/boost 3.0x ghosts from crowding out RS 5.0/boost 1.5x actual winners. (3) ai_blend_weight 0.5→0.35: LightGBM clusters 2.5-4.5, compressing RS distribution; lower weight lets heuristic path spread RS wider. (4) fair_value.ai_blend_weight 0.15→0.12: same reason. (5) game_script.starter_blowout_floor 0.70 (new): soften blowout penalty for starters from 0.55x floor to 0.70x — RS includes impact metrics, stars still produce in blowouts. (6) chalk_min_boost_floor 1.0→0.7: let Josh Hart (1.1x)/Reed Sheppard (1.5x) compete; MILP still prefers higher TV. (7) chalk_high_boost_threshold 1.5→1.8: require 3 players with real boost value (1.8x+). (8) moonshot min_card_boost 1.2→1.0, boost_leverage_power 0.65→0.75: wider moonshot net with slightly more boost reward. (9) star_anchor max_count 2→1, min_rating 4.0→4.5, min_boost 0.8→0.5: max 1 star only when RS >= 4.5. (10) post_lock_calibration recency_strength/max_nudge 0.12→0.20, cascade_weight 0.06→0.10. (11) DFS ast 1.0→1.2, stl 3.0→2.5: playmakers (Payne RS 7.7, Hart RS 7.6) drive RS through assists. (12) scorer_upside: min_pts_per_min 0.55→0.48, min_season_pts 15→12."
+      "change": "18-date audit (v58) \u2014 draft score optimization targeting 60-70+ total. Root causes: (1) Archetype penalties too harsh on bigs: big 0.88\u21920.95, pure_rebounder 0.78\u21920.88. Actual winners (Achiuwa RS 5.4, Kel'el Ware RS 5.3, Clingan RS 5.2) were being dropped below gating floors by 12-22% penalty. (2) core_pool.metric tv\u2192tv_floor (size 12\u219214): new metric gates on RS >= 3.8 before TV ranking \u2014 prevents RS 2.5/boost 3.0x ghosts from crowding out RS 5.0/boost 1.5x actual winners. (3) ai_blend_weight 0.5\u21920.35: LightGBM clusters 2.5-4.5, compressing RS distribution; lower weight lets heuristic path spread RS wider. (4) fair_value.ai_blend_weight 0.15\u21920.12: same reason. (5) game_script.starter_blowout_floor 0.70 (new): soften blowout penalty for starters from 0.55x floor to 0.70x \u2014 RS includes impact metrics, stars still produce in blowouts. (6) chalk_min_boost_floor 1.0\u21920.7: let Josh Hart (1.1x)/Reed Sheppard (1.5x) compete; MILP still prefers higher TV. (7) chalk_high_boost_threshold 1.5\u21921.8: require 3 players with real boost value (1.8x+). (8) moonshot min_card_boost 1.2\u21921.0, boost_leverage_power 0.65\u21920.75: wider moonshot net with slightly more boost reward. (9) star_anchor max_count 2\u21921, min_rating 4.0\u21924.5, min_boost 0.8\u21920.5: max 1 star only when RS >= 4.5. (10) post_lock_calibration recency_strength/max_nudge 0.12\u21920.20, cascade_weight 0.06\u21920.10. (11) DFS ast 1.0\u21921.2, stl 3.0\u21922.5: playmakers (Payne RS 7.7, Hart RS 7.6) drive RS through assists. (12) scorer_upside: min_pts_per_min 0.55\u21920.48, min_season_pts 15\u219212."
     },
     {
       "version": 57,
       "date": "2026-03-22",
-      "change": "14-date leaderboard audit (v57, 187 entries). Data-driven overhaul targeting 3 winner archetypes: Unicorn (50% of daily #1: RS 5+ AND boost 2+), Hidden Star (29%: RS 5+ low boost), Ghost (21%: RS <5 but boost 3.0x). Key changes: (1) chalk_milp_rs_focus 0.85→0.40 — MILP was nearly ignoring boost, now RS and boost both drive Starting 5 selection. (2) boost_leverage_power 0.4→0.65 — moderate boost reward in moonshot (Unicorn > Ghost > Hidden Star ordering verified). (3) star_anchor.require_count 1→0, max_count 1→2 — superstars are a trap (Luka 3x appearances, avg TV 17.5 vs sweet spot avg 18.5); stop forcing them. (4) DFS weights: stl 8.0→3.0 (was 5.3x a point scored — insane), blk 0.35→1.5, ast 0.65→1.0. (5) Boost floors: chalk 0.9→1.0, moonshot 1.0→1.2, moonshot rating 3.0→3.5. (6) Archetype calibration: pure_rebounder 0.82→0.78, scorer 1.10→1.12, star 0.92→0.95. (7) chalk_min_pts_projection 6.0→5.0 (let high-boost role players through). (8) core_pool.size 15→12. (9) chalk_min_high_boost_count 2→3 at threshold 1.5 (was 2.0)."
+      "change": "14-date leaderboard audit (v57, 187 entries). Data-driven overhaul targeting 3 winner archetypes: Unicorn (50% of daily #1: RS 5+ AND boost 2+), Hidden Star (29%: RS 5+ low boost), Ghost (21%: RS <5 but boost 3.0x). Key changes: (1) chalk_milp_rs_focus 0.85\u21920.40 \u2014 MILP was nearly ignoring boost, now RS and boost both drive Starting 5 selection. (2) boost_leverage_power 0.4\u21920.65 \u2014 moderate boost reward in moonshot (Unicorn > Ghost > Hidden Star ordering verified). (3) star_anchor.require_count 1\u21920, max_count 1\u21922 \u2014 superstars are a trap (Luka 3x appearances, avg TV 17.5 vs sweet spot avg 18.5); stop forcing them. (4) DFS weights: stl 8.0\u21923.0 (was 5.3x a point scored \u2014 insane), blk 0.35\u21921.5, ast 0.65\u21921.0. (5) Boost floors: chalk 0.9\u21921.0, moonshot 1.0\u21921.2, moonshot rating 3.0\u21923.5. (6) Archetype calibration: pure_rebounder 0.82\u21920.78, scorer 1.10\u21921.12, star 0.92\u21920.95. (7) chalk_min_pts_projection 6.0\u21925.0 (let high-boost role players through). (8) core_pool.size 15\u219212. (9) chalk_min_high_boost_count 2\u21923 at threshold 1.5 (was 2.0)."
     },
     {
       "version": 55,
       "date": "2026-03-20",
-      "change": "High-boost role player pathway (v55). Adds a 4th eligibility pathway to both moonshot and chalk pools for consistent rotation players whose value comes from a high card boost + real RS projection, not minutes volume. Moonshot: est_mult >= 2.0, recent_min >= 14, pred_min >= 14 (bypasses the 20-min season floor). Chalk: stricter est_mult >= 2.5, recent_min >= 16, pred_min >= 16. Example: a 16 min/game player with +2.5x boost and RS 4.5 projects chalk_ev 18.45 — beats many 30-min starters. The boost floor IS the quality gate; 2.0x+ signals Real Sports considers the player significantly underrated. Config: moonshot.high_boost_role.{enabled, min_boost, min_recent_min, min_pred_min}, projection.{chalk_hbr_enabled, chalk_hbr_min_boost, chalk_hbr_min_recent_min, chalk_hbr_min_pred_min}."
+      "change": "High-boost role player pathway (v55). Adds a 4th eligibility pathway to both moonshot and chalk pools for consistent rotation players whose value comes from a high card boost + real RS projection, not minutes volume. Moonshot: est_mult >= 2.0, recent_min >= 14, pred_min >= 14 (bypasses the 20-min season floor). Chalk: stricter est_mult >= 2.5, recent_min >= 16, pred_min >= 16. Example: a 16 min/game player with +2.5x boost and RS 4.5 projects chalk_ev 18.45 \u2014 beats many 30-min starters. The boost floor IS the quality gate; 2.0x+ signals Real Sports considers the player significantly underrated. Config: moonshot.high_boost_role.{enabled, min_boost, min_recent_min, min_pred_min}, projection.{chalk_hbr_enabled, chalk_hbr_min_boost, chalk_hbr_min_recent_min, chalk_hbr_min_pred_min}."
     },
     {
       "version": 52,

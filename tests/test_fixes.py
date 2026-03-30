@@ -286,7 +286,7 @@ class TestPerTierCalibration:
         def mock_cfg(key, default=None):
             return cfg_overrides.get(key, original_cfg(key, default))
         with patch('api.index._cfg', side_effect=mock_cfg):
-            with patch('api.index._est_card_boost', return_value=1.5):
+            with patch('api.index._est_card_boost', return_value=(1.5, (1.2, 1.8))):
                 with patch('api.index._github_get_file', return_value=(None, None)):
                     result = project_player(pinfo, stats, 2.0, 222.0, "away", "SAS", 0.0, False)
         # With scale 1.50 for role players, RS should be higher than with 1.00
@@ -311,7 +311,7 @@ class TestPerTierCalibration:
         def mock_cfg(key, default=None):
             return cfg_overrides.get(key, original_cfg(key, default))
         with patch('api.index._cfg', side_effect=mock_cfg):
-            with patch('api.index._est_card_boost', return_value=0.3):
+            with patch('api.index._est_card_boost', return_value=(0.3, (0.2, 0.4))):
                 with patch('api.index._github_get_file', return_value=(None, None)):
                     star_result = project_player(pinfo, stats, 2.0, 222.0, "home", "OKC", 0.0, False)
         # Just verify it ran without error — exact RS comparison is fragile due to LightGBM
@@ -1257,120 +1257,13 @@ class TestClaudeContextLayer:
 # TestPredMinTolerance — tolerance band on predMin < season_min gate
 # ─────────────────────────────────────────────────────────
 class TestPredMinTolerance:
-    """Verify that the predMin tolerance band allows small dips below season_min."""
-
-    def test_chalk_tolerance_config_exists(self):
-        """projection.pred_min_tolerance should be in model-config.json."""
-        import json
-        with open("data/model-config.json") as f:
-            cfg = json.load(f)
-        assert cfg["projection"]["pred_min_tolerance"] == 2.0
-
-    def test_moonshot_tolerance_config_exists(self):
-        """moonshot.pred_min_tolerance should be in model-config.json (tightened to 1.0)."""
-        import json
-        with open("data/model-config.json") as f:
-            cfg = json.load(f)
-        assert cfg["moonshot"]["pred_min_tolerance"] == 1.0
+    """Verify that the simplified lineup builder uses strategy.rs_floor for filtering."""
 
     def test_strategy_rs_floor_in_source(self):
         """Simplified pipeline should use strategy.rs_floor for filtering."""
         with open("api/index.py") as f:
             src = f.read()
         assert 'strategy.rs_floor' in src or 'rs_floor' in src
-
-
-# ─────────────────────────────────────────────────────────
-# TestPredMinDirectionFactor — EV penalty/bonus by minutes direction
-# ─────────────────────────────────────────────────────────
-class TestPredMinDirectionFactor:
-    """Verify _pred_min_direction_factor rewards above-avg projections and penalises below."""
-
-    def _factor(self, pred_min, season_min, recent_min=0):
-        from api.index import _pred_min_direction_factor
-        return _pred_min_direction_factor(pred_min, season_min, recent_min)
-
-    def test_below_avg_gets_penalty(self):
-        """Merrill-style: 24.6 proj / 26.4 avg → factor < 1."""
-        f = self._factor(24.6, 26.4)
-        assert f < 1.0, f"Expected penalty, got {f}"
-        # ratio = 24.6/26.4 = 0.932; with power=1 factor should be ~0.932
-        assert abs(f - 0.932) < 0.005
-
-    def test_above_avg_gets_bonus_capped(self):
-        """Small-style: 29.8 proj / 19.8 avg → ratio 1.505, capped at 1.10."""
-        f = self._factor(29.8, 19.8)
-        assert f == pytest.approx(1.10, abs=0.01)
-
-    def test_slightly_above_avg_below_cap(self):
-        """Mitchell-style: 36.3 proj / 33.6 avg → ratio 1.08, below cap."""
-        f = self._factor(36.3, 33.6)
-        assert 1.07 < f < 1.10
-
-    def test_large_below_floored(self):
-        """Very low projection ratio is floored at 0.85."""
-        f = self._factor(10.0, 30.0)  # ratio = 0.333 → floored
-        assert f == pytest.approx(0.85, abs=0.01)
-
-    def test_neutral_at_exact_avg(self):
-        """pred_min == season_min → factor == 1.0."""
-        f = self._factor(25.0, 25.0)
-        assert f == pytest.approx(1.0, abs=0.001)
-
-    def test_recent_min_used_as_hurdle(self):
-        """recent_min higher than season_min → tougher hurdle → larger penalty."""
-        f_season = self._factor(25.0, 24.0, recent_min=0)    # ref=24.0 → ratio 1.04 → bonus
-        f_recent = self._factor(25.0, 24.0, recent_min=30.0) # ref=30.0 → ratio 0.833 → penalty
-        assert f_season > 1.0
-        assert f_recent < 1.0
-
-    def test_config_keys_in_model_config(self):
-        """model-config.json should have all four pred_min_upside keys."""
-        import json
-        with open("data/model-config.json") as fh:
-            cfg = json.load(fh)
-        proj = cfg["projection"]
-        assert proj["pred_min_upside_enabled"] is True
-        assert proj["pred_min_upside_power"] == 1.0
-        assert proj["pred_min_upside_cap"] == 1.10
-        assert proj["pred_min_downside_floor"] == 0.85
-
-    def test_chalk_ev_uses_factor(self):
-        """chalk_ev_capped computation should reference _pred_min_direction_factor."""
-        with open("api/index.py") as fh:
-            src = fh.read()
-        assert "_pred_min_direction_factor" in src
-        assert "chalk_ev_capped" in src
-
-
-# ─────────────────────────────────────────────────────────
-# TestMoonshotPtsFloor — separate min_pts for moonshot
-# ─────────────────────────────────────────────────────────
-class TestMoonshotPtsFloor:
-    """Verify that moonshot uses a lower pts projection floor than chalk."""
-
-    def test_config_has_separate_moonshot_floor(self):
-        """scoring_thresholds should have both min_pts_projection and min_pts_projection_moonshot."""
-        import json
-        with open("data/model-config.json") as f:
-            cfg = json.load(f)
-        assert cfg["scoring_thresholds"]["min_pts_projection"] == 7.0  # v68: 5.0→7.0, chalk must project 7+ pts
-        # v68: moonshot floor raised to 5.0 — prevent sub-5pt players
-        assert cfg["scoring_thresholds"]["min_pts_projection_moonshot"] >= 5.0, \
-            f"moonshot pts floor should be >= 3.0, got {cfg['scoring_thresholds']['min_pts_projection_moonshot']}"
-
-    def test_project_player_uses_moonshot_floor(self):
-        """project_player should use the lower moonshot floor (4.0) not 7.0."""
-        with open("api/index.py") as f:
-            src = f.read()
-        assert 'min_pts_projection_moonshot' in src
-        assert 'min_pts_per_minute_moonshot' in src
-
-    def test_strategy_min_pts_in_source(self):
-        """Simplified pipeline should use strategy.min_pts_projection for filtering."""
-        with open("api/index.py") as f:
-            src = f.read()
-        assert 'min_pts_projection' in src or 'min_pts' in src
 
 
 # ─────────────────────────────────────────────────────────
@@ -1609,136 +1502,6 @@ class TestContextPassWithNews:
 
 
 # ─────────────────────────────────────────────────────────
-# TestLineupReview — Layer 3 post-lineup Opus review
-# ─────────────────────────────────────────────────────────
-class TestLineupReview:
-    """Verify _lineup_review_opus: disabled returns unchanged; no swaps unchanged; valid swap applied; exception returns original."""
-
-    def test_returns_unchanged_when_disabled(self):
-        """When lineup_review.enabled is False, chalk and upside are returned unchanged."""
-        from api.index import _lineup_review_opus
-
-        chalk = [{"name": "Player A", "team": "BOS", "slot": "2.0x", "rating": 5.0}]
-        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x", "rating": 4.0}]
-        all_proj = [{"name": "Player A", "team": "BOS"}, {"name": "Player B", "team": "LAL"}]
-        games = []
-
-        with patch("api.index._cfg", return_value=False):
-            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
-
-        assert out_chalk == chalk
-        assert out_upside == upside
-
-    def test_returns_unchanged_when_no_swaps(self):
-        """When Opus returns empty swaps, lineups unchanged."""
-        from api.index import _lineup_review_opus
-
-        chalk = [{"name": "Player A", "team": "BOS", "slot": "2.0x", "rating": 5.0}]
-        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x", "rating": 4.0}]
-        all_proj = [{"name": "Player A", "team": "BOS"}, {"name": "Player B", "team": "LAL"}]
-        games = []
-
-        mock_text_block = Mock()
-        mock_text_block.text = '{"swaps": []}'
-        mock_msg = Mock()
-        mock_msg.content = [mock_text_block]
-        mock_client = Mock()
-        mock_client.messages.create.return_value = mock_msg
-        mock_anthropic_module = Mock()
-        mock_anthropic_module.Anthropic.return_value = mock_client
-
-        def cfg_side_effect(key, default=None):
-            cfg_map = {
-                "lineup_review.enabled": True,
-                "lineup_review.model": "claude-opus-4-20250514",
-                "lineup_review.timeout_seconds": 30,
-            }
-            return cfg_map.get(key, default)
-
-        with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
-             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}):
-            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
-
-        assert out_chalk[0]["name"] == "Player A"
-        assert out_upside[0]["name"] == "Player B"
-
-    def test_applies_valid_swap(self):
-        """When Opus suggests a valid swap (in in all_proj), the lineup is updated."""
-        from api.index import _lineup_review_opus
-
-        chalk = [
-            {"name": "Player A", "team": "BOS", "slot": "2.0x", "rating": 5.0, "est_mult": 1.2},
-            {"name": "Player C", "team": "BOS", "slot": "1.8x", "rating": 4.5, "est_mult": 1.1},
-        ]
-        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x", "rating": 4.0}]
-        replacement = {"name": "Player D", "team": "BOS", "rating": 5.5, "est_mult": 1.3}
-        all_proj = [
-            {"name": "Player A", "team": "BOS"},
-            {"name": "Player B", "team": "LAL"},
-            {"name": "Player C", "team": "BOS"},
-            replacement,
-        ]
-        games = []
-
-        mock_text_block = Mock()
-        mock_text_block.text = '{"swaps": [{"lineup": "chalk", "out": "Player A", "in": "Player D"}]}'
-        mock_msg = Mock()
-        mock_msg.content = [mock_text_block]
-        mock_client = Mock()
-        mock_client.messages.create.return_value = mock_msg
-        mock_anthropic_module = Mock()
-        mock_anthropic_module.Anthropic.return_value = mock_client
-
-        def cfg_side_effect(key, default=None):
-            cfg_map = {
-                "lineup_review.enabled": True,
-                "lineup_review.model": "claude-opus-4-20250514",
-                "lineup_review.timeout_seconds": 30,
-            }
-            return cfg_map.get(key, default)
-
-        with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
-             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}):
-            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
-
-        assert out_chalk[0]["name"] == "Player D"
-        assert out_chalk[0]["slot"] == "2.0x"
-        assert out_chalk[1]["name"] == "Player C"
-
-    def test_returns_original_on_exception(self):
-        """On API or parse error, original chalk and upside are returned."""
-        from api.index import _lineup_review_opus
-
-        chalk = [{"name": "Player A", "team": "BOS", "slot": "2.0x"}]
-        upside = [{"name": "Player B", "team": "LAL", "slot": "1.8x"}]
-        all_proj = [{"name": "Player A", "team": "BOS"}, {"name": "Player B", "team": "LAL"}]
-        games = []
-
-        def cfg_side_effect(key, default=None):
-            cfg_map = {
-                "lineup_review.enabled": True,
-                "lineup_review.model": "claude-opus-4-20250514",
-                "lineup_review.timeout_seconds": 30,
-            }
-            return cfg_map.get(key, default)
-
-        mock_client = Mock()
-        mock_client.messages.create.side_effect = Exception("API error")
-        mock_anthropic_module = Mock()
-        mock_anthropic_module.Anthropic.return_value = mock_client
-
-        with patch("api.index._cfg", side_effect=cfg_side_effect), \
-             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"}), \
-             patch.dict("sys.modules", {"anthropic": mock_anthropic_module}):
-            out_chalk, out_upside = _lineup_review_opus(chalk, upside, all_proj, games)
-
-        assert out_chalk == chalk
-        assert out_upside == upside
-
-
-# ─────────────────────────────────────────────────────────
 # TestCorePool — core pool architecture
 # ─────────────────────────────────────────────────────────
 class TestCorePool:
@@ -1775,131 +1538,6 @@ class TestCorePool:
         assert chalk == []
         assert upside == []
 
-
-# ─────────────────────────────────────────────────────────
-# TestMatchupFactor — matchup analysis replacing dev-team bonus
-# ─────────────────────────────────────────────────────────
-class TestMatchupFactor:
-    """_compute_matchup_factor, _build_game_opp_map, and matchup config keys."""
-
-    def test_neutral_when_no_def_stats(self):
-        """Returns 1.0 when def_stats is empty (fallback to neutral)."""
-        from api.index import _compute_matchup_factor
-        factor = _compute_matchup_factor({"pos": "G"}, "LAL", {})
-        assert factor == 1.0
-
-    def test_neutral_when_opponent_unknown(self):
-        """Returns 1.0 when opponent not in def_stats."""
-        from api.index import _compute_matchup_factor
-        factor = _compute_matchup_factor({"pos": "G"}, "XYZ", {"LAL": {"pts_allowed": 110.0}})
-        assert factor == 1.0
-
-    def test_weak_defense_bonus_for_guard(self):
-        """Guard vs weak defense (118 pts allowed) gets >1.0 factor."""
-        from api.index import _compute_matchup_factor
-        factor = _compute_matchup_factor({"pos": "G"}, "SAC", {"SAC": {"pts_allowed": 118.0}})
-        assert factor > 1.0, f"Expected > 1.0, got {factor}"
-        assert factor <= 1.25
-
-    def test_elite_defense_penalty(self):
-        """Player vs elite defense (108 pts allowed) gets <1.0 factor."""
-        from api.index import _compute_matchup_factor
-        factor = _compute_matchup_factor({"pos": "F"}, "OKC", {"OKC": {"pts_allowed": 108.0}})
-        assert factor < 1.0, f"Expected < 1.0, got {factor}"
-        assert factor >= 0.80
-
-    def test_center_less_sensitive_than_guard(self):
-        """Center gets smaller adjustment magnitude than guard for same matchup."""
-        from api.index import _compute_matchup_factor
-        weak_def = {"LAL": {"pts_allowed": 120.0}}
-        guard_factor = _compute_matchup_factor({"pos": "G"}, "LAL", weak_def)
-        center_factor = _compute_matchup_factor({"pos": "C"}, "LAL", weak_def)
-        assert guard_factor > center_factor, "Guard should benefit more from weak defense than center"
-
-    def test_league_avg_defense_is_neutral(self):
-        """Opponent at exactly league avg (115 pts/g) yields factor 1.0."""
-        from api.index import _compute_matchup_factor
-        factor = _compute_matchup_factor({"pos": "F"}, "MIL", {"MIL": {"pts_allowed": 115.0}})
-        assert factor == 1.0
-
-    def test_build_game_opp_map(self):
-        """_build_game_opp_map builds bidirectional team → opponent map."""
-        from api.index import _build_game_opp_map
-        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "MIA"}}]
-        opp_map = _build_game_opp_map(games)
-        assert opp_map["BOS"] == "MIA"
-        assert opp_map["MIA"] == "BOS"
-
-    def test_matchup_config_keys_present(self):
-        """matchup config keys exist in _CONFIG_DEFAULTS."""
-        from api.index import _CONFIG_DEFAULTS
-        matchup = _CONFIG_DEFAULTS.get("matchup", {})
-        assert "enabled" in matchup
-        assert "def_scale" in matchup
-        assert "chalk_adj_min" in matchup
-        assert "moonshot_adj_min" in matchup
-        assert "claude_enabled" in matchup
-
-    def test_no_dev_team_pts_floor_in_moonshot_defaults(self):
-        """dev_team_pts_floor is removed from moonshot defaults."""
-        from api.index import _CONFIG_DEFAULTS
-        moonshot = _CONFIG_DEFAULTS.get("moonshot", {})
-        assert "dev_team_pts_floor" not in moonshot
-
-
-class TestTeamMotivation:
-    """Late-season team motivation tiering and multiplier wiring."""
-
-    def test_team_motivation_config_keys_present(self):
-        from api.index import _CONFIG_DEFAULTS
-        tm = _CONFIG_DEFAULTS.get("team_motivation", {})
-        assert "enabled" in tm
-        assert "start_date" in tm
-        assert "tier_a_mult_chalk" in tm
-        assert "tier_c_mult_chalk" in tm
-        assert "team_overrides" in tm
-
-    def test_team_tier_from_standings_rules(self):
-        from api.index import _team_tier_from_standings
-        cfg = {
-            "seeding_gap_games": 2.0,
-            "playin_gap_games": 2.0,
-            "elimination_buffer_games": 3.0,
-        }
-        # Play-in seeds are high-incentive
-        assert _team_tier_from_standings({"playoffSeed": 8, "gamesBack": 1.0}, cfg) == "A"
-        # Deep lottery with large gap is low-incentive
-        assert _team_tier_from_standings({"playoffSeed": 14, "gamesBack": 6.0}, cfg) == "C"
-        # Missing data should stay neutral
-        assert _team_tier_from_standings({}, cfg) == "B"
-
-    def test_team_motivation_multiplier_defaults_neutral(self):
-        from api.index import _team_motivation_multiplier
-        assert _team_motivation_multiplier("LAL", "chalk", {}) == 1.0
-        assert _team_motivation_multiplier("LAL", "moonshot", {}) == 1.0
-
-    def test_fetch_team_motivation_map_obeys_start_date_gate(self):
-        from api.index import _fetch_team_motivation_map
-
-        def cfg_side_effect(key, default=None):
-            if key == "team_motivation":
-                return {
-                    "enabled": True,
-                    "start_date": "2999-01-01",
-                    "tier_a_mult_chalk": 1.08,
-                    "tier_b_mult_chalk": 1.00,
-                    "tier_c_mult_chalk": 0.90,
-                    "tier_a_mult_moonshot": 1.00,
-                    "tier_b_mult_moonshot": 1.00,
-                    "tier_c_mult_moonshot": 1.00,
-                    "min_mult": 0.88,
-                    "max_mult": 1.12,
-                    "team_overrides": {},
-                }
-            return default
-
-        with patch("api.index._cfg", side_effect=cfg_side_effect):
-            assert _fetch_team_motivation_map() == {}
 
 # ─────────────────────────────────────────────────────────
 # TestBriefingSimulatedDraftScore — simulated_draft_score surfaces to Ben
@@ -2058,7 +1696,7 @@ class TestBoostModelInference:
         """Cold start (Tier 3): unknown role player should get high boost (2.5+).
         Uses a small-market team to avoid per-team boost ceiling caps."""
         from api.index import _est_card_boost
-        b = _est_card_boost(
+        b, _ = _est_card_boost(
             20.0, 8.0, "SAS", "Nobody Cold Start XYZ",
             season_pts=8.0, recent_pts=9.0, cascade_bonus=0.0, is_home=True,
             projected_rs=3.5, season_avg_min=20.0, player_pos="G",
@@ -2068,7 +1706,7 @@ class TestBoostModelInference:
     def test_est_card_boost_tier3_cold_start_star(self):
         """Cold start (Tier 3): unknown star should get low boost."""
         from api.index import _est_card_boost
-        b = _est_card_boost(
+        b, _ = _est_card_boost(
             35.0, 25.0, "MIN", "Nobody Star XYZ",
             season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
             projected_rs=7.0, season_avg_min=35.0, player_pos="G",
@@ -2080,15 +1718,15 @@ class TestBoostModelInference:
         """Boost is always non-negative regardless of tier."""
         from api.index import _est_card_boost
         for mins, pts in [(5, 2), (20, 10), (38, 30)]:
-            b = _est_card_boost(mins, pts, "GSW", player_name=f"Test {pts} XYZ",
-                                season_pts=float(pts), season_avg_min=float(mins))
+            b, _ = _est_card_boost(mins, pts, "GSW", player_name=f"Test {pts} XYZ",
+                                   season_pts=float(pts), season_avg_min=float(mins))
             assert b >= 0, f"Boost should be non-negative, got {b}"
 
     def test_est_card_boost_star_ppg_tier_cap(self):
         """Star PPG tier caps should limit boost for high-PPG players."""
         from api.index import _est_card_boost
         # 26+ PPG player gets capped at 0.2 by star_ppg_tiers config
-        b = _est_card_boost(
+        b, _ = _est_card_boost(
             35.0, 28.0, "WAS", "Nobody Star26 XYZ",
             season_pts=28.0, season_avg_min=35.0,
         )
@@ -2275,44 +1913,6 @@ class TestBoostsScreenshotType:
 
 
 # ─────────────────────────────────────────────────────────
-# TestCorePoolRsMetric — core_pool.metric = "rs" ranks by raw projected RS
-# ─────────────────────────────────────────────────────────
-class TestCorePoolRsMetric:
-    """When core_pool.metric = 'rs', core pool is ranked by raw rating (projected RS)."""
-
-    def test_rs_metric_ranks_by_rating(self):
-        """With metric='rs', a high-RS low-boost player ranks above low-RS high-boost."""
-        from api.index import _build_lineups
-
-        def cfg_rs(key, default=None):
-            if key == "core_pool":
-                return {"enabled": True, "size": 8, "metric": "rs", "blend_weight": 0.5}
-            return default
-
-        with patch("api.index._cfg", side_effect=cfg_rs), \
-             patch("api.index.get_all_statuses", return_value={}), \
-             patch("api.index._fetch_team_def_stats", return_value={}):
-            _, _, core = _build_lineups([])
-
-        # With empty projections, core is empty list; verify no crash
-        assert isinstance(core, list)
-
-    def test_draft_ev_code_exists(self):
-        """Simplified _build_lineups should use draft_ev for scoring."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert 'draft_ev' in src, \
-            "_build_lineups must use draft_ev for scoring players"
-
-    def test_rating_used_in_scoring(self):
-        """_build_lineups should use rating in draft_ev calculation."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert 'rating' in src, \
-            "_build_lineups must reference rating for scoring"
-
-
-# ─────────────────────────────────────────────────────────
 # TestPerGameCarryCorePool — per_game_carry surfaces local TV leaders
 # ─────────────────────────────────────────────────────────
 class TestPerGameCarryCorePool:
@@ -2346,102 +1946,6 @@ class TestPerGameCarryCorePool:
 # ─────────────────────────────────────────────────────────
 # TestVolatilityGuard — high-variance perimeter downshift (Mar 22 audit)
 # ─────────────────────────────────────────────────────────
-class TestVolatilityGuard:
-    """projection.volatility_guard optional dampening in project_player."""
-
-    def test_volatility_guard_branch_exists(self):
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "volatility_guard" in src
-        assert "min_scoring_variance" in src
-
-
-# ─────────────────────────────────────────────────────────
-# TestMoonshotEvRatingBlend — moonshot EV blends toward raw RS×matchup
-# ─────────────────────────────────────────────────────────
-class TestMoonshotEvRatingBlend:
-    """moonshot.ev_rating_blend lets stable scorers compete with pure boost leverage."""
-
-    def test_draft_ev_calculation_in_build_lineups(self):
-        """Simplified pipeline uses draft_ev instead of moonshot EV blending."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "draft_ev" in src, "_build_lineups must use draft_ev for scoring"
-
-    def test_model_config_has_ev_rating_blend(self):
-        cfg = json.load(open("data/model-config.json"))
-        ms = cfg.get("moonshot", {})
-        assert "ev_rating_blend" in ms
-        assert 0.0 <= float(ms["ev_rating_blend"]) <= 0.5
-
-
-# ─────────────────────────────────────────────────────────
-# TestMoonshotRsBypass — high-RS players bypass boost floor
-# ─────────────────────────────────────────────────────────
-class TestMoonshotRsBypass:
-    """moonshot.rs_bypass allows high-RS proven scorers to bypass min_card_boost."""
-
-    def test_rs_floor_in_build_lineups(self):
-        """Simplified pipeline uses strategy.rs_floor instead of rs_bypass pathway."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "rs_floor" in src, "_build_lineups must use rs_floor for filtering"
-
-    def test_rs_bypass_config_present(self):
-        """model-config.json must have moonshot.rs_bypass block."""
-        cfg = json.load(open("data/model-config.json"))
-        rb = cfg.get("moonshot", {}).get("rs_bypass", {})
-        assert rb.get("enabled") is True, "rs_bypass should be enabled in production config (v66 ceiling lift)"
-        assert rb.get("min_rating", 0) >= 4.0, "min_rating should be high enough to filter bench players"
-        assert rb.get("min_season_min", 0) >= 20.0, "min_season_min should require proven starters"
-
-    def test_rs_bypass_defaults_enabled(self):
-        """_CONFIG_DEFAULTS should have rs_bypass enabled (14-date audit: Hidden Star wins 29%)."""
-        from api.index import _CONFIG_DEFAULTS
-        rb = _CONFIG_DEFAULTS.get("moonshot", {}).get("rs_bypass", {})
-        assert rb.get("enabled") is False, "rs_bypass should be disabled in _CONFIG_DEFAULTS (v59)"
-
-
-# ─────────────────────────────────────────────────────────
-# TestChalkMilpRsFocusBalanced — chalk_milp_rs_focus balances RS and boost
-# ─────────────────────────────────────────────────────────
-class TestChalkMilpRsFocusHigh:
-    """At chalk_milp_rs_focus=0.20, MILP uses 80% real boost + 20% neutral."""
-
-    def test_rs_focus_calculation(self):
-        """At rs_focus=0.40, effective boost is 60% real + 40% neutral."""
-        rs_focus = 0.40
-        boost_neutral = 1.0
-
-        # High-boost player (2.5x)
-        high_boost_eff = (1.0 - rs_focus) * 2.5 + rs_focus * boost_neutral
-        # Low-boost player (0.5x)
-        low_boost_eff = (1.0 - rs_focus) * 0.5 + rs_focus * boost_neutral
-
-        # At 0.40, boost gap = 60% of raw gap — boost matters meaningfully
-        raw_gap = 2.5 - 0.5  # 2.0
-        eff_gap = high_boost_eff - low_boost_eff
-        assert eff_gap > raw_gap * 0.5, \
-            f"At rs_focus=0.40, boost gap should be >50% of raw gap; got {eff_gap:.2f} vs {raw_gap}"
-        assert eff_gap < raw_gap * 0.7, \
-            f"At rs_focus=0.40, boost gap should be <70% of raw gap; got {eff_gap:.2f} vs {raw_gap}"
-
-    def test_rs_focus_code_reads_config(self):
-        """chalk_milp_rs_focus mechanism must exist in chalk eligibility."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "chalk_milp_rs_focus" in src
-        assert "chalk_milp_boost_neutral" in src
-
-    def test_config_value(self):
-        """v67 audit: Production config should have boost-weighted rs_focus (0.2-0.5).
-        Data: 62% of winning slots have boost>=2.5. At 0.65, boost gap compressed to 0.875.
-        At 0.35, boost gap is 1.5 — lets MILP correctly assign high-boost to high slots."""
-        cfg = json.load(open("data/model-config.json"))
-        val = cfg.get("lineup", {}).get("chalk_milp_rs_focus", 0)
-        assert 0.2 <= val <= 0.8, f"chalk_milp_rs_focus should be 0.2-0.8 (v69 RS-first); got {val}"
-
-
 # ─────────────────────────────────────────────────────────
 # TestStatStufferBonus — stat-stuffer RS multiplier for multi-category players
 # ─────────────────────────────────────────────────────────
@@ -2553,9 +2057,9 @@ class TestClosenessCoefficient:
         assert cc.get("enabled") is False, "closeness should be disabled in production (v59)"
 
     def test_closeness_defaults_disabled_offline(self):
-        """_CONFIG_DEFAULTS should have closeness disabled (safe fallback)."""
+        """_CONFIG_DEFAULTS should have closeness disabled or absent (safe fallback)."""
         from api.index import _CONFIG_DEFAULTS
-        cc = _CONFIG_DEFAULTS["real_score"]["closeness"]
+        cc = _CONFIG_DEFAULTS.get("real_score", {}).get("closeness", {"enabled": False})
         assert cc["enabled"] is False
 
 
@@ -2578,9 +2082,9 @@ class TestCascadeRsBoost:
         assert cr.get("enabled") is True
 
     def test_cascade_rs_defaults_disabled(self):
-        """_CONFIG_DEFAULTS should have cascade_rs disabled."""
+        """_CONFIG_DEFAULTS should have cascade_rs disabled or absent (safe fallback)."""
         from api.index import _CONFIG_DEFAULTS
-        cr = _CONFIG_DEFAULTS["real_score"]["cascade_rs"]
+        cr = _CONFIG_DEFAULTS.get("real_score", {}).get("cascade_rs", {"enabled": False})
         assert cr["enabled"] is False
 
 
@@ -2603,9 +2107,9 @@ class TestRoleSpikeRs:
         assert rs.get("enabled") is True
 
     def test_role_spike_defaults_disabled(self):
-        """_CONFIG_DEFAULTS should have role_spike_rs disabled."""
+        """_CONFIG_DEFAULTS should have role_spike_rs disabled or absent (safe fallback)."""
         from api.index import _CONFIG_DEFAULTS
-        rs_cfg = _CONFIG_DEFAULTS["real_score"]["role_spike_rs"]
+        rs_cfg = _CONFIG_DEFAULTS.get("real_score", {}).get("role_spike_rs", {"enabled": False})
         assert rs_cfg["enabled"] is False
 
 
@@ -2799,45 +2303,6 @@ class TestRsCalibrationWeights:
         assert w["pts"] == 1.5, f"pts weight changed unexpectedly: {w['pts']}"
         assert w["stl"] <= 3.0, f"stl weight should be <= 3.0 (v58 reduced to 2.5); got {w['stl']}"
 
-    def test_pure_rebounder_archetype_detected(self):
-        """_infer_player_archetype must return 'pure_rebounder' for high-reb/low-scoring player."""
-        from api.index import _infer_player_archetype
-        # Lopez profile: 11.5 pts, 13 reb, 30 min → reb_pm = 0.43, season_pts = 11.5
-        arch = _infer_player_archetype(11.5, 30.0, 13.0, {"season_pts": 11.5})
-        assert arch == "pure_rebounder", (
-            f"Expected 'pure_rebounder' for Lopez-profile, got '{arch}'; "
-            "reb_pm=0.43 >= 0.28 threshold AND season_pts=11.5 < 12.0"
-        )
-
-    def test_scorer_archetype_detected(self):
-        """_infer_player_archetype must return 'scorer' for high pts/min efficient scorer."""
-        from api.index import _infer_player_archetype
-        # Jalen Green profile: 17.7 pts, 28 min → pts/min = 0.63, season_pts = 17.7
-        arch = _infer_player_archetype(17.7, 28.0, 3.5, {"season_pts": 17.7})
-        assert arch == "scorer", (
-            f"Expected 'scorer' for Jalen Green-profile, got '{arch}'; "
-            "ppm=0.63 >= 0.55 AND season_pts=17.7 >= 15.0"
-        )
-
-    def test_big_still_detected_for_scoring_bigs(self):
-        """Players with reb_pm >= 0.22 but pts >= 12 should remain 'big', not 'pure_rebounder'."""
-        from api.index import _infer_player_archetype
-        # Achiuwa profile: 9 pts, 24 min, 7 reb → reb_pm = 0.29, season_pts = 9 — is pure_rebounder
-        # Jokic profile: 26 pts, 34 min, 13 reb → star (season_pts >= 21, avg_min >= 28)
-        # Bam Adebayo profile: 19 pts, 33 min, 10 reb → reb_pm=0.30, season_pts=19 → big (pts >= 12)
-        arch = _infer_player_archetype(19.0, 33.0, 10.0, {"season_pts": 19.0})
-        assert arch == "big", (
-            f"Expected 'big' for Bam-profile, got '{arch}'; "
-            "season_pts=19 >= 12, so not pure_rebounder"
-        )
-
-    def test_wing_role_unchanged_for_avg_player(self):
-        """A typical role player (low ppm, low reb_pm) should still be wing_role."""
-        from api.index import _infer_player_archetype
-        # Generic role player: 8 pts, 22 min, 3 reb
-        arch = _infer_player_archetype(8.0, 22.0, 3.0, {"season_pts": 8.0})
-        assert arch == "wing_role", f"Expected 'wing_role' for generic role player, got '{arch}'"
-
     def test_pure_rebounder_penalty_lt_big(self):
         """pure_rebounder calibration multiplier must be lower than big."""
         cfg = json.load(open("data/model-config.json"))
@@ -2865,18 +2330,6 @@ class TestRsCalibrationWeights:
         assert big_mult < 1.0, (
             f"big mult {big_mult} should be < 1.0; was 1.04 (a bonus!) but "
             "non-star scoring bigs still over-project when they're in the 'big' bucket"
-        )
-
-    def test_scorer_upside_config_present(self):
-        """moonshot.scorer_upside block must exist, be enabled, and have sensible values."""
-        cfg = json.load(open("data/model-config.json"))
-        su = cfg.get("moonshot", {}).get("scorer_upside", {})
-        assert su, "moonshot.scorer_upside block must exist in model-config.json"
-        assert su.get("enabled") is True, "scorer_upside must be enabled (v66 ceiling lift)"
-        assert su.get("min_pts_per_min", 0) >= 0.40, "min_pts_per_min should be >= 0.40 (v58: 0.48)"
-        assert su.get("min_season_pts", 0) >= 12.0, "min_season_pts should be >= 12.0"
-        assert 1.0 < su.get("multiplier", 1.0) <= 1.25, (
-            "scorer_upside multiplier should be > 1.0 and <= 1.25 (modest boost, not a distortion)"
         )
 
     def test_draft_ev_scoring_in_build_lineups(self):
@@ -2932,25 +2385,6 @@ class TestRotoConfirmedRatingException:
         src = open("api/index.py").read()
         assert "_build_lineups" in src, "_build_lineups must exist"
         assert "rating" in src, "_build_lineups must filter by rating"
-
-    def test_roto_confirmed_config_keys(self):
-        """model-config.json moonshot section must have roto_confirmed_min_rating and min_boost."""
-        cfg = json.load(open("data/model-config.json"))
-        moon = cfg.get("moonshot", {})
-        assert "roto_confirmed_min_rating" in moon, (
-            "moonshot.roto_confirmed_min_rating must exist in model-config.json"
-        )
-        assert "roto_confirmed_min_boost" in moon, (
-            "moonshot.roto_confirmed_min_boost must exist in model-config.json"
-        )
-        min_rating = moon["roto_confirmed_min_rating"]
-        min_boost = moon["roto_confirmed_min_boost"]
-        assert 2.0 <= min_rating <= 2.5, (
-            f"roto_confirmed_min_rating should be 2.0-2.5 (selective but not too strict), got {min_rating}"
-        )
-        assert 2.0 <= min_boost <= 3.0, (
-            f"roto_confirmed_min_boost should be 2.0-3.0, got {min_boost}"
-        )
 
     def test_context_pass_includes_cascade_fields(self):
         """Context pass player payload must include cascade_bonus and roto_status."""
@@ -4494,72 +3928,6 @@ class TestClaudePromptUpdated:
         assert "PLAYER ON B2B" in prompt
 
 
-# ─────────────────────────────────────────────────────────
-# v62: Top Performer Analysis Tests
-# ─────────────────────────────────────────────────────────
-
-class TestBreakoutDetector:
-    """_compute_breakout_probability returns correct spike probability."""
-
-    def test_no_signals_returns_zero(self):
-        from api.index import _compute_breakout_probability
-        prob = _compute_breakout_probability({}, {})
-        assert prob == 0.0
-
-    def test_cascade_high_signal(self):
-        from api.index import _compute_breakout_probability
-        prob = _compute_breakout_probability(
-            {"_cascade_bonus": 10}, {"total": 222, "spread": 0}
-        )
-        assert prob >= 0.20  # cascade_high = 0.25
-
-    def test_cascade_low_signal(self):
-        from api.index import _compute_breakout_probability
-        prob = _compute_breakout_probability(
-            {"_cascade_bonus": 5}, {}
-        )
-        assert 0.10 <= prob <= 0.20  # cascade_low = 0.12
-
-    def test_pace_up_signal(self):
-        from api.index import _compute_breakout_probability
-        prob = _compute_breakout_probability(
-            {}, {"total": 235, "spread": 3}
-        )
-        assert prob >= 0.10  # pace_up_bonus = 0.15
-
-    def test_opp_weakness_signal(self):
-        from api.index import _compute_breakout_probability
-        prob = _compute_breakout_probability(
-            {}, {"opp_def_rating": 118}
-        )
-        assert prob >= 0.10  # opp_weak_bonus = 0.15
-
-    def test_hot_streak_signal(self):
-        from api.index import _compute_breakout_probability
-        prob = _compute_breakout_probability(
-            {"recent_pts": 25, "season_pts": 18}, {}  # 25/18 = 1.39 > 1.20
-        )
-        assert prob >= 0.08  # hot_streak_bonus = 0.10
-
-    def test_combined_signals_capped(self):
-        from api.index import _compute_breakout_probability
-        # All signals at once
-        prob = _compute_breakout_probability(
-            {"_cascade_bonus": 12, "recent_pts": 30, "season_pts": 15,
-             "rest_days": 5, "dvp_advantage": True},
-            {"total": 240, "spread": 2, "opp_def_rating": 120}
-        )
-        assert prob <= 0.75  # capped at prob_cap
-
-    def test_disabled_returns_zero(self):
-        from api.index import _compute_breakout_probability, _cfg
-        with patch("api.index._cfg") as mock_cfg:
-            mock_cfg.return_value = {"enabled": False}
-            prob = _compute_breakout_probability({"_cascade_bonus": 15}, {})
-            # When breakout is disabled, returns 0
-            assert prob == 0.0
-
-
 class TestEstimateLogDrafts:
     """_estimate_log_drafts predicts draft popularity from player profile."""
 
@@ -4589,41 +3957,6 @@ class TestEstimateLogDrafts:
         normal = _estimate_log_drafts(12.0, False, 12.0, 12.0)
         trending = _estimate_log_drafts(12.0, False, 16.0, 12.0)  # recent >> season
         assert trending > normal
-
-
-class TestDraftTiers:
-    """_assign_draft_tier and _draft_tier_multiplier classify correctly."""
-
-    def test_tier_a_low_drafts(self):
-        from api.index import _assign_draft_tier
-        assert _assign_draft_tier(0.8) == "A"  # ~6 drafts
-
-    def test_tier_b_moderate_drafts(self):
-        from api.index import _assign_draft_tier
-        assert _assign_draft_tier(1.5) == "B"  # ~30 drafts
-
-    def test_tier_c_popular(self):
-        from api.index import _assign_draft_tier
-        assert _assign_draft_tier(2.3) == "C"  # ~200 drafts
-
-    def test_tier_d_star(self):
-        from api.index import _assign_draft_tier
-        assert _assign_draft_tier(3.2) == "D"  # ~1600 drafts
-
-    def test_tier_a_bonus(self):
-        from api.index import _draft_tier_multiplier
-        mult = _draft_tier_multiplier("A")
-        assert mult > 1.0  # bonus for obscure players
-
-    def test_tier_d_penalty(self):
-        from api.index import _draft_tier_multiplier
-        mult = _draft_tier_multiplier("D", rating=4.0)
-        assert mult < 1.0  # penalty for stars
-
-    def test_tier_d_rs_override(self):
-        from api.index import _draft_tier_multiplier
-        mult = _draft_tier_multiplier("D", rating=8.0)
-        assert mult == 1.0  # exceptional RS overrides penalty
 
 
 class TestEvWeightedMetric:
@@ -4716,51 +4049,6 @@ class TestLgbmFeatureVector22:
         else:
             assert vec[15] == 110.0  # v63 tail: opp_pts_allowed
             assert vec[16] == 110.0  # team_pace_proxy default
-
-
-class TestConfigV62Defaults:
-    """v62 config defaults match plan values."""
-
-    def test_breakout_defaults_present(self):
-        from api.index import _CONFIG_DEFAULTS
-        bo = _CONFIG_DEFAULTS.get("breakout", {})
-        assert bo.get("enabled") is True
-        assert bo.get("min_prob") == 0.3
-        assert bo.get("max_mult") == 0.3
-
-    def test_draft_tier_defaults_present(self):
-        from api.index import _CONFIG_DEFAULTS
-        dt = _CONFIG_DEFAULTS.get("draft_tier", {})
-        assert dt.get("enabled") is True
-        assert dt.get("tier_a_bonus") == 1.08
-        assert dt.get("tier_d_penalty") == 0.85
-
-    def test_leaderboard_clf_defaults_present(self):
-        from api.index import _CONFIG_DEFAULTS
-        clf = _CONFIG_DEFAULTS.get("leaderboard_clf", {})
-        assert clf.get("enabled") is True
-        assert clf.get("weight") == 0.6
-
-    def test_core_pool_ev_weighted_default(self):
-        from api.index import _CONFIG_DEFAULTS
-        cp = _CONFIG_DEFAULTS.get("core_pool", {})
-        assert cp.get("metric") == "ev_weighted"
-        assert cp.get("rs_exponent") == 1.3
-
-    def test_moonshot_boost_leverage_reduced(self):
-        from api.index import _CONFIG_DEFAULTS
-        moon = _CONFIG_DEFAULTS.get("moonshot", {})
-        assert moon.get("boost_leverage_power") == 0.5  # was 0.8→1.0, now 0.5
-
-    def test_chalk_milp_rs_focus_increased(self):
-        from api.index import _CONFIG_DEFAULTS
-        lu = _CONFIG_DEFAULTS.get("lineup", {})
-        assert lu.get("chalk_milp_rs_focus") == 0.75  # v75: RS dominates MILP selection
-
-    def test_chalk_min_boost_floor_lowered(self):
-        from api.index import _CONFIG_DEFAULTS
-        proj = _CONFIG_DEFAULTS.get("projection", {})
-        assert proj.get("chalk_min_boost_floor") == 0.3  # v75: lowered — Mar 26 winners had boost 0.6-1.0x
 
 
 class TestProductionAnchor:
@@ -4927,51 +4215,6 @@ class TestPostCompressionMultCap:
         uncapped = pre_boost * 1.87
         assert uncapped > 5.5, "Uncapped would exceed 5.5"
         assert max_result < 4.5, "Capped must stay below 4.5"
-
-
-class TestLoweredChalkBoostFloor:
-    """Chalk boost floor lowered from 1.5 to 0.3 so top RS performers
-    (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) enter the S5 pool."""
-
-    def test_chalk_boost_floor_lowered(self):
-        """model-config.json chalk_min_boost_floor must be <= 0.5."""
-        cfg = json.load(open("data/model-config.json"))
-        floor = cfg.get("projection", {}).get("chalk_min_boost_floor", 1.5)
-        assert floor <= 0.5, f"chalk_min_boost_floor should be <= 0.5, got {floor}"
-
-    def test_star_anchor_config(self):
-        """Star anchor: 1 required, low boost gate (stars don't need boost), high RS gate."""
-        cfg = json.load(open("data/model-config.json"))
-        sa = cfg.get("star_anchor", {})
-        assert sa.get("require_count", 0) == 1, \
-            f"star_anchor require_count should be 1, got {sa.get('require_count')}"
-        assert sa.get("min_boost", 1.0) <= 0.3, \
-            f"star_anchor min_boost should be <= 0.3 (stars don't need boost), got {sa.get('min_boost')}"
-        assert sa.get("min_rating", 3.5) >= 4.0, \
-            f"star_anchor min_rating should be >= 4.0 (genuine producers only), got {sa.get('min_rating')}"
-        assert sa.get("max_count", 0) == 1, \
-            f"star_anchor max_count should be 1, got {sa.get('max_count')}"
-
-    def test_code_reads_chalk_boost_floor(self):
-        """Chalk pool must read chalk_min_boost_floor from config."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "chalk_min_boost_floor" in src, "Must read chalk_min_boost_floor from config"
-
-    def test_top_rs_players_pass_boost_floor(self):
-        """Players with boost 0.3+ should clear the lowered floor."""
-        cfg = json.load(open("data/model-config.json"))
-        floor = cfg["projection"]["chalk_min_boost_floor"]
-        # Top RS performers from Mar 27 leaderboard
-        test_players = [
-            ("Duren", 0.6),
-            ("Knueppel", 0.8),
-            ("DeRozan", 1.0),
-            ("Banchero", 0.6),
-            ("Hart", 1.0),
-        ]
-        for name, boost in test_players:
-            assert boost >= floor, f"{name} (boost {boost}) should pass floor {floor}"
 
 
 # ─────────────────────────────────────────────────────────

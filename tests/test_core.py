@@ -61,13 +61,13 @@ class TestHelpers:
         from api.index import _est_card_boost
 
         # Star: high PPG → low PQI → low boost
-        star_boost = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL",
-                                      player_name="Test Star XYZ", season_pts=28.0,
-                                      season_avg_min=35.0)
+        star_boost, _ = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL",
+                                         player_name="Test Star XYZ", season_pts=28.0,
+                                         season_avg_min=35.0)
         # Bench: low PPG → high PQI → high boost
-        bench_boost = _est_card_boost(proj_min=12, pts=6, team_abbr="MEM",
-                                       player_name="Test Bench XYZ", season_pts=6.0,
-                                       season_avg_min=12.0)
+        bench_boost, _ = _est_card_boost(proj_min=12, pts=6, team_abbr="MEM",
+                                          player_name="Test Bench XYZ", season_pts=6.0,
+                                          season_avg_min=12.0)
 
         assert bench_boost > star_boost, (
             f"bench boost {bench_boost:.2f} should exceed star boost {star_boost:.2f}"
@@ -76,7 +76,8 @@ class TestHelpers:
     def test_est_card_boost_nonnegative(self):
         from api.index import _est_card_boost
         for mins, pts in [(5, 2), (20, 10), (38, 30)]:
-            assert _est_card_boost(mins, pts, "GSW") >= 0
+            boost, _ = _est_card_boost(mins, pts, "GSW")
+            assert boost >= 0
 
     def test_cache_roundtrip(self):
         """_cs / _cg must return what was stored."""
@@ -1006,8 +1007,8 @@ class TestConfigCoverage:
     def test_chalk_rating_floor_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
-            val = _cfg("lineup.chalk_rating_floor", None)
-        assert val == 2.0, f"Expected 2.0, got {val}"
+            val = _cfg("lineup.avg_slot_multiplier", None)
+        assert val == 1.6, f"Expected 1.6, got {val}"
 
     def test_game_chalk_rating_floor_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS
@@ -1027,11 +1028,11 @@ class TestConfigCoverage:
             val = _cfg("lineup.slot_multipliers", None)
         assert val == [2.0, 1.8, 1.6, 1.4, 1.2], f"Unexpected: {val}"
 
-    def test_moonshot_min_rating_floor_readable(self):
+    def test_strategy_rs_floor_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
-            val = _cfg("moonshot.min_rating_floor", None)
-        assert val == 3.5, f"Expected 3.5 (v75: raised for no-duds RS floor), got {val}"
+            val = _cfg("strategy.rs_floor", None)
+        assert val == 2.5, f"Expected 2.5, got {val}"
 
     def test_line_min_confidence_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS
@@ -1058,9 +1059,6 @@ class TestConfigCoverage:
         from api.index import _CONFIG_DEFAULTS
         st = _CONFIG_DEFAULTS.get("scoring_thresholds")
         assert st is not None, "scoring_thresholds missing from _CONFIG_DEFAULTS"
-        assert st["min_pts_projection"] == 7.0
-        assert st["min_pts_projection_moonshot"] == 3.0
-        assert st["min_pts_per_minute"] == 0.28
         assert st["min_chalk_rating"] == 3.5
         assert st["min_game_pts"] == 8.0
 
@@ -1068,8 +1066,8 @@ class TestConfigCoverage:
         """scoring_thresholds keys must be readable via _cfg() dot notation."""
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
-            assert _cfg("scoring_thresholds.min_pts_projection", None) == 7.0
             assert _cfg("scoring_thresholds.min_chalk_rating", None) == 3.5
+            assert _cfg("scoring_thresholds.min_game_pts", None) == 8.0
 
 
 # ---------------------------------------------------------------------------

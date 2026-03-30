@@ -874,18 +874,6 @@ _CONFIG_DEFAULTS = {
             "mid_mult": 0.9336,
             "low_mult": 1.0813,
         },
-        "archetype_calibration": {
-            "enabled": False,
-            "archetypes": {
-                "star": 0.95,
-                "starter": 1.0,
-                "wing_role": 1.05,
-                "bench_microwave": 1.10,
-                "big": 0.95,
-                "pure_rebounder": 0.88,
-                "scorer": 1.12,
-            },
-        },
         "post_lock_calibration": {
             "enabled": True,
             "require_locked_slate": True,
@@ -902,21 +890,6 @@ _CONFIG_DEFAULTS = {
             "blk_threshold": 1.0,
             "bonus_3cat": 1.08,
             "bonus_td": 1.15,
-        },
-        "mc_strength": 0.5,  # Monte Carlo usage-scaled bonus strength
-        "closeness": {
-            "enabled": False,
-            "strength": 0.5,
-            "max_mult": 1.40,
-        },
-        "cascade_rs": {
-            "enabled": False,
-            "strength": 0.6,
-        },
-        "role_spike_rs": {
-            "enabled": False,
-            "min_ratio": 1.2,
-            "strength": 0.4,
         },
     },
     "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
@@ -948,64 +921,14 @@ _CONFIG_DEFAULTS = {
         "bidirectional": False,
     },
     "projection": {
-        "min_gate_minutes":15,"lock_buffer_minutes":5,"season_recent_blend":0.5,"default_total":222,"b2b_minute_penalty":0.88,
-        "major_role_change_threshold":0.75,"major_role_change_recent_weight":0.80,
-        "moderate_decline_threshold":0.90,"moderate_decline_recent_weight":0.65,
-        # DNP / reliability guards (added after March 4th audit)
-        "gtd_minute_penalty":0.75,      # GTD players: 25% minute reduction
-        "dnp_risk_min_threshold":5.0,   # recent avg min below this = dnp_risk flag (was 8; Mar 15 fix: 5-8min players were skipped entirely, losing deep bench contrarians like Quinten Post who hit for RS 3.3 / 16.4 value)
-        "reliability_floor":0.70,       # minimum reliability multiplier on chalk_ev
-        "chalk_boost_cap":3.0,          # was 2.5; 14-date audit: 36.9% of leaderboard has boost 2.6-3.0x — capping at 2.5 undervalued them
-        "chalk_season_min_floor":22.0,  # season avg floor for Starting 5 — proven rotation players (22+ min)
-        "chalk_recent_min_floor":20.0,  # recent avg floor — excludes players who've fallen out of rotation
-                                        # despite high season avg (e.g. demoted starter, rest-management)
-        "chalk_max_stars":1,            # max players with boost < threshold allowed in chalk lineup (was 2; Mar 14: 4/6 winners had 0 stars)
-        "chalk_star_boost_threshold":0.8, # boost below this = "star" (low ownership); counts toward cap (was 0.6; Bam 0.9/Reaves 0.8 weren't penalized)
-        "big_man_calibration": {        # post-LGBM multiplier for rebounding bigs; see project_player()
-            "reb_baseline": 6.0, "reb_scale": 0.04, "blk_scale": 0.10, "pts_cap": 20.0,
-        },
-        "bench_pts_threshold": 14.0,    # pts avg ceiling for "bench/role player" spread classification (was 12)
-        "bench_min_threshold": 30.0,    # min avg ceiling for "bench/role player" (was 26)
-        "chalk_min_boost_floor": 0.3,   # v75: lowered from 1.5 — Mar 26 winners had boost 0.6-1.0x
-                                        # Duren/Knueppel/DeRozan all have boost <1.5 but won every draft
-        # Projected-minutes direction factor: reward players expected to play MORE than their
-        # average tonight; penalise those expected to play FEWER (e.g. Merrill 24.6m < 26.4m avg).
-        # Applied multiplicatively to chalk_ev_capped and moonshot_ev before MILP.
-        "pred_min_upside_enabled": True,
-        "pred_min_upside_power": 1.0,       # linear by default; <1 compresses range, >1 amplifies
-        "pred_min_upside_cap": 1.10,        # max bonus: player projected 10%+ above avg → +10% EV
-        "pred_min_downside_floor": 0.85,    # max penalty: player projected way below avg → -15% EV
-        # Mar 22 audit: high-usage perimeter players with volatile scoring (|recent-season|/season)
-        # over-projected (Barrett/Henderson) — mild downshift when all gates hit.
-        "volatility_guard": {
-            "enabled": False,
-            "min_scoring_variance": 0.18,
-            "min_season_pts": 14.0,
-            "min_pts_per_minute": 0.38,
-            "rating_mult": 0.93,
-        },
-    },
-    "moonshot": {
-        # v62: RS-first targeting. Data: RS has 5x correlation with value vs boost.
-        # Sweet spot: RS 4-5, boost 2.0-3.0 (85.7% top-3 rate). Lower minutes to catch role players.
-        "min_minutes_floor":16, "min_recent_minutes_floor":16, "min_card_boost":0.5, "min_rating_floor":3.5,
-        "card_boost_weight":2.5, "minutes_weight":1.0,
-        "max_centers":99, "boost_leverage_power":0.5,
-        "require_rotowire_clearance":True, "max_ownership_pct":3.0,
-        "variance_penalty": 0.0,       # zero damping — moonshot wants maximum upside
-        "role_spike_ratio": 1.4, "role_spike_recent_floor": 20.0, "role_spike_season_floor": 8.0,
-        # RS-bypass DISABLED: stars with 0.0-0.3x boost are a trap (Jokic TV 16-18 vs rotation TV 20+)
-        "rs_bypass": {"enabled": False, "min_rating": 5.0, "min_season_min": 25.0, "min_boost": 0.3},
-        # scorer_upside DISABLED: another RS inflation layer — v59 strips all inflation
-        "scorer_upside": {"enabled": False, "min_pts_per_min": 0.48, "min_season_pts": 12.0, "multiplier": 1.10},
-        # scoring_pts_bias disabled (0.0 scale)
-        "scoring_pts_bias_threshold": 10.0, "scoring_pts_bias_scale": 0.0,
-        # Blend moonshot ceiling toward raw RS×matchup so middling-boost stable scorers compete.
-        "ev_rating_blend": 0.0,
+        "min_gate_minutes": 15, "lock_buffer_minutes": 5, "b2b_minute_penalty": 0.88,
+        # DNP / reliability guards
+        "gtd_minute_penalty": 0.75,
+        "dnp_risk_min_threshold": 5.0,
     },
     "matchup": {
         "enabled": True,
-        "claude_enabled": False,  # Layer 1.5 killed — ESPN def stats in _compute_matchup_factor() sufficient
+        "claude_enabled": False,  # Layer 1.5 disabled — ESPN def stats provide equivalent signal at zero cost
         "def_scale": 0.35,        # how strongly opponent pts_allowed affects the factor
         "pos_scale_g": 1.05,      # guards benefit most from weak defenses (pts-driver)
         "pos_scale_f": 1.00,      # forwards neutral
@@ -1016,87 +939,10 @@ _CONFIG_DEFAULTS = {
         "moonshot_adj_max": 1.30,
         "claude_timeout_seconds": 25,
     },
-    "team_motivation": {
-        # Late-season team intent signal (March/April):
-        # Starting 5 should favor stable, win-now rotations.
-        "enabled": True,
-        "start_date": "2026-03-01",
-        "seeding_gap_games": 2.0,
-        "playin_gap_games": 2.0,
-        "elimination_buffer_games": 3.0,
-        # Soft multipliers only (no hard bans).
-        "tier_a_mult_chalk": 1.08,
-        "tier_b_mult_chalk": 1.00,
-        "tier_c_mult_chalk": 0.90,
-        # Keep moonshot neutral by default; can tune later.
-        "tier_a_mult_moonshot": 1.00,
-        "tier_b_mult_moonshot": 1.00,
-        "tier_c_mult_moonshot": 1.00,
-        "min_mult": 0.88,
-        "max_mult": 1.12,
-        # Optional manual overrides: {"LAL":"A","WAS":"C"}
-        "team_overrides": {},
-    },
     "lineup": {
-        "chalk_rating_floor": 2.0,      # was 2.8; Mar 6: Ighodaro RS 2.3 was in all 3 winning lineups
         "game_chalk_rating_floor": 3.5,
         "avg_slot_multiplier": 1.6,
         "slot_multipliers": _SLOT_MULTS_SHARED,
-        # Starting 5 MILP: blend boost toward neutral so RS drives selection.
-        # v75: 0.75 — Mar 26 data confirms RS drives winning (r=0.651). At 0.75,
-        # milp_boost = 0.25*real + 0.75*neutral, so RS dominates MILP selection.
-        "chalk_milp_rs_focus": 0.75,
-        "chalk_milp_boost_neutral": 1.0,
-        "chalk_max_per_team": 2,
-        "chalk_max_double_teams": 1,   # max teams allowed to hit the 2-player ceiling
-        "moonshot_max_per_team": 2,
-        "moonshot_max_double_teams": 1,
-    },
-    "core_pool": {
-        "enabled": True,
-        "size": 15,          # absolute cap; dynamic sizing scales down for small slates
-        "size_per_game": 3.0, # effective size = max(8, round(games * size_per_game)), capped by size
-        "metric": "ev_weighted", # v62: RS^1.3 × (2.0 + boost) — RS exponent reflects 5x elasticity ratio
-        "tv_floor_min_rs": 3.8,  # minimum RS to enter pool under tv_floor metric (unused with rs_x_boost)
-        "blend_weight": 0.5,
-        "per_game_carry": 0,  # top K per matchup by TV forced into core before global trim (0 = off)
-        "rs_exponent": 1.3,  # v62: RS^1.3 amplifies RS differences (elasticity 4.72 at high boost vs 2.10 at low)
-    },
-    # v62: Breakout detector — identifies players likely to have career nights.
-    # Unicorn top-20 entries avg RS=6.32, boost=2.26, drafts=48.
-    "breakout": {
-        "enabled": True,
-        "min_prob": 0.3,       # minimum spike probability to apply multiplier
-        "max_mult": 0.3,       # max RS boost: 1.0 + 0.75 * 0.3 = +22.5%
-        "cascade_high": 0.25, "cascade_low": 0.12,
-        "cascade_high_threshold": 8, "cascade_low_threshold": 4,
-        "pace_up_bonus": 0.15, "pace_up_total": 230, "pace_up_spread": 5,
-        "pace_moderate_bonus": 0.08, "pace_moderate_total": 225,
-        "opp_weak_bonus": 0.15, "opp_weak_threshold": 115,
-        "opp_moderate_bonus": 0.08, "opp_moderate_threshold": 113,
-        "hot_streak_bonus": 0.10, "hot_streak_ratio": 1.20,
-        "rest_bonus": 0.10, "rest_days_threshold": 3,
-        "dvp_bonus": 0.10, "prob_cap": 0.75,
-    },
-    # v62: Draft tier targeting — players drafted 6-20 have highest avg value (16.6).
-    # log10(drafts) vs boost correlation = -0.660.
-    "draft_tier": {
-        "enabled": True,
-        "tier_a_max_log_drafts": 1.3,  # ≤20 drafts
-        "tier_b_max_log_drafts": 2.0,  # 21-100 drafts
-        "tier_c_max_log_drafts": 2.7,  # 101-500 drafts
-        "tier_a_bonus": 1.08,
-        "tier_b_mult": 1.00,
-        "tier_c_penalty": 0.95,
-        "tier_d_penalty": 0.85,
-        "tier_d_rs_override": 7.0,     # stars with RS >= 7.0 bypass tier D penalty
-    },
-    # v62: Leaderboard probability classifier integration.
-    "leaderboard_clf": {
-        "enabled": True,
-        "weight": 0.6,       # core_score *= (min_score + weight * prob)
-        "min_score": 0.7,    # range: [0.7, 1.3]
-        "max_score": 1.3,
     },
     "line": {
         "min_confidence": 50,
@@ -1199,23 +1045,14 @@ _CONFIG_DEFAULTS = {
         "neutral_favored_lean": 1.02,        # mild favored-team lean in moderate spreads
     },
     "scoring_thresholds": {
-        "min_pts_projection": 7.0,
-        "min_pts_projection_moonshot": 3.0,
-        "min_pts_per_minute": 0.28,
-        "min_pts_per_minute_moonshot": 0.15,
         "min_chalk_rating": 3.5,
-        "min_moonshot_rating": 3.0,
-        "min_moonshot_pts": 4.0,
-        "star_anchor_ppg": 20.0,
-        "scoring_bias_base": 1.0,
-        "scoring_bias_pts_weight": 0.0,
         "min_game_pts": 8.0,
     },
     # ── Strategy Report v1: Data-driven draft parameters ──────────────────
     # Based on 90 dates of winning draft data. These ~15 parameters replace
     # the ~120 draft-specific parameters scattered across other config sections.
     "strategy": {
-        "rs_floor": 2.0,               # Finding 2: only 1.3% of winners below RS 2.0
+        "rs_floor": 2.5,               # Finding 2: only 1.3% of winners below RS 2.0
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
         "min_minutes": 12.0,            # Minimum projected minutes to be draft-eligible
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
@@ -1223,7 +1060,7 @@ _CONFIG_DEFAULTS = {
         "ev_swap_threshold": 2.0,       # Max EV gap for safe→upside swap
         "max_upside_swaps": 2,          # Max players swapped between safe and upside lineups
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
-        "anti_popularity_strength": 0.1, # Boost penalty per unit of estimated popularity
+        "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
     },
 }
 
@@ -1404,76 +1241,6 @@ def _lgbm_predict_rs(feat_vec: list) -> Optional[float]:
 # _TEAM_MARKET_SCORES alias — still used by _estimate_log_drafts and draft tier system
 _TEAM_MARKET_SCORES = TEAM_MARKET_SCORES
 
-
-# grep: LEADERBOARD CLASSIFIER
-LEADERBOARD_CLF = None
-_LEADERBOARD_CLF_LOAD_ATTEMPTED = False
-_LEADERBOARD_CLF_LOAD_LOCK = threading.Lock()
-_LEADERBOARD_CLF_PATHS = [
-    Path(__file__).resolve().parent.parent / "leaderboard_clf.pkl",
-    Path("/app/leaderboard_clf.pkl"),
-]
-
-def _ensure_leaderboard_clf_loaded():
-    """Lazy-load the leaderboard probability classifier."""
-    global LEADERBOARD_CLF, _LEADERBOARD_CLF_LOAD_ATTEMPTED
-    if _LEADERBOARD_CLF_LOAD_ATTEMPTED:
-        return
-    with _LEADERBOARD_CLF_LOAD_LOCK:
-        if _LEADERBOARD_CLF_LOAD_ATTEMPTED:
-            return
-        for _p in _LEADERBOARD_CLF_PATHS:
-            if _p.exists():
-                try:
-                    with open(_p, "rb") as _f:
-                        _bundle = pickle.load(_f)
-                    if isinstance(_bundle, dict) and "model" in _bundle:
-                        LEADERBOARD_CLF = _bundle["model"]
-                        print(f"[leaderboard_clf] loaded from {_p}")
-                    break
-                except Exception as e:
-                    print(f"[leaderboard_clf] load error: {e}")
-        _LEADERBOARD_CLF_LOAD_ATTEMPTED = True
-        if LEADERBOARD_CLF is None:
-            print("[leaderboard_clf] model not found — classifier disabled")
-
-def _predict_leaderboard_prob(player_info):
-    """Predict probability that a player appears on the daily leaderboard.
-
-    Returns 0.5 (neutral) if classifier not loaded or inference fails.
-    Features: projected_rs, estimated_boost, projected_value, season_pts, season_min,
-    recent_pts, recent_min, cascade_bonus, breakout_prob, log_predicted_drafts.
-    """
-    _ensure_leaderboard_clf_loaded()
-    if LEADERBOARD_CLF is None:
-        return 0.5
-
-    try:
-        rating = float(player_info.get("rating", 0) or 0)
-        est_mult = float(player_info.get("est_mult", 0) or 0)
-        features = np.array([[
-            rating,
-            est_mult,
-            rating * (2.0 + est_mult),  # projected_value
-            float(player_info.get("season_pts", 0) or 0),
-            float(player_info.get("season_min", 0) or 0),
-            float(player_info.get("recent_pts", 0) or 0),
-            float(player_info.get("recent_min", 0) or 0),
-            float(player_info.get("_cascade_bonus", 0) or 0),
-            float(player_info.get("_breakout_prob", 0) or 0),
-            _estimate_log_drafts(
-                float(player_info.get("season_pts", 0) or 0),
-                player_info.get("team", "") in set(_cfg("card_boost.big_market_teams",
-                    _CONFIG_DEFAULTS["card_boost"]["big_market_teams"])),
-                float(player_info.get("recent_pts", 0) or 0),
-                float(player_info.get("season_pts", 0) or 0),
-            ),
-        ]])
-        prob = float(LEADERBOARD_CLF.predict_proba(features)[0][1])
-        return max(0.0, min(1.0, prob))
-    except Exception as e:
-        print(f"[leaderboard_clf] inference error: {e}")
-        return 0.5
 
 
 _NBA_SEASON_START_MONTH_DAY = (10, 21)  # Season typically starts Oct 21
@@ -2281,144 +2048,6 @@ _PARLAY_CONFIG_EDITABLE_KEYS = {
 }
 
 
-def _team_tier_from_standings(stats_dict: dict, mot_cfg: dict) -> str:
-    """Infer team motivation tier from standings stats.
-    A: meaningful seeding/play-in pressure
-    B: neutral
-    C: low-incentive / development profile
-    """
-    seed = _to_int(
-        stats_dict.get("playoffSeed")
-        or stats_dict.get("seed")
-        or stats_dict.get("rank"),
-        None,
-    )
-    games_back = _to_float(
-        stats_dict.get("gamesBack")
-        or stats_dict.get("gb"),
-        None,
-    )
-    win_pct = _to_float(
-        stats_dict.get("winPercent")
-        or stats_dict.get("winPct")
-        or stats_dict.get("winningPercentage"),
-        None,
-    )
-
-    seeding_gap = _to_float(mot_cfg.get("seeding_gap_games", 2.0), 2.0)
-    playin_gap = _to_float(mot_cfg.get("playin_gap_games", 2.0), 2.0)
-    elimination_buffer = _to_float(mot_cfg.get("elimination_buffer_games", 3.0), 3.0)
-
-    # Neutral default when stats are incomplete.
-    if seed is None:
-        return "B"
-
-    # Clear low-incentive bucket (bottom standings with large gap).
-    if seed >= 13:
-        if games_back is None or games_back > elimination_buffer:
-            return "C"
-
-    # Play-in pressure zone.
-    if 7 <= seed <= 10:
-        return "A"
-
-    # Bubble teams just outside play-in.
-    if 11 <= seed <= 12 and games_back is not None and games_back <= playin_gap:
-        return "A"
-
-    # Teams in top-6 that are still in a tight seeding race.
-    if 1 <= seed <= 6 and games_back is not None and games_back <= seeding_gap:
-        return "A"
-
-    # Fallback low-incentive heuristic when standings are weakly informative.
-    if seed >= 12 and win_pct is not None and win_pct < 0.40:
-        return "C"
-
-    return "B"
-
-
-def _fetch_team_motivation_map() -> dict:
-    """Build {TEAM_ABBR: {tier, chalk_mult, moonshot_mult}} for current ET date."""
-    mot_cfg = _cfg("team_motivation", _CONFIG_DEFAULTS.get("team_motivation", {})) or {}
-    if not mot_cfg.get("enabled", False):
-        return {}
-
-    start_date = str(mot_cfg.get("start_date", "") or "").strip()
-    if start_date:
-        try:
-            if _et_date() < datetime.fromisoformat(start_date).date():
-                return {}
-        except ValueError:
-            # Invalid config date should fail open (neutral behavior).
-            return {}
-
-    cache_key = f"team_motivation_{_et_date().strftime('%Y%m%d')}"
-    cached = _cg(cache_key)
-    if cached is not None:
-        return cached
-
-    data = _espn_get("https://site.api.espn.com/apis/v2/sports/basketball/nba/standings")
-    result = {}
-    try:
-        for entry in data.get("standings", {}).get("entries", []):
-            abbr = entry.get("team", {}).get("abbreviation", "")
-            if not abbr:
-                continue
-            stats_dict = {}
-            for s in entry.get("stats", []):
-                name = s.get("name")
-                if not name:
-                    continue
-                val = s.get("value", s.get("displayValue"))
-                stats_dict[name] = val
-
-            tier = _team_tier_from_standings(stats_dict, mot_cfg)
-            tier_key = tier.lower()
-            chalk_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_chalk", 1.0), 1.0)
-            moon_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_moonshot", 1.0), 1.0)
-            mn = _to_float(mot_cfg.get("min_mult", 0.88), 0.88)
-            mx = _to_float(mot_cfg.get("max_mult", 1.12), 1.12)
-            result[abbr] = {
-                "tier": tier,
-                "chalk_mult": max(mn, min(mx, chalk_mult)),
-                "moonshot_mult": max(mn, min(mx, moon_mult)),
-            }
-    except Exception:
-        return {}
-
-    # Manual tier overrides win over inferred tiers.
-    overrides = mot_cfg.get("team_overrides", {}) if isinstance(mot_cfg.get("team_overrides", {}), dict) else {}
-    for abbr, forced in overrides.items():
-        if not isinstance(abbr, str):
-            continue
-        tier = str(forced or "").strip().upper()
-        if tier not in ("A", "B", "C"):
-            continue
-        tier_key = tier.lower()
-        chalk_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_chalk", 1.0), 1.0)
-        moon_mult = _to_float(mot_cfg.get(f"tier_{tier_key}_mult_moonshot", 1.0), 1.0)
-        mn = _to_float(mot_cfg.get("min_mult", 0.88), 0.88)
-        mx = _to_float(mot_cfg.get("max_mult", 1.12), 1.12)
-        result[abbr.upper()] = {
-            "tier": tier,
-            "chalk_mult": max(mn, min(mx, chalk_mult)),
-            "moonshot_mult": max(mn, min(mx, moon_mult)),
-        }
-
-    if result:
-        _cs(cache_key, result)
-    return result
-
-
-def _team_motivation_multiplier(team_abbr: str, lineup_type: str, motivation_map: dict) -> float:
-    """Return motivation multiplier for team/lineup type (defaults to neutral 1.0)."""
-    if not team_abbr or not motivation_map:
-        return 1.0
-    rec = motivation_map.get(team_abbr, {})
-    if lineup_type == "chalk":
-        return float(rec.get("chalk_mult", 1.0))
-    return float(rec.get("moonshot_mult", 1.0))
-
 _GAMES_CACHE_TS: dict = {}  # cache_key → timestamp for TTL enforcement
 
 def fetch_games(date=None):
@@ -3115,64 +2744,6 @@ def _clamp_round_boost(x: float, floor_val: float, ceiling: float) -> float:
 # _ensure_boost_priors_loaded / _get_boost_prior removed — replaced by api/boost_model.py cascade
 
 
-# grep: BREAKOUT DETECTOR
-def _compute_breakout_probability(player_info, game_info=None):
-    """Compute probability of a breakout performance (0.0-1.0).
-
-    Based on 578-entry top-performer analysis. Unicorn entries (value 25+) share:
-    cascade opportunity, pace-up matchup, opponent defensive weakness, hot streak, rest.
-    Returns spike probability used as RS multiplier when >= min_prob threshold.
-    """
-    bo = _cfg("breakout", _CONFIG_DEFAULTS.get("breakout", {}))
-    if not bo.get("enabled", True):
-        return 0.0
-
-    prob = 0.0
-    game = game_info or {}
-
-    # 1. Cascade opportunity: teammate starter OUT → inherits minutes
-    # (Paul Reed 5.6 RS when Embiid sat, Nique Clifford 5.9 RS)
-    cascade = float(player_info.get("_cascade_bonus", 0) or player_info.get("cascade_bonus", 0) or 0)
-    if cascade >= float(bo.get("cascade_high_threshold", 8)):
-        prob += float(bo.get("cascade_high", 0.25))
-    elif cascade >= float(bo.get("cascade_low_threshold", 4)):
-        prob += float(bo.get("cascade_low", 0.12))
-
-    # 2. Pace-up matchup: high-total close game
-    total = float(game.get("total", 222))
-    spread = abs(float(game.get("spread", 0)))
-    pace_up_total = float(bo.get("pace_up_total", 230))
-    pace_up_spread = float(bo.get("pace_up_spread", 5))
-    if total >= pace_up_total and spread <= pace_up_spread:
-        prob += float(bo.get("pace_up_bonus", 0.15))
-    elif total >= float(bo.get("pace_moderate_total", 225)):
-        prob += float(bo.get("pace_moderate_bonus", 0.08))
-
-    # 3. Opponent defensive weakness (bottom-10 defense)
-    opp_def = float(game.get("opp_def_rating", 112))
-    if opp_def >= float(bo.get("opp_weak_threshold", 115)):
-        prob += float(bo.get("opp_weak_bonus", 0.15))
-    elif opp_def >= float(bo.get("opp_moderate_threshold", 113)):
-        prob += float(bo.get("opp_moderate_bonus", 0.08))
-
-    # 4. Recent hot streak: last 3 games ≥ 120% of season average
-    recent_pts = float(player_info.get("recent_pts", 0) or 0)
-    season_pts = float(player_info.get("season_pts", 0) or 0)
-    if season_pts > 0 and recent_pts / season_pts >= float(bo.get("hot_streak_ratio", 1.20)):
-        prob += float(bo.get("hot_streak_bonus", 0.10))
-
-    # 5. Rest advantage: ≥3 rest days
-    rest = float(player_info.get("rest_days", 2) or 2)
-    if rest >= float(bo.get("rest_days_threshold", 3)):
-        prob += float(bo.get("rest_bonus", 0.10))
-
-    # 6. DvP position matchup advantage (if available)
-    if player_info.get("dvp_advantage", False):
-        prob += float(bo.get("dvp_bonus", 0.10))
-
-    return min(prob, float(bo.get("prob_cap", 0.75)))
-
-
 # grep: DRAFT TIER TARGETING
 def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw=0, market_score=None):
     """Estimate log10(expected draft count) from player profile.
@@ -3211,45 +2782,6 @@ def _estimate_log_drafts(season_pts, is_big_market, recent_pts=0, season_pts_raw
         base += 0.15
 
     return max(0.0, min(3.5, base))
-
-
-def _assign_draft_tier(predicted_log_drafts):
-    """Assign draft tier based on expected popularity.
-
-    Data: drafts 6-20 bucket has highest avg value (16.6), avg boost 2.41.
-    Tier A = "known but obscure" sweet spot.
-    """
-    dt = _cfg("draft_tier", _CONFIG_DEFAULTS.get("draft_tier", {}))
-    if predicted_log_drafts <= float(dt.get("tier_a_max_log_drafts", 1.3)):
-        return "A"
-    elif predicted_log_drafts <= float(dt.get("tier_b_max_log_drafts", 2.0)):
-        return "B"
-    elif predicted_log_drafts <= float(dt.get("tier_c_max_log_drafts", 2.7)):
-        return "C"
-    else:
-        return "D"
-
-
-def _draft_tier_multiplier(tier, rating=0.0):
-    """Return EV multiplier for draft tier.
-
-    Tier A (1-20 drafts): ×1.08 — sweet spot
-    Tier B (21-100): neutral
-    Tier C (101-500): ×0.95 — too popular for good boost
-    Tier D (500+): ×0.85 — stars with massive drafts (unless RS >= 7.0)
-    """
-    dt = _cfg("draft_tier", _CONFIG_DEFAULTS.get("draft_tier", {}))
-    if tier == "A":
-        return float(dt.get("tier_a_bonus", 1.08))
-    elif tier == "B":
-        return float(dt.get("tier_b_mult", 1.00))
-    elif tier == "C":
-        return float(dt.get("tier_c_penalty", 0.95))
-    elif tier == "D":
-        if rating >= float(dt.get("tier_d_rs_override", 7.0)):
-            return 1.0  # exceptional RS overrides popularity penalty
-        return float(dt.get("tier_d_penalty", 0.85))
-    return 1.0
 
 
 def _est_card_boost(
@@ -3308,23 +2840,28 @@ def _est_card_boost(
     )
 
     raw_boost = result["boost"]
+    cb_low, cb_high = result.get("confidence_band", (raw_boost, raw_boost))
 
     # ── Anti-popularity adjustment (Strategy Report Finding 4) ─────────
     # Draft popularity has -0.457 correlation with boost. The least-drafted
     # 50% produce 24-26% more total value. High-popularity players see
     # depressed boosts; this feeds that signal into predictions.
     _strat = _cfg("strategy", {}) or {}
+    _anti_pop_delta = 0.0
     if _strat.get("anti_popularity_enabled", True):
-        _pop_strength = float(_strat.get("anti_popularity_strength", 0.1))
+        _pop_strength = float(_strat.get("anti_popularity_strength", 0.2))
         _pop_score = estimate_draft_popularity(
             season_ppg=_spts,
             team=team_abbr or "",
             recent_ppg=float(recent_pts or _spts or 0.0),
         )
         # Normalize popularity: 2500 = typical star draft count (top quartile)
-        # Penalty scales from 0 (unknown player) to -0.3 (heavily drafted star)
+        # Penalty scales from 0 (unknown player) to ~0.6 (heavily drafted star)
         _pop_normalized = min(_pop_score / 2500.0, 1.0)
-        raw_boost -= _pop_normalized * _pop_strength * 3.0  # max penalty ~0.3
+        _anti_pop_delta = _pop_normalized * _pop_strength * 3.0
+    raw_boost -= _anti_pop_delta
+    cb_low -= _anti_pop_delta
+    cb_high -= _anti_pop_delta
 
     # Star PPG tier caps — high-PPG players are nationally popular regardless of
     # team market size. These hard caps prevent over-prediction for stars.
@@ -3339,13 +2876,22 @@ def _est_card_boost(
     _team_ceil = float(_team_ceilings.get(team_abbr, ceiling))
 
     # Apply caps
+    _star_cap = ceiling
     for _tier in _star_tiers:
         if _spts >= float(_tier.get("min_ppg", 9999)):
-            raw_boost = min(raw_boost, float(_tier.get("boost_cap", ceiling)))
+            _star_cap = float(_tier.get("boost_cap", ceiling))
+            raw_boost = min(raw_boost, _star_cap)
             break
     raw_boost = min(raw_boost, _team_ceil)
+    cb_high = min(cb_high, _star_cap, _team_ceil)
 
-    return _clamp_round_boost(raw_boost, floor_val, ceiling)
+    return (
+        _clamp_round_boost(raw_boost, floor_val, ceiling),
+        (
+            _clamp_round_boost(cb_low, floor_val, ceiling),
+            _clamp_round_boost(cb_high, floor_val, ceiling),
+        ),
+    )
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
     """Real Score-aligned formula. Weights read from runtime config."""
@@ -3420,32 +2966,6 @@ def _game_script_label(total):
     if t <= gs.get("balanced_ceiling", 235):        return "Balanced Pace"
     if t <= gs.get("fast_paced_ceiling", 245):      return "Fast-Paced"
     return "Track Meet"
-
-
-def _infer_player_archetype(pts: float, avg_min: float, reb: float, stats: dict) -> str:
-    """Coarse role bucket for RS archetype calibration (not position-specific)."""
-    season_pts = float(stats.get("season_pts", pts) or pts)
-    recent_pts = float(stats.get("recent_pts", pts) or pts)
-    reb_pm = reb / max(avg_min, 1)
-    recent_vs = recent_pts / max(season_pts, 1.0)
-    if season_pts >= 21.0 and avg_min >= 28.0:
-        return "star"
-    # Pure rebounder: high reb rate but limited scoring — Lopez, Gobert, Capela.
-    # These players over-project because reb volume inflates DFS score more than RS justifies.
-    if reb_pm >= 0.28 and season_pts < 12.0:
-        return "pure_rebounder"
-    if reb_pm >= 0.22:
-        return "big"
-    # Efficient scorer: high pts/min with real volume — Jalen Green, DeRozan, Nesmith.
-    # These players under-project; when shots fall they generate RS 4.5–7.
-    ppm = pts / max(avg_min, 1)
-    if ppm >= 0.55 and season_pts >= 15.0:
-        return "scorer"
-    if avg_min < 22.0 and recent_vs >= 1.12:
-        return "bench_microwave"
-    if avg_min >= 28.0:
-        return "starter"
-    return "wing_role"
 
 
 def _apply_post_lock_rs_calibration(projections: list, *, slate_locked: bool) -> None:
@@ -3678,7 +3198,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Card boost is INVERSELY proportional to ownership — the app rewards
     # contrarian picks. Stars get crushed, obscure role players get huge boosts.
     is_home = side == "home"
-    card_boost = _est_card_boost(
+    card_boost, boost_band = _est_card_boost(
         proj_min,
         pts,
         team_abbr,
@@ -3727,6 +3247,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "blk":     round(blk, 1),
         "tov":     round(tov, 1),
         "est_mult": card_boost,
+        "boost_band": boost_band,
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
@@ -3961,84 +3482,6 @@ def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> st
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MATCHUP ANALYSIS (Layer 1.5 of the projection pipeline)
-# grep: MATCHUP ANALYSIS, _build_game_opp_map, _compute_matchup_factor, _fetch_matchup_intelligence
-# Replaces the crude dev-team win_pct bonus with real opponent defensive quality,
-# position-specific scaling, and Claude web_search for DvP intelligence.
-# Runs between Layer 1 (news) and Layer 2 (context pass).
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _build_game_opp_map(games: list) -> dict:
-    """Return {team_abbr: opp_abbr} for every team playing today.
-    Used to look up a player's opponent from their team abbreviation.
-    """
-    opp_map = {}
-    for g in games:
-        home = g.get("home", {}).get("abbr", "")
-        away = g.get("away", {}).get("abbr", "")
-        if home and away:
-            opp_map[home] = away
-            opp_map[away] = home
-    return opp_map
-
-
-def _compute_matchup_factor(player: dict, opp_abbr: str, def_stats: dict,
-                            dvp_data: dict = None) -> float:
-    """Compute a matchup quality multiplier [0.80, 1.25] based on opponent defense.
-
-    Components:
-    - def_factor: opponent pts_allowed vs league avg 115 → scaled by matchup.def_scale
-    - pos_scale: position-specific weighting (guards see more of the signal, centers less)
-    - dvp_data: when available, blends position-specific pts_allowed (60% DvP / 40% team-level)
-      League averages by position group: G ≈ 26 PPG, F ≈ 23 PPG, C ≈ 20 PPG
-
-    Falls back to 1.0 (neutral) when def_stats is empty or opponent unknown.
-    Config keys: matchup.def_scale (0.35), matchup.pos_scale_g/f/c (1.05/1.00/0.90),
-                 matchup.dvp_enabled (True), matchup.dvp_blend_weight (0.6)
-    """
-    if not _cfg("matchup.enabled", True):
-        return 1.0
-    if not def_stats or not opp_abbr:
-        return 1.0
-
-    opp = def_stats.get(opp_abbr, {})
-    pts_allowed = opp.get("pts_allowed")
-    if not pts_allowed:
-        return 1.0
-
-    league_avg = 115.0
-    def_scale = float(_cfg("matchup.def_scale", 0.35))
-    # Weak defense (allows 120) → +1.6% ×0.35 = ~+12% at 30pts above avg
-    # Elite defense (allows 108) → -7pts ×0.35 = ~-8% below avg
-    team_def_factor = 1.0 + (pts_allowed - league_avg) / 30.0 * def_scale
-
-    # Position scaling: guards score more pts → benefit more from a weak defense
-    pos = _pos_group(player.get("pos", ""))
-    pos_scales = {
-        "G": float(_cfg("matchup.pos_scale_g", 1.05)),
-        "F": float(_cfg("matchup.pos_scale_f", 1.00)),
-        "C": float(_cfg("matchup.pos_scale_c", 0.90)),
-    }
-    pos_scale = pos_scales.get(pos, 1.0)
-    team_adjusted = 1.0 + (team_def_factor - 1.0) * pos_scale
-
-    # ── DvP blend: position-specific pts allowed replaces team-level when available ──
-    dvp_enabled = _cfg("matchup.dvp_enabled", True)
-    if dvp_enabled and dvp_data and opp_abbr in dvp_data and pos in dvp_data[opp_abbr]:
-        dvp_pts = dvp_data[opp_abbr][pos]
-        # Position-specific league averages (pts per game by opposing pos group)
-        _DVP_LEAGUE_AVG = {"G": 26.0, "F": 23.0, "C": 20.0}
-        pos_league_avg = _DVP_LEAGUE_AVG.get(pos, 23.0)
-        dvp_def_factor = 1.0 + (dvp_pts - pos_league_avg) / pos_league_avg * def_scale
-        dvp_adjusted = max(0.80, min(1.25, dvp_def_factor))
-        blend = float(_cfg("matchup.dvp_blend_weight", 0.6))
-        adjusted = blend * dvp_adjusted + (1.0 - blend) * team_adjusted
-    else:
-        adjusted = team_adjusted
-
-    return max(0.80, min(1.25, round(adjusted, 3)))
-
-
 def _fetch_matchup_intelligence(games: list, all_proj: list, def_stats: dict,
                                  game_opp_map: dict, news_context: str = "") -> dict:
     """Layer 1.5: Claude analyzes tonight's matchups with web_search for DvP data.
@@ -4419,143 +3862,6 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LINEUP REVIEW (Layer 3 of 3-layer Opus pipeline)
-# grep: _lineup_review_opus
-# Post-lineup Opus + web_search: review assembled chalk/upside, suggest swaps
-# (e.g. late injury, rotation news); auto-apply valid swaps. Non-fatal: on error
-# returns original lineups unchanged.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _lineup_review_opus(chalk: list, upside: list, all_proj: list, games: list, core_pool: list = None, news_context: str = "") -> tuple:
-    """Review assembled lineups with Opus + web search; suggest and auto-apply swaps.
-
-    Reads lineup_review.enabled, lineup_review.model, lineup_review.timeout_seconds.
-    When core_pool is provided (list of player dicts), swap-ins are restricted to that
-    core so both lineups stay configurations of the same high-confidence pool.
-    When news_context is provided (from Layer 1), it's included in the prompt so Layer 3
-    doesn't need to perform redundant web searches — only searches for truly late-breaking
-    news (last 2-4 hours) that Layer 1 may have missed.
-    Returns (chalk, upside). On any failure returns original chalk/upside unchanged.
-    """
-    if not _cfg("lineup_review.enabled", False):
-        return chalk, upside
-
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
-        return chalk, upside
-
-    model_id = _cfg("lineup_review.model", "claude-sonnet-4-6-20250514")
-    timeout_s = float(_cfg("lineup_review.timeout_seconds", 30))
-
-    def _describe_lineup(players: list, label: str) -> str:
-        lines = []
-        for p in (players or []):
-            name = p.get("name", "")
-            team = p.get("team", "")
-            slot = p.get("slot", "")
-            rs = p.get("rating", 0)
-            boost = p.get("est_mult", 0)
-            lines.append(f"  {slot}: {name} ({team}) — RS {rs:.1f}, boost +{boost:.1f}x")
-        return f"{label}:\n" + "\n".join(lines) if lines else f"{label}: (none)"
-
-    chalk_desc = _describe_lineup(chalk, "Starting 5 (chalk)")
-    upside_desc = _describe_lineup(upside, "Moonshot (upside)")
-    core_names = [p.get("name", "") for p in (core_pool or []) if p.get("name")]
-    core_blurb = ""
-    if core_names:
-        core_blurb = (
-            "\n\nThese two lineups are two configurations of the same high-confidence core pool "
-            "(reliability vs ceiling); high overlap is intended. When suggesting a swap-in, prefer "
-            f"players from this core when possible: {', '.join(core_names)}."
-        )
-
-    # Include cached news from Layer 1 so Layer 3 has context without redundant searches
-    news_blurb = ""
-    if news_context:
-        news_blurb = (
-            f"\n\nKNOWN NEWS FROM EARLIER TODAY:\n{news_context}\n\n"
-            "The above was gathered earlier. Focus your web search on ONLY the last 2-4 hours "
-            "for truly late-breaking updates (last-minute scratches, game-time decisions). "
-            "If the known news already covers everything, return {\"swaps\": []}.\n"
-        )
-
-    user_content = (
-        "You have two daily NBA draft lineups (Starting 5 = chalk, Moonshot = upside). "
-        "Search the web for the latest news (last 2–4 hours): injuries, late scratches, "
-        "rotation changes, or anything that would make a current pick wrong or a different "
-        "player clearly better.\n\n"
-        f"{chalk_desc}\n\n{upside_desc}\n{core_blurb}{news_blurb}\n\n"
-        "If you find a reason to swap a player out (e.g. just ruled OUT, or a teammate "
-        "now getting the run), return a JSON object with a 'swaps' array. Each swap: "
-        '{"lineup": "chalk" or "upside", "out": "Exact Player Name", "in": "Exact Player Name"}. '
-        "Only suggest swaps when the news is clear and actionable. If nothing to change, "
-        'return {"swaps": []}. Return ONLY the JSON, no markdown or preamble.'
-    )
-
-    try:
-        import anthropic as _anthropic
-        client = _anthropic.Anthropic(api_key=anthropic_key, max_retries=0)
-        msg = client.messages.create(
-            model=model_id,
-            max_tokens=1024,
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
-            messages=[{"role": "user", "content": user_content}],
-            timeout=timeout_s,
-        )
-        text = ""
-        for block in (msg.content or []):
-            if hasattr(block, "text"):
-                text += block.text
-        text = text.strip()
-        if not text:
-            print("[lineup_review] skipped (empty response text)")
-            return chalk, upside
-        if text.startswith("```"):
-            parts = text.split("```")
-            text = parts[1] if len(parts) >= 3 else text[3:]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.strip()
-        data = json.loads(text)
-        swaps = data.get("swaps", [])
-        if not swaps:
-            return chalk, upside
-    except Exception as e:
-        print(f"[lineup_review] skipped (error: {e})")
-        return chalk, upside
-
-    name_to_proj = {p["name"]: p for p in all_proj}
-    core_names_set = {p.get("name") for p in (core_pool or []) if p.get("name")}
-    chalk_out = list(chalk)
-    upside_out = list(upside)
-    applied = 0
-
-    for s in swaps:
-        lineup_name = (s.get("lineup") or "").lower()
-        out_name = (s.get("out") or "").strip()
-        in_name = (s.get("in") or "").strip()
-        if not out_name or not in_name or lineup_name not in ("chalk", "upside"):
-            continue
-        replacement = name_to_proj.get(in_name)
-        if not replacement:
-            continue
-        if core_names_set and in_name not in core_names_set:
-            continue
-        target = chalk_out if lineup_name == "chalk" else upside_out
-        idx = next((i for i, p in enumerate(target) if (p.get("name") or "").strip() == out_name), None)
-        if idx is None:
-            continue
-        slot = target[idx].get("slot", "1.0x")
-        new_entry = {**replacement, "slot": slot}
-        target[idx] = new_entry
-        applied += 1
-
-    if applied:
-        print(f"[lineup_review] applied {applied} swap(s) via {model_id}")
-    return chalk_out, upside_out
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # GAME RUNNER & LINEUP BUILDER
 # grep: _run_game, _build_lineups, _build_game_lineups, chalk_ev, Moonshot
 # _run_game: fetches rosters, runs cascade, projects all players for one game
@@ -4784,50 +4090,21 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
     return core_pool
 
 
-def _pred_min_direction_factor(pred_min: float, season_min: float, recent_min: float = 0.0) -> float:
-    """Return a multiplier that rewards players projected above their average minutes
-    and penalises players projected below.
-
-    grep: PRED MIN FACTOR
-
-    Logic:
-      ref   = max(season_min, recent_min)          — use the higher baseline as the hurdle
-      ratio = pred_min / ref                        — >1 means trending up, <1 means trending down
-      factor = clamp(floor, cap, ratio ^ power)     — linear by default (power=1.0)
-
-    Config (projection.*):
-      pred_min_upside_enabled  — master switch (default True)
-      pred_min_upside_power    — exponent on ratio (default 1.0 = linear)
-      pred_min_upside_cap      — maximum bonus factor (default 1.10 = +10%)
-      pred_min_downside_floor  — minimum penalty factor (default 0.85 = -15% max)
-    """
-    _proj_cfg = _cfg("projection", _CONFIG_DEFAULTS.get("projection", {}))
-    if not (isinstance(_proj_cfg, dict) and _proj_cfg.get("pred_min_upside_enabled", True)):
-        return 1.0
-    ref = max(float(season_min or 0), float(recent_min or 0), 1.0)
-    if float(pred_min or 0) <= 0:
-        return 1.0
-    ratio = float(pred_min) / ref
-    power = float(_proj_cfg.get("pred_min_upside_power", 1.0)) if isinstance(_proj_cfg, dict) else 1.0
-    cap   = float(_proj_cfg.get("pred_min_upside_cap", 1.10)) if isinstance(_proj_cfg, dict) else 1.10
-    floor = float(_proj_cfg.get("pred_min_downside_floor", 0.85)) if isinstance(_proj_cfg, dict) else 0.85
-    return max(floor, min(cap, ratio ** power))
-
-
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
     """Strategy-report-aligned lineup builder.
 
     Single pipeline:
-      1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
-      2. Score: EV = RS × (2.0 + boost)  (Finding 2: boost 40% more valuable per unit)
-      3. Rank by EV descending
-      4. Safe (Starting 5): top 5, tie-break low variance (Finding 6: similar win rates)
-      5. Upside (Moonshot): 1-2 swaps toward higher variance/boost within ~2 EV
+      1. Filter: RS >= 2.5, minutes >= 12, not OUT, not blacklisted
+      2. Score: safe_ev = RS × (2.0 + cb_low); upside_ev = RS × (2.0 + cb_high)
+         where cb_low/cb_high come from the boost confidence band (Finding 2)
+      3. Rank by safe_ev descending
+      4. Safe (Starting 5): top 5 by safe_ev, tie-break low variance (Finding 6)
+      5. Upside (Moonshot): 1-2 swaps using upside_ev within ~2 EV threshold
       6. Slot assignment: sort by RS descending (Finding 3: provably optimal)
     """
     # ── Configuration ──────────────────────────────────────────────────────
     _strat = _cfg("strategy", {}) or {}
-    rs_floor = float(_strat.get("rs_floor", 2.0))
+    rs_floor = float(_strat.get("rs_floor", 2.5))
     min_minutes = float(_strat.get("min_minutes", 12.0))
     ev_swap_threshold = float(_strat.get("ev_swap_threshold", 2.0))
     max_swaps = int(_strat.get("max_upside_swaps", 2))
@@ -4870,43 +4147,57 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             if len(candidate_pool) >= 10:
                 break
 
-    # ── Step 2: Score by EV = RS × (2.0 + boost) ──────────────────────────
-    # Strategy Report Finding 2 + Finding 8: this formula beats all alternatives.
+    # ── Step 2: Score by safe_ev / upside_ev from confidence band ────────
+    # safe_ev  = RS × (2.0 + cb_low)  — conservative floor EV for safe lineup
+    # upside_ev = RS × (2.0 + cb_high) — optimistic ceiling EV for moonshot swaps
+    # When no band is available, both default to the point estimate (draft_ev).
     for p in candidate_pool:
-        p["draft_ev"] = round(float(p.get("rating", 0)) * (2.0 + float(p.get("est_mult", 0))), 2)
+        rs = float(p.get("rating", 0))
+        boost = float(p.get("est_mult", 0))
+        band = p.get("boost_band")
+        if band and isinstance(band, (list, tuple)) and len(band) == 2:
+            cb_low, cb_high = float(band[0]), float(band[1])
+        else:
+            cb_low = cb_high = boost
+        p["draft_ev"]   = round(rs * (2.0 + boost), 2)
+        p["safe_ev"]    = round(rs * (2.0 + cb_low), 2)
+        p["upside_ev"]  = round(rs * (2.0 + cb_high), 2)
         # Compute moonshot_ev for backward compatibility
         p["moonshot_ev"] = p["draft_ev"]
 
-    # ── Step 3: Rank by EV descending ──────────────────────────────────────
-    candidate_pool.sort(key=lambda x: (-x.get("draft_ev", 0), -x.get("rating", 0)))
+    # ── Step 3: Rank by safe_ev descending ─────────────────────────────────
+    candidate_pool.sort(key=lambda x: (-x.get("safe_ev", 0), -x.get("rating", 0)))
 
     # ── Step 4: Safe lineup (Starting 5) ───────────────────────────────────
-    # Top 5 by EV. When two players have similar EV (within threshold),
-    # the safe draft prefers the lower-variance player (Finding 6: reliable floor).
+    # Top 5 by safe_ev (conservative floor). When two players have similar safe_ev
+    # (within threshold), prefer the lower-variance player (Finding 6: reliable floor).
     safe_pool = list(candidate_pool)
-    safe_pool.sort(key=lambda x: (-x.get("draft_ev", 0), x.get("player_variance", 0)))
+    safe_pool.sort(key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
     chalk = safe_pool[:5]
 
     # ── Step 5: Upside lineup (Moonshot) ───────────────────────────────────
     # Start from the same ranked list. Make 1-2 swaps pushing toward higher
-    # ceiling: where two candidates have similar EV (within ~2 pts), the upside
-    # draft takes the higher-variance / higher-boost player.
+    # ceiling: where two candidates have similar upside_ev (within ~2 pts), the
+    # moonshot takes the higher-variance / higher-boost player.
     upside = list(chalk)  # start as copy of safe
     chalk_names = {p.get("name") for p in chalk}
-    # Find swap candidates: players NOT in safe lineup, ranked by EV
-    swap_candidates = [p for p in candidate_pool if p.get("name") not in chalk_names]
+    # Find swap candidates: players NOT in safe lineup, ranked by upside_ev
+    swap_candidates = sorted(
+        [p for p in candidate_pool if p.get("name") not in chalk_names],
+        key=lambda x: -x.get("upside_ev", 0),
+    )
     swaps_made = 0
     for candidate in swap_candidates:
         if swaps_made >= max_swaps:
             break
-        c_ev = candidate.get("draft_ev", 0)
+        c_ev = candidate.get("upside_ev", 0)
         c_var = candidate.get("player_variance", 0)
         c_boost = candidate.get("est_mult", 0)
-        # Find the weakest safe player within the EV threshold
+        # Find the weakest safe player within the EV threshold (compare upside_ev vs safe_ev)
         best_swap_idx = -1
         best_swap_score = -1
         for i, safe_p in enumerate(upside):
-            s_ev = safe_p.get("draft_ev", 0)
+            s_ev = safe_p.get("safe_ev", 0)
             ev_gap = s_ev - c_ev
             if ev_gap > ev_swap_threshold:
                 continue  # candidate is too far below this safe player
@@ -5953,18 +5244,13 @@ def _get_slate_impl():
             _dvp_data = _fetch_dvp_data()
         except Exception as _dvp_err:
             print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
-        _game_opp_map = _build_game_opp_map(draftable_games)
         # Optional Claude context pass: adjust RS projections for game narrative
         # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
-        # Capture news_text so Layer 1.5 and Layer 3 can reuse it.
         _slate_news_text = ""
         try:
             _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
         except Exception:
             pass
-        # Layer 1.5: Claude matchup intelligence — DISABLED (cost reduction).
-        # ESPN def stats in _compute_matchup_factor() provide equivalent signal at zero cost.
-        # Re-enable via matchup.claude_enabled=true in model-config.json if needed.
         _matchup_intel = {}
         try:
             _claude_context_pass(all_proj, draftable_games)
@@ -5972,10 +5258,6 @@ def _get_slate_impl():
             print(f"[context_pass] call-site error: {_ctx_err}")
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
         chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data)
-        try:
-            chalk, upside = _lineup_review_opus(chalk, upside, all_proj, draftable_games, core_pool=core_pool, news_context=_slate_news_text)
-        except Exception as _rev_err:
-            print(f"[lineup_review] call-site error: {_rev_err}")
         lineups = {"chalk": chalk, "upside": upside}
         # Watchlist: players near the lineup bubble sensitive to late-breaking news
         _watchlist = []
@@ -6426,10 +5708,6 @@ def _force_regenerate_sync(scope: str):
     _fr_any_locked = bool(_fr_starts) and any(_is_locked(st) for st in _fr_starts)
     _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
     chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data)
-    try:
-        chalk, upside = _lineup_review_opus(chalk, upside, all_proj, game_pool, core_pool=core_pool)
-    except Exception as _rev_err:
-        print(f"[lineup_review] call-site error: {_rev_err}")
     lineups = {"chalk": chalk, "upside": upside}
     # Watchlist for force-regen (Pass 2)
     _fr_watchlist = []
