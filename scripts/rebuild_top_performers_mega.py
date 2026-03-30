@@ -12,16 +12,19 @@ Usage (repo root):  python scripts/rebuild_top_performers_mega.py
 from __future__ import annotations
 
 import csv
-import json
 import sys
 import unicodedata
 from pathlib import Path
+
+try:
+    from scripts.team_utils import normalize_team
+except ImportError:
+    from team_utils import normalize_team
 
 REPO = Path(__file__).resolve().parent.parent
 MEGA = REPO / "data" / "top_performers.csv"
 PARQUET = REPO / "data" / "top_performers.parquet"
 ACT = REPO / "data" / "actuals"
-TEAMS_JSON = REPO / "data" / "teams.json"
 
 FIELDS = [
     "date",
@@ -34,32 +37,6 @@ FIELDS = [
     "total_value",
     "source",
 ]
-
-
-def _load_team_aliases() -> dict[str, str]:
-    """Load alias->canonical mapping from data/teams.json."""
-    if not TEAMS_JSON.exists():
-        return {}
-    with TEAMS_JSON.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    mapping: dict[str, str] = {}
-    for canon, info in data.get("canonical", {}).items():
-        mapping[canon] = canon
-        for alias in info.get("aliases", []):
-            mapping[alias] = canon
-    return mapping
-
-
-_TEAM_MAP: dict[str, str] = {}
-
-
-def _normalize_team(raw: str) -> str:
-    """Normalize team abbreviation to canonical form using data/teams.json."""
-    global _TEAM_MAP
-    if not _TEAM_MAP:
-        _TEAM_MAP = _load_team_aliases()
-    t = (raw or "").strip().upper()
-    return _TEAM_MAP.get(t, t)
 
 
 def _norm_name(name: str) -> str:
@@ -75,7 +52,7 @@ def _row_from_actuals(date_str: str, r: dict) -> dict:
         out["source"] = "highest_value"
     # Normalize team abbreviation to canonical form
     if out.get("team"):
-        out["team"] = _normalize_team(out["team"])
+        out["team"] = normalize_team(out["team"])
     return out
 
 
@@ -94,7 +71,7 @@ def main() -> int:
             row = {k: r.get(k, "") for k in FIELDS}
             # Normalize team abbreviation to canonical form
             if row.get("team"):
-                row["team"] = _normalize_team(row["team"])
+                row["team"] = normalize_team(row["team"])
             mega[(d, _norm_name(name))] = row
 
     for path in sorted(ACT.glob("*.csv")):
@@ -116,10 +93,16 @@ def main() -> int:
 
     print(f"[mega] wrote {len(rows)} rows to {MEGA.relative_to(REPO)}")
 
-    # Also output Parquet for faster model training (columnar format)
+    # Also output Parquet for faster model training (columnar format, typed)
     try:
         import pandas as pd
-        df = pd.read_csv(MEGA)
+
+        df = pd.DataFrame(rows, columns=FIELDS)
+        # Enforce ML-ready dtypes: numeric columns as float64, low-cardinality as category
+        for col in ("actual_rs", "actual_card_boost", "drafts", "avg_finish", "total_value"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        for col in ("team", "source"):
+            df[col] = df[col].astype("category")
         df.to_parquet(PARQUET, index=False, engine="pyarrow")
         print(f"[mega] wrote parquet to {PARQUET.relative_to(REPO)} ({len(df)} rows)")
     except ImportError:

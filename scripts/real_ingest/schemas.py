@@ -19,6 +19,14 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
+try:
+    from scripts.team_utils import normalize_team as _normalize_team_canonical
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from team_utils import normalize_team as _normalize_team_canonical
+
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
 
@@ -98,11 +106,8 @@ def _norm_name(raw: str) -> str:
 
 
 def _norm_team(raw: str) -> str:
-    """Return uppercase 3-letter NBA abbreviation or empty string."""
-    if not raw:
-        return ""
-    t = raw.strip().upper()
-    return t if len(t) <= 4 else ""  # allow up to 4 chars (e.g. "UTAH" legacy)
+    """Normalize to canonical NBA abbreviation via data/teams.json."""
+    return _normalize_team_canonical(raw)
 
 
 def _norm_float(raw) -> str:
