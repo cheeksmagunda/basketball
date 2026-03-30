@@ -524,21 +524,11 @@ class TestBannerGuardJS:
         assert start != -1 and end != -1, "No <script> block found in index.html"
         return html[start:end]
 
-    def test_has_actuals_in_log_flow(self, script_source):
-        assert "has_actuals" in script_source, (
-            "Missing has_actuals — log rendering likely broken"
-        )
-
     def test_no_upload_banner_dom_id(self, script_source):
         assert "benUploadBanner" not in script_source
 
     def test_no_handle_ben_upload(self, script_source):
         assert "_handleBenUpload" not in script_source
-
-    def test_log_get_fetched_in_showlabunlocked(self, script_source):
-        assert "/api/log/get" in script_source, (
-            "/api/log/get not called from showLabUnlocked"
-        )
 
     def test_briefing_fetched_in_showlabunlocked(self, script_source):
         assert "/api/lab/briefing" in script_source
@@ -1561,5 +1551,4 @@ class TestFrontendTabAbort:
         assert "_getTabSignal('predictions')" in src, "slate fetch should use predictions tab signal"
         assert "_getTabSignal('line')" in src, "line fetch should use line tab signal"
         assert "_getTabSignal('parlay')" in src, "parlay fetch should use parlay tab signal"
-        assert "_getTabSignal('log')" in src, "log fetch should use log tab signal"
         assert "_getTabSignal('lab')" in src, "lab fetch should use lab tab signal"

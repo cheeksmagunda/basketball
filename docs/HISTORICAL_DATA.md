@@ -109,8 +109,8 @@ python scripts/verify_top_performers.py   # drafts model overlap vs predictions
 
 ## Training
 
-- `train_drafts_lgbm.py` — labels from `top_performers.csv`, `data/actuals/`, and `data/most_popular/`.
-- `train_boost_lgbm.py` — adds `data/most_popular/` to the top_performers + actuals union.
+- `train_lgbm.py` — RS projection model (12 features); retrained nightly via GitHub Actions.
+- ~~`train_drafts_lgbm.py`~~ / ~~`train_boost_lgbm.py`~~ — **Archived.** Replaced by the deterministic 3-tier cascade in `api/boost_model.py` which reads `top_performers.csv` + `data/actuals/` directly at startup.
 
 User-facing Ben **screenshot upload banner is removed** this season; ingestion is **script/curl only** until a future UI return.
 

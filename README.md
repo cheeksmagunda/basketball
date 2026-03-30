@@ -67,7 +67,7 @@ The backend uses two mathematically distinct projection engines, each optimized 
 ESPN API (games, rosters, injuries, spreads)
   → LightGBM 12-feature points projection
   → Monte Carlo Real Score simulator (closeness, clutch-factor, momentum coefficients)
-  → Card Boost resolution (`drafts_model.pkl` popularity proxy → `boost_model.pkl` → sigmoid fallback)
+  → Card Boost resolution (3-tier cascade: prev_boost persistence → staleness blend → PQI cold start)
   → MILP slot optimizer → Starting 5 + Moonshot lineups
 ```
 **Why Monte Carlo?** DFS drafts reward high ceilings and variance. RS scoring is non-linear — tight games exponentially boost scores via closeness and clutch factors. Monte Carlo simulation captures these fat-tail distributions that deterministic medians miss.
@@ -252,7 +252,7 @@ All secrets and config live in **environment variables only** — never hardcode
 
 Retrained nightly via GitHub Actions (`retrain-model.yml`). Manual retrain: `python train_lgbm.py`.
 
-**Draft popularity + card boost:** `drafts_model.pkl` (`train_drafts_lgbm.py`) and `boost_model.pkl` (`train_boost_lgbm.py`) use labels from **`data/top_performers.csv`**, **`data/actuals/`**, and **`data/most_popular/`**, joined to `data/predictions/` for features—see **Primary historical dataset** below.
+**Card Boost prediction:** A deterministic 3-tier cascade model (`api/boost_model.py`) replaces the previous LightGBM approach. **Tier 1** (returning player, ≤14 days): prev_boost + 6 adjustment factors (RS decay, draft popularity, mean reversion, trend continuation, gap-day blend, boundary persistence). **Tier 2** (stale, >14 days): staleness-weighted blend of historical mean + PQI estimate. **Tier 3** (cold start): Player Quality Index mapping. Labels from **`data/top_performers.csv`** and **`data/actuals/`**.
 
 ## Data Layer
 

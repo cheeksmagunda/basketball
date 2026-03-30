@@ -267,11 +267,11 @@ This is controlled by `chalk_milp_rs_focus: 0.6` in config. A player with +3.0x 
 - If ESPN doesn't provide rolling averages, keep proxy but ensure it's trained on the same proxy
 - **Acceptance:** Train/inference feature distributions aligned
 
-**Task 2.3 (Day 4, 3 hours):** Retrain all three models
-- Retrain lgbm_model.pkl with 18 features, temporal split
-- Retrain boost_model.pkl with actual RS (not projected RS) as perf_score
-- Retrain drafts_model.pkl with only 2 features (role_pts, role_avg_min)
-- **Acceptance:** Test metrics realistic (NDCG@5 40-45%, top-5 recall 35-40%)
+**Task 2.3 (Day 4, 3 hours):** ~~Retrain all three models~~ **Superseded by cascade migration (Mar 30, 2026).** `boost_model.pkl` and `drafts_model.pkl` replaced by deterministic 3-tier cascade in `api/boost_model.py`. Only `lgbm_model.pkl` (RS projection) remains as an ML artifact.
+- ~~Retrain lgbm_model.pkl with 18 features, temporal split~~
+- ~~Retrain boost_model.pkl with actual RS (not projected RS) as perf_score~~
+- ~~Retrain drafts_model.pkl with only 2 features (role_pts, role_avg_min)~~
+- **Note:** RS model retraining recommendations may still apply independently.
 
 ### Day 5-6: Configuration Fixes
 
