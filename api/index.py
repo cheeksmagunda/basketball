@@ -53,6 +53,7 @@ try:
         RS_FEATURES, compute_rs_features, rs_feature_vector,
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
     )
+    from api.nba_api_feed import prefetch_enrichment as _nba_api_prefetch, enrich_stats_map as _nba_api_enrich
 except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
@@ -64,6 +65,7 @@ except ImportError:
         RS_FEATURES, compute_rs_features, rs_feature_vector,
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
     )
+    from .nba_api_feed import prefetch_enrichment as _nba_api_prefetch, enrich_stats_map as _nba_api_enrich
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -1285,6 +1287,10 @@ def _lgbm_feature_vector(
     recent_stl: Optional[float] = None,
     recent_blk: Optional[float] = None,
     avg_reb: Optional[float] = None,
+    usage_share: Optional[float] = None,
+    min_volatility: Optional[float] = None,
+    spread_abs: Optional[float] = None,
+    recent_3g_pts: Optional[float] = None,
 ) -> list:
     """Build feature vector aligned with the loaded Real Score bundle (native or pickle).
 
@@ -1318,11 +1324,16 @@ def _lgbm_feature_vector(
         cascade_signal=cascade_signal_,
         opp_pts_allowed=float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0,
         team_pace_proxy=float(team_pace) if team_pace is not None else 110.0,
-        usage_share=0.0,
+        usage_share=float(usage_share) if usage_share else 0.0,
         teammate_out_count=float(teammate_out_count) if teammate_out_count is not None else 0.0,
         game_total=float(game_total) if game_total is not None else 222.0,
-        spread_abs=0.0,
+        spread_abs=float(spread_abs) if spread_abs is not None else abs(float(spread or 0)),
+        recent_3g_pts=float(recent_3g_pts) if recent_3g_pts is not None else None,
     )
+
+    # Override min_volatility with nba_api value (rolling 5-game std) when available
+    if min_volatility is not None:
+        _feature_map["min_volatility"] = float(np.clip(min_volatility, 0.0, 1.2))
 
     # Use the loaded model's feature list to select and order.
     _ensure_lgbm_loaded()
@@ -3286,8 +3297,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             recent_min_ = stats.get("recent_min", avg_min)
             _gp = stats.get("gp", stats.get("games_played"))
             # v62 feature wiring: pass runtime game context instead of inference defaults.
-            _team_total_proxy = float(total or DEFAULT_TOTAL) / 2.0
-            _opp_def_proxy = 112.0 + ((1.0 if side == "away" else -1.0) * float(spread or 0) * 0.7)
+            # nba_api enrichment: prefer real team pace and opp defense when available
+            _nba_team_pace = stats.get("_nba_api_team_pace")
+            _team_total_proxy = float(_nba_team_pace) if _nba_team_pace else float(total or DEFAULT_TOTAL) / 2.0
+            _nba_opp_pts = stats.get("_nba_api_opp_pts_allowed")
+            _opp_def_proxy = float(_nba_opp_pts) if _nba_opp_pts else 112.0 + ((1.0 if side == "away" else -1.0) * float(spread or 0) * 0.7)
+            _nba_usage = stats.get("_nba_api_usage_share", 0.0)
+            _nba_gp = stats.get("_nba_api_games_played")
+            _nba_min_vol = stats.get("_nba_api_min_volatility")
             feat_vec = _lgbm_feature_vector(
                 avg_min=avg_min,
                 pts=pts,
@@ -3302,7 +3319,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 season_min=season_min_,
                 recent_min=recent_min_,
                 cascade_bonus=cascade_bonus,
-                games_played=float(_gp) if _gp is not None else None,
+                games_played=float(_nba_gp) if _nba_gp else (float(_gp) if _gp is not None else None),
                 rest_days=float(pinfo.get("rest_days", 2) or 2),
                 team_pace=_team_total_proxy,
                 opp_pts_allowed=_opp_def_proxy,
@@ -3312,6 +3329,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 recent_stl=stats.get("recent_stl"),
                 recent_blk=stats.get("recent_blk"),
                 avg_reb=stats.get("season_reb"),
+                usage_share=float(_nba_usage),
+                min_volatility=float(_nba_min_vol) if _nba_min_vol is not None else None,
+                spread_abs=abs(float(spread or 0)),
+                recent_3g_pts=float(stats.get("_nba_api_recent_3g_pts")) if stats.get("_nba_api_recent_3g_pts") is not None else None,
             )
             ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:
@@ -4101,6 +4122,15 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
 
     if gamelog_overlay_count:
         print(f"[run-game] gamelog overlay applied to {gamelog_overlay_count}/{len(stats_map)} players")
+
+    # Enrich stats with nba_api features (usage_share, team_pace, etc.)
+    try:
+        _pid_names = {str(p["id"]): p.get("name", "") for p, _, _ in players_in}
+        _nba_enriched = _nba_api_enrich(stats_map, _pid_names)
+        if _nba_enriched:
+            print(f"[run-game] nba_api enrichment: {_nba_enriched}/{len(stats_map)} players")
+    except Exception as _nba_e:
+        print(f"[run-game] nba_api enrich error (non-fatal): {_nba_e}")
 
     # Run cascade engine to redistribute minutes from OUT players
     cascade_flags = _cascade_minutes(all_roster, stats_map)
@@ -4993,6 +5023,14 @@ async def health() -> dict:
         out["github"] = "skipped"
     # Redis health probe
     out["redis"] = "ok" if redis_ok() else "unavailable"
+    # nba_api feed status
+    try:
+        from api.nba_api_feed import HAS_NBA_API, HAS_PANDAS, get_player_enrichment
+        out["nba_api"] = "available" if HAS_NBA_API and HAS_PANDAS else "missing_deps"
+        _pe = get_player_enrichment()
+        out["nba_api_players"] = len(_pe) if _pe else 0
+    except Exception:
+        out["nba_api"] = "error"
     return out
 
 
@@ -5406,6 +5444,13 @@ def _get_slate_impl():
         all_proj = []
         game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
         gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
+
+        # Pre-fetch nba_api enrichment (usage_share, team_pace, min_volatility, etc.)
+        # before parallel game runs. Cached per slate date — one heavy call per day.
+        try:
+            _nba_api_prefetch(today_str)
+        except Exception as _nba_err:
+            print(f"[nba-api-feed] prefetch error (non-fatal): {_nba_err}")
 
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {
@@ -5867,6 +5912,10 @@ def _force_regenerate_sync(scope: str):
     # Step 1: Run projection pipeline on the game pool (same as _get_slate_impl Layer 3)
     # NOTE: Cache bust intentionally deferred until we have valid results — if the pipeline
     # fails we preserve the existing cache so cold-start recovery still works.
+    try:
+        _nba_api_prefetch(today_str)
+    except Exception:
+        pass
     all_proj = []
     game_proj_map = {}
     # DFS draft path — per-game projections (no fair_value prefetch)
@@ -8096,10 +8145,17 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
     if not all_proj:
         return None, "no_projections"
     line_config = sanitize_line_config(_cfg("line", _CONFIG_DEFAULTS.get("line", {})))
-    # Fetch bookmaker lines via Claude web_search (replaces Odds API for LOTD).
-    player_odds_map = _fetch_lines_via_claude(all_proj, target_games, date=date)
+    # Fetch bookmaker lines via Odds API (bulk map for all slate games).
+    try:
+        player_odds_map = _build_player_odds_map(target_games)
+    except OddsApiRequiredError as _oerr:
+        print(f"[line] Odds API error: {_oerr.code} — proceeding with model-only fallback")
+        player_odds_map = {}
+    except Exception as _oerr:
+        print(f"[line] Odds API fetch failed: {_oerr} — proceeding with model-only fallback")
+        player_odds_map = {}
     if not player_odds_map:
-        print("[line] Claude lines fetch returned no lines — proceeding with model-only fallback")
+        print("[line] Odds API returned no lines — proceeding with model-only fallback")
         prefer_fallback = True
     news_context = ""
     dvp_data = {}
@@ -8460,15 +8516,7 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
         if _needs_odds:
             try:
                 _games_for_odds = fetch_games(today)
-                # Load cached projections so Claude knows which players to search for
-                _proj_for_odds = []
-                for _g in (_games_for_odds or []):
-                    _gp = _cg(_ck_game_proj(_g["gameId"]))
-                    if _gp:
-                        _proj_for_odds.extend(_gp)
-                if not _proj_for_odds:
-                    _proj_for_odds = _hydrate_game_projs_from_github(_games_for_odds or [])
-                _odds_map = _fetch_lines_via_claude(_proj_for_odds, _games_for_odds) if _games_for_odds else {}
+                _odds_map = _build_player_odds_map(_games_for_odds) if _games_for_odds else {}
                 if _odds_map:
                     _odds_updated = False
                     for _dk in ("over_pick", "under_pick"):
@@ -8614,23 +8662,35 @@ async def refresh_line_odds():
     if not picks:
         return {"status": "no_pick"}
 
-    # Load projections so Claude knows which players to search for
-    all_proj_refresh = []
-    for g in games:
-        gp = _cg(_ck_game_proj(g["gameId"]))
-        if gp:
-            all_proj_refresh.extend(gp)
-    if not all_proj_refresh:
-        all_proj_refresh = _hydrate_game_projs_from_github(games)
-
-    # Fetch fresh lines via Claude (force_refresh busts the /tmp cache)
-    player_odds_map = _fetch_lines_via_claude(all_proj_refresh, games, force_refresh=True)
+    # Fetch fresh lines from Odds API (require_fresh_book_odds to force live fetch)
+    try:
+        player_odds_map = _build_player_odds_map(games, require_fresh_book_odds=True)
+    except OddsApiRequiredError as _oerr:
+        return JSONResponse(
+            {
+                "status": "odds_unavailable",
+                "error": _oerr.code,
+                "message": _oerr.detail,
+                "updated": False,
+            },
+            status_code=503,
+        )
+    except Exception as _oerr:
+        return JSONResponse(
+            {
+                "status": "odds_unavailable",
+                "error": "odds_api_error",
+                "message": str(_oerr),
+                "updated": False,
+            },
+            status_code=503,
+        )
     if not player_odds_map:
         return JSONResponse(
             {
                 "status": "odds_unavailable",
-                "error": "claude_lines_empty",
-                "message": "Claude web search returned no prop lines for today's slate",
+                "error": "odds_api_empty",
+                "message": "Odds API returned no player prop lines for today's slate",
                 "updated": False,
             },
             status_code=503,
@@ -11171,17 +11231,24 @@ def _run_parlay_engine_sync(today, *, allow_synthetic=False):
     if not all_proj:
         return None, "no_projections", {}
 
-    # Fetch lines via Claude web_search (replaces Odds API for Parlay).
-    has_key = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
-    player_odds_map = _fetch_lines_via_claude(all_proj, target_games)
+    # Fetch bookmaker lines via Odds API (bulk map for all slate games).
+    has_key = bool(_get_odds_api_key())
+    try:
+        player_odds_map = _build_player_odds_map(target_games)
+    except OddsApiRequiredError as _oerr:
+        print(f"[parlay] Odds API error: {_oerr.code}")
+        player_odds_map = {}
+    except Exception as _oerr:
+        print(f"[parlay] Odds API fetch failed: {_oerr}")
+        player_odds_map = {}
     if not player_odds_map and not allow_synthetic:
-        print("[parlay] Claude lines fetch returned empty — returning no_odds_data error")
+        print("[parlay] Odds API returned no lines — returning no_odds_data error")
         debug = {
             "projections": len(all_proj),
             "odds_entries": 0,
             "odds_unavailable": True,
-            "odds_error_code": "claude_lines_empty",
-            "odds_message": "Claude web search returned no prop lines",
+            "odds_error_code": "odds_api_empty",
+            "odds_message": "Odds API returned no player prop lines",
             "has_key": has_key,
             "odds_available": False,
             "projection_only": False,
