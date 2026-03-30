@@ -1522,3 +1522,46 @@ class TestParlayFrontendErrorState:
         assert "else if (empty) {" in src and "empty.style.display = 'none';" in src, (
             "fetchParlay catch must hide empty-state when existing ticket remains visible"
         )
+
+
+class TestFrontendTabAbort:
+    """Frontend tab-switch abort system — regression guards."""
+
+    def test_tab_abort_controllers_declared(self):
+        src = (ROOT / "index.html").read_text()
+        assert "let _tabAbortControllers = {}" in src, (
+            "_tabAbortControllers must be declared for per-tab abort tracking"
+        )
+
+    def test_abort_tab_function_exists(self):
+        src = (ROOT / "index.html").read_text()
+        assert "function _abortTab(tab)" in src, (
+            "_abortTab function must exist for tab-switch cleanup"
+        )
+
+    def test_get_tab_signal_function_exists(self):
+        src = (ROOT / "index.html").read_text()
+        assert "function _getTabSignal(tab)" in src, (
+            "_getTabSignal function must exist for per-tab signal creation"
+        )
+
+    def test_switch_tab_calls_abort(self):
+        src = (ROOT / "index.html").read_text()
+        assert "_abortTab(t)" in src, (
+            "switchTab must call _abortTab for departing tabs"
+        )
+
+    def test_fetch_with_timeout_accepts_external_signal(self):
+        src = (ROOT / "index.html").read_text()
+        assert "function fetchWithTimeout(url, options = {}, timeoutMs = 10000, externalSignal)" in src, (
+            "fetchWithTimeout must accept optional externalSignal parameter"
+        )
+
+    def test_heavy_fetches_use_tab_signal(self):
+        """Key heavy fetches should pass _getTabSignal to fetchWithTimeout."""
+        src = (ROOT / "index.html").read_text()
+        assert "_getTabSignal('predictions')" in src, "slate fetch should use predictions tab signal"
+        assert "_getTabSignal('line')" in src, "line fetch should use line tab signal"
+        assert "_getTabSignal('parlay')" in src, "parlay fetch should use parlay tab signal"
+        assert "_getTabSignal('log')" in src, "log fetch should use log tab signal"
+        assert "_getTabSignal('lab')" in src, "lab fetch should use lab tab signal"

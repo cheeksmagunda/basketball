@@ -3461,7 +3461,7 @@ class TestLineLoadStabilizationRegressions:
         src = open("index.html").read()
         assert "let _lineLotdFetchPromise = null;" in src
         assert "if (_lineLotdFetchPromise) return _lineLotdFetchPromise;" in src
-        assert "fetchWithTimeout(_lotdUrl, {}, 30000);" in src, (
+        assert "fetchWithTimeout(_lotdUrl, {}, 30000" in src, (
             "line-of-the-day fetch should use 30s timeout budget"
         )
 
@@ -5245,6 +5245,210 @@ class TestTeamUtilsConsolidation:
                 f"TEAM_MARKET_SCORES key '{abbr}' normalizes to '{canonical}' "
                 f"which is not a canonical team"
             )
+
+
+class TestTeamRestDays:
+    """_fetch_team_rest_days computes per-team rest from ESPN scoreboards."""
+
+    def test_b2b_team_gets_rest_1(self):
+        """Team that played yesterday should have rest_days=1."""
+        import api.index as idx
+        from datetime import date, timedelta
+        today = date(2026, 3, 30)
+        yesterday = today - timedelta(days=1)
+        # Mock _et_date and _espn_get
+        original_et = idx._et_date
+        original_espn = idx._espn_get
+        original_cg = idx._cg
+        try:
+            idx._et_date = lambda: today
+            idx._cg = lambda key: None  # bypass cache
+            def mock_espn(url):
+                if yesterday.strftime("%Y%m%d") in url:
+                    return {"events": [{"competitions": [{"competitors": [
+                        {"team": {"abbreviation": "BOS"}},
+                        {"team": {"abbreviation": "LAL"}}
+                    ]}]}]}
+                return {"events": []}
+            idx._espn_get = mock_espn
+            # Disable caching
+            original_cs = idx._cs
+            idx._cs = lambda key, val: None
+            result = idx._fetch_team_rest_days()
+            assert result.get("BOS") == 1
+            assert result.get("LAL") == 1
+        finally:
+            idx._et_date = original_et
+            idx._espn_get = original_espn
+            idx._cg = original_cg
+            idx._cs = original_cs
+
+    def test_team_played_3_days_ago(self):
+        """Team that played 3 days ago should have rest_days=3."""
+        import api.index as idx
+        from datetime import date, timedelta
+        today = date(2026, 3, 30)
+        original_et = idx._et_date
+        original_espn = idx._espn_get
+        original_cg = idx._cg
+        original_cs = idx._cs
+        try:
+            idx._et_date = lambda: today
+            idx._cg = lambda key: None
+            idx._cs = lambda key, val: None
+            target = today - timedelta(days=3)
+            def mock_espn(url):
+                if target.strftime("%Y%m%d") in url:
+                    return {"events": [{"competitions": [{"competitors": [
+                        {"team": {"abbreviation": "MIA"}}
+                    ]}]}]}
+                return {"events": []}
+            idx._espn_get = mock_espn
+            result = idx._fetch_team_rest_days()
+            assert result.get("MIA") == 3
+        finally:
+            idx._et_date = original_et
+            idx._espn_get = original_espn
+            idx._cg = original_cg
+            idx._cs = original_cs
+
+    def test_unknown_team_not_in_result(self):
+        """Teams with no games in last 7 days should not appear in result."""
+        import api.index as idx
+        from datetime import date
+        original_et = idx._et_date
+        original_espn = idx._espn_get
+        original_cg = idx._cg
+        original_cs = idx._cs
+        try:
+            idx._et_date = lambda: date(2026, 3, 30)
+            idx._cg = lambda key: None
+            idx._cs = lambda key, val: None
+            idx._espn_get = lambda url: {"events": []}
+            result = idx._fetch_team_rest_days()
+            assert result.get("ZZZ") is None
+        finally:
+            idx._et_date = original_et
+            idx._espn_get = original_espn
+            idx._cg = original_cg
+            idx._cs = original_cs
+
+    def test_rest_clipped_to_7(self):
+        """rest_days should be clipped to max 7 even if last game was 7+ days ago."""
+        import api.index as idx
+        from datetime import date, timedelta
+        today = date(2026, 3, 30)
+        original_et = idx._et_date
+        original_espn = idx._espn_get
+        original_cg = idx._cg
+        original_cs = idx._cs
+        try:
+            idx._et_date = lambda: today
+            idx._cg = lambda key: None
+            idx._cs = lambda key, val: None
+            # Only game found at day 7 (the max lookback)
+            target = today - timedelta(days=7)
+            def mock_espn(url):
+                if target.strftime("%Y%m%d") in url:
+                    return {"events": [{"competitions": [{"competitors": [
+                        {"team": {"abbreviation": "DET"}}
+                    ]}]}]}
+                return {"events": []}
+            idx._espn_get = mock_espn
+            result = idx._fetch_team_rest_days()
+            assert result.get("DET") == 7
+        finally:
+            idx._et_date = original_et
+            idx._espn_get = original_espn
+            idx._cg = original_cg
+            idx._cs = original_cs
+
+    def test_cache_hit(self):
+        """Should return cached result when available."""
+        import api.index as idx
+        from datetime import date
+        original_et = idx._et_date
+        original_cg = idx._cg
+        try:
+            idx._et_date = lambda: date(2026, 3, 30)
+            idx._cg = lambda key: {"BOS": 2, "LAL": 1}
+            result = idx._fetch_team_rest_days()
+            assert result == {"BOS": 2, "LAL": 1}
+        finally:
+            idx._et_date = original_et
+            idx._cg = original_cg
+
+
+class TestGamesPlayedEstimate:
+    """_estimate_games_played produces season-progress-based estimates."""
+
+    def test_midseason_estimate(self):
+        """Mid-season should estimate ~40-45 games."""
+        import api.index as idx
+        from datetime import date
+        original_et = idx._et_date
+        try:
+            idx._et_date = lambda: date(2026, 1, 15)  # ~86 days into season
+            est = idx._estimate_games_played()
+            assert 35 <= est <= 45  # ~86 * 82/180 ≈ 39
+        finally:
+            idx._et_date = original_et
+
+    def test_season_start_estimate(self):
+        """Early season should estimate few games."""
+        import api.index as idx
+        from datetime import date
+        original_et = idx._et_date
+        try:
+            idx._et_date = lambda: date(2025, 10, 28)  # 7 days in
+            est = idx._estimate_games_played()
+            assert 1 <= est <= 5  # ~7 * 82/180 ≈ 3
+        finally:
+            idx._et_date = original_et
+
+    def test_season_end_estimate(self):
+        """Late season should estimate ~75-82 games."""
+        import api.index as idx
+        from datetime import date
+        original_et = idx._et_date
+        try:
+            idx._et_date = lambda: date(2026, 4, 10)  # ~171 days in
+            est = idx._estimate_games_played()
+            assert 70 <= est <= 82
+        finally:
+            idx._et_date = original_et
+
+    def test_never_exceeds_82(self):
+        """Estimate should never exceed 82."""
+        import api.index as idx
+        from datetime import date
+        original_et = idx._et_date
+        try:
+            idx._et_date = lambda: date(2026, 6, 1)  # way past season
+            est = idx._estimate_games_played()
+            assert est <= 82
+        finally:
+            idx._et_date = original_et
+
+
+class TestGamesPlayedBulkStats:
+    """_fetch_team_player_stats extracts gp from ESPN response."""
+
+    def test_gp_extracted_in_parse_split(self):
+        """_parse_split should extract gp when present in stat names."""
+        import api.index as idx
+        names = ["MIN", "PTS", "GP", "REB"]
+        split = {"stats": ["30.0", "18.0", "55", "7.0"]}
+        result = idx._parse_split(names, split)
+        assert result.get("gp") == 55.0
+
+    def test_gp_missing_graceful(self):
+        """_parse_split should not have gp key when not in stat names."""
+        import api.index as idx
+        names = ["MIN", "PTS", "REB"]
+        split = {"stats": ["30.0", "18.0", "7.0"]}
+        result = idx._parse_split(names, split)
+        assert "gp" not in result
 
 
 if __name__ == "__main__":

@@ -1672,19 +1672,50 @@
 // FETCH TIMEOUT WRAPPER — Prevent indefinite hangs on slow backend
 // ════════════════════════════════════════════════════════════════════
 /**
- * fetchWithTimeout(url, options, timeoutMs)
+ * fetchWithTimeout(url, options, timeoutMs, externalSignal)
  * Wraps fetch() with a timeout using Promise.race().
- * If timeout expires, aborts the request and rejects.
+ * If timeout expires OR externalSignal fires, aborts the request and rejects.
  * @param {string} url - Fetch URL
  * @param {object} options - Standard fetch options
  * @param {number} timeoutMs - Timeout in milliseconds (default 10s for blocking, 30s for screenshot)
+ * @param {AbortSignal} [externalSignal] - Optional external abort signal (e.g. tab switch)
  * @returns {Promise} - fetch response or timeout error
  */
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+
+// ── Per-tab AbortController system ──────────────────────────────────
+// Aborts in-flight fetches when user switches tabs, preventing stale
+// responses from updating global state and wasting bandwidth.
+let _tabAbortControllers = {};
+
+function _abortTab(tab) {
+  if (_tabAbortControllers[tab]) {
+    _tabAbortControllers[tab].abort();
+    _tabAbortControllers[tab] = null;
+  }
+}
+
+function _getTabSignal(tab) {
+  if (!_tabAbortControllers[tab] || _tabAbortControllers[tab].signal.aborted) {
+    _tabAbortControllers[tab] = new AbortController();
+  }
+  return _tabAbortControllers[tab].signal;
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000, externalSignal) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  options.signal = controller.signal;
+  // Compose timeout + external signal (tab switch abort)
+  let signal = controller.signal;
+  if (externalSignal && typeof AbortSignal.any === 'function') {
+    signal = AbortSignal.any([controller.signal, externalSignal]);
+  } else if (externalSignal) {
+    // Fallback for older browsers: listen on external signal manually
+    if (externalSignal.aborted) { controller.abort(); }
+    else { externalSignal.addEventListener('abort', () => controller.abort(), { once: true }); }
+  }
+
+  options.signal = signal;
 
   return fetch(url, options)
     .then(response => {
@@ -1694,6 +1725,10 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
     .catch(error => {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
+        // Distinguish tab-switch abort (silent) from timeout (user-facing)
+        if (externalSignal && externalSignal.aborted) {
+          throw new DOMException('Tab switched', 'AbortError');
+        }
         throw new Error(`Request timed out — tap Retry`);
       }
       throw error;
@@ -1911,6 +1946,11 @@ function switchTab(tab) {
   closeLinePickModal();
   closeParlayModal();
   hideLoader(); // Dismiss 8-ball overlay on ANY tab switch (scoped to Predict but belt-and-suspenders)
+
+  // Abort in-flight fetches for tabs we're leaving (prevents stale response processing)
+  ['predictions', 'line', 'parlay', 'lab', 'log'].forEach(function(t) {
+    if (t !== tab) _abortTab(t);
+  });
 
   // Live stat poll lifecycle: stop when leaving Line tab, restart when returning
   if (tab !== 'line' && LINE_LIVE_POLL) {
@@ -2606,7 +2646,7 @@ async function loadSlate() {
   // Only show skeletons on first load — background polls keep existing cards visible
   if (!SLATE) renderSkeletons('slateList', 5);
   try {
-    const r = await fetchWithTimeout('/api/slate', {}, 30000);
+    const r = await fetchWithTimeout('/api/slate', {}, 30000, _getTabSignal('predictions'));
     hideLoader();
     if (!r.ok) throw new Error('Slate fetch failed');
     const slateData = TransformSlateData(await r.json());
@@ -2857,7 +2897,7 @@ async function runAnalysis() {
 
   const _requestedGameId = gameId;
   try {
-    const r = await fetchWithTimeout(`/api/picks?gameId=${gameId}`, {}, 15000);
+    const r = await fetchWithTimeout(`/api/picks?gameId=${gameId}`, {}, 15000, _getTabSignal('predictions'));
     hideLoader();
     if (document.getElementById('gameSel').value !== _requestedGameId) {
       isFetching = false;
@@ -3391,7 +3431,7 @@ async function forceRegenerateParlay() {
   if (loading) { loading.innerHTML = _parlaySkeletons(); loading.style.display = 'block'; }
   PARLAY_STATE = asyncStateLoading(PARLAY_STATE);
   try {
-    const r = await fetchWithTimeout('/api/parlay-force-regenerate', {}, 120000);
+    const r = await fetchWithTimeout('/api/parlay-force-regenerate', {}, 120000, _getTabSignal('parlay'));
     if (loading) loading.style.display = 'none';
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
@@ -3433,7 +3473,7 @@ async function fetchParlay(background = false) {
   PARLAY_STATE = asyncStateLoading(PARLAY_STATE);
 
   try {
-    const r = await fetchWithTimeout('/api/parlay', {}, 45000);
+    const r = await fetchWithTimeout('/api/parlay', {}, 45000, _getTabSignal('parlay'));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (loading) loading.style.display = 'none';
@@ -3661,7 +3701,7 @@ async function fetchParlayHistory(nocache = false) {
     PARLAY_HIST_ERROR = null;
     const todayET = _etToday();
     const url = nocache ? '/api/parlay-history?nocache=1' : '/api/parlay-history';
-    const r = await fetchWithTimeout(url, {}, 15000);
+    const r = await fetchWithTimeout(url, {}, 15000, _getTabSignal('parlay'));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (data.error) {
@@ -3982,7 +4022,7 @@ async function selectLogDate(dateStr) {
   _renderLogGridFromState(dateStr);
 
   try {
-    const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`, {}, 15000);
+    const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`, {}, 15000, _getTabSignal('log'));
     if (!r.ok) throw new Error('Failed to load log data');
     const data = await r.json();
     LOG.dateCache[dateStr] = { data, loadedAt: Date.now() }; _evictLogCache();
@@ -4545,7 +4585,7 @@ async function fetchLineOfTheDay(nocache = false, background = false) {
   _lineLotdFetchPromise = (async function() {
     try {
       const _lotdUrl = nocache ? '/api/line-of-the-day?nocache=1' : '/api/line-of-the-day';
-      r = await fetchWithTimeout(_lotdUrl, {}, 30000);
+      r = await fetchWithTimeout(_lotdUrl, {}, 30000, _getTabSignal('line'));
       if (!r.ok) throw new Error('line-of-the-day error: ' + r.status);
       let data = await r.json();
       LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE, data);
@@ -4632,7 +4672,7 @@ async function fetchLineHistory() {
   LINE_HISTORY_STATE = asyncStateLoading(LINE_HISTORY_STATE);
   _renderLineHistoryFromState();
   try {
-    const hr = await fetchWithTimeout('/api/line-history', {}, 25000);
+    const hr = await fetchWithTimeout('/api/line-history', {}, 25000, _getTabSignal('line'));
     if (!hr.ok) throw new Error('line-history HTTP ' + hr.status);
     const hist = await hr.json();
     LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE, hist);
@@ -5100,7 +5140,7 @@ async function initLabPage() {
 
   // Load persisted daily Ben chat history (server + localStorage mirror if API fails or returns partial data).
   try {
-    const r = await fetchWithTimeout('/api/lab/chat-history', {}, 10000);
+    const r = await fetchWithTimeout('/api/lab/chat-history', {}, 10000, _getTabSignal('lab'));
     let history = [];
     if (r.ok) {
       const j = await r.json();
