@@ -5175,5 +5175,77 @@ class TestTrainServeSkewAlignment:
             idx.AI_FEATURES = saved
 
 
+class TestTeamUtilsConsolidation:
+    """Verify shared team_utils module and alias coverage."""
+
+    def test_canonical_teams_count(self):
+        from scripts.team_utils import canonical_teams
+        teams = canonical_teams()
+        assert len(teams) == 30, f"Expected 30 canonical teams, got {len(teams)}"
+
+    def test_normalize_known_aliases(self):
+        from scripts.team_utils import normalize_team
+        assert normalize_team("GSW") == "GS"
+        assert normalize_team("NYK") == "NY"
+        assert normalize_team("SAS") == "SA"
+        assert normalize_team("NOP") == "NO"
+        assert normalize_team("WAS") == "WSH"
+        assert normalize_team("UTA") == "UTAH"
+        assert normalize_team("PHO") == "PHX"
+        assert normalize_team("BRO") == "BKN"
+        assert normalize_team("NJN") == "BKN"
+        assert normalize_team("CHO") == "CHA"
+
+    def test_canonical_passthrough(self):
+        from scripts.team_utils import normalize_team, canonical_teams
+        for team in canonical_teams():
+            assert normalize_team(team) == team, f"{team} should pass through unchanged"
+
+    def test_empty_and_whitespace(self):
+        from scripts.team_utils import normalize_team
+        assert normalize_team("") == ""
+        assert normalize_team("  ") == ""
+        assert normalize_team(None) == ""
+
+    def test_case_insensitive(self):
+        from scripts.team_utils import normalize_team
+        assert normalize_team("gsw") == "GS"
+        assert normalize_team("lal") == "LAL"
+        assert normalize_team(" bos ") == "BOS"
+
+    def test_load_team_aliases_includes_identity(self):
+        from scripts.team_utils import load_team_aliases, canonical_teams
+        aliases = load_team_aliases()
+        # Every canonical team should map to itself
+        for team in canonical_teams():
+            assert aliases[team] == team, f"Canonical {team} should map to itself"
+
+    def test_teams_json_matches_aliases(self):
+        """Verify data/teams.json aliases are all resolvable."""
+        import json
+        teams_json = Path(__file__).resolve().parent.parent / "data" / "teams.json"
+        if not teams_json.exists():
+            pytest.skip("data/teams.json not found")
+        with teams_json.open() as f:
+            data = json.load(f)
+        from scripts.team_utils import normalize_team
+        for canon, info in data.get("canonical", {}).items():
+            assert normalize_team(canon) == canon
+            for alias in info.get("aliases", []):
+                assert normalize_team(alias) == canon, f"Alias {alias} should resolve to {canon}"
+
+    def test_team_market_scores_coverage(self):
+        """Every abbreviation in TEAM_MARKET_SCORES should map to a canonical team."""
+        from scripts.team_utils import normalize_team, canonical_teams
+        from api.features import TEAM_MARKET_SCORES
+        teams = canonical_teams()
+        for abbr in TEAM_MARKET_SCORES:
+            canonical = normalize_team(abbr)
+            assert canonical in teams, (
+                f"TEAM_MARKET_SCORES key '{abbr}' normalizes to '{canonical}' "
+                f"which is not a canonical team"
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

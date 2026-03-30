@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.team_utils import canonical_teams as _canonical_teams
+except ImportError:
+    from team_utils import canonical_teams as _canonical_teams
+
 REPO = Path(__file__).resolve().parent.parent
-TEAMS_JSON = REPO / "data" / "teams.json"
 
 # Expected columns in top_performers.csv
 REQUIRED_COLUMNS = {"date", "player_name", "team", "actual_rs", "actual_card_boost",
@@ -32,18 +35,8 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _load_canonical_teams() -> set[str]:
-    """Load canonical team abbreviations from data/teams.json."""
-    if not TEAMS_JSON.exists():
-        # Hardcoded fallback if teams.json missing
-        return {
-            "ATL", "BKN", "BOS", "CHA", "CHI", "CLE", "DAL", "DEN", "DET",
-            "GS", "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN",
-            "NO", "NY", "OKC", "ORL", "PHI", "PHX", "POR", "SA", "SAC",
-            "TOR", "UTAH", "WSH",
-        }
-    with TEAMS_JSON.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    return set(data.get("canonical", {}).keys())
+    """Load canonical team abbreviations via shared team_utils module."""
+    return _canonical_teams()
 
 
 def _dates_from_top_performers(path: Path) -> set[str]:

@@ -18,20 +18,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Set, Tuple
 
+try:
+    from scripts.team_utils import normalize_team
+except ImportError:
+    from team_utils import normalize_team
+
 REPO = Path(__file__).resolve().parent.parent
 DATA = REPO / "data"
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-
-TEAM_ALIASES = {
-    "GSW": "GS",
-    "NYK": "NY",
-    "SAS": "SA",
-    "NOP": "NO",
-    "NOH": "NO",
-    "WAS": "WSH",
-    "UTA": "UTAH",
-    "UTH": "UTAH",
-}
 
 KNOWN_PLAYER_TEAMS = {
     "alexandre sarr": "WSH",
@@ -51,10 +45,7 @@ SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 def norm_team(t: str) -> str:
-    t = (t or "").strip().upper()
-    if not t:
-        return ""
-    return TEAM_ALIASES.get(t, t)
+    return normalize_team(t)
 
 
 def _parse_dates_arg(raw: str) -> Set[str]:

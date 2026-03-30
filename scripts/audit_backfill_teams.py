@@ -39,41 +39,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
+try:
+    from scripts.team_utils import normalize_team, canonical_teams
+except ImportError:
+    from team_utils import normalize_team, canonical_teams
+
 REPO = Path(__file__).resolve().parent.parent
 DATA = REPO / "data"
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
-TEAMS_JSON = DATA / "teams.json"
 
-
-def _load_teams_from_json() -> tuple[set[str], dict[str, str]]:
-    """Load canonical teams and alias mapping from data/teams.json."""
-    if not TEAMS_JSON.exists():
-        # Hardcoded fallback for backward compatibility
-        canonical = {
-            "ATL", "BKN", "BOS", "CHA", "CHI", "CLE", "DAL", "DEN", "DET",
-            "GS", "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN",
-            "NO", "NY", "OKC", "ORL", "PHI", "PHX", "POR", "SA", "SAC",
-            "TOR", "UTAH", "WSH",
-        }
-        aliases = {
-            "GSW": "GS", "NYK": "NY", "SAS": "SA", "NOP": "NO", "NOH": "NO",
-            "WAS": "WSH", "UTA": "UTAH", "UTH": "UTAH", "PHO": "PHX",
-            "BRO": "BKN", "NJN": "BKN", "CHO": "CHA",
-        }
-        return canonical, aliases
-    with TEAMS_JSON.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    canonical: set[str] = set()
-    aliases: dict[str, str] = {}
-    for canon, info in data.get("canonical", {}).items():
-        canonical.add(canon)
-        for alias in info.get("aliases", []):
-            aliases[alias] = canon
-    return canonical, aliases
-
-
-# Load from centralized data/teams.json (single source of truth)
-CANONICAL_TEAMS, TEAM_ALIASES = _load_teams_from_json()
+# Loaded from centralized data/teams.json via team_utils
+CANONICAL_TEAMS = canonical_teams()
 
 
 def _norm_name(raw: str) -> str:
@@ -108,13 +84,10 @@ def _name_key_initial_surname(raw: str) -> tuple[str, str]:
 
 
 def _norm_team(raw: str) -> str:
-    t = (raw or "").strip().upper()
+    t = normalize_team(raw)
     if not t:
         return ""
-    t = TEAM_ALIASES.get(t, t)
-    if t in CANONICAL_TEAMS:
-        return t
-    return ""
+    return t if t in CANONICAL_TEAMS else ""
 
 
 def _read_csv_rows(path: Path) -> list[dict]:
