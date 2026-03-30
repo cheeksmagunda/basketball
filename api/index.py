@@ -1602,6 +1602,20 @@ def _predict_leaderboard_prob(player_info):
         return 0.5
 
 
+_NBA_SEASON_START_MONTH_DAY = (10, 21)  # Season typically starts Oct 21
+
+def _estimate_games_played() -> float:
+    """Estimate games played from season progress when ESPN gp unavailable.
+    Returns a float estimate based on days elapsed since season start.
+    82 games over ~180 days ≈ 0.456 games/day."""
+    today = _et_date()
+    season_year = today.year if today.month >= 10 else today.year - 1
+    season_start = today.replace(year=season_year, month=_NBA_SEASON_START_MONTH_DAY[0],
+                                 day=_NBA_SEASON_START_MONTH_DAY[1])
+    days_elapsed = max(0, (today - season_start).days)
+    return float(max(1, min(82, round(days_elapsed * 82 / 180))))
+
+
 def _lgbm_feature_vector(
     *,
     avg_min: float,
@@ -1656,7 +1670,7 @@ def _lgbm_feature_vector(
         home_away=home_away_,
         opp_def_rating=opp_def_rating,
         rest_days=float(rest_days) if rest_days is not None else 2.0,
-        games_played=float(games_played) if games_played is not None else 40.0,
+        games_played=float(games_played) if games_played is not None else _estimate_games_played(),
         cascade_signal=cascade_signal_,
         opp_pts_allowed=float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0,
         team_pace_proxy=float(team_pace) if team_pace is not None else 110.0,
@@ -1988,6 +2002,41 @@ def _fetch_b2b_teams():
             if abbr: b2b.add(abbr)
     _cs(cache_key, list(b2b))
     return b2b
+
+def _fetch_team_rest_days() -> dict:
+    """Compute rest days per team by checking ESPN scoreboards for the last 7 days.
+
+    Returns {team_abbr: rest_days} where rest_days is clipped to [1, 7].
+    Teams with no games in the last 7 days get default 3 (matches training fillna(3)).
+    Cached for the current ET date.
+    """
+    today = _et_date()
+    cache_key = f"team_rest_days_{today}"
+    c = _cg(cache_key)
+    if c is not None:
+        return c
+    # Check scoreboards for the last 7 days to find each team's most recent game
+    last_game = {}  # {abbr: date}
+    for days_ago in range(1, 8):
+        check_date = today - timedelta(days=days_ago)
+        date_str = check_date.strftime("%Y%m%d")
+        try:
+            data = _espn_get(_espn_scoreboard(date_str))
+            for ev in data.get("events", []):
+                comp = ev.get("competitions", [{}])[0]
+                for cd in comp.get("competitors", []):
+                    abbr = cd.get("team", {}).get("abbreviation", "")
+                    if abbr and abbr not in last_game:
+                        last_game[abbr] = check_date
+        except Exception:
+            continue
+    # Convert to rest_days: days since last game, clipped [1, 7]
+    result = {}
+    for abbr, game_date in last_game.items():
+        rest = (today - game_date).days
+        result[abbr] = max(1, min(rest, 7))
+    _cs(cache_key, result)
+    return result
 
 def _fetch_team_def_stats() -> dict:
     """Fetch NBA team defensive stats (pts allowed per game) from ESPN standings.
@@ -2763,6 +2812,7 @@ def _fetch_team_player_stats(team_id: str) -> dict:
                         elif "stl" in stat_name:  s["stl"] = _safe_float(stat_val)
                         elif "blk" in stat_name:  s["blk"] = _safe_float(stat_val)
                         elif "tov" in stat_name:  s["tov"] = _safe_float(stat_val)
+                        elif stat_name in ("gp", "g", "gamesplayed"):  s["gp"] = _safe_float(stat_val)
 
                     # Alternative: stats as flat array with labels
                     labels = cat.get("labels", [])
@@ -2777,6 +2827,7 @@ def _fetch_team_player_stats(team_id: str) -> dict:
                             elif "stl" in lk:  s["stl"] = _safe_float(val)
                             elif "blk" in lk:  s["blk"] = _safe_float(val)
                             elif "tov" in lk:  s["tov"] = _safe_float(val)
+                            elif lk in ("gp", "g", "gamesplayed"):  s["gp"] = _safe_float(val)
 
                 if s["min"] <= 0:
                     continue
@@ -4953,12 +5004,16 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
         if p.get("is_out"):
             team_out_counts[ab] = team_out_counts.get(ab, 0) + 1
 
+    # Fetch team rest days for rest_days feature (fixes training skew — was always 2.0)
+    team_rest = _fetch_team_rest_days()
+
     out = []
     for p, ab, sd in players_in:
         stats = stats_map.get(p["id"])
         if not stats:
             continue
-        p = {**p, "teammate_out_count": team_out_counts.get(ab, 0)}
+        p = {**p, "teammate_out_count": team_out_counts.get(ab, 0),
+             "rest_days": team_rest.get(ab, 3)}
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
         # Check if this player's team is on a back-to-back
         b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
