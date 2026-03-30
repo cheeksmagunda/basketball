@@ -696,123 +696,6 @@
 
     .hidden { display: none !important; }
 
-    /* ── LOG PAGE SPECIFIC ── */
-
-    /* Date strip */
-    .date-strip {
-      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 20px;
-      scrollbar-width: none;
-    }
-    .date-strip::-webkit-scrollbar { display: none; }
-    .date-chip {
-      flex-shrink: 0;
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      padding: 8px 12px;
-      background-color: rgba(20, 28, 46, 0.65);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 60%);
-      border: 1px solid rgba(255,255,255,0.10);
-      border-top-color: rgba(255,255,255,0.18);
-      border-radius: var(--radius-card); cursor: pointer;
-      transition: all 0.22s;
-      min-width: 52px;
-      backdrop-filter: blur(16px) saturate(150%);
-      -webkit-backdrop-filter: blur(16px) saturate(150%);
-      box-shadow: 0 2px 10px rgba(0,0,0,0.22), 0 1px 0 rgba(255,255,255,0.08) inset;
-    }
-    .date-chip:hover { border-color: rgba(255,255,255,0.22); border-top-color: rgba(255,255,255,0.30); background-color: rgba(28, 38, 60, 0.70); }
-    .date-chip.active {
-      background-color: rgba(20,184,166,0.12);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(20,184,166,0.04) 60%, transparent 100%);
-      border-color: rgba(20,184,166,0.35); border-top-color: rgba(255,255,255,0.28);
-      box-shadow: 0 2px 14px rgba(20,184,166,0.18), 0 1px 0 rgba(255,255,255,0.16) inset;
-    }
-    .date-chip-day {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--color-text-muted);
-    }
-    .date-chip.active .date-chip-day { color: var(--chalk); }
-    .date-chip-num {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.1rem; font-weight: 900; color: var(--color-text-muted); line-height: 1;
-    }
-    .date-chip.active .date-chip-num { color: var(--chalk); }
-    .date-chip-dot {
-      width: 5px; height: 5px; border-radius: 50%;
-      background: var(--log-win); opacity: 0.8;
-    }
-    .date-chip-dot.hidden-dot { opacity: 0; }
-    .date-chip-dot.historical-dot { background: var(--color-text-muted); }
-
-    /* Log game grid */
-    .log-game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
-    .log-slate-card {
-      grid-column: 1 / -1;
-      background-color: rgba(20,184,166,0.06);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.10) 0%, transparent 55%);
-      border: 1px solid rgba(20,184,166,0.20);
-      border-top-color: rgba(255,255,255,0.18);
-      border-radius: var(--r); padding: 16px 20px;
-      cursor: pointer; transition: all 0.22s;
-      display: flex; align-items: center; justify-content: space-between;
-      backdrop-filter: blur(20px) saturate(150%);
-      -webkit-backdrop-filter: blur(20px) saturate(150%);
-      box-shadow: 0 3px 18px rgba(0,0,0,0.26), 0 1px 0 rgba(255,255,255,0.10) inset;
-    }
-    .log-slate-card:hover { border-color: rgba(20,184,166,0.35); border-top-color: rgba(255,255,255,0.24); background-color: rgba(20,184,166,0.10); box-shadow: 0 6px 24px rgba(20,184,166,0.14), 0 1px 0 rgba(255,255,255,0.14) inset; }
-    .log-slate-card-label {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1rem; font-weight: 900; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--chalk);
-    }
-    .log-slate-card-sub { font-size: 0.7rem; color: var(--text-dim); margin-top: 3px; }
-
-    .log-game-card {
-      background-color: var(--surface);
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, transparent 55%);
-      backdrop-filter: blur(20px) saturate(150%);
-      -webkit-backdrop-filter: blur(20px) saturate(150%);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-top-color: rgba(255,255,255,0.16);
-      border-radius: var(--r); padding: 14px;
-      cursor: pointer; transition: all 0.22s;
-      box-shadow: 0 3px 16px rgba(0,0,0,0.26), 0 1px 0 rgba(255,255,255,0.08) inset;
-    }
-    .log-game-card:hover { border-color: rgba(255,255,255,0.20); border-top-color: rgba(255,255,255,0.28); box-shadow: 0 6px 22px rgba(0,0,0,0.32), 0 1px 0 rgba(255,255,255,0.12) inset; }
-    .log-game-matchup {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 0.95rem; font-weight: 800;
-      color: var(--text); margin-bottom: 4px;
-    }
-    .log-game-meta { font-size: 0.68rem; color: var(--muted); }
-
-
-    /* Log drill-down */
-    .log-drill-header {
-      display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;
-    }
-    .log-drill-title {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 1.7rem; font-weight: 900; letter-spacing: 0.04em;
-      text-transform: uppercase; color: var(--text);
-    }
-    .log-date-label {
-      font-size: 0.7rem; color: var(--muted); margin-top: 2px;
-    }
-
-    /* Log prediction cards — shifted palette */
-    .player-card.log-card::before { background: var(--tcolor, var(--log-chalk)); box-shadow: 2px 0 12px var(--tcolor, var(--log-chalk)); }
-    .player-card.log-card .rank-badge { color: var(--tcolor, var(--log-chalk)); }
-    .player-card.log-card .score-num { color: var(--log-score-color, var(--log-chalk)); }
-    .player-card.log-card .slot-badge {
-      color: var(--color-text-muted);
-      background: var(--surface-overlay);
-      border-color: var(--border);
-    }
-    .player-card.log-card .mult-badge {
-      background: var(--surface-overlay); color: var(--color-text-muted);
-      border-color: var(--border);
-    }
 
 
     /* Graded card states — hit/miss accent bar + glow */
@@ -1398,10 +1281,6 @@
         <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
         <span class="bnav-label">Ben</span>
       </button>
-      <button class="bnav-icon-btn" data-tab="log" onclick="switchTab('log')">
-        <div class="bnav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-        <span class="bnav-label">Log</span>
-      </button>
     </div>
   </nav>
 
@@ -1474,47 +1353,10 @@
 
   </div>
 
-  <!-- ══ TAB: LOG ══ -->
-  <div id="tab-log" class="tab-page">
-
-    <!-- Date strip -->
-    <div class="date-strip" id="logDateStrip"></div>
-    <!-- Grid view -->
-    <div id="logGridView">
-      <div class="section-label" id="logGridLabel">Games</div>
-      <div class="log-game-grid" id="logGameGrid">
-        <div class="empty-state" style="grid-column:1/-1">
-          <span class="icon">📅</span>
-          <p>Select a date to view game log.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Drill-down view -->
-    <div id="logDrillView" style="display:none">
-      <button class="back-btn" onclick="closeLogDrilldown()">← Back</button>
-      <div class="log-drill-header">
-        <div>
-          <div class="log-drill-title" id="logDrillTitle">Full Slate</div>
-          <div class="log-date-label" id="logDrillDate"></div>
-        </div>
-      </div>
-
-      <!-- Prediction cards (log palette) -->
-      <div class="mode-tabs" id="logDrillTabs">
-        <div class="slide-pill" id="logDrillPill"></div>
-        <button class="mode-tab active" data-t="chalk" onclick="switchLogTab('chalk')">⚡ Starting 5</button>
-        <button class="mode-tab" data-t="upside" onclick="switchLogTab('upside')">🚀 Moonshot</button>
-      </div>
-      <div id="logPredCards"></div>
-
-    </div>
-
-  </div>
 
   <!-- grep: LINE TAB DOM — tab-line, lineSubNav, lineContent, linePickModal, lineHistoryWrap (JS: grep: LINE PAGE) -->
   <!-- ══ TAB: LINE ══ -->
-  <!-- NOTE: Tab order in DOM = predictions, line, lab(ben), log(history) matching nav -->
+  <!-- NOTE: Tab order in DOM = predictions, line, parlay, lab(ben) matching nav -->
   <div id="tab-line" class="tab-page">
     <div style="margin-bottom:10px">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Line of the Day</div>
@@ -1811,7 +1653,7 @@ const TEAM_COLORS = {
 };
 
 // ════════════════════════════════════════════════════════════════════
-// GLOBAL STATE — grep: SLATE, PICKS_DATA, LOG, LAB, LINE_LOADED
+// GLOBAL STATE — grep: SLATE, PICKS_DATA, LAB, LINE_LOADED
 // ════════════════════════════════════════════════════════════════════
 /**
  * API shapes and tab init (grep: GLOBAL STATE)
@@ -1819,8 +1661,7 @@ const TEAM_COLORS = {
  * - PICKS_DATA: /api/picks per gameId — { lineups: { the_lineup[] }, game, gameScript, locked, injuries }.
  * - LINE_LOTD_STATE: AsyncState for Line tab — data = { pick, over_pick?, under_pick?, error? }; pick has stat_type, line, narrative, game_time, etc.
  * - LAB: Ben tab — messages[], briefing, cachedStatus, system; init on first visit; lock poll when locked.
- * - LOG: History tab — selectedDate, data (from /api/log/get), dateCache; init on first visit via initLogPage → buildLogDateStrip, selectLogDate.
- * Tab init: Predict (loadSlate at startup, non-blocking; game dropdown from SLATE.games on success); Line/Log/Lab lazy-init on first switchTab (initLinePage, initLogPage, initLabPage).
+ * Tab init: Predict (loadSlate at startup, non-blocking; game dropdown from SLATE.games on success); Line/Lab lazy-init on first switchTab (initLinePage, initLabPage).
  */
 let SLATE = null;
 let PICKS_DATA = null;
@@ -1833,35 +1674,6 @@ let _slateLoadInFlight = false;   // Prevent concurrent loadSlate() calls
 let _slateFailRetryCount = 0;    // Auto-retry on slate_failed (max 3)
 let _slateFailRetryTimer = null; // Timer for auto-retry countdown
 
-// Log page state — grep: LOG state, history page, drill-down
-const LOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-let LOG_LOADED_AT = 0; // timestamp of last initLogPage — staleness guard
-const LOG = {
-  selectedDate: null,
-  scope: null,           // 'slate' | matchup label
-  gameLabel: null,
-  datesWithData: new Set(),
-  data: null,            // {date, scopes, actuals}
-  currentTab: 'chalk',
-  dateCache: {},        // { [dateStr]: { data, loadedAt } }
-  _refetchedToday: false, // guard against re-fetch loops in renderLogGrid
-  _maxCacheSize: 15,      // LRU eviction: keep last N dates in memory
-  _datesLoadedAt: 0,     // timestamp when /api/log/dates last succeeded (for hydration check)
-  _dataLoadedAt: 0,      // timestamp when /api/log/get last succeeded (for hydration check)
-};
-// Restore datesWithData from localStorage (instant date strip on reload)
-try {
-  const _savedLogDates = JSON.parse(localStorage.getItem('log_dates_with_data') || '[]');
-  if (Array.isArray(_savedLogDates)) _savedLogDates.forEach(function(d) { LOG.datesWithData.add(d); });
-} catch(e) {}
-function _evictLogCache() {
-  const keys = Object.keys(LOG.dateCache);
-  if (keys.length > LOG._maxCacheSize) {
-    // Evict oldest by loadedAt
-    keys.sort((a, b) => (LOG.dateCache[a].loadedAt || 0) - (LOG.dateCache[b].loadedAt || 0));
-    while (keys.length > LOG._maxCacheSize) delete LOG.dateCache[keys.shift()];
-  }
-}
 
 // ════════════════════════════════════════════════════════════════════
 // ASYNC STATE — grep: asyncStateInitial, asyncStateLoading, asyncStateSuccess, asyncStateError
@@ -1948,7 +1760,7 @@ function switchTab(tab) {
   hideLoader(); // Dismiss 8-ball overlay on ANY tab switch (scoped to Predict but belt-and-suspenders)
 
   // Abort in-flight fetches for tabs we're leaving (prevents stale response processing)
-  ['predictions', 'line', 'parlay', 'lab', 'log'].forEach(function(t) {
+  ['predictions', 'line', 'parlay', 'lab'].forEach(function(t) {
     if (t !== tab) _abortTab(t);
   });
 
@@ -1990,14 +1802,8 @@ function switchTab(tab) {
 
   movePill(tab);
   setPillAccent(tab);
-  const tabGlows = { predictions: 'rgba(20,184,166,0.06)', line: 'rgba(212,166,64,0.06)', parlay: 'rgba(20,184,166,0.06)', lab: 'rgba(20,184,166,0.06)', log: 'rgba(20,184,166,0.05)' };
+  const tabGlows = { predictions: 'rgba(20,184,166,0.06)', line: 'rgba(212,166,64,0.06)', parlay: 'rgba(20,184,166,0.06)', lab: 'rgba(20,184,166,0.06)' };
   document.documentElement.style.setProperty('--tab-glow', tabGlows[tab] || tabGlows.predictions);
-  if (tab === 'log') {
-    closeLogDrilldown();  // always return to grid view on tab entry
-    // Staleness guard: only re-init if never loaded or > 5 min old
-    const _logStale = LOG_LOADED_AT > 0 && (Date.now() - LOG_LOADED_AT) > 5 * 60 * 1000;
-    if (!LOG.selectedDate || _logStale) initLogPage();
-  }
   if (tab === 'predictions') {
     let stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
     let dateStale = SLATE && SLATE.locked && SLATE.date && SLATE.date !== _etToday();
@@ -2065,7 +1871,6 @@ const TAB_ACCENT = {
   line:        { rgb: '212,166,64' },
   parlay:      { rgb: '212,166,64' },
   lab:         { rgb: '212,166,64' },
-  log:         { rgb: '212,166,64' },
 };
 
 function setPillAccent(tab) {
@@ -2124,12 +1929,6 @@ function _initAllTogglePills() {
     const dir = activeBtn && activeBtn.dataset.dir;
     const rgb = dir === 'over' ? '212,166,64' : dir === 'under' ? '20,184,166' : '255,255,255';
     moveTogglePill(lineHist, activeBtn, rgb);
-  }
-  // Log drill tabs (Starting 5 | Moonshot)
-  const logTabs = document.getElementById('logDrillTabs');
-  if (logTabs) {
-    const activeBtn = logTabs.querySelector('.mode-tab.active');
-    moveTogglePill(logTabs, activeBtn, '20,184,166');
   }
 }
 window.addEventListener('resize', _initAllTogglePills);
@@ -2203,8 +2002,6 @@ const _HYDRATION_ENDPOINTS = [
   { name: 'games', url: '/api/games', timeout: 10000, init: function(data) { populateGameSelector(data.data || data); } },
   { name: 'line', url: '/api/line-of-the-day', timeout: 30000, init: null },
   { name: 'line_history', url: '/api/line-history', timeout: 10000, init: null },
-  { name: 'log_dates', url: '/api/log/dates', timeout: 10000, init: null },
-  { name: 'log_get', url: '/api/log/get?date=' + _etToday(), timeout: 10000, init: null },
   { name: 'parlay', url: '/api/parlay', timeout: 45000, init: null, optional: true },
 ];
 
@@ -2237,14 +2034,6 @@ async function _hydrateApp() {
           LINE_HIST_DATA = data;
           LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE || {}, data);
         }
-      } else if (ep.name === 'log_dates') {
-        if (Array.isArray(data)) {
-          data.forEach(d => LOG.datesWithData.add(d));
-          LOG._datesLoadedAt = Date.now();
-        }
-      } else if (ep.name === 'log_get') {
-        LOG.data = data;
-        LOG._dataLoadedAt = Date.now();
       } else if (ep.name === 'parlay') {
         PARLAY_STATE = asyncStateSuccess(PARLAY_STATE || {}, data);
         PARLAY_STATE.loadedAt = Date.now();
@@ -2266,10 +2055,10 @@ async function _hydrateApp() {
 
   // Tiered hydration waterfall: prevent thundering herd on cold backend.
   // Tier 1 (critical, blocks first paint): slate + games
-  // Tier 2 (after Tier 1): line + line_history + log_dates + log_get — lightweight reads
+  // Tier 2 (after Tier 1): line + line_history — lightweight reads
   // Tier 3 (after Tier 2): parlay — heaviest endpoint, runs last when backend is free
   const _tier1Names = new Set(['slate', 'games']);
-  const _tier2Names = new Set(['line', 'line_history', 'log_dates', 'log_get']);
+  const _tier2Names = new Set(['line', 'line_history']);
   const _tier1 = _HYDRATION_ENDPOINTS.filter(ep => _tier1Names.has(ep.name));
   const _tier2 = _HYDRATION_ENDPOINTS.filter(ep => _tier2Names.has(ep.name));
   const _tier3 = _HYDRATION_ENDPOINTS.filter(ep => !_tier1Names.has(ep.name) && !_tier2Names.has(ep.name));
@@ -3869,430 +3658,6 @@ function closeParlayModal() {
   document.body.style.overflow = '';
 }
 
-// ════════════════════════════════════════════════════════
-// LOG PAGE — grep: initLogPage, selectLogDate, renderLogGrid, openLogDrilldown, drill-down
-// ════════════════════════════════════════════════════════
-let LOG_STATE = asyncStateInitial();
-
-function _renderLogGridFromState(dateStr) {
-  const grid = _el('logGameGrid');
-  const label = _el('logGridLabel');
-  if (!grid || !label) return;
-  if (LOG_STATE.status === 'initial' || LOG_STATE.status === 'loading') {
-    const d = new Date(dateStr + 'T12:00:00');
-    label.textContent = _fmtDateShort(d, true);
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">⏳</span><p>Loading...</p></div>`;
-    return;
-  }
-  if (LOG_STATE.status === 'error') {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📡</span><p>Couldn't load data for this date.</p></div>`;
-    return;
-  }
-}
-
-function buildLogDateStrip() {
-  const todayET = _etToday(); // YYYY-MM-DD in ET — consistent with backend date keys
-  const today = new Date(todayET + 'T12:00:00'); // noon anchor avoids DST edge cases
-  const strip = document.getElementById('logDateStrip');
-  const toLocalISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const chips = [];
-  for (let i = 0; i < 60; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const iso = toLocalISO(d);
-    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
-    const numLabel = d.getDate();
-    const hasData = LOG.datesWithData.has(iso);
-    chips.push({ iso, dayLabel, numLabel, hasData, isToday: i === 0 });
-  }
-  strip.innerHTML = chips.map(c => `
-    <button class="date-chip${(LOG.selectedDate === c.iso) || (!LOG.selectedDate && c.isToday) ? ' active' : ''}" data-date="${c.iso}" onclick="selectLogDate('${c.iso}')">
-      <span class="date-chip-day">${c.dayLabel}</span>
-      <span class="date-chip-num">${c.numLabel}</span>
-      <span class="date-chip-dot${c.isToday ? '' : c.hasData ? ' historical-dot' : ' hidden-dot'}"></span>
-    </button>`).join('');
-}
-
-async function initLogPage() {
-  const todayStr = _etToday();
-
-  LOG.selectedDate = todayStr;
-  LOG._refetchedToday = false;
-  closeLogDrilldown();
-  buildLogDateStrip();
-
-  // Hydration check first — avoids one-frame "Loading…" when LOG.data is already warm
-  const _datesAge = LOG._datesLoadedAt ? (Date.now() - LOG._datesLoadedAt) : Infinity;
-  const _dataAge = LOG._dataLoadedAt ? (Date.now() - LOG._dataLoadedAt) : Infinity;
-  const _isHydratedGrid = _dataAge < 30000 && LOG.data;
-  const _isHydratedDates = _datesAge < 30000 && LOG.datesWithData.size > 0;
-
-  if (_isHydratedGrid && (_isHydratedDates || LOG.datesWithData.size > 0)) {
-    console.log('[log] using hydrated data, skipping fetches');
-    LOG_STATE = asyncStateSuccess(LOG_STATE, LOG.data);
-    LOG_LOADED_AT = Date.now();
-    renderLogGrid(todayStr);
-    return;
-  }
-  if (_isHydratedGrid) {
-    // Have today's grid from hydration but date strip may be empty — paint grid, refresh dates in background
-    console.log('[log] using hydrated log/get, fetching dates in background');
-    LOG_STATE = asyncStateSuccess(LOG_STATE, LOG.data);
-    LOG_LOADED_AT = Date.now();
-    renderLogGrid(todayStr);
-    _fetchJson('/api/log/dates', 15000).then(function(arr) {
-      if (!Array.isArray(arr)) return;
-      arr.forEach(d => LOG.datesWithData.add(d));
-      LOG._datesLoadedAt = Date.now();
-      try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
-      buildLogDateStrip();
-    }).catch(function(e) { console.warn('[log/dates] failed to load date strip:', e); });
-    return;
-  }
-
-  // Local fallback: render last known today payload immediately while network fetch runs.
-  try {
-    const _raw = localStorage.getItem('log_get_' + todayStr);
-    if (_raw) {
-      const _cachedToday = JSON.parse(_raw);
-      if (_cachedToday && typeof _cachedToday === 'object') {
-        LOG.dateCache[todayStr] = { data: _cachedToday, loadedAt: Date.now() }; _evictLogCache();
-        LOG.data = _cachedToday;
-        LOG_STATE = asyncStateSuccess(LOG_STATE, _cachedToday);
-        renderLogGrid(todayStr);
-      }
-    }
-  } catch(e) {}
-
-  LOG_STATE = asyncStateLoading(LOG_STATE);
-  _renderLogGridFromState(todayStr);
-  LOG_LOADED_AT = Date.now();
-
-  // Fetch dates in background; never block grid paint on date strip refresh.
-  _fetchJson('/api/log/dates', 15000).then(function(arr) {
-    if (!Array.isArray(arr)) return;
-    arr.forEach(d => LOG.datesWithData.add(d));
-    LOG._datesLoadedAt = Date.now();
-    try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
-    buildLogDateStrip();
-  }).catch(function() {});
-
-  // Prioritize today's grid payload for fast first paint.
-  try {
-    const data = await _fetchJson(`/api/log/get?date=${todayStr}`, 15000);
-    LOG.dateCache[todayStr] = { data, loadedAt: Date.now() }; _evictLogCache();
-    LOG.data = data;
-    LOG._dataLoadedAt = Date.now();
-    LOG_STATE = asyncStateSuccess(LOG_STATE, data);
-    try { localStorage.setItem('log_get_' + todayStr, JSON.stringify(data)); } catch(e) {}
-    // Smart default: if today has no predictions, jump to most recent date with data
-    if (!data.has_predictions && LOG.datesWithData.size > 0) {
-      const mostRecent = [...LOG.datesWithData].sort().reverse()[0];
-      if (mostRecent && mostRecent !== todayStr) { selectLogDate(mostRecent); return; }
-    }
-    renderLogGrid(todayStr);
-  } catch(e) {
-    // Even on error for today, jump to most recent date with data if available
-    if (LOG.datesWithData.size > 0) {
-      const mostRecent = [...LOG.datesWithData].sort().reverse()[0];
-      if (mostRecent) { selectLogDate(mostRecent); return; }
-    }
-    LOG_STATE = asyncStateError(LOG_STATE, e);
-    _renderLogGridFromState(todayStr);
-  }
-}
-
-async function selectLogDate(dateStr) {
-  document.querySelectorAll('.date-chip').forEach(c =>
-    c.classList.toggle('active', c.dataset.date === dateStr));
-  LOG.selectedDate = dateStr;
-  LOG._refetchedToday = false;
-  closeLogDrilldown();
-
-  const cached = LOG.dateCache[dateStr];
-  if (cached && (Date.now() - cached.loadedAt) < LOG_CACHE_TTL_MS) {
-    LOG.data = cached.data;
-    LOG_STATE = asyncStateSuccess(LOG_STATE, cached.data);
-    renderLogGrid(dateStr);
-    return;
-  }
-
-  LOG.data = null;
-  LOG_STATE = asyncStateLoading(LOG_STATE);
-  _renderLogGridFromState(dateStr);
-
-  try {
-    const r = await fetchWithTimeout(`/api/log/get?date=${dateStr}`, {}, 15000, _getTabSignal('log'));
-    if (!r.ok) throw new Error('Failed to load log data');
-    const data = await r.json();
-    LOG.dateCache[dateStr] = { data, loadedAt: Date.now() }; _evictLogCache();
-    LOG.data = data;
-    LOG_STATE = asyncStateSuccess(LOG_STATE, data);
-    // Update dot for this chip progressively (catches /api/log/dates timeout/failure)
-    if (data.has_predictions || data.has_actuals) {
-      LOG.datesWithData.add(dateStr);
-      try { localStorage.setItem('log_dates_with_data', JSON.stringify([...LOG.datesWithData])); } catch(e) {}
-      const chip = document.querySelector(`.date-chip[data-date="${dateStr}"]`);
-      if (chip) {
-        const dot = chip.querySelector('.date-chip-dot');
-        if (dot) { dot.classList.remove('hidden-dot'); if (dateStr !== _etToday()) dot.classList.add('historical-dot'); }
-      }
-    }
-    renderLogGrid(dateStr);
-  } catch(e) {
-    LOG_STATE = asyncStateError(LOG_STATE, e);
-    _renderLogGridFromState(dateStr);
-  }
-}
-
-function renderLogGrid(dateStr) {
-  const data = LOG.data;
-  const grid = _el('logGameGrid');
-  const label = _el('logGridLabel');
-  if (!grid || !label) return;
-
-  const d = new Date(dateStr + 'T12:00:00');
-  const dateLabel = _fmtDateShort(d, true);
-  label.textContent = dateLabel;
-
-  // Check if predictions look incomplete for today: fewer per-game scopes than locked games.
-  // This catches the split-window case where only early games were saved initially.
-  let _todayET = _etToday();
-  let _isToday = dateStr === _todayET;
-  let _slateLocked = SLATE && SLATE.locked;
-  let _gameScopes = data ? Object.keys(data.scopes || {}).filter(function(s) { return s !== 'slate'; }).length : 0;
-  let _lockedGames = _slateLocked ? (SLATE.games || []).filter(function(g) {
-    return g.startTime && (new Date(g.startTime).getTime() - Date.now()) <= 5 * 60 * 1000;
-  }).length : 0;
-  let _looksIncomplete = _isToday && _slateLocked && data && data.has_predictions && _gameScopes < _lockedGames && !LOG._refetchedToday;
-
-  if (_looksIncomplete) {
-    // Predictions exist but missing games — trigger save then re-fetch
-    LOG._refetchedToday = true;
-    delete LOG.dateCache[dateStr];
-    fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 30000).catch(function(){}).finally(function() {
-      fetchWithTimeout('/api/log/get?date=' + dateStr, {}, 15000).then(function(r) {
-        if (!r.ok) throw new Error('Failed');
-        return r.json();
-      }).then(function(freshData) {
-        LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() }; _evictLogCache();
-        LOG.data = freshData;
-        LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
-        renderLogGrid(dateStr);
-      }).catch(function() {});
-    });
-    // Fall through to render current (partial) data while save runs in background
-  }
-
-  if (!data || !data.has_predictions) {
-
-    if (_isToday && !_slateLocked) {
-      // Pre-lock: predictions save at lock time — show friendly message
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">🔮</span><p>The Oracle cannot be rushed — drafts logged at event start.</p></div>`;
-      return;
-    }
-
-    if (_isToday && _slateLocked && !LOG._refetchedToday) {
-      // Post-lock but stale/incomplete: trigger save-predictions to capture any
-      // newly-locked games, THEN re-fetch the log data.
-      LOG._refetchedToday = true;
-      delete LOG.dateCache[dateStr];
-      LOG.data = null;
-      LOG_STATE = asyncStateLoading(LOG_STATE);
-      _renderLogGridFromState(dateStr);
-      // Fire save-predictions first so the backend auto-computes any missing games
-      fetchWithTimeout('/api/save-predictions', { method: 'POST' }, 30000).catch(function(){}).finally(function() {
-        fetchWithTimeout('/api/log/get?date=' + dateStr, {}, 15000).then(function(r) {
-          if (!r.ok) throw new Error('Failed');
-          return r.json();
-        }).then(function(freshData) {
-          LOG.dateCache[dateStr] = { data: freshData, loadedAt: Date.now() }; _evictLogCache();
-          LOG.data = freshData;
-          LOG_STATE = asyncStateSuccess(LOG_STATE, freshData);
-          renderLogGrid(dateStr);
-        }).catch(function() {
-          grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>';
-        });
-      });
-      return;
-    }
-
-    // Historical date or already refetched: show definitive message
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No predictions saved for this date.</p></div>`;
-    return;
-  }
-
-  // Build game list from scopes — only render entries that have been written (draft content exists).
-  const scopes = data.scopes || {};
-  const gameScopes = Object.keys(scopes).filter(s => s !== 'slate');
-  const hasActuals = data.has_actuals;
-
-  let html = '';
-
-  // Full Slate card — only show when slate scope has actual draft content (written at lock).
-  const slateChalk = (scopes['slate']?.chalk?.length || 0);
-  const slateUpside = (scopes['slate']?.upside?.length || 0);
-  if (slateChalk + slateUpside > 0) {
-    const playerCount = slateChalk + slateUpside;
-    html += `
-      <div class="log-slate-card" onclick="openLogDrilldown('slate', 'Full Slate')">
-        <div>
-          <div class="log-slate-card-label">Full Slate</div>
-          <div class="log-slate-card-sub">${playerCount} players${hasActuals ? ' · Results available' : ''}</div>
-        </div>
-        <span style="color:var(--chalk);font-size:1.2rem">›</span>
-      </div>`;
-  }
-
-  // Per-game cards — only show when that scope has draft content (chalk, upside, or the_lineup).
-  gameScopes.forEach(scope => {
-    const chalkCount = scopes[scope]?.chalk?.length || 0;
-    const upsideCount = scopes[scope]?.upside?.length || 0;
-    const theLineupCount = scopes[scope]?.the_lineup?.length || 0;
-    const totalCount = chalkCount + upsideCount + theLineupCount;
-    if (totalCount === 0) return;
-    html += `
-      <div class="log-game-card" data-scope="${scope.replace(/"/g, '&quot;')}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div class="log-game-matchup">${scope}</div>
-          <span style="color:var(--muted);font-size:1rem;margin-left:6px">›</span>
-        </div>
-        <div class="log-game-meta">${totalCount} players${hasActuals ? ' · Results' : ''}</div>
-      </div>`;
-  });
-
-  if (!html) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="icon">📭</span><p>No data for this date.</p></div>`;
-    return;
-  }
-
-  const cardCount = (slateChalk + slateUpside > 0 ? 1 : 0) + gameScopes.length;
-  const doWrite = () => {
-    grid.innerHTML = html;
-    grid.querySelectorAll('.log-game-card[data-scope]').forEach(card => {
-      card.addEventListener('click', () => {
-        const s = card.dataset.scope;
-        openLogDrilldown(s, s);
-      });
-    });
-  };
-  if (cardCount > 10) requestAnimationFrame(doWrite);
-  else doWrite();
-}
-
-function openLogDrilldown(scope, gameLabel) {
-  LOG.scope = scope;
-  LOG.gameLabel = gameLabel;
-
-  // Slate uses chalk/upside tabs; per-game uses the_lineup (no tabs)
-  const isSlate = scope === 'slate';
-  LOG.currentTab = isSlate ? 'chalk' : 'the_lineup';
-
-  document.getElementById('logGridView').style.display = 'none';
-  document.getElementById('logDrillView').style.display = 'block';
-  window.scrollTo({top: 0, behavior: 'smooth'});
-
-  const d = new Date((LOG.selectedDate || '') + 'T12:00:00');
-  const dateLabel = _fmtDateShort(d, true);
-
-  document.getElementById('logDrillTitle').textContent = gameLabel || scope;
-  document.getElementById('logDrillDate').textContent = dateLabel;
-
-  // Show chalk/upside tabs for slate, hide for per-game
-  const tabs = document.getElementById('logDrillTabs');
-  tabs.style.display = isSlate ? 'flex' : 'none';
-  if (isSlate) {
-    // Reset to chalk tab and init pill
-    tabs.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t.dataset.t === 'chalk'));
-    setTimeout(() => {
-      const activeBtn = tabs.querySelector('.mode-tab.active');
-      moveTogglePill(tabs, activeBtn, '20,184,166');
-    }, 30);
-  }
-
-  renderLogDrillCards();
-}
-
-function closeLogDrilldown() {
-  document.getElementById('logGridView').style.display = 'block';
-  document.getElementById('logDrillView').style.display = 'none';
-}
-
-function switchLogTab(tab) {
-  LOG.currentTab = tab;
-  const container = document.getElementById('logDrillTabs');
-  if (!container) return;
-  let activeBtn = null;
-  container.querySelectorAll('.mode-tab').forEach(t => {
-    const isActive = t.dataset.t === tab;
-    t.classList.toggle('active', isActive);
-    if (isActive) activeBtn = t;
-  });
-  moveTogglePill(container, activeBtn, '20,184,166');
-  renderLogDrillCards();
-}
-
-async function renderLogDrillCards() {
-  const predCards = _el('logPredCards');
-  if (!predCards) return;
-  const data = LOG.data;
-  const scope = LOG.scope;
-  const tab = LOG.currentTab;
-
-  if (!data || !data.scopes || !data.scopes[scope]) {
-    predCards.innerHTML = `<div class="empty-state"><span class="icon">📭</span><p>No predictions saved for this scope.</p></div>`;
-    return;
-  }
-
-  const players = data.scopes[scope][tab] || [];
-
-  // Build actuals map: player_name → actual_rs
-  const actualsMap = {};
-  if (data.actuals) {
-    data.actuals.forEach(a => {
-      if (a.player_name && a.actual_rs) {
-        actualsMap[a.player_name] = parseFloat(a.actual_rs);
-      }
-    });
-  }
-
-  // Fetch ESPN box score stats (cached on LOG to avoid re-fetching on tab switch)
-  let statsActualsMap = {};
-  const dateStr = LOG.selectedDate;
-  if (dateStr) {
-    if (LOG._statsCache && LOG._statsCacheDate === dateStr) {
-      statsActualsMap = LOG._statsCache;
-    } else {
-      try {
-        const r = await fetchWithTimeout(`/api/log/actuals-stats?date=${dateStr}`, {}, 15000);
-        if (r.ok) {
-          const resp = await r.json();
-          statsActualsMap = resp.players || {};
-          LOG._statsCache = statsActualsMap;
-          LOG._statsCacheDate = dateStr;
-        }
-      } catch(e) { /* non-fatal — cards render without ESPN stats */ }
-    }
-  }
-
-  // Normalize player objects from CSV format (include stat pills if stored)
-  const normalized = players.map((p, i) => ({
-    name: p.name || p.player_name || '',
-    team: p.team || '',
-    pos: p.pos || '',
-    rating: parseFloat(p.rating || p.predicted_rs || 0).toFixed(1),
-    est_mult: p.est_mult || p.est_card_boost || '',
-    predMin: p.predMin || p.pred_min || '',
-    pts:  p.pts  ? parseFloat(p.pts).toFixed(1)  : '',
-    reb:  p.reb  ? parseFloat(p.reb).toFixed(1)  : '',
-    ast:  p.ast  ? parseFloat(p.ast).toFixed(1)  : '',
-    stl:  p.stl  ? parseFloat(p.stl).toFixed(1)  : '',
-    blk:  p.blk  ? parseFloat(p.blk).toFixed(1)  : '',
-    slot: p.slot || `${i+1}`,
-  }));
-
-  renderCards(normalized, 'logPredCards', tab, { log: true, actualsMap, statsActualsMap });
-}
 
 // ════════════════════════════════════════════════════════
 // LINE PAGE — grep: initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
@@ -5278,9 +4643,8 @@ async function showLabUnlocked(status) {
     _fetchJson('/api/lab/config-history', 10000),
     _cachedLine,
     _cachedSlate,
-    _fetchJson(`/api/log/get?date=${_etToday()}`, 15000),
     _cachedParlay,
-  ]).then(function([briefingRes, configRes, lineRes, slateRes, logRes, parlayRes]) {
+  ]).then(function([briefingRes, configRes, lineRes, slateRes, parlayRes]) {
     if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
     if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
     if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
@@ -5373,12 +4737,11 @@ ${upside.map(fmtPlayer).join('\n') || '  (none)'}`;
 
   return `You are Ben — the Oracle's autonomous NBA analytics and engineering assistant. Full authority: data, config, and code.
 
-APP STRUCTURE (5 tabs):
+APP STRUCTURE (4 tabs):
 - PREDICT: Daily lineup optimizer. Slate-Wide: Starting 5 = chalk (conservative, high-RS + moderate boost, 20-min avg/recent floor). Moonshot = high-boost upside plays (low ownership, 17+ min projected floor, RotoWire cleared). Per-Game: single "THE LINE UP" format (5 players, 20-min projected floor, no card boost — same 2-team pool). Slate locks 5 min before first tip.
 - LINE: Line of the Day — Over and Under prop picks. Over/Under sub-nav defaults to Under. History strip shows streak and hit rate.
 - PARLAY: Safest 3-leg player prop parlay on the slate — certainty-optimized (Z-score + Vegas blend, anti-fragility filters, correlation score). Shown on the Parlay tab and summarized below.
 - BEN (here): Chat with model context from Predict + Line + Parlay when loaded.
-- LOG: Read-only history. Date strip → game grid → drill-down cards showing predicted RS vs actual RS per player (actuals primarily from data/top_performers.csv by date).
 
 DATA PIPELINE (this season):
 - Historical outcomes for Log/audit: data/top_performers.csv (mega rollup by date) is primary; legacy data/actuals/{date}.csv still supported as fallback.
