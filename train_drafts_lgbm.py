@@ -34,6 +34,7 @@ from api.features import pos_bucket as _pos_bucket
 
 REPO = Path(__file__).resolve().parent
 TOP_PERFORMERS = REPO / "data" / "top_performers.csv"
+TOP_PERFORMERS_PARQUET = REPO / "data" / "top_performers.parquet"
 ACTUALS_DIR = REPO / "data" / "actuals"
 MOST_POPULAR_DIR = REPO / "data" / "most_popular"
 PRED_DIR = REPO / "data" / "predictions"
@@ -116,7 +117,29 @@ def _player_role_aggregates(pred_index: dict[str, dict[str, dict]]) -> dict[str,
 
 def _labeled_rows() -> list[dict]:
     rows: list[dict] = []
-    if TOP_PERFORMERS.exists():
+    _tp_loaded = False
+    # Prefer parquet for faster loading
+    if TOP_PERFORMERS_PARQUET.exists():
+        try:
+            import pandas as pd
+            df = pd.read_parquet(TOP_PERFORMERS_PARQUET)
+            for _, r in df.iterrows():
+                drafts = _safe_float(r.get("drafts"), 0.0)
+                if drafts <= 0:
+                    continue
+                rows.append(
+                    {
+                        "date": str(r.get("date", "")),
+                        "player_name": str(r.get("player_name") or "").strip(),
+                        "drafts": drafts,
+                        "actual_boost": _safe_float(r.get("actual_card_boost"), -1.0),
+                    }
+                )
+            print(f"[drafts] Loaded {len(rows)} labeled rows from parquet")
+            _tp_loaded = True
+        except Exception:
+            pass
+    if not _tp_loaded and TOP_PERFORMERS.exists():
         with TOP_PERFORMERS.open("r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 drafts = _safe_float(r.get("drafts"), 0.0)
