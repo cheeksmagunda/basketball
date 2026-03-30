@@ -979,6 +979,20 @@ date,player_name,team,actual_rs,actual_card_boost,drafts,avg_finish,total_value,
 2025-12-21,Trae Young,WAS,5.8,1.2,75,1,18.5,highest_value
 2025-12-21,Tre Johnson,WAS,3.2,3.0,6,1,16.1,highest_value
 2025-12-21,Tristan Vukcevic,WAS,3.4,3.0,11,1,17.0,highest_value
+2025-12-22,Anthony Davis,LAL,5.3,0.4,52,1,12.8,highest_value
+2025-12-22,Bruce Brown,DEN,2.9,2.9,1,1,14.2,highest_value
+2025-12-22,Cameron Johnson,DEN,3.5,2.1,7,1,14.3,highest_value
+2025-12-22,Darius Garland,CLE,5.6,1.1,202,1,17.4,highest_value
+2025-12-22,De'Andre Hunter,SAC,3.9,1.7,3,1,14.3,highest_value
+2025-12-22,Dean Wade,CLE,2.7,3.0,1,1,13.4,highest_value
+2025-12-22,Derik Queen,MEM,3.7,1.4,217,1,12.5,highest_value
+2025-12-22,Jalen Duren,DET,5.7,0.8,116,1,15.9,highest_value
+2025-12-22,Kenrich Williams,OKC,2.9,3.0,3,1,14.5,highest_value
+2025-12-22,Klay Thompson,DAL,3.1,2.9,8,1,15.3,highest_value
+2025-12-22,Luguentz Dort,OKC,2.9,3.0,5,1,14.3,highest_value
+2025-12-22,Moses Moody,GSW,3.8,2.0,10,1,15.4,highest_value
+2025-12-22,Peyton Watson,DEN,3.7,2.0,1,1,14.8,highest_value
+2025-12-22,Tim Hardaway Jr.,DEN,3.4,2.2,1,1,14.1,highest_value
 2026-01-17,Anthony Edwards,MIN,6.7,0.3,781,,15.5,highest_value
 2026-01-17,Bam Adebayo,MIA,5.2,0.8,31,,14.7,highest_value
 2026-01-17,Brandin Podziemski,GSW,4.1,1.6,31,,14.6,highest_value
