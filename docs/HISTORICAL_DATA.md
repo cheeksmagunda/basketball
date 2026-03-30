@@ -6,21 +6,12 @@
 |--------|--------|-------|
 | Oct 21 – Nov 11, 2025 | ✅ Complete | Season open through early November |
 | Nov 12–15, 2025 | — | No games (off days) |
-| Nov 16 – Dec 26, 2025 | ✅ Complete | Nov 27 = Thanksgiving (no games); Dec 24 = no games |
-| Dec 27–28, 2025 | ❌ Missing | |
-| Dec 29, 2025 | ✅ Complete | |
-| Dec 30, 2025 – Jan 2, 2026 | ❌ Missing | |
-| Jan 3, 2026 | ✅ Complete | |
-| Jan 4–5, 2026 | ❌ Missing | |
-| Jan 6–7, 2026 | ✅ Complete | |
-| **Jan 8–16, 2026** | ❌ **Missing** | **~13 days total remaining across all gaps** |
+| Nov 16 – Jan 16, 2026 | ✅ Complete | Nov 27 = Thanksgiving (no games); Dec 24 = no games (Christmas Eve) |
 | Jan 17 – Feb 11, 2026 | ✅ Complete | |
 | Feb 12–18, 2026 | — | All-Star break (no games) |
 | Feb 19 – Mar 25, 2026 | ✅ Complete | |
 
-All four dataset types (`top_performers`, `most_popular`, `most_drafted_3x`, `winning_drafts`) track the same coverage windows above.
-
-**Next to ingest:** Dec 27–28, Dec 30 – Jan 2, Jan 4–6, Jan 8–16 (~14 dates remaining).
+All four dataset types (`top_performers`, `most_popular`, `most_drafted_3x`, `winning_drafts`) track the same coverage windows above. The Nov 30 – Jan 16 gap is fully closed.
 
 ---
 
