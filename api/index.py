@@ -50,6 +50,10 @@ try:
     from api.parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
     from api.fair_value import project_player_fv, dvp_binary_from_nba_com
     from api.cache import rcg, rcs, rflush, redis_ok
+    from api.features import (
+        RS_FEATURES, compute_rs_features, rs_feature_vector,
+        TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
+    )
 except ImportError:
     from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
@@ -58,6 +62,10 @@ except ImportError:
     from .parlay_engine import run_parlay_engine, select_parlay_gamelog_player_ids
     from .fair_value import project_player_fv, dvp_binary_from_nba_com
     from .cache import rcg, rcs, rflush, redis_ok
+    from .features import (
+        RS_FEATURES, compute_rs_features, rs_feature_vector,
+        TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
+    )
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -1498,48 +1506,11 @@ def _ensure_drafts_model_loaded():
             print("[drafts_model] not found — card boost uses minutes-derived min_proxy fallback")
 
 
-def _draft_pos_bucket(pos: str) -> int:
-    """Coarse position bucket for drafts model (must match train_drafts_lgbm.py)."""
-    p = (pos or "").strip().upper()
-    if not p:
-        return 3
-    if p.startswith("C"):
-        return 2
-    if p[0] in ("G", "P") or p.startswith("PG") or p.startswith("SG"):
-        return 0
-    return 1
-
-
-# Continuous team market score (0.0–1.0) for all 30 NBA teams.
-# Higher = larger fanbase = player more likely to be drafted = lower expected card boost.
-# Must stay in sync with TEAM_MARKET_SCORES in train_boost_lgbm.py.
-_TEAM_MARKET_SCORES: dict[str, float] = {
-    "LAL": 1.00, "GSW": 0.95, "GS": 0.95, "BOS": 0.90, "NYK": 0.90, "NY": 0.90,
-    "PHI": 0.75, "MIA": 0.75, "LAC": 0.70, "CHI": 0.70,
-    "BKN": 0.65, "DEN": 0.65, "MIL": 0.60, "DAL": 0.60,
-    "HOU": 0.55, "PHX": 0.55, "ATL": 0.50, "TOR": 0.50,
-    "CLE": 0.45, "IND": 0.40, "ORL": 0.35, "POR": 0.35,
-    "DET": 0.30, "MIN": 0.30, "OKC": 0.25, "UTA": 0.25,
-    "SAS": 0.25, "NOP": 0.20, "NO": 0.20, "MEM": 0.20,
-    "CHA": 0.15, "SAC": 0.15, "WSH": 0.10,
-}
-
-
-def _ppg_tier_bucket(season_pts: float) -> int:
-    """Coarse PPG tier (0–4) for player recognition.
-
-    Replaces the binary is_big_market PPG threshold with a smooth gradient.
-    Must stay in sync with _ppg_tier_bucket() in train_boost_lgbm.py.
-    """
-    if season_pts < 8:
-        return 0   # bench/fringe
-    if season_pts < 13:
-        return 1   # role player
-    if season_pts < 18:
-        return 2   # secondary scorer
-    if season_pts < 24:
-        return 3   # main option
-    return 4       # star/franchise
+# _draft_pos_bucket, _TEAM_MARKET_SCORES, _ppg_tier_bucket — imported from api.features
+# Aliases for backward compatibility with internal call sites:
+_draft_pos_bucket = pos_bucket
+_TEAM_MARKET_SCORES = TEAM_MARKET_SCORES
+_ppg_tier_bucket = ppg_tier_bucket
 
 
 def _lgbm_predict_log1p_drafts(feat_vec: list) -> Optional[float]:
@@ -1652,83 +1623,63 @@ def _lgbm_feature_vector(
     opp_pts_allowed: Optional[float] = None,
     game_total: Optional[float] = None,
     teammate_out_count: Optional[float] = None,
+    recent_ast: Optional[float] = None,
+    recent_stl: Optional[float] = None,
+    recent_blk: Optional[float] = None,
+    avg_reb: Optional[float] = None,
 ) -> list:
     """Build feature vector aligned with the loaded Real Score bundle (native or pickle).
 
+    Uses compute_rs_features() from api.features for formula consistency with training.
     Uses the loaded model's AI_FEATURES list to select and order features,
     so both v63 (17-feature) and legacy (22-feature) bundles work without
     code changes. Falls back to the 17-feature canonical order if no bundle loaded.
     """
-    USAGE_TREND_MIN, USAGE_TREND_MAX = 0.90, 1.50
-    usage = float(
-        np.clip(recent_min / max(avg_min, 1), USAGE_TREND_MIN, USAGE_TREND_MAX)
-    )
+    # Derive values that training computes from raw game data
     sign = 1.0 if side == "away" else -1.0
     opp_def_rating = 112.0 + sign * (spread or 0) * 0.7
-    ast_rate_ = ast / max(avg_min, 1)
-    def_rate_ = (stl + blk) / max(avg_min, 1)
-    pts_per_min_ = pts / max(avg_min, 1)
     home_away_ = 1.0 if side == "home" else 0.0
-    rest_days_ = float(rest_days) if rest_days is not None else 2.0
-    recent_vs_season_ = float(np.clip(recent_pts / max(season_pts, 1), 0.5, 2.0))
-    games_played_ = float(games_played) if games_played is not None else 40.0
-    reb_per_min_ = float(np.clip(reb / max(avg_min, 1), 0.0, 1.5))
-    l3_vs_l5_pts = float(np.clip((0.55 * recent_pts + 0.45 * season_pts) / max(recent_pts, 0.1), 0.4, 2.5))
-    min_volatility = float(
-        np.clip(abs(recent_min - season_min) / max(season_min, 1.0), 0.0, 1.2)
-    )
-    starter_proxy = 1.0 if avg_min >= 26.0 else 0.0
-    cascade_signal_  = 1.0 if cascade_bonus > 0 else 0.0
-    opp_pts_allowed_ = float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0
-    team_pace_proxy_ = float(team_pace) if team_pace is not None else 110.0
-    game_total_      = float(game_total) if game_total is not None else 222.0
-    teammate_out_    = float(teammate_out_count) if teammate_out_count is not None else 0.0
+    cascade_signal_ = 1.0 if cascade_bonus > 0 else 0.0
 
-    # Named feature map — superset of all features ever used in training.
-    # Key names MUST match the feature name strings in lgbm_model.json / .pkl bundles.
-    _feature_map = {
-        "avg_min":           avg_min,
-        "avg_pts":           season_pts,
-        "usage_trend":       usage,
-        "opp_def_rating":    opp_def_rating,
-        "home_away":         home_away_,
-        "ast_rate":          ast_rate_,
-        "def_rate":          def_rate_,
-        "pts_per_min":       pts_per_min_,
-        "rest_days":         rest_days_,
-        "recent_vs_season":  recent_vs_season_,
-        "games_played":      games_played_,
-        "reb_per_min":       reb_per_min_,
-        "l3_vs_l5_pts":      l3_vs_l5_pts,
-        "min_volatility":    min_volatility,
-        "starter_proxy":     starter_proxy,
-        "cascade_signal":    cascade_signal_,
-        "opp_pts_allowed":   opp_pts_allowed_,
-        "team_pace_proxy":   team_pace_proxy_,
-        "usage_share":       0.0,
-        "teammate_out_count": teammate_out_,
-        "game_total":        game_total_,
-        "spread_abs":        0.0,
-    }
+    # Use shared feature computation — matches training formulas exactly
+    _feature_map = compute_rs_features(
+        avg_min=avg_min,
+        avg_pts=season_pts,
+        recent_min=recent_min,
+        recent_pts=recent_pts,
+        season_pts=season_pts,
+        season_min=season_min,
+        recent_ast=recent_ast if recent_ast is not None else ast,
+        recent_stl=recent_stl if recent_stl is not None else stl,
+        recent_blk=recent_blk if recent_blk is not None else blk,
+        avg_reb=avg_reb if avg_reb is not None else reb,
+        home_away=home_away_,
+        opp_def_rating=opp_def_rating,
+        rest_days=float(rest_days) if rest_days is not None else 2.0,
+        games_played=float(games_played) if games_played is not None else 40.0,
+        cascade_signal=cascade_signal_,
+        opp_pts_allowed=float(opp_pts_allowed) if opp_pts_allowed is not None else 110.0,
+        team_pace_proxy=float(team_pace) if team_pace is not None else 110.0,
+        usage_share=0.0,
+        teammate_out_count=float(teammate_out_count) if teammate_out_count is not None else 0.0,
+        game_total=float(game_total) if game_total is not None else 222.0,
+        spread_abs=0.0,
+    )
 
     # Use the loaded model's feature list to select and order.
-    # This ensures inference always matches the trained feature contract.
     _ensure_lgbm_loaded()
     bundle_features = AI_FEATURES
     if bundle_features:
-        missing = [f for f in bundle_features if f not in _feature_map]
-        if missing:
-            raise ValueError(f"Model requires unknown features: {missing}")
-        return [_feature_map[f] for f in bundle_features]
+        return rs_feature_vector(_feature_map, bundle_features)
 
-    # Fallback: canonical 17-feature order (matches current train_lgbm.py)
+    # Fallback: canonical 17-feature order
     _CANONICAL_FEATURES = [
         "avg_min", "avg_pts", "usage_trend", "opp_def_rating", "home_away",
         "ast_rate", "def_rate", "pts_per_min", "rest_days", "recent_vs_season",
         "games_played", "reb_per_min", "l3_vs_l5_pts", "min_volatility",
         "starter_proxy", "opp_pts_allowed", "team_pace_proxy",
     ]
-    return [_feature_map[f] for f in _CANONICAL_FEATURES]
+    return rs_feature_vector(_feature_map, _CANONICAL_FEATURES)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & CACHE UTILITIES
@@ -3834,6 +3785,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
                 opp_pts_allowed=_opp_def_proxy,
                 game_total=float(total or DEFAULT_TOTAL),
                 teammate_out_count=float(pinfo.get("teammate_out_count", 0) or 0),
+                recent_ast=stats.get("recent_ast"),
+                recent_stl=stats.get("recent_stl"),
+                recent_blk=stats.get("recent_blk"),
+                avg_reb=stats.get("season_reb"),
             )
             ai_pred = _lgbm_predict_rs(feat_vec)
         except Exception as _lgbm_e:

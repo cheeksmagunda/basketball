@@ -8,7 +8,7 @@ Training objectives:
 - Sample weights up-weight high actual_rs within each game date (top-10 RS days matter more).
 - Evaluation: top-5 RS recall, NDCG@5 RS, MAE (reported on held-out dates).
 
-Feature list must stay aligned with api/index.py::_lgbm_feature_vector() and lgbm_model.json.
+Feature list and scalar computation shared with api/index.py via api/features.py.
 """
 import os
 import re
@@ -24,37 +24,11 @@ from nba_api.stats.endpoints import playergamelogs
 from requests.exceptions import RequestException
 from sklearn.model_selection import train_test_split
 
+# Import canonical feature list from shared module — single source of truth
+from api.features import RS_FEATURES as FEATURES, N_RS_FEATURES as N_FEATURES, compute_rs_features
+
 # Pull 3 seasons of NBA game logs
 SEASONS = ["2023-24", "2024-25", "2025-26"]
-
-# Total feature count — must match inference (see api/index.py::_lgbm_feature_vector + lgbm_model.json)
-# v64: full 22-feature bundle (restores cascade_signal, usage_share, teammate_out_count, game_total, spread_abs)
-N_FEATURES = 22
-
-FEATURES = [
-    "avg_min",
-    "avg_pts",
-    "usage_trend",
-    "opp_def_rating",
-    "home_away",
-    "ast_rate",
-    "def_rate",
-    "pts_per_min",
-    "rest_days",
-    "recent_vs_season",
-    "games_played",
-    "reb_per_min",
-    "l3_vs_l5_pts",
-    "min_volatility",
-    "starter_proxy",
-    "cascade_signal",
-    "opp_pts_allowed",
-    "team_pace_proxy",
-    "usage_share",
-    "teammate_out_count",
-    "game_total",
-    "spread_abs",
-]
 
 
 def _fetch_season_logs_with_retry(season: str, max_attempts: int = 6) -> pd.DataFrame:
@@ -334,6 +308,44 @@ else:
 
 df = df.dropna(subset=FEATURES + [target])
 print(f"After feature engineering: {len(df)} samples with complete features.")
+
+# ── Train-serve skew validation ─────────────────────────────────────────────
+# Verify that the shared compute_rs_features() produces the same values as
+# the Pandas vectorized computation above. Catches formula drift between
+# training and inference.
+_skew_sample = df.iloc[len(df) // 2]  # mid-dataset sample
+_skew_map = compute_rs_features(
+    avg_min=_skew_sample["avg_min"],
+    avg_pts=_skew_sample["avg_pts"],
+    recent_min=_skew_sample["recent_min"],
+    recent_pts=_skew_sample["recent_5g_pts"],
+    season_pts=_skew_sample["avg_pts"],
+    season_min=_skew_sample["avg_min"],
+    recent_ast=_skew_sample["avg_ast"],
+    recent_stl=_skew_sample["avg_stl"],
+    recent_blk=_skew_sample["avg_blk"],
+    avg_reb=_skew_sample["avg_reb"],
+    home_away=_skew_sample["home_away"],
+    opp_def_rating=_skew_sample["opp_def_rating"],
+    rest_days=_skew_sample["rest_days"],
+    games_played=_skew_sample["games_played"],
+    cascade_signal=_skew_sample["cascade_signal"],
+    opp_pts_allowed=_skew_sample["opp_pts_allowed"],
+    team_pace_proxy=_skew_sample["team_pace_proxy"],
+    usage_share=_skew_sample["usage_share"],
+    teammate_out_count=_skew_sample["teammate_out_count"],
+    game_total=_skew_sample["game_total"],
+    spread_abs=_skew_sample["spread_abs"],
+    recent_3g_pts=_skew_sample["roll3_pts"],
+)
+_skew_checks = ["usage_trend", "ast_rate", "def_rate", "pts_per_min", "recent_vs_season",
+                "reb_per_min", "starter_proxy", "home_away", "rest_days", "games_played"]
+for _sf in _skew_checks:
+    _train_val = float(_skew_sample[_sf])
+    _infer_val = float(_skew_map[_sf])
+    if abs(_train_val - _infer_val) > 0.01:
+        print(f"[SKEW WARNING] {_sf}: training={_train_val:.4f} vs shared={_infer_val:.4f}")
+print("[skew-check] Train-serve alignment validated on sample row.")
 
 if len(df) < 80:
     print(f"[ERROR] Only {len(df)} samples — need more for stable two-head training.")

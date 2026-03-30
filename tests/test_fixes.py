@@ -5006,5 +5006,174 @@ class TestLoweredChalkBoostFloor:
             assert boost >= floor, f"{name} (boost {boost}) should pass floor {floor}"
 
 
+# ─────────────────────────────────────────────────────────
+# TestTrainServeSkewAlignment — shared feature engineering
+# ─────────────────────────────────────────────────────────
+class TestTrainServeSkewAlignment:
+    """Verify api.features is the single source of truth for feature engineering."""
+
+    def test_rs_features_list_matches_model_json(self):
+        """RS_FEATURES from api.features matches lgbm_model.json when present."""
+        from api.features import RS_FEATURES
+        model_json = Path("lgbm_model.json")
+        if not model_json.exists():
+            pytest.skip("lgbm_model.json not present")
+        meta = json.loads(model_json.read_text())
+        assert meta["features"] == RS_FEATURES
+
+    def test_rs_features_has_22_entries(self):
+        from api.features import RS_FEATURES, N_RS_FEATURES
+        assert len(RS_FEATURES) == 22
+        assert N_RS_FEATURES == 22
+
+    def test_compute_rs_features_returns_all_keys(self):
+        from api.features import RS_FEATURES, compute_rs_features
+        result = compute_rs_features(
+            avg_min=24.0, avg_pts=14.0, recent_min=26.0, recent_pts=16.0,
+            season_pts=14.0, season_min=24.0,
+            recent_ast=3.0, recent_stl=1.0, recent_blk=0.5, avg_reb=5.0,
+            home_away=1.0, opp_def_rating=112.0,
+        )
+        assert set(result.keys()) == set(RS_FEATURES)
+
+    def test_ast_rate_uses_recent_ast_and_recent_min(self):
+        """ast_rate must use recent_ast / recent_min (not season / avg_min)."""
+        from api.features import compute_rs_features
+        result = compute_rs_features(
+            avg_min=30.0, avg_pts=20.0, recent_min=25.0, recent_pts=18.0,
+            season_pts=20.0, season_min=30.0,
+            recent_ast=5.0, recent_stl=1.0, recent_blk=0.5, avg_reb=6.0,
+            home_away=1.0, opp_def_rating=112.0,
+        )
+        # recent_ast=5.0 / recent_min=25.0 = 0.2
+        assert abs(result["ast_rate"] - 0.2) < 0.001
+
+    def test_def_rate_uses_recent_stl_blk_and_recent_min(self):
+        from api.features import compute_rs_features
+        result = compute_rs_features(
+            avg_min=30.0, avg_pts=20.0, recent_min=25.0, recent_pts=18.0,
+            season_pts=20.0, season_min=30.0,
+            recent_ast=3.0, recent_stl=2.0, recent_blk=1.0, avg_reb=6.0,
+            home_away=1.0, opp_def_rating=112.0,
+        )
+        # (2.0 + 1.0) / 25.0 = 0.12
+        assert abs(result["def_rate"] - 0.12) < 0.001
+
+    def test_pts_per_min_uses_recent_min_denominator(self):
+        from api.features import compute_rs_features
+        result = compute_rs_features(
+            avg_min=30.0, avg_pts=20.0, recent_min=25.0, recent_pts=18.0,
+            season_pts=20.0, season_min=30.0,
+            recent_ast=3.0, recent_stl=1.0, recent_blk=0.5, avg_reb=6.0,
+            home_away=1.0, opp_def_rating=112.0,
+        )
+        # avg_pts=20.0 / recent_min=25.0 = 0.8
+        assert abs(result["pts_per_min"] - 0.8) < 0.001
+
+    def test_min_volatility_uses_avg_min_plus_half_denominator(self):
+        from api.features import compute_rs_features
+        result = compute_rs_features(
+            avg_min=24.0, avg_pts=14.0, recent_min=20.0, recent_pts=12.0,
+            season_pts=14.0, season_min=24.0,
+            recent_ast=3.0, recent_stl=1.0, recent_blk=0.5, avg_reb=5.0,
+            home_away=1.0, opp_def_rating=112.0,
+        )
+        # |20 - 24| / (24 + 0.5) = 4 / 24.5 ≈ 0.1633
+        expected = 4.0 / 24.5
+        assert abs(result["min_volatility"] - expected) < 0.001
+
+    def test_l3_vs_l5_uses_recent_3g_when_available(self):
+        from api.features import compute_rs_features
+        result = compute_rs_features(
+            avg_min=24.0, avg_pts=14.0, recent_min=26.0, recent_pts=16.0,
+            season_pts=14.0, season_min=24.0,
+            recent_ast=3.0, recent_stl=1.0, recent_blk=0.5, avg_reb=5.0,
+            home_away=1.0, opp_def_rating=112.0,
+            recent_3g_pts=18.0,
+        )
+        # 18.0 / 16.0 = 1.125
+        assert abs(result["l3_vs_l5_pts"] - 1.125) < 0.001
+
+    def test_feature_vector_ordering(self):
+        from api.features import RS_FEATURES, compute_rs_features, rs_feature_vector
+        fmap = compute_rs_features(
+            avg_min=24.0, avg_pts=14.0, recent_min=26.0, recent_pts=16.0,
+            season_pts=14.0, season_min=24.0,
+            recent_ast=3.0, recent_stl=1.0, recent_blk=0.5, avg_reb=5.0,
+            home_away=1.0, opp_def_rating=112.0,
+        )
+        vec = rs_feature_vector(fmap, RS_FEATURES)
+        assert len(vec) == 22
+        assert vec[0] == fmap["avg_min"]
+        assert vec[4] == fmap["home_away"]
+        assert vec[-1] == fmap["spread_abs"]
+
+    def test_no_duplicate_helpers_in_training_scripts(self):
+        """TEAM_MARKET_SCORES, _pos_bucket, _ppg_tier_bucket should be imported, not redefined."""
+        boost_src = Path("train_boost_lgbm.py").read_text()
+        # Should NOT have a local dict definition
+        assert "TEAM_MARKET_SCORES = {" not in boost_src, "train_boost_lgbm.py should import TEAM_MARKET_SCORES, not define it"
+        # Should have import
+        assert "from api.features import" in boost_src
+
+        drafts_src = Path("train_drafts_lgbm.py").read_text()
+        assert "def _pos_bucket(" not in drafts_src, "train_drafts_lgbm.py should import pos_bucket, not define it"
+        assert "from api.features import" in drafts_src
+
+    def test_no_duplicate_helpers_in_index(self):
+        """api/index.py should import from api.features, not redefine."""
+        idx_src = Path("api/index.py").read_text()
+        # Should NOT have local TEAM_MARKET_SCORES dict definition
+        assert '"LAL": 1.00, "GSW": 0.95' not in idx_src, "api/index.py should import TEAM_MARKET_SCORES"
+        # Should have import
+        assert "from api.features import" in idx_src or "from .features import" in idx_src
+
+    def test_shared_pos_bucket_values(self):
+        from api.features import pos_bucket
+        assert pos_bucket("PG") == 0
+        assert pos_bucket("SG") == 0
+        assert pos_bucket("G") == 0
+        assert pos_bucket("SF") == 1
+        assert pos_bucket("PF") == 0  # P[0]='P' matches guard bucket (existing behavior)
+        assert pos_bucket("C") == 2
+        assert pos_bucket("") == 3
+
+    def test_shared_ppg_tier_bucket_values(self):
+        from api.features import ppg_tier_bucket
+        assert ppg_tier_bucket(5.0) == 0
+        assert ppg_tier_bucket(10.0) == 1
+        assert ppg_tier_bucket(15.0) == 2
+        assert ppg_tier_bucket(20.0) == 3
+        assert ppg_tier_bucket(28.0) == 4
+
+    def test_shared_team_market_scores(self):
+        from api.features import TEAM_MARKET_SCORES, get_team_market_score
+        assert TEAM_MARKET_SCORES["LAL"] == 1.00
+        assert TEAM_MARKET_SCORES["WSH"] == 0.10
+        assert get_team_market_score("LAL") == 1.00
+        assert get_team_market_score("UNKNOWN") == 0.3
+
+    def test_lgbm_feature_vector_uses_shared_module(self):
+        """_lgbm_feature_vector should produce same results via compute_rs_features."""
+        import api.index as idx
+        idx._LGBM_LOAD_ATTEMPTED = True  # prevent lazy load side effects
+        saved = idx.AI_FEATURES
+        try:
+            idx.AI_FEATURES = None  # test canonical fallback
+            vec = idx._lgbm_feature_vector(
+                avg_min=24.0, pts=14.0, reb=5.0, ast=3.0, stl=1.0, blk=0.5,
+                spread=3.0, side="home", season_pts=14.0, recent_pts=16.0,
+                season_min=24.0, recent_min=26.0, cascade_bonus=0.0,
+                recent_ast=3.5, recent_stl=1.2, recent_blk=0.6, avg_reb=5.5,
+            )
+            assert len(vec) == 17  # canonical fallback
+            # ast_rate should use recent_ast=3.5 / recent_min=26.0
+            ast_rate_idx = 5  # index in canonical 17-feature order
+            expected_ast_rate = 3.5 / 26.0
+            assert abs(vec[ast_rate_idx] - expected_ast_rate) < 0.001
+        finally:
+            idx.AI_FEATURES = saved
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
