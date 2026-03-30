@@ -4,7 +4,7 @@
 
 ## What This Is
 
-A daily NBA draft optimizer for the **Real Sports** app. Uses a **Dual-Model Machine Learning Architecture**: a LightGBM model for Real Score projections and a LightGBM model for Card Boost prediction, with Monte Carlo + MILP optimization for DFS lineup construction. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine for median-accurate stat projections and hit probabilities. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+A daily NBA draft optimizer for the **Real Sports** app. Uses a **Strategy-Report-Aligned Architecture**: LightGBM for RS projection, a 3-tier deterministic cascade for card boost prediction, and a sort-based lineup builder using `EV = RS × (2.0 + boost)`. The system follows findings from a 90-date historical analysis showing boost is 40% more valuable per unit than RS, slot assignment is a simple RS sort, and anti-popularity provides a 24% value edge. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
 
 ## How Real Sports Works
 
@@ -22,8 +22,8 @@ index.html             — 4-tab frontend (Predict | Line | Parlay | Ben, vanill
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only; pure functions)
 api/odds_math.py       — Shared American-odds implied probability helpers
-api/real_score.py      — Monte Carlo Real Score projection engine
-api/asset_optimizer.py — MILP lineup optimizer (PuLP)
+api/real_score.py      — Monte Carlo Real Score engine (retained for reference; not used by draft pipeline)
+api/asset_optimizer.py — MILP lineup optimizer (PuLP, used by per-game pipeline only)
 api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
 api/parlay_engine.py   — Safest 3-leg parlay optimizer (Z-score + correlation scoring)
 api/rotowire.py        — RotoWire lineup scraper (free tier: availability + injury flags)
@@ -52,8 +52,9 @@ server.py              — Local dev server (uvicorn)
 ## Machine Learning + Cascade Architecture
 
 The backend uses:
-1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature LightGBM model predicting player points, heavily integrated with the Monte Carlo simulator to forecast ceiling and variance. Trained nightly via GitHub Actions.
-2. **`api/boost_model.py` (3-Tier Cascade Boost Prediction)**: Deterministic cascade that predicts card boost (0.0–3.0) from historical Real Sports data. **Tier 1** (returning player, ≤14 days): uses prev_boost + adjustments for RS, drafts, trend, gap, mean reversion (MAE ~0.10–0.15). **Tier 2** (stale, >14 days): blends historical boost mean with API-derived estimate. **Tier 3** (cold start): Player Quality Index from season stats. Replaces the prior `boost_model.pkl` + `drafts_model.pkl` LightGBM chain. Historical labels from `data/top_performers.csv` + `data/actuals/` loaded at startup.
+1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature LightGBM model predicting player RS. Blended with heuristic DFS score, compressed, then simple additive game context adjustments applied (+0.3 RS close games, +0.15/10pts pace). No Monte Carlo — removed in v82 strategy simplification. Trained nightly via GitHub Actions.
+2. **`api/boost_model.py` (3-Tier Cascade Boost Prediction)**: Deterministic cascade that predicts card boost (0.0–3.0) from historical Real Sports data. **Tier 1** (returning player, ≤14 days): uses prev_boost + adjustments for RS, drafts, trend, gap, mean reversion (MAE ~0.10–0.15). **Tier 2** (stale, >14 days): blends historical boost mean with API-derived estimate. **Tier 3** (cold start): Player Quality Index from season stats. **Anti-popularity penalty** applied post-cascade: estimates draft popularity from season PPG + team market + hot streak; high-popularity players get boost depressed (Finding 4: -0.457 correlation).
+3. **Draft Lineup Builder** (`_build_lineups` in `api/index.py`): Sort-based pipeline replacing the prior MILP optimizer for slate-wide drafts. Single EV formula: `RS × (2.0 + boost)`. Two gates only: RS ≥ 2.0, minutes ≥ 12. Safe lineup = top 5 by EV (tie-break low variance). Upside lineup = 1-2 variance/boost swaps. Slot assignment = sort by RS descending (provably optimal per strategy report Finding 3).
 
 **Historical outcomes** for audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
@@ -61,11 +62,11 @@ The backend uses:
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
-### Engine 1: Monte Carlo `real_score` → DFS Drafts (Starting 5 + Moonshot)
-- **Pipeline**: ESPN → LightGBM → Monte Carlo RS (closeness + clutch + momentum) → Card Boost → MILP
-- **Why**: DFS drafts reward high ceilings and variance. RS scoring is non-linear (tight games exponentially boost scores). Monte Carlo captures fat-tail distributions that deterministic medians miss.
+### Engine 1: Strategy-Report-Aligned Draft Pipeline (Starting 5 + Moonshot)
+- **Pipeline**: ESPN → LightGBM + heuristic blend → compression → simple game context (+0.3 close, +pace) → Card Boost (cascade + anti-popularity) → `EV = RS × (2.0 + boost)` → Sort-based selection → RS-descending slot assignment
+- **Why**: Strategy report (90 dates) proves boost is 40% more valuable per unit than RS. The game is structurally solvable with `RS × (2.0 + boost)`. Monte Carlo and MILP were over-engineering a problem that data shows is simple. Anti-popularity captures a 24% value edge from going contrarian.
 - **Endpoints**: `/api/slate`, `/api/picks`, `/api/force-regenerate`, `/api/injury-check`
-- **Code**: `api/real_score.py`, `api/asset_optimizer.py`, projection pipeline in `api/index.py`
+- **Code**: `project_player()` and `_build_lineups()` in `api/index.py`, `api/boost_model.py`
 
 ### Engine 2: Deterministic `fair_value` → Prop Betting (Line + Parlay)
 - **Pipeline**: ESPN gamelogs (L10/L15 rolling windows) → DvP adjustment → Game script weights → Spread adj + momentum → Per-stat fair value + Z-score hit probabilities + EV classification
@@ -76,7 +77,7 @@ The deterministic fair-value engine remains isolated to prop betting surfaces.
 ### Isolation Boundary
 - `_compute_betting_fair_value()` is the **sole entry point** for Engine 2. It is called only from `_run_line_engine_for_date()` and `_run_parlay_engine_sync()`.
 - DFS draft paths (`/api/slate`, `/api/force-regenerate`, `/api/injury-check`) **never** invoke the fair value engine.
-- Engine 2 enriches Engine 1's projections — it does not replace them. Monte Carlo `all_proj` feeds both surfaces; fair value adds per-stat edge maps and hit probabilities on top.
+- Engine 1's `all_proj` feeds both surfaces; fair value adds per-stat edge maps and hit probabilities for prop betting on top.
 - Config: `fair_value.*` section in `data/model-config.json` (primary_window, short_window, edge_thresholds, compression).
 
 ### grep tags
@@ -135,8 +136,8 @@ grep: FAIR VALUE BETTING       — _compute_betting_fair_value() in api/index.py
 grep: ODDS ENRICHMENT          — _enrich_projections_with_odds, odds_map, blend_weight
 grep: WEB INTELLIGENCE         — _fetch_nba_news_context, Claude web_search, news_text
 grep: LINEUP REVIEW            — _lineup_review_opus, post-lineup Opus, lineup_review
-grep: CORE POOL                — core_pool, eligible_union, _build_lineups 3-tuple
-grep: GAME RUNNER              — _run_game, _build_lineups, chalk_ev
+grep: CORE POOL                — _build_lineups candidate pool, safe/upside lineups, draft_ev
+grep: GAME RUNNER              — _run_game, _build_lineups, draft_ev
 grep: PER-GAME                 — _build_game_lineups, _per_game_strategy, _per_game_adjust
 grep: PER_GAME_CONFIG          — per_game config defaults in _CONFIG_DEFAULTS
 grep: INJURY CHECK             — /api/injury-check, RotoWire re-check, affected game regeneration
@@ -247,12 +248,12 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 
 ## 3-Layer Slate Cache (Generate Once, Serve Cached)
 
-Predictions are generated **once per day** and cached. Subsequent requests serve from cache instead of re-running the full pipeline (ESPN + LightGBM + Monte Carlo + MILP). This reduces API calls from N per user visit to ~6-8 per day max.
+Predictions are generated **once per day** and cached. Subsequent requests serve from cache instead of re-running the full pipeline (ESPN + LightGBM + card boost + sort-based lineup builder). This reduces API calls from N per user visit to ~6-8 per day max.
 
 ### Cache Layers
 1. **Layer 1 — `/tmp` (Railway container)**: In-memory file cache. Fastest, but cleared on container restart (deploy or crash restart).
 2. **Layer 2 — GitHub persistent cache (`data/slate/`)**: `{date}_slate.json` (full slate with lineups) and `{date}_games.json` (per-game projections keyed by gameId). Survives cold starts. Used by `/api/slate` and `/api/picks`.
-3. **Layer 3 — Full pipeline**: ESPN → injury cascade → LightGBM → Monte Carlo RS → card boost → MILP optimizer. Only runs when both Layer 1 and Layer 2 are empty (true first run of the day).
+3. **Layer 3 — Full pipeline**: ESPN → injury cascade → LightGBM + heuristic blend → compression + game context → card boost (cascade + anti-popularity) → sort-based lineup builder. Only runs when both Layer 1 and Layer 2 are empty (true first run of the day).
 
 ### Cache Helpers (grep: SLATE CACHE GITHUB)
 - `_slate_cache_to_github(slate_data)` — writes today's slate to `data/slate/{date}_slate.json`
@@ -395,153 +396,63 @@ Three independent gates prevent pre-lock saves:
 - **Backend guard**: `if not any(_is_locked(st) ...)` → HTTP 409 in `/api/save-predictions`
 - **Cron guard**: `/api/refresh` only calls `save_predictions()` if `any(_is_locked(...))`
 
-## Scoring Upside Standards (v7 — quality over quantity)
-
-Mar 18 leaderboard analysis: winners are **rotation players with 20+ minutes AND high boosts** (Sensabaugh 22min +2.1x RS 4.5, McCain 33min +3x RS 4.1, GP2 20min +3x RS 3.5, Clingan 23min +2.7x RS 5.2). Our picks were deep bench trash (Missi 19min RS 1.5, Jackson 16min RS 1.4, Matkovic 14min RS 1.5) — high boost but no real production. v7 raises all gates to require proven rotation players.
+## Player Eligibility & RS Projection (v82 — Strategy-Report-Aligned)
 
 ### Projection-level gates (project_player)
 
-- **Minimum 5 projected pts** (moonshot floor) — universal floor in `project_player()` uses `min_pts_projection_moonshot` (default 5.0); filters out deep bench players who never produce
-- **Minimum 0.22 pts/min** (moonshot floor) — `min_pts_per_minute_moonshot` (default 0.22); chalk enforces stricter 0.28 separately
-- **Scoring bias multiplier** — players whose pts drive their base score (scorers)
-  receive a mild upside boost (up to 1.15×) over balanced accumulators
+- **Universal RS floor: 2.0** (`strategy.min_pts_projection`) — Strategy report Finding 2: only 1.3% of winning players have RS < 2.0. Single gate replaces the prior ~15 separate thresholds.
+- **Minimum 12 projected minutes** (`strategy.min_minutes`) — ensures rotation-level players only.
+- **OUT players filtered** — RotoWire integration removes injured/OUT players before lineup selection.
 
-### Chalk-specific gates
+### RS Projection Pipeline (simplified)
 
-- **Minimum 7 projected pts** — chalk pool enforces `min_pts_projection` (7.0) and `min_pts_per_minute` (0.28) separately from the universal moonshot floor
-- **Minimum 3.5 rating** before card boost is applied — boost cannot rescue a weak base
-- **Boost cap at 2.5** (configurable via `projection.chalk_boost_cap`)
-- **Star anchor pathway** — players with season_pts >= 20 (`star_anchor_ppg`) bypass the boost floor. Safety valve for rare star nights (like Mar 12 when Luka had 9.3 RS). Limited by `chalk_max_stars=1`.
+1. **Heuristic DFS score** — weighted sum of projected stats (`pts × 1.5 + ast × 1.2 + reb × 0.5 + stl × 3.0 + blk × 3.0 - tov × 1.0`) using `real_score.dfs_weights`
+2. **Game context adjustments** (simple additive):
+   - Close games (spread ≤ 5): +0.3 RS (`strategy.close_game_rs_bonus`)
+   - High-pace games (total > 220): +0.15 RS per 10 pts above 220 (`strategy.pace_rs_bonus_per_10`)
+   - Home court: 1.02× multiplier
+3. **Compression**: `min((s_base / divisor)^power, rs_cap)` — divisor 5.5, power 0.72, cap 20.0
+4. **AI/heuristic blend**: 35/65 (`ai_blend_weight: 0.35`)
+5. **Game context bonus applied additively** after compression
+6. **EV calculation**: `draft_ev = RS × (2.0 + boost)`
 
-### Moonshot-specific gates (v7 — quality over quantity)
+No Monte Carlo, no post-compression multiplier stack, no archetype calibration, no matchup factor.
 
-- **Minimum 3.0 rating** — Mar 18 winners all had RS 2.8+ actual; 2.0 floor let in RS 0.7-1.5 players
-- **Minimum 1.5 card boost** — moonshot is contrarian; this is the core filter
-- **Season/recent min >= 20** — proven rotation players (Sensabaugh 22min, GP2 20min, Clingan 23min pass; Missi 19min, Jackson 16min, Matkovic 14min filtered)
-- **Minimum 5 projected PPG** and **0.22 pts/min** — require real scoring production
-- **Boost leverage power 1.2** (down from 1.6) — reduces +3x boost dominance from 5.8x to 3.7x
-- **No center penalty** — Poeltl, Queta, Achiuwa all appear in winning lineups
-- **Light variance damping** (0.15, down from 0.45) — moonshot wants upside
+### Per-game lineup gates (unchanged)
 
-### Per-game lineup gates
-
-- **Minimum 10 projected pts** — single-game format has no card boost, so a low-scoring
-  player projecting 8 pts is a ceiling liability, not a value play
-
-### RS Distribution (asymmetric compression, v5)
-
-The projection pipeline uses asymmetric compression to preserve floor accuracy
-while widening the ceiling for high-upside players:
-
-- **compression_divisor**: 5.5 (was 7.0) — less pre-compression dampening
-- **compression_power**: 0.72 (was 0.62) — softer power law, lets stars separate from role players
-- **rs_cap**: 20.0 (was 15.0, applied 4× in pipeline) — removes artificial ceiling that bunched everyone
-- **AI blend**: 35/65 AI/heuristic (`ai_blend_weight: 0.35`) — LightGBM clusters outputs in 2.5-4.5; lower AI weight preserves a wider RS spread from the heuristic path.
-
-- **max_post_compression_mult**: 1.40 — caps total stacked post-compression multipliers (archetype × cascade_rs × role_spike × breakout) to prevent bench players from inflating from RS 3 to RS 6+. Mar 27 showed Sasser projected 6.1 but actual 0.2 — the 4 stacking boosts created a 1.87× inflation.
-
-**Result**: RS distribution widens from ~3-4.5 to ~2-8. Stars can project RS 6-8,
-role players stay at RS 2-4, and the gap between them drives better lineup selection.
-Post-compression cap prevents runaway inflation for cascade-elevated bench players.
-
-### Design rationale
-
-A player like Goga Bitadze (5.7 pts, +2.5x card) has a theoretical EV of
-`5.7 × (slot + 2.5)` but in practice cannot win a lineup. The boost amplifies
-a weak base — a 50% shooting night on 5 attempts still yields 7-8 pts.
-Contrast with a player projecting 15 pts with +1.5x — a hot night goes to 20+.
-The scoring floors enforce that the base must be real before boost matters.
-
-### What gets displaced
-
-Players with near-zero card boost (heavily-drafted stars) are displaced from moonshot
-entirely. Starting 5 allows max 1 star via the star anchor pathway. The model now
-correctly prioritizes the high-boost role players who actually win leaderboards.
+- **Minimum 10 projected pts** — single-game format has no card boost, so low-scoring players are ceiling liabilities
 
 ### Tunable via Ben
 
-Scoring gates in `scoring_thresholds`: `min_pts_projection`, `min_pts_projection_moonshot`,
-`min_pts_per_minute`, `min_pts_per_minute_moonshot`, `min_chalk_rating`, `min_moonshot_rating`,
-`min_moonshot_pts`, `star_anchor_ppg`, `scoring_bias_base`, `scoring_bias_pts_weight`.
+**Draft strategy** in `strategy`: `rs_floor` (2.0), `min_pts_projection` (2.0), `min_minutes` (12.0),
+`close_game_rs_bonus` (0.3), `pace_rs_bonus_per_10` (0.15), `ev_swap_threshold` (2.0),
+`max_upside_swaps` (2), `anti_popularity_enabled` (true), `anti_popularity_strength` (0.1).
 
-Projection gates: `pred_min_tolerance` (chalk, default 2.0 min tolerance band).
-
-Team incentive gates in `team_motivation`: `enabled`, `start_date`, `seeding_gap_games`,
-`playin_gap_games`, `elimination_buffer_games`, `tier_a_mult_chalk`, `tier_b_mult_chalk`,
-`tier_c_mult_chalk`, `tier_a_mult_moonshot`, `tier_b_mult_moonshot`,
-`tier_c_mult_moonshot`, `min_mult`, `max_mult`, `team_overrides`.
-
-Moonshot gates in `moonshot`: `min_minutes_floor`, `min_recent_minutes_floor`,
-`min_card_boost`, `min_rating_floor`, `variance_penalty`, `boost_leverage_power`,
-`max_centers`, `max_per_team`, `dev_team_pts_floor`, `pred_min_tolerance` (default 3.0),
-`rs_bypass.enabled`, `rs_bypass.min_rating`, `rs_bypass.min_season_min`, `rs_bypass.min_boost`,
-`high_boost_role.enabled`, `high_boost_role.min_boost`, `high_boost_role.min_recent_min`,
-`high_boost_role.min_pred_min`, `high_boost_role.min_rating`, `scorer_upside.enabled`, `scorer_upside.min_pts_per_min`,
-`scorer_upside.min_season_pts`, `scorer_upside.multiplier`,
-`roto_confirmed_min_rating`, `roto_confirmed_min_boost`.
-
-Chalk high-boost role pathway: `projection.chalk_hbr_enabled`, `chalk_hbr_min_boost`,
-`chalk_hbr_min_recent_min`.
-
-Lineup constraints in `lineup`: `chalk_max_per_game`, `moonshot_max_per_game` (max players from
-same game matchup), `chalk_min_big_boost_count`, `chalk_min_big_boost_threshold`,
-`moonshot_min_big_boost_count`, `moonshot_min_big_boost_threshold` (minimum high-boost players
-in lineup).
-
-RS calibration in `real_score`: `dfs_weights` (`pts`, `reb`, `ast`, `stl`, `blk`, `tov`),
-`archetype_calibration.enabled`, `archetype_calibration.archetypes` (`star`, `scorer`, `big`,
-`pure_rebounder`, `wing_role` multipliers), `cascade_rs.enabled`, `cascade_rs.mult`,
-`role_spike_rs.enabled`, `role_spike_rs.min_recent_min`, `role_spike_rs.ratio_threshold`,
-`role_spike_rs.mult`.
-
-Cascade: `cascade.per_player_cap_minutes` (raised to 10.0 for meaningful cascade propagation).
-
-Odds enrichment in `odds_enrichment`: `enabled`, `blend_weight`, `min_divergence_pct`, `upward_only`.
-
-Context layer in `context_layer`: `enabled`, `web_search_enabled`, `model`, `max_adjustment`,
-`timeout_seconds`.
-
-Parlay in `parlay`: `max_spread` (blowout filter, default 8.5), `max_minutes_cv` (volatility filter,
-default 0.30), `min_blended_conf` (minimum blended hit probability, default 0.52),
-`min_season_minutes` (floor, default 20.0), `min_games_played` (gamelog depth, default 10),
-`juice_threshold` (Vegas juice floor, default -105), `max_candidates_for_combinations` (pool cap,
-default 30), `positive_correlation_boost` (PG assists + teammate points, default 1.08),
-`shootout_correlation_boost` (opposing scorers in tight game, default 1.05),
-`correlated_pair_max_spread` (tightened from 6.5 to 5.0 — blowout mirage protection),
-`min_game_total` (possession floor for correlated pairs, default 225.5),
-`market_match_max_cv` (CV gate on heavily juiced Market Match legs, default 0.25),
-`pnr_rim_boost` (PnR-to-rim interior finisher synergy, default 1.20),
-`pace_boost_total_threshold` (game total for pace boost, default 232.0),
-`pace_boost` (multiplier for high-pace games, default 1.06),
-`rest_advantage_boost` (team rested vs opponent on B2B, default 1.08).
-
-Parlay auto-fade matrix in `parlay.auto_fade`: `switch_heavy_teams` (center reb over faded vs these
-teams, default `["BOS", "CLE", "MIN", "OKC"]`), `rebound_fade_teams` (dynamic Leg 1 substitution —
-rebounds deprioritized vs these defenses, default `["OKC", "CLE", "MIN", "HOU", "BOS"]`),
-`b2b_correlated_pair_penalty` (B2B fatigue penalty on correlated pairs, default 0.75),
-`perimeter_scorer_reb_floor` (scorer must avg this many reb to not be "perimeter-only", default 4.0),
-`fake_juice_recent_threshold` (L5-L10 hit rate ceiling for fake juice detection, default 0.80),
-`fake_juice_season_ceiling` (season model_prob ceiling for fake juice, default 0.55).
-
-Per-game in `per_game`: `enabled`, `total_baseline` (222), `total_mult_strength` (0.003 per pt),
-`total_mult_floor` (0.92), `total_mult_ceiling` (1.12), `close_spread_threshold` (5),
-`blowout_spread_threshold` (13), `close_game_floor_bonus` (0.06), `close_game_variance_dampen` (0.08),
-`blowout_favored_role_bonus` (1.12), `blowout_favored_star_bonus` (1.05),
-`blowout_underdog_role_penalty` (0.88), `blowout_underdog_star_penalty` (0.95),
-`blowout_min_per_team` (1), `role_player_pts_ceiling` (18), `value_anchor_min_rating` (3.8),
-`value_anchor_pts_ceiling` (16), `value_anchor_bonus` (0.08), `blowout_variance_uplift` (0.04).
+**Parlay**, **Per-game**, **Line**, **Context layer**, **Odds enrichment** config sections remain unchanged.
 
 ---
 
-## Two Draft Strategies (Core Pool Architecture)
+## Two Draft Strategies (Strategy-Report-Aligned Architecture)
 
-When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single **core pool** of up to 15 players projected to "pop off" that day. The core is the union of chalk-eligible players, ranked by a core score, with top N selected. **Starting 5** = best 5-of-core for reliability (chalk_ev); **Moonshot** = best 5-of-core for ceiling (moonshot_ev). High exposure and repeats across the two lineups are intended — they are different configurations of the same high-confidence pool. Config: `core_pool.enabled`, `core_pool.size`, `core_pool.metric` (`"rs"` | `"max_ev"` | `"blend"`), `core_pool.blend_weight`. **RS-first strategy (v8)**: `metric = "rs"` ranks core pool by raw projected RS (the `rating` field) so the highest-RS players always enter the MILP candidate set regardless of card boost. `"max_ev"` uses `max(chalk_ev, moonshot_ev)`, `"blend"` uses weighted average. When `core_pool.enabled` is false, legacy behavior: separate chalk and moonshot pools, each MILP from its own pool (overlap still allowed). Target: **70+ total draft score** for both.
+Both lineups use a **single EV formula**: `draft_ev = RS × (2.0 + boost)`. Strategy report (90 dates) proves boost is 40% more valuable per unit than RS, so both terms must be maximized. No separate chalk/moonshot pools or MILP optimizer — the problem is structurally solvable with a sort.
 
-### Slate-Wide: Starting 5 (chalk)
-MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Conservative, consistent. **Requires 16-minute season avg minutes floor** (`season_min >= 16`) and **16-minute recent avg** (`recent_min >= 16`). Configurable via `projection.chalk_season_min_floor` and `chalk_recent_min_floor`. **Boost floor lowered to 0.3** (`chalk_min_boost_floor`) so top RS performers (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) enter the chalk pool — the MILP with `chalk_milp_rs_focus=0.75` handles RS-first selection. **Star anchor pathway** (widened): players with season_pts >= 12 and rating >= 3.5 bypass the boost floor. Up to 3 stars allowed (`star_anchor.max_count`).
+**Pipeline** (6-step in `_build_lineups`):
+1. **Filter**: RS ≥ 2.0 (`strategy.rs_floor`), minutes ≥ 12 (`strategy.min_minutes`), not OUT, not blacklisted
+2. **Score**: `draft_ev = RS × (2.0 + boost)` for each candidate
+3. **Rank**: Candidates sorted by `draft_ev` descending
+4. **Safe Lineup (Starting 5)**: Top 5 by EV. Ties broken by lower variance (reliable floor).
+5. **Upside Lineup (Moonshot)**: Starts as copy of safe. Up to 2 swaps (`strategy.max_upside_swaps`) from remaining pool — prefers higher-variance or higher-boost players within a 2.0 EV threshold (`strategy.ev_swap_threshold`).
+6. **Slot Assignment**: Both lineups sorted by RS descending → 2.0x, 1.8x, 1.6x, 1.4x, 1.2x. This is provably optimal: `d(Value)/d(slot) = RS`, so highest RS → highest slot.
 
-### Slate-Wide: Moonshot (v8 — RS-first)
-RS-first strategy: **top projected RS scorers drive selection**, with boost as a secondary signal. Formula: `moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)` where `boost_leverage = est_mult^0.6` (reduced from 1.2 — halves boost dominance so RS quality is the primary signal). **Season/recent min >= 20**. **Minimum 3.5 rating**. **Minimum 6 PPG and 0.22 pts/min** at projection level. **No center penalty**. Wildcard gate: boost >= 2.0, min 15 min, min 7 PPG. Matchup factor from opponent defensive quality. **RS-bypass pathway**: high-RS players (rating >= 5.0, season_min >= 25) bypass the boost floor (`min_card_boost`) even with low boost (>= 0.3), ensuring top scorers always compete for moonshot slots. Config: `moonshot.rs_bypass.enabled`, `moonshot.rs_bypass.min_rating`, `moonshot.rs_bypass.min_season_min`, `moonshot.rs_bypass.min_boost`. **Star anchor pathway** (same as Starting 5): stars with season_pts >= 20, season_min >= 25, rating >= 4.0 bypass the `min_card_boost` gate. Up to 3 stars allowed (`star_anchor.max_count`). Philosophy: projected RS is the foundation; boost amplifies but cannot substitute for real production.
+**Anti-popularity** (Finding 4): Draft popularity has -0.457 correlation with boost. The cascade in `boost_model.py` estimates popularity from season PPG + team market + hot streak, then penalizes popular players' boost predictions. The least-drafted 50% produce 24-26% more total value.
+
+Config: All draft strategy parameters in `strategy.*` section of model-config defaults (~15 params replacing ~120 prior scattered params).
+
+### Slate-Wide: Starting 5 (Safe)
+Top 5 by `draft_ev`. Tie-breaking prefers lower variance for floor reliability. No MILP, no boost floors, no star anchor pathway — the EV formula naturally selects the right mix.
+
+### Slate-Wide: Moonshot (Upside)
+Starts from safe lineup, swaps 1-2 players for higher-variance/higher-boost alternatives from the candidate pool. Swaps only happen when replacement EV is within `ev_swap_threshold` of the displaced player's EV — ensures upside without sacrificing expected value.
 
 ### Per-Game: THE LINE UP (v60 — Strategy-Aware Draft Model)
 Redesigned from 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23, 2026). Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant.
@@ -565,11 +476,15 @@ Redesigned from 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23, 2026).
 
 **Frontend:** Strategy badge (color-coded by type), strategy insight bar with description, per-player ANCHOR/FAV pills on cards.
 
-### Matchup Intelligence (replaced dev team bonus)
-Opponent defensive quality drives matchup adjustments. `_compute_matchup_factor()` uses ESPN pts_allowed vs league average, position-scaled (guards benefit most). Range: chalk [0.92, 1.10], moonshot [0.75, 1.30]. Claude DvP web intelligence (Layer 1.5) disabled by default (`matchup.claude_enabled: false`) — ESPN def stats provide equivalent signal at zero API cost. Re-enable via config if needed.
+### Game Context (Strategy Report Finding 7)
+Simple additive RS adjustments replace the prior complex multiplicative matchup/spread system:
+- **Close games** (spread ≤ 5): +0.3 RS (`strategy.close_game_rs_bonus`). Finding 7: close games produce avg RS 4.44.
+- **High-pace games** (total > 220): +0.15 RS per 10 pts above 220 (`strategy.pace_rs_bonus_per_10`).
+- **Home court**: 1.02× multiplier.
+- `_compute_matchup_factor()` still exists in codebase (retained for potential reactivation) but is no longer called from the draft pipeline.
 
 ### RotoWire Integration (`api/rotowire.py`)
-Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Returns player availability (confirmed/expected/questionable/OUT). Moonshot hard-filters on this: any player flagged OUT or questionable is excluded. Cache TTL: 30 minutes.
+Free-tier scrape of RotoWire NBA lineups page. Runs ~30 min before first tip. Returns player availability (confirmed/expected/questionable/OUT). Draft pipeline filters OUT players in `_build_lineups()`. Cache TTL: 30 minutes.
 
 ## Model Improvements (deployed)
 
@@ -593,22 +508,15 @@ No pre-game boost uploads or per-player overrides at inference. Pipeline uses a 
 
 Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed formula tweaks).
 
-### Moonshot Formula (v7 — quality over quantity)
-`moonshot_ev = base_rating × matchup_factor × boost_leverage × (avg_slot + est_mult)`
-
-Where `boost_leverage = est_mult^1.2` and `base_rating = rating × max(0.85, 1.0 - variance × 0.15)`.
-
-Key knobs in `moonshot` section of model-config.json:
-- `min_minutes_floor`: 20 (season avg) — proven rotation players only; filters Missi/Jackson/Matkovic
-- `min_recent_minutes_floor`: 20 — matches season floor
-- `min_rating_floor`: 3.0 — require real RS production base
-- `boost_leverage_power`: 1.2 — reduced from 1.6; RS quality now matters more than pure boost
-- `variance_penalty`: 0.15 — light damping; moonshot wants upside
-- `max_centers`: 3 — Poeltl, Queta, Achiuwa all appear in winning lineups
-- `max_per_team`: 3 — allows team stacks
-### Spread Adjustment (continuous, no cliff edges)
-- Bench/role players (PPG ≤ 12, avg_min ≤ 26): neutral at spread ≤ 4, rises to +15% at large spreads (garbage-time minutes).
-- Stars/starters: peak 1.15× at pick'em, continuous decay, floors at 0.70× for heavy favorites.
+### Removed Systems (v82 Strategy Simplification)
+The following systems were removed or replaced in the strategy-report-aligned architecture:
+- **Monte Carlo simulation** (`real_score_projection`, `closeness_coefficient`, `clutch_coefficient`) — replaced by simple additive game context. Module `api/real_score.py` retained for reference.
+- **Post-compression multiplier stack** (archetype calibration, cascade RS, role spike RS, breakout probability, volatility guard) — removed entirely. RS compression is now `(s_base / divisor)^power + game_context_bonus`.
+- **MILP optimizer for slate-wide** (`optimize_lineup` from `api/asset_optimizer.py`) — replaced by sort-based selection. MILP still used for per-game lineups.
+- **Complex player gating** (star anchor, high-boost-role pathway, RS bypass, scorer upside, roto confirmed exceptions, min chalk rating, moonshot pts floor, etc.) — replaced by two gates: RS ≥ 2.0 and minutes ≥ 12.
+- **Matchup factor** (`_compute_matchup_factor`) — no longer called; function retained for potential reactivation.
+- **Separate chalk/moonshot formulas** — unified to `draft_ev = RS × (2.0 + boost)`.
+- **Core pool ranking metrics** (`rs`, `max_ev`, `blend`, `ev_weighted`) — replaced by single `draft_ev` sort.
 
 ### Audit Pipeline
 - `save-actuals` auto-writes `data/audit/{date}.json` with MAE, directional accuracy, over/under counts, top-8 misses.
@@ -844,8 +752,8 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Receives `edge_map` from fair_value for `fv_boost` on confidence. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
 | **api/parlay_engine.py** | Safest 3-leg parlay optimizer | Z-score hit probability, anti-fragility filters (blowout/CV/GTD), market alignment, correlation scoring. Receives `fair_value_data` with `_fv_hit_probs` to override baseline model_prob. Called by api/index.py `/api/parlay`. Pure computation; no external I/O. |
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
-| **api/real_score.py** | Monte Carlo Real Score (Engine 1) | RS projection (closeness, clutch, momentum). Used by DFS draft projection pipeline in index. |
-| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC for Starting 5 + Moonshot. Two-phase optimization for moonshot (Phase 1: player selection with shaped ratings; Phase 2: slot assignment with raw RS). No position-per-team constraint (Real Sports has no position requirements). Used by game runner in index. |
+| **api/real_score.py** | Monte Carlo Real Score (retained) | RS projection (closeness, clutch, momentum). **No longer used by draft pipeline** — retained for reference and potential reactivation. |
+| **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC. **Used by per-game pipeline only** (`_build_game_lineups`). Slate-wide drafts use sort-based selection in `_build_lineups`. |
 | **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production runs as a persistent Docker container on Railway. |
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
 | **scripts/sync_model_config.py** | Config sync | Syncs model-config from GitHub (used by workflows). |

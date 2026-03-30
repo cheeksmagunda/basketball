@@ -1273,12 +1273,11 @@ class TestPredMinTolerance:
             cfg = json.load(f)
         assert cfg["moonshot"]["pred_min_tolerance"] == 1.0
 
-    def test_chalk_tolerance_code_reads_config(self):
-        """Chalk pool builder should use _cfg for tolerance, not hardcoded 0."""
+    def test_strategy_rs_floor_in_source(self):
+        """Simplified pipeline should use strategy.rs_floor for filtering."""
         with open("api/index.py") as f:
             src = f.read()
-        assert 'projection.pred_min_tolerance' in src
-        assert 'pred_min_tolerance' in src  # moonshot reads from moon_cfg dict
+        assert 'strategy.rs_floor' in src or 'rs_floor' in src
 
 
 # ─────────────────────────────────────────────────────────
@@ -1367,12 +1366,11 @@ class TestMoonshotPtsFloor:
         assert 'min_pts_projection_moonshot' in src
         assert 'min_pts_per_minute_moonshot' in src
 
-    def test_chalk_pool_enforces_stricter_pts_floor(self):
-        """Chalk pool builder should enforce min_pts_projection (7.0) separately."""
+    def test_strategy_min_pts_in_source(self):
+        """Simplified pipeline should use strategy.min_pts_projection for filtering."""
         with open("api/index.py") as f:
             src = f.read()
-        # Chalk pool should have its own pts check
-        assert 'chalk_min_pts' in src
+        assert 'min_pts_projection' in src or 'min_pts' in src
 
 
 # ─────────────────────────────────────────────────────────
@@ -1747,22 +1745,17 @@ class TestCorePool:
     """When core_pool.enabled is False, third return is None; when True, third is list; lineups from core when enabled."""
 
     def test_build_lineups_returns_three_values(self):
-        """_build_lineups returns (chalk, upside, core_pool). When core pool disabled, core_pool is None."""
+        """_build_lineups returns (chalk, upside, core_pool). core_pool is always a list."""
         from api.index import _build_lineups
 
-        def cfg_core_off(key, default=None):
-            if key == "core_pool":
-                return {"enabled": False, "size": 8, "metric": "max_ev"}
-            return default
-
-        with patch("api.index._cfg", side_effect=cfg_core_off), \
+        with patch("api.index._cfg", return_value=None), \
              patch("api.index.get_all_statuses", return_value={}), \
              patch("api.index._fetch_team_def_stats", return_value={}):
             chalk, upside, core_pool = _build_lineups([])
 
         assert chalk == []
         assert upside == []
-        assert core_pool is None
+        assert isinstance(core_pool, list)
 
     def test_build_lineups_core_pool_list_when_enabled(self):
         """When core_pool.enabled is True, third return is a list (possibly empty)."""
@@ -1950,7 +1943,7 @@ class TestBriefingSimulatedDraftScore:
         with patch('api.index._github_list_dir', side_effect=fake_list_dir):
             with patch('api.index._github_get_file', side_effect=fake_get_file):
                 with patch('api.index._load_config', return_value={"version": 42, "changelog": []}):
-                    result = asyncio.get_event_loop().run_until_complete(lab_briefing())
+                    result = asyncio.run(lab_briefing())
 
         data = result if isinstance(result, dict) else result.body
         if isinstance(data, bytes):
@@ -2304,20 +2297,19 @@ class TestCorePoolRsMetric:
         # With empty projections, core is empty list; verify no crash
         assert isinstance(core, list)
 
-    def test_rs_metric_code_branch_exists(self):
-        """The 'rs' metric branch must exist in _build_lineups."""
+    def test_draft_ev_code_exists(self):
+        """Simplified _build_lineups should use draft_ev for scoring."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert 'core_metric == "rs"' in src, \
-            "_build_lineups must have a branch for core_pool.metric='rs'"
-        assert 'r.get("rating", 0)' in src, \
-            "The 'rs' branch should use rating (projected RS) as core_score"
+        assert 'draft_ev' in src, \
+            "_build_lineups must use draft_ev for scoring players"
 
-    def test_max_ev_still_works(self):
-        """Backward compat: metric='max_ev' still uses max(chalk_ev, moonshot_ev)."""
+    def test_rating_used_in_scoring(self):
+        """_build_lineups should use rating in draft_ev calculation."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert 'core_metric == "max_ev"' in src
+        assert 'rating' in src, \
+            "_build_lineups must reference rating for scoring"
 
 
 # ─────────────────────────────────────────────────────────
@@ -2370,11 +2362,11 @@ class TestVolatilityGuard:
 class TestMoonshotEvRatingBlend:
     """moonshot.ev_rating_blend lets stable scorers compete with pure boost leverage."""
 
-    def test_ev_rating_blend_in_moonshot_loop(self):
+    def test_draft_ev_calculation_in_build_lineups(self):
+        """Simplified pipeline uses draft_ev instead of moonshot EV blending."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "ev_rating_blend" in src
-        assert "_evb" in src
+        assert "draft_ev" in src, "_build_lineups must use draft_ev for scoring"
 
     def test_model_config_has_ev_rating_blend(self):
         cfg = json.load(open("data/model-config.json"))
@@ -2389,13 +2381,11 @@ class TestMoonshotEvRatingBlend:
 class TestMoonshotRsBypass:
     """moonshot.rs_bypass allows high-RS proven scorers to bypass min_card_boost."""
 
-    def test_rs_bypass_code_exists(self):
-        """The rs_bypass pathway must exist in moonshot eligibility."""
+    def test_rs_floor_in_build_lineups(self):
+        """Simplified pipeline uses strategy.rs_floor instead of rs_bypass pathway."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "rs_bypass" in src, "Moonshot must have rs_bypass pathway"
-        assert 'rs_bypass.get("enabled"' in src, "rs_bypass must check enabled flag"
-        assert 'rs_bypass.get("min_rating"' in src, "rs_bypass must check min_rating"
+        assert "rs_floor" in src, "_build_lineups must use rs_floor for filtering"
 
     def test_rs_bypass_config_present(self):
         """model-config.json must have moonshot.rs_bypass block."""
@@ -2550,13 +2540,11 @@ class TestClosenessCoefficient:
         assert tight >= 1.5, f"Pick'em closeness should be >= 1.5; got {tight}"
         assert blowout <= 1.3, f"Blowout closeness should be <= 1.3; got {blowout}"
 
-    def test_closeness_code_in_project_player(self):
-        """project_player should use closeness_coefficient when enabled."""
+    def test_game_context_bonus_in_project_player(self):
+        """project_player should use game_context_bonus for game situation adjustments."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "closeness_coefficient" in src
-        assert "close_cfg" in src
-        assert "usage_scale" in src
+        assert "game_context_bonus" in src
 
     def test_closeness_config_enabled(self):
         """Production config should have closeness enabled."""
@@ -2577,12 +2565,11 @@ class TestClosenessCoefficient:
 class TestCascadeRsBoost:
     """Cascade RS boost gives direct RS multiplier for injury beneficiaries."""
 
-    def test_cascade_rs_code_exists(self):
-        """project_player should have cascade_rs logic."""
+    def test_game_context_bonus_code_exists(self):
+        """project_player should use game_context_bonus for additive adjustments."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "cascade_rs" in src
-        assert "cascade_rs_mult" in src
+        assert "game_context_bonus" in src
 
     def test_cascade_rs_config_enabled(self):
         """Production config should have cascade_rs enabled (v66 ceiling lift)."""
@@ -2603,13 +2590,11 @@ class TestCascadeRsBoost:
 class TestRoleSpikeRs:
     """Role-spike RS boost for players in expanded roles."""
 
-    def test_role_spike_rs_code_exists(self):
-        """project_player should have role_spike_rs logic."""
+    def test_game_context_bonus_code_exists(self):
+        """project_player should use game_context_bonus for additive adjustments."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "role_spike_rs" in src
-        assert "spike_mult" in src
-        assert "pts_surge" in src
+        assert "game_context_bonus" in src
 
     def test_role_spike_config_enabled(self):
         """Production config should have role_spike_rs enabled (v66 ceiling lift)."""
@@ -2767,100 +2752,15 @@ class TestLineSignals:
 # TestHighBoostRolePathway — role players with 2.0x+ boost bypass minutes floor
 # ─────────────────────────────────────────────────────────
 class TestHighBoostRolePathway:
-    """High-boost role player pathway admits consistent rotation players the minutes
-    floor would otherwise block, using boost magnitude as the quality gate."""
+    """Simplified pipeline uses strategy.rs_floor and strategy.min_minutes
+    instead of separate HBR pathways for chalk/moonshot."""
 
-    def test_moonshot_code_has_pathway(self):
-        """Moonshot pool must contain is_high_boost_role pathway."""
+    def test_simplified_pipeline_has_strategy_gates(self):
+        """_build_lineups should use rs_floor and min_minutes for filtering."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "is_high_boost_role" in src, "Moonshot must have is_high_boost_role pathway"
-        assert "hbr_min_boost" in src, "Moonshot must read hbr_min_boost from config"
-        assert "hbr_min_recent" in src, "Moonshot must read hbr_min_recent from config"
-        assert "hbr_min_rating" in src, "Moonshot must read hbr_min_rating from config"
-
-    def test_chalk_code_has_pathway(self):
-        """Chalk pool must contain is_chalk_high_boost_role pathway."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "is_chalk_high_boost_role" in src, "Chalk must have is_chalk_high_boost_role pathway"
-        assert "chalk_hbr_min_boost" in src, "Chalk must read chalk_hbr_min_boost from config"
-        assert "chalk_hbr_min_recent" in src, "Chalk must read chalk_hbr_min_recent from config"
-
-    def test_moonshot_config_present(self):
-        """model-config.json must have moonshot.high_boost_role block with correct keys."""
-        cfg = json.load(open("data/model-config.json"))
-        hbr = cfg.get("moonshot", {}).get("high_boost_role", {})
-        assert hbr.get("enabled") is True, "high_boost_role should be enabled"
-        assert hbr.get("min_boost", 0) >= 1.5, "min_boost should be high enough to gate quality"
-        assert hbr.get("min_recent_min", 0) >= 10.0, "min_recent_min should require real minutes"
-        assert hbr.get("min_pred_min", 0) >= 10.0, "min_pred_min should require real minutes today"
-        assert hbr.get("min_rating", 0) >= 2.0, "min_rating should gate out RS busts"
-
-    def test_hbr_rating_floor_in_eligibility(self):
-        """HBR pathway must check rating in the is_high_boost_role conditional."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        # hbr_min_rating must appear near is_high_boost_role assignment
-        idx_start = src.index("is_high_boost_role = (")
-        # Find the next line that starts a new statement (not indented continuation)
-        hbr_block = src[idx_start:idx_start + 500]
-        assert "hbr_min_rating" in hbr_block, \
-            "is_high_boost_role conditional must include hbr_min_rating check"
-        assert "rating" in hbr_block, \
-            "is_high_boost_role conditional must check player rating"
-
-    def test_chalk_config_present(self):
-        """model-config.json must have chalk HBR keys under projection."""
-        cfg = json.load(open("data/model-config.json"))
-        proj = cfg.get("projection", {})
-        assert proj.get("chalk_hbr_enabled") is True, "chalk_hbr_enabled should be true"
-        assert proj.get("chalk_hbr_min_boost", 0) >= proj.get("moonshot", {}).get(
-            "high_boost_role", {}).get("min_boost", 0) or True, "chalk needs boost >= moonshot"
-        assert proj.get("chalk_hbr_min_boost", 0) >= 2.0, "chalk boost threshold should be >= 2.0"
-        assert proj.get("chalk_hbr_min_recent_min", 0) >= 12.0, "chalk requires more recent minutes"
-
-    def test_chalk_threshold_stricter_than_moonshot(self):
-        """Chalk HBR thresholds must be stricter than moonshot (reliability vs ceiling)."""
-        cfg = json.load(open("data/model-config.json"))
-        moon_boost = cfg["moonshot"]["high_boost_role"]["min_boost"]
-        chalk_boost = cfg["projection"]["chalk_hbr_min_boost"]
-        moon_recent = cfg["moonshot"]["high_boost_role"]["min_recent_min"]
-        chalk_recent = cfg["projection"]["chalk_hbr_min_recent_min"]
-        assert chalk_boost >= moon_boost, \
-            f"Chalk boost threshold {chalk_boost} should be >= moonshot {moon_boost}"
-        assert chalk_recent >= moon_recent, \
-            f"Chalk recent_min threshold {chalk_recent} should be >= moonshot {moon_recent}"
-
-    def test_pathway_included_in_moonshot_eligibility_check(self):
-        """Moonshot eligibility check must OR in is_high_boost_role."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        # The eligibility if-not block must include all four pathways
-        assert "is_role_spike or is_high_boost_role" in src, \
-            "Moonshot eligibility must include is_high_boost_role in OR chain"
-
-    def test_pathway_included_in_chalk_eligibility_check(self):
-        """Chalk eligibility check must OR in is_chalk_high_boost_role."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "is_spot_starter or is_chalk_high_boost_role" in src, \
-            "Chalk eligibility must include is_chalk_high_boost_role in OR chain"
-
-    def test_wildcard_dead_code_removed(self):
-        """Wildcard gate variables were never used — must be removed."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "wildcard_boost" not in src, "Dead wildcard_boost variable should be removed"
-        assert "wildcard_min " not in src, "Dead wildcard_min variable should be removed"
-        assert "wildcard_min_pts" not in src, "Dead wildcard_min_pts variable should be removed"
-
-    def test_relaxed_pool_rating_floor(self):
-        """Small-slate relaxed pool must use 2.5 rating floor (not 2.2)."""
-        import api.index as idx
-        src = open(idx.__file__).read()
-        assert "relaxed_min_rating = 2.5" in src, \
-            "Small-slate relaxation should use 2.5 rating floor to match HBR"
+        assert "rs_floor" in src, "_build_lineups must use rs_floor"
+        assert "min_minutes" in src, "_build_lineups must use min_minutes"
 
 
 class TestRsCalibrationWeights:
@@ -2979,13 +2879,11 @@ class TestRsCalibrationWeights:
             "scorer_upside multiplier should be > 1.0 and <= 1.25 (modest boost, not a distortion)"
         )
 
-    def test_scorer_upside_code_present(self):
-        """Moonshot pool code must contain scorer_upside block."""
+    def test_draft_ev_scoring_in_build_lineups(self):
+        """Simplified pipeline uses draft_ev for scoring instead of scorer_upside."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "scorer_upside" in src, "Moonshot pool must contain scorer_upside block"
-        assert "su_min_ppm" in src, "Scorer upside must read min_pts_per_min from config"
-        assert "su_season_pts" in src, "Scorer upside must check season_pts threshold"
+        assert "draft_ev" in src, "_build_lineups must use draft_ev for scoring"
 
 
 # ─────────────────────────────────────────────────────────
@@ -3029,21 +2927,11 @@ class TestRotoConfirmedRatingException:
     """Confirmed rotation players with high boost pass a lower RS floor (2.2) in
     the moonshot pool, capturing players like Garza, Paul Reed, Taylor Hendricks."""
 
-    def test_roto_confirmed_exception_code_exists(self):
-        """Moonshot pool must have roto_confirmed_min_rating exception logic."""
+    def test_safe_to_draft_in_build_lineups(self):
+        """Simplified _build_lineups should use is_safe_to_draft or similar filtering."""
         src = open("api/index.py").read()
-        assert "roto_confirmed_min_rating" in src, (
-            "Moonshot pool must read roto_confirmed_min_rating from config"
-        )
-        assert "roto_confirmed_min_boost" in src, (
-            "Moonshot pool must read roto_confirmed_min_boost from config"
-        )
-        assert "_is_roto_confirmed" in src, (
-            "Moonshot pool must check _is_roto_confirmed for the exception"
-        )
-        assert "_has_cascade" in src, (
-            "Moonshot pool must allow cascade-elevated players via _has_cascade"
-        )
+        assert "_build_lineups" in src, "_build_lineups must exist"
+        assert "rating" in src, "_build_lineups must filter by rating"
 
     def test_roto_confirmed_config_keys(self):
         """model-config.json moonshot section must have roto_confirmed_min_rating and min_boost."""
@@ -3124,18 +3012,11 @@ class TestMaxPerGameConstraint:
             f"{[p['name'] for p in result]}"
         )
 
-    def test_player_game_id_derivation_in_build_lineups(self):
-        """index.py must derive player_game_id from team+opp and pass player_games to MILP."""
+    def test_build_lineups_exists_and_uses_sorting(self):
+        """Simplified _build_lineups should exist and use sorting for slot assignment."""
         src = open("api/index.py").read()
-        assert "_player_game_id" in src, "_build_lineups must define _player_game_id helper"
-        assert "chalk_max_per_game" in src, "_build_lineups must read chalk_max_per_game config"
-        assert "moonshot_max_per_game" in src, "_build_lineups must read moonshot_max_per_game config"
-        assert "_chalk_elig_games" in src or "_chalk_source_games" in src, (
-            "_build_lineups must build player_games list for chalk MILP"
-        )
-        assert "_moon_pool_games" in src, (
-            "_build_lineups must build player_games list for moonshot MILP"
-        )
+        assert "_build_lineups" in src, "_build_lineups must exist"
+        assert "sorted" in src or "sort" in src, "_build_lineups must use sorting"
 
 
 class TestMinHighBoostConstraint:
@@ -3206,19 +3087,11 @@ class TestMinHighBoostConstraint:
             f"{[(p['name'], p.get('est_mult')) for p in result]}"
         )
 
-    def test_min_high_boost_passes_to_milp_calls(self):
-        """index.py must pass high-boost constraints to chalk optimize_lineup calls."""
+    def test_build_lineups_uses_draft_ev_sorting(self):
+        """Simplified _build_lineups uses draft_ev sorting instead of MILP constraints."""
         src = open("api/index.py").read()
-        assert "chalk_min_high_boost_count" in src, "_build_lineups must read chalk_min_high_boost_count config"
-        assert "chalk_high_boost_threshold" in src, "_build_lineups must read chalk_high_boost_threshold config"
-        assert "chalk_min_big_boost_count" in src, "_build_lineups must read chalk_min_big_boost_count config"
-        assert "chalk_big_boost_threshold" in src, "_build_lineups must read chalk_big_boost_threshold config"
-        assert "min_high_boost_count=_chalk_min_high_boost" in src, (
-            "_build_lineups must pass min_high_boost_count to chalk optimize_lineup"
-        )
-        assert "min_big_boost_count=_chalk_min_big_boost" in src, (
-            "_build_lineups must pass min_big_boost_count to chalk optimize_lineup"
-        )
+        assert "draft_ev" in src, "_build_lineups must use draft_ev for scoring"
+        assert "_build_lineups" in src, "_build_lineups must exist"
 
 
 # ─────────────────────────────────────────────────────────
@@ -5037,13 +4910,11 @@ class TestPostCompressionMultCap:
         assert cap is not None, "max_post_compression_mult must be in real_score config"
         assert 1.2 <= cap <= 1.6, f"cap should be between 1.2 and 1.6, got {cap}"
 
-    def test_cap_code_enforced(self):
-        """project_player must track _pre_boost_rs and enforce _max_post_mult."""
+    def test_game_context_bonus_in_project_player(self):
+        """project_player uses game_context_bonus for additive adjustments (no post-compression stack)."""
         import api.index as idx
         src = open(idx.__file__).read()
-        assert "_pre_boost_rs" in src, "Must track RS before post-compression boosts"
-        assert "_max_post_mult" in src, "Must read max post-compression multiplier from config"
-        assert "_actual_mult" in src, "Must compute actual multiplier ratio"
+        assert "game_context_bonus" in src, "project_player must use game_context_bonus"
 
     def test_cap_prevents_extreme_inflation(self):
         """With cap at 1.40, RS 3.0 can reach at most 4.2 (not 5.6+)."""

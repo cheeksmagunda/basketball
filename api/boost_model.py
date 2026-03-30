@@ -187,20 +187,6 @@ def get_tier_baseline(hist_rs_mean: float) -> float:
     return 0.05
 
 
-# Cold start PPG → boost mapping (calibrated from 419 first-appearance records)
-_COLD_START_TABLE = [
-    # (max_ppg, boost)
-    (5, 3.0),
-    (8, 3.0),
-    (12, 2.7),
-    (16, 2.2),
-    (20, 1.5),
-    (25, 0.8),
-    (30, 0.3),
-    (999, 0.0),
-]
-
-
 def estimate_boost_from_api(
     season_ppg: float = 0,
     season_rpg: float = 0,

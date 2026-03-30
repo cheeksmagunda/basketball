@@ -43,7 +43,6 @@ load_dotenv()
 
 # Real Score Ecosystem modules
 try:
-    from api.real_score import real_score_projection, _make_rng, closeness_coefficient
     from api.asset_optimizer import optimize_lineup
     from api.line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from api.rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
@@ -55,7 +54,6 @@ try:
         TEAM_MARKET_SCORES, get_team_market_score, pos_bucket, ppg_tier_bucket,
     )
 except ImportError:
-    from .real_score import real_score_projection, _make_rng, closeness_coefficient
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
     from .rotowire import get_all_statuses, is_safe_to_draft, clear_cache as _rw_clear
@@ -1213,6 +1211,20 @@ _CONFIG_DEFAULTS = {
         "scoring_bias_base": 1.0,
         "scoring_bias_pts_weight": 0.0,
         "min_game_pts": 8.0,
+    },
+    # ── Strategy Report v1: Data-driven draft parameters ──────────────────
+    # Based on 90 dates of winning draft data. These ~15 parameters replace
+    # the ~120 draft-specific parameters scattered across other config sections.
+    "strategy": {
+        "rs_floor": 2.0,               # Finding 2: only 1.3% of winners below RS 2.0
+        "min_pts_projection": 2.0,      # Universal scoring floor in project_player
+        "min_minutes": 12.0,            # Minimum projected minutes to be draft-eligible
+        "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
+        "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
+        "ev_swap_threshold": 2.0,       # Max EV gap for safe→upside swap
+        "max_upside_swaps": 2,          # Max players swapped between safe and upside lineups
+        "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
+        "anti_popularity_strength": 0.1, # Boost penalty per unit of estimated popularity
     },
 }
 
@@ -3273,7 +3285,7 @@ def _est_card_boost(
       - Star PPG tier caps (national stars always low boost)
       - Per-team boost ceilings (popular franchise role players)
     """
-    from api.boost_model import predict_boost
+    from api.boost_model import predict_boost, estimate_draft_popularity
 
     cb = _cfg("card_boost", _CONFIG_DEFAULTS["card_boost"])
     ceiling   = cb.get("ceiling", 3.0)
@@ -3299,6 +3311,23 @@ def _est_card_boost(
     )
 
     raw_boost = result["boost"]
+
+    # ── Anti-popularity adjustment (Strategy Report Finding 4) ─────────
+    # Draft popularity has -0.457 correlation with boost. The least-drafted
+    # 50% produce 24-26% more total value. High-popularity players see
+    # depressed boosts; this feeds that signal into predictions.
+    _strat = _cfg("strategy", {}) or {}
+    if _strat.get("anti_popularity_enabled", True):
+        _pop_strength = float(_strat.get("anti_popularity_strength", 0.1))
+        _pop_score = estimate_draft_popularity(
+            season_ppg=_spts,
+            team=team_abbr or "",
+            recent_ppg=float(recent_pts or _spts or 0.0),
+        )
+        # Normalize popularity: 2500 = typical star draft count (top quartile)
+        # Penalty scales from 0 (unknown player) to -0.3 (heavily drafted star)
+        _pop_normalized = min(_pop_score / 2500.0, 1.0)
+        raw_boost -= _pop_normalized * _pop_strength * 3.0  # max penalty ~0.3
 
     # Star PPG tier caps — high-PPG players are nationally popular regardless of
     # team market size. These hard caps prevent over-prediction for stars.
@@ -3511,20 +3540,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     tov = stats.get("tov", 0)
     minutes = stats.get("min", 0)
 
-    # SCORING UPSIDE GATE 1: minimum projected points floor.
-    # NOTE: Despite the name "moonshot", this is the UNIVERSAL floor applied in
-    # project_player() to ALL candidates (both chalk and moonshot). It is set low
-    # (3.0) so high-boost role players can enter the moonshot pool. Chalk pool
-    # enforces a stricter 7.0 floor separately in _build_lineups().
-    # Rename consideration: "min_pts_projection_universal" would be clearer.
-    min_pts_moonshot = _cfg("scoring_thresholds.min_pts_projection_moonshot", 3.0)
-    if pts < min_pts_moonshot:
-        return None
-
-    # SCORING UPSIDE GATE 2: minimum pts-per-minute efficiency.
-    # Uses moonshot floor (0.15) at the universal level; chalk enforces stricter 0.28.
-    min_ppm_moonshot = _cfg("scoring_thresholds.min_pts_per_minute_moonshot", 0.15)
-    if minutes > 0 and (pts / minutes) < min_ppm_moonshot:
+    # Universal scoring floor: RS floor of 2.0 means ~2 PPG minimum.
+    # Strategy report Finding 2: only 1.3% of winning players have RS < 2.0.
+    _min_pts_universal = float(_cfg("strategy.min_pts_projection", 2.0))
+    if pts < _min_pts_universal:
         return None
 
     # Base formula: PTS + REB + AST (correct for Real Sports scoring)
@@ -3611,48 +3630,26 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         except Exception as _lgbm_e:
             print(f"[WARN] LightGBM inference failed for player, using heuristic: {_lgbm_e}")
 
-    # Contextual multipliers — applied to heuristic only (not blend).
-    # ai_pred is already in RS units; only the heuristic path needs these.
-    pace_adj   = 1.0 + (0.06 * ((total or DEFAULT_TOTAL) - DEFAULT_TOTAL) / 20)
-
-    # Spread adjustment — RS-clutch-aligned (v8).
-    # RS algorithm heavily weights game closeness: tight games → every play matters →
-    # higher micro-ratings. Blowouts → garbage time → devalued stats + stars sit Q4.
-    # Tight spread + high total = back-and-forth shootout = RS goldmine.
-    abs_spread = abs(spread or 0)
-    bench_pts = float(_cfg("projection.bench_pts_threshold", 14.0))
-    bench_min = float(_cfg("projection.bench_min_threshold", 30.0))
-    is_bench = pts <= bench_pts and avg_min <= bench_min
-    if is_bench:
-        # Bench players: neutral in close games, bonus in blowouts (garbage-time minutes)
-        if abs_spread <= 4:
-            spread_adj = 1.0
-        else:
-            spread_adj = min(1.15, 1.0 + (abs_spread - 4) * 0.02)
-    else:
-        # Stars/starters: strong clutch bonus in tight games, steep blowout penalty.
-        # RS data: Luka 9.1 in tight game, but stars in blowouts produce low RS
-        # because clutch context multiplier → 0 in garbage time.
-        if abs_spread <= 3:
-            spread_adj = 1.25 - (abs_spread * 0.03)   # 1.25 at 0 → 1.16 at 3
-        elif abs_spread <= 7:
-            spread_adj = 1.16 - ((abs_spread - 3) * 0.04)  # 1.16 at 3 → 1.0 at 7
-        else:
-            _starter_floor = float(_cfg("game_script.starter_blowout_floor", 0.70))
-            spread_adj = max(_starter_floor, 1.0 - (abs_spread - 7) * 0.09)  # 1.0 at 7 → floor at spread ~10
-
-    # Total interaction: high total + tight spread = shootout bonus
+    # ── Simple game context adjustments (Strategy Report Finding 7) ──────────
+    # Close games (spread ≤ 5): avg RS 4.44 → +0.3 RS additive
+    # High-pace games (total ≥ 230): avg RS 4.44 vs 3.82 → +0.15 per 10pts above 220
     _total = total or DEFAULT_TOTAL
-    if not is_bench and _total >= 230 and abs_spread <= 5:
-        spread_adj *= 1.0 + min(0.10, (_total - 230) * 0.005)  # up to +10% bonus
-    home_adj   = 1.02 if side == "home" else 1.0
+    abs_spread = abs(spread or 0)
+    _close_game_bonus = float(_cfg("strategy.close_game_rs_bonus", 0.3))
+    _pace_bonus_per_10 = float(_cfg("strategy.pace_rs_bonus_per_10", 0.15))
+    game_context_bonus = 0.0
+    if abs_spread <= 5:
+        game_context_bonus += _close_game_bonus
+    if _total > 220:
+        game_context_bonus += (_total - 220) / 10.0 * _pace_bonus_per_10
+    home_adj = 1.02 if side == "home" else 1.0
 
-    s_base = heuristic * pace_adj * spread_adj * home_adj
+    s_base = heuristic * home_adj
 
-    # ── RS projection: Monte Carlo Real Score (usage-scaled) ─────────────────
-    # Re-integrated from real_score.py with usage scaling: stars in tight games
-    # get massive ceiling; bench players get near-neutral multiplier.
-    # This is the key to unlocking variance — the Fair Value engine killed it.
+    # ── RS projection (simplified — no Monte Carlo) ─────────────────────────
+    # Strategy report: game context effects are simple additive adjustments,
+    # not multiplicative Monte Carlo simulations. RS predictability from
+    # season averages is already high (CV < 0.25 for reliable players).
     season_pts = stats.get("season_pts", pts)
     recent_pts = stats.get("recent_pts", pts)
     player_variance = abs(recent_pts - season_pts) / max(season_pts, 1)
@@ -3663,31 +3660,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     comp_pow = rs_cfg.get("compression_power", _rs_defaults["compression_power"])
     rs_cap = rs_cfg.get("rs_cap", _rs_defaults["rs_cap"])
 
-    # Monte Carlo coefficients — Closeness, Clutch, Momentum from real_score.py
-    # Usage-scaled: only high-usage players get the full MC bonus (prevents
-    # bench inflation that caused the original removal).
-    try:
-        usage_rate = min(pts / max(avg_min, 1) / 0.5, 2.0)  # normalize to ~1.0 for avg player
-        rs_rng = _make_rng(spread or 0, total or DEFAULT_TOTAL, game_id=game_id)
-        mc_rs, mc_meta = real_score_projection(
-            s_base, spread or 0, total or DEFAULT_TOTAL,
-            usage_rate, player_variance, rng=rs_rng,
-        )
-        # Usage-scale the MC bonus: bench players (usage <0.6) get <30% of the bonus
-        mc_bonus = mc_rs - s_base
-        mc_strength = float(rs_cfg.get("mc_strength", 0.5))
-        usage_gate = min(usage_rate / 1.0, 1.5)  # caps at 1.5 for elite usage
-        s_base_mc = s_base + mc_bonus * mc_strength * usage_gate
-    except Exception as _mc_e:
-        if not getattr(project_player, "_mc_path_warned", False):
-            setattr(project_player, "_mc_path_warned", True)
-            print(
-                f"[WARN] Monte Carlo RS path failed (using pre-MC score only): {_mc_e}",
-                flush=True,
-            )
-        s_base_mc = s_base  # fallback: pure heuristic if MC fails
-
-    raw_linear = s_base_mc / comp_div
+    raw_linear = s_base / comp_div
     heuristic_rs = min(raw_linear ** comp_pow, rs_cap)
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
@@ -3698,136 +3671,10 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     else:
         raw_score = heuristic_rs
 
-    # Optional per-bucket RS calibration to reduce star inflation and
-    # lift under-projected low-PPG role players.
-    _bc_defaults = _rs_defaults.get("bucket_calibration", {})
-    bucket_cfg = rs_cfg.get("bucket_calibration", _bc_defaults)
-    if bucket_cfg.get("enabled", False):
-        high_thr = float(bucket_cfg.get("high_pts_threshold", _bc_defaults.get("high_pts_threshold", 18.462)))
-        mid_thr = float(bucket_cfg.get("mid_pts_threshold", _bc_defaults.get("mid_pts_threshold", 6.324)))
-        if pts >= high_thr:
-            raw_score *= float(bucket_cfg.get("high_mult", _bc_defaults.get("high_mult", 1.0)))
-        elif pts >= mid_thr:
-            raw_score *= float(bucket_cfg.get("mid_mult", _bc_defaults.get("mid_mult", 1.0)))
-        else:
-            raw_score *= float(bucket_cfg.get("low_mult", _bc_defaults.get("low_mult", 1.0)))
-        raw_score = min(raw_score, rs_cap)
-
-    # ── Post-compression multiplier cap ────────────────────────────────
-    # Track raw_score before any post-compression boosts so we can cap
-    # the total multiplicative inflation.  Stacking cascade_rs × role_spike
-    # × breakout × archetype can reach 1.87× and inflate bench players
-    # from RS 3 to RS 6.  Cap at 1.40× (configurable) to prevent this.
-    _pre_boost_rs = raw_score
-    _max_post_mult = float(rs_cfg.get("max_post_compression_mult", 1.40))
-
-    arch_cfg = rs_cfg.get("archetype_calibration", {})
-    if arch_cfg.get("enabled", False):
-        arch = _infer_player_archetype(pts, avg_min, reb, stats)
-        mults = arch_cfg.get("archetypes", {}) or {}
-        m = float(mults.get(arch, 1.0))
-        if m != 1.0:
-            raw_score = min(raw_score * m, rs_cap)
-
-    # ── Game closeness RS multiplier — selective by player usage ──────────
-    # WARNING: closeness is ALREADY applied inside real_score_projection() via
-    # c_c (the closeness coefficient). This block applies it a SECOND time with
-    # usage scaling. Only enable if mc_strength is set to 0 (MC path disabled),
-    # otherwise the closeness bonus will be double-counted.
-    close_cfg = rs_cfg.get("closeness", {})
-    _mc_active = float(rs_cfg.get("mc_strength", 0.5)) > 0
-    if close_cfg.get("enabled", False) and not _mc_active:
-        try:
-            c_c = closeness_coefficient(spread, total, game_id=game_id)
-            # Usage proxy: pts_per_min normalized (league avg ~0.5 pts/min)
-            ppm = pts / max(avg_min, 1)
-            usage_scale = min(ppm / 0.5, 1.5)  # caps at 1.5 for elite scorers
-            strength = float(close_cfg.get("strength", 0.5))
-            # Selective: only the (c_c - 1.0) bonus is scaled by usage
-            # Bench player (ppm 0.25, usage_scale 0.5): gets 50% of bonus
-            # Star (ppm 0.75, usage_scale 1.5): gets 150% of bonus (capped)
-            close_mult = 1.0 + (c_c - 1.0) * usage_scale * strength
-            close_mult = max(0.85, min(close_mult, float(close_cfg.get("max_mult", 1.40))))
-            raw_score = min(raw_score * close_mult, rs_cap)
-        except Exception as _ce:
-            if not getattr(project_player, "_close_mult_warned", False):
-                setattr(project_player, "_close_mult_warned", True)
-                print(f"[WARN] closeness multiplier skipped: {_ce}", flush=True)
-
-    # ── Cascade RS boost — usage spike from teammate injury ────────────────
-    # When a starter is OUT, backups inherit not just minutes but USAGE.
-    # More touches = more RS opportunity. This is additive to the minute scaling
-    # already applied to the heuristic. Mar 10: Cameron Payne (Lowry OUT) went
-    # from projected 2.6 to actual 7.7 — minute scaling alone can't explain this.
-    cascade_cfg = rs_cfg.get("cascade_rs", {})
-    if cascade_cfg.get("enabled", False) and cascade_bonus > 0:
-        cascade_str = float(cascade_cfg.get("strength", 0.6))
-        # Scale: +10 cascade min → ~1.10× RS boost (with strength 0.6)
-        cascade_rs_mult = 1.0 + min(cascade_bonus / 15.0, 0.30) * cascade_str
-        raw_score = min(raw_score * cascade_rs_mult, rs_cap)
-
-    # ── Role-spike RS boost — hot streak / expanded role detection ─────────
-    # Players whose recent production significantly exceeds their season average
-    # are in an expanded role (injury, trade, coach decision). RS correlates with
-    # opportunity: more minutes + more usage = exponentially more RS.
-    # Mar 12: Middleton (recent 28min vs season 26min) hit RS 5.8.
-    # Mar 7: Hendricks (took Achiuwa's minutes) hit RS 4.1.
-    spike_cfg = rs_cfg.get("role_spike_rs", {})
-    if spike_cfg.get("enabled", False):
-        _spike_ratio = float(spike_cfg.get("min_ratio", 1.2))
-        if season_min > 0 and recent_min >= season_min * _spike_ratio and recent_pts > 0:
-            pts_surge = recent_pts / max(season_pts, 1)
-            spike_str = float(spike_cfg.get("strength", 0.4))
-            spike_mult = 1.0 + min(pts_surge - 1.0, 0.30) * spike_str
-            if spike_mult > 1.0:
-                raw_score = min(raw_score * spike_mult, rs_cap)
-
-    vg = proj_cfg.get("volatility_guard", {})
-    if isinstance(vg, dict) and vg.get("enabled", False):
-        vmin_var = float(vg.get("min_scoring_variance", 0.18))
-        min_usage_pts = float(vg.get("min_season_pts", 14.0))
-        min_ppm = float(vg.get("min_pts_per_minute", 0.38))
-        vg_mult = float(vg.get("rating_mult", 0.93))
-        pos_u = (pinfo.get("pos") or "").strip().upper()
-        is_perimeter = (
-            pos_u.startswith("G")
-            or pos_u.startswith("F")
-            or pos_u in ("SG", "PG", "SF", "PF")
-        )
-        ppm = pts / max(avg_min, 1e-6)
-        if is_perimeter and season_pts >= min_usage_pts and ppm >= min_ppm and player_variance >= vmin_var:
-            raw_score = min(raw_score * vg_mult, rs_cap)
-
-    # grep: BREAKOUT DETECTOR INTEGRATION
-    # v62: Breakout detector — identifies players likely to spike.
-    # Data: unicorn top-20 entries avg RS=6.32, boost=2.26; all share specific game conditions.
-    _opp_def_proxy = 112.0 + ((1.0 if side == "away" else -1.0) * float(spread or 0) * 0.7)
-    _breakout_prob = _compute_breakout_probability(
-        {"_cascade_bonus": cascade_bonus, "recent_pts": recent_pts,
-         "season_pts": season_pts, "rest_days": pinfo.get("rest_days", 2),
-         "dvp_advantage": pinfo.get("dvp_advantage", False)},
-        {"total": total or 222, "spread": spread or 0,
-         "opp_def_rating": pinfo.get("opp_def_rating", _opp_def_proxy)},
-    )
-    _bo_cfg = _cfg("breakout", _CONFIG_DEFAULTS.get("breakout", {}))
-    _bo_min_prob = float(_bo_cfg.get("min_prob", 0.3))
-    _bo_max_mult = float(_bo_cfg.get("max_mult", 0.3))
-    if _breakout_prob >= _bo_min_prob:
-        _spike_mult = 1.0 + _breakout_prob * _bo_max_mult
-        raw_score = min(raw_score * _spike_mult, rs_cap)
-
-    # ── Enforce post-compression multiplier cap ─────────────────────────
-    # All post-compression boosts (archetype, close-game, cascade_rs,
-    # role_spike, breakout) have now been applied.  Clamp total inflation.
-    # NOTE: This cap is NOT redundant with rs_cap. rs_cap is an absolute ceiling
-    # on the RS value (default 20.0). This cap limits the MULTIPLICATIVE inflation
-    # from stacked post-compression boosts (e.g., archetype 1.1 × cascade 1.15 ×
-    # spike 1.2 = 1.52× total). If rs_cap were raised or removed, this 1.40× cap
-    # independently prevents bench players from inflating RS 3→6+.
-    if _pre_boost_rs > 0:
-        _actual_mult = raw_score / _pre_boost_rs
-        if _actual_mult > _max_post_mult:
-            raw_score = round(_pre_boost_rs * _max_post_mult, 4)
+    # ── Game context bonus (additive, applied after compression) ─────────
+    # Strategy report Finding 7: simple additive RS adjustments.
+    raw_score += game_context_bonus
+    raw_score = min(raw_score, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -3850,19 +3697,18 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         season_ast=float(stats.get("season_ast", ast)),
     )
 
-    # EV score — card-adjusted expected value using additive formula
-    # Use average slot (1.6) for ranking; MILP uses exact slots
+    # ── EV score: the dominant formula from strategy report ──────────────
+    # Strategy report Finding 2: EV = RS × (2.0 + boost). Boost is 40% more
+    # valuable per unit than RS. This single formula drives all selection.
+    draft_ev = round(raw_score * (2.0 + card_boost), 2)
+
+    # Legacy chalk_ev kept for backward compatibility with frontend/cache
     avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
+    chalk_ev = round(raw_score * (avg_slot + card_boost), 2)
 
-    # Core value formula: RS × (slot + boost). No post-hoc reliability adjustments.
-    # Minute consistency is already baked into RS projection via season/recent blending.
-    # Boost dominance audit (Mar 19): removed reliability multiplier that was dampening
-    # high-boost players with minute variance — exactly the players that win leaderboards.
-    chalk_ev  = round(raw_score * (avg_slot + card_boost), 2)
-
-    # Ceiling score — player's upside (variance-adjusted median)
+    # Ceiling score — player's upside (variance-adjusted)
     ceiling_score = raw_score * (1.0 + (player_variance * 0.5))
-    ceiling_ev = round(ceiling_score * (avg_slot + card_boost), 2)
+    ceiling_ev = round(ceiling_score * (2.0 + card_boost), 2)
     ceiling_score = round(ceiling_score, 1)
 
     return {
@@ -3872,6 +3718,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "pos":     pinfo["pos"],
         "team":    team_abbr,
         "rating":        round(raw_score, 1),
+        "draft_ev":      draft_ev,
         "chalk_ev":      chalk_ev,
         "ceiling_score": ceiling_score,
         "ceiling_ev":    ceiling_ev,
@@ -3886,7 +3733,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
-        "_breakout_prob": round(_breakout_prob, 3),
         # Recent vs season stats — used by line engine for trend detection
         "season_min": round(stats.get("season_min", avg_min), 1),
         "recent_min": round(recent_min, 1),
@@ -4813,7 +4659,7 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal-only fields never sent to the frontend
-_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_matchup_factor"}
+_PLAYER_INTERNAL_FIELDS = {"chalk_ev_capped", "_rw_cleared", "_matchup_factor", "_core_score"}
 
 def _normalize_player(p: dict) -> dict:
     """Stable frontend contract for player projection objects.
@@ -4833,6 +4679,7 @@ def _normalize_player(p: dict) -> dict:
         "blk":           round(float(p.get("blk") or 0), 1),
         "est_mult":      round(float(p.get("est_mult") or 0), 2),
         "slot":          p.get("slot", "1.0x"),
+        "draft_ev":      round(float(p.get("draft_ev") or 0), 2),
         "chalk_ev":      round(float(p.get("chalk_ev") or 0), 2),
         "moonshot_ev":   round(float(p.get("moonshot_ev") or 0), 2),
         "injury_status": p.get("injury_status", ""),
@@ -4971,719 +4818,126 @@ def _pred_min_direction_factor(pred_min: float, season_min: float, recent_min: f
 
 
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
-    avg_slot   = _cfg("lineup.avg_slot_multiplier", 1.6)
-    chalk_floor = _cfg("lineup.chalk_rating_floor", 2.0)
-    proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
-    _proj_defaults = _CONFIG_DEFAULTS["projection"]
-    boost_cap = proj_cfg.get("chalk_boost_cap", _proj_defaults.get("chalk_boost_cap", 2.5))
+    """Strategy-report-aligned lineup builder.
 
-    moon_cfg = _cfg("moonshot", _CONFIG_DEFAULTS["moonshot"])
-    _moon_defaults = _CONFIG_DEFAULTS["moonshot"]
-    use_rotowire = moon_cfg.get("require_rotowire_clearance", True)
+    Single pipeline:
+      1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
+      2. Score: EV = RS × (2.0 + boost)  (Finding 2: boost 40% more valuable per unit)
+      3. Rank by EV descending
+      4. Safe (Starting 5): top 5, tie-break low variance (Finding 6: similar win rates)
+      5. Upside (Moonshot): 1-2 swaps toward higher variance/boost within ~2 EV
+      6. Slot assignment: sort by RS descending (Finding 3: provably optimal)
+    """
+    # ── Configuration ──────────────────────────────────────────────────────
+    _strat = _cfg("strategy", {}) or {}
+    rs_floor = float(_strat.get("rs_floor", 2.0))
+    min_minutes = float(_strat.get("min_minutes", 12.0))
+    ev_swap_threshold = float(_strat.get("ev_swap_threshold", 2.0))
+    max_swaps = int(_strat.get("max_upside_swaps", 2))
 
-    # Fetch RotoWire lineup statuses once — shared by chalk AND moonshot
+    # RotoWire availability check
     rw_statuses = {}
-    if use_rotowire:
-        try:
-            rw_statuses = get_all_statuses()
-        except Exception as e:
-            print(f"RotoWire fetch failed, proceeding without: {e}")
-    # Team motivation (late-season): soft reliability tilt for Starting 5.
-    team_motivation = _fetch_team_motivation_map()
+    try:
+        rw_statuses = get_all_statuses()
+    except Exception as e:
+        print(f"RotoWire fetch failed, proceeding without: {e}")
 
-    # STARTING 5: MILP-optimized for chalk_ev with card boost capped.
-    # chalk_boost_cap=2.5: rewards moderate-ownership role players without going full moonshot.
-    # Mar 5 insight: Ace Bailey (RS 5.9 × boost 2.1) >>> Wemby (RS 7.1 × boost 0.3).
-    # RotoWire filter applied here too — chalk can't include OUT/questionable players.
-    chalk_eligible = []
-    chalk_min_pts = float(_cfg("scoring_thresholds.min_pts_projection", 7.0))
-    chalk_min_ppm = float(_cfg("scoring_thresholds.min_pts_per_minute", 0.28))
-    for p in projections:
-        # Application-layer blacklist: never include certain players in draft lineups.
-        if p.get("name") in BLACKLISTED_PLAYERS:
-            continue
-        # Chalk-specific scoring floors (stricter than the universal moonshot floor).
-        # A chalk player must project 7+ pts and 0.28 pts/min to be viable.
-        if p.get("pts", 0) < chalk_min_pts:
-            continue
-        p_min = p.get("season_min", 0)
-        if p_min > 0 and (p.get("pts", 0) / p_min) < chalk_min_ppm:
-            continue
-        if p["rating"] < chalk_floor:
-            continue
-        # SLATE-WIDE CHALK: Proven rotation regular OR definitive spot-starter.
-        # Condition A: Both historical floors met (established starter).
-        # Condition B: predMin >= 28 AND _cascade_bonus >= 10 (backup stepping into a
-        #   starter role due to injury — cascade engine gave them 10+ bonus minutes).
-        #   This prevents "DFS Ghosts": trickle-cascade bench warmers won't clear
-        #   both gates simultaneously, only true spot-starters will.
-        chalk_min_floor = _cfg("projection.chalk_season_min_floor",
-                              _CONFIG_DEFAULTS["projection"]["chalk_season_min_floor"])
-        chalk_recent_floor = _cfg("projection.chalk_recent_min_floor",
-                                  _CONFIG_DEFAULTS["projection"]["chalk_recent_min_floor"])
-        _recent_min_chalk = p.get("recent_min", 0) or p.get("season_min", 0)
-        is_regular     = (p.get("season_min", 0) >= chalk_min_floor and
-                          _recent_min_chalk >= chalk_recent_floor)
-        is_spot_starter = (p.get("predMin", 0) >= 28.0 and
-                           p.get("_cascade_bonus", 0) >= 10.0)
-        # High-boost role player pathway for chalk: stricter thresholds than moonshot
-        # because Starting 5 requires reliability. Only players with a strong boost
-        # signal AND consistent recent minutes qualify. Boost >= 2.5 means Real Sports
-        # considers them significantly underrated — a reliable contrarian play.
-        chalk_hbr_enabled    = _cfg("projection.chalk_hbr_enabled", True)
-        chalk_hbr_min_boost  = float(_cfg("projection.chalk_hbr_min_boost", 2.5))
-        chalk_hbr_min_recent = float(_cfg("projection.chalk_hbr_min_recent_min", 16.0))
-        chalk_hbr_min_pred   = float(_cfg("projection.chalk_hbr_min_pred_min", 16.0))
-        is_chalk_high_boost_role = (
-            chalk_hbr_enabled
-            and p.get("est_mult", 0) >= chalk_hbr_min_boost
-            and _recent_min_chalk >= chalk_hbr_min_recent
-            and p.get("predMin", 0) >= chalk_hbr_min_pred
-        )
-        if not (is_regular or is_spot_starter or is_chalk_high_boost_role):
-            continue
-        # Skip players flagged OUT or questionable in RotoWire (same logic as moonshot)
-        if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
-            continue
-        # Never draft a chalk player projected well below their season minute average.
-        # A small tolerance band (default 2.0 min) prevents tiny projection misses from
-        # excluding viable chalk players — Bub Carrington (25.8 vs 27.3 = 1.5 gap) etc.
-        chalk_min_tol = float(_cfg("projection.pred_min_tolerance", 2.0))
-        if p.get("predMin", 0) < (p.get("season_min", 0) - chalk_min_tol):
-            continue
-        # Boost floor — players below this threshold fail unless star anchor applies.
-        chalk_min_boost = float(_cfg("projection.chalk_min_boost_floor", 1.5))
-        est_boost = p.get("est_mult", 0)
-        is_star_anchor = False
-        if est_boost < chalk_min_boost:
-            # Star anchor pathway: genuine scorers (season_pts >= 20) with decent boost
-            # bypass the boost floor so lineups always include at least 1 high-PPG player.
-            # Stars blocked: Jokic (+0.2x), Luka (+0.0x), Wemby (+0.3x) — kills EV.
-            # Stars allowed: Josh Hart (+1.1x), OG Anunoby (+1.1x), Jalen Green (+1.6x).
-            sa_cfg = _cfg("star_anchor", {})
-            sa_enabled = sa_cfg.get("enabled", True) if isinstance(sa_cfg, dict) else True
-            sa_min_pts = float(sa_cfg.get("min_season_pts", 20.0)) if isinstance(sa_cfg, dict) else 20.0
-            sa_min_min = float(sa_cfg.get("min_season_min", 25.0)) if isinstance(sa_cfg, dict) else 25.0
-            sa_min_boost = float(sa_cfg.get("min_boost", 0.8)) if isinstance(sa_cfg, dict) else 0.8
-            sa_min_rating = float(sa_cfg.get("min_rating", 4.0)) if isinstance(sa_cfg, dict) else 4.0
-            if (sa_enabled
-                    and p.get("season_pts", 0) >= sa_min_pts
-                    and p.get("season_min", 0) >= sa_min_min
-                    and est_boost >= sa_min_boost
-                    and p.get("rating", 0) >= sa_min_rating):
-                is_star_anchor = True
-            else:
-                continue
-        # Minimum rating gate: boost cannot rescue a weak base.
-        # A player with rating < 3.5 doesn't generate enough RS to be a viable chalk pick
-        # regardless of card boost. Kills Lopez (+3x, 11.6 pts) and Kennard (+3x, 8.9 pts)
-        # archetypes where boost was masking a weak RS foundation.
-        min_chalk_rating = _cfg("scoring_thresholds.min_chalk_rating", 3.5)
-        if p["rating"] < min_chalk_rating:
-            continue
-        capped_boost = min(est_boost, boost_cap)
-        p["capped_boost"] = capped_boost
-        p["_is_star_anchor"] = is_star_anchor
-        # Light matchup adjustment for chalk (narrower range than moonshot — reliability first)
-        opp = p.get("opp", "")
-        chalk_matchup = _compute_matchup_factor(p, opp, def_stats or {}, dvp_data=dvp_data)
-        chalk_matchup = max(
-            float(_cfg("matchup.chalk_adj_min", 0.92)),
-            min(float(_cfg("matchup.chalk_adj_max", 1.10)), chalk_matchup)
-        )
-        # MILP additive term only: blend boost with neutral so both RS and boost drive selection.
-        # v57: rs_focus 0.40 means milp_boost = 0.6*real + 0.4*neutral. UI chalk_ev_capped uses real boost.
-        _lu = _cfg("lineup", _CONFIG_DEFAULTS["lineup"])
-        _rs_focus = max(0.0, min(1.0, float(_lu.get("chalk_milp_rs_focus", 0.0))))
-        _boost_neutral = float(_lu.get("chalk_milp_boost_neutral", 1.0))
-        p["chalk_milp_boost"] = round(
-            (1.0 - _rs_focus) * float(capped_boost) + _rs_focus * _boost_neutral,
-            4,
-        )
-        # Core value: RS × matchup × (slot + boost). No team motivation — disabled by audit.
-        # Minutes direction factor: reward players projected above their avg, penalise below.
-        # grep: PRED MIN FACTOR
-        _pm_factor = _pred_min_direction_factor(p.get("predMin", 0), p.get("season_min", 0), _recent_min_chalk)
-        p["chalk_ev_capped"] = round(p["rating"] * chalk_matchup * (avg_slot + capped_boost) * _pm_factor, 2)
-        chalk_eligible.append(p)
-
-    # Small-slate quality expansion:
-    # If strict chalk gates produce <5 candidates, add intersection-style players that
-    # still have real production (RS + minutes + at least moderate boost) instead of
-    # dropping to a trivial 4-man "all stars only" build.
-    if len(chalk_eligible) < 5:
-        existing = {p.get("name") for p in chalk_eligible}
-        relaxed_rating_floor = max(3.2, float(_cfg("scoring_thresholds.min_chalk_rating", 3.5)) - 0.3)
-        relaxed_boost_floor = max(1.0, float(_cfg("projection.chalk_min_boost_floor", 1.5)) - 0.5)
-        relaxed_pred_min_floor = 18.0
-        for p in projections:
-            if len(chalk_eligible) >= 8:
-                break
-            if p.get("name") in existing or p.get("name") in BLACKLISTED_PLAYERS:
-                continue
-            if p.get("rating", 0) < relaxed_rating_floor:
-                continue
-            if p.get("predMin", 0) < relaxed_pred_min_floor and p.get("season_min", 0) < relaxed_pred_min_floor:
-                continue
-            # Keep intersection intent: either moderate boost or true high-RS anchor.
-            if p.get("est_mult", 0) < relaxed_boost_floor and p.get("rating", 0) < 5.0:
-                continue
-            if use_rotowire and rw_statuses and not is_safe_to_draft(p["name"]):
-                continue
-
-            _est_boost = p.get("est_mult", 0)
-            _capped = min(_est_boost, boost_cap)
-            _opp = p.get("opp", "")
-            _matchup = _compute_matchup_factor(p, _opp, def_stats or {}, dvp_data=dvp_data)
-            _matchup = max(
-                float(_cfg("matchup.chalk_adj_min", 0.92)),
-                min(float(_cfg("matchup.chalk_adj_max", 1.10)), _matchup)
-            )
-            _lu = _cfg("lineup", _CONFIG_DEFAULTS["lineup"])
-            _rs_focus = max(0.0, min(1.0, float(_lu.get("chalk_milp_rs_focus", 0.0))))
-            _boost_neutral = float(_lu.get("chalk_milp_boost_neutral", 1.0))
-            p["capped_boost"] = _capped
-            p["_is_star_anchor"] = bool(
-                p.get("season_pts", 0) >= 20.0 and p.get("season_min", 0) >= 25.0 and p.get("rating", 0) >= 4.5
-            )
-            p["chalk_milp_boost"] = round((1.0 - _rs_focus) * float(_capped) + _rs_focus * _boost_neutral, 4)
-            _pm_factor_exp = _pred_min_direction_factor(p.get("predMin", 0), p.get("season_min", 0), p.get("recent_min", 0))
-            p["chalk_ev_capped"] = round(p["rating"] * _matchup * (avg_slot + _capped) * _pm_factor_exp, 2)
-            chalk_eligible.append(p)
-            existing.add(p.get("name"))
-        if len(chalk_eligible) < 5:
-            print(f"[build_lineups] chalk candidate pool still thin after small-slate expansion ({len(chalk_eligible)})")
-
-    # Star anchor: identify star candidate indices for the MILP constraint.
-    # These are players that bypassed the boost floor via the star anchor pathway.
-    # The MILP will require at least min_star_count of them in the lineup.
-    sa_cfg = _cfg("star_anchor", {})
-    sa_enabled = sa_cfg.get("enabled", True) if isinstance(sa_cfg, dict) else True
-    sa_require = int(sa_cfg.get("require_count", 1)) if isinstance(sa_cfg, dict) else 1
-    sa_max = int(sa_cfg.get("max_count", 0)) if isinstance(sa_cfg, dict) else 0
-    chalk_star_indices = [
-        i for i, p in enumerate(chalk_eligible)
-        if p.get("_is_star_anchor", False)
-    ] if sa_enabled else []
-
-    # Lineup quality constraints — per-game cap, per-team cap, and boost floors.
-    _lu_cfg = _cfg("lineup", {})
-    _chalk_max_per_game = int(_lu_cfg.get("chalk_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
-    _moon_max_per_game = int(_lu_cfg.get("moonshot_max_per_game", 0)) if isinstance(_lu_cfg, dict) else 0
-    _chalk_max_per_team = int(_lu_cfg.get("chalk_max_per_team", 2)) if isinstance(_lu_cfg, dict) else 2
-    _chalk_max_double_teams = int(_lu_cfg.get("chalk_max_double_teams", 0)) if isinstance(_lu_cfg, dict) else 0
-    _moon_max_per_team = int(_lu_cfg.get("moonshot_max_per_team", 2)) if isinstance(_lu_cfg, dict) else 2
-    _moon_max_double_teams = int(_lu_cfg.get("moonshot_max_double_teams", 0)) if isinstance(_lu_cfg, dict) else 0
-    _chalk_min_high_boost = int(_lu_cfg.get("chalk_min_high_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
-    _chalk_high_boost_thr = float(_lu_cfg.get("chalk_high_boost_threshold", 2.0)) if isinstance(_lu_cfg, dict) else 2.0
-    _chalk_min_big_boost = int(_lu_cfg.get("chalk_min_big_boost_count", 0)) if isinstance(_lu_cfg, dict) else 0
-    _chalk_big_boost_thr = float(_lu_cfg.get("chalk_big_boost_threshold", 2.8)) if isinstance(_lu_cfg, dict) else 2.8
-
-    def _player_game_id(p):
-        """Derive a canonical game ID from team + opp pair (order-independent)."""
-        return "_vs_".join(sorted([p.get("team", ""), p.get("opp", "")]))
-
-    # Core pool: when enabled, both lineups are built from the same 7–10 player core (two configurations).
-    core_pool_cfg = _cfg("core_pool", _CONFIG_DEFAULTS.get("core_pool", {}))
-    core_pool_enabled = core_pool_cfg.get("enabled", False) if isinstance(core_pool_cfg, dict) else False
-
-    if not core_pool_enabled:
-        _chalk_elig_games = [_player_game_id(p) for p in chalk_eligible]
-        chalk = optimize_lineup(chalk_eligible, n=5, sort_key="chalk_ev_capped",
-                                rating_key="rating", card_boost_key="chalk_milp_boost",
-                                max_per_team=_chalk_max_per_team,
-                                max_double_teams=_chalk_max_double_teams,
-                                star_indices=chalk_star_indices if chalk_star_indices else None,
-                                min_star_count=sa_require if chalk_star_indices else 0,
-                                max_star_count=sa_max if sa_max > 0 else 0,
-                                max_per_game=_chalk_max_per_game,
-                                player_games=_chalk_elig_games,
-                                min_high_boost_count=_chalk_min_high_boost,
-                                high_boost_threshold=_chalk_high_boost_thr,
-                                min_big_boost_count=_chalk_min_big_boost,
-                                big_boost_threshold=_chalk_big_boost_thr)
-
-    # ── MOONSHOT: Contrarian EV strategy (v6 — matchup-aware) ───────────────
-    # 5-day leaderboard analysis (Mar 8-13): winning moonshots are role players
-    # with high card boost. Stars almost NEVER win moonshot (4/5 days pure role
-    # players). The formula: maximize RS × (slot + boost) with matchup adjustment.
-    #
-    # Approach:
-    #   - Card boost >= 1.5 (contrarian — low ownership)
-    #   - Season/recent avg >= 15 min (was 25; Santos/Clifford/Ellis play 15-20)
-    #   - Rating >= 2.0 (was 3.0; Ellis RS 2.2, Clifford RS 2.1 were winners)
-    #   - RotoWire: only exclude confirmed OUT
-    #   - Matchup factor: opponent def quality × Claude DvP intelligence (replaces dev-team bonus)
-    #   - Boost leverage baked into adj_ceiling for MILP
-    #   - No center penalty (Poeltl, Queta, Achiuwa all win)
-    #   - Light variance damping (moonshot wants upside)
-    # ─────────────────────────────────────────────────────────────────────────
-    min_floor        = moon_cfg.get("min_minutes_floor", _moon_defaults["min_minutes_floor"])
-    min_recent_floor = moon_cfg.get("min_recent_minutes_floor", _moon_defaults["min_recent_minutes_floor"])
-    min_boost        = moon_cfg.get("min_card_boost", _moon_defaults["min_card_boost"])
-
-    variance_penalty_coef = moon_cfg.get("variance_penalty", _moon_defaults["variance_penalty"])
-    # Matchup intel from Claude Layer 1.5 (pre-fetched, passed in)
-    _matchup_intel = matchup_intel or {}
-
-    # v5: Starting 5 and Moonshot can share players. They represent two independent
-    # draft strategies (reliability vs ceiling) — if a player is the best pick for
-    # both, they should appear in both. The two lineups together predict the two
-    # best possible drafts of the day.
-    moonshot_pool = []
+    # ── Step 1: Build single candidate pool ────────────────────────────────
+    # Two gates only: RS floor + minutes floor (Strategy Report Finding 2)
+    candidate_pool = []
     for p in projections:
         if p.get("name") in BLACKLISTED_PLAYERS:
             continue
-
-        # Proven rotation regular OR definitive spot-starter due to injury cascade.
-        # Condition A: Both historical floors met.
-        # Condition B: predMin >= 28 AND _cascade_bonus >= 10 — prevents DFS Ghosts
-        #   (trickle-cascade bench warmers) from clearing both gates simultaneously.
-        # Condition C: Wildcard — ultra-high boost with higher minutes and a minimum
-        #   season scoring floor so we don't chase pure cardio bench archetypes.
-        season_min = p.get("season_min", 0)
-        recent_min = p.get("recent_min", 0) or season_min  # fallback to season_min if missing/zero
-        pred_min   = p.get("predMin", 0)
-        season_pts = p.get("season_pts", p.get("pts", 0))
-        est_mult   = p.get("est_mult", 0.3)
-
-        # ── Moonshot eligibility ─────────────────────────────────────────────
-        # 3 pathways (star anchor removed — boost dominance audit Mar 19):
-        #   Regular:      season AND recent min meet floor
-        #   Spot-starter: cascade injury gave them a starter role
-        #   Role spike:   recent minutes >> season (role change/injury)
-        is_moonshot_regular      = (season_min >= min_floor and recent_min >= min_recent_floor)
-        is_moonshot_spot_starter = (pred_min >= 28.0 and p.get("_cascade_bonus", 0) >= 10.0)
-        role_spike_ratio  = moon_cfg.get("role_spike_ratio", _moon_defaults["role_spike_ratio"])
-        role_spike_recent = moon_cfg.get("role_spike_recent_floor", _moon_defaults["role_spike_recent_floor"])
-        role_spike_season = moon_cfg.get("role_spike_season_floor", _moon_defaults["role_spike_season_floor"])
-        is_role_spike = (
-            recent_min >= role_spike_recent
-            and season_min >= role_spike_season
-            and recent_min >= season_min * role_spike_ratio
-            and est_mult >= min_boost
-        )
-        # High-boost role player pathway: consistent rotation player whose value comes
-        # from a high card boost + real RS projection, not from minutes volume.
-        # Example: 16 min/game player with +2.5x boost and RS 4.5 → chalk_ev 18.45 —
-        # beats many starters on EV. Boost + minimum RS rating gate quality here.
-        hbr_cfg = moon_cfg.get("high_boost_role", {})
-        hbr_enabled     = hbr_cfg.get("enabled", True)
-        hbr_min_boost   = float(hbr_cfg.get("min_boost", 2.0))
-        hbr_min_recent  = float(hbr_cfg.get("min_recent_min", 14.0))
-        hbr_min_pred    = float(hbr_cfg.get("min_pred_min", 14.0))
-        hbr_min_rating  = float(hbr_cfg.get("min_rating", 2.5))
-        is_high_boost_role = (
-            hbr_enabled
-            and est_mult >= hbr_min_boost
-            and recent_min >= hbr_min_recent
-            and pred_min >= hbr_min_pred
-            and p.get("rating", 0) >= hbr_min_rating
-        )
-        if not (is_moonshot_regular or is_moonshot_spot_starter
-                or is_role_spike or is_high_boost_role):
+        if p.get("rating", 0) < rs_floor:
             continue
-
-        # Never draft a moonshot player projected well below their season minute average.
-        # Moonshot = ceiling plays — a downside minutes projection is anti-moonshot.
-        moon_min_tol = float(moon_cfg.get("pred_min_tolerance", 1.0))
-        if pred_min < (season_min - moon_min_tol):
+        if p.get("predMin", 0) < min_minutes and p.get("season_min", 0) < min_minutes:
             continue
-
-        # Moonshot requires projected pts >= X% of season avg (default 90%).
-        # A player projecting below their own average is a downside scenario, not upside.
-        _min_pts_ratio = float(moon_cfg.get("min_proj_pts_ratio", 0.90))
-        if _min_pts_ratio > 0 and season_pts > 0:
-            if p.get("pts", 0) < season_pts * _min_pts_ratio:
-                continue
-
-        # Hard boost floor — with star anchor pathway AND RS-bypass for high-RS scorers.
-        is_moonshot_star_anchor = False
-        if est_mult < min_boost:
-            # Star anchor pathway: genuine scorers bypass boost floor so moonshot
-            # always includes 1 high-PPG player for RS floor (same as chalk).
-            sa_cfg_m = _cfg("star_anchor", {})
-            sa_enabled_m = sa_cfg_m.get("enabled", True) if isinstance(sa_cfg_m, dict) else True
-            sa_min_pts_m = float(sa_cfg_m.get("min_season_pts", 20.0)) if isinstance(sa_cfg_m, dict) else 20.0
-            sa_min_min_m = float(sa_cfg_m.get("min_season_min", 25.0)) if isinstance(sa_cfg_m, dict) else 25.0
-            sa_min_boost_m = float(sa_cfg_m.get("min_boost", 0.8)) if isinstance(sa_cfg_m, dict) else 0.8
-            sa_min_rating_m = float(sa_cfg_m.get("min_rating", 4.0)) if isinstance(sa_cfg_m, dict) else 4.0
-            if (sa_enabled_m
-                    and season_pts >= sa_min_pts_m
-                    and season_min >= sa_min_min_m
-                    and est_mult >= sa_min_boost_m
-                    and p.get("rating", 0) >= sa_min_rating_m):
-                is_moonshot_star_anchor = True
-            else:
-                # RS-bypass for high-RS proven scorers
-                rs_bypass = moon_cfg.get("rs_bypass", {})
-                if (rs_bypass.get("enabled", False)
-                        and p.get("rating", 0) >= float(rs_bypass.get("min_rating", 5.0))
-                        and season_min >= float(rs_bypass.get("min_season_min", 25.0))
-                        and est_mult >= float(rs_bypass.get("min_boost", 0.3))):
-                    pass  # high-RS bypass
-                else:
-                    continue
-
-        # RotoWire: only exclude confirmed OUT players.
-        if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
+        if rw_statuses and not is_safe_to_draft(p.get("name", "")):
             continue
+        if p.get("injury_status", "").upper() == "OUT":
+            continue
+        candidate_pool.append(p)
 
-        # Minimum rating floor — all pathways use the same floor.
-        # Exception: confirmed rotation players with high boost pass a lower floor.
-        # This captures cascade-elevated backups (e.g. Garza when Porzingis is OUT)
-        # and confirmed role players with very high boosts (e.g. Taylor Hendricks +3.0x).
-        min_rating_floor = moon_cfg.get("min_rating_floor", _moon_defaults["min_rating_floor"])
-        if p["rating"] < min_rating_floor:
-            roto_confirmed_min_rating = float(moon_cfg.get("roto_confirmed_min_rating", 2.2))
-            roto_confirmed_min_boost = float(moon_cfg.get("roto_confirmed_min_boost", 2.5))
-            _roto_entry = (rw_statuses or {}).get(p["name"].lower(), {})
-            _roto_status = _roto_entry.get("status", "unknown")
-            _is_roto_confirmed = _roto_status in ("confirmed", "expected")
-            _has_cascade = p.get("_cascade_bonus", 0) >= 5.0
-            if (_is_roto_confirmed or _has_cascade) and est_mult >= roto_confirmed_min_boost and p["rating"] >= roto_confirmed_min_rating:
-                pass  # confirmed rotation player with meaningful boost — allow through
-            else:
-                continue
-
-        # ── Moonshot EV (boost-dominance formula) ──────────────────────────────
-        # Core formula: RS × boost_leverage × (slot + boost)
-        # Boost dominance audit (Mar 19): removed variance penalty (moonshot IS variance),
-        # removed Claude matchup factor (noise). Light math matchup kept.
-        opp_abbr = p.get("opp", "")
-        matchup_factor = _compute_matchup_factor(p, opp_abbr, def_stats or {}, dvp_data=dvp_data)
-        matchup_factor = max(
-            float(_cfg("matchup.moonshot_adj_min", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_min"])),
-            min(float(_cfg("matchup.moonshot_adj_max", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_max"])), matchup_factor)
-        )
-
-        # Boost leverage — the core moonshot signal. High-boost players get
-        # exponentially more weight so the MILP strongly favors them.
-        boost_power = moon_cfg.get("boost_leverage_power", _moon_defaults["boost_leverage_power"])
-        boost_leverage = max(est_mult, 0.2) ** boost_power
-
-        adj_ceiling = round(p["rating"] * matchup_factor * boost_leverage, 3)
-
-        # Scoring bias: reward players who actually score over pure rebounders/defenders.
-        # Leaderboard data (Mar 15-19): winners are scorers (Harkless RS 4.2, Bailey RS 5.0,
-        # Williams RS 4.0, Gillespie RS 4.5) — not big men accumulating reb/blk only.
-        pts_bias_threshold = float(moon_cfg.get("scoring_pts_bias_threshold", 10.0))
-        pts_bias_scale = float(moon_cfg.get("scoring_pts_bias_scale", 0.0))
-        if pts_bias_scale > 0 and p.get("pts", 0) > pts_bias_threshold:
-            pts_bias = 1.0 + (p["pts"] - pts_bias_threshold) * pts_bias_scale
-            adj_ceiling = round(adj_ceiling * pts_bias, 3)
-
-        # Scorer upside: efficient scorers with real volume get a moonshot ceiling boost.
-        # Data: Jalen Green, Aaron Nesmith, DeRozan under-projected on multiple dates —
-        # they generate RS 4.5–6.8 when hot but project 2.6–4.1 from season averages.
-        # Only applies when season_min data is present (not inferred projections).
-        scorer_upside_cfg = moon_cfg.get("scorer_upside", {})
-        if scorer_upside_cfg.get("enabled", True):
-            su_min_ppm = float(scorer_upside_cfg.get("min_pts_per_min", 0.48))
-            su_min_pts = float(scorer_upside_cfg.get("min_season_pts", 12.0))
-            su_mult = float(scorer_upside_cfg.get("multiplier", 1.10))
-            su_ppm = p.get("pts", 0) / max(p.get("season_min", 1) or 1, 1)
-            su_season_pts = p.get("season_pts", p.get("pts", 0)) or 0
-            if su_ppm >= su_min_ppm and su_season_pts >= su_min_pts:
-                adj_ceiling = round(adj_ceiling * su_mult, 3)
-
-        _evb = max(0.0, min(0.5, float(moon_cfg.get("ev_rating_blend", 0.0))))
-        if _evb > 1e-9:
-            adj_ceiling = round(
-                (1.0 - _evb) * adj_ceiling + _evb * (p["rating"] * matchup_factor),
-                3,
-            )
-
-        # Moonshot EV: MILP will optimize slot assignment on top.
-        # Minutes direction factor applied here too — same upside/downside signal.
-        _moon_pm_factor = _pred_min_direction_factor(pred_min, season_min, recent_min)
-        moonshot_ev = round(adj_ceiling * (avg_slot + est_mult) * _moon_pm_factor, 2)
-
-        moonshot_pool.append({
-            **p,
-            "moonshot_ev":    moonshot_ev,
-            "adj_ceiling":    adj_ceiling,
-            "_matchup_factor": round(matchup_factor, 3),
-            "_rw_cleared":    True,
-            "_is_star_anchor": is_moonshot_star_anchor,
-        })
-
-    # No center cap — position balancing removed (boost dominance audit Mar 19).
-    # Poeltl, Queta, Achiuwa all appear in winning lineups.
-    moonshot_max_team = _moon_max_per_team
-
-    # Star anchor indices for moonshot MILP — same constraint as chalk.
-    # Forces 1 guaranteed high-RS producer in moonshot (unified 1+4 strategy).
-    moonshot_star_indices = [
-        i for i, p in enumerate(moonshot_pool)
-        if p.get("_is_star_anchor", False)
-    ] if sa_enabled else []
-
-    if core_pool_enabled:
-        # ── Core pool path: one 7–10 player core; both lineups are configurations of it ──
-        def _moonshot_ev_for_player(p, _avg_slot, _moon_cfg, _def_stats, _matchup_intel_map):
-            _est = p.get("est_mult", 0.3)
-            _boost_power = _moon_cfg.get("boost_leverage_power", _CONFIG_DEFAULTS["moonshot"]["boost_leverage_power"])
-            _boost_leverage = max(_est, 0.2) ** _boost_power
-            # Simplified: rating × matchup × boost_leverage (no variance, no Claude)
-            _opp = p.get("opp", "")
-            _matchup = _compute_matchup_factor(p, _opp, _def_stats or {}, dvp_data=dvp_data)
-            _matchup = max(
-                float(_cfg("matchup.moonshot_adj_min", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_min"])),
-                min(float(_cfg("matchup.moonshot_adj_max", _CONFIG_DEFAULTS["matchup"]["moonshot_adj_max"])), _matchup)
-            )
-            _adj = round(p["rating"] * _matchup * _boost_leverage, 3)
-            _pts_threshold = float(_moon_cfg.get("scoring_pts_bias_threshold", 10.0))
-            _pts_scale = float(_moon_cfg.get("scoring_pts_bias_scale", 0.0))
-            if _pts_scale > 0 and p.get("pts", 0) > _pts_threshold:
-                _adj = round(_adj * (1.0 + (p["pts"] - _pts_threshold) * _pts_scale), 3)
-            _evb2 = max(0.0, min(0.5, float(_moon_cfg.get("ev_rating_blend", 0.0))))
-            if _evb2 > 1e-9:
-                _adj = round((1.0 - _evb2) * _adj + _evb2 * (p["rating"] * _matchup), 3)
-            return round(_adj * (_avg_slot + _est), 2), _adj
-
-        moonshot_by_name = {p["name"]: p for p in moonshot_pool}
-        eligible_union = []
-        # Core pool = players eligible for BOTH chalk and moonshot (intersection),
-        # plus chalk-only and moonshot-only with computed cross-EVs.
-        # Starting 5 runs on the core pool (chalk-eligible players ranked by _core_score).
-        # Moonshot runs on its own moonshot_pool — see comment at line ~5441 for rationale.
-        for p in chalk_eligible:
-            rec = {**p, "chalk_ev_capped": p["chalk_ev_capped"], "capped_boost": p["capped_boost"]}
-            if p["name"] in moonshot_by_name:
-                rec["moonshot_ev"] = moonshot_by_name[p["name"]]["moonshot_ev"]
-                rec["adj_ceiling"] = moonshot_by_name[p["name"]]["adj_ceiling"]
-            else:
-                _mev, _adj = _moonshot_ev_for_player(p, avg_slot, moon_cfg, def_stats, _matchup_intel)
-                rec["moonshot_ev"] = _mev
-                rec["adj_ceiling"] = _adj
-            eligible_union.append(rec)
-        # Moonshot-only players (pass moonshot gates but not chalk gates) are NOT added
-        # to the core pool. The core pool is one shared pool — if a player can't make
-        # Starting 5, they shouldn't be in the pool at all. This prevents the chalk gate
-        # bypass where sub-4.0-RS moonshot-only players leaked into Starting 5.
-
-        # Dynamic core size: scale with slate size so a 3-game slate uses ~9 slots
-        # instead of the full 20, keeping the pool focused. Configured size is the cap.
-        _num_games = len({p.get("gameId") for p in projections if p.get("gameId")}) or 1
-        _size_per_game = float(core_pool_cfg.get("size_per_game", 3.0))
-        _dynamic_cap = max(8, round(_num_games * _size_per_game))
-        core_size = min(int(core_pool_cfg.get("size", 15)), _dynamic_cap, max(5, len(eligible_union)))
-        core_metric = (core_pool_cfg.get("metric") or "max_ev").lower()
-        blend_w = float(core_pool_cfg.get("blend_weight", 0.5))
-        for r in eligible_union:
-            ce, me = r.get("chalk_ev_capped", 0), r.get("moonshot_ev", 0)
-            if core_metric == "tv_floor":
-                # TV with RS floor gate — 18-date audit fix: RS 2.5/boost 3.0x ghosts beat
-                # RS 5.0/boost 1.5x actual winners under pure TV. Floor at 3.8 ensures only
-                # legit producers enter pool, then rank by TV. Every daily winner since Feb 19
-                # had RS >= 3.5; 3.8 floor adds small tolerance while blocking deep bench.
-                _tv_floor = float(core_pool_cfg.get("tv_floor_min_rs", 3.8))
-                _rs = r.get("rating", 0)
-                r["_core_score"] = (_rs * (avg_slot + r.get("est_mult", 0.3))
-                                    if _rs >= _tv_floor else -1.0)
-            elif core_metric == "rs_x_boost":
-                # RS × (2.0 + boost) — matches confirmed leaderboard formula
-                r["_core_score"] = r.get("rating", 0) * (2.0 + r.get("est_mult", 0.3))
-            elif core_metric == "ev_weighted":
-                # v62: RS^1.3 × (2.0 + boost) — RS exponent reflects 5x elasticity ratio.
-                # Data: each RS point is worth 4.72 value at boost≥2.5 vs 2.10 at boost<1.5.
-                # Exponent amplifies RS differences: RS 5.0 vs 3.5 goes from 1.43x to 1.62x.
-                _rs_exp = float(core_pool_cfg.get("rs_exponent", 1.3))
-                _rating = max(r.get("rating", 0), 0.1)
-                _base_score = (_rating ** _rs_exp) * (2.0 + r.get("est_mult", 0.3))
-                # Apply draft tier multiplier if enabled
-                dt_cfg = _cfg("draft_tier", _CONFIG_DEFAULTS.get("draft_tier", {}))
-                if dt_cfg.get("enabled", False):
-                    _big_markets = set(_cfg("card_boost.big_market_teams",
-                        _CONFIG_DEFAULTS["card_boost"]["big_market_teams"]))
-                    _log_drafts = _estimate_log_drafts(
-                        r.get("season_pts", 0), r.get("team", "") in _big_markets,
-                        r.get("recent_pts", 0), r.get("season_pts", 0)
-                    )
-                    _tier = _assign_draft_tier(_log_drafts)
-                    _tier_mult = _draft_tier_multiplier(_tier, _rating)
-                    _base_score *= _tier_mult
-                    r["_draft_tier"] = _tier
-                    r["_draft_tier_mult"] = _tier_mult
-                # Apply leaderboard classifier multiplier if enabled
-                _clf_cfg = _cfg("leaderboard_clf", _CONFIG_DEFAULTS.get("leaderboard_clf", {}))
-                if _clf_cfg.get("enabled", False):
-                    _lb_prob = _predict_leaderboard_prob(r)
-                    _clf_weight = float(_clf_cfg.get("weight", 0.6))
-                    _clf_min = float(_clf_cfg.get("min_score", 0.7))
-                    _clf_max = float(_clf_cfg.get("max_score", 1.3))
-                    _clf_mult = max(_clf_min, min(_clf_max, _clf_min + _clf_weight * _lb_prob))
-                    _base_score *= _clf_mult
-                    r["_leaderboard_prob"] = round(_lb_prob, 3)
-                    r["_clf_mult"] = round(_clf_mult, 3)
-                r["_core_score"] = _base_score
-            elif core_metric == "tv":
-                # Pure Total Value formula: RS × (avg_slot + boost). No double-counting,
-                # no exponential leverage — ranks players by actual expected draft value.
-                # 14-date audit: this correctly ranks Unicorn > Ghost > Hidden Star,
-                # matching real winner frequencies (50% / 21% / 29%).
-                r["_core_score"] = r.get("rating", 0) * (avg_slot + r.get("est_mult", 0.3))
-            elif core_metric == "rs":
-                r["_core_score"] = r.get("rating", 0)
-            elif core_metric == "max_ev":
-                r["_core_score"] = max(ce, me)
-            else:
-                r["_core_score"] = blend_w * ce + (1 - blend_w) * me
-        eligible_union.sort(key=lambda x: x.get("_core_score", 0), reverse=True)
-        _pgc = int(core_pool_cfg.get("per_game_carry", 0) or 0)
-        if _pgc > 0:
-            _avg_slot_cp = float(_cfg("lineup.avg_slot_multiplier", 1.6))
-            core_pool = _apply_per_game_carry_core_pool(
-                eligible_union, chalk_eligible, core_size, _pgc, _avg_slot_cp
-            )
-        else:
-            core_pool = eligible_union[:core_size]
-
-        # Core pool is built exclusively from chalk_eligible — all players passed
-        # chalk gates (4.0 RS, 22 min, 7 pts, 0.28 ppm). Both MILP runs use core_pool.
-        # If core pool has <5 players, fall back to full chalk_eligible.
-        chalk_source = core_pool if len(core_pool) >= 5 else chalk_eligible
-        # Star indices relative to chalk_source
-        _chalk_source_names = [p["name"] for p in chalk_source]
-        _core_star_indices = [
-            i for i, p in enumerate(chalk_source)
-            if p.get("_is_star_anchor", False)
-        ] if sa_enabled else []
-        _chalk_source_games = [_player_game_id(p) for p in chalk_source]
-        chalk = optimize_lineup(chalk_source, n=5, sort_key="chalk_ev_capped",
-                                rating_key="rating", card_boost_key="chalk_milp_boost",
-                                max_per_team=_chalk_max_per_team,
-                                max_double_teams=_chalk_max_double_teams,
-                                objective_mode="chalk",
-                                variance_penalty=0.5,
-                                star_indices=_core_star_indices if _core_star_indices else None,
-                                min_star_count=sa_require if _core_star_indices else 0,
-                                max_star_count=sa_max if sa_max > 0 else 0,
-                                max_per_game=_chalk_max_per_game,
-                                player_games=_chalk_source_games,
-                                min_high_boost_count=_chalk_min_high_boost,
-                                high_boost_threshold=_chalk_high_boost_thr,
-                                min_big_boost_count=_chalk_min_big_boost,
-                                big_boost_threshold=_chalk_big_boost_thr)
-        chalk_ids = [p.get("id") for p in chalk if p.get("id")]
-        # ARCHITECTURE: Moonshot uses its own moonshot_pool, NOT core_pool.
-        # core_pool = chalk-eligible players ranked by _core_score → feeds Starting 5 MILP.
-        # moonshot_pool = separate pool with different eligibility gates (boost >= min_card_boost,
-        # RS >= 3.0, high-boost-role pathway for 2.0x+/14min players) ranked by moonshot_ev
-        # which uses boost_leverage_power to strongly favor 3.0x boost players.
-        # Rationale: Using core_pool (chalk-eligible) for moonshot caused it to pick the same
-        # RS-ranked stars as Starting 5. Moonshot needs its own contrarian pool.
-        # overlap_cap=3 ensures some differentiation from Starting 5 (max 3 shared players).
-        # Moonshot star indices relative to moonshot_pool
-        _moon_star_indices = [
-            i for i, p in enumerate(moonshot_pool)
-            if p.get("_is_star_anchor", False)
-        ] if sa_enabled else []
-        _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
-        upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
-                                 rating_key="adj_ceiling",
-                                 card_boost_key="est_mult",
-                                 max_per_team=moonshot_max_team,
-                                 max_double_teams=_moon_max_double_teams,
-                                 objective_mode="moonshot",
-                                 variance_uplift=0.35,
-                                 boost_leverage_extra_power=0.8,
-                                 overlap_player_ids=chalk_ids,
-                                 overlap_cap=3,
-                                 two_phase=True,
-                                 raw_rating_key="rating",
-                                 max_per_game=_moon_max_per_game,
-                                 player_games=_moon_pool_games,
-                                 star_indices=_moon_star_indices if _moon_star_indices else None,
-                                 min_star_count=sa_require if _moon_star_indices else 0,
-                                 max_star_count=sa_max if sa_max > 0 else 0)
-    else:
-        _moon_pool_games = [_player_game_id(p) for p in moonshot_pool]
-        upside = optimize_lineup(moonshot_pool, n=5, sort_key="moonshot_ev",
-                                 rating_key="adj_ceiling",
-                                 card_boost_key="est_mult",
-                                 max_per_team=moonshot_max_team,
-                                 max_double_teams=_moon_max_double_teams,
-                                 objective_mode="moonshot",
-                                 variance_uplift=0.35,
-                                 boost_leverage_extra_power=0.8,
-                                 two_phase=True,
-                                 raw_rating_key="rating",
-                                 max_per_game=_moon_max_per_game,
-                                 player_games=_moon_pool_games,
-                                 star_indices=moonshot_star_indices if moonshot_star_indices else None,
-                                 min_star_count=sa_require if moonshot_star_indices else 0,
-                                 max_star_count=sa_max if sa_max > 0 else 0)
-        core_pool = None
-
-    # Chalk fallback: if MILP returns <5 but we have enough candidates, fill from sorted EV.
-    # This protects small slates where hard constraints can make the MILP infeasible.
-    if len(chalk) < 5 and chalk_eligible:
-        _filled = sorted(chalk_eligible, key=lambda x: x.get("chalk_ev_capped", 0), reverse=True)[:5]
-        for i, p in enumerate(_filled):
-            p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
-        chalk = _filled
-        print(f"[build_lineups] chalk MILP short ({len(chalk)}) — EV fallback used")
-
-    # Moonshot fallback 1: if gateing produced too small a pool on a small slate,
-    # build a relaxed pool so users still get a usable contrarian lineup.
-    if len(moonshot_pool) < 5:
-        relaxed_pool = []
-        # Keep this conservative: only relax when the strict pool is too thin.
-        relaxed_min_rating = 2.5
-        relaxed_min_pred_min = 12.0
-        relaxed_min_boost = max(1.0, float(min_boost) - 0.5)
+    if len(candidate_pool) < 5:
+        print(f"[build_lineups] candidate pool thin ({len(candidate_pool)}), relaxing RS floor to 1.5")
         for p in projections:
             if p.get("name") in BLACKLISTED_PLAYERS:
                 continue
-            if p.get("rating", 0) < relaxed_min_rating:
+            if p.get("name") in {c.get("name") for c in candidate_pool}:
                 continue
-            if p.get("predMin", 0) < relaxed_min_pred_min:
+            if p.get("rating", 0) < 1.5:
                 continue
-            if p.get("est_mult", 0) < relaxed_min_boost:
+            if p.get("injury_status", "").upper() == "OUT":
                 continue
-            if use_rotowire and rw_statuses and p.get("injury_status", "").upper() == "OUT":
-                continue
-            _mp = {**p}
-            # Apply boost leverage consistent with main moonshot path
-            _relax_boost_power = moon_cfg.get("boost_leverage_power", _moon_defaults["boost_leverage_power"])
-            _relax_boost_lev = max(float(p.get("est_mult", 0)), 0.2) ** _relax_boost_power
-            _mp["adj_ceiling"] = round(float(p.get("rating", 0)) * _relax_boost_lev, 3)
-            _relax_pm_factor = _pred_min_direction_factor(p.get("predMin", 0), p.get("season_min", 0), p.get("recent_min", 0))
-            _mp["moonshot_ev"] = round(_mp["adj_ceiling"] * (avg_slot + float(p.get("est_mult", 0))) * _relax_pm_factor, 2)
-            relaxed_pool.append(_mp)
-        if relaxed_pool:
-            moonshot_pool = sorted(relaxed_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
-            print(f"[build_lineups] moonshot strict pool too thin ({len(moonshot_pool)}) — relaxed small-slate pool used")
-
-    # Moonshot fallback 2: if MILP returned empty but we have candidates, sort by moonshot_ev.
-    # Prevents "No players to display yet" when constraints are unsatisfiable.
-    # Applies max_per_game constraint via greedy selection to avoid over-concentration.
-    if not upside and moonshot_pool:
-        _moon_max_pg = int(_cfg("lineup.moonshot_max_per_game", 2))
-        _sorted_pool = sorted(moonshot_pool, key=lambda x: x.get("moonshot_ev", 0), reverse=True)
-        _fallback = []
-        _game_counts = {}
-        for p in _sorted_pool:
-            if len(_fallback) >= 5:
+            candidate_pool.append(p)
+            if len(candidate_pool) >= 10:
                 break
-            _gid = "_vs_".join(sorted([p.get("team", ""), p.get("opp", "")]))
-            if _moon_max_pg > 0 and _game_counts.get(_gid, 0) >= _moon_max_pg:
-                continue
-            _game_counts[_gid] = _game_counts.get(_gid, 0) + 1
-            _fallback.append(p)
-        # If constraints made it impossible to get 5, relax and fill
-        if len(_fallback) < 5:
-            for p in _sorted_pool:
-                if len(_fallback) >= 5:
-                    break
-                if p not in _fallback:
-                    _fallback.append(p)
-        upside = _fallback[:5]
-        for i, p in enumerate(upside):
-            p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
-        print(f"[build_lineups] moonshot MILP empty — sort fallback used ({len(upside)} players)")
+
+    # ── Step 2: Score by EV = RS × (2.0 + boost) ──────────────────────────
+    # Strategy Report Finding 2 + Finding 8: this formula beats all alternatives.
+    for p in candidate_pool:
+        p["draft_ev"] = round(float(p.get("rating", 0)) * (2.0 + float(p.get("est_mult", 0))), 2)
+        # Compute moonshot_ev for backward compatibility
+        p["moonshot_ev"] = p["draft_ev"]
+
+    # ── Step 3: Rank by EV descending ──────────────────────────────────────
+    candidate_pool.sort(key=lambda x: (-x.get("draft_ev", 0), -x.get("rating", 0)))
+
+    # ── Step 4: Safe lineup (Starting 5) ───────────────────────────────────
+    # Top 5 by EV. When two players have similar EV (within threshold),
+    # the safe draft prefers the lower-variance player (Finding 6: reliable floor).
+    safe_pool = list(candidate_pool)
+    safe_pool.sort(key=lambda x: (-x.get("draft_ev", 0), x.get("player_variance", 0)))
+    chalk = safe_pool[:5]
+
+    # ── Step 5: Upside lineup (Moonshot) ───────────────────────────────────
+    # Start from the same ranked list. Make 1-2 swaps pushing toward higher
+    # ceiling: where two candidates have similar EV (within ~2 pts), the upside
+    # draft takes the higher-variance / higher-boost player.
+    upside = list(chalk)  # start as copy of safe
+    chalk_names = {p.get("name") for p in chalk}
+    # Find swap candidates: players NOT in safe lineup, ranked by EV
+    swap_candidates = [p for p in candidate_pool if p.get("name") not in chalk_names]
+    swaps_made = 0
+    for candidate in swap_candidates:
+        if swaps_made >= max_swaps:
+            break
+        c_ev = candidate.get("draft_ev", 0)
+        c_var = candidate.get("player_variance", 0)
+        c_boost = candidate.get("est_mult", 0)
+        # Find the weakest safe player within the EV threshold
+        best_swap_idx = -1
+        best_swap_score = -1
+        for i, safe_p in enumerate(upside):
+            s_ev = safe_p.get("draft_ev", 0)
+            ev_gap = s_ev - c_ev
+            if ev_gap > ev_swap_threshold:
+                continue  # candidate is too far below this safe player
+            if ev_gap < -ev_swap_threshold:
+                continue  # candidate is much better — should already be in top 5
+            # Candidate has higher variance OR higher boost → upside swap
+            s_var = safe_p.get("player_variance", 0)
+            s_boost = safe_p.get("est_mult", 0)
+            if c_var > s_var or c_boost > s_boost + 0.5:
+                swap_score = (c_var - s_var) + (c_boost - s_boost) * 0.5
+                if swap_score > best_swap_score:
+                    best_swap_score = swap_score
+                    best_swap_idx = i
+        if best_swap_idx >= 0 and best_swap_score > 0:
+            upside[best_swap_idx] = candidate
+            swaps_made += 1
+
+    # ── Step 6: Assign slots by RS descending (Finding 3) ──────────────────
+    # Provably optimal: highest RS → 2.0x, next → 1.8x, etc.
+    chalk.sort(key=lambda x: -float(x.get("rating", 0)))
+    upside.sort(key=lambda x: -float(x.get("rating", 0)))
+    for i, p in enumerate(chalk):
+        p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
+    for i, p in enumerate(upside):
+        p["slot"] = _SLOT_LABELS_SHARED[i] if i < len(_SLOT_LABELS_SHARED) else "1.0x"
+
+    # core_pool = full ranked candidate list (for lineup review / watchlist compatibility)
+    core_pool = candidate_pool[:20]
 
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
 
