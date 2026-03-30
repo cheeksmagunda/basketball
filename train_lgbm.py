@@ -367,10 +367,25 @@ def _assign_weights(y_series: pd.Series) -> pd.Series:
 sample_weight = df.groupby(date_col, group_keys=False)[target].transform(_assign_weights)
 
 # v62: Top-performers sample weighting — players on the actual leaderboard get 3x weight
+top_perf_parquet = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "top_performers.parquet")
 top_perf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "top_performers.csv")
-if os.path.exists(top_perf_path):
+_tp_loaded = False
+if os.path.exists(top_perf_parquet):
+    try:
+        tp_df = pd.read_parquet(top_perf_parquet)
+        print(f"   Loaded top_performers from parquet ({len(tp_df)} rows)")
+        _tp_loaded = True
+    except Exception:
+        pass
+if not _tp_loaded and os.path.exists(top_perf_path):
     try:
         tp_df = pd.read_csv(top_perf_path)
+        print(f"   Loaded top_performers from CSV ({len(tp_df)} rows)")
+        _tp_loaded = True
+    except Exception as e:
+        print(f"   [WARN] Could not load top_performers: {e}")
+if _tp_loaded:
+    try:
         tp_df["norm_name"] = tp_df["player_name"].apply(_normalize_name)
         tp_df["date_key"] = pd.to_datetime(tp_df["date"]).dt.normalize()
         tp_keys = set(zip(tp_df["norm_name"], tp_df["date_key"]))
@@ -383,7 +398,7 @@ if os.path.exists(top_perf_path):
         n_lb = sum(is_leaderboard)
         print(f"   Top-performers boost: {n_lb} samples get 3x weight (from {len(tp_keys)} leaderboard entries)")
     except Exception as e:
-        print(f"   [WARN] Could not load top_performers.csv for weighting: {e}")
+        print(f"   [WARN] Could not apply top_performers weighting: {e}")
 
 X = df[FEATURES].copy()
 y = df[target].astype(float)

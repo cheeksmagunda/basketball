@@ -42,29 +42,38 @@ from typing import Dict, Iterable, Optional, Set
 REPO = Path(__file__).resolve().parent.parent
 DATA = REPO / "data"
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+TEAMS_JSON = DATA / "teams.json"
 
-# Canonical set follows the abbreviations observed in prediction CSVs.
-CANONICAL_TEAMS = {
-    "ATL", "BKN", "BOS", "CHA", "CHI", "CLE", "DAL", "DEN", "DET",
-    "GS", "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN",
-    "NO", "NY", "OKC", "ORL", "PHI", "PHX", "POR", "SA", "SAC",
-    "TOR", "UTAH", "WSH",
-}
 
-TEAM_ALIASES = {
-    "GSW": "GS",
-    "NYK": "NY",
-    "SAS": "SA",
-    "NOP": "NO",
-    "NOH": "NO",
-    "WAS": "WSH",
-    "UTA": "UTAH",
-    "UTH": "UTAH",
-    "PHO": "PHX",
-    "BRO": "BKN",
-    "NJN": "BKN",
-    "CHO": "CHA",
-}
+def _load_teams_from_json() -> tuple[set[str], dict[str, str]]:
+    """Load canonical teams and alias mapping from data/teams.json."""
+    if not TEAMS_JSON.exists():
+        # Hardcoded fallback for backward compatibility
+        canonical = {
+            "ATL", "BKN", "BOS", "CHA", "CHI", "CLE", "DAL", "DEN", "DET",
+            "GS", "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN",
+            "NO", "NY", "OKC", "ORL", "PHI", "PHX", "POR", "SA", "SAC",
+            "TOR", "UTAH", "WSH",
+        }
+        aliases = {
+            "GSW": "GS", "NYK": "NY", "SAS": "SA", "NOP": "NO", "NOH": "NO",
+            "WAS": "WSH", "UTA": "UTAH", "UTH": "UTAH", "PHO": "PHX",
+            "BRO": "BKN", "NJN": "BKN", "CHO": "CHA",
+        }
+        return canonical, aliases
+    with TEAMS_JSON.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    canonical: set[str] = set()
+    aliases: dict[str, str] = {}
+    for canon, info in data.get("canonical", {}).items():
+        canonical.add(canon)
+        for alias in info.get("aliases", []):
+            aliases[alias] = canon
+    return canonical, aliases
+
+
+# Load from centralized data/teams.json (single source of truth)
+CANONICAL_TEAMS, TEAM_ALIASES = _load_teams_from_json()
 
 
 def _norm_name(raw: str) -> str:

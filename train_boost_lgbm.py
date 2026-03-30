@@ -38,6 +38,7 @@ from api.features import (
 )
 
 TOP_PERFORMERS = Path("data/top_performers.csv")
+TOP_PERFORMERS_PARQUET = Path("data/top_performers.parquet")
 ACTUALS_DIR = Path("data/actuals")
 MOST_POPULAR_DIR = Path("data/most_popular")
 PREDICTIONS_DIR = Path("data/predictions")
@@ -131,10 +132,26 @@ def _load_prediction_index() -> tuple[dict, dict]:
 
 
 def _load_top_performers() -> list[dict]:
+    # Prefer parquet for faster loading; fall back to CSV
+    rows = []
+    if TOP_PERFORMERS_PARQUET.exists():
+        try:
+            import pandas as pd
+            df = pd.read_parquet(TOP_PERFORMERS_PARQUET)
+            for _, r in df.iterrows():
+                boost = _safe_float(r.get("actual_card_boost"), 0.0)
+                rs = _safe_float(r.get("actual_rs"), 0.0)
+                name = str(r.get("player_name") or "").strip()
+                date_str = str(r.get("date") or "").strip()
+                if boost > 0 and rs > 0 and name and date_str:
+                    rows.append({"date": date_str, "player_name": name, "actual_card_boost": boost})
+            print(f"[boost] Loaded {len(rows)} rows from parquet")
+            return rows
+        except Exception:
+            pass  # Fall through to CSV
     if not TOP_PERFORMERS.exists():
         print(f"[ERROR] Missing {TOP_PERFORMERS}")
         return []
-    rows = []
     with TOP_PERFORMERS.open("r", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             boost = _safe_float(r.get("actual_card_boost"), 0.0)
