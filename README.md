@@ -18,7 +18,7 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 ## Architecture
 
 ```
-index.html             — 5-tab frontend (Predict | Line | Parlay | Ben | Log, vanilla JS)
+index.html             — 4-tab frontend (Predict | Line | Parlay | Ben, vanilla JS)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only)
 api/odds_math.py       — Shared American-odds implied-prob helpers
@@ -31,7 +31,7 @@ lgbm_model.pkl         — LightGBM model bundle {model, features}
 train_lgbm.py          — Training script (12 features)
 data/model-config.json — Runtime model config (Ben/Lab writes here; 5-min cache)
 data/predictions/      — Git-tracked daily prediction CSVs
-data/top_performers.csv — **Main historical dataset** (leaderboard outcomes by date); primary source for Log + audit
+data/top_performers.csv — **Main historical dataset** (leaderboard outcomes by date); primary source for audit
 data/actuals/          — Legacy per-day CSVs (same schema as rollup); optional fallback when a date is missing from the mega file
 data/most_popular/     — Per-date most-drafted / popularity CSVs (developer ingest; `save-ownership` writes here)
 data/most_drafted_3x/  — High-boost popular sub-list per date (optional)
@@ -54,10 +54,9 @@ server.py              — Local dev server (uvicorn)
 | Tab | Purpose |
 |-----|---------|
 | **Predict** | Live slate optimizer. Starting 5 (chalk) + Moonshot lineups. Sub-tabs: Slate-Wide / Game |
-| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh on a game-window cron. Resolved picks also in Recent Picks history |
+| **Line** | Line of the Day — best player prop edge. Over/Under sub-tabs. Odds refresh on a game-window cron. Recent Picks history with streak + hit rate |
 | **Parlay** | Safest 3-leg player prop parlay (certainty-focused). Ticket + Recent Parlays history with modal resolution |
 | **Ben** | Chat interface (Claude Opus). Always available. Historical screenshot ingestion is **developer-only** this season (see [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md)) |
-| **Log** | Historical drill-down — graded cards (actual RS from `top_performers` / legacy actuals + ESPN box scores vs projections) |
 
 ## Dual-Engine Architecture
 
@@ -118,7 +117,7 @@ Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku whe
 
 ## Ben (Lab) Interface
 
-Plain chat powered by `claude-opus-4-6`. Context is auto-loaded in the background (briefing, config, slate, line, log, parlay when available). **Historical leaderboard CSVs are not uploaded from the app** this season — use [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md) (curl/scripts). `POST /api/hindsight` remains available for optimal hindsight lineups when you have actual RS inputs.
+Plain chat powered by `claude-opus-4-6`. Context is auto-loaded in the background (briefing, config, slate, line, parlay when available). **Historical leaderboard CSVs are not uploaded from the app** this season — use [docs/HISTORICAL_DATA.md](docs/HISTORICAL_DATA.md) (curl/scripts). `POST /api/hindsight` remains available for optimal hindsight lineups when you have actual RS inputs.
 
 **Config updates**: Ben can propose model parameter changes, run backtests, and apply changes to `data/model-config.json` via the GitHub Contents API — no redeploy needed.
 
@@ -137,9 +136,9 @@ Plain chat powered by `claude-opus-4-6`. Context is auto-loaded in the backgroun
 | `/api/save-boosts` | POST | Persist pre-game boosts to `data/boosts/{date}.json` (Layer 0) and bust slate cache |
 | `/api/save-actuals` | POST | Save parsed actuals to GitHub CSV + auto-generate audit JSON |
 | `/api/audit/get?date=X` | GET | Pre-computed accuracy audit (MAE, directional acc, top misses) |
-| `/api/log/dates` | GET | List dates with stored prediction/actual data |
-| `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope |
-| `/api/log/actuals-stats?date=X` | GET | ESPN box score stats (PTS, REB, AST, STL, BLK, MIN) per player for completed games |
+| `/api/log/dates` | GET | List dates with stored prediction/actual data (backend only — no frontend Log tab) |
+| `/api/log/get?date=X` | GET | Predictions + actuals for a given date, grouped by scope (backend only) |
+| `/api/log/actuals-stats?date=X` | GET | ESPN box score stats per player for completed games (backend only) |
 | `/api/hindsight` | POST | Optimal hindsight lineup from actual RS scores |
 | `/api/refresh` | GET | Clear `/tmp` caches + config cache + bust GitHub slate cache; optional auto-save if locked. **No auth required** (non-destructive; used by daily cron). |
 | `/api/injury-check` | GET | Cron: check RotoWire for newly OUT/questionable players; regenerate affected games only |
@@ -265,7 +264,7 @@ Real Sports **leaderboard outcomes** (who won the value contest, how many drafts
 
 | Artifact | Role |
 |----------|------|
-| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player) with **`team`** (NBA abbr). **Log** and **`_compute_audit`** read this first for each date. Rebuild via `scripts/rebuild_top_performers_mega.py` / sync scripts as needed. |
+| **`data/top_performers.csv`** | **Canonical mega file**: one row per (date, player) with **`team`** (NBA abbr). **`_compute_audit`** reads this first for each date. Rebuild via `scripts/rebuild_top_performers_mega.py` / sync scripts as needed. |
 | **`data/actuals/{date}.csv`** | Legacy per-day CSVs (same columns as mega minus `date`, including **`team`**). Used when a date has **no** rows in the mega file, and for older tooling that still expects per-day files. |
 | **`data/most_popular/{date}.csv`** | Most-drafted / popularity snapshots (`save-most-popular` / `save-ownership` alias). Training + `calibrate-boost`. |
 | **`data/predictions/{date}.csv`** | Pre-game projections — feature source for drafts/boost training and `scripts/verify_top_performers.py`. |
@@ -358,4 +357,3 @@ Predictions lock 5 minutes before the earliest game tip-off. **Slates unlock bas
 - When over and under picks are the same player, `/api/refresh-line-odds` fetches Odds API once and applies the result to both (deduped).
 - RotoWire scraping is free-tier only (availability + injury flags, no projected minutes).
 - Keep `data/slate/` and `data/locks/` lean. Old cache snapshots should be pruned so only active-slate artifacts remain.
-- History tab shows a 60-day date strip; dates with stored data are highlighted (from `/api/log/dates`).
