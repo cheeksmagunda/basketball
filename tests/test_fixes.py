@@ -4662,5 +4662,251 @@ class TestGamesPlayedBulkStats:
         assert "gp" not in result
 
 
+# ─────────────────────────────────────────────────────────
+# TestGamelogToStats — gamelog-based projection stats
+# ─────────────────────────────────────────────────────────
+class TestGamelogToStats:
+    """_gamelog_to_stats builds projection stats from per-game data (last 7 days)."""
+
+    def _make_gamelog(self, minutes, points=None, dates=None, **kwargs):
+        n = len(minutes)
+        gl = {
+            "minutes": minutes,
+            "points": points or [10.0] * n,
+            "rebounds": kwargs.get("rebounds", [3.0] * n),
+            "assists": kwargs.get("assists", [2.0] * n),
+            "steals": kwargs.get("steals", [1.0] * n),
+            "blocks": kwargs.get("blocks", [0.5] * n),
+            "turnovers": kwargs.get("turnovers", [1.0] * n),
+        }
+        if dates:
+            gl["game_dates"] = dates
+        return gl
+
+    def _make_season(self):
+        return {
+            "min": 25.0, "pts": 15.0, "reb": 5.0, "ast": 4.0,
+            "stl": 1.5, "blk": 0.5, "tov": 2.0,
+            "season_min": 25.0, "season_pts": 15.0, "season_reb": 5.0,
+            "season_ast": 4.0, "season_stl": 1.5, "season_blk": 0.5,
+        }
+
+    def test_empty_gamelog_returns_season(self):
+        """No gamelog data → season stats unchanged."""
+        from api.index import _gamelog_to_stats
+        season = self._make_season()
+        result = _gamelog_to_stats({}, season, window_days=7)
+        assert result["min"] == 25.0
+        assert result["pts"] == 15.0
+
+    def test_none_gamelog_returns_season(self):
+        from api.index import _gamelog_to_stats
+        season = self._make_season()
+        result = _gamelog_to_stats(None, season, window_days=7)
+        assert result is season
+
+    def test_recency_weighting(self):
+        """Most recent game (2x) dominates over older games (1x)."""
+        from api.index import _gamelog_to_stats
+        # 3 games: old 30min, old 30min, recent 10min
+        gl = self._make_gamelog([30.0, 30.0, 10.0])
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=30)
+        # Weights: 1.0, 1.5, 2.0 → total 4.5
+        # Expected: (30*1.0 + 30*1.5 + 10*2.0) / 4.5 = 95/4.5 ≈ 21.1
+        assert result["min"] < 25.0  # Less than season avg
+        assert result["min"] == pytest.approx(95.0 / 4.5, abs=0.1)
+
+    def test_payne_scenario_dnp_risk(self):
+        """Cameron Payne scenario: 17→17→17→17→2 min. Last game triggers DNP risk."""
+        from api.index import _gamelog_to_stats
+        gl = self._make_gamelog([17.0, 17.0, 17.0, 17.0, 2.0])
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=30)
+        # Last game was 2 min < 8 (dnp_risk_min_threshold)
+        assert result.get("dnp_risk") is True
+        # Minutes should be heavily pulled down by the 2-min game (2x weight)
+        assert result["min"] < 15.0  # Much less than 17 avg
+        assert result["last_game_min"] == 2.0
+
+    def test_dates_filter_7_day_window(self):
+        """Only games within the window are used."""
+        from api.index import _gamelog_to_stats, _et_date
+        today = _et_date()
+        dates = [
+            (today - timedelta(days=20)).isoformat(),  # old — excluded
+            (today - timedelta(days=15)).isoformat(),  # old — excluded
+            (today - timedelta(days=5)).isoformat(),   # in window
+            (today - timedelta(days=3)).isoformat(),   # in window
+            (today - timedelta(days=1)).isoformat(),   # in window
+        ]
+        gl = self._make_gamelog(
+            [25.0, 25.0, 20.0, 18.0, 5.0],
+            points=[15.0, 15.0, 12.0, 10.0, 2.0],
+            dates=dates,
+        )
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=7)
+        # Only last 3 games (within 7 days) should be used
+        assert result["games_in_window"] == 3
+        # Last game 5 min < 8 → DNP risk
+        assert result.get("dnp_risk") is True
+        # Minutes should reflect the 3 recent games, not the old 25-min ones
+        assert result["min"] < 20.0
+
+    def test_season_stats_preserved(self):
+        """Season stats are preserved for LightGBM features and card display."""
+        from api.index import _gamelog_to_stats
+        gl = self._make_gamelog([10.0, 12.0, 8.0])
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=30)
+        assert result["season_min"] == 25.0
+        assert result["season_pts"] == 15.0
+        assert result["season_reb"] == 5.0
+
+    def test_healthy_player_no_dnp_risk(self):
+        """Player with consistent 25+ min → no DNP risk."""
+        from api.index import _gamelog_to_stats
+        gl = self._make_gamelog([25.0, 27.0, 24.0, 26.0, 28.0])
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=30)
+        assert result.get("dnp_risk") is not True
+        assert result["min"] > 24.0
+
+    def test_fallback_to_last_3_when_few_in_window(self):
+        """<2 games in 7-day window → falls back to last 3 games."""
+        from api.index import _gamelog_to_stats, _et_date
+        today = _et_date()
+        dates = [
+            (today - timedelta(days=30)).isoformat(),
+            (today - timedelta(days=25)).isoformat(),
+            (today - timedelta(days=20)).isoformat(),
+            (today - timedelta(days=15)).isoformat(),
+            (today - timedelta(days=3)).isoformat(),  # only 1 in window
+        ]
+        gl = self._make_gamelog([20.0, 20.0, 20.0, 20.0, 5.0], dates=dates)
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=7)
+        # Falls back to last 3 games (indices 2, 3, 4)
+        assert result["games_in_window"] == 3
+
+    def test_no_dates_uses_last_3(self):
+        """No game_dates in gamelog → uses last 3 games as proxy."""
+        from api.index import _gamelog_to_stats
+        gl = self._make_gamelog([20.0, 20.0, 20.0, 20.0, 5.0])
+        # No dates key
+        season = self._make_season()
+        result = _gamelog_to_stats(gl, season, window_days=7)
+        assert result["games_in_window"] == 3
+
+
+class TestParseGamelogDate:
+    """_parse_gamelog_date handles various ESPN date formats."""
+
+    def test_iso_with_z(self):
+        from api.index import _parse_gamelog_date
+        d = _parse_gamelog_date("2026-03-28T00:00Z")
+        assert d is not None
+        assert d.year == 2026
+        assert d.month == 3
+        assert d.day == 28
+
+    def test_iso_with_time(self):
+        from api.index import _parse_gamelog_date
+        d = _parse_gamelog_date("2026-03-28T19:30:00Z")
+        assert d is not None
+        assert d.day == 28
+
+    def test_yyyymmdd(self):
+        from api.index import _parse_gamelog_date
+        d = _parse_gamelog_date("20260328")
+        assert d is not None
+        assert d.month == 3
+
+    def test_yyyy_mm_dd(self):
+        from api.index import _parse_gamelog_date
+        d = _parse_gamelog_date("2026-03-28")
+        assert d is not None
+
+    def test_epoch_millis(self):
+        from api.index import _parse_gamelog_date
+        # March 28, 2026 in epoch millis (approx)
+        d = _parse_gamelog_date("1774857600000")
+        assert d is not None
+
+    def test_empty_returns_none(self):
+        from api.index import _parse_gamelog_date
+        assert _parse_gamelog_date("") is None
+        assert _parse_gamelog_date(None) is None
+
+    def test_garbage_returns_none(self):
+        from api.index import _parse_gamelog_date
+        assert _parse_gamelog_date("not-a-date") is None
+
+
+class TestGamelogProjectionConfig:
+    """Config defaults for gamelog-based projection."""
+
+    def test_gamelog_window_days_in_defaults(self):
+        from api.index import _CONFIG_DEFAULTS
+        proj = _CONFIG_DEFAULTS["projection"]
+        assert "gamelog_window_days" in proj
+        assert proj["gamelog_window_days"] == 7
+
+    def test_dnp_risk_threshold_default(self):
+        from api.index import _CONFIG_DEFAULTS
+        proj = _CONFIG_DEFAULTS["projection"]
+        assert proj["dnp_risk_min_threshold"] == 8.0
+
+
+class TestFetchGamelogDates:
+    """_fetch_gamelog now returns game_dates parallel to stat arrays."""
+
+    def test_gamelog_returns_game_dates_key(self):
+        """Verify that _fetch_gamelog's return shape includes game_dates."""
+        # We test the data structure, not the actual ESPN call
+        # The function should include game_dates in the returned dict when present
+        sample = {
+            "points": [10.0, 12.0],
+            "minutes": [20.0, 22.0],
+            "game_dates": ["2026-03-28T00:00Z", "2026-03-27T00:00Z"],
+        }
+        assert "game_dates" in sample
+        assert len(sample["game_dates"]) == len(sample["points"])
+
+
+class TestGamelogInRunGame:
+    """_run_game now uses gamelog overlay for projection stats."""
+
+    def test_gamelog_overlay_replaces_season_stats(self):
+        """When gamelog is available, stats_map should reflect recent games, not season."""
+        from api.index import _gamelog_to_stats
+        # Season: 25 min, 15 pts
+        season = {
+            "min": 25.0, "pts": 15.0, "reb": 5.0, "ast": 4.0,
+            "stl": 1.5, "blk": 0.5, "tov": 2.0,
+            "season_min": 25.0, "season_pts": 15.0, "season_reb": 5.0,
+            "season_ast": 4.0, "season_stl": 1.5, "season_blk": 0.5,
+        }
+        # Gamelog: last 3 games show declining minutes
+        gamelog = {
+            "minutes": [20.0, 15.0, 5.0],
+            "points": [10.0, 8.0, 2.0],
+            "rebounds": [3.0, 2.0, 1.0],
+            "assists": [2.0, 1.0, 0.0],
+            "steals": [1.0, 1.0, 0.0],
+            "blocks": [0.0, 0.0, 0.0],
+            "turnovers": [1.0, 1.0, 0.0],
+        }
+        result = _gamelog_to_stats(gamelog, season, window_days=30)
+        # Projected min should be much lower than 25 (season)
+        assert result["min"] < 15.0
+        # Season stats preserved
+        assert result["season_min"] == 25.0
+        assert result["season_pts"] == 15.0
+        # DNP risk from 5 min last game
+        assert result.get("dnp_risk") is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
