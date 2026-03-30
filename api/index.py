@@ -567,19 +567,18 @@ def _odds_map_fingerprint(games):
 
 
 def _bust_slate_cache():
-    """Clear today's slate cache from /tmp AND GitHub so next request regenerates.
-    Called by /api/refresh and /api/lab/update-config.
-
-    If Starting 5 still shows low-recent-min players (e.g. Olynyk, Plumlee, Drummond)
-    after a bust: (1) Ensure this codebase is deployed with the recent_raw_min fix
-    (_fetch_athlete using recent_raw_min when recent split < 10). (2) On serverless,
-    each instance has its own /tmp; the tombstone on GitHub forces all instances to
-    treat slate cache as miss and regenerate. (3) If the app is still on an old deploy,
-    merge and deploy the fix, then trigger /api/refresh or wait for next slate load."""
+    """Clear today's slate cache from Redis + /tmp + GitHub so next request regenerates.
+    Called by /api/refresh, /api/lab/update-config, and version-aware startup."""
     today = _today_str()
-    # Clear in-memory response cache (Level 0) — ensures /api/slate and /api/games
-    # serve fresh data after a bust instead of the stale in-memory copy.
+    # Clear in-memory response cache (Level 0)
     _RESPONSE_CACHE.invalidate()
+    # Flush Redis (Level 0.5) — all oracle:* keys
+    try:
+        flushed = rflush()
+        if flushed:
+            print(f"[bust-slate] flushed {flushed} Redis keys")
+    except Exception as e:
+        print(f"[bust-slate] Redis flush error: {e}")
     # Clear /tmp caches
     for key in [_CK_SLATE]:
         try:
@@ -3482,7 +3481,7 @@ def _apply_post_lock_rs_calibration(projections: list, *, slate_locked: bool) ->
 # ─────────────────────────────────────────────────────────────────────────────
 # PLAYER PROJECTION ENGINE
 # grep: project_player, pinfo, stats, spread, total, rating, est_mult, blk, stl
-# grep: PLAYER PROJECTION ENGINE — Monte Carlo Real Score
+# grep: PLAYER PROJECTION ENGINE — LightGBM + heuristic blend, sort-based lineup builder
 # Returns projection dict: {name, team, pos, rating (RS), est_mult (card boost),
 #   predMin, pts, reb, ast, stl, blk, season_*/recent_* raw stats, signals}
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5903,7 +5902,7 @@ def _get_slate_impl():
 
     # ── Layer 3: First run of the day — generate fresh, then persist ──
     # Concurrent cold-start guard: if another thread is already generating, wait for it
-    # and then serve from the cache it populated. Prevents N×(ESPN + LightGBM + MILP) on
+    # and then serve from the cache it populated. Prevents N×(ESPN + LightGBM + boost) on
     # simultaneous cold-start requests (common when the app is opened in multiple tabs).
     global _SLATE_GEN_IN_FLIGHT
     with _SLATE_GEN_LOCK:
@@ -6402,7 +6401,7 @@ def _force_regenerate_sync(scope: str):
     # fails we preserve the existing cache so cold-start recovery still works.
     all_proj = []
     game_proj_map = {}
-    # DFS draft path — uses Monte Carlo real_score exclusively (no fair_value prefetch)
+    # DFS draft path — per-game projections (no fair_value prefetch)
     with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
         futs = {pool.submit(_run_game, g): g for g in game_pool}
         for fut in as_completed(futs):
@@ -7539,20 +7538,10 @@ async def refresh(request: Request):
         print(f"[refresh] auto-save skipped: {e}")
 
     cleared = 0
-    # Clear in-memory response cache first (Level 0) — must happen before file cache clears
-    # so that _bust_slate_cache() called below doesn't double-count the invalidation.
-    _RESPONSE_CACHE.invalidate()
-    # Flush Redis cache (Level 0.5) — all oracle:* keys
-    redis_cleared = 0
+    # _bust_slate_cache() handles all layers: in-memory + Redis + /tmp + GitHub tombstones
     try:
-        redis_cleared = rflush()
-    except Exception as e:
-        print(f"[refresh] Redis flush error: {e}")
-    try:
-        for f in CACHE_DIR.glob("*.json"):
-            f.unlink(); cleared += 1
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        _bust_slate_cache()
+    except Exception: pass
     # Clear lock cache (LOCK_DIR) — stale lock files must not survive a manual refresh
     try:
         for f in LOCK_DIR.glob("*.json"):
@@ -7568,17 +7557,9 @@ async def refresh(request: Request):
     try:
         _rw_clear()
     except Exception: pass
-    # Bust GitHub-persisted slate cache so full pipeline regeneration runs next.
-    try:
-        _bust_slate_cache()
-    except Exception: pass
-    # Do not tombstone GitHub parlay files on refresh — those are historical artifacts.
-    # /tmp parlay cache is already cleared by CACHE_DIR glob unlink above.
 
-    # Full regeneration in background: bust + force prewarm runs the complete pipeline
-    # (ESPN → LightGBM → Monte Carlo → MILP) so the slate is ready before first user.
-    # This is one of 3 full regeneration triggers: (1) /api/refresh (2pm ET daily cron),
-    # (2) slate turn via prewarm cron (10pm-2am ET), (3) deploy startup prewarm.
+    # Full regeneration in background (ESPN → LightGBM → card boost → sort-based builder).
+    # One of 3 cold pipeline triggers: (1) /api/refresh cron, (2) deploy SHA change, (3) prewarm cron.
     def _bg_prewarm_after_refresh():
         try:
             _prewarm_current_slate_sync(force=True, include_slate=True)
@@ -7587,7 +7568,7 @@ async def refresh(request: Request):
             print(f"[refresh] background regeneration failed: {e}")
     threading.Thread(target=_bg_prewarm_after_refresh, daemon=True).start()
 
-    return {"status": "ok", "cleared": cleared, "redis_cleared": redis_cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
+    return {"status": "ok", "cleared": cleared, "auto_saved": auto_saved, "ts": datetime.now().isoformat()}
 
 
 @app.get("/api/save-slate-results")
@@ -7736,44 +7717,74 @@ async def prewarm_current_slate(request: Request):
 
 @app.on_event("startup")
 async def _deploy_startup_safe_prewarm():
-    """On deploy/restart, safely re-warm /tmp cache from GitHub without busting persistent cache.
+    """Version-aware startup: detect new deploy SHA → bust + regenerate; same SHA → hydrate from Redis/GitHub.
 
-    CRITICAL: This NEVER calls _bust_slate_cache() or _force_regenerate_sync().
-    It only reads existing GitHub cache files into /tmp. The ONLY legitimate
-    cache busting mechanism is /api/refresh (user or cron triggered).
+    On new deploy (SHA mismatch): bust all caches, background-regenerate the full slate
+    so the cold pipeline runs exactly once at deploy time. All subsequent requests served
+    from Redis.
 
-    If GitHub cache is missing, the app gracefully falls back to full pipeline
-    regeneration on first /api/slate request. This is correct behavior — new
-    containers should only regenerate when explicitly requested or on natural
-    slate turnover.
+    On container restart (same SHA): hydrate /tmp from Redis (instant) or GitHub (1-2s).
+    No pipeline run needed — Redis survives container restarts.
     """
     today = _today_str()
+    current_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+
+    # Check if this is a new deploy by comparing SHA in Redis
+    previous_sha = rcg("deploy_sha", "global")
+    is_new_deploy = bool(current_sha) and (current_sha != (previous_sha or ""))
+
+    if is_new_deploy:
+        print(f"[startup] new deploy detected: {previous_sha or 'none'} → {current_sha[:7]}")
+        # Store the new SHA so subsequent restarts skip regeneration
+        rcs("deploy_sha", current_sha, "global", ttl=604800)  # 7-day TTL
+        # Bust all caches — Redis + /tmp + GitHub tombstones
+        try:
+            _bust_slate_cache()
+            print("[startup] all caches busted for new deploy")
+        except Exception as e:
+            print(f"[startup] cache bust error (non-fatal): {e}")
+        # Background regenerate so the slate is ready before first user request
+        def _bg_deploy_regen():
+            try:
+                _prewarm_current_slate_sync(force=True, include_slate=True)
+                # Re-store SHA after rflush inside prewarm may have cleared it
+                rcs("deploy_sha", current_sha, "global", ttl=604800)
+                print("[startup] background deploy regeneration completed")
+            except Exception as e:
+                print(f"[startup] background deploy regeneration failed: {e}")
+        threading.Thread(target=_bg_deploy_regen, daemon=True).start()
+        return
+
+    # Same SHA (container restart) — hydrate /tmp from Redis or GitHub
     try:
-        # Safely hydrate /tmp cache from GitHub (read-only, no regeneration)
+        cached = _cg(_CK_SLATE)
+        if cached:
+            print(f"[startup] Redis hit — slate already cached for {today}")
+            return
+
         gh_slate, _ = _github_get_file(f"data/slate/{today}_slate.json")
         if gh_slate:
             try:
                 slate_data = json.loads(gh_slate)
-                if not slate_data.get("_busted"):  # Skip if marked for bust
+                if not slate_data.get("_busted"):
                     _cs(_CK_SLATE, slate_data)
-                    print(f"[startup-prewarm] hydrated /tmp slate cache from GitHub for {today}")
+                    print(f"[startup] hydrated slate cache from GitHub for {today}")
             except Exception as e:
-                print(f"[startup-prewarm] hydration error: {e}")
+                print(f"[startup] hydration error: {e}")
 
-        # Also prewarm per-game projections if available
         gh_games, _ = _github_get_file(f"data/slate/{today}_games.json")
         if gh_games:
             try:
                 games_data = json.loads(gh_games)
                 if not games_data.get("_busted"):
                     _cs(f"{_CK_SLATE}_games", games_data)
-                    print(f"[startup-prewarm] hydrated /tmp games cache from GitHub for {today}")
+                    print(f"[startup] hydrated games cache from GitHub for {today}")
             except Exception as e:
-                print(f"[startup-prewarm] games hydration error: {e}")
+                print(f"[startup] games hydration error: {e}")
 
-        print(f"[startup-prewarm] safe cache rehydration completed")
+        print(f"[startup] cache rehydration completed")
     except Exception as e:
-        print(f"[startup-prewarm] initialization failed (non-fatal, will regenerate on first request): {e}")
+        print(f"[startup] initialization failed (non-fatal, will regenerate on first request): {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -7907,7 +7918,6 @@ async def injury_check(request: Request):
     # Regenerate only affected games
     games_map = {g["gameId"]: g for g in games}
     affected_games = [games_map[gid] for gid in injured_games if gid in games_map]
-    # DFS draft path — uses Monte Carlo real_score exclusively (no fair_value prefetch)
     for gid in injured_games:
         game = games_map.get(gid)
         if not game:
@@ -8357,7 +8367,7 @@ def _get_projections_for_date(date_obj):
     # Layer 2: GitHub games cache (cold /tmp after deploy)
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(draftable)
-    # Layer 3: full pipeline (Monte Carlo real_score — no fair_value here)
+    # Layer 3: full pipeline (LightGBM + heuristic — no fair_value here)
     if not all_proj:
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in draftable}
@@ -8623,7 +8633,7 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
-        # Layer 3: Monte Carlo real_score pipeline (no fair_value — that runs post-projection)
+        # Layer 3: full projection pipeline (no fair_value — that runs post-projection)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
             try:
@@ -11903,7 +11913,7 @@ def _run_parlay_engine_sync(today, *, allow_synthetic=False):
     if not all_proj:
         all_proj = _hydrate_game_projs_from_github(target_games)
     if not all_proj:
-        # Layer 3: Monte Carlo real_score pipeline (no fair_value — that runs post-projection)
+        # Layer 3: full projection pipeline (no fair_value — that runs post-projection)
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {pool.submit(_run_game, g): g for g in target_games}
             try:

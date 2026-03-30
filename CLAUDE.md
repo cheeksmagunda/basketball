@@ -233,6 +233,7 @@ grep: PRODUCTION CACHE         — _TTL_* constants, _CK_* keys, _cp/_cg/_cs, od
 - `INGEST_SECRET` — (optional) When set, `POST /api/save-most-popular`, `save-ownership`, `save-most-drafted-3x`, and `save-winning-drafts` require `X-Ingest-Key` or `Authorization: Bearer <INGEST_SECRET>`. See `docs/HISTORICAL_DATA.md`.
 - `CRON_SECRET` — (optional) When set, cron-only endpoints (`/api/auto-resolve-line`, `/api/lab/auto-improve`, `/api/injury-check`) require `Authorization: Bearer <CRON_SECRET>`. Railway injects this via the cron commands in railway.toml. `/api/refresh` is intentionally unprotected (non-destructive, user-facing).
 - `DOCS_SECRET` — (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header so only people with the secret can browse/test the API.
+- `REDIS_URL` — (recommended) Full `redis://` connection string. Auto-injected by Railway Redis plugin. When set, all cache reads/writes go through Redis (sub-ms latency) with `/tmp` file fallback. Without it, the system works but relies on ephemeral `/tmp` files that don't survive container restarts. Setup: Railway dashboard → "+ New" → "Database" → "Redis". Verify: `GET /api/health` returns `"redis": "ok"`.
 
 **OpenAPI docs:** FastAPI serves `/docs` (Swagger UI) and `/redoc` in production. Use them to browse and try endpoints. When `DOCS_SECRET` is set, append `?docs_key=<DOCS_SECRET>` to the URL or send the header to access.
 
@@ -246,26 +247,33 @@ file at startup and caches it for 5 minutes. The Lab writes updates via the GitH
 - Use `_cfg("dot.path", default)` helper anywhere in `api/index.py` to read config
 - `/api/refresh` also clears the config cache for immediate effect
 
-## 3-Layer Slate Cache (Generate Once, Serve Cached)
+## 4-Layer Cache Architecture (Generate Once, Serve from Redis)
 
-Predictions are generated **once per day** and cached. Subsequent requests serve from cache instead of re-running the full pipeline (ESPN + LightGBM + card boost + sort-based lineup builder). This reduces API calls from N per user visit to ~6-8 per day max.
+The cold pipeline runs **exactly twice per day**: (1) daily `/api/refresh` cron at 2pm ET, (2) `/api/injury-check` cron in the afternoon. All other requests are served instantly from Redis. On new deploys, the version-aware startup hook detects the SHA change and forces a one-time regeneration.
 
-### Cache Layers
-1. **Layer 1 — `/tmp` (Railway container)**: In-memory file cache. Fastest, but cleared on container restart (deploy or crash restart).
-2. **Layer 2 — GitHub persistent cache (`data/slate/`)**: `{date}_slate.json` (full slate with lineups) and `{date}_games.json` (per-game projections keyed by gameId). Survives cold starts. Used by `/api/slate` and `/api/picks`.
-3. **Layer 3 — Full pipeline**: ESPN → injury cascade → LightGBM + heuristic blend → compression + game context → card boost (cascade + anti-popularity) → sort-based lineup builder. Only runs when both Layer 1 and Layer 2 are empty (true first run of the day).
+### Cache Layers (read order)
+0. **Layer 0 — In-memory `ResponseCache`**: Thread-safe dict with TTL. Cleared on every request to `_bust_slate_cache()`.
+1. **Layer 0.5 — Redis** (`api/cache.py`): Primary persistent cache. Sub-ms reads. Survives container restarts. All `_cg()`/`_cs()` calls go here first. Requires `REDIS_URL` env var (Railway Redis plugin). Graceful fallback to Layer 1 when unavailable.
+2. **Layer 1 — `/tmp` files**: Fallback file cache on Railway container filesystem. Cleared on container restart. `_cg()` backfills Redis from `/tmp` hits.
+3. **Layer 2 — GitHub persistent cache (`data/slate/`)**: `{date}_slate.json` and `{date}_games.json`. Survives everything. Cold-start recovery source.
+4. **Layer 3 — Full pipeline**: ESPN → LightGBM + heuristic blend → compression + game context → card boost (cascade + anti-popularity) → sort-based lineup builder. Only runs when all layers miss.
 
 ### Cache Helpers (grep: SLATE CACHE GITHUB)
+- `_cg(key)` / `_cs(key, value)` — Redis-first read/write with `/tmp` fallback and automatic backfill
+- `_bust_slate_cache()` — **Atomic bust of all layers**: in-memory + Redis (`rflush()`) + `/tmp` + GitHub tombstones
 - `_slate_cache_to_github(slate_data)` — writes today's slate to `data/slate/{date}_slate.json`
 - `_slate_cache_from_github()` — reads today's slate; returns `None` if missing or busted
-- `_games_cache_to_github(game_proj_map)` — writes per-game projections to `data/slate/{date}_games.json`
-- `_games_cache_from_github()` — reads per-game projections; returns `None` if missing or busted
-- `_bust_slate_cache()` — clears both `/tmp` and GitHub caches using tombstone pattern (`{"_busted": true}`)
 
 ### Cache Invalidation
-- **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → next request regenerates with new params
-- **Manual refresh** (`/api/refresh`): calls `_bust_slate_cache()` → full cache clear
-- **Injury check** (`/api/injury-check`): regenerates only affected games, updates both layers
+- **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → busts all layers → next request regenerates
+- **Daily refresh** (`/api/refresh` cron, 2pm ET): calls `_bust_slate_cache()` → background regeneration (cold run #1)
+- **Injury check** (`/api/injury-check` cron, afternoon): regenerates only affected games, updates all layers (cold run #2)
+- **New deploy**: startup hook detects SHA mismatch → `_bust_slate_cache()` → background regeneration
+
+### Version-Aware Startup (grep: deploy_sha)
+On container start, `_deploy_startup_safe_prewarm()` compares `RAILWAY_GIT_COMMIT_SHA` against a `deploy_sha` key in Redis:
+- **SHA mismatch** (new deploy): bust all caches, write new SHA, background-regenerate full slate
+- **SHA match** (container restart): check Redis (instant) → `/tmp` → GitHub for existing cache — no pipeline run
 
 ### Line / Parlay projection hydration
 `_run_line_engine_for_date()`, `_get_projections_for_date()`, and the parlay pipeline load per-game projections in order: **Layer 1** `/tmp` (`game_proj_{gameId}`), **Layer 2** GitHub `data/slate/{date}_games.json` (via `_hydrate_game_projs_from_github()`), **Layer 3** full `_run_game()` if still empty. One GitHub read on a cold instance avoids re-running ESPN + LightGBM for every tab.

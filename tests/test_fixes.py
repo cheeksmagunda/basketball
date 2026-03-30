@@ -3483,15 +3483,16 @@ class TestSlateTransitionPrewarm:
         assert "/api/prewarm-current-slate" in src
 
     def test_deploy_startup_safe_prewarm_hook_exists(self):
-        """Startup hook should safely hydrate /tmp from GitHub without busting cache."""
+        """Startup hook: version-aware — new deploy busts+regenerates, same SHA hydrates."""
         src = open("api/index.py").read()
         assert '@app.on_event("startup")' in src
         assert "async def _deploy_startup_safe_prewarm():" in src
-        # Safe prewarm reads from GitHub, does NOT regenerate or bust cache
-        assert "_cs(_CK_SLATE" in src  # Writes to /tmp cache
+        assert "_cs(_CK_SLATE" in src  # Writes to cache
         assert "_github_get_file" in src  # Reads from GitHub
-        # CRITICAL: Should NOT call _bust_slate_cache() or _force_regenerate_sync()
-        assert "This NEVER calls _bust_slate_cache()" in src  # Safety documentation
+        # Version-aware: detects new deploy via SHA comparison in Redis
+        assert "deploy_sha" in src
+        assert "RAILWAY_GIT_COMMIT_SHA" in src
+        assert "is_new_deploy" in src
 
 
 class TestVerifyTopPerformersScript:
