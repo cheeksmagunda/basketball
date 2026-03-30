@@ -26,26 +26,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-train.txt
 
-      # Boost + drafts first (local data only). RS last: if RS fails, job fails and nothing is committed.
-      - name: Retrain boost model from actuals
-        id: retrain_boost
-        continue-on-error: true
-        run: python train_boost_lgbm.py
-
-      - name: Retrain drafts popularity model (overlap with predictions)
-        id: retrain_drafts
-        continue-on-error: true
-        run: python train_drafts_lgbm.py
-
-      - name: Retrain status note (Boost)
-        if: steps.retrain_boost.outcome != 'success'
-        run: |
-          echo "::warning::Boost retrain skipped or failed. Keeping tracked boost artifacts."
-
-      - name: Retrain status note (Drafts)
-        if: steps.retrain_drafts.outcome != 'success'
-        run: |
-          echo "::warning::Drafts retrain skipped or insufficient overlap. Keeping tracked drafts artifacts."
+      # Boost + drafts models replaced by deterministic cascade (api/boost_model.py).
+      # Only the RS (Real Score) LightGBM model is retrained nightly.
 
       # Core Real Score model: NBA API can flake — retry before failing the whole workflow.
       - name: Retrain RS model on 3 seasons
@@ -63,9 +45,7 @@ jobs:
         run: |
           if git diff --quiet \
             lgbm_model.json lgbm_baseline.txt lgbm_spike.txt \
-            boost_model.json boost_model.txt \
-            drafts_model.json drafts_model.txt \
-            lgbm_model.pkl boost_model.pkl drafts_model.pkl 2>/dev/null; then
+            lgbm_model.pkl 2>/dev/null; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -112,9 +92,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           for f in \
             lgbm_model.json lgbm_baseline.txt lgbm_spike.txt \
-            boost_model.json boost_model.txt \
-            drafts_model.json drafts_model.txt \
-            lgbm_model.pkl boost_model.pkl drafts_model.pkl \
+            lgbm_model.pkl \
             data/model-config.json; do
             if [ -f "$f" ]; then git add "$f"; fi
           done
@@ -132,9 +110,8 @@ jobs:
             echo "## Model retrain results"
             echo "| Step | Outcome |"
             echo "|------|---------|"
-            echo "| Boost | \`${{ steps.retrain_boost.outcome }}\` |"
-            echo "| Drafts | \`${{ steps.retrain_drafts.outcome }}\` |"
             echo "| RS (Real Score) | \`${{ steps.retrain_rs.outcome }}\` |"
             echo ""
             echo "Auto-commit to \`main\` runs only when **RS retrain succeeds** and artifacts differ from HEAD."
+            echo "Card boost prediction uses deterministic cascade (api/boost_model.py) — no ML retrain needed."
           } >> "$GITHUB_STEP_SUMMARY"

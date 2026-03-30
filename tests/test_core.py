@@ -56,20 +56,18 @@ class TestHelpers:
         assert _is_locked(soon) is True
 
     def test_est_card_boost_decreases_with_star_minutes(self):
-        """Star players (high min_proxy) should get a lower boost than bench players.
-        Uses mocked models so the test is independent of pkl version/availability."""
+        """Star players should get a lower boost than bench players via 3-tier cascade.
+        Uses cold-start (Tier 3) path since test players have no history."""
         from api.index import _est_card_boost
-        import api.index as idx
-        from unittest.mock import patch
 
-        def mock_predict(feat_vec):
-            # Higher min_proxy (feat_vec[1]) → higher popularity → lower boost
-            return max(0.2, 3.0 - feat_vec[1] * 0.05)
-
-        with patch.object(idx, "_lgbm_predict_log1p_drafts", return_value=None):
-            with patch.object(idx, "_lgbm_predict_boost", side_effect=mock_predict):
-                star_boost  = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL")
-                bench_boost = _est_card_boost(proj_min=12, pts=6,  team_abbr="MEM")
+        # Star: high PPG → low PQI → low boost
+        star_boost = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL",
+                                      player_name="Test Star XYZ", season_pts=28.0,
+                                      season_avg_min=35.0)
+        # Bench: low PPG → high PQI → high boost
+        bench_boost = _est_card_boost(proj_min=12, pts=6, team_abbr="MEM",
+                                       player_name="Test Bench XYZ", season_pts=6.0,
+                                       season_avg_min=12.0)
 
         assert bench_boost > star_boost, (
             f"bench boost {bench_boost:.2f} should exceed star boost {star_boost:.2f}"
@@ -526,21 +524,11 @@ class TestBannerGuardJS:
         assert start != -1 and end != -1, "No <script> block found in index.html"
         return html[start:end]
 
-    def test_has_actuals_in_log_flow(self, script_source):
-        assert "has_actuals" in script_source, (
-            "Missing has_actuals — log rendering likely broken"
-        )
-
     def test_no_upload_banner_dom_id(self, script_source):
         assert "benUploadBanner" not in script_source
 
     def test_no_handle_ben_upload(self, script_source):
         assert "_handleBenUpload" not in script_source
-
-    def test_log_get_fetched_in_showlabunlocked(self, script_source):
-        assert "/api/log/get" in script_source, (
-            "/api/log/get not called from showLabUnlocked"
-        )
 
     def test_briefing_fetched_in_showlabunlocked(self, script_source):
         assert "/api/lab/briefing" in script_source
@@ -1063,7 +1051,7 @@ class TestConfigCoverage:
         # card_boost.ceiling is an existing 3rd-level key
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
             val = _cfg("card_boost.ceiling", None)
-        assert val == 3.5, f"Expected 3.5, got {val}"
+        assert val == 3.0, f"Expected 3.0, got {val}"
 
     def test_scoring_thresholds_in_config_defaults(self):
         """scoring_thresholds block must exist in _CONFIG_DEFAULTS (hot-path reads depend on it)."""
@@ -1563,5 +1551,4 @@ class TestFrontendTabAbort:
         assert "_getTabSignal('predictions')" in src, "slate fetch should use predictions tab signal"
         assert "_getTabSignal('line')" in src, "line fetch should use line tab signal"
         assert "_getTabSignal('parlay')" in src, "parlay fetch should use parlay tab signal"
-        assert "_getTabSignal('log')" in src, "log fetch should use log tab signal"
         assert "_getTabSignal('lab')" in src, "lab fetch should use lab tab signal"

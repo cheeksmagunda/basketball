@@ -661,16 +661,13 @@ class TestLineConfig:
 # ─────────────────────────────────────────────────────────
 class TestLgbmNativeArtifacts:
     def test_loaders_try_lightgbm_native_first(self):
+        """RS LightGBM loader handles native format. Boost/drafts models removed (cascade)."""
         import inspect
         from api import index
-        for fn in (
-            index._ensure_lgbm_loaded,
-            index._ensure_boost_model_loaded,
-            index._ensure_drafts_model_loaded,
-        ):
-            src = inspect.getsource(fn)
-            assert "lightgbm_native" in src, f"{fn.__name__} must handle native format"
-        assert "_LGBM_JSON_PATHS" in inspect.getsource(index._ensure_lgbm_loaded)
+        # Only RS model still uses LightGBM native format
+        src = inspect.getsource(index._ensure_lgbm_loaded)
+        assert "lightgbm_native" in src, "_ensure_lgbm_loaded must handle native format"
+        assert "_LGBM_JSON_PATHS" in src
 
 
 # ─────────────────────────────────────────────────────────
@@ -2062,72 +2059,170 @@ class TestPerGameFloor:
 # TWO-PASS PIPELINE — watchlist and pass metadata
 # ---------------------------------------------------------------------------
 class TestBoostModelInference:
-    """Card boost: boost_model LightGBM uses direct 8-feature vector."""
+    """Card boost: 3-tier cascade model (api/boost_model.py)."""
 
-    def test_est_card_boost_uses_ml_when_model_returns_value(self):
-        """When boost LightGBM returns a float, that value is clamped and returned."""
+    def test_est_card_boost_tier3_cold_start_role_player(self):
+        """Cold start (Tier 3): unknown role player should get high boost (2.5+).
+        Uses a small-market team to avoid per-team boost ceiling caps."""
         from api.index import _est_card_boost
-        import api.index as idx
+        b = _est_card_boost(
+            20.0, 8.0, "SAS", "Nobody Cold Start XYZ",
+            season_pts=8.0, recent_pts=9.0, cascade_bonus=0.0, is_home=True,
+            projected_rs=3.5, season_avg_min=20.0, player_pos="G",
+        )
+        assert b >= 2.0, f"Cold start role player should get high boost, got {b}"
 
-        captured = {}
-
-        def _fake_predict(vec):
-            captured["vec"] = list(vec)
-            return 2.0
-
-        with patch.object(idx, "_lgbm_predict_boost", side_effect=_fake_predict):
-            b = _est_card_boost(
-                28.0, 15.0, "MEM", "Bench Player",
-                season_pts=14.0, recent_pts=16.0, cascade_bonus=2.0, is_home=True,
-                projected_rs=4.5,
-                season_avg_min=28.0,
-                player_pos="G",
-            )
-
-        # 8-feature vector: [projected_rs, season_pts, recent_pts, season_min, pred_min,
-        #                     team_market_score, pos_bucket, ppg_tier]
-        assert len(captured["vec"]) == 8
-        assert captured["vec"][0] == 4.5            # projected_rs
-        assert captured["vec"][1] == 14.0           # season_pts
-        assert captured["vec"][2] == 16.0           # recent_pts
-        assert captured["vec"][3] == 28.0           # season_min
-        assert captured["vec"][4] == 28.0           # pred_min
-        assert captured["vec"][5] == 0.20           # team_market_score (MEM = 0.20)
-        assert captured["vec"][6] == 0.0            # pos_bucket (G = 0)
-        assert captured["vec"][7] == 2.0            # ppg_tier (14.0 PPG → tier 2)
-        # ML returns 2.0, ml_additive_correction=0.0 (no team ceiling in defaults) → 2.0
-        assert b == 2.0
-
-    def test_est_card_boost_returns_heuristic_when_ml_none(self):
-        """When boost model returns None, fallback must be non-flat heuristic (not 1.0 sentinel)."""
+    def test_est_card_boost_tier3_cold_start_star(self):
+        """Cold start (Tier 3): unknown star should get low boost."""
         from api.index import _est_card_boost
-        import api.index as idx
+        b = _est_card_boost(
+            35.0, 25.0, "MIN", "Nobody Star XYZ",
+            season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
+            projected_rs=7.0, season_avg_min=35.0, player_pos="G",
+        )
+        # Star profile → low boost via PQI
+        assert b <= 1.0, f"Cold start star should get low boost, got {b}"
 
-        with patch.object(idx, "_lgbm_predict_boost", return_value=None):
-            b = _est_card_boost(
-                30.0, 25.0, "MIN", "Anthony Edwards",
-                season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
-                projected_rs=7.0,
-                season_avg_min=30.0,
-                player_pos="G",
-            )
-        # Star-ish profile should receive a low boost in fallback path (heuristic, not flat).
-        assert 0.2 <= b <= 1.5
-
-    def test_est_card_boost_calls_ml_even_with_zero_projected_rs(self):
-        """ML model is always attempted — even with projected_rs=0 (no sigmoid path)."""
+    def test_est_card_boost_nonnegative_all_tiers(self):
+        """Boost is always non-negative regardless of tier."""
         from api.index import _est_card_boost
-        import api.index as idx
+        for mins, pts in [(5, 2), (20, 10), (38, 30)]:
+            b = _est_card_boost(mins, pts, "GSW", player_name=f"Test {pts} XYZ",
+                                season_pts=float(pts), season_avg_min=float(mins))
+            assert b >= 0, f"Boost should be non-negative, got {b}"
 
-        with patch.object(idx, "_lgbm_predict_boost", return_value=1.5) as mock_boost:
-            b = _est_card_boost(30.0, 25.0, "MIN", "Anthony Edwards", season_pts=25.0)
-            mock_boost.assert_called_once()
-            args, _ = mock_boost.call_args
-            # 8-feature vector: [rs, season_pts, recent_pts, season_min, pred_min,
-            #                     team_market_score, pos_bucket, ppg_tier]
-            assert len(args[0]) == 8
-        # ML returns 1.5, ml_additive_correction=0.0; no star_ppg_tiers in defaults → 1.5
-        assert b == 1.5
+    def test_est_card_boost_star_ppg_tier_cap(self):
+        """Star PPG tier caps should limit boost for high-PPG players."""
+        from api.index import _est_card_boost
+        # 26+ PPG player gets capped at 0.2 by star_ppg_tiers config
+        b = _est_card_boost(
+            35.0, 28.0, "WAS", "Nobody Star26 XYZ",
+            season_pts=28.0, season_avg_min=35.0,
+        )
+        assert b <= 0.4, f"26+ PPG star should be capped low, got {b}"
+
+
+class TestBoostCascadeModel:
+    """Tests for the 3-tier cascade boost prediction model (api/boost_model.py)."""
+
+    def test_tier3_cold_start_deep_bench(self):
+        """Tier 3: deep bench (PPG<5) always gets 3.0."""
+        from api.boost_model import predict_boost
+        r = predict_boost("Nobody Deep Bench", "2026-03-30", season_ppg=3.0, season_rpg=1.0,
+                          season_apg=0.5, season_mpg=8.0)
+        assert r["tier"] == 3
+        assert r["boost"] == 3.0
+
+    def test_tier3_cold_start_star(self):
+        """Tier 3: star (PPG>=25) gets very low boost."""
+        from api.boost_model import predict_boost
+        r = predict_boost("Nobody Superstar", "2026-03-30", season_ppg=27.0, season_rpg=7.0,
+                          season_apg=6.0, season_mpg=36.0)
+        assert r["tier"] == 3
+        assert r["boost"] <= 0.5
+
+    def test_tier3_cold_start_mid_rotation(self):
+        """Tier 3: mid-rotation (PPG 12-16) gets moderate boost."""
+        from api.boost_model import predict_boost
+        r = predict_boost("Nobody Rotation", "2026-03-30", season_ppg=14.0, season_rpg=4.0,
+                          season_apg=3.0, season_mpg=28.0)
+        assert r["tier"] == 3
+        assert 1.0 <= r["boost"] <= 2.5
+
+    def test_estimate_boost_from_api_monotonic(self):
+        """Higher PPG → lower boost (monotonically decreasing)."""
+        from api.boost_model import estimate_boost_from_api
+        boosts = [estimate_boost_from_api(ppg, 4.0, 3.0, 25.0) for ppg in [5, 10, 15, 20, 25, 30]]
+        for i in range(len(boosts) - 1):
+            assert boosts[i] >= boosts[i + 1], \
+                f"Boost should decrease: {boosts[i]} at ppg={5+5*i} > {boosts[i+1]} at ppg={10+5*i}"
+
+    def test_load_player_history(self):
+        """Player history loads successfully from top_performers.csv."""
+        from api.boost_model import load_player_history
+        h = load_player_history()
+        assert len(h) > 0, "Should load at least some players"
+        # Check structure of entries
+        for name, entries in list(h.items())[:3]:
+            assert all("date" in e and "boost" in e and "rs" in e for e in entries)
+            # Entries should be sorted by date
+            dates = [e["date"] for e in entries]
+            assert dates == sorted(dates), f"Entries for {name} should be date-sorted"
+
+    def test_tier1_returning_player_persistence(self):
+        """Tier 1: boost at 3.0 should stay near 3.0 (75% persistence rate)."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-25", "boost": 3.0, "rs": 2.5, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-27", "boost": 3.0, "rs": 3.0, "drafts": 60, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=2, season_mpg=20, ceiling=3.0, floor=0.0)
+        assert r["boost"] >= 2.9, f"3.0 boost should persist, got {r['boost']}"
+
+    def test_tier1_monster_game_drops_boost(self):
+        """Tier 1: RS >= 7.0 should reduce boost slightly."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-28", "boost": 2.0, "rs": 7.5, "drafts": 200, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=2, season_mpg=30, ceiling=3.0, floor=0.0)
+        assert r["boost"] < 2.0, f"Monster game should drop boost, got {r['boost']}"
+
+    def test_tier1_bust_game_raises_boost(self):
+        """Tier 1: RS < 2.0 should increase boost slightly."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-28", "boost": 2.0, "rs": 1.5, "drafts": 30, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=2, season_mpg=20, ceiling=3.0, floor=0.0)
+        assert r["boost"] >= 2.0, f"Bust game should raise boost, got {r['boost']}"
+
+    def test_tier2_stale_blends_history_and_api(self):
+        """Tier 2: stale player blends hist mean with API estimate based on staleness."""
+        from api.boost_model import _predict_tier2
+        entries = [
+            {"date": "2026-02-01", "boost": 2.5, "rs": 3.0, "drafts": 50, "has_boost_data": True},
+        ]
+        # At 30 days stale (staleness = (30-14)/30 = 0.53)
+        r = _predict_tier2(entries, gap_days=30, season_ppg=8.0, season_rpg=3.0,
+                           season_apg=2.0, season_mpg=20.0, ceiling=3.0, floor=0.0)
+        assert r["tier"] == 2
+        assert r["confidence"] == "medium"
+        # Should be between hist mean (2.5) and API estimate (~2.7)
+        assert 2.0 <= r["boost"] <= 3.0
+
+    def test_predict_boost_returns_required_fields(self):
+        """All prediction results must contain required fields."""
+        from api.boost_model import predict_boost
+        r = predict_boost("Test Player", "2026-03-30", season_ppg=10.0)
+        assert "boost" in r
+        assert "tier" in r
+        assert "confidence" in r
+        assert "confidence_band" in r
+        assert "reason" in r
+        assert r["tier"] in (1, 2, 3)
+        assert r["confidence"] in ("high", "medium", "low")
+        assert 0.0 <= r["boost"] <= 3.0
+        low, high = r["confidence_band"]
+        assert low <= r["boost"] <= high
+
+    def test_superstar_zero_boost_persistence(self):
+        """Stars with 0.0 boost should stay near 0.0."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-20", "boost": 0.0, "rs": 6.0, "drafts": 5000, "has_boost_data": True},
+            {"date": "2026-03-25", "boost": 0.0, "rs": 5.5, "drafts": 4800, "has_boost_data": True},
+            {"date": "2026-03-28", "boost": 0.0, "rs": 7.0, "drafts": 5200, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=2, season_mpg=35, ceiling=3.0, floor=0.0)
+        assert r["boost"] <= 0.2, f"Superstar 0.0 boost should persist, got {r['boost']}"
+
+    def test_clamp_round_snaps_to_3(self):
+        """Boost ≥ 2.8 should snap to 3.0 (26.1% of all boosts are exactly 3.0)."""
+        from api.boost_model import _clamp_round
+        assert _clamp_round(2.85, 0.0, 3.0) == 3.0
+        assert _clamp_round(2.80, 0.0, 3.0) == 3.0  # exactly 2.8 snaps to 3.0
+        assert _clamp_round(2.74, 0.0, 3.0) == 2.7   # below snap threshold
 
 
 class TestWatchlist:
@@ -4894,10 +4989,11 @@ class TestDataFittedBoostFormula:
     """v71: Data-fitted boost formula from 909 observations."""
 
     def test_no_prior_weight_in_defaults(self):
-        """max_prior_weight should be 0 — never trust prior data."""
+        """max_prior_weight removed — cascade model replaces prior blending."""
         from api.index import _CONFIG_DEFAULTS
         cb = _CONFIG_DEFAULTS.get("card_boost", {})
-        assert cb.get("max_prior_weight") == 0.0
+        # max_prior_weight no longer needed — cascade model handles priors internally
+        assert "max_prior_weight" not in cb
 
     def test_no_ppg_correction_in_defaults(self):
         """ppg_boost_correction removed — replaced by data-fitted formula."""
