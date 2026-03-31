@@ -68,7 +68,7 @@ export default function BenTab() {
 // Build the system prompt from briefing data (matches vanilla JS buildLabSystemPrompt)
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt(briefing: object): string {
+function buildSystemPrompt(briefing: LabBriefing): string {
   const lines: string[] = [
     'You are Ben, the Basketball Oracle\'s AI assistant.',
     'You help analyze NBA prediction accuracy, tune model parameters, and run backtests.',
@@ -80,4 +80,3 @@ function buildSystemPrompt(briefing: object): string {
   ];
   return lines.join('\n');
 }
-
