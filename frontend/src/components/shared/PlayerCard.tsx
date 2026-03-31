@@ -14,13 +14,25 @@ interface PlayerCardProps {
 const STAT_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk'] as const;
 const STAT_LABELS = ['PTS', 'REB', 'AST', 'STL', 'BLK'] as const;
 
-/**
- * Format a numeric value to one decimal place for display.
- * Returns "0" for falsy / NaN values.
- */
+/** Format a numeric value for display. Returns "0" for falsy/NaN. */
 function fmt(val: number | undefined | null): string {
   if (val == null || Number.isNaN(val)) return '0';
   return val % 1 === 0 ? String(val) : val.toFixed(1);
+}
+
+/** Semantic accent bar color based on player value tier. */
+function getAccentColor(player: Player, showBoost: boolean): string {
+  if (player.injury_status && player.injury_status !== '') {
+    return 'var(--color-danger)';
+  }
+  if (showBoost) {
+    if (player.draft_ev >= 15.0) return 'var(--color-success)';
+    if (player.draft_ev >= 8.0) return 'var(--color-warning)';
+    return 'var(--color-text-muted)';
+  }
+  if (player.rating >= 5.0) return 'var(--color-success)';
+  if (player.rating >= 3.5) return 'var(--color-warning)';
+  return 'var(--color-text-muted)';
 }
 
 export default function PlayerCard({
@@ -33,18 +45,23 @@ export default function PlayerCard({
   const teamHex = tcolor || TEAM_COLORS[player.team] || '#14b8a6';
   const teamAlpha = hexToRgba(teamHex, 0.04);
   const delay = animDelay ?? index * 0.06;
-
-  // Score color: above 5.0 RS use team color, below use muted
   const scoreColor = player.rating >= 5.0 ? teamHex : undefined;
+  const accentColor = getAccentColor(player, showBoost);
+  const avgMin = player.avg_min ?? player.season_min ?? 0;
 
   return (
     <div
       className={styles['player-card']}
+      role="article"
+      aria-label={`${player.name}, ${player.team}, projected RS ${player.rating.toFixed(1)}${
+        showBoost && player.est_mult > 0 ? `, ${player.est_mult.toFixed(1)}x boost` : ''
+      }`}
       style={
         {
           '--tcolor': teamHex,
           '--tcolor-alpha': teamAlpha,
           '--score-color': scoreColor,
+          '--accent-color': accentColor,
           animationDelay: `${delay}s`,
         } as React.CSSProperties
       }
@@ -54,87 +71,119 @@ export default function PlayerCard({
 
       {/* Player info column */}
       <div className={styles['player-info']}>
-        {/* Meta row: team + position + injury */}
-        <div className={styles['player-meta']}>
-          <span>{player.team}</span>
-          <span className={styles['pos-pill']}>{player.pos}</span>
-          {player.injury_status && player.injury_status !== '' && (
-            <span className={styles['injury-badge']}>
-              {player.injury_status}
-            </span>
-          )}
-        </div>
-
-        {/* Player name */}
-        <div className={styles['player-name']}>{player.name}</div>
-
-        {/* Stat pills row: context pills + stat grid */}
-        <div className={styles['stat-pills']}>
-          {/* Context pills row + minutes (flush right) */}
-          <div className={styles['stat-context-row']}>
-            {showBoost && player.est_mult > 0 && (
-              <span
-                className={styles['stat-context-pill']}
-                style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.25) }}
-              >
-                +{player.est_mult.toFixed(1)}x card
+        {/* === HEADER ZONE === */}
+        <div className={styles['card-header']}>
+          <div className={styles['player-identity']}>
+            <span className={styles['player-name']}>{player.name}</span>
+            {player.opp ? (
+              <span className={styles['player-opp']}>
+                {player.team} vs {player.opp}
               </span>
+            ) : (
+              <span className={styles['player-opp']}>{player.team}</span>
             )}
-            {/* Hot streak indicator (from pass-through fields) */}
+          </div>
+          <div className={styles['badge-row']}>
             {player._hot_streak && (
-              <span
-                className={`${styles['stat-context-pill']} ${styles['overperform-hot']}`}
-              >
-                HOT
-              </span>
+              <span className={styles['hot-pill']}>HOT</span>
             )}
-            {/* Odds adjusted indicator */}
-            {player._odds_adjusted && (
-              <span
-                className={`${styles['stat-context-pill']} ${styles['overperform-odds']}`}
-              >
-                ODDS
-              </span>
-            )}
-            {/* Minutes: avg → projected (flush right) */}
-            {player.predMin > 0 && (
-              <span className={styles['minutes-inline']}>
-                <span className={styles['minutes-label']}>MIN</span>
-                {(player.avg_min ?? player.season_min) != null && (
-                  <>
-                    <span className={styles['minutes-avg']}>
-                      {fmt(player.avg_min ?? player.season_min)}
-                    </span>
-                    <span className={styles['minutes-arrow']}>&rarr;</span>
-                  </>
-                )}
-                <span className={styles['minutes-proj']}>
-                  {fmt(player.predMin)}
-                </span>
+            <span className={styles['pos-pill']}>{player.pos}</span>
+            {player.injury_status && player.injury_status !== '' && (
+              <span className={styles['injury-badge']}>
+                {player.injury_status}
               </span>
             )}
           </div>
+        </div>
 
-          {/* Stat grid (5 columns) */}
-          <div className={styles['stat-grid-row']}>
-            {STAT_KEYS.map((key, i) => (
-              <div key={key} className={styles['stat-col']}>
-                <span className={styles['stat-col-val']}>
-                  {fmt(player[key] as number)}
+        {/* === BODY ZONE === */}
+        <div className={styles['card-body']}>
+          {/* Boost + Odds row (slate-wide only) */}
+          {showBoost && (player.est_mult > 0 || player._odds_adjusted) && (
+            <div className={styles['boost-row']}>
+              {player.est_mult > 0 && (
+                <span
+                  className={styles['boost-pill']}
+                  style={{
+                    color: teamHex,
+                    borderColor: hexToRgba(teamHex, 0.25),
+                  }}
+                >
+                  +{player.est_mult.toFixed(1)}x card
                 </span>
-                <span className={styles['stat-col-lbl']}>{STAT_LABELS[i]}</span>
+              )}
+              {player._odds_adjusted && (
+                <span className={styles['odds-pill']}>ODDS</span>
+              )}
+            </div>
+          )}
+
+          {/* Minutes progress bar */}
+          {player.predMin > 0 && (
+            <div className={styles['minutes-bar-wrap']}>
+              <span className={styles['minutes-label']}>MIN</span>
+              <div className={styles['minutes-track']}>
+                <div
+                  className={styles['minutes-fill']}
+                  style={{
+                    width: `${Math.min((player.predMin / 48) * 100, 100)}%`,
+                  }}
+                />
+                {avgMin > 0 && (
+                  <div
+                    className={styles['minutes-avg-marker']}
+                    style={{
+                      left: `${Math.min((avgMin / 48) * 100, 100)}%`,
+                    }}
+                  />
+                )}
               </div>
-            ))}
+              <span className={styles['minutes-values']}>
+                {avgMin > 0 && <>{fmt(avgMin)} / </>}
+                <span className={styles.proj}>{fmt(player.predMin)}</span>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* === FOOTER ZONE === */}
+        <div className={styles['card-footer']}>
+          <div className={styles['stat-grid-row']}>
+            {STAT_KEYS.map((key, i) => {
+              const seasonKey = `season_${key}` as keyof Player;
+              const seasonVal = player[seasonKey] as number | undefined;
+              return (
+                <div key={key} className={styles['stat-col']}>
+                  <span className={styles['stat-val-proj']}>
+                    {fmt(player[key] as number)}
+                  </span>
+                  {seasonVal != null && seasonVal > 0 && (
+                    <span className={styles['stat-val-avg']}>
+                      {fmt(seasonVal)}
+                    </span>
+                  )}
+                  <span className={styles['stat-lbl']}>{STAT_LABELS[i]}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Score column */}
-      <div className={styles['score-col']}>
+      {/* Score zone */}
+      <div className={styles['score-zone']}>
         <div className={styles['score-num']}>{player.rating.toFixed(1)}</div>
         <span className={styles['score-label']}>RS</span>
         {player.slot && (
-          <span className={styles['slot-badge']}>{player.slot}</span>
+          <span
+            className={`${styles['slot-badge']}${
+              player.slot === '2.0x' || player.slot === '1.8x'
+                ? ` ${styles['slot-badge-high']}`
+                : ''
+            }`}
+          >
+            {player.slot}
+          </span>
         )}
       </div>
     </div>

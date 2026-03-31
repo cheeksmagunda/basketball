@@ -15,6 +15,9 @@ function SingleSkeleton() {
         <div
           className={`${styles['skel-block']} ${styles['skel-line']} ${styles.narrow}`}
         />
+        <div
+          className={`${styles['skel-block']} ${styles['skel-line']} ${styles.narrow}`}
+        />
       </div>
       <div className={`${styles['skel-block']} ${styles['skel-score']}`} />
     </div>
