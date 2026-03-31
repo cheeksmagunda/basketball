@@ -54,10 +54,14 @@ export default function PlayerCard({
       {/* Player info column */}
       <div className={styles['player-info']}>
 
-        {/* Row 1: Name + boost inline | badges + matchup right-aligned */}
+        {/* Row 1: Name only — full width, no competing badges */}
         <div className={styles['card-header']}>
-          <div className={styles['name-boost-group']}>
-            <span className={styles['player-name']}>{player.name}</span>
+          <span className={styles['player-name']}>{player.name}</span>
+        </div>
+
+        {/* Row 2: Subtitle — boost + HOT + team/pos/matchup left | slot badge right */}
+        <div className={styles['subtitle-row']}>
+          <div className={styles['subtitle-left']}>
             {showBoost && player.est_mult > 0 && (
               <span
                 className={styles['boost-pill']}
@@ -69,27 +73,34 @@ export default function PlayerCard({
             {player._odds_adjusted && (
               <span className={styles['odds-pill']}>ODDS</span>
             )}
-          </div>
-          <div className={styles['badge-col']}>
-            <div className={styles['badge-row']}>
-              {player._hot_streak && (
-                <span className={styles['hot-pill']}>HOT</span>
-              )}
-              <span
-                className={styles['team-badge']}
-                style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
-              >
-                {player.team}
-              </span>
-              <span className={styles['pos-pill']}>{player.pos}</span>
-              {player.injury_status && player.injury_status !== '' && (
-                <span className={styles['injury-badge']}>{player.injury_status}</span>
-              )}
-            </div>
+            {player._hot_streak && (
+              <span className={styles['hot-pill']}>HOT</span>
+            )}
+            <span
+              className={styles['team-badge']}
+              style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
+            >
+              {player.team}
+            </span>
+            <span className={styles['pos-pill']}>{player.pos}</span>
+            {player.injury_status && player.injury_status !== '' && (
+              <span className={styles['injury-badge']}>{player.injury_status}</span>
+            )}
             {player.opp && (
               <span className={styles['matchup-text']}>vs {player.opp}</span>
             )}
           </div>
+          {player.slot && (
+            <span
+              className={`${styles['slot-badge']}${
+                player.slot === '2.0x' || player.slot === '1.8x'
+                  ? ` ${styles['slot-badge-high']}`
+                  : ''
+              }`}
+            >
+              {player.slot}
+            </span>
+          )}
         </div>
 
         {/* Row 3: Stat grid */}
@@ -137,21 +148,10 @@ export default function PlayerCard({
         )}
       </div>
 
-      {/* Score zone */}
+      {/* Score zone — RS number + label only */}
       <div className={styles['score-zone']}>
         <div className={styles['score-num']}>{player.rating.toFixed(1)}</div>
         <span className={styles['score-label']}>RS</span>
-        {player.slot && (
-          <span
-            className={`${styles['slot-badge']}${
-              player.slot === '2.0x' || player.slot === '1.8x'
-                ? ` ${styles['slot-badge-high']}`
-                : ''
-            }`}
-          >
-            {player.slot}
-          </span>
-        )}
       </div>
     </div>
   );
