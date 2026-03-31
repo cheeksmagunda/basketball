@@ -74,3 +74,8 @@
   font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; line-height: 1;
 }
+
+/* Hide nav while Ben's keyboard is open so the input sits above the keyboard */
+:global(body.lab-kb-open) .bottom-nav {
+  display: none;
+}
