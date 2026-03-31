@@ -37,11 +37,17 @@ export function useSlate() {
 
 /**
  * Today's games with lock status.
+ *
+ * Backend returns { data: GameInfo[], cache_status, cached_at }
+ * so we unwrap .data here to keep consumers working with a plain array.
  */
 export function useGames() {
   return useQuery<GamesResponse>({
     queryKey: ['games'],
-    queryFn: () => fetchJson<GamesResponse>('/api/games', 10_000),
+    queryFn: async () => {
+      const res = await fetchJson<{ data: GamesResponse }>('/api/games', 10_000);
+      return res.data ?? [];
+    },
     staleTime: 5 * 60 * 1000, // 5 min
   });
 }
