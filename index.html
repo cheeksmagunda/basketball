@@ -973,6 +973,10 @@
       width: 100% !important;
       background: var(--color-success);
     }
+    .parlay-leg-progress-fill.miss-locked {
+      width: 100% !important;
+      background: var(--color-danger);
+    }
     .parlay-hist-chevron {
       font-size: 1.1rem; font-weight: 300; color: var(--color-text-muted);
       margin-left: 6px; line-height: 1;
@@ -3342,11 +3346,18 @@ function _applyParlayLiveUpdate(payload) {
       }
       if (bar) {
         const prevHit = bar.classList.contains('hit-locked');
+        const prevMiss = bar.classList.contains('miss-locked');
         if (L.hit_threshold_met || L.leg_result_preview === 'hit') {
+          bar.classList.remove('miss-locked');
           bar.classList.add('hit-locked');
           bar.style.width = '100%';
-        } else if (!prevHit && L.progress != null) {
+        } else if (L.leg_result_preview === 'miss') {
           bar.classList.remove('hit-locked');
+          bar.classList.add('miss-locked');
+          bar.style.width = '100%';
+        } else if (!prevHit && !prevMiss && L.progress != null) {
+          bar.classList.remove('hit-locked');
+          bar.classList.remove('miss-locked');
           bar.style.width = Math.round(Math.min(100, Math.max(0, L.progress * 100))) + '%';
         }
       }
@@ -3365,10 +3376,16 @@ function _applyParlayLiveUpdate(payload) {
       }
       if (bar) {
         if (L.leg_result_preview === 'hit' || L.hit_threshold_met) {
+          bar.classList.remove('miss-locked');
           bar.classList.add('hit-locked');
+          bar.style.width = '100%';
+        } else if (L.leg_result_preview === 'miss') {
+          bar.classList.remove('hit-locked');
+          bar.classList.add('miss-locked');
           bar.style.width = '100%';
         } else {
           bar.classList.remove('hit-locked');
+          bar.classList.remove('miss-locked');
           bar.style.width = L.progress != null ? Math.round(Math.min(100, Math.max(0, L.progress * 100))) + '%' : '0%';
         }
       }
@@ -3381,6 +3398,7 @@ function _applyParlayLiveUpdate(payload) {
       if (wrap) wrap.style.display = 'none';
       if (bar) {
         bar.classList.remove('hit-locked');
+        bar.classList.remove('miss-locked');
         bar.style.width = '0%';
       }
     }
