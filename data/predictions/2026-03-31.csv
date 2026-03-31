@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Gary Trent Jr.,4277843,MIL,G,5.7,2.0,34.8,22.0,1.2,2.4,1.8,0.0
+slate,chalk,1.8x,Jaxson Hayes,4397077,LAL,C,5.3,2.6,22.5,16.4,8.0,0.6,0.4,3.0
+slate,chalk,1.6x,Ziaire Williams,4433137,BKN,F,5.2,2.6,31.4,17.0,2.1,1.8,3.8,0.0
+slate,chalk,1.4x,Jamal Shead,4432241,TOR,G,4.7,2.6,26.9,7.1,0.9,8.0,2.4,0.2
+slate,chalk,1.6x,Keon Ellis,4702177,CLE,G,4.6,1.7,30.3,12.9,1.3,1.3,1.7,0.4
+slate,upside,2.0x,Gary Trent Jr.,4277843,MIL,G,5.7,2.0,34.8,22.0,1.2,2.4,1.8,0.0
+slate,upside,1.8x,Jaxson Hayes,4397077,LAL,C,5.3,2.6,22.5,16.4,8.0,0.6,0.4,3.0
+slate,upside,1.6x,Keon Ellis,4702177,CLE,G,4.6,1.7,30.3,12.9,1.3,1.3,1.7,0.4
+slate,upside,1.4x,Paul Reed,4278562,DET,F,4.6,2.4,21.6,15.1,7.4,2.1,1.0,2.1
+slate,upside,1.2x,Josh Minott,4687718,BKN,F,4.2,2.5,32.9,14.0,4.4,1.2,1.6,0.3
