@@ -933,6 +933,16 @@ _CONFIG_DEFAULTS = {
         "decay_days": 3,
         "confidence_threshold": 0.4,
     },
+    "context_layer": {
+        "enabled": True,
+        "model": "claude-sonnet-4-6-20250514",
+        "max_adjustment": 0.4,
+        "timeout_seconds": 20,
+        "web_search_enabled": True,
+        "web_search_model": "claude-sonnet-4-6-20250514",
+        "max_slate_adjustments": 8,
+        "max_total_impact": 2.0,
+    },
     "projection": {
         "min_gate_minutes": 15, "lock_buffer_minutes": 5, "b2b_minute_penalty": 0.88,
         # DNP / reliability guards

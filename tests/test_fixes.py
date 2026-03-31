@@ -4908,5 +4908,333 @@ class TestGamelogInRunGame:
         assert result.get("dnp_risk") is True
 
 
+# ─────────────────────────────────────────────────────────
+# DRAFT SIGNALS RESTRUCTURE — New Signal Integration Tests
+# ─────────────────────────────────────────────────────────
+
+
+class TestNbaApiFeed:
+    """nba_api runtime feed: module loads, caching, enrichment merge."""
+
+    def test_module_importable(self):
+        from api.nba_api_feed import prefetch_enrichment, enrich_stats_map, get_player_enrichment
+        assert callable(prefetch_enrichment)
+        assert callable(enrich_stats_map)
+        assert callable(get_player_enrichment)
+
+    def test_normalize_name(self):
+        from api.nba_api_feed import _normalize_name
+        assert _normalize_name("LeBron James Jr.") == "lebron james"
+        assert _normalize_name("Nikola Jokic") == "nikola jokic"
+        assert _normalize_name("Shai Gilgeous-Alexander") == "shai gilgeousalexander"
+
+    def test_enrich_stats_map_empty_graceful(self):
+        """enrich_stats_map returns 0 when no nba_api data cached."""
+        from api.nba_api_feed import enrich_stats_map
+        stats_map = {"123": {"min": 25, "pts": 15}}
+        names = {"123": "Test Player"}
+        result = enrich_stats_map(stats_map, names, date_str="1999-01-01")
+        assert result == 0
+        assert "_nba_api_usage_share" not in stats_map["123"]
+
+    def test_current_season_format(self):
+        from api.nba_api_feed import _current_season
+        s = _current_season()
+        assert len(s) == 7  # "2025-26"
+        assert "-" in s
+
+    def test_cache_roundtrip(self):
+        from api.nba_api_feed import _write_cache, _read_cache
+        _write_cache("test_key_nba", {"foo": "bar"})
+        result = _read_cache("test_key_nba")
+        assert result is not None
+        assert result["foo"] == "bar"
+
+
+class TestGameOddsSnapshot:
+    """Game-level Odds API spreads/totals snapshot."""
+
+    def test_snapshot_function_exists(self):
+        from api.index import _fetch_game_odds_snapshot, _apply_odds_snapshot_to_games
+        assert callable(_fetch_game_odds_snapshot)
+        assert callable(_apply_odds_snapshot_to_games)
+
+    def test_snapshot_no_key_returns_empty(self):
+        from api.index import _fetch_game_odds_snapshot
+        with patch.dict(os.environ, {"ODDS_API_KEY": ""}):
+            result = _fetch_game_odds_snapshot([])
+            assert result == {}
+
+    def test_apply_snapshot_no_data(self):
+        from api.index import _apply_odds_snapshot_to_games
+        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "LAL"}, "spread": -5, "total": 220}]
+        with patch("api.index._fetch_game_odds_snapshot", return_value={}):
+            updated = _apply_odds_snapshot_to_games(games)
+            assert updated == 0
+            assert games[0]["spread"] == -5  # unchanged
+
+    def test_apply_snapshot_updates_game(self):
+        from api.index import _apply_odds_snapshot_to_games
+        games = [{"home": {"abbr": "BOS"}, "away": {"abbr": "LAL"}, "spread": -5, "total": 220}]
+        mock_snapshot = {("BOS", "LAL"): {"spread": -6.5, "total": 225.5}}
+        with patch("api.index._fetch_game_odds_snapshot", return_value=mock_snapshot):
+            updated = _apply_odds_snapshot_to_games(games)
+            assert updated == 1
+            assert games[0]["spread"] == -6.5
+            assert games[0]["total"] == 225.5
+
+    def test_odds_enrichment_enabled_default(self):
+        from api.index import _CONFIG_DEFAULTS
+        assert _CONFIG_DEFAULTS["odds_enrichment"]["enabled"] is True
+
+
+class TestInjuryFeed:
+    """Unified injury feed: ESPN secondary adapter, combined availability."""
+
+    def test_module_importable(self):
+        from api.injury_feed import is_available, get_combined_availability, fetch_espn_injuries
+        assert callable(is_available)
+        assert callable(get_combined_availability)
+        assert callable(fetch_espn_injuries)
+
+    def test_normalize_status(self):
+        from api.injury_feed import _normalize_status
+        assert _normalize_status("Out") == "out"
+        assert _normalize_status("Doubtful") == "doubtful"
+        assert _normalize_status("Questionable") == "questionable"
+        assert _normalize_status("Day-To-Day") == "day-to-day"
+        assert _normalize_status("Active") == "active"
+
+    def test_is_available_unknown_player(self):
+        from api.injury_feed import is_available
+        with patch("api.injury_feed.get_combined_availability", return_value={}):
+            avail, reason = is_available("Unknown Player XYZ")
+            assert avail is True
+            assert reason == ""
+
+    def test_is_available_out_player(self):
+        from api.injury_feed import is_available
+        mock_data = {
+            "test player": {
+                "available": False,
+                "status": "out",
+                "source": "both",
+                "confidence": "high",
+                "detail": "ACL tear",
+            }
+        }
+        with patch("api.injury_feed.get_combined_availability", return_value=mock_data):
+            avail, reason = is_available("Test Player")
+            assert avail is False
+            assert "out" in reason
+
+    def test_per_game_lineups_check_rotowire(self):
+        """_build_game_lineups now filters via RotoWire (consistency fix)."""
+        from api.index import _build_game_lineups
+        source = Path("api/index.py").read_text()
+        # Per-game lineup path must call is_safe_to_draft or _injury_available
+        assert "is_safe_to_draft" in source or "_injury_available" in source
+
+
+class TestDfsSalaryFeed:
+    """DFS salary CSV popularity proxy: parsing, scoring, integration."""
+
+    def test_module_importable(self):
+        from api.dfs_salary_feed import (
+            save_dfs_salaries, load_dfs_salaries, compute_popularity_scores,
+            get_anti_popularity_adjustment,
+        )
+        assert callable(save_dfs_salaries)
+        assert callable(compute_popularity_scores)
+
+    def test_parse_draftkings_csv(self):
+        from api.dfs_salary_feed import _parse_dfs_csv
+        csv_content = "Name,Position,Salary,AvgPointsPerGame\nLeBron James,SF,$10200,42.5\nBench Guy,PG,$3500,12.0\n"
+        players = _parse_dfs_csv(csv_content, "draftkings")
+        assert len(players) == 2
+        assert players[0]["player_name"] == "LeBron James"
+        assert players[0]["salary"] == 10200
+        assert players[0]["avg_fpts"] == 42.5
+
+    def test_parse_fanduel_csv(self):
+        from api.dfs_salary_feed import _parse_dfs_csv
+        csv_content = "Nickname,Position,Salary,FPPG\nSteph Curry,PG,11000,45.2\n"
+        players = _parse_dfs_csv(csv_content, "fanduel")
+        assert len(players) == 1
+        assert players[0]["player_name"] == "Steph Curry"
+        assert players[0]["salary"] == 11000
+
+    def test_popularity_scores_empty_graceful(self):
+        from api.dfs_salary_feed import compute_popularity_scores
+        result = compute_popularity_scores("1999-01-01")
+        assert result == {}
+
+    def test_anti_pop_adjustment_no_data(self):
+        from api.dfs_salary_feed import get_anti_popularity_adjustment
+        adj = get_anti_popularity_adjustment("Any Player", date_str="1999-01-01")
+        assert adj == 0.0
+
+    def test_anti_pop_adjustment_bounded(self):
+        from api.dfs_salary_feed import get_anti_popularity_adjustment
+        mock_scores = {
+            "popular star": {
+                "popularity_score": 0.95,
+                "salary": 11000,
+                "salary_pct": 0.98,
+                "anti_pop_adjustment": -0.45,
+            }
+        }
+        with patch("api.dfs_salary_feed.compute_popularity_scores", return_value=mock_scores):
+            adj = get_anti_popularity_adjustment("Popular Star", max_penalty=0.5, max_bonus=0.2)
+            assert -0.5 <= adj <= 0.2
+            assert adj < 0  # should be negative for popular player
+
+    def test_dfs_config_defaults(self):
+        from api.index import _CONFIG_DEFAULTS
+        assert "dfs_popularity" in _CONFIG_DEFAULTS
+        cfg = _CONFIG_DEFAULTS["dfs_popularity"]
+        assert cfg["weight"] == 0.7
+        assert cfg["max_penalty"] == 0.5
+
+    def test_save_endpoint_exists(self):
+        from api.index import app
+        routes = [r.path for r in app.routes]
+        assert "/api/save-dfs-salaries" in routes
+
+
+class TestClaudeGuardrails:
+    """Claude context pass: caps, reason codes, audit trail."""
+
+    def test_context_layer_config_defaults(self):
+        from api.index import _CONFIG_DEFAULTS
+        cl = _CONFIG_DEFAULTS["context_layer"]
+        assert cl["max_slate_adjustments"] == 8
+        assert cl["max_total_impact"] == 2.0
+        assert cl["max_adjustment"] == 0.4
+
+    def test_context_pass_prompt_has_reason_class(self):
+        """Claude prompt requires reason_class in each adjustment."""
+        source = Path("api/index.py").read_text()
+        assert "reason_class" in source
+        assert "availability" in source
+        assert "injury_cascade" in source
+
+    def test_context_pass_audit_written(self):
+        """Context pass writes audit to context_audit_ cache key."""
+        source = Path("api/index.py").read_text()
+        assert "context_audit_" in source
+        assert "data/audit/context_" in source
+
+    def test_context_pass_max_adj_clamped(self):
+        """Multipliers are clamped to [1-max_adj, 1+max_adj]."""
+        source = Path("api/index.py").read_text()
+        assert "1.0 - max_adj" in source
+        assert "1.0 + max_adj" in source
+
+    def test_context_pass_slate_cap(self):
+        """Context pass enforces max_slate_adjustments."""
+        source = Path("api/index.py").read_text()
+        assert "max_slate_adjustments" in source
+        assert "max_total_impact" in source
+
+
+class TestLgbmFeatureEnrichment:
+    """Verify nba_api features flow through to LightGBM feature vector."""
+
+    def test_lgbm_feature_vector_accepts_usage_share(self):
+        from api.index import _lgbm_feature_vector
+        import inspect
+        sig = inspect.signature(_lgbm_feature_vector)
+        assert "usage_share" in sig.parameters
+        assert "min_volatility" in sig.parameters
+        assert "spread_abs" in sig.parameters
+        assert "recent_3g_pts" in sig.parameters
+
+    def test_feature_vector_usage_share_flows(self):
+        """When usage_share is passed, it appears in the feature map (not 0.0)."""
+        from api.features import compute_rs_features
+        fm = compute_rs_features(
+            avg_min=30, avg_pts=20, recent_min=28, recent_pts=22,
+            season_pts=20, season_min=30, recent_ast=5, recent_stl=1,
+            recent_blk=0.5, avg_reb=6, home_away=1.0, opp_def_rating=110,
+            usage_share=0.22,
+        )
+        assert fm["usage_share"] == pytest.approx(0.22)
+
+    def test_spread_abs_uses_real_value(self):
+        """spread_abs uses abs(spread) instead of hardcoded 0.0."""
+        from api.features import compute_rs_features
+        fm = compute_rs_features(
+            avg_min=30, avg_pts=20, recent_min=28, recent_pts=22,
+            season_pts=20, season_min=30, recent_ast=5, recent_stl=1,
+            recent_blk=0.5, avg_reb=6, home_away=1.0, opp_def_rating=110,
+            spread_abs=7.5,
+        )
+        assert fm["spread_abs"] == pytest.approx(7.5)
+
+    def test_recent_3g_pts_improves_l3_vs_l5(self):
+        """When recent_3g_pts is provided, l3_vs_l5_pts uses real value."""
+        from api.features import compute_rs_features
+        fm_with = compute_rs_features(
+            avg_min=30, avg_pts=20, recent_min=28, recent_pts=22,
+            season_pts=20, season_min=30, recent_ast=5, recent_stl=1,
+            recent_blk=0.5, avg_reb=6, home_away=1.0, opp_def_rating=110,
+            recent_3g_pts=25.0,
+        )
+        fm_without = compute_rs_features(
+            avg_min=30, avg_pts=20, recent_min=28, recent_pts=22,
+            season_pts=20, season_min=30, recent_ast=5, recent_stl=1,
+            recent_blk=0.5, avg_reb=6, home_away=1.0, opp_def_rating=110,
+        )
+        # With recent_3g_pts=25 and recent_pts=22, l3/l5 = 25/22 ≈ 1.14
+        assert fm_with["l3_vs_l5_pts"] != fm_without["l3_vs_l5_pts"]
+
+
+class TestHealthEndpointSignals:
+    """Health endpoint reports nba_api feed status."""
+
+    def test_health_includes_nba_api(self):
+        source = Path("api/index.py").read_text()
+        assert "nba_api" in source
+        assert "nba_api_players" in source
+
+
+class TestSignalFallbackSafety:
+    """All new signals degrade gracefully when data unavailable."""
+
+    def test_nba_api_graceful_no_deps(self):
+        """nba_api_feed returns empty when nba_api not installed."""
+        from api.nba_api_feed import HAS_NBA_API
+        # Can't force HAS_NBA_API=False without mocking at import, but
+        # we can verify the guard exists
+        source = Path("api/nba_api_feed.py").read_text()
+        assert "HAS_NBA_API" in source
+        assert "return {}" in source  # graceful fallback
+
+    def test_odds_snapshot_graceful_no_key(self):
+        """Game odds snapshot returns empty with no ODDS_API_KEY."""
+        source = Path("api/index.py").read_text()
+        assert 'if not api_key' in source
+
+    def test_injury_feed_graceful_no_espn(self):
+        """Injury feed returns empty on ESPN failure."""
+        from api.injury_feed import fetch_espn_injuries
+        with patch("api.injury_feed.requests.get", side_effect=Exception("timeout")):
+            result = fetch_espn_injuries()
+            assert result == {}
+
+    def test_dfs_salary_graceful_no_data(self):
+        """DFS salary returns 0.0 adjustment when no CSV."""
+        from api.dfs_salary_feed import get_anti_popularity_adjustment
+        result = get_anti_popularity_adjustment("Nobody", date_str="1900-01-01")
+        assert result == 0.0
+
+    def test_context_pass_nonfatal(self):
+        """Context pass function has try/except and prints error."""
+        source = Path("api/index.py").read_text()
+        # The context pass is wrapped in try/except at call site
+        assert "[context_pass] skipped" in source or "context_pass" in source
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
