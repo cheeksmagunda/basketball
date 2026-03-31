@@ -831,6 +831,15 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
     over_pick  = over_candidates[0]  if over_candidates  else None
     under_pick = under_candidates[0] if under_candidates else None
 
+    # Dedup: same player can't be both over and under pick — use next-best candidate
+    if over_pick and under_pick and over_pick.get("player_name") == under_pick.get("player_name"):
+        if over_pick.get("confidence", 0) >= under_pick.get("confidence", 0):
+            alt_unders = [p for p in under_candidates if p.get("player_name") != over_pick["player_name"]]
+            under_pick = alt_unders[0] if alt_unders else None
+        else:
+            alt_overs = [p for p in over_candidates if p.get("player_name") != under_pick["player_name"]]
+            over_pick = alt_overs[0] if alt_overs else None
+
     # Last-resort pass: if one direction is still empty, find the best available
     # pick for it by relaxing the edge threshold — guarantees both directions always
     # produce a pick as long as any player is projected above or below their line.
@@ -1052,6 +1061,13 @@ def run_line_engine(
             over_pick = fallback.get("over_pick")
         if not under_pick:
             under_pick = fallback.get("under_pick")
+
+    # Safety net: same player can't be both over and under (Claude path has no ranked alternatives)
+    if over_pick and under_pick and over_pick.get("player_name") == under_pick.get("player_name"):
+        if over_pick.get("confidence", 0) >= under_pick.get("confidence", 0):
+            under_pick = None
+        else:
+            over_pick = None
 
     # Enrich Claude-built picks with season_avg, proj_min, avg_min, game_time, recent_form_bars
     game_ctx_map = _game_lookup_from_games(games)
