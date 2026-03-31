@@ -1,3 +1,7 @@
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+
 /* ── SKELETON LOADING ── */
 .skeleton {
   background-color: var(--surface);

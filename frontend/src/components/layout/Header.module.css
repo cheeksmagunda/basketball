@@ -1,16 +1,26 @@
+@keyframes ballFloat {
+  0%, 100% { transform: translateY(0px) rotate(-1.5deg); }
+  50%       { transform: translateY(-16px) rotate(1.5deg); }
+}
+
 /* ── APP HEADER ── */
 .header {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   padding: 16px 0 12px;
 }
 
 .logo {
-  width: 32px;
-  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logoIcon {
+  font-size: 1.4rem;
   animation: ballFloat 3s ease-in-out infinite;
+  display: inline-block;
 }
 
 .title {
@@ -20,4 +30,15 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--chalk);
+  line-height: 1.1;
+}
+
+.sub {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  display: block;
 }
