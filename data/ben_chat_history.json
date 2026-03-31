@@ -2,5 +2,9 @@
   {
     "role": "user",
     "content": "Hey Ben couple of issues"
+  },
+  {
+    "role": "assistant",
+    "content": "What's going on? Lay them out."
   }
 ]
