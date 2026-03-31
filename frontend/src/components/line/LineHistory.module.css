@@ -1,0 +1,127 @@
+/* ── LINE HISTORY SECTION ── */
+
+.section {
+  margin-top: 28px;
+}
+
+.sectionTitle {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+/* ── Stats row (Hit Rate + Streak + Resolved) ── */
+.statsRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.statBox {
+  flex: 1;
+  background-color: var(--surface);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, transparent 55%);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--border);
+  border-top-color: rgba(255,255,255,0.14);
+  border-radius: var(--radius-sm);
+  padding: 10px 8px;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.20), 0 1px 0 rgba(255,255,255,0.06) inset;
+}
+.statValue {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.statLabel {
+  font-size: var(--font-size-micro);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  margin-top: 2px;
+}
+
+/* ── Filter tabs ── */
+.filterRow {
+  margin-bottom: 10px;
+}
+
+/* ── History list ── */
+.list {
+  background-color: var(--surface);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.05) 0%, transparent 55%);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--border);
+  border-top-color: rgba(255,255,255,0.14);
+  border-radius: var(--radius-card);
+  padding: 4px 14px;
+  box-shadow: 0 3px 14px rgba(0,0,0,0.22), 0 1px 0 rgba(255,255,255,0.07) inset;
+}
+
+.emptyFilter {
+  padding: 16px 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Skeleton loading ── */
+.skelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.skelRow:last-child {
+  border-bottom: none;
+}
+.skelLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.skelLines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skelBlock {
+  background: linear-gradient(
+    90deg,
+    var(--surface-overlay) 25%,
+    var(--surface-overlay-md) 50%,
+    var(--surface-overlay) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-xs);
+  animation: shimmer 1.4s infinite;
+}
+.skelPill {
+  width: 42px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+}
+.skelName {
+  width: 100px;
+  height: 12px;
+}
+.skelSub {
+  width: 70px;
+  height: 10px;
+}
+.skelResult {
+  width: 36px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+}

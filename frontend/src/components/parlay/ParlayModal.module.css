@@ -1,0 +1,298 @@
+/* ── PARLAY MODAL (Bottom Sheet Content) ── */
+.modal {
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--parlay);
+  display: block;
+}
+
+.date {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin-top: 3px;
+  display: block;
+}
+
+.headerRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.overallPill {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+}
+
+.overallHit {
+  background: rgba(var(--green-rgb),0.2);
+  color: var(--color-success);
+  border: 1px solid rgba(var(--green-rgb),0.45);
+}
+
+.overallMiss {
+  background: rgba(var(--red-rgb),0.1);
+  color: var(--color-danger);
+  border: 1px solid rgba(var(--red-rgb),0.2);
+}
+
+.prob {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: var(--parlay);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Divider */
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-bright), transparent);
+  margin: 14px 0;
+}
+
+/* Legs */
+.legs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.leg {
+  padding: 12px;
+  background-color: rgba(255,255,255,0.03);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, transparent 55%);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-top-color: rgba(255,255,255,0.14);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+}
+
+.legTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.legInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.legNum {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--parlay);
+  opacity: 0.6;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.legNameBlock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.legName {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legTeam {
+  font-size: 0.62rem;
+  color: var(--color-text-muted);
+}
+
+.legPlayBlock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dirPill {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.dirOver {
+  background: rgba(212,166,64,0.14);
+  color: var(--line);
+  border: 1px solid rgba(212,166,64,0.35);
+}
+
+.dirUnder {
+  background: rgba(20,184,166,0.14);
+  color: var(--lab);
+  border: 1px solid rgba(20,184,166,0.35);
+}
+
+.legLineVal {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Stats row */
+.legStats {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.legStatCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.legStatLabel {
+  font-size: var(--font-size-micro);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+
+.legStatVal {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.valHit {
+  color: var(--color-success);
+}
+
+.valMiss {
+  color: var(--color-danger);
+}
+
+/* Result pill per leg */
+.legResultRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.legResultPill {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: var(--font-size-micro);
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.legResultHit {
+  background: rgba(var(--green-rgb),0.2);
+  color: var(--color-success);
+  border: 1px solid rgba(var(--green-rgb),0.45);
+}
+
+.legResultMiss {
+  background: rgba(var(--red-rgb),0.1);
+  color: var(--color-danger);
+  border: 1px solid rgba(var(--red-rgb),0.2);
+}
+
+/* Correlation section */
+.corrSection {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.corrLabel {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--parlay);
+}
+
+.corrList {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+}
+
+.corrItem {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  padding-left: 10px;
+  position: relative;
+}
+
+.corrItem::before {
+  content: '\2022';
+  position: absolute;
+  left: 0;
+  color: var(--parlay);
+}
+
+/* Narrative */
+.narrativeWrap {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background-color: rgba(255,255,255,0.04);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 55%);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-top-color: rgba(255,255,255,0.18);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
+}
+
+.narrative {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}

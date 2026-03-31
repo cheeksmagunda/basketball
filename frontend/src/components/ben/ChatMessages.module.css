@@ -1,0 +1,71 @@
+/* ── CHAT MESSAGES SCROLL AREA ── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  position: relative;
+  padding-right: 12px; /* prevent scrollbar from overlapping right-aligned user messages */
+}
+
+/* Spacer: grows when few messages, pushes them to the bottom like a real chat UI */
+.messages::before {
+  content: '';
+  flex: 1;
+}
+
+/* Scrollbar */
+.messages::-webkit-scrollbar { width: 4px; }
+.messages::-webkit-scrollbar-track { background: transparent; }
+.messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+/* ── EMPTY STATE ── */
+.emptyState {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 24px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.emptyIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: rgba(20,184,166,0.12);
+  border: 1px solid rgba(20,184,166,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  margin-bottom: 4px;
+}
+
+.emptyTitle {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.emptySub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 220px;
+}
+
+/* Hide empty state when messages exist */
+.hasMessages .emptyState {
+  display: none;
+}

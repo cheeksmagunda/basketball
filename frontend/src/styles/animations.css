@@ -1,0 +1,53 @@
+/* ── KEYFRAME ANIMATIONS ── */
+
+/* 8-ball floating animation */
+@keyframes ballFloat {
+  0%, 100% { transform: translateY(0px) rotate(-1.5deg); }
+  50%       { transform: translateY(-16px) rotate(1.5deg); }
+}
+
+/* Card entrance animation */
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Skeleton shimmer loading gradient */
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+
+/* Spinner rotation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 8-ball text fade in */
+@keyframes textFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Oracle label pulse */
+@keyframes textPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* Live stat badge pulse */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Ben thinking dots pulse */
+@keyframes labPulse {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.75); }
+  40% { opacity: 1; transform: scale(1.1); }
+}
+
+/* Parlay live dot pulse */
+@keyframes parlayLivePulse {
+  0% { box-shadow: 0 0 0 0 rgba(0,230,118,0.35); opacity: 1; }
+  70% { box-shadow: 0 0 0 6px rgba(0,230,118,0); opacity: 0.85; }
+  100% { box-shadow: 0 0 0 0 rgba(0,230,118,0); opacity: 1; }
+}

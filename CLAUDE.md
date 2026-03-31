@@ -18,7 +18,18 @@ A daily NBA draft optimizer for the **Real Sports** app. Uses a **Strategy-Repor
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predict | Line | Parlay | Ben, vanilla JS)
+frontend/              — React + Vite + TypeScript SPA (replaces vanilla JS monolith)
+  src/main.tsx         — React entry point (QueryClientProvider + global CSS)
+  src/App.tsx          — Shell: Header + TabRouter + BottomNav
+  src/types/           — TypeScript interfaces (slate, line, parlay, lab, common)
+  src/api/             — React Query hooks: useSlate, useLineOfTheDay, useParlay, useLabBriefing, …
+  src/store/           — Zustand state: uiStore (activeTab, lineDir, …), labStore (messages, system)
+  src/hooks/           — useAbortOnTabSwitch, useEventSource, useEtDate, useKeyboardNavHide
+  src/components/      — Predict | Line | Parlay | Ben tabs + shared (PlayerCard, OracleLoader, …)
+  src/styles/          — tokens.css, global.css, animations.css (CSS Modules per component)
+  vite.config.ts       — Vite: proxy /api → localhost:8080
+  Dockerfile           — Multi-stage: Node build (npm run build) → Python runtime (COPY dist)
+index.html             — Legacy vanilla JS frontend (fallback when frontend/dist/ absent)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only; pure functions)
 api/odds_math.py       — Shared American-odds implied probability helpers
@@ -1053,7 +1064,7 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 ## Pre-deploy checklist (production finalization)
 
 - **Env**: Required vars set in Railway (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY; optional ODDS_API_KEY, CRON_SECRET, DOCS_SECRET).
-- **Tests**: Run `python3 -m pytest tests/ -v` locally when changing backend or frontend contract; test_core.py catches JS apostrophe crashes.
+- **Tests**: Run `python3 -m pytest tests/ -v` locally when changing backend contracts. `TestJSSyntax` is skipped (superseded by TypeScript compiler). For frontend: `cd frontend && npx tsc --noEmit`.
 - **Docs**: CLAUDE.md and README.md reflect current endpoints, crons, lock/cache behavior, and core-pool architecture; docs/LOADING_AUDIT.md for loading and timeouts.
 - **Health**: Use GET `/api/health` for uptime monitoring; alert on non-200.
 - **Loading**: All blocking fetches use `fetchWithTimeout`; Line tab uses background re-fetch on same-day and live-card update only when data changes (see docs/LOADING_AUDIT.md).
@@ -1061,10 +1072,21 @@ Full audit: [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md). Implemented: G
 ## Development
 
 ```bash
-# Local
+# Local backend (Terminal 1)
 pip install -r requirements.txt
-python scripts/check-env.py   # verify required env vars (fail-fast)
-uvicorn server:app --reload
+python scripts/check-env.py        # verify required env vars (fail-fast)
+uvicorn server:app --reload --port 8080
+
+# Local frontend (Terminal 2)
+cd frontend
+npm install                         # first time only
+npm run dev                         # Vite on :5173, proxies /api → :8080
+
+# TypeScript check
+cd frontend && npx tsc --noEmit
+
+# Production build (what Railway runs)
+cd frontend && npm run build        # outputs frontend/dist/
 
 # Deploy — push to main → Railway detects watchPatterns change → rebuilds Docker container
 git push -u origin <your-branch>
@@ -1080,9 +1102,9 @@ When starting fresh in a new chat, Claude Code automatically reads this file for
 Provide the following to the new session to orient it quickly:
 
 1. **Branch**: Work on a feature branch; merge to `main` via PR or local merge + push. Railway auto-deploys from `main` when watchPatterns match.
-2. **Stack**: FastAPI backend (`api/index.py`) + single-file vanilla JS frontend (`index.html`)
-3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers, line cache, JS syntax. Deploy still triggers on push to main; verify on `the-oracle.up.railway.app`.
+2. **Stack**: FastAPI backend (`api/index.py`) + React + Vite + TypeScript frontend (`frontend/`). Legacy `index.html`/`app.js`/`styles.css` remain as server.py fallback until React app is production-verified.
+3. **Tests**: `pytest tests/ -v` (requires `pip install -r requirements.txt`). test_fixes.py covers lock/audit/cache; test_core.py covers helpers and line cache (`TestJSSyntax` is skipped — superseded by `cd frontend && npx tsc --noEmit`). Deploy triggers on push to main; verify on `the-oracle.up.railway.app`.
 4. **Data layer**: All persistent state in GitHub via Contents API (`data/` directory). No database.
-5. **Key globals in frontend**: `SLATE`, `PICKS_DATA`, `LAB`, `LINE_DIR`, `LINE_OVER_PICK`, `LINE_UNDER_PICK`, `LINE_LOADED_DATE`
+5. **Frontend state**: Zustand stores in `frontend/src/store/` (`uiStore`: activeTab, lineDir, etc. | `labStore`: messages, system). React Query hooks in `frontend/src/api/` for all server state.
 6. **Cache**: 3-layer: `/tmp` (ephemeral) → GitHub `data/slate/` (persistent) → full pipeline. Check `CACHE_DIR` in `api/index.py` for the current tmp path (versioned, e.g. `/tmp/nba_cache_v19/`). `/api/cold-reset` clears/regenerates caches + config. `_bust_slate_cache()` invalidates both layers.
 7. **Config**: `data/model-config.json` on GitHub — Ben/Lab writes here, backend reads with 5-min TTL.

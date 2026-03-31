@@ -1,0 +1,29 @@
+/* ── SKELETON LOADING ── */
+.skeleton {
+  background-color: var(--surface);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, transparent 55%);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-top-color: rgba(255,255,255,0.15);
+  border-radius: var(--r);
+  padding: 16px 20px;
+  margin-bottom: 10px;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: 0 3px 14px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.07) inset;
+}
+
+.skel-block {
+  background: linear-gradient(90deg, var(--surface-overlay) 25%, var(--surface-overlay-md) 50%, var(--surface-overlay) 75%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: shimmer 1.4s infinite;
+}
+
+.skel-circle { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; }
+
+.skel-lines { flex: 1; }
+
+.skel-line { height: 10px; margin-bottom: 8px; }
+.skel-line.wide { width: 70%; }
+.skel-line.narrow { width: 40%; }
+
+.skel-score { width: 48px; height: 44px; }

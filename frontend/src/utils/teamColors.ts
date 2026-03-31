@@ -1,0 +1,11 @@
+export const TEAM_COLORS: Record<string, string> = {
+  ATL: '#E03A3E', BOS: '#00A550', BKN: '#B8B8B8', CHA: '#00B4CC',
+  CHI: '#CE1141', CLE: '#FDBB30', DAL: '#00538C', DEN: '#FDB927',
+  DET: '#0C6DC4', GS: '#FFC72C', GSW: '#FFC72C', HOU: '#FF3A5C',
+  IND: '#FFC843', LAC: '#C8102E', LAL: '#FDB927', MEM: '#6B8FC0',
+  MIA: '#98002E', MIL: '#3ECF7E', MIN: '#78BE20', NO: '#C8A96A',
+  NOP: '#C8A96A', NYK: '#F58426', OKC: '#EF8D2F', ORL: '#0077C0',
+  PHI: '#006BB6', PHX: '#E56020', POR: '#CB2025', SA: '#C4CED4',
+  SAC: '#7B4DB5', SAS: '#C4CED4', TOR: '#A8002C', UTA: '#F9A01B',
+  UTAH: '#F9A01B', WAS: '#E31837', WSH: '#E31837',
+};

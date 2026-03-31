@@ -1,0 +1,86 @@
+/* ── MAGIC 8-BALL LOADER ── */
+/* Loader is INSIDE the Predict tab — position:absolute keeps it
+   scoped so it never overlays Line/Ben/Log. */
+
+.oracleLoader {
+  position: absolute; inset: 0; z-index: 10;
+  background: rgba(6,10,15,0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 24px;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.oracleLoader.visible { opacity: 1; pointer-events: all; }
+
+/* Loader colors (magic8-ball, oracle) are intentional one-offs — no design token. */
+.magic8-ball {
+  width: 130px; height: 130px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #1e2235 0%, #090c14 60%, #030508 100%);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 8px 40px rgba(0,0,0,0.8),
+    0 0 60px rgba(20,184,166,0.08),
+    inset 4px 4px 14px rgba(255,255,255,0.055),
+    inset -4px -4px 14px rgba(0,0,0,0.6);
+  position: relative;
+  animation: ballFloat 3.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* Shine highlight */
+.magic8-ball::before {
+  content: '';
+  position: absolute; top: 14px; left: 22px;
+  width: 28px; height: 16px;
+  background: radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, transparent 70%);
+  border-radius: 50%; transform: rotate(-30deg);
+}
+
+/* The 8 circle */
+.magic8-num {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -62%);
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.3rem; font-weight: 900; color: rgba(255,255,255,0.7);
+  letter-spacing: 0;
+}
+
+/* Triangle window at bottom */
+.magic8-window {
+  position: absolute; bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  width: 70px; height: 60px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.magic8-window::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 80%, #0a1628 0%, #060a10 100%);
+  clip-path: polygon(50% 2%, 100% 100%, 0% 100%);
+  border: 1px solid rgba(20,184,166,0.20);
+}
+
+.magic8-text {
+  position: relative; z-index: 1;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.5rem; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--chalk);
+  text-align: center; line-height: 1.2;
+  padding-top: 20px; width: 56px;
+  animation: textFadeIn 0.4s ease forwards;
+}
+
+.oracle-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--color-oracle-label);
+  text-shadow: 0 0 12px rgba(94,234,212,0.4), 0 0 24px rgba(94,234,212,0.15);
+  animation: textPulse 2s ease-in-out infinite;
+}

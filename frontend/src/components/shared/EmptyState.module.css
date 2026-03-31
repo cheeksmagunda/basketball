@@ -1,0 +1,37 @@
+/* ── EMPTY/PLACEHOLDER STATE ── */
+.empty-state {
+  text-align: center; padding: 36px 20px;
+  background-color: rgba(20, 28, 46, 0.50);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, transparent 55%);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-top-color: rgba(255,255,255,0.18);
+  border-radius: var(--r); color: var(--muted);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.08) inset;
+}
+.empty-state .icon { font-size: 2rem; margin-bottom: 10px; display: block; }
+.empty-state p { font-size: 0.82rem; line-height: 1.55; }
+
+/* ── SECONDARY BUTTON (often used in empty states) ── */
+.secondary-btn {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.75rem; font-weight: 700; letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  background-color: rgba(255,255,255,0.07);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.02) 50%, transparent 100%);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-top-color: rgba(255,255,255,0.24);
+  padding: 8px 16px; border-radius: var(--radius-card);
+  color: var(--color-text-muted); cursor: pointer;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.22), 0 1px 0 rgba(255,255,255,0.18) inset;
+  transition: all 0.22s;
+}
+.secondary-btn:hover {
+  color: var(--color-text-primary);
+  border-color: rgba(255,255,255,0.26);
+  border-top-color: rgba(255,255,255,0.36);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.22) inset;
+}

@@ -1,0 +1,17 @@
+{
+  "name": "The Oracle — NBA Draft Optimizer",
+  "short_name": "The Oracle",
+  "description": "AI-powered NBA DFS draft optimizer",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060a0f",
+  "theme_color": "#060a0f",
+  "icons": [
+    {
+      "src": "/oracle-ball.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

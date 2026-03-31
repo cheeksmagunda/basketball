@@ -191,6 +191,11 @@ class TestLineCacheLogic:
 # 3. JS syntax integrity — catches the apostrophe crash class before push
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(
+    reason="Frontend migrated to React+TypeScript. TypeScript compiler (tsc --noEmit) "
+           "provides stronger static analysis guarantees than these heuristic JS scans. "
+           "Run: cd frontend && npx tsc --noEmit"
+)
 class TestJSSyntax:
     """
     Scans app.js for unescaped apostrophes inside single-quoted JS string

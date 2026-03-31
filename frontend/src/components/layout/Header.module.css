@@ -1,0 +1,23 @@
+/* ── APP HEADER ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 0 12px;
+}
+
+.logo {
+  width: 32px;
+  height: 32px;
+  animation: ballFloat 3s ease-in-out infinite;
+}
+
+.title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--chalk);
+}

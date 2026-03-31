@@ -8,69 +8,111 @@ Railway / any host: python server.py   (reads PORT env var automatically)
 Local dev:          uvicorn server:app --reload
 
 grep: DEV SERVER — PORT, static routes (manifest/favicon/svg), SPA index.html catch-all
+
+Dual-mode serving:
+  - If frontend/dist/ exists: mount React build assets, serve dist/index.html for all SPA routes.
+  - Otherwise: serve legacy index.html + app.js + styles.css from project root (fallback during migration).
 """
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 print("[boot] importing api.index...", flush=True)
 from api.index import app  # noqa: F401 – re-export for uvicorn
 print("[boot] api.index imported OK", flush=True)
 
 ROOT = Path(__file__).parent
+DIST = ROOT / "frontend" / "dist"
+REACT_MODE = DIST.is_dir()
 
-# --- Static file routes (replaces Vercel's @vercel/static) ---
+print(f"[boot] serving mode: {'React (frontend/dist/)' if REACT_MODE else 'legacy (root index.html)'}", flush=True)
 
-@app.get("/manifest.json")
-async def serve_manifest():
-    p = ROOT / "manifest.json"
-    if p.exists():
-        return FileResponse(p, media_type="application/json",
+# ── React mode: mount /assets static files ──────────────────────────────────
+
+if REACT_MODE:
+    assets_dir = DIST / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/manifest.json")
+    async def serve_manifest_react():
+        p = DIST / "manifest.json"
+        if p.exists():
+            return FileResponse(p, media_type="application/json",
+                                headers={"Cache-Control": "public, max-age=86400"})
+        return HTMLResponse("Not found", status_code=404)
+
+    @app.get("/favicon.ico")
+    async def serve_favicon_react():
+        p = DIST / "favicon.ico"
+        if p.exists():
+            return FileResponse(p)
+        return HTMLResponse("", status_code=204)
+
+    @app.get("/oracle-ball.svg")
+    async def serve_oracle_ball_react():
+        p = DIST / "oracle-ball.svg"
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml",
+                                headers={"Cache-Control": "public, max-age=86400"})
+        return HTMLResponse("Not found", status_code=404)
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend_react(request: Request, full_path: str = ""):
+        if full_path.startswith("api/"):
+            return JSONResponse({"error": "Endpoint not found"}, status_code=404)
+        index = DIST / "index.html"
+        return HTMLResponse(
+            content=index.read_text(),
+            status_code=200,
+            headers={"Cache-Control": "max-age=0, must-revalidate"},
+        )
+
+# ── Legacy mode: serve root index.html + app.js + styles.css ────────────────
+
+else:
+    @app.get("/manifest.json")
+    async def serve_manifest():
+        p = ROOT / "manifest.json"
+        if p.exists():
+            return FileResponse(p, media_type="application/json",
+                                headers={"Cache-Control": "public, max-age=86400"})
+        return HTMLResponse("Not found", status_code=404)
+
+    @app.get("/favicon.ico")
+    async def serve_favicon():
+        p = ROOT / "favicon.ico"
+        if p.exists():
+            return FileResponse(p)
+        return HTMLResponse("", status_code=204)
+
+    @app.get("/oracle-ball.svg")
+    async def serve_oracle_ball():
+        return FileResponse(ROOT / "oracle-ball.svg", media_type="image/svg+xml",
                             headers={"Cache-Control": "public, max-age=86400"})
-    return HTMLResponse("Not found", status_code=404)
 
+    @app.get("/styles.css")
+    async def serve_styles():
+        return FileResponse(ROOT / "styles.css", media_type="text/css",
+                            headers={"Cache-Control": "public, max-age=86400"})
 
-@app.get("/favicon.ico")
-async def serve_favicon():
-    p = ROOT / "favicon.ico"
-    if p.exists():
-        return FileResponse(p)
-    return HTMLResponse("", status_code=204)
+    @app.get("/app.js")
+    async def serve_app_js():
+        return FileResponse(ROOT / "app.js", media_type="application/javascript",
+                            headers={"Cache-Control": "public, max-age=86400"})
 
-
-@app.get("/oracle-ball.svg")
-async def serve_oracle_ball():
-    return FileResponse(ROOT / "oracle-ball.svg", media_type="image/svg+xml",
-                        headers={"Cache-Control": "public, max-age=86400"})
-
-
-@app.get("/styles.css")
-async def serve_styles():
-    return FileResponse(ROOT / "styles.css", media_type="text/css",
-                        headers={"Cache-Control": "public, max-age=86400"})
-
-
-@app.get("/app.js")
-async def serve_app_js():
-    return FileResponse(ROOT / "app.js", media_type="application/javascript",
-                        headers={"Cache-Control": "public, max-age=86400"})
-
-
-# Catch-all: serve index.html for any non-API route (SPA pattern).
-# This MUST be last — FastAPI routes explicit /api/* handlers first; this
-# only fires when no other route matched (i.e. real SPA navigation paths).
-# Guard against /api/* typos that would otherwise return 200+HTML silently.
-@app.get("/{full_path:path}")
-async def serve_frontend(request: Request, full_path: str = ""):
-    if full_path.startswith("api/"):
-        return JSONResponse({"error": "Endpoint not found"}, status_code=404)
-    html_path = ROOT / "index.html"
-    return HTMLResponse(
-        content=html_path.read_text(),
-        status_code=200,
-        headers={"Cache-Control": "max-age=0, must-revalidate"},
-    )
+    @app.get("/{full_path:path}")
+    async def serve_frontend(request: Request, full_path: str = ""):
+        if full_path.startswith("api/"):
+            return JSONResponse({"error": "Endpoint not found"}, status_code=404)
+        html_path = ROOT / "index.html"
+        return HTMLResponse(
+            content=html_path.read_text(),
+            status_code=200,
+            headers={"Cache-Control": "max-age=0, must-revalidate"},
+        )
 
 
 if __name__ == "__main__":

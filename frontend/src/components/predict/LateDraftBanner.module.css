@@ -1,0 +1,43 @@
+/* ── Late Draft Banner — shown when slate is locked but remaining games exist ── */
+.banner {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.text {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.text strong {
+  color: var(--color-text-primary);
+}
+
+.btn {
+  flex-shrink: 0;
+  background: var(--chalk);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius-card);
+  padding: 8px 16px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

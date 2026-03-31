@@ -1,0 +1,77 @@
+/* Global design tokens — single source of truth for colors, radius, typography.
+   Prefer semantic tokens (--color-success, --color-danger, --radius-card) for new code.
+   --green/--red: legacy success/error (use --color-success/--color-danger where consistent).
+   --r: alias for --radius-card (14px). */
+:root {
+  --bg: #060a0f;
+  --surface: rgba(12, 18, 28, 0.78);
+  --surface2: rgba(20, 30, 48, 0.52);
+  --border: rgba(255,255,255,0.09);
+  --border-bright: rgba(255,255,255,0.18);
+  /* ── 3-color accent system: teal (primary) + gold (secondary) + coral (alert) ── */
+  --chalk: #14b8a6;
+  --chalk-glow: rgba(20,184,166,0.25);
+  --chalk-rgb: 20,184,166;
+  --upside: #14b8a6;
+  --upside-glow: rgba(20,184,166,0.25);
+  --muted: #64748b;
+  --text: #e8edf5;
+  --text-dim: #94a3b8;
+  --green: #22c55e;
+  --red: #f43f5e;
+  --r: var(--radius-card);
+  /* Line page accent — gold (secondary) */
+  --line: #d4a640;
+  --line-glow: rgba(212,166,64,0.22);
+  /* Lab/Ben page accent — teal (same as primary) */
+  --lab: #14b8a6;
+  --lab-glow: rgba(20,184,166,0.22);
+  /* Parlay page accent — teal (unified, no more magenta) */
+  --parlay: #14b8a6;
+  --parlay-glow: rgba(20,184,166,0.22);
+  /* Per-tab ambient glow (set by switchTab) */
+  --tab-glow: rgba(20,184,166,0.06);
+  /* Log page palette — desaturated, WCAG AA on dark bg */
+  --log-chalk: #8ec5b8;
+  --log-chalk-glow: rgba(142,197,184,0.2);
+  --log-upside: #8ec5b8;
+  --log-upside-glow: rgba(142,197,184,0.2);
+  --log-win: #d4a640;
+  --log-win-glow: rgba(212,166,64,0.2);
+  --log-opt: #9b80c8;
+  --log-opt-glow: rgba(155,128,200,0.2);
+
+  /* Semantic design tokens (prefer these in new styles) */
+  --color-success: #00E676;
+  --color-danger: #FF8A80;
+  --color-warning: #d4a640;
+  --color-text-primary: #e8edf5;
+  --color-text-muted: #8A96A3;
+  --radius-pill: 9999px;
+  --radius-card: 18px;
+  --radius-md: 14px;
+  --radius-sm: 8px;
+  --radius-xs: 4px;
+  --font-size-micro: 0.65rem;
+  --tracking-caps: 0.08em;
+  --surface-overlay: rgba(255,255,255,0.05);
+  --surface-overlay-md: rgba(255,255,255,0.09);
+  /* Liquid Glass design tokens — Apple iOS 26 / macOS Tahoe aesthetic */
+  --glass-specular: linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 45%, transparent 100%);
+  --glass-shadow: 0 8px 32px rgba(0,0,0,0.38), 0 1px 0 rgba(255,255,255,0.20) inset;
+  --glass-border: rgba(255,255,255,0.18);
+  --glass-border-subtle: rgba(255,255,255,0.11);
+  --glass-blur: blur(32px) saturate(180%);
+  --green-rgb: 34,197,94;
+  --red-rgb: 244,63,94;
+  /* Decorative one-offs */
+  --color-injury-bg: #3B1C1C;
+  --color-line-under: #5eead4;
+  --color-oracle-label: #5eead4;
+  --color-date-chip-bg: #1E2633;
+  --color-date-chip-hover: #243040;
+  --lab-vh: 100dvh;
+  --keyboard-height: 0px;
+  --lab-header-offset: 80px;
+  --lab-nav-offset: 90px;
+}

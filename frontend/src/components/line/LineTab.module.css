@@ -1,0 +1,110 @@
+/* ── Line Tab container ── */
+.root {
+  padding-top: 10px;
+  padding-bottom: 90px;
+}
+
+.pickSection {
+  margin-top: 12px;
+}
+
+/* Pending / next-slate state */
+.pending {
+  text-align: center;
+  padding: 28px 16px;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+.pendingIcon {
+  font-size: 1.4rem;
+  margin-bottom: 8px;
+}
+.pendingText {
+  line-height: 1.4;
+}
+.checkBtn {
+  margin-top: 12px;
+  padding: 6px 14px;
+  font-size: 0.72rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.checkBtn:hover {
+  color: var(--color-text-primary);
+  border-color: var(--border-bright);
+}
+
+/* No direction pick message */
+.noDir {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+/* ── Skeleton placeholder ── */
+.skeleton {
+  background-color: var(--surface);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, transparent 55%);
+  border: 1px solid var(--border);
+  border-top-color: rgba(255,255,255,0.15);
+  border-radius: var(--radius-card);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.08) inset;
+}
+
+.skelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skelBlock {
+  background: linear-gradient(
+    90deg,
+    var(--surface-overlay) 25%,
+    var(--surface-overlay-md) 50%,
+    var(--surface-overlay) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: shimmer 1.4s infinite;
+}
+
+.skelWide {
+  height: 18px;
+  width: 55%;
+}
+.skelNarrow {
+  height: 12px;
+  width: 40%;
+}
+.skelPill {
+  height: 28px;
+  width: 90px;
+  border-radius: var(--radius-pill);
+}
+.skelDataRow {
+  display: flex;
+  gap: 8px;
+}
+.skelCol {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--radius-sm);
+}
+.skelConclusion {
+  height: 52px;
+  width: 100%;
+}
