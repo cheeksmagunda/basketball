@@ -69,29 +69,9 @@
 /* ── PLAYER INFO COLUMN ── */
 .player-info { position: relative; z-index: 1; min-width: 0; }
 
-/* ── HEADER ZONE ── */
+/* ── ROW 1: NAME HEADLINE ── */
 .card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.name-boost-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
-
-.badge-col {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  flex-shrink: 0;
+  margin-bottom: 3px;
 }
 
 .player-name {
@@ -99,9 +79,29 @@
   font-size: 1.15rem; font-weight: 900; line-height: 1;
   color: var(--color-text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block;
 }
 
-/* Matchup text "vs OPP" — below badge-row, right-aligned */
+/* ── ROW 2: SUBTITLE — boost + badges + matchup left | slot badge right ── */
+.subtitle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.subtitle-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Matchup text "vs OPP" — inline in subtitle row */
 .matchup-text {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 0.6rem; font-weight: 600;
@@ -109,10 +109,6 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   white-space: nowrap;
-}
-
-.badge-row {
-  display: flex; align-items: center; gap: 5px; flex-shrink: 0;
 }
 
 .hot-pill {
@@ -177,19 +173,20 @@
   letter-spacing: 0.04em; text-transform: uppercase;
 }
 
+/* ── ROW 3: STAT GRID ── */
 .stat-grid-row {
-  display: flex; gap: 2px;
+  display: flex; gap: 4px;
   margin-bottom: 4px;
 }
 
 .stat-col {
-  display: flex; flex-direction: column; align-items: center;
-  min-width: 34px; padding: 0 3px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  min-width: 36px; padding: 0 3px;
 }
 
 .stat-val-proj {
   font-family: 'Barlow Condensed', sans-serif;
-  font-size: 0.82rem; font-weight: 800;
+  font-size: 0.9rem; font-weight: 900;
   color: var(--color-text-primary);
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -265,13 +262,13 @@
   font-weight: 700;
 }
 
-/* ── SCORE ZONE ── */
+/* ── SCORE ZONE — RS number + label only ── */
 .score-zone {
   text-align: center;
   position: relative; z-index: 1;
   border-left: 1px solid var(--border);
   padding-left: 12px;
-  min-width: 66px;
+  min-width: 54px;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
 }
@@ -290,7 +287,7 @@
   display: block; margin-top: 3px;
 }
 
-/* Prominent slot badge */
+/* Slot badge — now rendered in subtitle-row (right side) */
 .slot-badge {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 0.78rem; font-weight: 900;
@@ -299,8 +296,9 @@
   border: 1px solid rgba(255,255,255,0.18);
   border-radius: var(--radius-pill);
   padding: 3px 10px;
-  display: inline-block; margin-top: 6px;
+  display: inline-block;
   box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  flex-shrink: 0;
 }
 
 /* High slot highlight (2.0x, 1.8x) */
