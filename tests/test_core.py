@@ -193,9 +193,8 @@ class TestLineCacheLogic:
 
 class TestJSSyntax:
     """
-    Scans index.html's <script> block for unescaped apostrophes inside
-    single-quoted JS string literals. These cause silent parse failures that
-    blank out the entire app.
+    Scans app.js for unescaped apostrophes inside single-quoted JS string
+    literals. These cause silent parse failures that blank out the entire app.
     """
 
     @pytest.fixture(scope="class")
