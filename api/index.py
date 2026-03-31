@@ -1087,6 +1087,7 @@ _CONFIG_DEFAULTS = {
         "max_upside_swaps": 2,          # Max players swapped between safe and upside lineups
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
+        "max_per_team": 1,              # Max players from the same team in a lineup (diversity)
     },
 }
 
@@ -4541,6 +4542,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     min_minutes = float(_strat.get("min_minutes", 12.0))
     ev_swap_threshold = float(_strat.get("ev_swap_threshold", 2.0))
     max_swaps = int(_strat.get("max_upside_swaps", 2))
+    max_per_team = int(_strat.get("max_per_team", 1))
 
     # RotoWire availability check
     rw_statuses = {}
@@ -4610,14 +4612,31 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # ── Step 4: Safe lineup (Starting 5) ───────────────────────────────────
     # Top 5 by safe_ev (conservative floor). When two players have similar safe_ev
     # (within threshold), prefer the lower-variance player (Finding 6: reliable floor).
+    # Team diversity: max_per_team limits players from the same team (default 1).
     safe_pool = list(candidate_pool)
     safe_pool.sort(key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
-    chalk = safe_pool[:5]
+
+    def _select_with_team_cap(pool, n, max_team):
+        """Greedy top-N selection respecting per-team cap."""
+        selected = []
+        team_counts = {}
+        for p in pool:
+            if len(selected) >= n:
+                break
+            team = (p.get("team") or "").upper()
+            if team and team_counts.get(team, 0) >= max_team:
+                continue
+            selected.append(p)
+            team_counts[team] = team_counts.get(team, 0) + 1
+        return selected
+
+    chalk = _select_with_team_cap(safe_pool, 5, max_per_team)
 
     # ── Step 5: Upside lineup (Moonshot) ───────────────────────────────────
     # Start from the same ranked list. Make 1-2 swaps pushing toward higher
     # ceiling: where two candidates have similar upside_ev (within ~2 pts), the
     # moonshot takes the higher-variance / higher-boost player.
+    # Team diversity enforced: swaps must not violate max_per_team.
     upside = list(chalk)  # start as copy of safe
     chalk_names = {p.get("name") for p in chalk}
     # Find swap candidates: players NOT in safe lineup, ranked by upside_ev
@@ -4632,6 +4651,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         c_ev = candidate.get("upside_ev", 0)
         c_var = candidate.get("player_variance", 0)
         c_boost = candidate.get("est_mult", 0)
+        c_team = (candidate.get("team") or "").upper()
         # Find the weakest safe player within the EV threshold (compare upside_ev vs safe_ev)
         best_swap_idx = -1
         best_swap_score = -1
@@ -4642,6 +4662,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 continue  # candidate is too far below this safe player
             if ev_gap < -ev_swap_threshold:
                 continue  # candidate is much better — should already be in top 5
+            # Check team cap: after swap, would the candidate's team exceed max_per_team?
+            s_team = (safe_p.get("team") or "").upper()
+            if c_team:
+                team_count_after = sum(1 for p in upside if (p.get("team") or "").upper() == c_team and p.get("name") != safe_p.get("name"))
+                if team_count_after >= max_per_team:
+                    continue  # swap would violate team cap
             # Candidate has higher variance OR higher boost → upside swap
             s_var = safe_p.get("player_variance", 0)
             s_boost = safe_p.get("est_mult", 0)
