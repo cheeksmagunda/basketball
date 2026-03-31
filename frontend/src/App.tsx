@@ -6,6 +6,7 @@ export default function App() {
   return (
     <div className="app">
       <Header />
+      <div className="divider" style={{ margin: '8px 0 0' }} />
       <TabRouter />
       <BottomNav />
     </div>
