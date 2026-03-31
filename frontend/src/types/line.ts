@@ -20,7 +20,7 @@ export interface LinePick {
   projection: number;                 // model projection for the stat
   edge: number;                       // projection - line (over) or line - projection (under)
   confidence: number;                 // 0–100 integer score
-  signals: string[];                  // driver signals for narrative (e.g. "3 of last 5 over")
+  signals: Array<{ type: string; detail: string }>; // driver signal objects from backend
   result: PickResult;
   actual_stat: number | null;         // post-game actual (null when pending)
   date: string;                       // YYYY-MM-DD

@@ -8457,6 +8457,37 @@ def _fetch_lines_via_claude(all_proj: list, games: list, date=None, force_refres
         return {}
 
 
+_L5_STAT_MAP = {"points": "points", "rebounds": "rebounds", "assists": "assists"}
+
+def _enrich_line_picks_l5(result, all_proj):
+    """Populate recent_form_values on line picks from ESPN gamelogs (L5 real game stats)."""
+    if not result:
+        return
+    for key in ("over_pick", "under_pick"):
+        pick = result.get(key)
+        if not pick or pick.get("recent_form_values"):
+            continue
+        pid = pick.get("player_id", "")
+        if not pid:
+            # Try to find player_id from projections
+            for p in (all_proj or []):
+                if p.get("name") == pick.get("player_name") and p.get("team") == pick.get("team"):
+                    pid = str(p.get("id", ""))
+                    if pid:
+                        pick["player_id"] = pid
+                    break
+        if not pid:
+            continue
+        stat_key = _L5_STAT_MAP.get(pick.get("stat_type", ""), "points")
+        try:
+            gl = _fetch_gamelog(pid, 5)
+            vals = gl.get(stat_key, [])[:5] if gl else []
+            if vals:
+                pick["recent_form_values"] = [round(float(v), 1) for v in vals]
+        except Exception as e:
+            print(f"[line-l5] gamelog fetch failed for {pick.get('player_name')}: {e}")
+
+
 def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False):
     """Run the full line engine pipeline for a given date (datetime.date).
     Blocking — call via asyncio.to_thread() from async endpoints."""
@@ -8528,6 +8559,8 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
         fair_value_data=fv_full_data or None,
         prefer_fallback=prefer_fallback,
     )
+    # Enrich picks with real L5 game values from ESPN gamelogs
+    _enrich_line_picks_l5(result, all_proj)
     return result, None
 
 

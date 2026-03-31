@@ -43,21 +43,6 @@ function fmtOddsTimestamp(iso: string | null): string | null {
 }
 
 /**
- * Build narrative conclusion from pick.narrative + pick.signals.
- * Returns plain text string (no HTML -- we'll render with spans).
- */
-function buildConclusion(pick: LinePick): string {
-  const parts: string[] = [];
-  if (pick.narrative) parts.push(pick.narrative);
-  if (pick.signals?.length) {
-    const signalText = pick.signals.join('. ');
-    if (parts.length && !parts[0].endsWith('.')) parts[0] += '.';
-    parts.push(signalText);
-  }
-  return parts.join(' ') || '';
-}
-
-/**
  * Render L5 recent form values.
  * Uses `recent_form_values` (raw stat values) when available,
  * otherwise falls back to ratio-derived values from `recent_form_bars`.
@@ -83,7 +68,6 @@ export default function LinePickCard({ pick }: LinePickCardProps) {
   const dirClass = isOver ? styles.over : styles.under;
   const edgePlus = pick.edge >= 0;
   const oddsTs = fmtOddsTimestamp(pick.line_updated_at);
-  const conclusionText = buildConclusion(pick);
   const l5 = getL5Values(pick);
   const isResolved = pick.result === 'hit' || pick.result === 'miss';
 
@@ -188,14 +172,7 @@ export default function LinePickCard({ pick }: LinePickCardProps) {
         </div>
       </div>
 
-      {/* ── Zone 4: Conclusion (Oracle Insight) ── */}
-      {conclusionText && (
-        <div className={styles.conclusionWrap}>
-          <p className={styles.conclusion}>{conclusionText}</p>
-        </div>
-      )}
-
-      {/* ── Zone 5: Result (when resolved) ── */}
+      {/* ── Zone 4: Result (when resolved) ── */}
       {isResolved && (
         <div className={styles.resultRow}>
           <span className={styles.resultLabel}>Result</span>

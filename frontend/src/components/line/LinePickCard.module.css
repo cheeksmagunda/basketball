@@ -214,27 +214,7 @@
   color: var(--color-text-muted);
 }
 
-/* ── Zone 4: Conclusion (Oracle Insight) ── */
-.conclusionWrap {
-  margin-top: 16px;
-  padding: 12px 14px;
-  background-color: rgba(255,255,255,0.04);
-  background-image: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, transparent 55%);
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(255,255,255,0.10);
-  border-top-color: rgba(255,255,255,0.18);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
-  position: relative;
-  z-index: 1;
-}
-.conclusion {
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  margin: 0;
-}
-
-/* ── Zone 5: Result row ── */
+/* ── Zone 4: Result row ── */
 .resultRow {
   display: flex;
   align-items: center;
