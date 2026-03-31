@@ -14,7 +14,6 @@ interface PlayerCardProps {
 const STAT_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk'] as const;
 const STAT_LABELS = ['PTS', 'REB', 'AST', 'STL', 'BLK'] as const;
 
-/** Format a numeric value for display. Returns "0" for falsy/NaN. */
 function fmt(val: number | undefined | null): string {
   if (val == null || Number.isNaN(val)) return '0';
   return val % 1 === 0 ? String(val) : val.toFixed(1);
@@ -54,16 +53,14 @@ export default function PlayerCard({
 
       {/* Player info column */}
       <div className={styles['player-info']}>
-        {/* === HEADER ZONE === */}
+
+        {/* Row 1: Name + badges */}
         <div className={styles['card-header']}>
-          <div className={styles['player-identity']}>
-            <span className={styles['player-name']}>{player.name}</span>
-          </div>
+          <span className={styles['player-name']}>{player.name}</span>
           <div className={styles['badge-row']}>
             {player._hot_streak && (
               <span className={styles['hot-pill']}>HOT</span>
             )}
-            {/* Team name badge — team-colored */}
             <span
               className={styles['team-badge']}
               style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
@@ -72,83 +69,63 @@ export default function PlayerCard({
             </span>
             <span className={styles['pos-pill']}>{player.pos}</span>
             {player.injury_status && player.injury_status !== '' && (
-              <span className={styles['injury-badge']}>
-                {player.injury_status}
-              </span>
+              <span className={styles['injury-badge']}>{player.injury_status}</span>
             )}
           </div>
         </div>
 
-        {/* Matchup line */}
-        {player.opp && (
-          <div className={styles['matchup-row']}>
-            vs {player.opp}
-          </div>
-        )}
-
-        {/* === BODY ZONE === */}
-        <div className={styles['card-body']}>
-          {/* Boost + Odds row (slate-wide only) */}
-          {showBoost && (player.est_mult > 0 || player._odds_adjusted) && (
-            <div className={styles['boost-row']}>
-              {player.est_mult > 0 && (
-                <span
-                  className={styles['boost-pill']}
-                  style={{
-                    color: teamHex,
-                    borderColor: hexToRgba(teamHex, 0.25),
-                  }}
-                >
-                  +{player.est_mult.toFixed(1)}x card
-                </span>
-              )}
-              {player._odds_adjusted && (
-                <span className={styles['odds-pill']}>ODDS</span>
-              )}
-            </div>
+        {/* Row 2: Boost pill + matchup — single compact row */}
+        <div className={styles['sub-row']}>
+          {showBoost && player.est_mult > 0 && (
+            <span
+              className={styles['boost-pill']}
+              style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.25) }}
+            >
+              +{player.est_mult.toFixed(1)}x card
+            </span>
+          )}
+          {player._odds_adjusted && (
+            <span className={styles['odds-pill']}>ODDS</span>
+          )}
+          {player.opp && (
+            <span className={styles['matchup-text']}>vs {player.opp}</span>
           )}
         </div>
 
-        {/* === FOOTER ZONE — stat grid === */}
-        <div className={styles['card-footer']}>
-          <div className={styles['stat-grid-row']}>
-            {STAT_KEYS.map((key, i) => {
-              const seasonKey = `season_${key}` as keyof Player;
-              const seasonVal = player[seasonKey] as number | undefined;
-              return (
-                <div key={key} className={styles['stat-col']}>
-                  <span className={styles['stat-val-proj']}>
-                    {fmt(player[key] as number)}
+        {/* Row 3: Stat grid */}
+        <div className={styles['stat-grid-row']}>
+          {STAT_KEYS.map((key, i) => {
+            const seasonKey = `season_${key}` as keyof Player;
+            const seasonVal = player[seasonKey] as number | undefined;
+            return (
+              <div key={key} className={styles['stat-col']}>
+                <span className={styles['stat-val-proj']}>
+                  {fmt(player[key] as number)}
+                </span>
+                {seasonVal != null && seasonVal > 0 && (
+                  <span className={styles['stat-val-avg']}>
+                    {fmt(seasonVal)}
                   </span>
-                  {seasonVal != null && seasonVal > 0 && (
-                    <span className={styles['stat-val-avg']}>
-                      {fmt(seasonVal)}
-                    </span>
-                  )}
-                  <span className={styles['stat-lbl']}>{STAT_LABELS[i]}</span>
-                </div>
-              );
-            })}
-          </div>
+                )}
+                <span className={styles['stat-lbl']}>{STAT_LABELS[i]}</span>
+              </div>
+            );
+          })}
         </div>
 
-        {/* === MINUTES BAR — last element === */}
+        {/* Row 4: Minutes bar */}
         {player.predMin > 0 && (
           <div className={styles['minutes-bar-wrap']}>
             <span className={styles['minutes-label']}>MIN</span>
             <div className={styles['minutes-track']}>
               <div
                 className={styles['minutes-fill']}
-                style={{
-                  width: `${Math.min((player.predMin / 48) * 100, 100)}%`,
-                }}
+                style={{ width: `${Math.min((player.predMin / 48) * 100, 100)}%` }}
               />
               {avgMin > 0 && (
                 <div
                   className={styles['minutes-avg-marker']}
-                  style={{
-                    left: `${Math.min((avgMin / 48) * 100, 100)}%`,
-                  }}
+                  style={{ left: `${Math.min((avgMin / 48) * 100, 100)}%` }}
                 />
               )}
             </div>
