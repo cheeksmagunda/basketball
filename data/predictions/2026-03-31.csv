@@ -1,0 +1,46 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Gary Trent Jr.,4277843,MIL,G,5.7,2.0,34.8,22.0,1.2,2.4,1.8,0.0
+slate,chalk,1.8x,Ziaire Williams,4433137,BKN,F,5.2,2.6,31.4,17.0,2.1,1.8,3.8,0.0
+slate,chalk,1.6x,Jaxson Hayes,4397077,LAL,C,5.0,2.6,24.9,13.9,7.6,1.0,1.1,3.8
+slate,chalk,1.4x,Jamal Shead,4432241,TOR,G,4.7,2.6,26.9,7.1,0.9,8.0,2.4,0.2
+slate,chalk,1.2x,Keon Ellis,4702177,CLE,G,4.6,1.7,30.1,12.9,1.3,1.3,1.7,0.4
+slate,upside,2.0x,Gary Trent Jr.,4277843,MIL,G,5.7,2.0,34.8,22.0,1.2,2.4,1.8,0.0
+slate,upside,1.8x,Ziaire Williams,4433137,BKN,F,5.2,2.6,31.4,17.0,2.1,1.8,3.8,0.0
+slate,upside,1.6x,Jaxson Hayes,4397077,LAL,C,5.0,2.6,24.9,13.9,7.6,1.0,1.1,3.8
+slate,upside,1.4x,Daniss Jenkins,5107199,DET,G,4.8,2.1,30.5,16.3,4.9,7.0,0.6,0.0
+slate,upside,1.2x,Keon Ellis,4702177,CLE,G,4.6,1.7,30.1,12.9,1.3,1.3,1.7,0.4
+PHX @ ORL,the_lineup,2.0x,Paolo Banchero,4432573,ORL,F,6.3,0.0,35.9,22.0,6.6,4.8,0.2,0.2
+PHX @ ORL,the_lineup,1.8x,Devin Booker,3136193,PHX,G,6.3,0.0,25.2,29.6,2.6,6.7,0.3,0.3
+PHX @ ORL,the_lineup,1.6x,Desmond Bane,4066320,ORL,G,5.8,0.0,32.8,19.0,2.9,3.6,0.4,0.0
+PHX @ ORL,the_lineup,1.4x,Jalen Green,4437244,PHX,G,5.7,0.0,21.9,24.3,6.0,2.8,0.9,0.0
+PHX @ ORL,the_lineup,1.2x,Jordan Goodwin,4278402,PHX,G,5.3,0.0,23.1,8.2,6.6,4.3,3.3,0.4
+CHA @ BKN,the_lineup,2.0x,Ziaire Williams,4433137,BKN,F,4.9,0.0,31.4,17.0,2.1,1.8,3.8,0.0
+CHA @ BKN,the_lineup,1.8x,LaMelo Ball,4432816,CHA,G,4.8,0.0,31.9,20.0,3.9,5.3,0.8,0.0
+CHA @ BKN,the_lineup,1.6x,Brandon Miller,4433287,CHA,F,4.4,0.0,33.3,20.1,7.1,2.4,0.0,0.0
+CHA @ BKN,the_lineup,1.4x,Kon Knueppel,5061575,CHA,G,3.9,0.0,34.4,15.2,7.9,3.3,0.0,0.0
+CHA @ BKN,the_lineup,1.2x,Miles Bridges,4066383,CHA,F,3.7,0.0,30.5,13.7,4.0,1.9,0.0,0.0
+TOR @ DET,the_lineup,2.0x,Scottie Barnes,4433134,TOR,F,6.6,0.0,31.9,19.9,6.0,13.3,2.4,1.2
+TOR @ DET,the_lineup,1.8x,Ausar Thompson,4684742,DET,G,5.2,0.0,26.4,10.3,4.9,1.1,3.7,0.9
+TOR @ DET,the_lineup,1.6x,Jakob Poeltl,3134908,TOR,C,4.8,0.0,26.7,13.1,8.1,2.6,1.0,0.8
+TOR @ DET,the_lineup,1.4x,Sandro Mamukelashvili,4278580,TOR,F,4.5,0.0,20.6,17.3,6.3,0.7,1.7,0.3
+TOR @ DET,the_lineup,1.2x,Daniss Jenkins,5107199,DET,G,4.1,0.0,30.5,16.3,4.9,7.0,0.6,0.0
+NY @ HOU,the_lineup,2.0x,Alperen Sengun,4871144,HOU,C,6.8,0.0,35.8,27.3,9.8,6.1,1.7,2.9
+NY @ HOU,the_lineup,1.8x,Jalen Brunson,3934672,NY,G,5.9,0.0,39.0,30.0,3.1,8.1,0.3,0.0
+NY @ HOU,the_lineup,1.6x,Kevin Durant,3202,HOU,F,5.7,0.0,35.1,23.9,4.4,7.8,1.2,0.2
+NY @ HOU,the_lineup,1.4x,Amen Thompson,4684740,HOU,G,5.4,0.0,39.9,14.7,8.2,5.4,2.0,0.8
+NY @ HOU,the_lineup,1.2x,Josh Hart,3062679,NY,G,5.1,0.0,37.2,14.2,6.8,3.3,2.6,0.0
+DAL @ MIL,the_lineup,2.0x,Cooper Flagg,5041939,DAL,F,6.5,0.0,37.4,19.1,4.6,2.7,1.8,1.1
+DAL @ MIL,the_lineup,1.8x,Daniel Gafford,4278049,DAL,F,5.7,0.0,32.5,17.6,8.8,2.8,0.3,0.8
+DAL @ MIL,the_lineup,1.6x,Myles Turner,3133628,MIL,C,5.6,0.0,33.8,10.6,3.3,0.4,1.0,1.7
+DAL @ MIL,the_lineup,1.4x,Brandon Williams,4397040,DAL,G,5.6,0.0,22.5,12.4,3.4,6.1,0.9,0.3
+DAL @ MIL,the_lineup,1.2x,AJ Green,4397475,MIL,G,5.5,0.0,34.5,10.1,3.2,3.4,1.1,0.7
+CLE @ LAL,the_lineup,2.0x,Austin Reaves,4066457,LAL,G,8.4,0.0,36.1,25.2,4.3,6.0,1.1,0.2
+CLE @ LAL,the_lineup,1.8x,Evan Mobley,4432158,CLE,C,8.2,0.0,27.8,24.6,12.0,3.2,0.8,1.3
+CLE @ LAL,the_lineup,1.6x,Donovan Mitchell,3908809,CLE,G,8.0,0.0,32.4,23.3,3.6,5.1,1.8,0.0
+CLE @ LAL,the_lineup,1.4x,James Harden,3992,CLE,G,7.7,0.0,35.0,15.4,6.3,12.4,1.1,0.7
+CLE @ LAL,the_lineup,1.2x,LeBron James,1966,LAL,F,7.6,0.0,32.1,16.6,7.7,8.8,0.8,0.2
+POR @ LAC,the_lineup,2.0x,Kawhi Leonard,6450,LAC,F,6.1,0.0,31.2,24.2,7.6,2.7,1.0,0.2
+POR @ LAC,the_lineup,1.8x,Darius Garland,4396907,LAC,G,6.1,0.0,31.1,22.0,1.8,7.9,1.1,0.2
+POR @ LAC,the_lineup,1.6x,Deni Avdija,4683021,POR,F,5.7,0.0,32.9,19.6,7.0,5.8,1.2,0.9
+POR @ LAC,the_lineup,1.4x,Scoot Henderson,4683678,POR,G,5.6,0.0,27.3,17.4,2.7,5.0,1.2,0.0
+POR @ LAC,the_lineup,1.2x,Bennedict Mathurin,4683634,LAC,G,5.4,0.0,28.5,23.2,5.9,2.1,0.3,0.2
