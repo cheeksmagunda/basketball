@@ -74,8 +74,6 @@ export default function SlateView() {
         accentRgb="20,184,166"
       />
 
-      {showLateDraft && <LateDraftBanner onRegenerated={() => refetch()} />}
-
       {players.length === 0 ? (
         <EmptyState
           icon={'\uD83D\uDCCA'}
@@ -94,6 +92,8 @@ export default function SlateView() {
           ))}
         </div>
       )}
+
+      {showLateDraft && <LateDraftBanner onRegenerated={() => refetch()} />}
     </div>
   );
 }
