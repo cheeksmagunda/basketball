@@ -786,7 +786,7 @@ class TestGameSelectorLockDisplay:
 
     def test_no_slate_locked_passed_to_populate_game_selector(self):
         """loadSlate should call populateGameSelector without slateLocked override"""
-        with open('index.html', 'r') as f:
+        with open('app.js', 'r') as f:
             html = f.read()
 
         # Find all calls to populateGameSelector
@@ -798,7 +798,7 @@ class TestGameSelectorLockDisplay:
 
     def test_per_game_lock_check_in_populate(self):
         """populateGameSelector checks g.locked and g.startTime individually"""
-        with open('index.html', 'r') as f:
+        with open('app.js', 'r') as f:
             html = f.read()
         # The lock line should check g.locked or startTime, not slateLocked
         assert 'g.locked === true' in html or 'g.locked===true' in html
@@ -814,7 +814,7 @@ class TestLinePrimaryPickFallback:
 
     def test_frontend_has_primary_pick_fallback(self):
         """When data.pick exists but both directional picks are null, primary is used"""
-        with open('index.html', 'r') as f:
+        with open('app.js', 'r') as f:
             html = f.read()
         # The fallback block: if (!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick)
         assert '!LINE_OVER_PICK && !LINE_UNDER_PICK && data.pick' in html, \
@@ -896,7 +896,7 @@ class TestSwitchTabNoDuplicateInit:
 
     def test_no_unconditional_init_line_page(self):
         """switchTab should not have a standalone 'if (tab === line) initLinePage()' outside stale block"""
-        with open('index.html', 'r') as f:
+        with open('app.js', 'r') as f:
             src = f.read()
         # The old pattern was: stale check calls initLinePage, then unconditional initLinePage
         # New pattern: single initLinePage call with stale check blanking cache beforehand
@@ -910,7 +910,7 @@ class TestSwitchTabNoDuplicateInit:
 
     def test_pred_saved_count_refire(self):
         """savePredictions should track locked count for split-window re-fire"""
-        with open('index.html', 'r') as f:
+        with open('app.js', 'r') as f:
             src = f.read()
         assert '_predSavedLockedCount' in src, "savePredictions must track locked game count"
         assert 'lockedNow' in src, "savePredictions must count currently locked games"
@@ -2932,7 +2932,7 @@ class TestParlayHistoryAndConfigHardening:
 
     def test_projection_only_persisted_and_labeled(self):
         src_api = open("api/index.py").read()
-        src_ui = open("index.html").read()
+        src_ui = open("app.js").read()
         assert '"projection_only": result.get("projection_only", False)' in src_api
         assert "sourceBadge = data.projection_only" in src_ui
         assert "MODEL</span>'" in src_ui
@@ -2969,7 +2969,7 @@ class TestLineLoadStabilizationRegressions:
     """Regression guards for line load stabilization (no flash + fast backend path)."""
 
     def test_line_rotation_refresh_keeps_card(self):
-        src = open("index.html").read()
+        src = open("app.js").read()
         assert "fetchLineOfTheDay(true, true);" in src, (
             "rotation refresh should run as background nocache fetch (no skeleton reset)"
         )
@@ -2978,7 +2978,7 @@ class TestLineLoadStabilizationRegressions:
         )
 
     def test_line_fetch_dedup_and_timeout(self):
-        src = open("index.html").read()
+        src = open("app.js").read()
         assert "let _lineLotdFetchPromise = null;" in src
         assert "if (_lineLotdFetchPromise) return _lineLotdFetchPromise;" in src
         assert "fetchWithTimeout(_lotdUrl, {}, 30000" in src, (
@@ -3564,24 +3564,24 @@ class TestPerGameFrontend:
         assert 'id="strategyInsight"' in src
 
     def test_render_strategy_insight_function(self):
-        src = open("index.html").read()
+        src = open("app.js").read()
         assert "function _renderStrategyInsight" in src
 
     def test_strategy_pills_in_cards(self):
-        src = open("index.html").read()
+        src = open("app.js").read()
         assert "ANCHOR" in src
         assert "FAV" in src
 
     def test_strategy_badge_display(self):
         """Strategy badge should show type-based border color."""
-        src = open("index.html").read()
+        src = open("app.js").read()
         assert "strat.type === " in src or "strat.type ===" in src
         assert "balanced" in src
         assert "top_heavy" in src
 
     def test_back_hides_strategy_insight(self):
         """_backToGameGrid should hide strategy insight bar."""
-        src = open("index.html").read()
+        src = open("app.js").read()
         assert "strategyInsight" in src
         # The _backToGameGrid function should reference strategyInsight
         import re

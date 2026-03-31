@@ -585,20 +585,20 @@ class TestParlayFrontend:
         assert "switchTab('parlay')" in html
 
     def test_parlay_accent_in_tab_accent(self):
-        html = open("index.html").read()
-        assert "parlay:" in html
+        js = open("app.js").read()
+        assert "parlay:" in js
         # Parlay uses teal accent (unified color system)
-        assert "20,184,166" in html
+        assert "20,184,166" in js
 
     def test_parlay_css_variable(self):
-        html = open("index.html").read()
-        assert "--parlay:" in html
+        css = open("styles.css").read()
+        assert "--parlay:" in css
 
     def test_parlay_state_init(self):
-        html = open("index.html").read()
-        assert "PARLAY_STATE" in html
-        assert "initParlayPage" in html
-        assert "fetchParlay" in html
+        js = open("app.js").read()
+        assert "PARLAY_STATE" in js
+        assert "initParlayPage" in js
+        assert "fetchParlay" in js
 
     def test_parlay_ticket_container(self):
         html = open("index.html").read()
@@ -607,17 +607,17 @@ class TestParlayFrontend:
         assert 'id="parlayLoading"' in html
 
     def test_parlay_tab_glow(self):
-        html = open("index.html").read()
+        js = open("app.js").read()
         # Parlay tab glow uses teal (unified color system)
-        assert "parlay: 'rgba(20,184,166" in html
+        assert "parlay: 'rgba(20,184,166" in js
 
     def test_render_parlay_leg_function(self):
-        html = open("index.html").read()
-        assert "function renderParlayLeg(" in html
+        js = open("app.js").read()
+        assert "function renderParlayLeg(" in js
 
     def test_render_parlay_ticket_function(self):
-        html = open("index.html").read()
-        assert "function renderParlayTicket(" in html
+        js = open("app.js").read()
+        assert "function renderParlayTicket(" in js
 
     def test_parlay_history_wrap_exists(self):
         html = open("index.html").read()
@@ -636,8 +636,8 @@ class TestParlayFrontend:
         assert 'id="parlayHistoryMessage"' in html
 
     def test_render_parlay_history_error_exists(self):
-        html = open("index.html").read()
-        assert "function renderParlayHistoryError(" in html
+        js = open("app.js").read()
+        assert "function renderParlayHistoryError(" in js
 
     def test_parlay_modal_exists(self):
         html = open("index.html").read()
@@ -645,27 +645,28 @@ class TestParlayFrontend:
         assert 'id="parlayModalContent"' in html
 
     def test_fetch_parlay_history_function(self):
-        html = open("index.html").read()
-        assert "function fetchParlayHistory(" in html
+        js = open("app.js").read()
+        assert "function fetchParlayHistory(" in js
 
     def test_render_parlay_history_function(self):
-        html = open("index.html").read()
-        assert "function renderParlayHistory(" in html
+        js = open("app.js").read()
+        assert "function renderParlayHistory(" in js
 
     def test_open_parlay_modal_function(self):
-        html = open("index.html").read()
-        assert "function openParlayModal(" in html
+        js = open("app.js").read()
+        assert "function openParlayModal(" in js
 
     def test_close_parlay_modal_function(self):
-        html = open("index.html").read()
-        assert "function closeParlayModal(" in html
+        js = open("app.js").read()
+        assert "function closeParlayModal(" in js
 
     def test_parlay_hist_data_global(self):
-        html = open("index.html").read()
-        assert "PARLAY_HIST_DATA" in html
-        assert "PARLAY_HIST_ERROR" in html
+        js = open("app.js").read()
+        assert "PARLAY_HIST_DATA" in js
+        assert "PARLAY_HIST_ERROR" in js
 
     def test_parlay_modal_escape_key(self):
+        # closeParlayModal() is in both HTML (onclick) and JS
         html = open("index.html").read()
         assert "closeParlayModal()" in html
 
