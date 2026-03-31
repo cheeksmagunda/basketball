@@ -20,21 +20,6 @@ function fmt(val: number | undefined | null): string {
   return val % 1 === 0 ? String(val) : val.toFixed(1);
 }
 
-/** Semantic accent bar color based on player value tier. */
-function getAccentColor(player: Player, showBoost: boolean): string {
-  if (player.injury_status && player.injury_status !== '') {
-    return 'var(--color-danger)';
-  }
-  if (showBoost) {
-    if (player.draft_ev >= 15.0) return 'var(--color-success)';
-    if (player.draft_ev >= 8.0) return 'var(--color-warning)';
-    return 'var(--color-text-muted)';
-  }
-  if (player.rating >= 5.0) return 'var(--color-success)';
-  if (player.rating >= 3.5) return 'var(--color-warning)';
-  return 'var(--color-text-muted)';
-}
-
 export default function PlayerCard({
   player,
   index,
@@ -46,7 +31,6 @@ export default function PlayerCard({
   const teamAlpha = hexToRgba(teamHex, 0.04);
   const delay = animDelay ?? index * 0.06;
   const scoreColor = player.rating >= 5.0 ? teamHex : undefined;
-  const accentColor = getAccentColor(player, showBoost);
   const avgMin = player.avg_min ?? player.season_min ?? 0;
 
   return (
@@ -61,7 +45,6 @@ export default function PlayerCard({
           '--tcolor': teamHex,
           '--tcolor-alpha': teamAlpha,
           '--score-color': scoreColor,
-          '--accent-color': accentColor,
           animationDelay: `${delay}s`,
         } as React.CSSProperties
       }
@@ -75,18 +58,18 @@ export default function PlayerCard({
         <div className={styles['card-header']}>
           <div className={styles['player-identity']}>
             <span className={styles['player-name']}>{player.name}</span>
-            {player.opp ? (
-              <span className={styles['player-opp']}>
-                {player.team} vs {player.opp}
-              </span>
-            ) : (
-              <span className={styles['player-opp']}>{player.team}</span>
-            )}
           </div>
           <div className={styles['badge-row']}>
             {player._hot_streak && (
               <span className={styles['hot-pill']}>HOT</span>
             )}
+            {/* Team name badge — team-colored */}
+            <span
+              className={styles['team-badge']}
+              style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
+            >
+              {player.team}
+            </span>
             <span className={styles['pos-pill']}>{player.pos}</span>
             {player.injury_status && player.injury_status !== '' && (
               <span className={styles['injury-badge']}>
@@ -95,6 +78,13 @@ export default function PlayerCard({
             )}
           </div>
         </div>
+
+        {/* Matchup line */}
+        {player.opp && (
+          <div className={styles['matchup-row']}>
+            vs {player.opp}
+          </div>
+        )}
 
         {/* === BODY ZONE === */}
         <div className={styles['card-body']}>
@@ -117,36 +107,9 @@ export default function PlayerCard({
               )}
             </div>
           )}
-
-          {/* Minutes progress bar */}
-          {player.predMin > 0 && (
-            <div className={styles['minutes-bar-wrap']}>
-              <span className={styles['minutes-label']}>MIN</span>
-              <div className={styles['minutes-track']}>
-                <div
-                  className={styles['minutes-fill']}
-                  style={{
-                    width: `${Math.min((player.predMin / 48) * 100, 100)}%`,
-                  }}
-                />
-                {avgMin > 0 && (
-                  <div
-                    className={styles['minutes-avg-marker']}
-                    style={{
-                      left: `${Math.min((avgMin / 48) * 100, 100)}%`,
-                    }}
-                  />
-                )}
-              </div>
-              <span className={styles['minutes-values']}>
-                {avgMin > 0 && <>{fmt(avgMin)} / </>}
-                <span className={styles.proj}>{fmt(player.predMin)}</span>
-              </span>
-            </div>
-          )}
         </div>
 
-        {/* === FOOTER ZONE === */}
+        {/* === FOOTER ZONE — stat grid === */}
         <div className={styles['card-footer']}>
           <div className={styles['stat-grid-row']}>
             {STAT_KEYS.map((key, i) => {
@@ -168,6 +131,33 @@ export default function PlayerCard({
             })}
           </div>
         </div>
+
+        {/* === MINUTES BAR — last element === */}
+        {player.predMin > 0 && (
+          <div className={styles['minutes-bar-wrap']}>
+            <span className={styles['minutes-label']}>MIN</span>
+            <div className={styles['minutes-track']}>
+              <div
+                className={styles['minutes-fill']}
+                style={{
+                  width: `${Math.min((player.predMin / 48) * 100, 100)}%`,
+                }}
+              />
+              {avgMin > 0 && (
+                <div
+                  className={styles['minutes-avg-marker']}
+                  style={{
+                    left: `${Math.min((avgMin / 48) * 100, 100)}%`,
+                  }}
+                />
+              )}
+            </div>
+            <span className={styles['minutes-values']}>
+              {avgMin > 0 && <>{fmt(avgMin)} / </>}
+              <span className={styles.proj}>{fmt(player.predMin)}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Score zone */}
