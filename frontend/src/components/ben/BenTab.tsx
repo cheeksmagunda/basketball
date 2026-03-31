@@ -8,6 +8,7 @@ import ChatInput from './ChatInput';
 import { useLabStore } from '../../store/labStore';
 import { useLabBriefing } from '../../api/lab';
 import { useKeyboardNavHide } from '../../hooks/useKeyboardNavHide';
+import type { LabBriefing } from '../../types';
 import styles from './BenTab.module.css';
 
 export default function BenTab() {
@@ -17,23 +18,39 @@ export default function BenTab() {
 
   useKeyboardNavHide(inputRef);
 
-  // Initialize on first mount: inject briefing context as hidden system message
+  // Remove .app bottom padding while Ben is mounted — Ben uses a fixed-height
+  // flex layout that accounts for the nav, so the 140px clearance causes overflow.
   useEffect(() => {
-    if (initialized) return;
+    const app = document.querySelector('.app');
+    if (app) app.classList.add('ben-active');
+    return () => {
+      const appEl = document.querySelector('.app');
+      if (appEl) appEl.classList.remove('ben-active');
+    };
+  }, []);
+
+  // When briefing data arrives and we haven't initialized, inject system context + visible greeting
+  useEffect(() => {
+    if (initialized || !briefingQuery.data) return;
     setInitialized(true);
 
-    if (briefingQuery.data) {
-      const briefingText = buildSystemPrompt(briefingQuery.data);
-      setSystem(briefingText);
-      addMessage({
-        role: 'assistant',
-        content: briefingText,
-        hidden: true,
-      });
-    }
-  }, [initialized, setInitialized, briefingQuery.data, setSystem, addMessage]);
+    const briefingText = buildSystemPrompt(briefingQuery.data);
+    setSystem(briefingText);
+    addMessage({ role: 'assistant', content: briefingText, hidden: true });
+    addMessage({ role: 'assistant', content: buildGreeting(briefingQuery.data) });
+  }, [initialized, briefingQuery.data, setInitialized, setSystem, addMessage]);
 
-  // Update system prompt when briefing data loads (for late arrivals)
+  // Fallback: if briefing fails, still show a basic greeting
+  useEffect(() => {
+    if (initialized || !briefingQuery.isError) return;
+    setInitialized(true);
+    addMessage({
+      role: 'assistant',
+      content: 'What can I help with? Deep dives, config changes, backtests — just ask.',
+    });
+  }, [initialized, briefingQuery.isError, setInitialized, addMessage]);
+
+  // Update system prompt when briefing data refreshes
   useEffect(() => {
     if (briefingQuery.data) {
       setSystem(buildSystemPrompt(briefingQuery.data));
@@ -67,4 +84,47 @@ function buildSystemPrompt(briefing: object): string {
     'Answer concisely. Use data when available. You can suggest config changes, backtests, and analysis.',
   ];
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Build a visible greeting from briefing data
+// ---------------------------------------------------------------------------
+
+function buildGreeting(briefing: LabBriefing): string {
+  const parts: string[] = [];
+
+  const ls = briefing.latest_slate;
+  if (ls) {
+    const mae = ls.mean_absolute_error?.toFixed(2) ?? '—';
+    parts.push(`**Last slate (${ls.date}):** MAE ${mae} across ${ls.players_with_actuals} players`);
+
+    if (ls.directional_accuracy != null) {
+      parts[parts.length - 1] += ` · ${(ls.directional_accuracy * 100).toFixed(0)}% directional accuracy`;
+    }
+
+    if (ls.biggest_misses?.length > 0) {
+      const m = ls.biggest_misses[0];
+      parts.push(
+        `Biggest miss: **${m.name}** (predicted ${m.predicted.toFixed(1)}, actual ${m.actual.toFixed(1)})`
+      );
+    }
+  }
+
+  const ra = briefing.rolling_accuracy;
+  if (ra?.overall_mae != null) {
+    parts.push(`**Rolling MAE:** ${ra.overall_mae.toFixed(2)} across ${ra.slates_with_data} slates`);
+  }
+
+  if (briefing.patterns?.length > 0) {
+    parts.push(`*Pattern detected:* ${briefing.patterns[0].description}`);
+  }
+
+  if (parts.length === 0) {
+    parts.push('No recent slate data yet.');
+  }
+
+  parts.push('');
+  parts.push('What can I help with? Deep dives, config changes, backtests — just ask.');
+
+  return parts.join('\n');
 }
