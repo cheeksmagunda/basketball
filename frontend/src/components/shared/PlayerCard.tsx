@@ -70,7 +70,7 @@ export default function PlayerCard({
 
         {/* Stat pills row: context pills + stat grid */}
         <div className={styles['stat-pills']}>
-          {/* Context pills row */}
+          {/* Context pills row + minutes (flush right) */}
           <div className={styles['stat-context-row']}>
             {showBoost && player.est_mult > 0 && (
               <span
@@ -96,6 +96,23 @@ export default function PlayerCard({
                 ODDS
               </span>
             )}
+            {/* Minutes: avg → projected (flush right) */}
+            {player.predMin > 0 && (
+              <span className={styles['minutes-inline']}>
+                <span className={styles['minutes-label']}>MIN</span>
+                {(player.avg_min ?? player.season_min) != null && (
+                  <>
+                    <span className={styles['minutes-avg']}>
+                      {fmt(player.avg_min ?? player.season_min)}
+                    </span>
+                    <span className={styles['minutes-arrow']}>&rarr;</span>
+                  </>
+                )}
+                <span className={styles['minutes-proj']}>
+                  {fmt(player.predMin)}
+                </span>
+              </span>
+            )}
           </div>
 
           {/* Stat grid (5 columns) */}
@@ -109,26 +126,6 @@ export default function PlayerCard({
               </div>
             ))}
           </div>
-
-          {/* Minutes: avg → projected */}
-          {player.predMin > 0 && (
-            <div className={styles['minutes-row']}>
-              <span className={styles['minutes-label']}>MIN</span>
-              <span className={styles['minutes-vals']}>
-                {(player.avg_min ?? player.season_min) != null && (
-                  <>
-                    <span className={styles['minutes-avg']}>
-                      {fmt(player.avg_min ?? player.season_min)}
-                    </span>
-                    <span className={styles['minutes-arrow']}>&rarr;</span>
-                  </>
-                )}
-                <span className={styles['minutes-proj']}>
-                  {fmt(player.predMin)}
-                </span>
-              </span>
-            </div>
-          )}
         </div>
       </div>
 

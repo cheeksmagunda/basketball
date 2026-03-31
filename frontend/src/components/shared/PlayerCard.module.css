@@ -11,8 +11,8 @@
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,0.16);
   border-radius: var(--r);
-  padding: 14px 14px 14px 24px;
-  margin-bottom: 8px;
+  padding: 11px 14px 10px 24px;
+  margin-bottom: 7px;
   display: grid;
   grid-template-columns: 42px 1fr auto;
   gap: 12px;
@@ -89,13 +89,13 @@
 .player-name {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 1.25rem; font-weight: 900; line-height: 1;
-  color: var(--color-text-primary); margin-bottom: 6px;
+  color: var(--color-text-primary); margin-bottom: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.stat-pills { display: flex; flex-direction: column; gap: 6px; }
+.stat-pills { display: flex; flex-direction: column; gap: 5px; }
 
-.stat-context-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.stat-context-row { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; }
 
 .stat-context-pill {
   font-family: 'Barlow Condensed', sans-serif;
@@ -147,29 +147,26 @@
   background: var(--tcolor, var(--chalk)); opacity: 0.5;
 }
 
-/* Minutes row: avg → projected */
-.minutes-row {
-  display: flex; align-items: center; gap: 6px; margin-top: 4px;
-}
-.minutes-label {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 0.58rem; font-weight: 700; color: var(--color-text-muted);
-  text-transform: uppercase; letter-spacing: var(--tracking-caps);
-  min-width: 24px;
-}
-.minutes-vals {
+/* Minutes inline (flush right on badges row) */
+.minutes-inline {
   display: flex; align-items: center; gap: 4px;
+  margin-left: auto;
   font-family: 'Barlow Condensed', sans-serif;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.minutes-label {
+  font-size: 0.58rem; font-weight: 700; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps);
 }
 .minutes-avg {
-  font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted);
+  font-size: 0.68rem; font-weight: 600; color: var(--color-text-muted);
 }
 .minutes-arrow {
   font-size: 0.55rem; color: var(--color-text-muted); opacity: 0.5;
 }
 .minutes-proj {
-  font-size: 0.7rem; font-weight: 700; color: var(--color-text-primary);
+  font-size: 0.68rem; font-weight: 700; color: var(--color-text-primary);
 }
 
 .score-col {
