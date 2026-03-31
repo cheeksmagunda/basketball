@@ -1415,7 +1415,6 @@
         </div></div>
       </div>
       <div id="parlayLoading" style="display:none" role="status" aria-label="Loading parlay"></div>
-      <div id="parlayStaleIndicator" style="display:none;text-align:center;font-size:0.68rem;color:var(--muted);padding:4px 0;letter-spacing:0.04em">Updating parlay in background...</div>
       <div id="parlayTicket" style="display:none"></div>
     </div>
     <!-- Parlay History -->
@@ -3066,6 +3065,7 @@ let PARLAY_LOADED_DATE = '';
 let PARLAY_HIST_DATA = null;
 let PARLAY_HIST_LOADED_DATE = '';
 let PARLAY_HIST_ERROR = null;
+let PARLAY_LIVE_CACHE = null; // last SSE payload — restored instantly on tab return
 
 function _parlaySkeletons() {
   const skel = `
@@ -3166,11 +3166,6 @@ function renderParlayLeg(leg, index, total, forTicket) {
 function renderParlayTicket(data) {
   const wrap = _el('parlayTicket');
   if (!wrap) return;
-  // Stale-while-revalidate indicator
-  const _parlayStale = _el('parlayStaleIndicator');
-  if (_parlayStale) {
-    _parlayStale.style.display = (data.is_stale || data.refreshing) ? 'block' : 'none';
-  }
   const legs = data.legs || [];
   if (!legs.length) {
     wrap.style.display = 'none';
@@ -3396,17 +3391,23 @@ function _startParlayLiveSse() {
   if (_parlayLiveES || typeof EventSource === 'undefined') return;
   // Immediately show live rows with a loading placeholder so the tracker
   // area is visible before the first SSE event arrives (1-3s ESPN fetch).
-  // _applyParlayLiveUpdate will hide rows for non-live legs on first tick.
-  const _sseLegs = PARLAY_STATE && PARLAY_STATE.data && PARLAY_STATE.data.legs || [];
-  for (let _si = 0; _si < _sseLegs.length; _si++) {
-    const _sRow = _el('parlayLegLiveRow-' + _si);
-    const _sStat = _el('parlayLegLiveStat-' + _si);
-    const _sWrap = _el('parlayLegProgressWrap-' + _si);
-    if (_sRow && !_sRow.textContent.trim()) {
-      _sRow.style.display = '';
-      if (_sStat) _sStat.textContent = '…';
+  // If we have a cached live snapshot from a previous session on this tab,
+  // apply it immediately so the tracker is populated before the first SSE tick.
+  if (PARLAY_LIVE_CACHE && PARLAY_LIVE_CACHE.legs && PARLAY_LIVE_CACHE.legs.length) {
+    _applyParlayLiveUpdate(PARLAY_LIVE_CACHE);
+  } else {
+    // No cache — show "…" placeholder so the tracker area is visible while SSE connects.
+    const _sseLegs = PARLAY_STATE && PARLAY_STATE.data && PARLAY_STATE.data.legs || [];
+    for (let _si = 0; _si < _sseLegs.length; _si++) {
+      const _sRow = _el('parlayLegLiveRow-' + _si);
+      const _sStat = _el('parlayLegLiveStat-' + _si);
+      const _sWrap = _el('parlayLegProgressWrap-' + _si);
+      if (_sRow && !_sRow.textContent.trim()) {
+        _sRow.style.display = '';
+        if (_sStat) _sStat.textContent = '…';
+      }
+      if (_sWrap) _sWrap.style.display = '';
     }
-    if (_sWrap) _sWrap.style.display = '';
   }
   try {
     _parlayLiveES = new EventSource('/api/parlay-live-stream');
@@ -3414,6 +3415,7 @@ function _startParlayLiveSse() {
       try {
         const d = JSON.parse(ev.data);
         if (d.legs && d.legs.length && !d.no_ticket) {
+          PARLAY_LIVE_CACHE = d; // cache for instant restore on next tab return
           _applyParlayLiveUpdate(d);
         }
         if (d.all_games_final) {
