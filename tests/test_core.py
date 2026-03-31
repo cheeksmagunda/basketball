@@ -200,11 +200,8 @@ class TestJSSyntax:
 
     @pytest.fixture(scope="class")
     def script_lines(self):
-        html = (ROOT / "index.html").read_text()
-        start = html.rfind("<script>")
-        end   = html.rfind("</script>")
-        assert start != -1 and end != -1, "No <script> block found in index.html"
-        return html[start:end].split("\n")
+        js = (ROOT / "app.js").read_text()
+        return js.split("\n")
 
     def test_no_apostrophe_in_single_quoted_strings(self, script_lines):
         """
@@ -248,10 +245,11 @@ class TestJSSyntax:
     def test_no_redundant_info_bars(self, script_lines):
         """Redundant slateChips info bars must not exist in the codebase. headerMeta is valid."""
         html = (ROOT / "index.html").read_text()
+        css = (ROOT / "styles.css").read_text()
         assert 'id="slateChips"' not in html, "slateChips element should be removed"
         assert 'id="headerMeta"' in html, "headerMeta element should exist for game count/lock badges"
-        assert ".lock-chip" not in html, "lock-chip CSS should be removed"
-        assert ".game-chips" not in html, "game-chips CSS should be removed"
+        assert ".lock-chip" not in css, "lock-chip CSS should be removed"
+        assert ".game-chips" not in css, "game-chips CSS should be removed"
 
     def test_line_pick_extraction_before_error_gate(self, script_lines):
         """LINE_OVER_PICK/LINE_UNDER_PICK must be extracted before the error gate check."""
@@ -519,11 +517,7 @@ class TestBannerGuardJS:
 
     @pytest.fixture(scope="class")
     def script_source(self):
-        html = (ROOT / "index.html").read_text()
-        start = html.rfind("<script>")
-        end   = html.rfind("</script>")
-        assert start != -1 and end != -1, "No <script> block found in index.html"
-        return html[start:end]
+        return (ROOT / "app.js").read_text()
 
     def test_no_upload_banner_dom_id(self, script_source):
         assert "benUploadBanner" not in script_source
@@ -1249,11 +1243,7 @@ class TestJSContractGuard:
 
     @pytest.fixture(scope="class")
     def script_source(self):
-        html = (ROOT / "index.html").read_text()
-        start = html.rfind("<script>")
-        end   = html.rfind("</script>")
-        assert start != -1 and end != -1
-        return html[start:end]
+        return (ROOT / "app.js").read_text()
 
     def test_optional_chaining_on_lineups_chalk(self, script_source):
         """Both lineups?.chalk? guards must be present after Phase C fix."""
@@ -1433,11 +1423,7 @@ class TestFrontendAuditFixes:
 
     @pytest.fixture(scope="class")
     def script_source(self):
-        html = (ROOT / "index.html").read_text()
-        start = html.rfind("<script>")
-        end   = html.rfind("</script>")
-        assert start != -1 and end != -1
-        return html[start:end]
+        return (ROOT / "app.js").read_text()
 
     def test_briefing_fetch_has_ok_check(self, script_source):
         """C1: /api/lab/briefing fetch must check .ok before .json() (via _fetchJson helper)."""
@@ -1495,13 +1481,13 @@ class TestParlayFrontendErrorState:
     """Regression guards for parlay fetch error-state mismatch fix."""
 
     def test_fetch_parlay_uses_has_ticket_data_guard(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "const hasTicketData = !!(PARLAY_STATE && PARLAY_STATE.data" in src, (
             "fetchParlay catch must detect existing ticket data before showing empty-state"
         )
 
     def test_fetch_parlay_does_not_show_empty_when_ticket_exists(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "if (!hasTicketData && empty)" in src, (
             "fetchParlay catch should show empty-state only when no ticket is rendered"
         )
@@ -1514,38 +1500,38 @@ class TestFrontendTabAbort:
     """Frontend tab-switch abort system — regression guards."""
 
     def test_tab_abort_controllers_declared(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "let _tabAbortControllers = {}" in src, (
             "_tabAbortControllers must be declared for per-tab abort tracking"
         )
 
     def test_abort_tab_function_exists(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "function _abortTab(tab)" in src, (
             "_abortTab function must exist for tab-switch cleanup"
         )
 
     def test_get_tab_signal_function_exists(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "function _getTabSignal(tab)" in src, (
             "_getTabSignal function must exist for per-tab signal creation"
         )
 
     def test_switch_tab_calls_abort(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "_abortTab(t)" in src, (
             "switchTab must call _abortTab for departing tabs"
         )
 
     def test_fetch_with_timeout_accepts_external_signal(self):
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "function fetchWithTimeout(url, options = {}, timeoutMs = 10000, externalSignal)" in src, (
             "fetchWithTimeout must accept optional externalSignal parameter"
         )
 
     def test_heavy_fetches_use_tab_signal(self):
         """Key heavy fetches should pass _getTabSignal to fetchWithTimeout."""
-        src = (ROOT / "index.html").read_text()
+        src = (ROOT / "app.js").read_text()
         assert "_getTabSignal('predictions')" in src, "slate fetch should use predictions tab signal"
         assert "_getTabSignal('line')" in src, "line fetch should use line tab signal"
         assert "_getTabSignal('parlay')" in src, "parlay fetch should use parlay tab signal"

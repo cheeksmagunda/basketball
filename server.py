@@ -45,6 +45,18 @@ async def serve_oracle_ball():
                         headers={"Cache-Control": "public, max-age=86400"})
 
 
+@app.get("/styles.css")
+async def serve_styles():
+    return FileResponse(ROOT / "styles.css", media_type="text/css",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/app.js")
+async def serve_app_js():
+    return FileResponse(ROOT / "app.js", media_type="application/javascript",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 # Catch-all: serve index.html for any non-API route (SPA pattern).
 # This MUST be last — FastAPI routes explicit /api/* handlers first; this
 # only fires when no other route matched (i.e. real SPA navigation paths).

@@ -1,7 +1,7 @@
 [build]
 builder = "DOCKERFILE"
 # Only redeploy when actual code/config changes — ignore data commits (predictions, actuals, cache busts, model config)
-watchPatterns = ["api/**", "index.html", "server.py", "requirements.txt", "railway.toml", "Dockerfile", "train_lgbm.py", "lgbm_model.json", "lgbm_baseline.txt", "lgbm_spike.txt", "lgbm_model.pkl", "scripts/**", ".github/workflows/**"]
+watchPatterns = ["api/**", "index.html", "styles.css", "app.js", "server.py", "requirements.txt", "railway.toml", "Dockerfile", "train_lgbm.py", "lgbm_model.json", "lgbm_baseline.txt", "lgbm_spike.txt", "lgbm_model.pkl", "scripts/**", ".github/workflows/**"]
 
 [deploy]
 healthcheckPath = "/api/health"
