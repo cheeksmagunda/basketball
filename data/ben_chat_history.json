@@ -6,5 +6,9 @@
   {
     "role": "assistant",
     "content": "Hey! \ud83d\udc4b I'm Ben, your Basketball Oracle AI assistant.\n\nHere's a quick snapshot of where things stand:\n\n- **Model Config**: Version 81, last updated March 15, 2026\n- **Latest Changes**: Major Starting 5 (chalk lineup) overhaul \u2014 lowered the minutes floor, capped stars, and forced more contrarian players into top slots based on leaderboard analysis\n- **Rolling Accuracy**: No scored slates available yet to report on\n- **Pending Data**: March 30 slate is queued up\n\nWhat can I help you with today? Here are some things I can do:\n\n- \ud83d\udcca **Check live NBA scores & player stats**\n- \ud83d\udd27 **Review or tune model config parameters**\n- \ud83d\udcc1 **Explore prediction/actuals data and audit files**\n- \ud83d\udd0d **Analyze prediction accuracy and patterns**\n- \ud83c\udfc0 **Run backtests or investigate specific slates**\n\nWhat's on your mind?"
+  },
+  {
+    "role": "user",
+    "content": "hi"
   }
 ]
