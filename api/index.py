@@ -1078,7 +1078,8 @@ _CONFIG_DEFAULTS = {
     # Based on 90 dates of winning draft data. These ~15 parameters replace
     # the ~120 draft-specific parameters scattered across other config sections.
     "strategy": {
-        "rs_floor": 2.5,               # Finding 2: only 1.3% of winners below RS 2.0
+        "rs_floor": 2.0,               # Finding 2: 0% of winners below RS 2.0; 2.7% below 3.0
+                                        # RS 2 + Boost 3.0 combo has 18 winning appearances (avg value 13.3)
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
         "min_minutes": 12.0,            # Minimum projected minutes to be draft-eligible
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
@@ -4538,7 +4539,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     """
     # ── Configuration ──────────────────────────────────────────────────────
     _strat = _cfg("strategy", {}) or {}
-    rs_floor = float(_strat.get("rs_floor", 2.5))
+    rs_floor = float(_strat.get("rs_floor", 2.0))
     min_minutes = float(_strat.get("min_minutes", 12.0))
     ev_swap_threshold = float(_strat.get("ev_swap_threshold", 2.0))
     max_swaps = int(_strat.get("max_upside_swaps", 2))

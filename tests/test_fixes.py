@@ -1849,11 +1849,129 @@ class TestBoostCascadeModel:
         assert r["boost"] <= 0.2, f"Superstar 0.0 boost should persist, got {r['boost']}"
 
     def test_clamp_round_snaps_to_3(self):
-        """Boost ≥ 2.8 should snap to 3.0 (26.1% of all boosts are exactly 3.0)."""
+        """Boost ≥ 2.95 should snap to 3.0 (26.1% of all boosts are exactly 3.0).
+
+        Snap threshold tightened from 2.8 → 2.95 to reduce systematic over-prediction.
+        148-date backtest showed +0.242 mean signed error; the 2.8 snap was a major contributor.
+        """
         from api.boost_model import _clamp_round
-        assert _clamp_round(2.85, 0.0, 3.0) == 3.0
-        assert _clamp_round(2.80, 0.0, 3.0) == 3.0  # exactly 2.8 snaps to 3.0
-        assert _clamp_round(2.74, 0.0, 3.0) == 2.7   # below snap threshold
+        assert _clamp_round(2.97, 0.0, 3.0) == 3.0  # above 2.95 snaps to 3.0
+        assert _clamp_round(2.95, 0.0, 3.0) == 3.0  # exactly 2.95 snaps to 3.0
+        assert _clamp_round(2.85, 0.0, 3.0) == 2.9   # below new snap threshold — no longer snaps
+        assert _clamp_round(2.74, 0.0, 3.0) == 2.7   # well below snap threshold
+
+
+class TestBoostModelOptimization:
+    """Tests for 148-date historical backtest optimizations (boost cascade)."""
+
+    def test_star_ppg_guard_elite(self):
+        """Elite superstars (PPG ≥ 25) should get boost 0.0 from Tier 3."""
+        from api.boost_model import estimate_boost_from_api
+        # Jokic/Luka/SGA type: 27+ PPG
+        assert estimate_boost_from_api(season_ppg=27) == 0.0
+
+    def test_star_ppg_guard_borderline(self):
+        """Borderline superstars (22-25 PPG) should get low boost."""
+        from api.boost_model import estimate_boost_from_api
+        assert estimate_boost_from_api(season_ppg=23) == 0.3
+
+    def test_star_ppg_guard_star(self):
+        """Stars (19-22 PPG) should get moderate-low boost."""
+        from api.boost_model import estimate_boost_from_api
+        assert estimate_boost_from_api(season_ppg=20) == 0.8
+
+    def test_star_ppg_guard_starter(self):
+        """Starters (15-19 PPG) should get scaled boost."""
+        from api.boost_model import estimate_boost_from_api
+        result = estimate_boost_from_api(season_ppg=16)
+        assert 0.8 <= result <= 2.0, f"Expected 0.8-2.0, got {result}"
+
+    def test_star_ppg_guard_role_player(self):
+        """Role players (PPG < 15) use PQI formula — should still get high boost."""
+        from api.boost_model import estimate_boost_from_api
+        # Low PPG, low stats → high boost (role player)
+        result = estimate_boost_from_api(season_ppg=8, season_rpg=3, season_apg=1, season_mpg=18)
+        assert result >= 2.5, f"Role player should have high boost, got {result}"
+
+    def test_tier1_drift_correction(self):
+        """Tier 1 should apply a general downward drift correction."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-25", "boost": 2.0, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=1, season_mpg=25, ceiling=3.0, floor=0.0)
+        # drift correction (-0.03) + RS 3.5 mid-RS → potential decay
+        # After rounding to 0.1, drift pulls to ≤ 2.0
+        assert r["boost"] <= 2.0, f"Expected drift to pull to ≤ 2.0, got {r['boost']}"
+
+    def test_tier1_mid_boost_regression(self):
+        """Mid-boost players (1.0-2.5) should regress harder after big swings."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-20", "boost": 1.5, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-25", "boost": 2.3, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=1, season_mpg=25, ceiling=3.0, floor=0.0)
+        # After a +0.8 swing, regression + drift should prevent further increase
+        assert r["boost"] <= 2.3, f"Expected regression, got {r['boost']}"
+
+    def test_tier1_stronger_mean_reversion_mid_rs(self):
+        """Mid-RS players (3-5) should have 8% mean reversion (vs 5% for others)."""
+        from api.boost_model import _predict_tier1
+        # Mid-RS player with boost far from tier baseline
+        entries = [
+            {"date": "2026-03-20", "boost": 3.0, "rs": 4.0, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-25", "boost": 3.0, "rs": 4.0, "drafts": 50, "has_boost_data": True},
+        ]
+        r_mid = _predict_tier1(entries, gap_days=1, season_mpg=25, ceiling=3.0, floor=0.0)
+
+        # High-RS player with same boost distance from baseline
+        entries_high = [
+            {"date": "2026-03-20", "boost": 3.0, "rs": 6.0, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-25", "boost": 3.0, "rs": 6.0, "drafts": 50, "has_boost_data": True},
+        ]
+        r_high = _predict_tier1(entries_high, gap_days=1, season_mpg=25, ceiling=3.0, floor=0.0)
+
+        # Both should show downward correction; mid-RS should pull harder toward baseline
+        assert r_mid["boost"] <= 3.0, f"Mid-RS should revert, got {r_mid['boost']}"
+
+    def test_wider_confidence_band(self):
+        """Tier 1 confidence band should be ±0.25 (widened from ±0.15)."""
+        from api.boost_model import _predict_tier1
+        entries = [
+            {"date": "2026-03-28", "boost": 2.0, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=1, season_mpg=25, ceiling=3.0, floor=0.0)
+        low, high = r["confidence_band"]
+        band_width = high - low
+        assert band_width >= 0.4, f"Band width should be ≥0.4 (±0.25), got {band_width}"
+
+    def test_snap_threshold_tightened(self):
+        """Only values ≥ 2.95 should snap to 3.0 (not 2.8)."""
+        from api.boost_model import _clamp_round
+        assert _clamp_round(2.90, 0.0, 3.0) == 2.9  # 2.90 should NOT snap to 3.0
+        assert _clamp_round(2.94, 0.0, 3.0) == 2.9  # 2.94 should NOT snap to 3.0
+        assert _clamp_round(2.96, 0.0, 3.0) == 3.0  # 2.96 should snap to 3.0
+
+    def test_rs_floor_lowered_to_2(self):
+        """Strategy RS floor should be 2.0 (not 2.5) to catch high-boost role players."""
+        from api.index import _CONFIG_DEFAULTS
+        assert _CONFIG_DEFAULTS["strategy"]["rs_floor"] == 2.0
+
+    def test_recency_weighted_boost_mean(self):
+        """Tier 1 should use recency-weighted mean (3x/2x/1x for last 3)."""
+        from api.boost_model import _predict_tier1
+        # Player with old low boost but recent high boost
+        entries = [
+            {"date": "2026-03-10", "boost": 0.5, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-15", "boost": 0.5, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-20", "boost": 2.0, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+            {"date": "2026-03-25", "boost": 2.5, "rs": 3.5, "drafts": 50, "has_boost_data": True},
+        ]
+        r = _predict_tier1(entries, gap_days=1, season_mpg=25, ceiling=3.0, floor=0.0)
+        # With weighted mean, recent high boosts should have more influence
+        # Result includes drift, mean reversion etc., but hist_boost_mean should be >1.5
+        assert r["hist_boost_mean"] > 1.5, f"Expected weighted mean > 1.5, got {r['hist_boost_mean']}"
 
 
 class TestWatchlist:

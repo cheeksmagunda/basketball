@@ -1032,7 +1032,7 @@ class TestConfigCoverage:
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
             val = _cfg("strategy.rs_floor", None)
-        assert val == 2.5, f"Expected 2.5, got {val}"
+        assert val == 2.0, f"Expected 2.0, got {val}"
 
     def test_line_min_confidence_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS
