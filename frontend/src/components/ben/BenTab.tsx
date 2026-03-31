@@ -37,18 +37,13 @@ export default function BenTab() {
     const briefingText = buildSystemPrompt(briefingQuery.data);
     setSystem(briefingText);
     addMessage({ role: 'assistant', content: briefingText, hidden: true });
-    addMessage({ role: 'assistant', content: buildGreeting(briefingQuery.data) });
   }, [initialized, briefingQuery.data, setInitialized, setSystem, addMessage]);
 
-  // Fallback: if briefing fails, still show a basic greeting
+  // Fallback: if briefing fails, still mark initialized so empty state shows
   useEffect(() => {
     if (initialized || !briefingQuery.isError) return;
     setInitialized(true);
-    addMessage({
-      role: 'assistant',
-      content: 'What can I help with? Deep dives, config changes, backtests — just ask.',
-    });
-  }, [initialized, briefingQuery.isError, setInitialized, addMessage]);
+  }, [initialized, briefingQuery.isError, setInitialized]);
 
   // Update system prompt when briefing data refreshes
   useEffect(() => {
