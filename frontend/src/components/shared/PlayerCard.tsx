@@ -54,42 +54,42 @@ export default function PlayerCard({
       {/* Player info column */}
       <div className={styles['player-info']}>
 
-        {/* Row 1: Name + badges */}
+        {/* Row 1: Name + boost inline | badges + matchup right-aligned */}
         <div className={styles['card-header']}>
-          <span className={styles['player-name']}>{player.name}</span>
-          <div className={styles['badge-row']}>
-            {player._hot_streak && (
-              <span className={styles['hot-pill']}>HOT</span>
+          <div className={styles['name-boost-group']}>
+            <span className={styles['player-name']}>{player.name}</span>
+            {showBoost && player.est_mult > 0 && (
+              <span
+                className={styles['boost-pill']}
+                style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.25) }}
+              >
+                +{player.est_mult.toFixed(1)}x card
+              </span>
             )}
-            <span
-              className={styles['team-badge']}
-              style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
-            >
-              {player.team}
-            </span>
-            <span className={styles['pos-pill']}>{player.pos}</span>
-            {player.injury_status && player.injury_status !== '' && (
-              <span className={styles['injury-badge']}>{player.injury_status}</span>
+            {player._odds_adjusted && (
+              <span className={styles['odds-pill']}>ODDS</span>
             )}
           </div>
-        </div>
-
-        {/* Row 2: Boost pill + matchup — single compact row */}
-        <div className={styles['sub-row']}>
-          {showBoost && player.est_mult > 0 && (
-            <span
-              className={styles['boost-pill']}
-              style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.25) }}
-            >
-              +{player.est_mult.toFixed(1)}x card
-            </span>
-          )}
-          {player._odds_adjusted && (
-            <span className={styles['odds-pill']}>ODDS</span>
-          )}
-          {player.opp && (
-            <span className={styles['matchup-text']}>vs {player.opp}</span>
-          )}
+          <div className={styles['badge-col']}>
+            <div className={styles['badge-row']}>
+              {player._hot_streak && (
+                <span className={styles['hot-pill']}>HOT</span>
+              )}
+              <span
+                className={styles['team-badge']}
+                style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
+              >
+                {player.team}
+              </span>
+              <span className={styles['pos-pill']}>{player.pos}</span>
+              {player.injury_status && player.injury_status !== '' && (
+                <span className={styles['injury-badge']}>{player.injury_status}</span>
+              )}
+            </div>
+            {player.opp && (
+              <span className={styles['matchup-text']}>vs {player.opp}</span>
+            )}
+          </div>
         </div>
 
         {/* Row 3: Stat grid */}
