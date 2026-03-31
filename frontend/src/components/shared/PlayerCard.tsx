@@ -73,9 +73,6 @@ export default function PlayerCard({
             {player._odds_adjusted && (
               <span className={styles['odds-pill']}>ODDS</span>
             )}
-            {player._hot_streak && (
-              <span className={styles['hot-pill']}>HOT</span>
-            )}
             <span
               className={styles['team-badge']}
               style={{ color: teamHex, borderColor: hexToRgba(teamHex, 0.3) }}
