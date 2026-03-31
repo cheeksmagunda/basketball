@@ -9250,7 +9250,9 @@ def _parlay_live_tick_payload() -> dict:
                     snap["hit_threshold_met"] = sf > lv
                 else:
                     snap["progress"] = min(1.0, max(0.0, (lv - sf) / lv))
-                    snap["hit_threshold_met"] = sf < lv
+                    # UNDER: bet can only be "hit" once the game is final — stat can
+                    # still increase during live play, so never lock bar mid-game.
+                    snap["hit_threshold_met"] = st == "final" and sf < lv
                 if st == "final":
                     prev = snap.get("leg_result_preview")
                     snap["progress"] = 1.0 if prev == "hit" else 0.0

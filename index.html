@@ -3394,6 +3394,20 @@ function _applyParlayLiveUpdate(payload) {
 
 function _startParlayLiveSse() {
   if (_parlayLiveES || typeof EventSource === 'undefined') return;
+  // Immediately show live rows with a loading placeholder so the tracker
+  // area is visible before the first SSE event arrives (1-3s ESPN fetch).
+  // _applyParlayLiveUpdate will hide rows for non-live legs on first tick.
+  const _sseLegs = PARLAY_STATE && PARLAY_STATE.data && PARLAY_STATE.data.legs || [];
+  for (let _si = 0; _si < _sseLegs.length; _si++) {
+    const _sRow = _el('parlayLegLiveRow-' + _si);
+    const _sStat = _el('parlayLegLiveStat-' + _si);
+    const _sWrap = _el('parlayLegProgressWrap-' + _si);
+    if (_sRow && !_sRow.textContent.trim()) {
+      _sRow.style.display = '';
+      if (_sStat) _sStat.textContent = '…';
+    }
+    if (_sWrap) _sWrap.style.display = '';
+  }
   try {
     _parlayLiveES = new EventSource('/api/parlay-live-stream');
     _parlayLiveES.onmessage = function(ev) {
