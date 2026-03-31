@@ -1,44 +1,55 @@
-@keyframes ballFloat {
-  0%, 100% { transform: translateY(0px) rotate(-1.5deg); }
-  50%       { transform: translateY(-16px) rotate(1.5deg); }
-}
-
 /* ── APP HEADER ── */
 .header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 16px 0 12px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
 }
 
 .logo {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .logoIcon {
-  font-size: 1.4rem;
-  animation: ballFloat 3s ease-in-out infinite;
-  display: inline-block;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background-color: var(--chalk);
+  background-image: linear-gradient(145deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+  border: 1px solid rgba(255,255,255,0.24);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  box-shadow: 0 4px 20px var(--chalk-glow), 0 1px 0 rgba(255,255,255,0.26) inset;
+  flex-shrink: 0;
 }
 
 .title {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 1.1rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--chalk);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-text-primary);
   line-height: 1.1;
 }
 
 .sub {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.14em;
   display: block;
+  margin-top: 2px;
 }

@@ -7,7 +7,7 @@ export default function Header() {
         <div className={styles.logoIcon}>🏀</div>
         <div>
           <h1 className={styles.title}>THE ORACLE</h1>
-          <span className={styles.sub}>Sees what others miss</span>
+          <span className={styles.sub}>NBA Draft Optimizer</span>
         </div>
       </div>
     </header>
