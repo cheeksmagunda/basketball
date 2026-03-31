@@ -7,7 +7,6 @@ import { useSlate } from '../../api/slate';
 import { useUiStore } from '../../store/uiStore';
 import SlidingPillNav from '../shared/SlidingPillNav';
 import PlayerCard from '../shared/PlayerCard';
-import OracleLoader from '../shared/OracleLoader';
 import EmptyState from '../shared/EmptyState';
 import LateDraftBanner from './LateDraftBanner';
 import { TEAM_COLORS } from '../../utils/teamColors';
@@ -22,8 +21,8 @@ export default function SlateView() {
   const slateMode = useUiStore((s) => s.slateMode);
   const setSlateMode = useUiStore((s) => s.setSlateMode);
 
-  // Loading state -- show Oracle 8-ball
-  if (isLoading) return <OracleLoader visible />;
+  // Initial load handled by App-level OracleLoader; nothing to render yet
+  if (isLoading && !slate) return null;
 
   // Error or failed slate
   if (error || !slate || slate.error) {

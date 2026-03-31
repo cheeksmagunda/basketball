@@ -5,14 +5,22 @@
 import { useParlay, useParlayHistory } from '../../api/parlay';
 import ParlayTicket from './ParlayTicket';
 import ParlayHistory from './ParlayHistory';
-import OracleLoader from '../shared/OracleLoader';
+import ParlayTicketSkeleton from './ParlayTicketSkeleton';
 import EmptyState from '../shared/EmptyState';
 
 export default function ParlayTab() {
   const { data: parlay, isLoading, error, refetch } = useParlay();
   const historyQuery = useParlayHistory();
 
-  if (isLoading) return <OracleLoader visible />;
+  // Inline skeleton while parlay data loads (prefetch started on app mount)
+  if (isLoading && !parlay) {
+    return (
+      <div>
+        <ParlayTicketSkeleton />
+        <ParlayHistory data={historyQuery.data || null} isLoading={historyQuery.isLoading} />
+      </div>
+    );
+  }
 
   if (error || !parlay) {
     return (

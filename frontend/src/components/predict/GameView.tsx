@@ -7,7 +7,6 @@ import { useState, useCallback } from 'react';
 import { useGames, usePicks } from '../../api/slate';
 import PlayerCard from '../shared/PlayerCard';
 import SkeletonCard from '../shared/SkeletonCard';
-import OracleLoader from '../shared/OracleLoader';
 import EmptyState from '../shared/EmptyState';
 import StrategyInsight from './StrategyInsight';
 import { TEAM_COLORS } from '../../utils/teamColors';
@@ -57,8 +56,8 @@ export default function GameView() {
         />
       )}
 
-      {/* Loading picks for selected game */}
-      {selectedGame && picksLoading && <OracleLoader visible />}
+      {/* Loading picks for selected game — inline skeleton, not full-screen overlay */}
+      {selectedGame && picksLoading && <SkeletonCard count={5} />}
 
       {/* Error loading picks */}
       {selectedGame && !picksLoading && picksError && (
