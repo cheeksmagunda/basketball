@@ -197,7 +197,23 @@ def estimate_boost_from_api(
 
     Uses a Player Quality Index (PQI) that combines stats weighted
     by their correlation with player fame/quality.
+
+    Star PPG guard: Stars (PPG ≥ 15) are heavily drafted regardless of PQI,
+    so they ALWAYS get low boosts. This was the single biggest source of
+    Tier 3 errors (MAE 0.714): the model predicted 3.0 for Jokic, Luka,
+    SGA, Curry etc. when their actual boosts are 0.0-0.5.
     """
+    # Star PPG guard — applied BEFORE PQI to prevent massive over-predictions.
+    # Calibrated from 148-date backtest: stars with PPG ≥ 22 always have boost ≤ 0.5.
+    if season_ppg >= 25:
+        return 0.0   # Elite superstars (Jokic, SGA, Luka): always 0.0
+    elif season_ppg >= 22:
+        return 0.3   # Borderline superstars: 0.0-0.5 range
+    elif season_ppg >= 19:
+        return 0.8   # Stars: 0.3-1.0 range
+    elif season_ppg >= 15:
+        return max(2.0 - (season_ppg - 15) * 0.3, 0.8)  # Starters: 0.8-2.0
+
     pqi = season_ppg * 1.0 + season_rpg * 0.4 + season_apg * 0.6 + season_mpg * 0.2
 
     if pqi < 8:
@@ -347,28 +363,52 @@ def _predict_tier1(
     ceiling: float,
     floor: float,
 ) -> dict:
-    """Tier 1: Returning player — high accuracy from prev_boost + adjustments."""
+    """Tier 1: Returning player — high accuracy from prev_boost + adjustments.
+
+    Calibrated from 148-date backtest (2024-12 – 2026-03):
+    - Overall day-over-day boost changes: median 0.0, mean -0.052
+    - Mid-RS (3-5) average drift: -0.077/appearance
+    - Low-pop (<50 drafts) drift: -0.094/appearance
+    - High-RS (≥5) drift: -0.040/appearance
+    """
     prev = entries[-1]
     base = prev["boost"]
     prev_rs = prev["rs"]
     prev_drafts = prev["drafts"]
 
-    # Compute historical stats (0.0 is a valid boost for superstars)
+    # Compute historical stats — use recency-weighted mean for boost
+    # Recent appearances are more predictive than older ones
     all_boosts = [e["boost"] for e in entries]
+    if len(all_boosts) >= 3:
+        # Weighted: last 3 appearances get 3x, 2x, 1x weight
+        recent_3 = all_boosts[-3:]
+        weights = [1.0] * max(0, len(all_boosts) - 3) + [1.0, 2.0, 3.0][-len(recent_3):]
+        if len(weights) < len(all_boosts):
+            weights = [1.0] * (len(all_boosts) - len(recent_3)) + weights
+        hist_boost_mean = sum(b * w for b, w in zip(all_boosts, weights)) / sum(weights)
+    else:
+        hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else base
     all_rs = [e["rs"] for e in entries if e["rs"] > 0]
-    hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else base
     hist_rs_mean = sum(all_rs) / len(all_rs) if all_rs else prev_rs
     tier_baseline = get_tier_baseline(hist_rs_mean)
 
     adjustments = []
 
+    # Factor 0: General downward drift correction
+    # Backtest shows mean day-over-day change is -0.052 across all players.
+    # This corrects the systematic over-prediction bias (+0.242 mean signed error).
+    base -= 0.03
+    adjustments.append("drift correction (-0.03)")
+
     # Factor 1: RS performance decay — high RS → boost drops, low RS → boost rises
+    # Strengthened from backtest: high-RS bucket shows -0.040 avg drift,
+    # mid-RS shows -0.077 avg drift (largest).
     if prev_rs >= 7.0:
-        base -= 0.1
-        adjustments.append("monster game last out (-0.1)")
+        base -= 0.12
+        adjustments.append("monster game last out (-0.12)")
     elif prev_rs >= 5.0:
-        base -= 0.05
-        adjustments.append("strong game last out (-0.05)")
+        base -= 0.08
+        adjustments.append("strong game last out (-0.08)")
     elif prev_rs < 2.0 and prev_rs > 0:
         base += 0.1
         adjustments.append("bust game last out (+0.1)")
@@ -381,11 +421,29 @@ def _predict_tier1(
         base += 0.05
         adjustments.append(f"ignored ({int(prev_drafts)} drafts) (+0.05)")
 
-    # Factor 3: Mean reversion toward tier baseline (5% pull)
-    reversion = (tier_baseline - base) * 0.05
+    # Factor 3: Mean reversion toward tier baseline
+    # Strengthened from 5% to 8% for mid-RS players (RS 3-5) where drift is largest (-0.077).
+    # Mid-boost range (1.0-2.5) had MAE 0.432 — strongest reversion helps most there.
+    if 3.0 <= hist_rs_mean < 5.0:
+        reversion_rate = 0.08
+    else:
+        reversion_rate = 0.05
+    reversion = (tier_baseline - base) * reversion_rate
     if abs(reversion) >= 0.01:
         base += reversion
         adjustments.append(f"mean reversion toward {tier_baseline:.1f} ({reversion:+.2f})")
+
+    # Factor 3b: Mid-boost regression pull
+    # Players in the volatile 1.0-2.5 range (MAE 0.432 — worst bucket) get an extra
+    # pull toward their recency-weighted historical mean when they've had recent swings.
+    if 1.0 <= prev["boost"] <= 2.5 and len(entries) >= 2:
+        recent_swing = abs(prev["boost"] - entries[-2]["boost"])
+        if recent_swing >= 0.3:
+            # After a big swing, regress harder toward weighted mean
+            regression_pull = (hist_boost_mean - base) * 0.10
+            if abs(regression_pull) >= 0.01:
+                base += regression_pull
+                adjustments.append(f"mid-boost regression after {recent_swing:.1f} swing ({regression_pull:+.02f})")
 
     # Factor 4: Trend continuation (if 2+ data points)
     if len(entries) >= 2:
@@ -424,10 +482,10 @@ def _predict_tier1(
 
     predicted = _clamp_round(base, floor, ceiling)
 
-    # Confidence band — Tier 1 is tight
-    band_width = 0.15
+    # Confidence band — Tier 1 widened based on actual ±0.3 range covering 88% of changes
+    band_width = 0.25
     if gap_days > 7:
-        band_width = 0.25
+        band_width = 0.35
 
     return {
         "boost": predicted,
@@ -518,8 +576,10 @@ def _predict_tier3(
 
 def _clamp_round(x: float, floor_val: float, ceiling: float) -> float:
     """Clamp to [floor, ceiling] and round to nearest 0.1 (Real Sports precision)."""
-    # Special case: if prediction is ≥2.8, snap to 3.0 (26.1% of all boosts are 3.0)
-    if x >= 2.8:
+    # Special case: if prediction is ≥2.95, snap to 3.0 (26.1% of all boosts are 3.0)
+    # Tightened from 2.8 → 2.95 to reduce systematic over-prediction in the 2.8-2.9 range.
+    # Backtest showed +0.242 mean signed error; the old 2.8 snap was a major contributor.
+    if x >= 2.95:
         x = 3.0
     return round(min(max(float(x), floor_val), ceiling), 1)
 
