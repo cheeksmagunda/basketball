@@ -111,17 +111,6 @@
   white-space: nowrap;
 }
 
-.hot-pill {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 0.62rem; font-weight: 800;
-  color: #1a1a1a;
-  background: var(--line);
-  border-radius: var(--radius-pill);
-  padding: 2px 7px;
-  display: inline-flex; align-items: center;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  box-shadow: 0 1px 6px rgba(212,166,64,0.3);
-}
 
 /* Team name badge — team-colored border, no fill */
 .team-badge {

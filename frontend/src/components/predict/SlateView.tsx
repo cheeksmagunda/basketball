@@ -11,6 +11,8 @@ import EmptyState from '../shared/EmptyState';
 import LateDraftBanner from './LateDraftBanner';
 import { TEAM_COLORS } from '../../utils/teamColors';
 
+const SLOT_LABELS = ['2.0x', '1.8x', '1.6x', '1.4x', '1.2x'] as const;
+
 const SLATE_MODES = [
   { key: 'chalk', label: 'Starting 5' },
   { key: 'upside', label: 'Moonshot' },
@@ -84,7 +86,7 @@ export default function SlateView() {
           {players.map((p, i) => (
             <PlayerCard
               key={p.id || p.name}
-              player={p}
+              player={{ ...p, slot: SLOT_LABELS[i] ?? p.slot }}
               index={i}
               showBoost
               tcolor={TEAM_COLORS[p.team] || '#14b8a6'}
