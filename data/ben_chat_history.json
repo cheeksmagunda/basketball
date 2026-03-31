@@ -6,5 +6,9 @@
   {
     "role": "assistant",
     "content": "What's going on? Lay them out."
+  },
+  {
+    "role": "user",
+    "content": "The three leg parlay ticket live tracker, doesn\u2019t display right away, takes a second. It\u2019s also showing ayo progress all green even tho he\u2019s not 3/9 rn"
   }
 ]
