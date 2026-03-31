@@ -7,6 +7,7 @@ import ParlayTicket from './ParlayTicket';
 import ParlayHistory from './ParlayHistory';
 import ParlayTicketSkeleton from './ParlayTicketSkeleton';
 import EmptyState from '../shared/EmptyState';
+import styles from './ParlayTab.module.css';
 
 export default function ParlayTab() {
   const { data: parlay, isLoading, error, refetch } = useParlay();
@@ -15,7 +16,7 @@ export default function ParlayTab() {
   // Inline skeleton while parlay data loads (prefetch started on app mount)
   if (isLoading && !parlay) {
     return (
-      <div>
+      <div className={styles.root}>
         <ParlayTicketSkeleton />
         <ParlayHistory data={historyQuery.data || null} isLoading={historyQuery.isLoading} />
       </div>
@@ -24,17 +25,19 @@ export default function ParlayTab() {
 
   if (error || !parlay) {
     return (
-      <EmptyState
-        icon="&nbsp;"
-        message="Couldn't load parlay."
-        action={{ label: 'Retry', onClick: () => refetch() }}
-      />
+      <div className={styles.root}>
+        <EmptyState
+          icon="&nbsp;"
+          message="Couldn't load parlay."
+          action={{ label: 'Retry', onClick: () => refetch() }}
+        />
+      </div>
     );
   }
 
   if (parlay.error || !parlay.legs?.length) {
     return (
-      <div>
+      <div className={styles.root}>
         <EmptyState
           icon="&nbsp;"
           message={parlay.error || "No valid parlay found for today's slate."}
@@ -48,7 +51,7 @@ export default function ParlayTab() {
   }
 
   return (
-    <div>
+    <div className={styles.root}>
       <ParlayTicket parlay={parlay} />
       <ParlayHistory
         data={historyQuery.data || null}
