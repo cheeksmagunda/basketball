@@ -109,6 +109,26 @@ export default function PlayerCard({
               </div>
             ))}
           </div>
+
+          {/* Minutes: avg → projected */}
+          {player.predMin > 0 && (
+            <div className={styles['minutes-row']}>
+              <span className={styles['minutes-label']}>MIN</span>
+              <span className={styles['minutes-vals']}>
+                {(player.avg_min ?? player.season_min) != null && (
+                  <>
+                    <span className={styles['minutes-avg']}>
+                      {fmt(player.avg_min ?? player.season_min)}
+                    </span>
+                    <span className={styles['minutes-arrow']}>&rarr;</span>
+                  </>
+                )}
+                <span className={styles['minutes-proj']}>
+                  {fmt(player.predMin)}
+                </span>
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

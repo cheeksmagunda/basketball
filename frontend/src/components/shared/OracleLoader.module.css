@@ -14,14 +14,14 @@
 }
 
 /* ── MAGIC 8-BALL LOADER ── */
-/* Loader is INSIDE the Predict tab — position:absolute keeps it
-   scoped so it never overlays Line/Ben/Log. */
+/* Fullscreen overlay — blocks ALL interaction (including bottom nav)
+   until app / data finishes loading. z-index above bottom-nav (1000). */
 
 .oracleLoader {
-  position: absolute; inset: 0; z-index: 10;
-  background: rgba(6,10,15,0.94);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(6,10,15,0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 24px;
   opacity: 0; pointer-events: none;

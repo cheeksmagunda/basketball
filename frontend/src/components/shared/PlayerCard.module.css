@@ -147,6 +147,31 @@
   background: var(--tcolor, var(--chalk)); opacity: 0.5;
 }
 
+/* Minutes row: avg → projected */
+.minutes-row {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px;
+}
+.minutes-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.58rem; font-weight: 700; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps);
+  min-width: 24px;
+}
+.minutes-vals {
+  display: flex; align-items: center; gap: 4px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.minutes-avg {
+  font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted);
+}
+.minutes-arrow {
+  font-size: 0.55rem; color: var(--color-text-muted); opacity: 0.5;
+}
+.minutes-proj {
+  font-size: 0.7rem; font-weight: 700; color: var(--color-text-primary);
+}
+
 .score-col {
   text-align: right; position: relative; z-index: 1;
   border-left: 1px solid var(--border);

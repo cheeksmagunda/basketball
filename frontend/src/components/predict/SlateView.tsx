@@ -29,7 +29,7 @@ export default function SlateView() {
   if (error || !slate || slate.error) {
     return (
       <EmptyState
-        icon="&#128225;"
+        icon={'\uD83D\uDCE1'}
         message={
           slate?.error === 'slate_failed'
             ? 'Slate temporarily unavailable.'
@@ -44,7 +44,7 @@ export default function SlateView() {
   if (slate.no_games) {
     return (
       <EmptyState
-        icon="&#127936;"
+        icon={'\uD83C\uDFC0'}
         message={
           slate.next_slate_date
             ? `No NBA games today. Next slate: ${slate.next_slate_date}`
@@ -77,11 +77,11 @@ export default function SlateView() {
 
       {players.length === 0 ? (
         <EmptyState
-          icon="&#128202;"
+          icon={'\uD83D\uDCCA'}
           message="No players in this lineup."
         />
       ) : (
-        <div style={{ marginTop: 12 }}>
+        <div>
           {players.map((p, i) => (
             <PlayerCard
               key={p.id || p.name}

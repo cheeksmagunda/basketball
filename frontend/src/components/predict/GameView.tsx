@@ -52,7 +52,7 @@ export default function GameView() {
       {/* No game selected */}
       {!selectedGame && (
         <EmptyState
-          icon="&#127936;"
+          icon={'\uD83C\uDFC0'}
           message="Select a game above to see the optimal lineup."
         />
       )}
@@ -63,7 +63,7 @@ export default function GameView() {
       {/* Error loading picks */}
       {selectedGame && !picksLoading && picksError && (
         <EmptyState
-          icon="&#128225;"
+          icon={'\uD83D\uDCE1'}
           message="Could not load analysis."
           action={{ label: 'Retry', onClick: () => refetch() }}
         />
@@ -77,7 +77,7 @@ export default function GameView() {
 
           {lineup.length === 0 ? (
             <EmptyState
-              icon="&#128202;"
+              icon={'\uD83D\uDCCA'}
               message="No lineup available for this game."
             />
           ) : (
