@@ -2,11 +2,6 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes livePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 /* ── LINE PICK CARD (CSS Module) ── */
 
 /* ── Card container ── */
@@ -265,19 +260,3 @@
   border: 1px solid rgba(var(--red-rgb),0.2);
 }
 
-/* ── Live stat tracking (placeholder zone — future) ── */
-.liveSection {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  position: relative;
-  z-index: 1;
-}
-.liveBadge {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  color: var(--color-success);
-  animation: livePulse 1.8s ease-in-out infinite;
-}

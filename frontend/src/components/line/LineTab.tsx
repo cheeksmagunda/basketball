@@ -81,7 +81,6 @@ export default function LineTab() {
       <LineHistory
         data={historyQuery.data ?? null}
         isLoading={historyQuery.isLoading}
-        lineDir={lineDir}
       />
     </div>
   );

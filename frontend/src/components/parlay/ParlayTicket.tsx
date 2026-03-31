@@ -57,12 +57,6 @@ export default function ParlayTicket({ parlay }: ParlayTicketProps) {
         </div>
       )}
 
-      {/* Narrative */}
-      {parlay.narrative && (
-        <div className={styles.narrativeWrap}>
-          <p className={styles.narrative}>{parlay.narrative}</p>
-        </div>
-      )}
     </div>
   );
 }

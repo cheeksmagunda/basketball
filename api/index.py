@@ -8234,12 +8234,14 @@ def _pick_has_display_fields(pick):
 
 
 def _enrich_loaded_line_picks(picks_dict, date_obj):
-    """Enrich over_pick and under_pick with season_avg, proj_min, avg_min, game_time, recent_form_bars when loaded from GitHub.
+    """Enrich over_pick and under_pick with season_avg, proj_min, avg_min, game_time, recent_form_bars,
+    and recent_form_values (real L5 game stats) when loaded from GitHub.
     Only runs the full projection pipeline when enrichment fields are actually missing — skips it
     entirely when the stored picks already have all display fields (avoids 30-60s cold-start hit)."""
     if not picks_dict:
         return
     _enrich_fields = ("season_avg", "proj_min", "avg_min", "game_time", "game_start_iso", "recent_form_bars")
+    all_proj = None
     def _needs_proj(pick):
         return bool(pick) and any(pick.get(f) is None for f in _enrich_fields)
     needs_proj = any(_needs_proj(picks_dict.get(k)) for k in ("over_pick", "under_pick"))
@@ -8251,6 +8253,8 @@ def _enrich_loaded_line_picks(picks_dict, date_obj):
                 pick = picks_dict.get(key)
                 if pick:
                     _enrich_pick_from_projections(pick, all_proj, game_ctx_map)
+    # Always enrich L5 real game values if missing
+    _enrich_line_picks_l5(picks_dict, all_proj)
 
 
 
@@ -8460,7 +8464,9 @@ def _fetch_lines_via_claude(all_proj: list, games: list, date=None, force_refres
 _L5_STAT_MAP = {"points": "points", "rebounds": "rebounds", "assists": "assists"}
 
 def _enrich_line_picks_l5(result, all_proj):
-    """Populate recent_form_values on line picks from ESPN gamelogs (L5 real game stats)."""
+    """Populate recent_form_values on line picks from ESPN gamelogs (L5 real game stats).
+    Uses _fetch_gamelog (default 15 games, cached) and takes the last 5 entries
+    (most recent games in chronological order)."""
     if not result:
         return
     for key in ("over_pick", "under_pick"):
@@ -8480,8 +8486,10 @@ def _enrich_line_picks_l5(result, all_proj):
             continue
         stat_key = _L5_STAT_MAP.get(pick.get("stat_type", ""), "points")
         try:
-            gl = _fetch_gamelog(pid, 5)
-            vals = gl.get(stat_key, [])[:5] if gl else []
+            # Use default num_games (15) to share cache with parlay/other callers;
+            # take last 5 for the most recent games (gamelog is chronological: oldest first)
+            gl = _fetch_gamelog(pid)
+            vals = gl.get(stat_key, [])[-5:] if gl else []
             if vals:
                 pick["recent_form_values"] = [round(float(v), 1) for v in vals]
         except Exception as e:
@@ -8885,6 +8893,9 @@ async def get_line_of_the_day(request: Request, mock: bool = Query(False, descri
                     _tmp = {_dir_key: _p}
                     _enrich_loaded_line_picks(_tmp, _p_date)
                     combo[_dir_key] = _tmp[_dir_key]
+
+        # ── L5 enrichment (always — even when display fields already present) ──
+        _enrich_line_picks_l5(combo, None)
 
         # ── Inline odds enrichment: fill missing odds on cached picks ──
         _needs_odds = any(

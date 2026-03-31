@@ -18,7 +18,7 @@
   margin-bottom: 12px;
 }
 
-/* ── Stats row (Hit Rate + Streak + Resolved) ── */
+/* ── Stats row (Hit Rate + Streak) ── */
 .statsRow {
   display: flex;
   gap: 8px;

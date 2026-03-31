@@ -1,14 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useUiStore } from '../../store/uiStore';
 import SlidingPillNav from '../shared/SlidingPillNav';
 import LineHistoryRow from './LineHistoryRow';
 import styles from './LineHistory.module.css';
-import type { LineHistoryResponse, LinePick } from '../../types';
+import type { LineHistoryResponse } from '../../types';
 
 interface LineHistoryProps {
   data: LineHistoryResponse | null;
   isLoading: boolean;
-  lineDir: 'over' | 'under';
 }
 
 const FILTER_TABS = [
@@ -21,15 +20,36 @@ export default function LineHistory({ data, isLoading }: LineHistoryProps) {
   const lineHistoryFilter = useUiStore((s) => s.lineHistoryFilter);
   const setLineHistoryFilter = useUiStore((s) => s.setLineHistoryFilter);
 
-  // Placeholder for a detail modal (tappable rows wire here)
-  const [_selectedPick, setSelectedPick] = useState<LinePick | null>(null);
-
   // Filter picks by direction
   const filteredPicks = useMemo(() => {
     if (!data?.picks) return [];
     if (lineHistoryFilter === 'all') return data.picks;
     return data.picks.filter((p) => p.direction === lineHistoryFilter);
   }, [data?.picks, lineHistoryFilter]);
+
+  // Compute hit rate + streak from the filtered subset (not global data)
+  const { hitRate, streak, streakType } = useMemo(() => {
+    const resolved = filteredPicks.filter(
+      (p) => p.result === 'hit' || p.result === 'miss',
+    );
+    const hits = resolved.filter((p) => p.result === 'hit').length;
+    const rate = resolved.length > 0 ? Math.round((hits / resolved.length) * 100) : null;
+
+    let sk = 0;
+    let skType: string | null = null;
+    for (const p of filteredPicks) {
+      if (p.result !== 'hit' && p.result !== 'miss') continue;
+      if (skType === null) {
+        skType = p.result;
+        sk = 1;
+      } else if (p.result === skType) {
+        sk += 1;
+      } else {
+        break;
+      }
+    }
+    return { hitRate: rate, streak: sk, streakType: skType };
+  }, [filteredPicks]);
 
   // Accent color for the filter pill nav
   const filterAccent =
@@ -55,39 +75,31 @@ export default function LineHistory({ data, isLoading }: LineHistoryProps) {
       {/* ── Stats row ── */}
       <div className={styles.sectionTitle}>Recent Picks</div>
       <div className={styles.statsRow}>
-        {/* Hit rate */}
+        {/* Hit rate — computed from filtered picks */}
         <div className={styles.statBox}>
           <div className={styles.statValue}>
-            {data.hit_rate != null ? `${Math.round(data.hit_rate)}%` : '--'}
+            {hitRate != null ? `${hitRate}%` : '--'}
           </div>
           <div className={styles.statLabel}>Hit Rate</div>
         </div>
 
-        {/* Streak */}
+        {/* Streak — computed from filtered picks */}
         <div className={styles.statBox}>
           <div
             className={styles.statValue}
             style={
-              data.streak_type === 'hit'
+              streakType === 'hit'
                 ? { color: 'var(--color-success)' }
-                : data.streak_type === 'miss'
+                : streakType === 'miss'
                   ? { color: 'var(--color-danger)' }
                   : undefined
             }
           >
-            {data.streak > 0
-              ? `${data.streak}x ${data.streak_type === 'hit' ? 'HIT' : 'MISS'}`
+            {streak > 0
+              ? `${streak}x ${streakType === 'hit' ? 'HIT' : 'MISS'}`
               : '--'}
           </div>
           <div className={styles.statLabel}>Streak</div>
-        </div>
-
-        {/* Resolved count */}
-        <div className={styles.statBox}>
-          <div className={styles.statValue}>
-            {data.resolved}/{data.total_picks}
-          </div>
-          <div className={styles.statLabel}>Resolved</div>
         </div>
       </div>
 
@@ -112,7 +124,6 @@ export default function LineHistory({ data, isLoading }: LineHistoryProps) {
             <LineHistoryRow
               key={`${pick.date}-${pick.player_name}-${pick.direction}-${i}`}
               pick={pick}
-              onClick={() => setSelectedPick(pick)}
             />
           ))
         )}
