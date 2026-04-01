@@ -1106,6 +1106,7 @@ _CONFIG_DEFAULTS = {
         "max_per_team": 2,              # Max players from the same team in a lineup (winners stack 2 ~40% of the time)
         "moonshot_min_recent_minutes": 16.0,  # Moonshot swaps require recent_min >= 16 (rotation-bubble filter)
         "moonshot_min_ev": 10.0,        # Moonshot swaps require upside_ev >= 10 (winning-draft data: only 4% of winners had EV < 10)
+        "moonshot_ev_swap_threshold": 4.0,  # Wider EV window for moonshot swaps (allows boost-for-RS trades)
         "minutes_delta": {
             "enabled": True,
             "neutral_zone": 2.0,        # ±2 min band = "business as usual" (no catalyst)
@@ -4714,15 +4715,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     chalk = _select_with_team_cap(safe_pool, 5, max_per_team)
 
     # ── Step 5: Upside lineup (Moonshot) ───────────────────────────────────
-    # Start from the same ranked list. Make 1-2 swaps pushing toward higher
-    # ceiling: where two candidates have similar upside_ev (within ~2 pts), the
-    # moonshot takes the higher-variance / higher-boost player.
-    # Team diversity enforced: swaps must not violate max_per_team.
+    # Strategy report: "Start from the same ranked list but make 1-2 swaps
+    # that push toward higher ceiling." The moonshot prefers:
+    #   - Higher boost (3.0× role player over 1.5× starter when EV is close)
+    #   - Optimistic boost band (cb_high vs cb_low)
+    # Compare upside_ev to upside_ev (apples-to-apples, not safe_ev vs upside_ev).
+    # Strategy report Finding 2: boost is 40% more valuable per unit than RS,
+    # so the swap signal is boost difference, not variance.
     upside = list(chalk)  # start as copy of safe
     chalk_names = {p.get("name") for p in chalk}
     moonshot_min_recent = float(_strat.get("moonshot_min_recent_minutes", 16.0))
     moonshot_min_ev = float(_strat.get("moonshot_min_ev", 10.0))
-    # Find swap candidates: players NOT in safe lineup, ranked by upside_ev
+    moonshot_ev_threshold = float(_strat.get("moonshot_ev_swap_threshold", 4.0))
+    # Find swap candidates: NOT in safe lineup, ranked by upside_ev
     swap_candidates = sorted(
         [p for p in candidate_pool if p.get("name") not in chalk_names],
         key=lambda x: -x.get("upside_ev", 0),
@@ -4738,34 +4743,35 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if candidate.get("upside_ev", 0) < moonshot_min_ev:
             continue
         c_ev = candidate.get("upside_ev", 0)
-        c_var = candidate.get("player_variance", 0)
         c_boost = candidate.get("est_mult", 0)
         c_team = (candidate.get("team") or "").upper()
-        # Find the weakest safe player within the EV threshold (compare upside_ev vs safe_ev)
+        # Find the S5 player with the lowest boost where candidate has higher boost
+        # and EV is within the swap threshold (apples-to-apples: upside_ev vs upside_ev)
         best_swap_idx = -1
         best_swap_score = -1
         for i, safe_p in enumerate(upside):
-            s_ev = safe_p.get("safe_ev", 0)
-            ev_gap = s_ev - c_ev
-            if ev_gap > ev_swap_threshold:
-                continue  # candidate is too far below this safe player
-            if ev_gap < -ev_swap_threshold:
-                continue  # candidate is much better — should already be in top 5
-            # Check team cap: after swap, would the candidate's team exceed max_per_team?
+            s_up_ev = safe_p.get("upside_ev", 0)
+            s_boost = safe_p.get("est_mult", 0)
+            # EV proximity: candidate must be within threshold of safe player's upside_ev
+            ev_diff = abs(c_ev - s_up_ev)
+            if ev_diff > moonshot_ev_threshold:
+                continue
+            # Team cap check
             s_team = (safe_p.get("team") or "").upper()
             if c_team:
                 team_count_after = sum(1 for p in upside if (p.get("team") or "").upper() == c_team and p.get("name") != safe_p.get("name"))
                 if team_count_after >= max_per_team:
-                    continue  # swap would violate team cap
-            # Candidate has higher variance OR higher boost → upside swap
-            s_var = safe_p.get("player_variance", 0)
-            s_boost = safe_p.get("est_mult", 0)
-            if c_var > s_var or c_boost > s_boost + 0.5:
-                swap_score = (c_var - s_var) + (c_boost - s_boost) * 0.5
-                if swap_score > best_swap_score:
-                    best_swap_score = swap_score
-                    best_swap_idx = i
-        if best_swap_idx >= 0 and best_swap_score > 0:
+                    continue
+            # Swap signal: candidate must have HIGHER boost (Finding 2: boost > RS in value)
+            boost_diff = c_boost - s_boost
+            if boost_diff <= 0:
+                continue  # only swap IN players with higher boost
+            # Score by boost difference — the primary moonshot differentiator
+            swap_score = boost_diff * 2.0
+            if swap_score > best_swap_score:
+                best_swap_score = swap_score
+                best_swap_idx = i
+        if best_swap_idx >= 0:
             upside[best_swap_idx] = candidate
             swaps_made += 1
 
