@@ -1,0 +1,131 @@
+{
+  "date": "2026-03-31",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "MIL",
+      "away": "DAL",
+      "home_score": 123,
+      "away_score": 99,
+      "winner": "MIL",
+      "loser": "DAL",
+      "winner_score": 123,
+      "loser_score": 99
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "user_report",
+  "study_period": "per_game_v60_jan6_mar23",
+  "drafts": {
+    "top_players": [
+      {"name": "R. Rollins", "team": "MIL", "rs": 4.4},
+      {"name": "K. Kuzma", "team": "MIL", "rs": 3.3},
+      {"name": "O. Dieng", "team": "DAL", "rs": 3.1},
+      {"name": "C. Flagg", "team": "MIL", "rs": 2.8},
+      {"name": "M. Turner", "team": "MIL", "rs": 2.5},
+      {"name": "A. Green", "team": "DAL", "rs": 2.2},
+      {"name": "B. Williams", "team": "MIL", "rs": 1.8}
+    ],
+    "optimal_score": 26.30,
+    "optimal_assignment": "RS descending: Rollins 2.0x, Kuzma 1.8x, Dieng 1.6x, Flagg 1.4x, Turner 1.2x",
+    "winning_drafts": [
+      {
+        "rank": 1,
+        "user": "norwaynugget",
+        "score": 25.38,
+        "lineup": [
+          {"slot": "2.0x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.8x", "name": "M. Turner", "rs": 2.5},
+          {"slot": "1.6x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.4x", "name": "A. Green", "rs": 2.2},
+          {"slot": "1.2x", "name": "O. Dieng", "rs": 3.1}
+        ]
+      },
+      {
+        "rank": 2,
+        "user": "depressedbrewersfan",
+        "score": 25.28,
+        "lineup": [
+          {"slot": "2.0x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.8x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.6x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.4x", "name": "M. Turner", "rs": 2.5},
+          {"slot": "1.2x", "name": "A. Green", "rs": 2.2}
+        ]
+      },
+      {
+        "rank": 3,
+        "user": "djmaerz",
+        "score": 25.12,
+        "lineup": [
+          {"slot": "2.0x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.8x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.6x", "name": "M. Turner", "rs": 2.5},
+          {"slot": "1.4x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.2x", "name": "A. Green", "rs": 2.2}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "kanta1",
+        "score": 25.09,
+        "lineup": [
+          {"slot": "2.0x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.8x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.6x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.4x", "name": "B. Williams", "rs": 1.8},
+          {"slot": "1.2x", "name": "O. Dieng", "rs": 3.1}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "shork",
+        "score": 24.77,
+        "lineup": [
+          {"slot": "2.0x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.8x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.6x", "name": "B. Williams", "rs": 1.8},
+          {"slot": "1.4x", "name": "O. Dieng", "rs": 3.1},
+          {"slot": "1.2x", "name": "K. Kuzma", "rs": 3.3}
+        ]
+      },
+      {
+        "rank": 6,
+        "user": "french370z",
+        "score": 24.74,
+        "lineup": [
+          {"slot": "2.0x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.8x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.6x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.4x", "name": "M. Turner", "rs": 2.5},
+          {"slot": "1.2x", "name": "B. Williams", "rs": 1.8}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "nathanx",
+        "score": 24.58,
+        "lineup": [
+          {"slot": "2.0x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.8x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.6x", "name": "M. Turner", "rs": 2.5},
+          {"slot": "1.4x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.2x", "name": "B. Williams", "rs": 1.8}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "c.j.b",
+        "score": 24.58,
+        "lineup": [
+          {"slot": "2.0x", "name": "R. Rollins", "rs": 4.4},
+          {"slot": "1.8x", "name": "C. Flagg", "rs": 2.8},
+          {"slot": "1.6x", "name": "M. Turner", "rs": 2.5},
+          {"slot": "1.4x", "name": "K. Kuzma", "rs": 3.3},
+          {"slot": "1.2x", "name": "B. Williams", "rs": 1.8}
+        ]
+      }
+    ],
+    "notes": "MIL blowout (24pt spread). No superstars in top drafts — Rollins (4.4) was the clear #1 but is a role player. Winner differentiated with player selection (Dieng 3.1 from losing DAL + Green 2.2 over Flagg 2.8) and better slotting (Kuzma 3.3 at 1.6x). Winner still mis-slotted Turner (2.5) at 1.8x over Kuzma (3.3) and Dieng (3.1) at 1.2x. #4 kanta1 put Flagg (2.8) at 2.0x over Rollins (4.4) — star bias on the rookie. Winning team dominated RS: 5 of top 6 are MIL players. Only DAL contributors: Dieng (3.1), Green (2.2)."
+  }
+}
