@@ -1095,7 +1095,7 @@ _CONFIG_DEFAULTS = {
         "rs_floor": 2.0,               # Finding 2: 0% of winners below RS 2.0; 2.7% below 3.0
                                         # RS 2 + Boost 3.0 combo has 18 winning appearances (avg value 13.3)
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
-        "min_minutes": 12.0,            # Minimum projected minutes to be draft-eligible
+        "min_minutes": 25.0,            # Minimum projected minutes to be draft-eligible
         "min_recent_minutes": 15.0,     # Minimum recent minutes for candidate pool (rotation-bubble filter)
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
@@ -1417,8 +1417,7 @@ ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 OPUS_MODEL  = "claude-opus-4-6"
-MIN_GATE  = 12          # Minimum projected minutes — lowered from 15 to catch
-                        # deep bench (Clifford, Riley) who win in garbage time
+MIN_GATE  = 25          # Minimum projected minutes — filter low-minutes players
 DEFAULT_TOTAL = 222     # Fallback over/under when odds unavailable
 
 # Map ESPN team abbreviations to keyword fragments in Odds API full team names
@@ -3391,10 +3390,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # PPG proxy, raising the minutes bar (high-PPG stars assumed low boost).
     # Formula: effective_gate = max(8, min_gate - (rough_boost - 1.5) * 3)
     min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
-    _pts_for_gate = stats.get("pts", 0)
-    _rough_boost = max(0.2, 3.0 - _pts_for_gate * 0.12)
-    effective_gate = max(8, min_gate - max(0, (_rough_boost - 1.5) * 3))
-    if proj_min < effective_gate: return None
+    if proj_min < min_gate: return None
 
     pts = stats["pts"]
     reb = stats["reb"]
@@ -4600,7 +4596,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # ── Configuration ──────────────────────────────────────────────────────
     _strat = _cfg("strategy", {}) or {}
     rs_floor = float(_strat.get("rs_floor", 2.0))
-    min_minutes = float(_strat.get("min_minutes", 12.0))
+    min_minutes = float(_strat.get("min_minutes", 25.0))
     ev_swap_threshold = float(_strat.get("ev_swap_threshold", 2.0))
     max_swaps = int(_strat.get("max_upside_swaps", 2))
     max_per_team = int(_strat.get("max_per_team", 1))
