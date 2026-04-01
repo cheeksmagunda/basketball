@@ -1110,10 +1110,16 @@ _CONFIG_DEFAULTS = {
             "enabled": True,
             "neutral_zone": 2.0,        # ±2 min band = "business as usual" (no catalyst)
             "neutral_discount": 0.97,   # 3% RS haircut when delta within neutral zone
-            "bonus_per_min": 0.015,     # 1.5% RS bonus per min above neutral zone
-            "max_bonus": 0.12,          # Cap at 12% (reached at ~+10 min delta)
+            "bonus_per_min": 0.03,      # 3% RS bonus per min above neutral zone (was 1.5% — too weak)
+            "max_bonus": 0.20,          # Cap at 20% (was 12%; reached at ~+8.7 min delta)
             "penalty_per_min": 0.01,    # 1% RS penalty per min below -neutral zone
             "max_penalty": 0.08,        # Cap at 8%
+        },
+        "minutes_increase_ev_bonus": {
+            "enabled": True,
+            "min_delta": 4.0,           # Minimum minutes increase to trigger EV bonus
+            "bonus_per_min": 0.02,      # 2% EV bonus per minute above min_delta
+            "max_bonus": 0.15,          # Cap at 15% EV uplift
         },
     },
 }
@@ -4651,6 +4657,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # safe_ev  = RS × (2.0 + cb_low)  — conservative floor EV for safe lineup
     # upside_ev = RS × (2.0 + cb_high) — optimistic ceiling EV for moonshot swaps
     # When no band is available, both default to the point estimate (draft_ev).
+    # Minutes increase EV bonus: players with big minutes jumps (cascade, expanded role)
+    # get an EV uplift — winning draft data shows these players outperform their RS alone.
+    _mi_cfg = _strat.get("minutes_increase_ev_bonus", {})
+    _mi_enabled = _mi_cfg.get("enabled", True)
+    _mi_min_delta = float(_mi_cfg.get("min_delta", 4.0))
+    _mi_bonus_per_min = float(_mi_cfg.get("bonus_per_min", 0.02))
+    _mi_max_bonus = float(_mi_cfg.get("max_bonus", 0.15))
     for p in candidate_pool:
         rs = float(p.get("rating", 0))
         boost = float(p.get("est_mult", 0))
@@ -4659,9 +4672,18 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             cb_low, cb_high = float(band[0]), float(band[1])
         else:
             cb_low = cb_high = boost
-        p["draft_ev"]   = round(rs * (2.0 + boost), 2)
-        p["safe_ev"]    = round(rs * (2.0 + cb_low), 2)
-        p["upside_ev"]  = round(rs * (2.0 + cb_high), 2)
+        # Minutes increase EV multiplier: reward players stepping into expanded roles
+        mi_mult = 1.0
+        if _mi_enabled:
+            pred_min = float(p.get("predMin", 0))
+            season_min = float(p.get("season_min", 0))
+            mi_delta = pred_min - season_min
+            if mi_delta >= _mi_min_delta:
+                mi_mult = 1.0 + min(_mi_bonus_per_min * (mi_delta - _mi_min_delta), _mi_max_bonus)
+        p["draft_ev"]   = round(rs * (2.0 + boost) * mi_mult, 2)
+        p["safe_ev"]    = round(rs * (2.0 + cb_low) * mi_mult, 2)
+        p["upside_ev"]  = round(rs * (2.0 + cb_high) * mi_mult, 2)
+        p["_mi_mult"] = round(mi_mult, 3)
         # Compute moonshot_ev for backward compatibility
         p["moonshot_ev"] = p["draft_ev"]
 

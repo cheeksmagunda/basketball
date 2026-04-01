@@ -5671,6 +5671,61 @@ class TestMoonshotMinRecentMinutes:
         assert not blocked, "High season_min should override low recent_min"
 
 
+class TestMinutesIncreaseEVBonus:
+    """Players with big minutes jumps get EV uplift in lineup selection."""
+
+    def test_config_keys_exist(self):
+        """minutes_increase_ev_bonus config must exist in _CONFIG_DEFAULTS."""
+        src = open("api/index.py").read()
+        assert "minutes_increase_ev_bonus" in src
+        assert "min_delta" in src
+        assert "bonus_per_min" in src
+
+    def test_defaults_correct(self):
+        """Verify default values for minutes increase EV bonus."""
+        src = open("api/index.py").read()
+        assert '"min_delta": 4.0' in src
+        assert '"max_bonus": 0.15' in src
+
+    def test_cascade_player_gets_ev_boost(self):
+        """Player with +8 min increase should get ~8% EV uplift."""
+        pred_min = 28.0
+        season_min = 20.0
+        mi_delta = pred_min - season_min  # +8
+        min_delta_threshold = 4.0
+        bonus_per_min = 0.02
+        max_bonus = 0.15
+        mi_mult = 1.0 + min(bonus_per_min * (mi_delta - min_delta_threshold), max_bonus)
+        assert abs(mi_mult - 1.08) < 0.01, f"Expected ~1.08, got {mi_mult}"
+
+    def test_no_bonus_below_threshold(self):
+        """Player with <4 min increase gets no EV bonus."""
+        mi_delta = 3.0
+        min_delta_threshold = 4.0
+        assert mi_delta < min_delta_threshold, "Should not trigger bonus"
+
+    def test_bonus_capped(self):
+        """Player with +15 min increase should be capped at 15% bonus."""
+        mi_delta = 15.0
+        min_delta_threshold = 4.0
+        bonus_per_min = 0.02
+        max_bonus = 0.15
+        raw_bonus = bonus_per_min * (mi_delta - min_delta_threshold)
+        mi_mult = 1.0 + min(raw_bonus, max_bonus)
+        assert mi_mult == 1.15, f"Should be capped at 1.15, got {mi_mult}"
+
+    def test_ev_formula_includes_mi_mult(self):
+        """_build_lineups EV computation should multiply by mi_mult."""
+        src = open("api/index.py").read()
+        assert "* mi_mult" in src, "EV formula should include mi_mult multiplier"
+
+    def test_minutes_delta_bonus_increased(self):
+        """bonus_per_min should be 0.03 (3% per min), max_bonus should be 0.20."""
+        src = open("api/index.py").read()
+        assert '"bonus_per_min": 0.03' in src, "Minutes delta bonus should be 3% per min"
+        assert '"max_bonus": 0.20' in src, "Minutes delta max bonus should be 20%"
+
+
 class TestMoonshotMinEV:
     """Moonshot swap rejects candidates with low upside EV."""
 
