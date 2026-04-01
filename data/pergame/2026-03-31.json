@@ -1,0 +1,130 @@
+{
+  "date": "2026-03-31",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "POR",
+      "away": "LAC",
+      "home_score": 114,
+      "away_score": 104,
+      "winner": "POR",
+      "loser": "LAC",
+      "winner_score": 114,
+      "loser_score": 104
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "user_report",
+  "study_period": "per_game_v60_jan6_mar23",
+  "drafts": {
+    "top_players": [
+      {"name": "D. Avdija", "team": "POR", "rs": 4.7},
+      {"name": "J. Holiday", "team": "LAC", "rs": 4.0},
+      {"name": "J. Collins", "team": "LAC", "rs": 3.6},
+      {"name": "T. Camara", "team": "POR", "rs": 3.1},
+      {"name": "K. Leonard", "team": "LAC", "rs": 2.8},
+      {"name": "D. Garland", "team": "LAC", "rs": 2.2}
+    ],
+    "optimal_score": 30.06,
+    "optimal_assignment": "RS descending: Avdija 2.0x, Holiday 1.8x, Collins 1.6x, Camara 1.4x, Leonard 1.2x",
+    "winning_drafts": [
+      {
+        "rank": 1,
+        "user": "mvyea",
+        "score": 29.28,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "J. Holiday", "rs": 4.0},
+          {"slot": "1.4x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.2x", "name": "T. Camara", "rs": 3.1}
+        ]
+      },
+      {
+        "rank": 2,
+        "user": "nikishin",
+        "score": 29.20,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.4x", "name": "J. Holiday", "rs": 4.0},
+          {"slot": "1.2x", "name": "T. Camara", "rs": 3.1}
+        ]
+      },
+      {
+        "rank": 2,
+        "user": "kawii",
+        "score": 29.20,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.4x", "name": "J. Holiday", "rs": 4.0},
+          {"slot": "1.2x", "name": "T. Camara", "rs": 3.1}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "raidifyy",
+        "score": 29.18,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "J. Holiday", "rs": 4.0},
+          {"slot": "1.4x", "name": "T. Camara", "rs": 3.1},
+          {"slot": "1.2x", "name": "J. Collins", "rs": 3.6}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "ethanbell4",
+        "score": 28.92,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "T. Camara", "rs": 3.1},
+          {"slot": "1.4x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.2x", "name": "J. Holiday", "rs": 4.0}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "andrew23m",
+        "score": 28.92,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "T. Camara", "rs": 3.1},
+          {"slot": "1.4x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.2x", "name": "J. Holiday", "rs": 4.0}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "amenthomps.on",
+        "score": 28.22,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "T. Camara", "rs": 3.1},
+          {"slot": "1.6x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.4x", "name": "J. Holiday", "rs": 4.0},
+          {"slot": "1.2x", "name": "D. Avdija", "rs": 4.7}
+        ]
+      },
+      {
+        "rank": 8,
+        "user": "perkossje",
+        "score": 28.16,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Leonard", "rs": 2.8},
+          {"slot": "1.8x", "name": "D. Avdija", "rs": 4.7},
+          {"slot": "1.6x", "name": "J. Holiday", "rs": 4.0},
+          {"slot": "1.4x", "name": "J. Collins", "rs": 3.6},
+          {"slot": "1.2x", "name": "D. Garland", "rs": 2.2}
+        ]
+      }
+    ],
+    "notes": "All top 7 picked same 5 players. Only slot assignment differed. Every drafter put Leonard at 2.0x (star bias) despite lowest RS (2.8). Optimal RS-descending would have scored 30.06 (+0.78 vs winner). POR won 114-104 (10pt spread = standard/blowout border). Avdija (POR) top RS at 4.7. Validates F5: razor-thin margins from slot assignment."
+  }
+}
