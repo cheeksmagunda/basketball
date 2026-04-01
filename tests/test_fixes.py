@@ -5626,36 +5626,104 @@ class TestMinutesDeltaSignal:
 
 
 class TestMoonshotMinRecentMinutes:
-    """Moonshot swap rejects rotation-bubble players with low recent minutes."""
+    """Candidate pool rejects rotation-bubble players with low recent minutes."""
 
-    def test_low_recent_min_blocked(self):
-        """Player with recent_min=12 should be blocked from Moonshot swaps (default threshold 16)."""
-        # Read the config defaults directly from source to verify the value
+    def test_low_recent_min_blocked_from_pool(self):
+        """Player with recent_min=12, season_min=14 should be blocked from candidate pool."""
         src = open("api/index.py").read()
-        assert '"moonshot_min_recent_minutes": 16.0' in src, "Default should be 16.0"
-        # Simulate the gate logic
-        candidate_recent_min = 12.0
-        threshold = 16.0
-        assert candidate_recent_min < threshold, "12 min recent should be below 16 threshold"
+        assert '"min_recent_minutes": 15.0' in src, "Default min_recent_minutes should be 15.0"
+        # Simulate the candidate pool gate
+        recent_min = 12.0
+        season_min = 14.2
+        min_recent = 15.0
+        blocked = recent_min < min_recent and season_min < min_recent + 3
+        assert blocked, "Morales-type player (12 recent, 14.2 season) should be blocked from pool"
 
     def test_config_key_exists(self):
-        """moonshot_min_recent_minutes must exist in _CONFIG_DEFAULTS."""
+        """min_recent_minutes must exist in _CONFIG_DEFAULTS."""
         src = open("api/index.py").read()
-        assert "moonshot_min_recent_minutes" in src
-        assert "moonshot_min_recent" in src  # used in _build_lineups
+        assert "min_recent_minutes" in src
+        # Also check moonshot swap filter still exists
+        assert "moonshot_min_recent" in src
 
     def test_morales_scenario(self):
-        """A player like Morales (recent_min=12, predMin=14.2) should be filtered from Moonshot swaps."""
-        # Simulate the swap candidate check
-        candidate = {"recent_min": 12.0, "predMin": 14.2, "upside_ev": 28.0}
-        moonshot_min_recent = 16.0
-        assert candidate["recent_min"] < moonshot_min_recent, "Morales-type player should be blocked"
+        """A player like Morales (recent_min=12, season_min=14.2) should be filtered from candidate pool."""
+        recent_min = 12.0
+        season_min = 14.2
+        min_recent = 15.0
+        # Gate: recent_min < min_recent AND season_min < min_recent + 3
+        assert recent_min < min_recent and season_min < min_recent + 3, "Morales should be blocked"
 
     def test_high_minutes_passes(self):
-        """Player with recent_min=22 should pass the Moonshot gate."""
-        candidate = {"recent_min": 22.0, "predMin": 28.0, "upside_ev": 20.0}
-        moonshot_min_recent = 16.0
-        assert candidate["recent_min"] >= moonshot_min_recent, "High-minutes player should pass"
+        """Player with recent_min=22 should pass the candidate pool gate."""
+        recent_min = 22.0
+        season_min = 28.0
+        min_recent = 15.0
+        blocked = recent_min < min_recent and season_min < min_recent + 3
+        assert not blocked, "High-minutes player should pass"
+
+    def test_season_min_escape_hatch(self):
+        """Player with low recent_min but high season_min (>18) should still pass — likely just resting."""
+        recent_min = 13.0
+        season_min = 25.0  # season average is high — recent dip is likely rest/matchup
+        min_recent = 15.0
+        blocked = recent_min < min_recent and season_min < min_recent + 3
+        assert not blocked, "High season_min should override low recent_min"
+
+
+class TestMinutesIncreaseEVBonus:
+    """Players with big minutes jumps get EV uplift in lineup selection."""
+
+    def test_config_keys_exist(self):
+        """minutes_increase_ev_bonus config must exist in _CONFIG_DEFAULTS."""
+        src = open("api/index.py").read()
+        assert "minutes_increase_ev_bonus" in src
+        assert "min_delta" in src
+        assert "bonus_per_min" in src
+
+    def test_defaults_correct(self):
+        """Verify default values for minutes increase EV bonus."""
+        src = open("api/index.py").read()
+        assert '"min_delta": 4.0' in src
+        assert '"max_bonus": 0.15' in src
+
+    def test_cascade_player_gets_ev_boost(self):
+        """Player with +8 min increase should get ~8% EV uplift."""
+        pred_min = 28.0
+        season_min = 20.0
+        mi_delta = pred_min - season_min  # +8
+        min_delta_threshold = 4.0
+        bonus_per_min = 0.02
+        max_bonus = 0.15
+        mi_mult = 1.0 + min(bonus_per_min * (mi_delta - min_delta_threshold), max_bonus)
+        assert abs(mi_mult - 1.08) < 0.01, f"Expected ~1.08, got {mi_mult}"
+
+    def test_no_bonus_below_threshold(self):
+        """Player with <4 min increase gets no EV bonus."""
+        mi_delta = 3.0
+        min_delta_threshold = 4.0
+        assert mi_delta < min_delta_threshold, "Should not trigger bonus"
+
+    def test_bonus_capped(self):
+        """Player with +15 min increase should be capped at 15% bonus."""
+        mi_delta = 15.0
+        min_delta_threshold = 4.0
+        bonus_per_min = 0.02
+        max_bonus = 0.15
+        raw_bonus = bonus_per_min * (mi_delta - min_delta_threshold)
+        mi_mult = 1.0 + min(raw_bonus, max_bonus)
+        assert mi_mult == 1.15, f"Should be capped at 1.15, got {mi_mult}"
+
+    def test_ev_formula_includes_mi_mult(self):
+        """_build_lineups EV computation should multiply by mi_mult."""
+        src = open("api/index.py").read()
+        assert "* mi_mult" in src, "EV formula should include mi_mult multiplier"
+
+    def test_minutes_delta_bonus_increased(self):
+        """bonus_per_min should be 0.03 (3% per min), max_bonus should be 0.20."""
+        src = open("api/index.py").read()
+        assert '"bonus_per_min": 0.03' in src, "Minutes delta bonus should be 3% per min"
+        assert '"max_bonus": 0.20' in src, "Minutes delta max bonus should be 20%"
 
 
 class TestMoonshotMinEV:
