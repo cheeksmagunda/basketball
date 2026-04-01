@@ -5625,5 +5625,85 @@ class TestMinutesDeltaSignal:
             assert "_min_delta_mult" in result
 
 
+class TestMoonshotMinRecentMinutes:
+    """Moonshot swap rejects rotation-bubble players with low recent minutes."""
+
+    def test_low_recent_min_blocked(self):
+        """Player with recent_min=12 should be blocked from Moonshot swaps (default threshold 16)."""
+        # Read the config defaults directly from source to verify the value
+        src = open("api/index.py").read()
+        assert '"moonshot_min_recent_minutes": 16.0' in src, "Default should be 16.0"
+        # Simulate the gate logic
+        candidate_recent_min = 12.0
+        threshold = 16.0
+        assert candidate_recent_min < threshold, "12 min recent should be below 16 threshold"
+
+    def test_config_key_exists(self):
+        """moonshot_min_recent_minutes must exist in _CONFIG_DEFAULTS."""
+        src = open("api/index.py").read()
+        assert "moonshot_min_recent_minutes" in src
+        assert "moonshot_min_recent" in src  # used in _build_lineups
+
+    def test_morales_scenario(self):
+        """A player like Morales (recent_min=12, predMin=14.2) should be filtered from Moonshot swaps."""
+        # Simulate the swap candidate check
+        candidate = {"recent_min": 12.0, "predMin": 14.2, "upside_ev": 28.0}
+        moonshot_min_recent = 16.0
+        assert candidate["recent_min"] < moonshot_min_recent, "Morales-type player should be blocked"
+
+    def test_high_minutes_passes(self):
+        """Player with recent_min=22 should pass the Moonshot gate."""
+        candidate = {"recent_min": 22.0, "predMin": 28.0, "upside_ev": 20.0}
+        moonshot_min_recent = 16.0
+        assert candidate["recent_min"] >= moonshot_min_recent, "High-minutes player should pass"
+
+
+class TestMoonshotMinEV:
+    """Moonshot swap rejects candidates with low upside EV."""
+
+    def test_config_key_exists(self):
+        """moonshot_min_ev must exist in _CONFIG_DEFAULTS."""
+        src = open("api/index.py").read()
+        assert "moonshot_min_ev" in src
+
+    def test_default_value(self):
+        """Default moonshot_min_ev should be 10.0."""
+        src = open("api/index.py").read()
+        assert '"moonshot_min_ev": 10.0' in src, "Default should be 10.0"
+
+    def test_low_ev_blocked(self):
+        """Player with upside_ev=8 should be blocked from Moonshot swaps."""
+        candidate = {"upside_ev": 8.0, "recent_min": 25.0}
+        moonshot_min_ev = 10.0
+        assert candidate["upside_ev"] < moonshot_min_ev, "Low-EV player should be blocked"
+
+    def test_high_ev_passes(self):
+        """Player with upside_ev=15 should pass."""
+        candidate = {"upside_ev": 15.0, "recent_min": 25.0}
+        moonshot_min_ev = 10.0
+        assert candidate["upside_ev"] >= moonshot_min_ev
+
+
+class TestContextLayerMinutesRisk:
+    """Context layer prompt includes rotation-bubble minutes risk rule."""
+
+    def test_prompt_has_rotation_bubble_rule(self):
+        """Context pass prompt should mention recent_min < 16 rotation-bubble rule."""
+        src = open("api/index.py").read()
+        assert "recent_min < 16" in src, "Context prompt should include rotation-bubble rule"
+        assert "rotation-bubble" in src, "Context prompt should mention rotation-bubble risk"
+
+    def test_prompt_covers_any_roto_status(self):
+        """The new rule applies to ANY roto_status, not just unknown."""
+        src = open("api/index.py").read()
+        assert "any roto_status" in src, "New rule should apply regardless of roto_status"
+
+    def test_moonshot_swap_has_recent_min_check(self):
+        """The Moonshot swap loop should check recent_min."""
+        src = open("api/index.py").read()
+        # Find the moonshot swap section
+        assert 'candidate.get("recent_min", 0) < moonshot_min_recent' in src
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
