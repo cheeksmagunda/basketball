@@ -1604,38 +1604,18 @@ class TestBriefingSimulatedDraftScore:
         assert latest.get("simulated_draft_score") is None
 
 
-class TestMinGatePpgProxy:
-    """min_gate_minutes uses PPG-derived rough_boost only (no card_boost overrides)."""
+class TestMinGateMinutes:
+    """min_gate_minutes enforces a hard 25-minute floor for draft eligibility."""
 
-    def _effective_gate(self, pts, rough_boost_override=None, min_gate=12):
-        rough_boost = rough_boost_override if rough_boost_override is not None else max(0.2, 3.0 - pts * 0.12)
-        return max(8, min_gate - max(0, (rough_boost - 1.5) * 3))
+    def test_min_gate_default_is_25(self):
+        from api.index import MIN_GATE
+        assert MIN_GATE == 25
 
-    def test_high_rough_boost_lowers_gate_to_8(self):
-        gate = self._effective_gate(pts=8.0, rough_boost_override=3.0)
-        assert gate == 8
-
-    def test_low_rough_boost_raises_gate(self):
-        gate = self._effective_gate(pts=8.0, rough_boost_override=None)
-        assert gate > 10
-
-    def test_10_min_fails_default_proxy_at_8_ppg(self):
-        proj_min = 10
-        gate_high = self._effective_gate(pts=8.0, rough_boost_override=3.0)
-        gate_low = self._effective_gate(pts=8.0, rough_boost_override=None)
-        assert proj_min >= gate_high
-        assert proj_min < gate_low
-
-    def test_rough_boost_2_1_gate(self):
-        gate = self._effective_gate(pts=10.0, rough_boost_override=2.1)
-        assert gate == pytest.approx(10.2, abs=0.1)
-
-    def test_project_player_gate_no_config_overrides(self):
+    def test_project_player_uses_simple_gate(self):
         import inspect
         from api import index
         src = inspect.getsource(index.project_player)
-        assert "player_overrides" not in src
-        assert "3.0 - _pts_for_gate * 0.12" in src
+        assert "if proj_min < min_gate" in src
 
 
 class TestPerGameFloor:
