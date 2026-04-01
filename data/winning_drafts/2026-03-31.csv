@@ -1,0 +1,21 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,jaysker,65.92,1,Luka Doncic,LAL,7.1,2.0,0.0,2026-04-01T00:00:00+00:00
+1,jaysker,65.92,2,Kevin Durant,PHX,5.6,1.8,0.5,2026-04-01T00:00:00+00:00
+1,jaysker,65.92,3,Daniss Jenkins,BOS,3.3,1.6,2.3,2026-04-01T00:00:00+00:00
+1,jaysker,65.92,4,Brook Lopez,MIL,3.0,1.4,2.9,2026-04-01T00:00:00+00:00
+1,jaysker,65.92,5,Ousmane Dieng,MIL,3.1,1.2,3.0,2026-04-01T00:00:00+00:00
+2,danielwest,64.51,1,Luka Doncic,LAL,7.1,2.0,0.0,2026-04-01T00:00:00+00:00
+2,danielwest,64.51,2,Daniss Jenkins,BOS,3.3,1.8,2.3,2026-04-01T00:00:00+00:00
+2,danielwest,64.51,3,Jaylen Shead,HOU,2.5,1.6,2.6,2026-04-01T00:00:00+00:00
+2,danielwest,64.51,4,Ousmane Dieng,MIL,3.1,1.4,3.0,2026-04-01T00:00:00+00:00
+2,danielwest,64.51,5,Brook Lopez,MIL,3.0,1.2,2.9,2026-04-01T00:00:00+00:00
+3,kunitz,64.36,1,Luka Doncic,LAL,7.1,2.0,0.0,2026-04-01T00:00:00+00:00
+3,kunitz,64.36,2,Daniss Jenkins,BOS,3.3,1.8,2.3,2026-04-01T00:00:00+00:00
+3,kunitz,64.36,3,Paul Reed,PHI,2.5,1.6,2.6,2026-04-01T00:00:00+00:00
+3,kunitz,64.36,4,Ousmane Dieng,MIL,3.1,1.4,3.0,2026-04-01T00:00:00+00:00
+3,kunitz,64.36,5,Brook Lopez,MIL,3.0,1.2,2.9,2026-04-01T00:00:00+00:00
+4,kpy_12,63.02,1,Luka Doncic,LAL,7.1,2.0,0.0,2026-04-01T00:00:00+00:00
+4,kpy_12,63.02,2,Kevin Durant,PHX,5.6,1.8,0.5,2026-04-01T00:00:00+00:00
+4,kpy_12,63.02,3,Paul Reed,PHI,2.5,1.6,2.6,2026-04-01T00:00:00+00:00
+4,kpy_12,63.02,4,Daniss Jenkins,BOS,3.3,1.4,2.3,2026-04-01T00:00:00+00:00
+4,kpy_12,63.02,5,Ousmane Dieng,MIL,3.1,1.2,3.0,2026-04-01T00:00:00+00:00
