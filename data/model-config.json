@@ -1,7 +1,7 @@
 {
-  "version": 84,
-  "updated_at": "2026-04-01T12:00:00Z",
-  "updated_by": "v84-per-game-sleeper-blowout",
+  "version": 85,
+  "updated_at": "2026-04-01T15:00:00Z",
+  "updated_by": "v85-one-per-team",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -401,6 +401,11 @@
   },
   "changelog": [
     {
+      "version": 85,
+      "date": "2026-04-01",
+      "change": "REVERT TEAMMATE STACKS: strategy.max_per_team 2->1. The v83 stacking allowance backfired on Mar 31: Moonshot drafted Trent Jr. (MIL, RS 1.7) + Lopez (MIL, RS 3.0) — bad MIL player occupied 5x slot, dragging total value to 45.11. Highest-value leaderboard had 5 different teams in top 5 (Eason HOU 17.3, Dieng OKC 15.6, Jenkins CHA 14.7, Lopez MIL 14.6, Duren DET 14.4). Today's S5 also stacked 2 WSH players. Model cannot reliably predict which teammate pair will both outperform. One player per team is the safer structural constraint."
+    },
+    {
       "version": 84,
       "date": "2026-04-01",
       "change": "PER-GAME STRATEGY OVERHAUL from 6-game/48-lineup leaderboard study (Mar 25-31). Three changes: (1) TWO-TIER ELIGIBILITY: core pool (rating>=3.5) + sleeper pool (rating>=2.5) with best-sleeper substitution for the decisive 5th player pick. Data: winners differ from mid-pack by exactly 1 player in 5/6 games; winning 5th picks (Plowden 3.3, Camara 3.1, Dieng 3.1) fail the old 3.5 floor. (2) GRADUATED BLOWOUT PENALTIES: moderate blowouts (13-19pt) use 0.95 underdog role penalty (was 0.88). Data: LAL/LAC 14pt loss, losing bigs Allen 3.4 + Ayton 3.3 outscored all winning role players. True blowouts (20+pt) keep full penalties. (3) Config: sleeper_rating_floor=2.5, sleeper_min_floor=12, sleeper_min_pts=5, heavy_blowout_threshold=20, moderate_blowout_underdog_role=0.95, moderate_blowout_underdog_star=0.98."
@@ -769,7 +774,7 @@
     "pace_rs_bonus_per_10": 0.15,
     "ev_swap_threshold": 2.0,
     "max_upside_swaps": 2,
-    "max_per_team": 2,
+    "max_per_team": 1,
     "anti_popularity_enabled": true,
     "anti_popularity_strength": 0.2
   }
