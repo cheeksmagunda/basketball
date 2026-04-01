@@ -1096,6 +1096,7 @@ _CONFIG_DEFAULTS = {
                                         # RS 2 + Boost 3.0 combo has 18 winning appearances (avg value 13.3)
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
         "min_minutes": 12.0,            # Minimum projected minutes to be draft-eligible
+        "min_recent_minutes": 15.0,     # Minimum recent minutes for candidate pool (rotation-bubble filter)
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
         "ev_swap_threshold": 2.0,       # Max EV gap for safe→upside swap
@@ -4605,7 +4606,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         print(f"RotoWire fetch failed, proceeding without: {e}")
 
     # ── Step 1: Build single candidate pool ────────────────────────────────
-    # Two gates only: RS floor + minutes floor (Strategy Report Finding 2)
+    # Gates: RS floor + minutes floor + recent_min floor (rotation-bubble filter)
+    min_recent_minutes = float(_strat.get("min_recent_minutes", 15.0))
     candidate_pool = []
     for p in projections:
         if p.get("name") in BLACKLISTED_PLAYERS:
@@ -4613,6 +4615,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if p.get("rating", 0) < rs_floor:
             continue
         if p.get("predMin", 0) < min_minutes and p.get("season_min", 0) < min_minutes:
+            continue
+        # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
+        # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot
+        if p.get("recent_min", 0) < min_recent_minutes and p.get("season_min", 0) < min_recent_minutes + 3:
             continue
         if rw_statuses and not is_safe_to_draft(p.get("name", "")):
             continue

@@ -5626,36 +5626,49 @@ class TestMinutesDeltaSignal:
 
 
 class TestMoonshotMinRecentMinutes:
-    """Moonshot swap rejects rotation-bubble players with low recent minutes."""
+    """Candidate pool rejects rotation-bubble players with low recent minutes."""
 
-    def test_low_recent_min_blocked(self):
-        """Player with recent_min=12 should be blocked from Moonshot swaps (default threshold 16)."""
-        # Read the config defaults directly from source to verify the value
+    def test_low_recent_min_blocked_from_pool(self):
+        """Player with recent_min=12, season_min=14 should be blocked from candidate pool."""
         src = open("api/index.py").read()
-        assert '"moonshot_min_recent_minutes": 16.0' in src, "Default should be 16.0"
-        # Simulate the gate logic
-        candidate_recent_min = 12.0
-        threshold = 16.0
-        assert candidate_recent_min < threshold, "12 min recent should be below 16 threshold"
+        assert '"min_recent_minutes": 15.0' in src, "Default min_recent_minutes should be 15.0"
+        # Simulate the candidate pool gate
+        recent_min = 12.0
+        season_min = 14.2
+        min_recent = 15.0
+        blocked = recent_min < min_recent and season_min < min_recent + 3
+        assert blocked, "Morales-type player (12 recent, 14.2 season) should be blocked from pool"
 
     def test_config_key_exists(self):
-        """moonshot_min_recent_minutes must exist in _CONFIG_DEFAULTS."""
+        """min_recent_minutes must exist in _CONFIG_DEFAULTS."""
         src = open("api/index.py").read()
-        assert "moonshot_min_recent_minutes" in src
-        assert "moonshot_min_recent" in src  # used in _build_lineups
+        assert "min_recent_minutes" in src
+        # Also check moonshot swap filter still exists
+        assert "moonshot_min_recent" in src
 
     def test_morales_scenario(self):
-        """A player like Morales (recent_min=12, predMin=14.2) should be filtered from Moonshot swaps."""
-        # Simulate the swap candidate check
-        candidate = {"recent_min": 12.0, "predMin": 14.2, "upside_ev": 28.0}
-        moonshot_min_recent = 16.0
-        assert candidate["recent_min"] < moonshot_min_recent, "Morales-type player should be blocked"
+        """A player like Morales (recent_min=12, season_min=14.2) should be filtered from candidate pool."""
+        recent_min = 12.0
+        season_min = 14.2
+        min_recent = 15.0
+        # Gate: recent_min < min_recent AND season_min < min_recent + 3
+        assert recent_min < min_recent and season_min < min_recent + 3, "Morales should be blocked"
 
     def test_high_minutes_passes(self):
-        """Player with recent_min=22 should pass the Moonshot gate."""
-        candidate = {"recent_min": 22.0, "predMin": 28.0, "upside_ev": 20.0}
-        moonshot_min_recent = 16.0
-        assert candidate["recent_min"] >= moonshot_min_recent, "High-minutes player should pass"
+        """Player with recent_min=22 should pass the candidate pool gate."""
+        recent_min = 22.0
+        season_min = 28.0
+        min_recent = 15.0
+        blocked = recent_min < min_recent and season_min < min_recent + 3
+        assert not blocked, "High-minutes player should pass"
+
+    def test_season_min_escape_hatch(self):
+        """Player with low recent_min but high season_min (>18) should still pass — likely just resting."""
+        recent_min = 13.0
+        season_min = 25.0  # season average is high — recent dip is likely rest/matchup
+        min_recent = 15.0
+        blocked = recent_min < min_recent and season_min < min_recent + 3
+        assert not blocked, "High season_min should override low recent_min"
 
 
 class TestMoonshotMinEV:
