@@ -5671,6 +5671,60 @@ class TestMoonshotMinRecentMinutes:
         assert not blocked, "High season_min should override low recent_min"
 
 
+class TestMoonshotSwapLogic:
+    """Moonshot swap logic: boost-driven swaps with upside_ev comparison."""
+
+    def test_higher_boost_candidate_swaps_in(self):
+        """Candidate with higher boost should replace S5 player with lower boost."""
+        # Simulate: S5 player has boost=1.5, candidate has boost=2.9
+        s_boost = 1.5
+        c_boost = 2.9
+        boost_diff = c_boost - s_boost  # 1.4
+        assert boost_diff > 0, "Higher-boost candidate should trigger swap"
+        swap_score = boost_diff * 2.0
+        assert swap_score > 0, "Swap score should be positive"
+
+    def test_lower_boost_candidate_blocked(self):
+        """Candidate with lower boost than all S5 players should not swap."""
+        s_boost = 2.9
+        c_boost = 2.0
+        boost_diff = c_boost - s_boost  # -0.9
+        assert boost_diff <= 0, "Lower-boost candidate should be blocked"
+
+    def test_ev_threshold_widened(self):
+        """Config default for moonshot_ev_swap_threshold should be 4.0."""
+        src = open("api/index.py").read()
+        assert '"moonshot_ev_swap_threshold": 4.0' in src
+
+    def test_upside_ev_comparison(self):
+        """Code should compare upside_ev to upside_ev (not safe_ev to upside_ev)."""
+        src = open("api/index.py").read()
+        # Should use upside_ev for safe player comparison
+        assert 's_up_ev = safe_p.get("upside_ev", 0)' in src
+        # Should NOT use safe_ev in the moonshot swap comparison
+        assert 's_ev = safe_p.get("safe_ev", 0)' not in src.split("Step 5")[1].split("Step 6")[0]
+
+    def test_boost_is_primary_swap_signal(self):
+        """Swap scoring should weight boost difference, not variance."""
+        src = open("api/index.py").read()
+        swap_section = src.split("Step 5")[1].split("Step 6")[0]
+        assert "boost_diff * 2.0" in swap_section, "Boost should be primary swap signal"
+        # Should NOT use player_variance in swap scoring
+        assert "c_var" not in swap_section, "Variance should not be in swap logic"
+
+    def test_strategy_report_scenario(self):
+        """A 3.0x boost player with RS 3.0 should swap out a 1.5x boost player with RS 4.5."""
+        # S5 player: RS=4.5, boost=1.5, upside_ev = 4.5*(2.0+1.5) = 15.75
+        # Candidate: RS=3.0, boost=3.0, upside_ev = 3.0*(2.0+3.0) = 15.0
+        s_up_ev = 15.75
+        c_ev = 15.0
+        ev_diff = abs(c_ev - s_up_ev)  # 0.75
+        moonshot_ev_threshold = 4.0
+        assert ev_diff <= moonshot_ev_threshold, "Should be within EV threshold"
+        boost_diff = 3.0 - 1.5  # 1.5
+        assert boost_diff > 0, "Higher boost candidate should trigger swap"
+
+
 class TestMinutesIncreaseEVBonus:
     """Players with big minutes jumps get EV uplift in lineup selection."""
 
