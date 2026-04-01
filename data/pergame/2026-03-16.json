@@ -1,0 +1,89 @@
+{
+  "date": "2026-03-16",
+  "game_count": 8,
+  "games": [
+    {
+      "home": "ATL",
+      "away": "ORL",
+      "home_score": 124,
+      "away_score": 112,
+      "winner": "ATL",
+      "loser": "ORL",
+      "winner_score": 124,
+      "loser_score": 112
+    },
+    {
+      "home": "WAS",
+      "away": "GSW",
+      "home_score": 117,
+      "away_score": 125,
+      "winner": "GSW",
+      "loser": "WAS",
+      "winner_score": 125,
+      "loser_score": 117
+    },
+    {
+      "home": "BKN",
+      "away": "POR",
+      "home_score": 95,
+      "away_score": 114,
+      "winner": "POR",
+      "loser": "BKN",
+      "winner_score": 114,
+      "loser_score": 95
+    },
+    {
+      "home": "BOS",
+      "away": "PHX",
+      "home_score": 120,
+      "away_score": 112,
+      "winner": "BOS",
+      "loser": "PHX",
+      "winner_score": 120,
+      "loser_score": 112
+    },
+    {
+      "home": "CHI",
+      "away": "MEM",
+      "home_score": 132,
+      "away_score": 107,
+      "winner": "CHI",
+      "loser": "MEM",
+      "winner_score": 132,
+      "loser_score": 107
+    },
+    {
+      "home": "NOP",
+      "away": "DAL",
+      "home_score": 129,
+      "away_score": 111,
+      "winner": "NOP",
+      "loser": "DAL",
+      "winner_score": 129,
+      "loser_score": 111
+    },
+    {
+      "home": "HOU",
+      "away": "LAL",
+      "home_score": 92,
+      "away_score": 100,
+      "winner": "LAL",
+      "loser": "HOU",
+      "winner_score": 100,
+      "loser_score": 92
+    },
+    {
+      "home": "LAC",
+      "away": "SAS",
+      "home_score": 115,
+      "away_score": 119,
+      "winner": "SAS",
+      "loser": "LAC",
+      "winner_score": 119,
+      "loser_score": 115
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

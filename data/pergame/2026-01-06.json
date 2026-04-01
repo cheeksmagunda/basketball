@@ -1,0 +1,69 @@
+{
+  "date": "2026-01-06",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "IND",
+      "away": "CLE",
+      "home_score": 116,
+      "away_score": 120,
+      "winner": "CLE",
+      "loser": "IND",
+      "winner_score": 120,
+      "loser_score": 116
+    },
+    {
+      "home": "WAS",
+      "away": "ORL",
+      "home_score": 120,
+      "away_score": 112,
+      "winner": "WAS",
+      "loser": "ORL",
+      "winner_score": 120,
+      "loser_score": 112
+    },
+    {
+      "home": "MEM",
+      "away": "SAS",
+      "home_score": 106,
+      "away_score": 105,
+      "winner": "MEM",
+      "loser": "SAS",
+      "winner_score": 106,
+      "loser_score": 105
+    },
+    {
+      "home": "MIN",
+      "away": "MIA",
+      "home_score": 122,
+      "away_score": 94,
+      "winner": "MIN",
+      "loser": "MIA",
+      "winner_score": 122,
+      "loser_score": 94
+    },
+    {
+      "home": "NOP",
+      "away": "LAL",
+      "home_score": 103,
+      "away_score": 111,
+      "winner": "LAL",
+      "loser": "NOP",
+      "winner_score": 111,
+      "loser_score": 103
+    },
+    {
+      "home": "SAC",
+      "away": "DAL",
+      "home_score": 98,
+      "away_score": 100,
+      "winner": "DAL",
+      "loser": "SAC",
+      "winner_score": 100,
+      "loser_score": 98
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

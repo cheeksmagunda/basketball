@@ -1,0 +1,39 @@
+{
+  "date": "2026-01-08",
+  "game_count": 3,
+  "games": [
+    {
+      "home": "CHA",
+      "away": "IND",
+      "home_score": 112,
+      "away_score": 114,
+      "winner": "IND",
+      "loser": "CHA",
+      "winner_score": 114,
+      "loser_score": 112
+    },
+    {
+      "home": "MIN",
+      "away": "CLE",
+      "home_score": 131,
+      "away_score": 122,
+      "winner": "MIN",
+      "loser": "CLE",
+      "winner_score": 131,
+      "loser_score": 122
+    },
+    {
+      "home": "UTA",
+      "away": "DAL",
+      "home_score": 116,
+      "away_score": 114,
+      "winner": "UTA",
+      "loser": "DAL",
+      "winner_score": 116,
+      "loser_score": 114
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

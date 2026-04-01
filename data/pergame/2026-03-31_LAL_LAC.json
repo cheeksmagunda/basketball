@@ -1,0 +1,131 @@
+{
+  "date": "2026-03-31",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "LAL",
+      "away": "LAC",
+      "home_score": 127,
+      "away_score": 113,
+      "winner": "LAL",
+      "loser": "LAC",
+      "winner_score": 127,
+      "loser_score": 113
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "user_report",
+  "study_period": "per_game_v60_jan6_mar23",
+  "drafts": {
+    "top_players": [
+      {"name": "L. Doncic", "team": "LAL", "rs": 7.1},
+      {"name": "J. Allen", "team": "LAC", "rs": 3.4},
+      {"name": "D. Ayton", "team": "LAC", "rs": 3.3},
+      {"name": "L. James", "team": "LAL", "rs": 2.4},
+      {"name": "A. Reaves", "team": "LAL", "rs": 2.3},
+      {"name": "J. LaRavia", "team": "LAL", "rs": 2.3},
+      {"name": "J. Harden", "team": "LAC", "rs": 1.6}
+    ],
+    "optimal_score": 31.72,
+    "optimal_assignment": "RS descending: Doncic 2.0x, Allen 1.8x, Ayton 1.6x, James 1.4x, Reaves 1.2x",
+    "winning_drafts": [
+      {
+        "rank": 1,
+        "user": "fastbreakluka",
+        "score": 30.89,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "L. James", "rs": 2.4},
+          {"slot": "1.6x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.4x", "name": "J. Allen", "rs": 3.4},
+          {"slot": "1.2x", "name": "D. Ayton", "rs": 3.3}
+        ]
+      },
+      {
+        "rank": 2,
+        "user": "curryfor3",
+        "score": 30.51,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "J. Allen", "rs": 3.4},
+          {"slot": "1.6x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.4x", "name": "J. Harden", "rs": 1.6},
+          {"slot": "1.2x", "name": "A. Reaves", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 3,
+        "user": "kaylarolltide",
+        "score": 29.70,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.6x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.4x", "name": "J. LaRavia", "rs": 2.3},
+          {"slot": "1.2x", "name": "L. James", "rs": 2.4}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "mauricetdkr",
+        "score": 29.56,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "L. James", "rs": 2.4},
+          {"slot": "1.6x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.4x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.2x", "name": "J. LaRavia", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "hoincho",
+        "score": 29.56,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "L. James", "rs": 2.4},
+          {"slot": "1.6x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.4x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.2x", "name": "J. LaRavia", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "rrydog",
+        "score": 29.56,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "L. James", "rs": 2.4},
+          {"slot": "1.6x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.4x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.2x", "name": "J. LaRavia", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "sukairo",
+        "score": 29.56,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "L. James", "rs": 2.4},
+          {"slot": "1.6x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.4x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.2x", "name": "J. LaRavia", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "willschaft",
+        "score": 29.56,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Doncic", "rs": 7.1},
+          {"slot": "1.8x", "name": "L. James", "rs": 2.4},
+          {"slot": "1.6x", "name": "A. Reaves", "rs": 2.3},
+          {"slot": "1.4x", "name": "D. Ayton", "rs": 3.3},
+          {"slot": "1.2x", "name": "J. LaRavia", "rs": 2.3}
+        ]
+      }
+    ],
+    "notes": "LAL blowout win (14pt spread). Doncic dominated at RS 7.1 — unanimous 2.0x pick. Winner differentiated by picking Allen (3.4) + Ayton (3.3) from losing LAC over LaRavia (2.3 LAL), but still mis-slotted: James (2.4) at 1.8x over Allen (3.4). 5-way tie at rank 4 all had identical LAL-heavy lineups with LaRavia instead of Allen. Losing team role players (Allen 3.4, Ayton 3.3) outscored all LAL role players — challenges pure favored-team-lean in blowouts."
+  }
+}

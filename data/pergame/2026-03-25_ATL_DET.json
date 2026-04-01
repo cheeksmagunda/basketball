@@ -1,0 +1,131 @@
+{
+  "date": "2026-03-25",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "ATL",
+      "away": "DET",
+      "home_score": 130,
+      "away_score": 129,
+      "winner": "ATL",
+      "loser": "DET",
+      "winner_score": 130,
+      "loser_score": 129
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "user_report",
+  "study_period": "per_game_v60_jan6_mar23",
+  "drafts": {
+    "top_players": [
+      {"name": "J. Johnson", "team": "ATL", "rs": 4.8},
+      {"name": "A. Thompson", "team": "DET", "rs": 4.4},
+      {"name": "C. McCollum", "team": "ATL", "rs": 4.3},
+      {"name": "J. Duren", "team": "DET", "rs": 4.2},
+      {"name": "N. Alexander-Walker", "team": "ATL", "rs": 3.9},
+      {"name": "T. Harris", "team": "DET", "rs": 3.5},
+      {"name": "D. Daniels", "team": "ATL", "rs": 3.3}
+    ],
+    "optimal_score": 36.16,
+    "optimal_assignment": "RS descending: Johnson 2.0x, Thompson 1.8x, McCollum 1.6x, Duren 1.4x, Alexander-Walker 1.2x",
+    "winning_drafts": [
+      {
+        "rank": 1,
+        "user": "fastbreakluka",
+        "score": 34.60,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.8x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.6x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.4x", "name": "A. Thompson", "rs": 4.4},
+          {"slot": "1.2x", "name": "C. McCollum", "rs": 4.3}
+        ]
+      },
+      {
+        "rank": 1,
+        "user": "ebokchunk",
+        "score": 34.60,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.8x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.6x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.4x", "name": "A. Thompson", "rs": 4.4},
+          {"slot": "1.2x", "name": "C. McCollum", "rs": 4.3}
+        ]
+      },
+      {
+        "rank": 3,
+        "user": "zavierlew",
+        "score": 34.54,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.8x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.6x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.4x", "name": "A. Thompson", "rs": 4.4},
+          {"slot": "1.2x", "name": "C. McCollum", "rs": 4.3}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "sommatron",
+        "score": 34.34,
+        "lineup": [
+          {"slot": "2.0x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.8x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.6x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.4x", "name": "C. McCollum", "rs": 4.3},
+          {"slot": "1.2x", "name": "A. Thompson", "rs": 4.4}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "betson42",
+        "score": 34.26,
+        "lineup": [
+          {"slot": "2.0x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.8x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.6x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.4x", "name": "A. Thompson", "rs": 4.4},
+          {"slot": "1.2x", "name": "C. McCollum", "rs": 4.3}
+        ]
+      },
+      {
+        "rank": 6,
+        "user": "cashwalsk",
+        "score": 33.82,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.8x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.6x", "name": "C. McCollum", "rs": 4.3},
+          {"slot": "1.4x", "name": "D. Daniels", "rs": 3.3},
+          {"slot": "1.2x", "name": "A. Thompson", "rs": 4.4}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "michiganmiles",
+        "score": 33.63,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.8x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.6x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.4x", "name": "A. Thompson", "rs": 4.4},
+          {"slot": "1.2x", "name": "T. Harris", "rs": 3.5}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "thelucaflex",
+        "score": 33.63,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Johnson", "rs": 4.8},
+          {"slot": "1.8x", "name": "J. Duren", "rs": 4.2},
+          {"slot": "1.6x", "name": "N. Alexander-Walker", "rs": 3.9},
+          {"slot": "1.4x", "name": "A. Thompson", "rs": 4.4},
+          {"slot": "1.2x", "name": "T. Harris", "rs": 3.5}
+        ]
+      }
+    ],
+    "notes": "Closest game in dataset — ATL 130-129 DET (1pt spread, balanced). Extremely flat RS distribution: top 5 range from 4.8 to 3.9 (only 0.9 spread). Winners picked the right 5 but badly mis-slotted: Thompson (4.4) at 1.4x and McCollum (4.3) at 1.2x while NAW (3.9) sat at 1.6x. Optimal would have scored 36.16 vs winner 34.60 — largest gap (1.56) in our dataset, entirely from slotting. Both teams well-represented in optimal: 3 ATL + 2 DET. High-scoring shootout (259 total). #6 cashwalsk swapped McCollum (4.3) for Daniels (3.3) — player selection miss. #7s swapped McCollum (4.3) for Harris (3.5) — 0.8 RS gap at 1.2x cost ~1 pt."
+  }
+}

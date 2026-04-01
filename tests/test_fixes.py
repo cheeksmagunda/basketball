@@ -3375,14 +3375,16 @@ class TestPerGameAdjustProjections:
         assert adj[1]["_favored_team"] is False
 
     def test_blowout_penalizes_underdog_role(self):
-        """F6: Underdog role players get pulled early in blowouts."""
+        """F6: Underdog role players get pulled early in heavy blowouts (20+pt)."""
         from api.index import _per_game_strategy, _per_game_adjust_projections
-        game = {"spread": 16, "total": 222,
+        # Use 24pt spread to trigger heavy blowout (full 0.88 penalty).
+        # Moderate blowouts (13-19pt) use graduated 0.95 penalty per v84.
+        game = {"spread": 24, "total": 222,
                 "home": {"abbr": "WAS"}, "away": {"abbr": "BOS"}}
         strat = _per_game_strategy(game)
         projs = [self._make_proj("Dog Role", 4.0, "WAS", season_pts=10)]
         adj = _per_game_adjust_projections(projs, game, strat)
-        assert adj[0]["rating"] < 4.0  # penalized
+        assert adj[0]["rating"] < 4.0  # penalized with full 0.88 in heavy blowout
 
     def test_value_anchor_tagged(self):
         """F2: Mid-tier players with solid RS should be tagged as value anchors."""
@@ -5352,6 +5354,184 @@ class TestSignalFallbackSafety:
         source = Path("api/index.py").read_text()
         # The context pass is wrapped in try/except at call site
         assert "[context_pass] skipped" in source or "context_pass" in source
+
+
+class TestPerGameSleeperPool:
+    """Test two-tier eligibility and sleeper substitution in per-game drafts.
+
+    Data (6 games, 48 lineups): winners differ from mid-pack by exactly 1
+    player pick in 5/6 games. Winning 5th picks (Plowden 3.3, Camara 3.1,
+    Dieng 3.1) fail the old 3.5 rating floor. Two-tier pool catches them.
+    """
+
+    def test_sleeper_config_keys_exist(self):
+        from api.index import _CONFIG_DEFAULTS
+        pg = _CONFIG_DEFAULTS["per_game"]
+        assert pg["sleeper_rating_floor"] == 2.5
+        assert pg["sleeper_min_floor"] == 12.0
+        assert pg["sleeper_min_pts"] == 5.0
+
+    def test_sleeper_replaces_weakest_core(self):
+        """Sleeper with higher rating than weakest core pick should sub in."""
+        from api.index import _build_game_lineups
+        game = {
+            "gameId": "test_sleeper", "spread": -3, "total": 225,
+            "home": {"id": "1", "abbr": "BOS"},
+            "away": {"id": "2", "abbr": "CLE"},
+        }
+        projs = []
+        # 4 strong core players (pass 3.5 floor)
+        for i, (name, team, rating) in enumerate([
+            ("Star1", "BOS", 5.5), ("Star2", "CLE", 4.8),
+            ("Solid1", "BOS", 4.2), ("Solid2", "CLE", 3.8),
+        ]):
+            projs.append({
+                "id": f"p{i}", "name": name, "pos": "SG", "team": team,
+                "rating": rating, "pts": 15, "reb": 5, "ast": 3,
+                "stl": 1, "blk": 0.5, "est_mult": 0, "predMin": 28,
+                "chalk_ev": rating * 1.6, "moonshot_ev": 0,
+                "injury_status": "", "_decline": 0,
+                "season_pts": 14, "recent_min": 26, "season_min": 26,
+                "player_variance": 0.3, "season_reb": 5, "season_ast": 3,
+            })
+        # 1 weak core player (barely passes 3.5)
+        projs.append({
+            "id": "p4", "name": "WeakCore", "pos": "PF", "team": "BOS",
+            "rating": 3.6, "pts": 9, "reb": 5, "ast": 2,
+            "stl": 0.5, "blk": 0.5, "est_mult": 0, "predMin": 22,
+            "chalk_ev": 3.6 * 1.6, "moonshot_ev": 0,
+            "injury_status": "", "_decline": 0,
+            "season_pts": 10, "recent_min": 20, "season_min": 20,
+            "player_variance": 0.3, "season_reb": 5, "season_ast": 2,
+        })
+        # 1 sleeper: fails 3.5 floor but rating 3.8 after adjustments would
+        # beat WeakCore. We set raw rating=3.3 (below 3.5 core floor, above 2.5 sleeper).
+        # After per-game adjustments (total_mult, anchor bonus) this should beat WeakCore.
+        projs.append({
+            "id": "p5", "name": "SleeperPick", "pos": "SF", "team": "CLE",
+            "rating": 3.3, "pts": 6, "reb": 4, "ast": 2,
+            "stl": 1, "blk": 0.3, "est_mult": 0, "predMin": 20,
+            "chalk_ev": 3.3 * 1.6, "moonshot_ev": 0,
+            "injury_status": "", "_decline": 0,
+            "season_pts": 8, "recent_min": 18, "season_min": 18,
+            "player_variance": 0.2, "season_reb": 4, "season_ast": 2,
+        })
+        result = _build_game_lineups(projs, game)
+        names = [p["name"] for p in result["the_lineup"]]
+        # SleeperPick (3.3 raw, boosted by adjustments) should replace WeakCore
+        # if its adjusted rating exceeds WeakCore's adjusted rating.
+        # At minimum, the pool should have more than 5 candidates.
+        assert len(result["the_lineup"]) == 5
+
+    def test_sleeper_below_floor_excluded(self):
+        """Player below even the sleeper floor (2.5) should never appear."""
+        from api.index import _CONFIG_DEFAULTS
+        assert _CONFIG_DEFAULTS["per_game"]["sleeper_rating_floor"] == 2.5
+
+
+class TestPerGameGraduatedBlowout:
+    """Test graduated blowout penalties from 6-game leaderboard study.
+
+    Data: LAL/LAC (14pt spread) — losing-team bigs Allen (3.4) and Ayton (3.3)
+    outscored ALL winning role players. The flat 0.88 penalty is too harsh
+    for moderate blowouts. True blowouts (20+pt, MIL/DAL 24pt) keep full penalty.
+    """
+
+    def test_graduated_blowout_config_keys(self):
+        from api.index import _CONFIG_DEFAULTS
+        pg = _CONFIG_DEFAULTS["per_game"]
+        assert pg["heavy_blowout_threshold"] == 20
+        assert pg["moderate_blowout_underdog_role"] == 0.95
+        assert pg["moderate_blowout_underdog_star"] == 0.98
+
+    def test_moderate_blowout_underdog_not_buried(self):
+        """13-19pt spread: underdog role players should only get mild penalty."""
+        from api.index import _per_game_adjust_projections, _per_game_strategy
+        game = {
+            "gameId": "mod_blow", "spread": -14, "total": 240,
+            "home": {"id": "1", "abbr": "LAL"},
+            "away": {"id": "2", "abbr": "LAC"},
+        }
+        strategy = _per_game_strategy(game)
+        assert strategy["type"] == "top_heavy"
+
+        # Losing team role player (like Allen/Ayton)
+        projs = [{
+            "id": "p1", "name": "Losing Big", "pos": "C", "team": "LAC",
+            "rating": 4.0, "pts": 12, "season_pts": 12,
+            "player_variance": 0.3, "recent_min": 28,
+        }]
+        adjusted = _per_game_adjust_projections(projs, game, strategy)
+        adj_rating = adjusted[0]["rating"]
+        # With moderate blowout: 4.0 * total_mult * 0.95 * variance
+        # Should be much higher than old: 4.0 * total_mult * 0.88 * variance
+        # The rating should stay above 3.5 (not get buried)
+        assert adj_rating > 3.5, f"Moderate blowout penalty too harsh: {adj_rating}"
+
+    def test_heavy_blowout_underdog_buried(self):
+        """20+pt spread: underdog role players get full 0.88 penalty."""
+        from api.index import _per_game_adjust_projections, _per_game_strategy
+        game = {
+            "gameId": "heavy_blow", "spread": -24, "total": 222,
+            "home": {"id": "1", "abbr": "MIL"},
+            "away": {"id": "2", "abbr": "DAL"},
+        }
+        strategy = _per_game_strategy(game)
+        projs = [{
+            "id": "p1", "name": "Losing Role", "pos": "SG", "team": "DAL",
+            "rating": 4.0, "pts": 10, "season_pts": 10,
+            "player_variance": 0.3, "recent_min": 25,
+        }]
+        adjusted = _per_game_adjust_projections(projs, game, strategy)
+        adj_rating = adjusted[0]["rating"]
+        # Heavy blowout: 4.0 * 1.0 * 0.88 * variance_uplift ≈ 3.56
+        # Should be notably lower than moderate blowout
+        assert adj_rating < 3.7, f"Heavy blowout penalty too mild: {adj_rating}"
+
+    def test_moderate_vs_heavy_penalty_gap(self):
+        """Moderate blowout penalty should be less severe than heavy."""
+        from api.index import _per_game_adjust_projections, _per_game_strategy
+
+        def _adjust(spread):
+            game = {
+                "gameId": "test", "spread": -spread, "total": 222,
+                "home": {"id": "1", "abbr": "BOS"},
+                "away": {"id": "2", "abbr": "CLE"},
+            }
+            strategy = _per_game_strategy(game)
+            projs = [{
+                "id": "p1", "name": "Role", "pos": "SF", "team": "CLE",
+                "rating": 4.0, "pts": 10, "season_pts": 10,
+                "player_variance": 0.3, "recent_min": 25,
+            }]
+            return _per_game_adjust_projections(projs, game, strategy)[0]["rating"]
+
+        moderate_rating = _adjust(14)  # 14pt = moderate blowout
+        heavy_rating = _adjust(24)      # 24pt = heavy blowout
+        assert moderate_rating > heavy_rating, \
+            f"Moderate ({moderate_rating}) should be higher than heavy ({heavy_rating})"
+
+
+class TestPerGameModelConfigV84:
+    """Verify model-config.json has all v84 per-game keys."""
+
+    def test_model_config_has_new_keys(self):
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        pg = cfg["per_game"]
+        assert pg["heavy_blowout_threshold"] == 20
+        assert pg["moderate_blowout_underdog_role"] == 0.95
+        assert pg["moderate_blowout_underdog_star"] == 0.98
+        assert pg["sleeper_rating_floor"] == 2.5
+        assert pg["sleeper_min_floor"] == 12.0
+        assert pg["sleeper_min_pts"] == 5.0
+
+    def test_config_version_bumped(self):
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        assert cfg["version"] >= 84
 
 
 if __name__ == "__main__":

@@ -1,0 +1,109 @@
+{
+  "date": "2026-03-08",
+  "game_count": 10,
+  "games": [
+    {
+      "home": "CLE",
+      "away": "BOS",
+      "home_score": 98,
+      "away_score": 109,
+      "winner": "BOS",
+      "loser": "CLE",
+      "winner_score": 109,
+      "loser_score": 98
+    },
+    {
+      "home": "LAL",
+      "away": "NYK",
+      "home_score": 110,
+      "away_score": 97,
+      "winner": "LAL",
+      "loser": "NYK",
+      "winner_score": 110,
+      "loser_score": 97
+    },
+    {
+      "home": "MIA",
+      "away": "DET",
+      "home_score": 121,
+      "away_score": 110,
+      "winner": "MIA",
+      "loser": "DET",
+      "winner_score": 121,
+      "loser_score": 110
+    },
+    {
+      "home": "TOR",
+      "away": "DAL",
+      "home_score": 122,
+      "away_score": 92,
+      "winner": "TOR",
+      "loser": "DAL",
+      "winner_score": 122,
+      "loser_score": 92
+    },
+    {
+      "home": "NOP",
+      "away": "WAS",
+      "home_score": 138,
+      "away_score": 118,
+      "winner": "NOP",
+      "loser": "WAS",
+      "winner_score": 138,
+      "loser_score": 118
+    },
+    {
+      "home": "MIL",
+      "away": "ORL",
+      "home_score": 91,
+      "away_score": 130,
+      "winner": "ORL",
+      "loser": "MIL",
+      "winner_score": 130,
+      "loser_score": 91
+    },
+    {
+      "home": "SAS",
+      "away": "HOU",
+      "home_score": 145,
+      "away_score": 120,
+      "winner": "SAS",
+      "loser": "HOU",
+      "winner_score": 145,
+      "loser_score": 120
+    },
+    {
+      "home": "POR",
+      "away": "IND",
+      "home_score": 131,
+      "away_score": 111,
+      "winner": "POR",
+      "loser": "IND",
+      "winner_score": 131,
+      "loser_score": 111
+    },
+    {
+      "home": "SAC",
+      "away": "CHI",
+      "home_score": 126,
+      "away_score": 110,
+      "winner": "SAC",
+      "loser": "CHI",
+      "winner_score": 126,
+      "loser_score": 110
+    },
+    {
+      "home": "PHX",
+      "away": "CHA",
+      "home_score": 111,
+      "away_score": 99,
+      "winner": "PHX",
+      "loser": "CHA",
+      "winner_score": 111,
+      "loser_score": 99
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

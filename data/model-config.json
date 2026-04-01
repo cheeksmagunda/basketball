@@ -1,7 +1,7 @@
 {
-  "version": 83,
-  "updated_at": "2026-04-01T01:00:00Z",
-  "updated_by": "v83-max-per-team-2",
+  "version": 84,
+  "updated_at": "2026-04-01T12:00:00Z",
+  "updated_by": "v84-per-game-sleeper-blowout",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -386,14 +386,25 @@
     "blowout_underdog_star_penalty": 0.95,
     "blowout_min_per_team": 1,
     "role_player_pts_ceiling": 18,
+    "heavy_blowout_threshold": 20,
+    "moderate_blowout_underdog_role": 0.95,
+    "moderate_blowout_underdog_star": 0.98,
     "value_anchor_min_rating": 3.8,
     "value_anchor_pts_ceiling": 16,
     "value_anchor_bonus": 0.08,
     "close_game_variance_dampen": 0.08,
     "blowout_variance_uplift": 0.04,
-    "neutral_favored_lean": 1.02
+    "neutral_favored_lean": 1.02,
+    "sleeper_rating_floor": 2.5,
+    "sleeper_min_floor": 12.0,
+    "sleeper_min_pts": 5.0
   },
   "changelog": [
+    {
+      "version": 84,
+      "date": "2026-04-01",
+      "change": "PER-GAME STRATEGY OVERHAUL from 6-game/48-lineup leaderboard study (Mar 25-31). Three changes: (1) TWO-TIER ELIGIBILITY: core pool (rating>=3.5) + sleeper pool (rating>=2.5) with best-sleeper substitution for the decisive 5th player pick. Data: winners differ from mid-pack by exactly 1 player in 5/6 games; winning 5th picks (Plowden 3.3, Camara 3.1, Dieng 3.1) fail the old 3.5 floor. (2) GRADUATED BLOWOUT PENALTIES: moderate blowouts (13-19pt) use 0.95 underdog role penalty (was 0.88). Data: LAL/LAC 14pt loss, losing bigs Allen 3.4 + Ayton 3.3 outscored all winning role players. True blowouts (20+pt) keep full penalties. (3) Config: sleeper_rating_floor=2.5, sleeper_min_floor=12, sleeper_min_pts=5, heavy_blowout_threshold=20, moderate_blowout_underdog_role=0.95, moderate_blowout_underdog_star=0.98."
+    },
     {
       "version": 83,
       "date": "2026-04-01",

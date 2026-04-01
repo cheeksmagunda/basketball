@@ -1,0 +1,131 @@
+{
+  "date": "2026-03-26",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "SAC",
+      "away": "ORL",
+      "home_score": 117,
+      "away_score": 121,
+      "winner": "ORL",
+      "loser": "SAC",
+      "winner_score": 121,
+      "loser_score": 117
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "user_report",
+  "study_period": "per_game_v60_jan6_mar23",
+  "drafts": {
+    "top_players": [
+      {"name": "D. DeRozan", "team": "SAC", "rs": 5.7},
+      {"name": "P. Banchero", "team": "ORL", "rs": 4.9},
+      {"name": "D. Bane", "team": "SAC", "rs": 3.3},
+      {"name": "D. Plowden", "team": "ORL", "rs": 3.3},
+      {"name": "P. Achiuwa", "team": "NYK", "rs": 2.8},
+      {"name": "M. Monk", "team": "SAC", "rs": 2.6},
+      {"name": "M. Raynaud", "team": "ORL", "rs": 2.3}
+    ],
+    "optimal_score": 33.74,
+    "optimal_assignment": "RS descending: DeRozan 2.0x, Banchero 1.8x, Bane 1.6x, Plowden 1.4x, Achiuwa 1.2x",
+    "winning_drafts": [
+      {
+        "rank": 1,
+        "user": "shitheaded",
+        "score": 32.60,
+        "lineup": [
+          {"slot": "2.0x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.8x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.6x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.4x", "name": "P. Achiuwa", "rs": 2.8},
+          {"slot": "1.2x", "name": "D. Plowden", "rs": 3.3}
+        ]
+      },
+      {
+        "rank": 2,
+        "user": "manpreetatwal",
+        "score": 32.19,
+        "lineup": [
+          {"slot": "2.0x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.8x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.6x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.4x", "name": "M. Monk", "rs": 2.6},
+          {"slot": "1.2x", "name": "D. Plowden", "rs": 3.3}
+        ]
+      },
+      {
+        "rank": 3,
+        "user": "zaxxrutter",
+        "score": 32.13,
+        "lineup": [
+          {"slot": "2.0x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.8x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.6x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.4x", "name": "M. Raynaud", "rs": 2.3},
+          {"slot": "1.2x", "name": "P. Achiuwa", "rs": 2.8}
+        ]
+      },
+      {
+        "rank": 3,
+        "user": "leftie12goal",
+        "score": 32.13,
+        "lineup": [
+          {"slot": "2.0x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.8x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.6x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.4x", "name": "M. Raynaud", "rs": 2.3},
+          {"slot": "1.2x", "name": "P. Achiuwa", "rs": 2.8}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "jaden",
+        "score": 32.06,
+        "lineup": [
+          {"slot": "2.0x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.8x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.6x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.4x", "name": "P. Achiuwa", "rs": 2.8},
+          {"slot": "1.2x", "name": "M. Raynaud", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "utahazz",
+        "score": 32.06,
+        "lineup": [
+          {"slot": "2.0x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.8x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.6x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.4x", "name": "P. Achiuwa", "rs": 2.8},
+          {"slot": "1.2x", "name": "M. Raynaud", "rs": 2.3}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "mylesottery",
+        "score": 31.96,
+        "lineup": [
+          {"slot": "2.0x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.8x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.6x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.4x", "name": "M. Raynaud", "rs": 2.3},
+          {"slot": "1.2x", "name": "P. Achiuwa", "rs": 2.8}
+        ]
+      },
+      {
+        "rank": 7,
+        "user": "corona_extra",
+        "score": 31.96,
+        "lineup": [
+          {"slot": "2.0x", "name": "P. Banchero", "rs": 4.9},
+          {"slot": "1.8x", "name": "D. DeRozan", "rs": 5.7},
+          {"slot": "1.6x", "name": "D. Bane", "rs": 3.3},
+          {"slot": "1.4x", "name": "M. Raynaud", "rs": 2.3},
+          {"slot": "1.2x", "name": "P. Achiuwa", "rs": 2.8}
+        ]
+      }
+    ],
+    "notes": "Close game ORL win (4pt spread, balanced). Winner put Bane (3.3) at 2.0x over DeRozan (5.7) — unusual anti-star play that worked because Plowden (3.3) at 1.2x was the 5th player pick that differentiated. Ranks 3-4 had optimal top-3 slotting (DeRozan 2.0x, Banchero 1.8x, Bane 1.6x) but picked Raynaud (2.3) over Plowden (3.3) — player selection gap. Ranks 5-8 all put Banchero at 2.0x over DeRozan (star bias on the ORL franchise player). Losing team's DeRozan (5.7) had highest RS — winning team didn't dominate RS in this close game. Mixed teams in optimal: 2 SAC + 2 ORL + 1 NYK."
+  }
+}

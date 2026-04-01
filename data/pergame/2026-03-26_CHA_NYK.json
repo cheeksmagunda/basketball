@@ -1,0 +1,131 @@
+{
+  "date": "2026-03-26",
+  "game_count": 1,
+  "games": [
+    {
+      "home": "CHA",
+      "away": "NYK",
+      "home_score": 114,
+      "away_score": 103,
+      "winner": "CHA",
+      "loser": "NYK",
+      "winner_score": 114,
+      "loser_score": 103
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "user_report",
+  "study_period": "per_game_v60_jan6_mar23",
+  "drafts": {
+    "top_players": [
+      {"name": "K. Knueppel", "team": "CHA", "rs": 5.9},
+      {"name": "J. Brunson", "team": "NYK", "rs": 4.5},
+      {"name": "L. Ball", "team": "CHA", "rs": 3.8},
+      {"name": "J. Hart", "team": "NYK", "rs": 3.8},
+      {"name": "B. Miller", "team": "CHA", "rs": 3.0},
+      {"name": "O. Anunoby", "team": "NYK", "rs": 2.9},
+      {"name": "M. Bridges", "team": "NYK", "rs": 2.8}
+    ],
+    "optimal_score": 35.16,
+    "optimal_assignment": "RS descending: Knueppel 2.0x, Brunson 1.8x, Ball 1.6x, Hart 1.4x, Miller 1.2x",
+    "winning_drafts": [
+      {
+        "rank": 1,
+        "user": "sheeze",
+        "score": 34.18,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.8x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.6x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.4x", "name": "B. Miller", "rs": 3.0},
+          {"slot": "1.2x", "name": "J. Hart", "rs": 3.8}
+        ]
+      },
+      {
+        "rank": 2,
+        "user": "lukafat",
+        "score": 33.69,
+        "lineup": [
+          {"slot": "2.0x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.8x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.6x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.4x", "name": "O. Anunoby", "rs": 2.9},
+          {"slot": "1.2x", "name": "J. Hart", "rs": 3.8}
+        ]
+      },
+      {
+        "rank": 3,
+        "user": "saltymuffin",
+        "score": 33.41,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.8x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.6x", "name": "O. Anunoby", "rs": 2.9},
+          {"slot": "1.4x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.2x", "name": "B. Miller", "rs": 3.0}
+        ]
+      },
+      {
+        "rank": 4,
+        "user": "bananastand",
+        "score": 33.29,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.8x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.6x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.4x", "name": "B. Miller", "rs": 3.0},
+          {"slot": "1.2x", "name": "M. Bridges", "rs": 2.8}
+        ]
+      },
+      {
+        "rank": 5,
+        "user": "paigebueckers5",
+        "score": 33.14,
+        "lineup": [
+          {"slot": "2.0x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.8x", "name": "B. Miller", "rs": 3.0},
+          {"slot": "1.6x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.4x", "name": "J. Hart", "rs": 3.8},
+          {"slot": "1.2x", "name": "M. Bridges", "rs": 2.8}
+        ]
+      },
+      {
+        "rank": 6,
+        "user": "bruzer10",
+        "score": 32.92,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.8x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.6x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.4x", "name": "B. Miller", "rs": 3.0},
+          {"slot": "1.2x", "name": "O. Anunoby", "rs": 2.9}
+        ]
+      },
+      {
+        "rank": 6,
+        "user": "cookedbyriley0",
+        "score": 32.92,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.8x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.6x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.4x", "name": "B. Miller", "rs": 3.0},
+          {"slot": "1.2x", "name": "O. Anunoby", "rs": 2.9}
+        ]
+      },
+      {
+        "rank": 6,
+        "user": "bshumer1",
+        "score": 32.92,
+        "lineup": [
+          {"slot": "2.0x", "name": "J. Brunson", "rs": 4.5},
+          {"slot": "1.8x", "name": "L. Ball", "rs": 3.8},
+          {"slot": "1.6x", "name": "K. Knueppel", "rs": 5.9},
+          {"slot": "1.4x", "name": "B. Miller", "rs": 3.0},
+          {"slot": "1.2x", "name": "O. Anunoby", "rs": 2.9}
+        ]
+      }
+    ],
+    "notes": "CHA upset win (11pt spread, standard). Knueppel (CHA rookie, 5.9 RS) was the top performer but only 2 of 8 drafters put him at 2.0x. Winner sheeze put Ball (3.8) at 2.0x over Knueppel (5.9) — star bias on LaMelo cost 0.98 vs optimal. Mixed team representation: top 5 optimal includes 3 CHA + 2 NYK. Hart (NYK, 3.8) was a sleeper — only 2 of 8 top drafters picked him, but he tied Ball for 3rd-highest RS. High scoring game (217 total) with wide RS spread (5.9 to 2.8) made player selection matter more than usual."
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "date": "2026-02-27",
+  "game_count": 5,
+  "games": [
+    {
+      "home": "DET",
+      "away": "CLE",
+      "home_score": 122,
+      "away_score": 119,
+      "winner": "DET",
+      "loser": "CLE",
+      "winner_score": 122,
+      "loser_score": 119
+    },
+    {
+      "home": "BOS",
+      "away": "BKN",
+      "home_score": 148,
+      "away_score": 111,
+      "winner": "BOS",
+      "loser": "BKN",
+      "winner_score": 148,
+      "loser_score": 111
+    },
+    {
+      "home": "MIL",
+      "away": "NYK",
+      "home_score": 98,
+      "away_score": 127,
+      "winner": "NYK",
+      "loser": "MIL",
+      "winner_score": 127,
+      "loser_score": 98
+    },
+    {
+      "home": "DAL",
+      "away": "MEM",
+      "home_score": 105,
+      "away_score": 124,
+      "winner": "MEM",
+      "loser": "DAL",
+      "winner_score": 124,
+      "loser_score": 105
+    },
+    {
+      "home": "OKC",
+      "away": "DEN",
+      "home_score": 127,
+      "away_score": 121,
+      "winner": "OKC",
+      "loser": "DEN",
+      "winner_score": 127,
+      "loser_score": 121
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

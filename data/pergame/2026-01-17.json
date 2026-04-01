@@ -1,0 +1,99 @@
+{
+  "date": "2026-01-17",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "DAL",
+      "away": "UTA",
+      "home_score": 138,
+      "away_score": 120,
+      "winner": "DAL",
+      "loser": "UTA",
+      "winner_score": 138,
+      "loser_score": 120
+    },
+    {
+      "home": "ATL",
+      "away": "BOS",
+      "home_score": 106,
+      "away_score": 132,
+      "winner": "BOS",
+      "loser": "ATL",
+      "winner_score": 132,
+      "loser_score": 106
+    },
+    {
+      "home": "DET",
+      "away": "IND",
+      "home_score": 121,
+      "away_score": 78,
+      "winner": "DET",
+      "loser": "IND",
+      "winner_score": 121,
+      "loser_score": 78
+    },
+    {
+      "home": "NYK",
+      "away": "PHX",
+      "home_score": 99,
+      "away_score": 106,
+      "winner": "PHX",
+      "loser": "NYK",
+      "winner_score": 106,
+      "loser_score": 99
+    },
+    {
+      "home": "MIA",
+      "away": "OKC",
+      "home_score": 122,
+      "away_score": 120,
+      "winner": "MIA",
+      "loser": "OKC",
+      "winner_score": 122,
+      "loser_score": 120
+    },
+    {
+      "home": "SAS",
+      "away": "MIN",
+      "home_score": 126,
+      "away_score": 123,
+      "winner": "SAS",
+      "loser": "MIN",
+      "winner_score": 126,
+      "loser_score": 123
+    },
+    {
+      "home": "GSW",
+      "away": "CHA",
+      "home_score": 136,
+      "away_score": 116,
+      "winner": "GSW",
+      "loser": "CHA",
+      "winner_score": 136,
+      "loser_score": 116
+    },
+    {
+      "home": "DEN",
+      "away": "WAS",
+      "home_score": 121,
+      "away_score": 115,
+      "winner": "DEN",
+      "loser": "WAS",
+      "winner_score": 121,
+      "loser_score": 115
+    },
+    {
+      "home": "POR",
+      "away": "LAL",
+      "home_score": 132,
+      "away_score": 116,
+      "winner": "POR",
+      "loser": "LAL",
+      "winner_score": 132,
+      "loser_score": 116
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

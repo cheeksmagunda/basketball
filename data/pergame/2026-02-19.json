@@ -1,0 +1,109 @@
+{
+  "date": "2026-02-19",
+  "game_count": 10,
+  "games": [
+    {
+      "home": "CHA",
+      "away": "HOU",
+      "home_score": 101,
+      "away_score": 105,
+      "winner": "HOU",
+      "loser": "CHA",
+      "winner_score": 105,
+      "loser_score": 101
+    },
+    {
+      "home": "CLE",
+      "away": "BKN",
+      "home_score": 112,
+      "away_score": 84,
+      "winner": "CLE",
+      "loser": "BKN",
+      "winner_score": 112,
+      "loser_score": 84
+    },
+    {
+      "home": "PHI",
+      "away": "ATL",
+      "home_score": 107,
+      "away_score": 117,
+      "winner": "ATL",
+      "loser": "PHI",
+      "winner_score": 117,
+      "loser_score": 107
+    },
+    {
+      "home": "WAS",
+      "away": "IND",
+      "home_score": 112,
+      "away_score": 105,
+      "winner": "WAS",
+      "loser": "IND",
+      "winner_score": 112,
+      "loser_score": 105
+    },
+    {
+      "home": "NYK",
+      "away": "DET",
+      "home_score": 111,
+      "away_score": 126,
+      "winner": "DET",
+      "loser": "NYK",
+      "winner_score": 126,
+      "loser_score": 111
+    },
+    {
+      "home": "CHI",
+      "away": "TOR",
+      "home_score": 101,
+      "away_score": 110,
+      "winner": "TOR",
+      "loser": "CHI",
+      "winner_score": 110,
+      "loser_score": 101
+    },
+    {
+      "home": "SAS",
+      "away": "PHX",
+      "home_score": 121,
+      "away_score": 94,
+      "winner": "SAS",
+      "loser": "PHX",
+      "winner_score": 121,
+      "loser_score": 94
+    },
+    {
+      "home": "GSW",
+      "away": "BOS",
+      "home_score": 110,
+      "away_score": 121,
+      "winner": "BOS",
+      "loser": "GSW",
+      "winner_score": 121,
+      "loser_score": 110
+    },
+    {
+      "home": "SAC",
+      "away": "ORL",
+      "home_score": 94,
+      "away_score": 131,
+      "winner": "ORL",
+      "loser": "SAC",
+      "winner_score": 131,
+      "loser_score": 94
+    },
+    {
+      "home": "LAC",
+      "away": "DEN",
+      "home_score": 115,
+      "away_score": 114,
+      "winner": "LAC",
+      "loser": "DEN",
+      "winner_score": 115,
+      "loser_score": 114
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}
