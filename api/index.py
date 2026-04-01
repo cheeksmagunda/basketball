@@ -1103,6 +1103,8 @@ _CONFIG_DEFAULTS = {
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
         "max_per_team": 2,              # Max players from the same team in a lineup (winners stack 2 ~40% of the time)
+        "moonshot_min_recent_minutes": 16.0,  # Moonshot swaps require recent_min >= 16 (rotation-bubble filter)
+        "moonshot_min_ev": 10.0,        # Moonshot swaps require upside_ev >= 10 (winning-draft data: only 4% of winners had EV < 10)
         "minutes_delta": {
             "enabled": True,
             "neutral_zone": 2.0,        # ±2 min band = "business as usual" (no catalyst)
@@ -4141,7 +4143,11 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "- roto_status='confirmed' + cascade_bonus >= 8: Apply 1.20–1.30x UP — high-confidence "
         "starter-role situation with real upside.\n"
         "- roto_status='unknown' + pred_min < 18: Apply 0.85–0.90x DOWN — player not in RotoWire "
-        "rotation and has fragile minute floor; DNP or early hook risk is meaningful.\n\n"
+        "rotation and has fragile minute floor; DNP or early hook risk is meaningful.\n"
+        "- recent_min < 16 AND season_min < 18 (any roto_status): Apply 0.85–0.90x DOWN — "
+        "rotation-bubble player with limited recent usage; DNP or early hook risk even if "
+        "technically in rotation. These players look attractive on paper (high boost) but "
+        "12-15 min/game players frequently get DNP'd or pulled early.\n\n"
 
         "CALIBRATION: Most players get NO adjustment (omit them). Only adjust when you have "
         "a specific reason from TODAY's news, cascade_bonus, roto_status, or game context. "
@@ -4686,6 +4692,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # Team diversity enforced: swaps must not violate max_per_team.
     upside = list(chalk)  # start as copy of safe
     chalk_names = {p.get("name") for p in chalk}
+    moonshot_min_recent = float(_strat.get("moonshot_min_recent_minutes", 16.0))
+    moonshot_min_ev = float(_strat.get("moonshot_min_ev", 10.0))
     # Find swap candidates: players NOT in safe lineup, ranked by upside_ev
     swap_candidates = sorted(
         [p for p in candidate_pool if p.get("name") not in chalk_names],
@@ -4695,6 +4703,12 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     for candidate in swap_candidates:
         if swaps_made >= max_swaps:
             break
+        # Moonshot rotation-bubble filter: reject low-minutes players (Morales fix)
+        if candidate.get("recent_min", 0) < moonshot_min_recent:
+            continue
+        # Moonshot minimum EV floor: winning-draft data shows only 4% of winners had EV < 10
+        if candidate.get("upside_ev", 0) < moonshot_min_ev:
+            continue
         c_ev = candidate.get("upside_ev", 0)
         c_var = candidate.get("player_variance", 0)
         c_boost = candidate.get("est_mult", 0)
