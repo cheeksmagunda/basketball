@@ -1059,6 +1059,13 @@ _CONFIG_DEFAULTS = {
         "blowout_underdog_star_penalty": 0.95,
         "blowout_min_per_team": 1,      # relax team balance in blowouts (allow 4-1)
         "role_player_pts_ceiling": 18,   # season_pts <= this = role player
+        # Finding 7: Graduated blowout penalties (new, from 6-game leaderboard study)
+        # LAL/LAC 14pt: losing-team bigs (Allen 3.4, Ayton 3.3) outscored winning
+        # role players. Moderate blowouts (13-19pt) shouldn't bury underdog players
+        # the way true blowouts (20+pt, MIL/DAL 24pt) do.
+        "heavy_blowout_threshold": 20,         # 20+pt = true blowout (full penalties)
+        "moderate_blowout_underdog_role": 0.95, # 13-19pt: mild role penalty (was 0.88)
+        "moderate_blowout_underdog_star": 0.98, # 13-19pt: barely penalize stars (was 0.95)
         # Finding 2: Value anchor (high-floor player at low slot)
         "value_anchor_min_rating": 3.8,  # RS floor for value anchor candidates
         "value_anchor_pts_ceiling": 16,  # season_pts ceiling — non-star
@@ -1069,6 +1076,13 @@ _CONFIG_DEFAULTS = {
         "close_game_variance_dampen": 0.08,  # penalize variance in close games
         "blowout_variance_uplift": 0.04,     # reward variance in blowouts
         "neutral_favored_lean": 1.02,        # mild favored-team lean in moderate spreads
+        # Finding 8: Sleeper 5th-player gates (new, from 6-game leaderboard study)
+        # Winners differ from mid-pack by exactly 1 player pick in 5/6 games.
+        # Winning 5th picks (Plowden 3.3, Camara 3.1, Dieng 3.1) fail the 3.5 floor.
+        # Two-tier pool: core (standard) + sleeper (relaxed) for the decisive 5th pick.
+        "sleeper_rating_floor": 2.5,     # relaxed RS floor for 5th player candidates
+        "sleeper_min_floor": 12.0,       # relaxed minutes floor
+        "sleeper_min_pts": 5.0,          # relaxed points floor
     },
     "scoring_thresholds": {
         "min_chalk_rating": 3.5,
@@ -4919,7 +4933,12 @@ def _per_game_adjust_projections(projections, game, strategy):
 
         elif comp == "top_heavy":
             # Blowout: favored team runs away; role players get extended run.
-            # Underdog role players get buried.
+            # Underdog role players get buried — BUT only in true blowouts (20+).
+            # Data (LAL 127-113 LAC, 14pt): losing-team bigs (Allen 3.4, Ayton 3.3)
+            # outscored ALL winning role players. The old flat 12% penalty is too
+            # harsh for moderate blowouts (13-19pt). Use graduated penalties.
+            heavy_blowout_thr = cfg.get("heavy_blowout_threshold", 20)
+            is_heavy = spread >= heavy_blowout_thr
             if team == favored:
                 if is_role:
                     # F6: Favored team's 3rd-5th options get garbage-time production
@@ -4928,19 +4947,29 @@ def _per_game_adjust_projections(projections, game, strategy):
                     # Stars on favored team still produce but game may end early
                     rating *= cfg.get("blowout_favored_star_bonus", 1.05)
             else:
-                if is_role:
-                    # Underdog role players get pulled in blowouts
-                    rating *= cfg.get("blowout_underdog_role_penalty", 0.88)
+                if is_heavy:
+                    # True blowout (20+pt): underdog role players get buried
+                    if is_role:
+                        rating *= cfg.get("blowout_underdog_role_penalty", 0.88)
+                    else:
+                        rating *= cfg.get("blowout_underdog_star_penalty", 0.95)
                 else:
-                    # Underdog stars play through but game script unfavorable
-                    rating *= cfg.get("blowout_underdog_star_penalty", 0.95)
+                    # Moderate blowout (13-19pt): underdog still contributes,
+                    # especially bigs who accumulate stats in losing effort.
+                    # Data: Allen/Ayton (LAC losers) had RS 3.4/3.3 in 14pt loss.
+                    if is_role:
+                        rating *= cfg.get("moderate_blowout_underdog_role", 0.95)
+                    else:
+                        rating *= cfg.get("moderate_blowout_underdog_star", 0.98)
 
             # F1: Blowout variance uplift — high-upside players rise to 2.0x
             var_up = cfg.get("blowout_variance_uplift", 0.04)
             rating *= (1.0 + var_up * variance)
 
         else:
-            # Neutral (moderate spread 6-12): mild favored-team lean
+            # Neutral (moderate spread 6-12): mild favored-team lean.
+            # Data: POR/LAC (10pt) had 3 loser players in optimal 5;
+            # CHA/NYK (11pt) had 2. Don't over-penalize losing side.
             if team == favored:
                 rating *= cfg.get("neutral_favored_lean", 1.02)
             # F1: neutral variance treatment — no shaping
@@ -4983,23 +5012,28 @@ def _build_game_lineups(projections, game):
     strategy = _per_game_strategy(game)
     adjusted = _per_game_adjust_projections(rescored, game, strategy)
 
-    # Step 3: Eligibility gating (unified injury check — matches _build_lineups)
+    # Step 3: Eligibility gating — TWO TIERS (grep: PER-GAME ELIGIBILITY)
+    # Tier A (core): standard gates for top-4 consensus picks
+    # Tier B (sleeper): relaxed gates for the decisive 5th player pick
+    # Data (6 games, 48 lineups): winners differ from mid-pack by exactly
+    # 1 player in 5/6 games. That 5th player averages +0.9 RS over the
+    # mid-pack's 5th pick. Many winning 5th picks (Plowden 3.3, Camara 3.1,
+    # Dieng 3.1) would fail the old 3.5 rating floor.
     game_chalk_floor = _cfg("lineup.game_chalk_rating_floor", 3.5)
+    game_sleeper_floor = _cfg("per_game.sleeper_rating_floor", 2.5)
     game_min_floor = _cfg("lineup.game_recent_min_floor", 15.0)
+    game_sleeper_min_floor = _cfg("per_game.sleeper_min_floor", 12.0)
     min_game_pts = _cfg("scoring_thresholds.min_game_pts", 8.0)
+    sleeper_min_pts = _cfg("per_game.sleeper_min_pts", 5.0)
     rw_statuses = {}
     try:
         rw_statuses = get_all_statuses()
     except Exception:
         pass
-    eligible_pool = []
+
+    core_pool = []
+    sleeper_pool = []
     for p in adjusted:
-        if p.get("recent_min", 0) < game_min_floor:
-            continue
-        if p["rating"] < game_chalk_floor:
-            continue
-        if p.get("pts", 0) < min_game_pts:
-            continue
         if p.get("name") in BLACKLISTED_PLAYERS:
             continue
         if p.get("injury_status", "").upper() == "OUT":
@@ -5012,9 +5046,18 @@ def _build_game_lineups(projections, game):
                 continue
         except Exception:
             pass
-        eligible_pool.append(p)
+        # Tier A: core pool (standard gates)
+        if (p.get("recent_min", 0) >= game_min_floor
+                and p["rating"] >= game_chalk_floor
+                and p.get("pts", 0) >= min_game_pts):
+            core_pool.append(p)
+        # Tier B: sleeper pool (relaxed gates — the 5th player edge)
+        elif (p.get("recent_min", 0) >= game_sleeper_min_floor
+              and p["rating"] >= game_sleeper_floor
+              and p.get("pts", 0) >= sleeper_min_pts):
+            sleeper_pool.append(p)
 
-    # Step 4: MILP optimization
+    # Step 4: MILP optimization with sleeper-aware candidate pool
     # Per-game: card boost is irrelevant — zero out est_mult.
     # In blowouts, relax team balance to allow 4-1 from favored team (Finding 6).
     cfg = _cfg("per_game", _CONFIG_DEFAULTS["per_game"])
@@ -5023,10 +5066,26 @@ def _build_game_lineups(projections, game):
     else:
         min_per_team = 2
 
-    no_boost = [{**p, "est_mult": 0} for p in eligible_pool]
+    # First pass: MILP on core pool (gets the consensus top-4 right)
+    no_boost = [{**p, "est_mult": 0} for p in core_pool]
     the_lineup = optimize_lineup(no_boost, n=5, min_per_team=min_per_team,
                                  sort_key="rating", rating_key="rating",
                                  card_boost_key="est_mult")
+
+    # Step 4b: Sleeper substitution — try replacing weakest core pick with
+    # best sleeper if the sleeper has higher adjusted rating.
+    # This captures the decisive 5th-player edge that separates winners.
+    if len(the_lineup) >= 5 and sleeper_pool:
+        weakest_idx = min(range(len(the_lineup)),
+                         key=lambda i: the_lineup[i].get("rating", 0))
+        weakest_rating = the_lineup[weakest_idx].get("rating", 0)
+        lineup_names = {p["name"] for p in the_lineup}
+        best_sleeper = max(
+            [s for s in sleeper_pool if s["name"] not in lineup_names],
+            key=lambda s: s.get("rating", 0), default=None
+        )
+        if best_sleeper and best_sleeper.get("rating", 0) > weakest_rating:
+            the_lineup[weakest_idx] = {**best_sleeper, "est_mult": 0}
 
     # Step 5: Brute-force 5! permutation validation (Finding 5)
     # MILP handles this, but 120 combos is trivial — verify optimality.
