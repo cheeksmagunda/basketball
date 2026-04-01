@@ -1,0 +1,69 @@
+{
+  "date": "2026-03-07",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "MIN",
+      "away": "ORL",
+      "home_score": 92,
+      "away_score": 119,
+      "winner": "ORL",
+      "loser": "MIN",
+      "winner_score": 119,
+      "loser_score": 92
+    },
+    {
+      "home": "DET",
+      "away": "BKN",
+      "home_score": 105,
+      "away_score": 107,
+      "winner": "BKN",
+      "loser": "DET",
+      "winner_score": 107,
+      "loser_score": 105
+    },
+    {
+      "home": "ATL",
+      "away": "PHI",
+      "home_score": 125,
+      "away_score": 116,
+      "winner": "ATL",
+      "loser": "PHI",
+      "winner_score": 125,
+      "loser_score": 116
+    },
+    {
+      "home": "MEM",
+      "away": "LAC",
+      "home_score": 120,
+      "away_score": 123,
+      "winner": "LAC",
+      "loser": "MEM",
+      "winner_score": 123,
+      "loser_score": 120
+    },
+    {
+      "home": "MIL",
+      "away": "UTA",
+      "home_score": 113,
+      "away_score": 99,
+      "winner": "MIL",
+      "loser": "UTA",
+      "winner_score": 113,
+      "loser_score": 99
+    },
+    {
+      "home": "OKC",
+      "away": "GSW",
+      "home_score": 104,
+      "away_score": 97,
+      "winner": "OKC",
+      "loser": "GSW",
+      "winner_score": 104,
+      "loser_score": 97
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

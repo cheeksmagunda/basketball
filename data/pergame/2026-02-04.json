@@ -1,0 +1,79 @@
+{
+  "date": "2026-02-04",
+  "game_count": 7,
+  "games": [
+    {
+      "home": "NYK",
+      "away": "DEN",
+      "home_score": 134,
+      "away_score": 127,
+      "winner": "NYK",
+      "loser": "DEN",
+      "winner_score": 134,
+      "loser_score": 127
+    },
+    {
+      "home": "TOR",
+      "away": "MIN",
+      "home_score": 126,
+      "away_score": 128,
+      "winner": "MIN",
+      "loser": "TOR",
+      "winner_score": 128,
+      "loser_score": 126
+    },
+    {
+      "home": "HOU",
+      "away": "BOS",
+      "home_score": 93,
+      "away_score": 114,
+      "winner": "BOS",
+      "loser": "HOU",
+      "winner_score": 114,
+      "loser_score": 93
+    },
+    {
+      "home": "MIL",
+      "away": "NOP",
+      "home_score": 141,
+      "away_score": 137,
+      "winner": "MIL",
+      "loser": "NOP",
+      "winner_score": 141,
+      "loser_score": 137
+    },
+    {
+      "home": "SAS",
+      "away": "OKC",
+      "home_score": 116,
+      "away_score": 106,
+      "winner": "SAS",
+      "loser": "OKC",
+      "winner_score": 116,
+      "loser_score": 106
+    },
+    {
+      "home": "SAC",
+      "away": "MEM",
+      "home_score": 125,
+      "away_score": 129,
+      "winner": "MEM",
+      "loser": "SAC",
+      "winner_score": 129,
+      "loser_score": 125
+    },
+    {
+      "home": "LAC",
+      "away": "CLE",
+      "home_score": 91,
+      "away_score": 124,
+      "winner": "CLE",
+      "loser": "LAC",
+      "winner_score": 124,
+      "loser_score": 91
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

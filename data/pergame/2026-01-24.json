@@ -1,0 +1,69 @@
+{
+  "date": "2026-01-24",
+  "game_count": 6,
+  "games": [
+    {
+      "home": "CHA",
+      "away": "WAS",
+      "home_score": 119,
+      "away_score": 115,
+      "winner": "CHA",
+      "loser": "WAS",
+      "winner_score": 119,
+      "loser_score": 115
+    },
+    {
+      "home": "PHI",
+      "away": "NYK",
+      "home_score": 109,
+      "away_score": 112,
+      "winner": "NYK",
+      "loser": "PHI",
+      "winner_score": 112,
+      "loser_score": 109
+    },
+    {
+      "home": "ORL",
+      "away": "CLE",
+      "home_score": 105,
+      "away_score": 119,
+      "winner": "CLE",
+      "loser": "ORL",
+      "winner_score": 119,
+      "loser_score": 105
+    },
+    {
+      "home": "CHI",
+      "away": "BOS",
+      "home_score": 114,
+      "away_score": 111,
+      "winner": "CHI",
+      "loser": "BOS",
+      "winner_score": 114,
+      "loser_score": 111
+    },
+    {
+      "home": "DAL",
+      "away": "LAL",
+      "home_score": 110,
+      "away_score": 116,
+      "winner": "LAL",
+      "loser": "DAL",
+      "winner_score": 116,
+      "loser_score": 110
+    },
+    {
+      "home": "UTA",
+      "away": "MIA",
+      "home_score": 116,
+      "away_score": 147,
+      "winner": "MIA",
+      "loser": "UTA",
+      "winner_score": 147,
+      "loser_score": 116
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

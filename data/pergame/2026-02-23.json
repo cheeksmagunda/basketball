@@ -1,0 +1,39 @@
+{
+  "date": "2026-02-23",
+  "game_count": 3,
+  "games": [
+    {
+      "home": "DET",
+      "away": "SAS",
+      "home_score": 103,
+      "away_score": 114,
+      "winner": "SAS",
+      "loser": "DET",
+      "winner_score": 114,
+      "loser_score": 103
+    },
+    {
+      "home": "MEM",
+      "away": "SAC",
+      "home_score": 114,
+      "away_score": 123,
+      "winner": "SAC",
+      "loser": "MEM",
+      "winner_score": 123,
+      "loser_score": 114
+    },
+    {
+      "home": "HOU",
+      "away": "UTA",
+      "home_score": 125,
+      "away_score": 105,
+      "winner": "HOU",
+      "loser": "UTA",
+      "winner_score": 125,
+      "loser_score": 105
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}

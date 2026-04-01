@@ -1,0 +1,109 @@
+{
+  "date": "2026-02-03",
+  "game_count": 10,
+  "games": [
+    {
+      "home": "DET",
+      "away": "DEN",
+      "home_score": 124,
+      "away_score": 121,
+      "winner": "DET",
+      "loser": "DEN",
+      "winner_score": 124,
+      "loser_score": 121
+    },
+    {
+      "home": "IND",
+      "away": "UTA",
+      "home_score": 122,
+      "away_score": 131,
+      "winner": "UTA",
+      "loser": "IND",
+      "winner_score": 131,
+      "loser_score": 122
+    },
+    {
+      "home": "WAS",
+      "away": "NYK",
+      "home_score": 101,
+      "away_score": 132,
+      "winner": "NYK",
+      "loser": "WAS",
+      "winner_score": 132,
+      "loser_score": 101
+    },
+    {
+      "home": "BKN",
+      "away": "LAL",
+      "home_score": 109,
+      "away_score": 125,
+      "winner": "LAL",
+      "loser": "BKN",
+      "winner_score": 125,
+      "loser_score": 109
+    },
+    {
+      "home": "MIA",
+      "away": "ATL",
+      "home_score": 115,
+      "away_score": 127,
+      "winner": "ATL",
+      "loser": "MIA",
+      "winner_score": 127,
+      "loser_score": 115
+    },
+    {
+      "home": "DAL",
+      "away": "BOS",
+      "home_score": 100,
+      "away_score": 110,
+      "winner": "BOS",
+      "loser": "DAL",
+      "winner_score": 110,
+      "loser_score": 100
+    },
+    {
+      "home": "MIL",
+      "away": "CHI",
+      "home_score": 131,
+      "away_score": 115,
+      "winner": "MIL",
+      "loser": "CHI",
+      "winner_score": 131,
+      "loser_score": 115
+    },
+    {
+      "home": "OKC",
+      "away": "ORL",
+      "home_score": 128,
+      "away_score": 92,
+      "winner": "OKC",
+      "loser": "ORL",
+      "winner_score": 128,
+      "loser_score": 92
+    },
+    {
+      "home": "GSW",
+      "away": "PHI",
+      "home_score": 94,
+      "away_score": 113,
+      "winner": "PHI",
+      "loser": "GSW",
+      "winner_score": 113,
+      "loser_score": 94
+    },
+    {
+      "home": "POR",
+      "away": "PHX",
+      "home_score": 125,
+      "away_score": 130,
+      "winner": "PHX",
+      "loser": "POR",
+      "winner_score": 130,
+      "loser_score": 125
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "espn_scoreboard_api",
+  "study_period": "per_game_v60_jan6_mar23"
+}
