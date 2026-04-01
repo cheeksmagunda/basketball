@@ -1,7 +1,7 @@
 {
-  "version": 81,
-  "updated_at": "2026-03-27T23:00:00Z",
-  "updated_by": "v81-boost-floor-0",
+  "version": 82,
+  "updated_at": "2026-04-01T00:00:00Z",
+  "updated_by": "v82-lgbm-only-no-dfs",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -125,7 +125,7 @@
     "compression_divisor": 5.5,
     "compression_power": 0.8,
     "rs_cap": 25.0,
-    "ai_blend_weight": 0.35,
+    "ai_blend_weight": 1.0,
     "max_post_compression_mult": 1.4,
     "bucket_calibration": {
       "enabled": false,
@@ -394,6 +394,11 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 82,
+      "date": "2026-04-01",
+      "change": "REMOVE DFS SIGNALS: ai_blend_weight 0.35->1.0. RS projection is now 100% LightGBM (trained on actual Real Score data). The DFS heuristic (pts*1.5 + ast*1.2 + reb*0.5 + stl*2.5 + blk*1.5) was causing catastrophic RS over-projection for role players: Trent Jr. projected RS 5.7 (actual 1.7), Hayes RS 5.3 (actual 1.2), Williams RS 5.2 (actual 0.9). DFS score measures box-score fantasy value, not Real Score impact. LightGBM is trained directly on actual RS outcomes. cascade_rs/role_spike_rs/archetype_calibration are already dead code so no code changes needed."
+    },
     {
       "version": 81,
       "date": "2026-03-27",
