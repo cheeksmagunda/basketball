@@ -1103,6 +1103,15 @@ _CONFIG_DEFAULTS = {
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
         "max_per_team": 2,              # Max players from the same team in a lineup (winners stack 2 ~40% of the time)
+        "minutes_delta": {
+            "enabled": True,
+            "neutral_zone": 2.0,        # ±2 min band = "business as usual" (no catalyst)
+            "neutral_discount": 0.97,   # 3% RS haircut when delta within neutral zone
+            "bonus_per_min": 0.015,     # 1.5% RS bonus per min above neutral zone
+            "max_bonus": 0.12,          # Cap at 12% (reached at ~+10 min delta)
+            "penalty_per_min": 0.01,    # 1% RS penalty per min below -neutral zone
+            "max_penalty": 0.08,        # Cap at 8%
+        },
     },
 }
 
@@ -3526,6 +3535,27 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     else:
         raw_score = heuristic_rs
 
+    # ── Minutes delta signal: reward expanded role, discount business-as-usual ──
+    # Players with significant minutes jumps (cascade/injury) have a concrete
+    # upside catalyst. Players at normal minutes are "business as usual" — no
+    # catalyst to justify top-tier ranking. A +2 min increase isn't strong enough.
+    _md_cfg = _cfg("strategy.minutes_delta", {})
+    _md_delta = 0.0
+    _md_mult = 1.0
+    if _md_cfg.get("enabled", True):
+        _md_neutral = float(_md_cfg.get("neutral_zone", 2.0))
+        _md_season = stats.get("season_min", avg_min)
+        _md_delta = proj_min - _md_season
+        if _md_delta >= _md_neutral:
+            _md_bonus = min(float(_md_cfg.get("bonus_per_min", 0.015)) * (_md_delta - _md_neutral), float(_md_cfg.get("max_bonus", 0.12)))
+            _md_mult = 1.0 + _md_bonus
+        elif _md_delta <= -_md_neutral:
+            _md_pen = min(float(_md_cfg.get("penalty_per_min", 0.01)) * abs(_md_delta + _md_neutral), float(_md_cfg.get("max_penalty", 0.08)))
+            _md_mult = 1.0 - _md_pen
+        else:
+            _md_mult = float(_md_cfg.get("neutral_discount", 0.97))
+        raw_score *= _md_mult
+
     # ── Game context bonus (additive, applied after compression) ─────────
     # Strategy report Finding 7: simple additive RS adjustments.
     raw_score += game_context_bonus
@@ -3589,6 +3619,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
+        "_min_delta": round(_md_delta, 1),
+        "_min_delta_mult": round(_md_mult, 3),
         # Recent vs season stats — used by line engine for trend detection
         "season_min": round(stats.get("season_min", avg_min), 1),
         "recent_min": round(recent_min, 1),

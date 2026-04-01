@@ -1,7 +1,7 @@
 {
-  "version": 85,
-  "updated_at": "2026-04-01T15:00:00Z",
-  "updated_by": "v85-one-per-team",
+  "version": 86,
+  "updated_at": "2026-04-01T16:00:00Z",
+  "updated_by": "v86-minutes-delta-signal",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -401,6 +401,11 @@
   },
   "changelog": [
     {
+      "version": 86,
+      "date": "2026-04-01",
+      "change": "MINUTES DELTA SIGNAL: RS multiplier based on projected vs season minutes gap. Players at normal minutes (±2 min, no catalyst) get 0.97x RS discount. Players with significant minutes jumps (cascade/injury, +5-10 min) get up to 1.12x RS bonus. Players projecting below season avg get up to 0.92x RS penalty. Fixes Bub Carrington case: projected 27.6 min vs 29.5 season (-1.9 delta, neutral zone) → 3% RS haircut drops him from #1 slot. Cascade beneficiaries with +8 min delta get 9% RS boost, properly rewarding expanded-role upside. Config: strategy.minutes_delta.* (enabled, neutral_zone, neutral_discount, bonus_per_min, max_bonus, penalty_per_min, max_penalty)."
+    },
+    {
       "version": 85,
       "date": "2026-04-01",
       "change": "REVERT TEAMMATE STACKS: strategy.max_per_team 2->1. The v83 stacking allowance backfired on Mar 31: Moonshot drafted Trent Jr. (MIL, RS 1.7) + Lopez (MIL, RS 3.0) — bad MIL player occupied 5x slot, dragging total value to 45.11. Highest-value leaderboard had 5 different teams in top 5 (Eason HOU 17.3, Dieng OKC 15.6, Jenkins CHA 14.7, Lopez MIL 14.6, Duren DET 14.4). Today's S5 also stacked 2 WSH players. Model cannot reliably predict which teammate pair will both outperform. One player per team is the safer structural constraint."
@@ -776,6 +781,15 @@
     "max_upside_swaps": 2,
     "max_per_team": 1,
     "anti_popularity_enabled": true,
-    "anti_popularity_strength": 0.2
+    "anti_popularity_strength": 0.2,
+    "minutes_delta": {
+      "enabled": true,
+      "neutral_zone": 2.0,
+      "neutral_discount": 0.97,
+      "bonus_per_min": 0.015,
+      "max_bonus": 0.12,
+      "penalty_per_min": 0.01,
+      "max_penalty": 0.08
+    }
   }
 }
