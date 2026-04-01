@@ -1,7 +1,7 @@
 {
-  "version": 81,
-  "updated_at": "2026-03-27T23:00:00Z",
-  "updated_by": "v81-boost-floor-0",
+  "version": 83,
+  "updated_at": "2026-04-01T01:00:00Z",
+  "updated_by": "v83-max-per-team-2",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -125,7 +125,7 @@
     "compression_divisor": 5.5,
     "compression_power": 0.8,
     "rs_cap": 25.0,
-    "ai_blend_weight": 0.35,
+    "ai_blend_weight": 1.0,
     "max_post_compression_mult": 1.4,
     "bucket_calibration": {
       "enabled": false,
@@ -394,6 +394,16 @@
     "neutral_favored_lean": 1.02
   },
   "changelog": [
+    {
+      "version": 83,
+      "date": "2026-04-01",
+      "change": "ALLOW TEAMMATE STACKS: strategy.max_per_team 1->2. Every top-4 winning lineup on Mar 31 stacked 2 MIL players (Lopez + Dieng). With max_per_team=1, the model was structurally blocked from building the winning lineup. Data: 149 dates show ~40% of winning lineups contain 2 players from the same team. Also externalized full strategy section in config (was code-only defaults)."
+    },
+    {
+      "version": 82,
+      "date": "2026-04-01",
+      "change": "REMOVE DFS SIGNALS: ai_blend_weight 0.35->1.0. RS projection is now 100% LightGBM (trained on actual Real Score data). The DFS heuristic (pts*1.5 + ast*1.2 + reb*0.5 + stl*2.5 + blk*1.5) was causing catastrophic RS over-projection for role players: Trent Jr. projected RS 5.7 (actual 1.7), Hayes RS 5.3 (actual 1.2), Williams RS 5.2 (actual 0.9). DFS score measures box-score fantasy value, not Real Score impact. LightGBM is trained directly on actual RS outcomes. cascade_rs/role_spike_rs/archetype_calibration are already dead code so no code changes needed."
+    },
     {
       "version": 81,
       "date": "2026-03-27",
@@ -739,5 +749,17 @@
       "date": "2026-03-15",
       "change": "Starting 5 audit (Mar 14 leaderboard: top 6 all scored 69-71, our S5 scored ~45). 6/6 winners had Achiuwa, 5/6 Raynaud, 4/6 Westbrook \u2014 high-boost role players excluded by our 30-min floor. 4/6 winners had ZERO stars. Fixes: (1) chalk_season_min_floor 30\u219225 \u2014 Smart (28.9min), Achiuwa (~26min) were excluded; this was THE bottleneck, best chalk_ev players couldn't enter the pool. (2) chalk_max_stars 2\u21921 \u2014 only 2/6 winning drafts even had 1 star; at most 1 low-boost star allowed now. (3) chalk_star_boost_threshold 0.6\u21920.8 \u2014 Bam (0.9x) and Reaves (0.8x) weren't counted as stars; now they are, further limiting star-heavy lineups. (4) leverage_top_slots 1\u21922 \u2014 force 2 contrarian (boost\u22651.5) players into 2.0x and 1.8x slots; winners consistently put high-boost players in top slots. (5) leverage_boost_threshold 1.0\u21921.5 \u2014 raise bar for what counts as contrarian in top slots. (6) All 4 new params externalized to model-config.json for Ben tuning."
     }
-  ]
+  ],
+  "strategy": {
+    "rs_floor": 2.0,
+    "min_pts_projection": 2.0,
+    "min_minutes": 12.0,
+    "close_game_rs_bonus": 0.3,
+    "pace_rs_bonus_per_10": 0.15,
+    "ev_swap_threshold": 2.0,
+    "max_upside_swaps": 2,
+    "max_per_team": 2,
+    "anti_popularity_enabled": true,
+    "anti_popularity_strength": 0.2
+  }
 }

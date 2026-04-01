@@ -1088,7 +1088,7 @@ _CONFIG_DEFAULTS = {
         "max_upside_swaps": 2,          # Max players swapped between safe and upside lineups
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
-        "max_per_team": 1,              # Max players from the same team in a lineup (diversity)
+        "max_per_team": 2,              # Max players from the same team in a lineup (winners stack 2 ~40% of the time)
     },
 }
 
