@@ -5534,5 +5534,96 @@ class TestPerGameModelConfigV84:
         assert cfg["version"] >= 84
 
 
+class TestMinutesDeltaSignal:
+    """Minutes delta signal: reward expanded role, discount business-as-usual."""
+
+    def test_neutral_zone_discount(self):
+        """Player at season avg minutes (±2) gets 0.97x RS discount."""
+        from api.index import _CONFIG_DEFAULTS
+        md = _CONFIG_DEFAULTS["strategy"]["minutes_delta"]
+        assert md["enabled"] is True
+        assert md["neutral_zone"] == 2.0
+        assert md["neutral_discount"] == 0.97
+        # Simulate: proj_min=28, season_min=29 → delta=-1.0, within ±2 neutral zone
+        delta = 28.0 - 29.0  # -1.0
+        assert abs(delta) < md["neutral_zone"]
+        mult = md["neutral_discount"]
+        assert mult == 0.97  # 3% haircut
+
+    def test_bonus_for_cascade_jump(self):
+        """Player with +8 min cascade jump gets RS bonus."""
+        from api.index import _CONFIG_DEFAULTS
+        md = _CONFIG_DEFAULTS["strategy"]["minutes_delta"]
+        # Simulate: proj_min=35, season_min=27 → delta=+8
+        delta = 35.0 - 27.0  # +8.0
+        assert delta >= md["neutral_zone"]
+        bonus = min(md["bonus_per_min"] * (delta - md["neutral_zone"]), md["max_bonus"])
+        mult = 1.0 + bonus
+        assert mult > 1.0
+        assert round(bonus, 4) == round(0.015 * 6, 4)  # 0.09
+        assert mult == 1.09
+
+    def test_penalty_for_negative_delta(self):
+        """B2B player projecting below season avg gets RS penalty."""
+        from api.index import _CONFIG_DEFAULTS
+        md = _CONFIG_DEFAULTS["strategy"]["minutes_delta"]
+        # Simulate: proj_min=24.6 (30*0.88 B2B), season_min=30 → delta=-5.4
+        delta = 24.6 - 30.0  # -5.4
+        assert delta <= -md["neutral_zone"]
+        pen = min(md["penalty_per_min"] * abs(delta + md["neutral_zone"]), md["max_penalty"])
+        mult = 1.0 - pen
+        assert mult < 1.0
+        assert round(pen, 4) == round(0.01 * 3.4, 4)  # 0.034
+        assert round(mult, 3) == 0.966
+
+    def test_max_bonus_cap(self):
+        """Bonus is capped at max_bonus even with huge delta."""
+        from api.index import _CONFIG_DEFAULTS
+        md = _CONFIG_DEFAULTS["strategy"]["minutes_delta"]
+        # Simulate: delta=+20 (extreme cascade)
+        delta = 20.0
+        bonus = min(md["bonus_per_min"] * (delta - md["neutral_zone"]), md["max_bonus"])
+        assert bonus == md["max_bonus"]  # capped at 0.12
+
+    def test_max_penalty_cap(self):
+        """Penalty is capped at max_penalty even with large negative delta."""
+        from api.index import _CONFIG_DEFAULTS
+        md = _CONFIG_DEFAULTS["strategy"]["minutes_delta"]
+        # Simulate: delta=-15 (extreme GTD)
+        delta = -15.0
+        pen = min(md["penalty_per_min"] * abs(delta + md["neutral_zone"]), md["max_penalty"])
+        assert pen == md["max_penalty"]  # capped at 0.08
+
+    def test_config_json_has_minutes_delta(self):
+        """model-config.json has strategy.minutes_delta section."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        md = cfg["strategy"]["minutes_delta"]
+        assert md["enabled"] is True
+        assert md["neutral_zone"] == 2.0
+        assert md["neutral_discount"] == 0.97
+        assert md["bonus_per_min"] == 0.015
+        assert md["max_bonus"] == 0.12
+        assert md["penalty_per_min"] == 0.01
+        assert md["max_penalty"] == 0.08
+
+    def test_project_player_returns_min_delta_fields(self):
+        """project_player return dict includes _min_delta and _min_delta_mult."""
+        from api.index import project_player
+        # Minimal pinfo/stats to get a non-None result
+        pinfo = {"id": "999", "name": "Test Player", "pos": "G", "is_out": False}
+        stats = {
+            "min": 28.0, "pts": 12.0, "reb": 4.0, "ast": 3.0,
+            "stl": 1.0, "blk": 0.5, "tov": 1.5,
+            "season_min": 28.0, "recent_min": 28.0,
+            "season_pts": 12.0, "recent_pts": 12.0,
+        }
+        result = project_player(pinfo, stats, spread=5.0, total=220.0, side="home")
+        if result is not None:
+            assert "_min_delta" in result
+            assert "_min_delta_mult" in result
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
