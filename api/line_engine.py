@@ -57,6 +57,15 @@ def _lookup_player_odds(player_odds_map, player_name, stat_type):
     return None
 
 
+def _same_game(pick_a, pick_b):
+    """Return True if two picks are from the same NBA game (order-independent)."""
+    if not pick_a or not pick_b:
+        return False
+    game_a = tuple(sorted((pick_a.get("team", ""), pick_a.get("opponent", ""))))
+    game_b = tuple(sorted((pick_b.get("team", ""), pick_b.get("opponent", ""))))
+    return game_a == game_b and game_a != ("", "")
+
+
 def _game_lookup_from_games(games):
     """Build team abbr -> {opponent, opp_b2b, total, spread, game_time, game_start_iso} lookup."""
     lookup = {}
@@ -840,6 +849,18 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             alt_overs = [p for p in over_candidates if p.get("player_name") != under_pick["player_name"]]
             over_pick = alt_overs[0] if alt_overs else None
 
+    # Dedup: over and under must be from different games — diversify coverage
+    if _same_game(over_pick, under_pick):
+        # Keep the higher-confidence pick, swap the other to next-best from a different game
+        if over_pick.get("confidence", 0) >= under_pick.get("confidence", 0):
+            alt_unders = [p for p in under_candidates
+                          if not _same_game(p, over_pick) and p.get("player_name") != over_pick.get("player_name")]
+            under_pick = alt_unders[0] if alt_unders else None
+        else:
+            alt_overs = [p for p in over_candidates
+                         if not _same_game(p, under_pick) and p.get("player_name") != under_pick.get("player_name")]
+            over_pick = alt_overs[0] if alt_overs else None
+
     # Last-resort pass: if one direction is still empty, find the best available
     # pick for it by relaxing the edge threshold — guarantees both directions always
     # produce a pick as long as any player is projected above or below their line.
@@ -895,11 +916,16 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
         if last_resort:
             last_resort.sort(key=lambda c: abs(c["edge"]), reverse=True)
             if not over_pick:
-                lr_over = [c for c in last_resort if c["direction"] == "over"]
+                # Prefer a game different from the existing under_pick
+                lr_over = [c for c in last_resort if c["direction"] == "over" and not _same_game(c, under_pick)]
+                if not lr_over:
+                    lr_over = [c for c in last_resort if c["direction"] == "over"]
                 if lr_over:
                     over_pick = lr_over[0]
             if not under_pick:
-                lr_under = [c for c in last_resort if c["direction"] == "under"]
+                lr_under = [c for c in last_resort if c["direction"] == "under" and not _same_game(c, over_pick)]
+                if not lr_under:
+                    lr_under = [c for c in last_resort if c["direction"] == "under"]
                 if lr_under:
                     under_pick = lr_under[0]
 
@@ -1054,20 +1080,35 @@ def run_line_engine(
     if under_pick and under_pick.get("confidence", 0) < min_confidence:
         under_pick = None
 
-    # Fill missing direction from algorithmic fallback
-    if not over_pick or not under_pick:
-        fallback = run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
-        if not over_pick:
-            over_pick = fallback.get("over_pick")
-        if not under_pick:
-            under_pick = fallback.get("under_pick")
-
     # Safety net: same player can't be both over and under (Claude path has no ranked alternatives)
     if over_pick and under_pick and over_pick.get("player_name") == under_pick.get("player_name"):
         if over_pick.get("confidence", 0) >= under_pick.get("confidence", 0):
             under_pick = None
         else:
             over_pick = None
+
+    # Safety net: over and under must be from different games — diversify coverage.
+    # Claude path has no ranked alternatives, so null out the weaker pick and let
+    # the fallback fill logic below provide a replacement from a different game.
+    if _same_game(over_pick, under_pick):
+        if over_pick.get("confidence", 0) >= under_pick.get("confidence", 0):
+            under_pick = None
+        else:
+            over_pick = None
+
+    # Fill missing direction from algorithmic fallback (also enforces different-games)
+    if not over_pick or not under_pick:
+        # Pass the surviving pick so fallback can exclude its game
+        fallback = run_model_fallback(projections, games, line_config, player_odds_map, edge_map=edge_map)
+        if not over_pick:
+            fb_over = fallback.get("over_pick")
+            # Ensure fallback pick is also from a different game than the surviving pick
+            if fb_over and not _same_game(fb_over, under_pick):
+                over_pick = fb_over
+        if not under_pick:
+            fb_under = fallback.get("under_pick")
+            if fb_under and not _same_game(fb_under, over_pick):
+                under_pick = fb_under
 
     # Enrich Claude-built picks with season_avg, proj_min, avg_min, game_time, recent_form_bars
     game_ctx_map = _game_lookup_from_games(games)

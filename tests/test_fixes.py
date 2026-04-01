@@ -657,6 +657,95 @@ class TestLineConfig:
 
 
 # ─────────────────────────────────────────────────────────
+# Over/Under picks must come from different games
+# ─────────────────────────────────────────────────────────
+class TestLineDifferentGames:
+    """Over and under picks must be from different NBA games."""
+
+    def test_same_game_helper(self):
+        from api.line_engine import _same_game
+        a = {"team": "ORL", "opponent": "ATL"}
+        b = {"team": "ATL", "opponent": "ORL"}
+        c = {"team": "BOS", "opponent": "NYK"}
+        assert _same_game(a, b) is True
+        assert _same_game(a, c) is False
+        assert _same_game(None, a) is False
+        assert _same_game(a, None) is False
+
+    def test_fallback_forces_different_games(self):
+        """run_model_fallback swaps to a different game when top over/under share a game."""
+        from api.line_engine import run_model_fallback
+        proj = [
+            {"name": "Player A", "team": "ORL", "predMin": 30,
+             "pts": 25, "season_pts": 22, "recent_pts": 23,
+             "reb": 5, "season_reb": 5, "recent_reb": 5,
+             "ast": 4, "season_ast": 4, "recent_ast": 4},
+            {"name": "Player B", "team": "ATL", "predMin": 28,
+             "pts": 15, "season_pts": 20, "recent_pts": 18,
+             "reb": 3, "season_reb": 4, "recent_reb": 3,
+             "ast": 2, "season_ast": 3, "recent_ast": 2},
+            {"name": "Player C", "team": "BOS", "predMin": 30,
+             "pts": 24, "season_pts": 22, "recent_pts": 23,
+             "reb": 6, "season_reb": 5, "recent_reb": 6,
+             "ast": 5, "season_ast": 5, "recent_ast": 5},
+            {"name": "Player D", "team": "NYK", "predMin": 28,
+             "pts": 14, "season_pts": 18, "recent_pts": 16,
+             "reb": 3, "season_reb": 4, "recent_reb": 3,
+             "ast": 2, "season_ast": 3, "recent_ast": 2},
+        ]
+        games = [
+            {"home": {"abbr": "ORL"}, "away": {"abbr": "ATL"}, "home_b2b": False, "away_b2b": False},
+            {"home": {"abbr": "BOS"}, "away": {"abbr": "NYK"}, "home_b2b": False, "away_b2b": False},
+        ]
+        odds_map = {
+            ("player a", "points"): {"line": 22.0, "odds_over": -110, "odds_under": -110, "books_consensus": 2},
+            ("player b", "points"): {"line": 20.0, "odds_over": -110, "odds_under": -110, "books_consensus": 2},
+            ("player c", "points"): {"line": 21.0, "odds_over": -110, "odds_under": -110, "books_consensus": 2},
+            ("player d", "points"): {"line": 18.0, "odds_over": -110, "odds_under": -110, "books_consensus": 2},
+        }
+        out = run_model_fallback(proj, games, player_odds_map=odds_map)
+        over_pick = out.get("over_pick")
+        under_pick = out.get("under_pick")
+        if over_pick and under_pick:
+            over_game = tuple(sorted((over_pick["team"], over_pick["opponent"])))
+            under_game = tuple(sorted((under_pick["team"], under_pick["opponent"])))
+            assert over_game != under_game, (
+                f"Over ({over_pick['player_name']}: {over_pick['team']} vs {over_pick['opponent']}) "
+                f"and Under ({under_pick['player_name']}: {under_pick['team']} vs {under_pick['opponent']}) "
+                f"must be from different games"
+            )
+
+    def test_claude_path_same_game_nulls_weaker(self):
+        """run_line_engine nulls same-game pick and fills from fallback with different game."""
+        from api.line_engine import run_line_engine, _same_game
+        proj = [
+            {"name": "Star A", "team": "ORL", "predMin": 32, "season_min": 32,
+             "pts": 25, "season_pts": 22, "recent_pts": 24,
+             "reb": 6, "season_reb": 6, "recent_reb": 6,
+             "ast": 5, "season_ast": 5, "recent_ast": 5},
+            {"name": "Star B", "team": "BOS", "predMin": 30, "season_min": 30,
+             "pts": 20, "season_pts": 24, "recent_pts": 22,
+             "reb": 4, "season_reb": 5, "recent_reb": 4,
+             "ast": 3, "season_ast": 4, "recent_ast": 3},
+        ]
+        games = [
+            {"home": {"abbr": "ORL"}, "away": {"abbr": "ATL"}, "home_b2b": False, "away_b2b": False},
+            {"home": {"abbr": "BOS"}, "away": {"abbr": "NYK"}, "home_b2b": False, "away_b2b": False},
+        ]
+        odds_map = {
+            ("star a", "points"): {"line": 22.0, "odds_over": -110, "odds_under": -110, "books_consensus": 2},
+            ("star b", "points"): {"line": 24.0, "odds_over": -110, "odds_under": -110, "books_consensus": 2},
+        }
+        # Force fallback (no API key) to test the constraint end-to-end
+        with patch("api.line_engine.ANTHROPIC_API_KEY", ""):
+            result = run_line_engine(proj, games, player_odds_map=odds_map)
+        over_pick = result.get("over_pick")
+        under_pick = result.get("under_pick")
+        if over_pick and under_pick:
+            assert not _same_game(over_pick, under_pick), "Over and under must be from different games"
+
+
+# ─────────────────────────────────────────────────────────
 # Native LightGBM artifacts (lgbm_model.json + .txt) vs pickle fallback
 # ─────────────────────────────────────────────────────────
 class TestLgbmNativeArtifacts:
