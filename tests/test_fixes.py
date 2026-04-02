@@ -2714,10 +2714,11 @@ class TestCascadeTeamDetector:
         ct = _CONFIG_DEFAULTS["cascade"]["team_detector"]
         assert ct["enabled"] is True
         assert ct["star_ppg_threshold"] == 20.0
-        assert ct["rs_multiplier"] == 1.3
         assert ct["boost_floor"] == 2.5
         assert ct["deep_rotation_rs_floor"] == 1.5
         assert ct["deep_rotation_min_minutes"] == 12.0
+        # No rs_multiplier — removed to prevent overfit to injuries
+        assert "rs_multiplier" not in ct
 
     def test_cascade_team_flag_in_code(self):
         """_cascade_team flag set in _run_game and used in project_player."""
@@ -2726,12 +2727,18 @@ class TestCascadeTeamDetector:
         assert "cascade_teams" in src
         assert "CASCADE TEAM DETECTOR" in src
 
-    def test_cascade_team_rs_multiplier_in_project_player(self):
-        """project_player applies RS multiplier when _cascade_team is True."""
+    def test_cascade_team_no_rs_multiplier(self):
+        """project_player does NOT apply RS multiplier — avoids overfit to injuries.
+
+        The cascade signal flows through boost floor (2.5) and relaxed gates,
+        not through an artificial RS inflation that would cause both lineups
+        to overfit to injury plays.
+        """
         src = open("api/index.py").read()
-        # The RS multiplier is applied after game context bonus
-        assert "_ct_rs_mult" in src
-        assert "rs_multiplier" in src
+        # RS multiplier was intentionally removed — cascade value flows through boost
+        assert "_ct_rs_mult" not in src
+        # Boost floor IS applied
+        assert "_ct_boost_floor" in src
 
     def test_cascade_team_boost_floor_in_project_player(self):
         """project_player applies boost floor when _cascade_team is True."""

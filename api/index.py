@@ -909,7 +909,6 @@ _CONFIG_DEFAULTS = {
         "team_detector": {
             "enabled": True,
             "star_ppg_threshold": 20.0,     # PPG that qualifies as "star" for cascade detection
-            "rs_multiplier": 1.3,           # RS boost for teammates when star is OUT
             "boost_floor": 2.5,             # Minimum boost prediction for cascade teammates
             "deep_rotation_rs_floor": 1.5,  # Relaxed RS floor for cascade deep rotation (normally 2.0)
             "deep_rotation_min_minutes": 12.0,  # Relaxed minutes floor for cascade (normally 25)
@@ -3646,16 +3645,13 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     raw_score += game_context_bonus
     raw_score = min(raw_score, rs_cap)
 
-    # ── Cascade Team RS Multiplier ─────────────────────────────────────────
+    # ── Cascade Team flag ────────────────────────────────────────────────
     # grep: CASCADE TEAM DETECTOR
-    # When a star (20+ PPG) is OUT, teammates get an RS multiplier (default 1.3x).
-    # Historical data: deep rotation players on cascade teams avg RS 3.83, value 16.1.
+    # When a star (20+ PPG) is OUT, teammates are flagged. The cascade signal
+    # flows through the boost floor (2.5) and relaxed gates — NOT through an RS
+    # multiplier, which would artificially inflate projections and cause both
+    # lineups to overfit to injury plays. RS must reflect actual expected production.
     _cascade_team = bool(pinfo.get("_cascade_team"))
-    _ct_rs_mult = 1.0
-    if _cascade_team:
-        _ct_cfg = _cfg("cascade.team_detector", {}) or {}
-        _ct_rs_mult = float(_ct_cfg.get("rs_multiplier", 1.3))
-        raw_score = min(raw_score * _ct_rs_mult, rs_cap)
 
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
@@ -3727,7 +3723,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
         "_cascade_team": _cascade_team,
-        "_ct_rs_mult": round(_ct_rs_mult, 2),
         "_min_delta": round(_md_delta, 1),
         "_min_delta_mult": round(_md_mult, 3),
         # Recent vs season stats — used by line engine for trend detection

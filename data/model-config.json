@@ -181,7 +181,6 @@
     "team_detector": {
       "enabled": true,
       "star_ppg_threshold": 20.0,
-      "rs_multiplier": 1.3,
       "boost_floor": 2.5,
       "deep_rotation_rs_floor": 1.5,
       "deep_rotation_min_minutes": 12.0
