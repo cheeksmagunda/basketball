@@ -543,10 +543,10 @@ Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed for
 ### Cascade Team Detector + Deep Rotation Sweet Spot (grep: CASCADE TEAM DETECTOR)
 Based on analysis of 2,299 top performer entries across 151 dates:
 
-- **Cascade Team Detector**: When a star (20+ PPG season avg) is marked OUT on a team, all active teammates are flagged with `_cascade_team=True`. Flagged players receive: RS multiplier (1.3x, configurable), boost floor (2.5, configurable). Historical data: 192 mega-stack instances where 3+ same-team players hit the leaderboard with combined values of 50-80+. Detection is purely stat-based (PPG threshold) — no hardcoded player names.
+- **Cascade Team Detector**: When a star (20+ PPG season avg) is marked OUT on a team, all active teammates are flagged with `_cascade_team=True`. Flagged players receive a boost floor (2.5) — no RS multiplier to avoid overfitting both lineups to injury plays. RS comes from actual projected stats; the cascade signal flows through boost (underdrafted → high card boost). Historical data: 192 mega-stack instances where 3+ same-team players hit the leaderboard with combined values of 50-80+. Detection is purely stat-based (PPG threshold) — no hardcoded player names.
 - **Deep Rotation Sweet Spot**: Cascade team players get relaxed gates in both `project_player` (min_gate 12 min vs 25) and `_build_lineups` (RS floor 1.5 vs 2.0, minutes floor 12 vs 25, rotation-bubble filter bypassed). The 5-20 draft archetype historically produces the highest avg value (16.1) — higher than superstars (8.4) and starters (14.9).
 - **Proportional Cascade Cap**: Cascade minute bonus capped at 40% of player's avg minutes (`max_cascade_pct`). Prevents bench players (16 avg min) from being projected at 26+.
-- **Config**: `cascade.team_detector.*` section in model-config.json (`enabled`, `star_ppg_threshold`, `rs_multiplier`, `boost_floor`, `deep_rotation_rs_floor`, `deep_rotation_min_minutes`). All tunable via Ben.
+- **Config**: `cascade.team_detector.*` section in model-config.json (`enabled`, `star_ppg_threshold`, `boost_floor`, `deep_rotation_rs_floor`, `deep_rotation_min_minutes`). All tunable via Ben.
 
 ### Removed Systems (v82 Strategy Simplification)
 The following systems were removed or replaced in the strategy-report-aligned architecture:
