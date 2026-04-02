@@ -5939,16 +5939,16 @@ def _get_slate_impl():
             already_running = False
 
     if already_running:
-        # Poll /tmp cache until the other thread finishes (max ~90s).
-        for _ in range(45):
+        # Poll /tmp cache until the other thread finishes (max ~20s — within
+        # frontend's 30s timeout).  If it never appears, fall through and run
+        # our own pipeline (the other thread may have crashed).
+        for _ in range(10):
             time.sleep(2)
             _warm = _cg(_CK_SLATE, today_str)
             if _warm:
                 _warm["locked"] = locked
                 _warm.setdefault("draftable_count", len(draftable_games))
                 return _warm
-        # Fallback: if it never appeared, fall through to run our own pipeline
-        # (the other thread may have crashed).
 
     try:
         all_proj = []
@@ -6077,9 +6077,8 @@ def _get_slate_impl():
                 print(f"[slate-cache] sync clear bust err: {_e}")
         return result
     finally:
-        if not already_running:
-            with _SLATE_GEN_LOCK:
-                _SLATE_GEN_IN_FLIGHT = False
+        with _SLATE_GEN_LOCK:
+            _SLATE_GEN_IN_FLIGHT = False
 
 
 @app.get("/api/slate")
