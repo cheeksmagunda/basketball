@@ -958,7 +958,7 @@ _CONFIG_DEFAULTS = {
         # DNP / reliability guards
         "gtd_minute_penalty": 0.75,
         "dnp_risk_min_threshold": 8.0,
-        "max_predmin_drop": 8.0,  # Reject players projected >N min below season avg
+        "max_predmin_drop": 0.0,  # Reject players projected below season avg minutes (0 = no drop allowed)
         # Gamelog-based projection: use per-game data from last N days instead of
         # ESPN averaged splits. Fixes rotation-loss blindness (e.g. Payne 17→2 min).
         "gamelog_window_days": 7,
@@ -4834,10 +4834,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _pred_min = float(p.get("predMin", 0))
         _season_min = float(p.get("season_min", 0))
         _mi_bypass = (_pred_min - _season_min) >= minutes_increase_bypass
-        # Hard gate: never draft players projected far below their season average.
-        # This applies to ALL players including cascade team — a big minutes drop
+        # Hard gate: only draft players projected at or above their season average minutes.
+        # This applies to ALL players including cascade team — any minutes drop
         # signals B2B, load management, or role change regardless of team situation.
-        # e.g. Fox: season 30.9 min, projected 20.6 (B2B) → 10.3 drop > 8.0 threshold.
         # Cascade bypass is for bench players getting MORE minutes, not starters getting fewer.
         _max_min_drop = float(_cfg("projection.max_predmin_drop", 8.0))
         if _season_min > 0 and (_season_min - _pred_min) > _max_min_drop:

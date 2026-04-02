@@ -1355,11 +1355,11 @@ class TestPredMinTolerance:
         assert 'max_predmin_drop' in src
 
     def test_max_predmin_drop_in_config(self):
-        """max_predmin_drop must be present in model-config.json projection section."""
+        """max_predmin_drop must be 0.0 in model-config.json — only increased minutes allowed."""
         import json
         with open("data/model-config.json") as f:
             cfg = json.load(f)
-        assert "max_predmin_drop" in cfg.get("projection", {})
+        assert cfg.get("projection", {}).get("max_predmin_drop") == 0.0
 
     def test_hyland_style_drop_filtered(self):
         """Player with predMin=16, season_min=25.9 (9.9-min drop) must be filtered out.
@@ -1373,9 +1373,9 @@ class TestPredMinTolerance:
 
     def test_cascade_team_still_filtered_on_minutes_drop(self):
         """Cascade team players must still be filtered when projected minutes drop
-        significantly below season average. The cascade bypass is for bench players
-        getting MORE minutes (teammate OUT), not starters getting fewer (B2B/load mgmt).
-        e.g. Fox: season 30.9 min, projected 20.6 (B2B) → 10.3 drop > 8.0 threshold."""
+        below season average. The cascade bypass is for bench players getting MORE
+        minutes (teammate OUT), not starters getting fewer (B2B/load mgmt).
+        max_predmin_drop=0.0 means any drop is rejected."""
         with open("api/index.py") as f:
             src = f.read()
         # The max_predmin_drop check must appear BEFORE the cascade bypass block,
