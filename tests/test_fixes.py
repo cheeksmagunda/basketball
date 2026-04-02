@@ -1371,6 +1371,22 @@ class TestPredMinTolerance:
         assert 'max_predmin_drop' in src
         assert '_season_min - _pred_min' in src or '(_season_min - _pred_min)' in src
 
+    def test_cascade_team_still_filtered_on_minutes_drop(self):
+        """Cascade team players must still be filtered when projected minutes drop
+        significantly below season average. The cascade bypass is for bench players
+        getting MORE minutes (teammate OUT), not starters getting fewer (B2B/load mgmt).
+        e.g. Fox: season 30.9 min, projected 20.6 (B2B) → 10.3 drop > 8.0 threshold."""
+        with open("api/index.py") as f:
+            src = f.read()
+        # The max_predmin_drop check must appear BEFORE the cascade bypass block,
+        # not inside it. Verify it's outside the 'if not _mi_bypass and not _is_ct:' guard.
+        drop_idx = src.index('_max_min_drop = float(_cfg("projection.max_predmin_drop"')
+        cascade_guard_idx = src.index('if not _mi_bypass and not _is_ct:')
+        assert drop_idx < cascade_guard_idx, (
+            "max_predmin_drop check must run before the cascade team bypass, "
+            "so cascade team players with big minutes drops are still filtered"
+        )
+
 
 # ─────────────────────────────────────────────────────────
 # TestOddsEnrichment — Odds API enrichment in draft pipeline

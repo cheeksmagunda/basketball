@@ -4834,17 +4834,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _pred_min = float(p.get("predMin", 0))
         _season_min = float(p.get("season_min", 0))
         _mi_bypass = (_pred_min - _season_min) >= minutes_increase_bypass
+        # Hard gate: never draft players projected far below their season average.
+        # This applies to ALL players including cascade team — a big minutes drop
+        # signals B2B, load management, or role change regardless of team situation.
+        # e.g. Fox: season 30.9 min, projected 20.6 (B2B) → 10.3 drop > 8.0 threshold.
+        # Cascade bypass is for bench players getting MORE minutes, not starters getting fewer.
+        _max_min_drop = float(_cfg("projection.max_predmin_drop", 8.0))
+        if _season_min > 0 and (_season_min - _pred_min) > _max_min_drop:
+            continue
         if not _mi_bypass and not _is_ct:
             if _pred_min < _effective_min_minutes and _season_min < _effective_min_minutes:
-                continue
-            # Hard gate: never draft players projected far below their season average.
-            # This catches role changes, B2B+GTD combos, and load management — cases
-            # where season_min is high enough to pass the gate above but pred_min tells
-            # the real story (e.g. Hyland: pred_min=16, season_min=25.9 → passes AND gate,
-            # but 9.9-min drop signals his role has shrunk or he's on B2B+GTD).
-            # Configurable: projection.max_predmin_drop (default 8.0 min).
-            _max_min_drop = float(_cfg("projection.max_predmin_drop", 8.0))
-            if _season_min > 0 and (_season_min - _pred_min) > _max_min_drop:
                 continue
             # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
             # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot
