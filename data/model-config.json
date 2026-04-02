@@ -170,9 +170,14 @@
     }
   },
   "cascade": {
-    "redistribution_rate": 0.85,
+    "redistribution_rate": 0.70,
     "per_player_cap_minutes": 10.0,
-    "center_forward_share": 0.3
+    "partial_cascade_cap_minutes": 4.0,
+    "center_forward_share": 0.30,
+    "gtd_sit_probability": 0.30,
+    "dtd_sit_probability": 0.10,
+    "gtd_minute_reduction": 0.15,
+    "max_cascade_pct": 0.40
   },
   "projection": {
     "min_gate_minutes": 25,
