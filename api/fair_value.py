@@ -29,10 +29,12 @@ _STAT_KEYS = (
     "minutes",
 )
 
-# ── Game Script Tiers (mirrors _game_script_weights in index.py) ──────────
-# Per-stat multipliers based on expected game pace/style.
-# These defaults match _CONFIG_DEFAULTS["game_script"] in index.py.
-_GAME_SCRIPT_DEFAULTS = {
+# ── Game Script Tiers ─────────────────────────────────────────────────────
+# Callers MUST pass gs_config from model-config.json (via _cfg("game_script")).
+# No hardcoded defaults here — single source of truth is _CONFIG_DEFAULTS
+# in index.py / data/model-config.json.  If gs_config is None the function
+# uses minimal safe fallbacks so pure-unit-test paths don't crash.
+_GAME_SCRIPT_FALLBACK = {
     "defensive_grind_ceiling": 220,
     "balanced_ceiling": 235,
     "fast_paced_ceiling": 245,
@@ -57,7 +59,7 @@ def game_script_weights(
     Pure function version of _game_script_weights in index.py.
     Returns dict with keys: pts, reb, ast, stl, blk, tov.
     """
-    gs = gs_config or _GAME_SCRIPT_DEFAULTS
+    gs = gs_config or _GAME_SCRIPT_FALLBACK
     t = total or _DEFAULT_TOTAL
 
     dg_ceil = float(gs.get("defensive_grind_ceiling", 220))
@@ -74,7 +76,7 @@ def game_script_weights(
     else:
         tier = "track_meet"
 
-    defaults = _GAME_SCRIPT_DEFAULTS[tier]
+    defaults = _GAME_SCRIPT_FALLBACK[tier]
     tier_cfg = gs.get(tier, defaults)
     w = {k: float(tier_cfg.get(k, defaults.get(k, 1.0))) for k in ["pts", "reb", "ast", "stl", "blk", "tov"]}
 

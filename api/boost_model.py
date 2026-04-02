@@ -33,6 +33,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+from api.shared import normalize_player_name as _normalize_name
+
 # ---------------------------------------------------------------------------
 # Player history index — loaded once from data/top_performers.csv
 # ---------------------------------------------------------------------------
@@ -42,14 +44,7 @@ _HISTORY_LOADED = False
 _HISTORY_LOCK = threading.Lock()
 
 
-def _normalize_name(name: str) -> str:
-    """Lightweight name normalizer (lowercase, strip suffixes, collapse whitespace)."""
-    n = (name or "").strip().lower()
-    for suffix in (" jr.", " jr", " sr.", " sr", " ii", " iii", " iv"):
-        if n.endswith(suffix):
-            n = n[: -len(suffix)].strip()
-            break
-    return " ".join(n.split())
+# _normalize_name imported from api.shared (DRY — handles accents/diacritics)
 
 
 def load_player_history(force: bool = False) -> dict[str, list[dict]]:
