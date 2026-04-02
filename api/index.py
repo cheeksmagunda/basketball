@@ -898,7 +898,7 @@ _CONFIG_DEFAULTS = {
             "bonus_td": 1.15,
         },
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30,"gtd_sit_probability":0.40,"dtd_sit_probability":0.25,"gtd_minute_reduction":0.20},
     # fair_value config — powers deterministic prop betting pipeline (Line + Parlay only; NOT DFS drafts)
     "fair_value": {
         "primary_window": 15,
@@ -2977,8 +2977,23 @@ def _pos_group(pos):
     return POS_GROUPS.get(pos, "G")
 
 def _cascade_minutes(roster, stats_map):
-    """Redistribute minutes from OUT players to eligible teammates."""
+    """Redistribute minutes from OUT and GTD/DTD players to eligible teammates.
+
+    OUT players: 100% of their minutes are redistributed (they won't play).
+    GTD/DTD players: a fraction of their minutes are redistributed, weighted by
+    the probability they sit. This prevents the binary 0-or-10 cascade gap where
+    a star listed day-to-day generates zero cascade for teammates.
+
+    Config:  cascade.gtd_sit_probability  (default 0.40)
+             cascade.dtd_sit_probability  (default 0.25)
+             cascade.gtd_minute_reduction (default 0.20) — expected minute cut when they DO play
+    """
     cascade_flags = {}
+
+    # Sit-probability weights for partial cascade
+    gtd_sit_prob = float(_cfg("cascade.gtd_sit_probability", 0.40))
+    dtd_sit_prob = float(_cfg("cascade.dtd_sit_probability", 0.25))
+    gtd_min_reduction = float(_cfg("cascade.gtd_minute_reduction", 0.20))
 
     # Group players by team
     teams = {}
@@ -2989,29 +3004,44 @@ def _cascade_minutes(roster, stats_map):
         teams[team].append(p)
 
     for team, team_players in teams.items():
-        # Find OUT players with known minutes
-        out_players = []
+        # Find OUT + GTD/DTD players with known minutes, and active players
+        # Each donor has a cascade_weight: 1.0 for OUT, partial for GTD/DTD
+        donor_players = []  # (player, stats, cascade_weight)
         active_players = []
         for p in team_players:
             pid = p["id"]
             s = stats_map.get(pid)
-            if p.get("is_out") and s and s.get("min", 0) > 0:
-                out_players.append((p, s))
-            elif not p.get("is_out") and s and s.get("min", 0) > 0:
+            if not s or s.get("min", 0) <= 0:
+                continue
+            inj = (p.get("injury_status") or "").upper()
+            if p.get("is_out"):
+                donor_players.append((p, s, 1.0))
+            elif inj in ("GTD",):
+                # GTD: expected cascade = sit_prob * full_minutes + play_prob * minute_reduction
+                # e.g., 40% sit × 36 min + 60% × 20% reduction × 36 min = 18.7 min freed
+                weight = gtd_sit_prob + (1.0 - gtd_sit_prob) * gtd_min_reduction
+                donor_players.append((p, s, weight))
+                active_players.append((p, s))  # Still active (might play)
+            elif inj in ("DTD", "DOUBT"):
+                weight = dtd_sit_prob + (1.0 - dtd_sit_prob) * gtd_min_reduction
+                donor_players.append((p, s, weight))
+                active_players.append((p, s))  # Still active (might play)
+            else:
                 active_players.append((p, s))
 
-        if not out_players or not active_players:
+        if not donor_players or not active_players:
             continue
 
-        # Calculate total minutes freed per position group
+        # Calculate total minutes freed per position group, weighted by cascade probability
         freed_by_group = {}
-        for op, os in out_players:
+        for op, os, cw in donor_players:
             pg = _pos_group(op["pos"])
-            freed_by_group[pg] = freed_by_group.get(pg, 0) + os.get("min", 0)
+            freed = os.get("min", 0) * cw
+            freed_by_group[pg] = freed_by_group.get(pg, 0) + freed
             # Centers also share with forwards
             if pg == "C":
                 cf_share = _cfg("cascade.center_forward_share", 0.30)
-                freed_by_group["F"] = freed_by_group.get("F", 0) + os.get("min", 0) * cf_share
+                freed_by_group["F"] = freed_by_group.get("F", 0) + freed * cf_share
 
         # Distribute freed minutes to active players in same position group
         for group, freed_min in freed_by_group.items():
@@ -4021,8 +4051,9 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
     # and API cost when the call would just repack existing filter outputs.
     has_cascade = any(p.get("_cascade_bonus", 0) > 0 for p in all_proj)
     has_b2b = any(g.get("home_b2b") or g.get("away_b2b") for g in games)
-    if not news_text and not has_cascade and not has_b2b:
-        print("[context_pass] skipped — no fresh signals (no news, no cascade, no B2B)")
+    has_gtd_dtd = any(p.get("injury_status", "").upper() in ("GTD", "DTD", "DOUBT") for p in all_proj)
+    if not news_text and not has_cascade and not has_b2b and not has_gtd_dtd:
+        print("[context_pass] skipped — no fresh signals (no news, no cascade, no B2B, no GTD/DTD)")
         return
 
     # Build compact game context map: {team_abbr: {opponent, spread, total}}
@@ -4042,6 +4073,22 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         rw_ctx = _gcs() or {}
     except Exception:
         pass
+
+    # Fetch ESPN injury report for narrative context (GTD/DTD details)
+    espn_injuries = {}
+    try:
+        espn_injuries = _espn_injuries_fetch()
+    except Exception:
+        pass
+
+    # Build per-team injury summary for context pass
+    team_injuries = {}
+    for norm_name, inj_info in espn_injuries.items():
+        t = inj_info.get("team", "")
+        if t and t in game_ctx:
+            if t not in team_injuries:
+                team_injuries[t] = []
+            team_injuries[t].append(f"{norm_name}: {inj_info['status']} — {inj_info.get('detail', '')[:60]}")
 
     # Build compact player list for prompt (top 40 by rating to keep prompt small)
     sorted_proj = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:40]
@@ -4066,8 +4113,10 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
             "projected_rs": p.get("rating", 0),
             "card_boost":   round(p.get("est_mult", 0), 1),
             "pred_min":     round(p.get("predMin", p.get("season_min", 0)), 1),
+            "season_min":   round(p.get("season_min", 0), 1),
             "cascade_bonus": cascade_bonus,
             "roto_status":  roto_status,
+            "injury_status": p.get("injury_status", ""),
         }
         # Include Odds API lines if available (from _enrich_projections_with_odds)
         if p.get("odds_pts_line"):
@@ -4168,15 +4217,21 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         "OVERRIDE PROTOCOL — Each adjustment MUST include:\n"
         "- player: exact name from the list\n"
         "- rs_multiplier: between 0.6 and 1.4\n"
+        "- minutes_delta: integer, extra minutes to add/subtract (e.g. +4, -3). "
+        "Use 0 if only RS changes. Range: -8 to +8. This is for injury narrative "
+        "context the algorithmic cascade cannot see — e.g. 'Star X questionable with "
+        "knee → backup Y likely gets +4 min even if Star X plays on a restriction'. "
+        "Do NOT double-count cascade_bonus already shown in the data.\n"
         "- reason: brief explanation citing specific today-signal\n"
         "- reason_class: one of: availability, role_change, minutes_risk, game_script, "
         "injury_cascade, blowout_risk, matchup, news, b2b, rest\n\n"
         "STRICT CAPS: max 8 adjustments per slate. Each reason must cite a specific signal "
         "(news item, cascade_bonus value, spread, roto_status). No generic team-style reasons.\n\n"
         "Return ONLY valid JSON:\n"
-        '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, '
-        '"reason": "Star X out — inherits 30+ min", "reason_class": "injury_cascade"}]}\n'
-        "Keep multipliers between 0.6 and 1.4. Omit players with multiplier 1.0."
+        '{"adjustments": [{"player": "Exact Name", "rs_multiplier": 1.20, "minutes_delta": 4, '
+        '"reason": "Star X questionable — Y inherits expanded role", "reason_class": "injury_cascade"}]}\n'
+        "Keep multipliers between 0.6 and 1.4. minutes_delta between -8 and +8. "
+        "Omit players with multiplier 1.0 AND minutes_delta 0."
     )
     # Include web search results in the user prompt if available (Layer 1 output)
     news_section = ""
@@ -4189,9 +4244,25 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
             "and coach quotes should drive explicit up/down adjustments with clear magnitude. "
             "Weight press conference quotes and official injury reports heavily."
         )
+    # Build injury report section
+    injury_section = ""
+    if team_injuries:
+        lines = []
+        for t, injs in sorted(team_injuries.items()):
+            lines.append(f"  {t}: " + "; ".join(injs))
+        injury_section = (
+            "\n\nTEAM INJURY REPORT (ESPN):\n" + "\n".join(lines) + "\n"
+            "Synthesize these injury statuses with the player data above. A star listed "
+            "day-to-day or questionable may play limited minutes — their teammates should "
+            "get minutes_delta bumps even if the cascade_bonus doesn't fully reflect it. "
+            "Think about WHO benefits from each injury narratively (same-position backups, "
+            "ball-handlers if a guard is questionable, etc.).\n"
+        )
+
     user_prompt = (
         f"Today's slate players (top 40 by projected RS):\n"
         f"{json.dumps(players_payload, separators=(',', ':'))}"
+        f"{injury_section}"
         f"{news_section}\n\n"
         "Return JSON adjustments only."
     )
@@ -4256,6 +4327,7 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
 
         player_name = adj_entry.get("player", "")
         multiplier = adj_entry.get("rs_multiplier", 1.0)
+        minutes_delta = adj_entry.get("minutes_delta", 0)
         reason = adj_entry.get("reason", "")
         reason_class = adj_entry.get("reason_class", "")
 
@@ -4263,8 +4335,11 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         if not p:
             continue
 
-        # Clamp to [1-max_adj, 1+max_adj]
+        # Clamp RS multiplier to [1-max_adj, 1+max_adj]
         clamped = max(1.0 - max_adj, min(1.0 + max_adj, float(multiplier)))
+
+        # Clamp minutes_delta to [-8, +8]
+        min_delta = max(-8, min(8, int(minutes_delta)))
 
         # Track cumulative slate impact
         impact = abs(clamped - 1.0) * p.get("rating", 3.0)
@@ -4280,12 +4355,21 @@ def _claude_context_pass(all_proj: list, games: list) -> None:
         p["_context_reason"] = reason[:100]
         p["_context_reason_class"] = reason_class if reason_class in _VALID_REASON_CLASSES else "other"
 
+        # Apply minutes adjustment from injury narrative synthesis
+        if min_delta != 0:
+            old_min = p.get("predMin", 0)
+            new_min = round(max(0, old_min + min_delta), 1)
+            p["predMin"] = new_min
+            p["_context_minutes_delta"] = min_delta
+            print(f"[context_pass] {player_name}: minutes {old_min} → {new_min} ({min_delta:+d}, {reason[:50]})")
+
         audit_entries.append({
             "player": player_name,
             "team": p.get("team", ""),
             "multiplier": round(clamped, 3),
             "old_rating": round(old_rating, 1),
             "new_rating": p["rating"],
+            "minutes_delta": min_delta,
             "reason": reason[:200],
             "reason_class": p["_context_reason_class"],
         })
