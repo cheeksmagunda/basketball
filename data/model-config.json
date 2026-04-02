@@ -215,7 +215,7 @@
     "bench_min_threshold": 30.0,
     "chalk_min_boost_floor": 0.3,
     "pred_min_tolerance": 2.0,
-    "max_predmin_drop": 8.0,
+    "max_predmin_drop": 0.0,
     "pred_min_upside_enabled": true,
     "pred_min_upside_power": 1.0,
     "pred_min_upside_cap": 1.1,
