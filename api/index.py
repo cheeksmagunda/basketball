@@ -6064,27 +6064,30 @@ def _get_slate_impl():
             _enrich_projections_with_odds(all_proj, draftable_games)
         except Exception as _odds_err:
             print(f"[odds_enrich] call-site error: {_odds_err}")
-        # Matchup data: opponent defensive stats + game opponent map (used by Layer 1.5 and _build_lineups)
-        try:
-            _def_stats = _fetch_team_def_stats()
-        except Exception as _def_err:
-            print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
-        try:
-            _dvp_data = _fetch_dvp_data()
-        except Exception as _dvp_err:
-            print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
-        # Optional Claude context pass: adjust RS projections for game narrative
-        # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
-        _slate_news_text = ""
-        try:
-            _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
-        except Exception:
-            pass
+        # Matchup data + news + context pass — run in parallel (saves 2-4s vs serial)
         _matchup_intel = {}
-        try:
-            _claude_context_pass(all_proj, draftable_games)
-        except Exception as _ctx_err:
-            print(f"[context_pass] call-site error: {_ctx_err}")
+        _slate_news_text = ""
+        with ThreadPoolExecutor(max_workers=4) as _enrich_pool:
+            _def_fut = _enrich_pool.submit(_fetch_team_def_stats)
+            _dvp_fut = _enrich_pool.submit(_fetch_dvp_data)
+            _news_fut = _enrich_pool.submit(_fetch_nba_news_context, draftable_games, all_proj=all_proj)
+            _ctx_fut = _enrich_pool.submit(_claude_context_pass, all_proj, draftable_games)
+            try:
+                _def_stats = _def_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _def_err:
+                print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+            try:
+                _dvp_data = _dvp_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _dvp_err:
+                print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
+            try:
+                _slate_news_text = _news_fut.result(timeout=_T_EXECUTOR) or ""
+            except Exception:
+                pass
+            try:
+                _ctx_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _ctx_err:
+                print(f"[context_pass] call-site error: {_ctx_err}")
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
         chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data)
         lineups = {"chalk": chalk, "upside": upside}
@@ -7682,7 +7685,7 @@ def _run_cold_pipeline(trigger: str) -> dict:
         auto_saved = False
         cleared = 0
         try:
-            games = fetch_games()
+            games = _cp_games if trigger != "manual_redeploy" else fetch_games()
             starts = [g["startTime"] for g in games if g.get("startTime")]
             if _any_locked(starts):
                 try:
@@ -8848,21 +8851,23 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
     fv_edge_map = {}
     fv_full_data = {}
     if full_enrichment:
-        # Fetch web search news context for the line engine (reuses Layer 1 cache).
-        # This gives Claude injury/rotation/rest intel that can improve pick quality.
-        try:
-            news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
-        except Exception as _news_err:
-            print(f"[line] web search for news context failed (non-fatal): {_news_err}")
-        try:
-            dvp_data = _fetch_dvp_data()
-        except Exception as _dvp_err:
-            print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
-        # Fair Value enrichment — deterministic edge maps for prop betting confidence
-        try:
-            fv_edge_map, fv_full_data = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
-        except Exception as _fv_err:
-            print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
+        # Parallel enrichment: news + DvP + fair value (saves 1-2s vs serial)
+        with ThreadPoolExecutor(max_workers=3) as _le_pool:
+            _le_news_fut = _le_pool.submit(_fetch_nba_news_context, target_games, date=date, all_proj=all_proj)
+            _le_dvp_fut = _le_pool.submit(_fetch_dvp_data)
+            _le_fv_fut = _le_pool.submit(_compute_betting_fair_value, all_proj, target_games, player_odds_map)
+            try:
+                news_context = _le_news_fut.result(timeout=_T_EXECUTOR) or ""
+            except Exception as _news_err:
+                print(f"[line] web search for news context failed (non-fatal): {_news_err}")
+            try:
+                dvp_data = _le_dvp_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _dvp_err:
+                print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
+            try:
+                fv_edge_map, fv_full_data = _le_fv_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _fv_err:
+                print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
     _line_odds_source = "model_only" if not player_odds_map else "live"
     result = run_line_engine(
         all_proj, target_games, line_config, player_odds_map,
