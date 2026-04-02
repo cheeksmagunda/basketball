@@ -1,14 +1,1 @@
-[
-  {
-    "role": "user",
-    "content": "hi"
-  },
-  {
-    "role": "assistant",
-    "content": "Hey! \ud83d\udc4b I'm Ben, your Basketball Oracle AI assistant.\n\nHere's a quick snapshot of where things stand:\n\n- **Model Config**: Version 81, last updated March 15, 2026\n- **Latest Changes**: Major Starting 5 (chalk lineup) overhaul \u2014 lowered the minutes floor, capped stars, and forced more contrarian players into top slots based on leaderboard analysis\n- **Rolling Accuracy**: No scored slates available yet to report on\n- **Pending Data**: March 30 slate is queued up\n\nWhat can I help you with today? Here are some things I can do:\n\n- \ud83d\udcca **Check live NBA scores & player stats**\n- \ud83d\udd27 **Review or tune model config parameters**\n- \ud83d\udcc1 **Explore prediction/actuals data and audit files**\n- \ud83d\udd0d **Analyze prediction accuracy and patterns**\n- \ud83c\udfc0 **Run backtests or investigate specific slates**\n\nWhat's on your mind?"
-  },
-  {
-    "role": "assistant",
-    "content": "Hey! I'm Ben, the Basketball Oracle's AI assistant. \ud83d\udc4b\n\nHere's a quick status update:\n\n- **Model Config**: Version 81 (last updated March 15, 2026)\n- **Rolling Accuracy**: No scored slates with data currently available\n- **Latest Slate**: None pending\n\nI can help you with:\n\n- \ud83d\udcca **Live NBA scores & player stats** \u2014 what's happening on the court right now\n- \ud83d\udd27 **Model tuning** \u2014 review and adjust parameters in `model-config.json`\n- \ud83d\udcc8 **Backtesting & analysis** \u2014 dig into prediction CSVs, actuals, and audit logs\n- \ud83c\udfc0 **Ownership calibration** \u2014 data available for Oct 28\u2013Nov 1, 2026\n\nWhat would you like to dive into?"
-  }
-]
+[]
