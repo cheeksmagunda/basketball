@@ -2,7 +2,7 @@
 
 **Document Status:** Current Reference
 
-AI-powered daily NBA draft optimizer for the **Real Sports App**. Uses a **Dual-Engine Architecture**: DFS drafts are powered by a Monte Carlo `real_score` simulator (variance, clutch-factor, ceiling), while prop betting surfaces (Line of the Day, Parlay) are powered by a deterministic `fair_value` engine (rolling medians, Z-score probabilities, floor stability). Card boosts + MILP lineup optimization on the draft side. Deployed on **Railway** as a Dockerized Python (FastAPI) backend + single-page HTML frontend.
+AI-powered daily NBA draft optimizer for the **Real Sports App**. Uses a **Strategy-Report-Aligned Architecture**: LightGBM for RS projection, a 3-tier deterministic cascade for card boost prediction, and a sort-based lineup builder using `EV = RS × (2.0 + boost)`. Prop betting surfaces (Line of the Day + Parlay) are powered by a deterministic `fair_value` engine (rolling medians, Z-score probabilities, floor stability). Deployed on **Railway** as a Dockerized Python (FastAPI) backend + React/Vite/TypeScript SPA.
 
 ## What Real Sports Scores
 
@@ -18,12 +18,14 @@ Total Value = Real Score × (Slot Multiplier + Card Boost). Slot multipliers: 2.
 ## Architecture
 
 ```
-index.html             — 4-tab frontend (Predict | Line | Parlay | Ben, vanilla JS)
+frontend/              — React + Vite + TypeScript SPA (primary frontend)
+index.html             — Legacy vanilla JS frontend (fallback when frontend/dist/ absent)
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only)
 api/odds_math.py       — Shared American-odds implied-prob helpers
-api/real_score.py      — Monte Carlo Real Score projection engine
-api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC)
+api/real_score.py      — DFS scoring weights (Monte Carlo simulation retained for reference only)
+api/asset_optimizer.py — MILP lineup optimizer (PuLP/CBC, per-game pipeline only)
+api/boost_model.py     — 3-tier cascade boost prediction (replaces LightGBM boost models)
 api/line_engine.py     — Line of the Day (Claude Haiku + Odds API)
 api/parlay_engine.py   — Safest 3-leg parlay (Z-score + correlation scoring)
 api/rotowire.py        — RotoWire lineup scraper (availability/injury flags)
@@ -62,15 +64,17 @@ server.py              — Local dev server (uvicorn)
 
 The backend uses two mathematically distinct projection engines, each optimized for its use case:
 
-### Engine 1: Monte Carlo `real_score` (DFS Drafts — Starting 5 + Moonshot)
+### Engine 1: Strategy-Report-Aligned Draft Pipeline (Starting 5 + Moonshot)
 ```
 ESPN API (games, rosters, injuries, spreads)
-  → LightGBM 12-feature points projection
-  → Monte Carlo Real Score simulator (closeness, clutch-factor, momentum coefficients)
-  → Card Boost resolution (3-tier cascade: prev_boost persistence → staleness blend → PQI cold start)
-  → MILP slot optimizer → Starting 5 + Moonshot lineups
+  → LightGBM 12-feature RS projection + heuristic DFS blend
+  → Compression (min((s / 5.5)^0.72, 20.0))
+  → Simple game context (+0.3 RS close games, +0.15/10pts pace)
+  → Card Boost (3-tier cascade: prev_boost persistence → staleness blend → PQI cold start)
+  → EV = RS × (2.0 + boost) → Sort-based selection (top 5 by EV)
+  → RS-descending slot assignment (provably optimal)
 ```
-**Why Monte Carlo?** DFS drafts reward high ceilings and variance. RS scoring is non-linear — tight games exponentially boost scores via closeness and clutch factors. Monte Carlo simulation captures these fat-tail distributions that deterministic medians miss.
+**Why sort-based?** Strategy report (90 dates) proves boost is 40% more valuable per unit than RS. The game is structurally solvable with `RS × (2.0 + boost)`. Anti-popularity captures a 24% value edge from going contrarian. Two gates only: RS ≥ 2.0, minutes ≥ 12.
 
 ### Engine 2: Deterministic `fair_value` (Prop Betting — Line + Parlay)
 ```
@@ -84,7 +88,7 @@ ESPN gamelogs (L10/L15 rolling windows per stat)
 **Why deterministic?** Prop betting rewards median accuracy and floor stability. A points over/under bet cares about the most likely stat line, not the ceiling. Rolling window medians with Normal CDF hit probabilities produce tighter Z-scores for leg selection.
 
 ### Isolation Boundary
-- `/api/slate`, `/api/picks`, `/api/force-regenerate`, `/api/injury-check` → **Engine 1 only** (Monte Carlo)
+- `/api/slate`, `/api/picks`, `/api/force-regenerate`, `/api/injury-check` → **Engine 1 only** (sort-based EV)
 - `/api/line-of-the-day`, `/api/parlay` → **Engine 2** enriches Engine 1 projections (fair value edge maps + hit probs)
 - `_compute_betting_fair_value()` is the sole entry point for Engine 2; it is never called from DFS draft paths
 
@@ -94,7 +98,7 @@ Predictions are generated **once per day** and cached across three layers:
 
 1. **`/tmp`** (Railway container) — fastest, ephemeral on cold start/redeploy
 2. **GitHub `data/slate/`** — persistent `{date}_slate.json` + `{date}_games.json`, survives cold starts
-3. **Full pipeline** — ESPN + LightGBM + Monte Carlo + MILP; only runs on true first request of the day
+3. **Full pipeline** — ESPN + LightGBM + heuristic blend + compression + cascade boost + sort; only runs on true first request of the day
 
 Two-pass usage: `/api/slate` is Pass 1 (morning baseline), and Pass 2 reruns are conditional via `/api/slate-check` + `/api/force-regenerate` only when material triggers are detected.
 
@@ -102,16 +106,15 @@ Subsequent visits serve from cache. Injury-triggered regeneration (`/api/injury-
 
 ## Two Lineup Types
 
-When **core pool** is enabled (`core_pool.enabled` in model-config), both lineups are built from a single shared core (size from `core_pool.size`, often ~15; union of eligible players, ranked by `core_pool.metric`). **Starting 5** = best 5-of-core for reliability; **Moonshot** = best 5-of-core for ceiling. High overlap is intended. When disabled, legacy behavior: separate pools, each MILP from its own pool.
+Both lineups use a **single EV formula**: `draft_ev = RS × (2.0 + boost)`. Strategy report (90 dates) proves boost is 40% more valuable per unit than RS, so both terms must be maximized. No MILP optimizer for slate-wide — the problem is structurally solvable with a sort.
 
-**Starting 5 (chalk)** — MILP-optimized for `chalk_ev = rating × (avg_slot + card_boost) × reliability`. Minutes floors are **configurable** (`projection.chalk_season_min_floor`, `chalk_recent_min_floor` in `data/model-config.json`). **Star anchor**: a star (e.g. season_pts ≥ `star_anchor_ppg`) can bypass the boost floor — `chalk_max_stars` limits exposure. Consistent, conservative.
-Late-season (`team_motivation.start_date` onward), Starting 5 applies a soft team-incentive reliability tilt so playoff/play-in teams are favored and low-incentive teams are discounted (configurable A/B/C multipliers; no hard bans).
+**Starting 5 (Safe)** — Top 5 candidates by `draft_ev`. Ties broken by lower variance (reliable floor). Two gates only: RS ≥ 2.0 (`strategy.rs_floor`), minutes ≥ 12 (`strategy.min_minutes`). Slot assignment = sort by RS descending → 2.0x, 1.8x, 1.6x, 1.4x, 1.2x (provably optimal).
 
-**Moonshot** — Contrarian EV strategy. Multiple eligibility pathways (regular, spot-starter, wildcard, role-spike, star/scoring anchors — see `moonshot` and `scoring_thresholds` in model-config). Ranked by `moonshot_ev` using `boost_leverage` from `est_mult` raised to **`moonshot.boost_leverage_power`** (configurable; not a fixed 1.6). MILP constraints like `max_low_boost` limit star exposure. Dev team bonus from live ESPN standings when enabled.
+**Moonshot (Upside)** — Starts as a copy of safe lineup. Up to 2 swaps (`strategy.max_upside_swaps`) from the remaining candidate pool — prefers higher-variance or higher-boost players within a 2.0 EV threshold (`strategy.ev_swap_threshold`). Same slot assignment rule.
 
 ## Line of the Day
 
-Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku when the API key is set, plus an algorithmic fallback). Picks are slate-bound and stay on the active slate until a cold-reset trigger advances the slate. The pick card uses a zoned layout: header (matchup, game time), play row, 5-column data row (Baseline, Edge, Target stat, Minutes, L5), and a **Conclusion** box at the bottom. Line behavior is tuned via the `line` section of `data/model-config.json` (`min_confidence`, `min_edge_pct`, etc.).
+Daily Over + Under player prop picks from `api/line_engine.py` (Claude Haiku when the API key is set, plus an algorithmic fallback). Over and under picks are always from **different games** to diversify slate coverage. Picks are slate-bound and stay on the active slate until a cold-reset trigger advances the slate. The pick card uses a zoned layout: header (matchup, game time), play row, 5-column data row (Baseline, Edge, Target stat, Minutes, L5), and a **Conclusion** box at the bottom. Line behavior is tuned via the `line` section of `data/model-config.json` (`min_confidence`, `min_edge_pct`, etc.).
 
 **Bookmaker odds sync**: Railway runs `/api/refresh-line-odds` on a **game-window schedule** (see [`railway.toml`](railway.toml)), not 24×/day. The endpoint uses a bulk Odds API map + per-pick lookup. Odds freeze once the slate is locked (5 min before first tip). Pick cards show "Odds · [time] CT" when `line_updated_at` is set.
 
@@ -193,7 +196,8 @@ Source of truth: [`railway.toml`](railway.toml). When `CRON_SECRET` is set, prot
 | `0 20,21,22,23,0,1,2,3,4,5,6,7 * * *` | `/api/auto-resolve-line` | Resolve line picks (game-window hours; CRON_SECRET when set) |
 | `0 18,22,2 * * *` | `/api/injury-check` | RotoWire injury check (3 windows/day; CRON_SECRET when set) |
 | `0 6 * * 1` | `/api/mae-drift-check` | Weekly MAE drift (Monday; CRON_SECRET when set) |
-| `0 17 * * *` | `/api/parlay-force-regenerate` | Pre-lock parlay generation → GitHub |
+| `30 18 * * *` | `/api/parlay-force-regenerate` | Early parlay generation (2:30 PM ET) → GitHub |
+| `0 21 * * *` | `/api/parlay-force-regenerate` | Late parlay retry (5:00 PM ET) → GitHub |
 
 ## Responsiveness & Reliability
 
@@ -233,6 +237,7 @@ All secrets and config live in **environment variables only** — never hardcode
 | `ODDS_API_KEY` | The Odds API — player prop lines for Line of the Day |
 | `CRON_SECRET` | (optional) Secures cron-only endpoints; Railway injects via cron commands in railway.toml |
 | `DOCS_SECRET` | (optional) When set, `/docs`, `/redoc`, and `/openapi.json` require `?docs_key=<value>` or `X-Docs-Key` header |
+| `REDIS_URL` | (optional, recommended) Full `redis://` connection string for persistent cache layer. Auto-injected by Railway Redis plugin. Without it, falls back to ephemeral `/tmp` files |
 
 **Cold reset:** `GET /api/cold-reset` requires `CRON_SECRET` and runs a full slate+line+parlay cold pipeline.
 
@@ -240,7 +245,7 @@ All secrets and config live in **environment variables only** — never hardcode
 
 - **Health**: `GET /api/health` — Railway `healthcheckPath`; alert on non-200.
 - **Build**: `GET /api/version` — deploy SHA for verifying Railway picked up a push.
-- **Tests**: `python3 -m pytest tests/ -v` before shipping (415+ tests; requires `pip install -r requirements.txt`).
+- **Tests**: `python3 -m pytest tests/ -v` before shipping (719 tests; requires `pip install -r requirements.txt`).
 - **TTLs / caches**: One backend block (`_TTL_*`, `_CK_*`, `_cp`/`_cg`/`_cs`) — document in [CLAUDE.md](CLAUDE.md); avoid duplicating magic numbers in new endpoints.
 - **Deploy**: `watchPatterns` in `railway.toml` — `data/` commits do not rebuild the Docker image.
 - **DRY**: Shared Odds bulk map (`_build_player_odds_map`), GitHub games hydration (`_hydrate_game_projs_from_github`), scoped parlay gamelogs (`select_parlay_gamelog_player_ids`).
