@@ -4489,40 +4489,6 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
         print(f"[run-game] nba_api enrich error (non-fatal): {_nba_e}")
 
     # Run cascade engine to redistribute minutes from OUT players
-    # First, enrich roster with ESPN injury feed data — the roster endpoint often
-    # doesn't include GTD/DTD status, but the dedicated injuries endpoint does.
-    # This is critical for partial cascade: Edwards "Day-to-Day" needs to be
-    # reflected as injury_status="DTD" on the roster player for cascade weighting.
-    try:
-        espn_inj = _espn_injuries_fetch()
-        if espn_inj:
-            from api.injury_feed import _normalize_name as _inj_normalize
-            enriched_count = 0
-            for p in all_roster:
-                if p.get("injury_status"):
-                    continue  # Already has status from roster endpoint
-                norm = _inj_normalize(p.get("name", ""))
-                inj_info = espn_inj.get(norm)
-                if inj_info:
-                    status = inj_info.get("status", "")
-                    if status == "out" and not p.get("is_out"):
-                        p["is_out"] = True
-                        p["injury_status"] = ""
-                        enriched_count += 1
-                    elif status == "questionable":
-                        p["injury_status"] = "GTD"
-                        enriched_count += 1
-                    elif status == "day-to-day":
-                        p["injury_status"] = "DTD"
-                        enriched_count += 1
-                    elif status == "doubtful":
-                        p["injury_status"] = "DOUBT"
-                        enriched_count += 1
-            if enriched_count:
-                print(f"[run-game] injury feed enriched {enriched_count} players with GTD/DTD/OUT status")
-    except Exception as _inj_err:
-        print(f"[run-game] injury feed enrichment error (non-fatal): {_inj_err}")
-
     cascade_flags = _cascade_minutes(all_roster, stats_map)
 
     # Project all players with cascade-adjusted minutes
