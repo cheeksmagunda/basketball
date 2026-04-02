@@ -569,9 +569,16 @@ def _odds_map_fingerprint(games):
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
 
-def _bust_slate_cache():
+def _bust_slate_cache(_caller: str = ""):
     """Clear today's slate cache from Redis + /tmp + GitHub so next request regenerates.
-    Called by cold reset, /api/lab/update-config, and version-aware startup."""
+
+    IMPORTANT: This function writes bust tombstones to GitHub but does NOT regenerate
+    the slate. It MUST only be called from code paths that will subsequently regenerate:
+      - _run_cold_pipeline() — handles bust + regen as an atomic unit
+      - /api/lab/update-config — bust only; next /api/slate request regenerates via Layer 3
+    Never call from external scripts, MCP tools, or ad-hoc GitHub API writes — orphan
+    tombstones with no regeneration cause infinite loading."""
+    print(f"[bust-slate] triggered by: {_caller or 'unknown'}")
     today = _today_str()
     # Clear in-memory response cache (Level 0)
     _RESPONSE_CACHE.invalidate()
@@ -6382,7 +6389,7 @@ def _force_regenerate_sync(scope: str):
     }
     if chalk or upside:
         # Only bust AFTER confirming we have valid lineups to replace it with.
-        _bust_slate_cache()
+        _bust_slate_cache(_caller="force_regenerate")
         _cs(_CK_SLATE, result)
         _ls(_CK_SLATE_LOCKED, result)
         _slate_cache_to_github(result)
@@ -7479,7 +7486,7 @@ def _run_cold_pipeline(trigger: str) -> dict:
             print(f"[cold-reset] pre-save check skipped: {e}")
 
         try:
-            _bust_slate_cache()
+            _bust_slate_cache(_caller=f"cold_pipeline:{trigger}")
         except Exception as e:
             print(f"[cold-reset] bust err: {e}")
         try:
@@ -10380,7 +10387,7 @@ async def lab_update_config(payload: dict = Body(...)):
     except Exception: pass
     # Bust slate cache so next request regenerates with new config params
     try:
-        _bust_slate_cache()
+        _bust_slate_cache(_caller="lab_update_config")
     except Exception: pass
 
     return {"status": "applied", "version": new_version, "changes": changes}
@@ -10458,7 +10465,7 @@ async def lab_rollback(payload: dict = Body(...)):
         (CONFIG_CACHE_DIR / "model_config.json").unlink(missing_ok=True)
     except Exception: pass
     try:
-        _bust_slate_cache()
+        _bust_slate_cache(_caller="lab_rollback")
     except Exception: pass
 
     return {"status": "rolled_back", "new_version": new_version,
