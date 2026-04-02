@@ -2561,6 +2561,86 @@ class TestCascadeCapFix:
 
 
 # ─────────────────────────────────────────────────────────
+# TestPartialCascade — GTD/DTD players contribute weighted cascade
+# ─────────────────────────────────────────────────────────
+class TestPartialCascade:
+    """GTD/DTD players partially cascade minutes to teammates instead of binary 0-or-full."""
+
+    def test_cascade_defaults_include_gtd_probability(self):
+        """_CONFIG_DEFAULTS must define cascade.gtd_sit_probability."""
+        from api.index import _CONFIG_DEFAULTS
+        cascade = _CONFIG_DEFAULTS.get("cascade", {})
+        assert "gtd_sit_probability" in cascade, "cascade config must include gtd_sit_probability"
+        assert 0 < cascade["gtd_sit_probability"] < 1, "gtd_sit_probability must be between 0 and 1"
+
+    def test_cascade_defaults_include_dtd_probability(self):
+        """_CONFIG_DEFAULTS must define cascade.dtd_sit_probability."""
+        from api.index import _CONFIG_DEFAULTS
+        cascade = _CONFIG_DEFAULTS.get("cascade", {})
+        assert "dtd_sit_probability" in cascade, "cascade config must include dtd_sit_probability"
+        assert 0 < cascade["dtd_sit_probability"] < 1, "dtd_sit_probability must be between 0 and 1"
+
+    def test_cascade_gtd_produces_partial_minutes(self):
+        """A GTD guard should produce partial cascade for same-position teammates."""
+        from api.index import _cascade_minutes
+        roster = [
+            {"id": "star", "team_abbr": "MIN", "pos": "PG", "is_out": False, "injury_status": "GTD"},
+            {"id": "backup", "team_abbr": "MIN", "pos": "SG", "is_out": False, "injury_status": ""},
+        ]
+        stats_map = {
+            "star": {"min": 36},
+            "backup": {"min": 16},
+        }
+        with patch("api.index._cfg") as mock_cfg:
+            mock_cfg.side_effect = lambda key, default=None: {
+                "cascade.gtd_sit_probability": 0.40,
+                "cascade.dtd_sit_probability": 0.25,
+                "cascade.gtd_minute_reduction": 0.20,
+                "cascade.center_forward_share": 0.30,
+                "cascade.redistribution_rate": 0.70,
+                "cascade.per_player_cap_minutes": 10.0,
+            }.get(key, default)
+            flags = _cascade_minutes(roster, stats_map)
+        # Backup should get SOME cascade (not 0, and not full 36 * 0.7 = 25.2)
+        assert "backup" in flags, "GTD star should cascade partial minutes to backup"
+        assert flags["backup"] > 0, "partial cascade must be positive"
+        assert flags["backup"] < 25.0, "partial cascade must be less than full OUT cascade"
+
+    def test_cascade_out_still_full(self):
+        """OUT players should still cascade at 100% (no regression)."""
+        from api.index import _cascade_minutes
+        roster = [
+            {"id": "out_star", "team_abbr": "MIN", "pos": "PG", "is_out": True, "injury_status": ""},
+            {"id": "backup", "team_abbr": "MIN", "pos": "SG", "is_out": False, "injury_status": ""},
+        ]
+        stats_map = {
+            "out_star": {"min": 36},
+            "backup": {"min": 16},
+        }
+        with patch("api.index._cfg") as mock_cfg:
+            mock_cfg.side_effect = lambda key, default=None: {
+                "cascade.gtd_sit_probability": 0.40,
+                "cascade.dtd_sit_probability": 0.25,
+                "cascade.gtd_minute_reduction": 0.20,
+                "cascade.center_forward_share": 0.30,
+                "cascade.redistribution_rate": 0.70,
+                "cascade.per_player_cap_minutes": 10.0,
+            }.get(key, default)
+            flags = _cascade_minutes(roster, stats_map)
+        # OUT = full cascade (36 * 1.0 * 0.70 = 25.2, capped at 10)
+        assert "backup" in flags
+        assert flags["backup"] == 10.0, f"OUT should cascade full amount (capped), got {flags['backup']}"
+
+    def test_context_pass_minutes_delta_in_prompt(self):
+        """Context pass prompt must mention minutes_delta for injury narrative adjustments."""
+        src = open("api/index.py").read()
+        assert "minutes_delta" in src, "context pass must support minutes_delta adjustments"
+        assert "minutes_delta" in src[src.find("OVERRIDE PROTOCOL"):], (
+            "OVERRIDE PROTOCOL section must document minutes_delta"
+        )
+
+
+# ─────────────────────────────────────────────────────────
 # TestRotoConfirmedRatingException — confirmed rotation players bypass min_rating_floor
 # ─────────────────────────────────────────────────────────
 class TestRotoConfirmedRatingException:
@@ -2822,6 +2902,42 @@ class TestApiResilience:
             _claude_context_pass(players, games)
 
         # Claude MUST be called — news is a genuine fresh signal
+        mock_client.messages.create.assert_called_once()
+
+    def test_context_pass_runs_when_gtd_present(self):
+        """Context pass calls Claude when a teammate is GTD/DTD, even without news/cascade/B2B."""
+        from api.index import _claude_context_pass
+
+        players = [
+            {"name": "Backup Guard", "team": "MIN", "rating": 3.0, "chalk_ev": 12.0,
+             "ceiling_score": 4.0, "est_mult": 2.5, "season_pts": 8.0,
+             "season_reb": 3.0, "season_ast": 2.0, "season_stl": 0.5, "season_blk": 0.2,
+             "injury_status": "GTD"}  # star is questionable
+        ]
+        games = [{"gameId": "g1", "spread": 0, "total": 222,
+                  "home": {"abbr": "MIN", "id": "1"}, "away": {"abbr": "DET", "id": "2"}}]
+
+        claude_response = json.dumps({"adjustments": []})
+        mock_msg = Mock()
+        mock_msg.content = [Mock(text=claude_response)]
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_msg
+
+        def cfg_side_effect(key, default=None):
+            if key == "context_layer.enabled": return True
+            if key == "context_layer.model": return "claude-sonnet-4-6-20250514"
+            if key == "context_layer.max_adjustment": return 0.4
+            if key == "context_layer.timeout_seconds": return 15
+            return default
+
+        with patch("api.index._cfg", side_effect=cfg_side_effect), \
+             patch("api.index._fetch_nba_news_context", return_value=""), \
+             patch("api.index._espn_injuries_fetch", return_value={}), \
+             patch("anthropic.Anthropic", return_value=mock_client), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            _claude_context_pass(players, games)
+
+        # Claude MUST be called — GTD teammate is a genuine signal for minutes adjustments
         mock_client.messages.create.assert_called_once()
 
     def test_context_pass_sdk_uses_no_retries(self):
