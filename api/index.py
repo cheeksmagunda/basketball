@@ -1100,14 +1100,9 @@ _CONFIG_DEFAULTS = {
         "minutes_increase_bypass": 15.0, # If predMin - season_min >= this, bypass minutes gates (cascade/injury expanded role)
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
-        "ev_swap_threshold": 2.0,       # Max EV gap for safe→upside swap
-        "max_upside_swaps": 2,          # Max players swapped between safe and upside lineups
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
         "max_per_team": 2,              # Max players from the same team in a lineup (winners stack 2 ~40% of the time)
-        "moonshot_min_recent_minutes": 16.0,  # Moonshot swaps require recent_min >= 16 (rotation-bubble filter)
-        "moonshot_min_ev": 10.0,        # Moonshot swaps require upside_ev >= 10 (winning-draft data: only 4% of winners had EV < 10)
-        "moonshot_ev_swap_threshold": 4.0,  # Wider EV window for moonshot swaps (allows boost-for-RS trades)
         "minutes_delta": {
             "enabled": True,
             "neutral_zone": 2.0,        # ±2 min band = "business as usual" (no catalyst)
@@ -4604,8 +4599,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     _strat = _cfg("strategy", {}) or {}
     rs_floor = float(_strat.get("rs_floor", 2.0))
     min_minutes = float(_strat.get("min_minutes", 25.0))
-    ev_swap_threshold = float(_strat.get("ev_swap_threshold", 2.0))
-    max_swaps = int(_strat.get("max_upside_swaps", 2))
     max_per_team = int(_strat.get("max_per_team", 1))
 
     # RotoWire availability check
@@ -4732,9 +4725,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # e.g. Safe = star-heavy (high RS, low boost), Moonshot = role-player-heavy
     # (moderate RS, high boost) which is where winning drafts actually come from.
     # Finding 2: boost is 40% more valuable per unit than RS.
-    moonshot_min_recent = float(_strat.get("moonshot_min_recent_minutes", 16.0))
-    moonshot_min_ev = float(_strat.get("moonshot_min_ev", 10.0))
-    moonshot_rs_floor = float(_strat.get("moonshot_rs_floor", rs_floor))
     moonshot_pool = list(candidate_pool)
     # Sort by upside_ev descending; tiebreak by boost descending (prefer high-boost)
     moonshot_pool.sort(key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0)))
