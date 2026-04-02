@@ -1108,6 +1108,7 @@ _CONFIG_DEFAULTS = {
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
         "min_minutes": 25.0,            # Minimum projected minutes to be draft-eligible
         "min_recent_minutes": 15.0,     # Minimum recent minutes for candidate pool (rotation-bubble filter)
+        "min_pred_min_season_ratio": 1.0, # Floor: predMin >= season_min * ratio (1.0 = at least season avg; exempt: B2B, GTD)
         "minutes_increase_bypass": 15.0, # If predMin - season_min >= this, bypass minutes gates (cascade/injury expanded role)
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
@@ -3455,6 +3456,16 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     proj_cfg = _cfg("projection", _CONFIG_DEFAULTS["projection"])
     if pinfo.get("injury_status") == "GTD":
         proj_min *= proj_cfg.get("gtd_minute_penalty", 0.75)
+
+    # Season-minutes floor: ensure projected minutes don't drop below season avg
+    # times a configurable ratio. The season/recent blend can pull predMin far
+    # below season avg (e.g. 18.1 vs 30.1 season) for players in temporary
+    # minute dips. Drafted players should show at least their season-level minutes.
+    # GTD and B2B players are exempt — their minute reductions are real signals.
+    _season_min_floor = stats.get("season_min", avg_min)
+    _min_season_ratio = float(_cfg("strategy.min_pred_min_season_ratio", 1.0))
+    if not is_b2b and pinfo.get("injury_status") != "GTD" and _season_min_floor > 0:
+        proj_min = max(proj_min, _season_min_floor * _min_season_ratio)
 
     # Minutes gate — cascade team players get relaxed gate (12 min vs 25).
     # Deep rotation players on cascade teams historically produce avg value 16.1.

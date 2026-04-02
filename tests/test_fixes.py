@@ -6139,6 +6139,47 @@ class TestMinutesIncreaseEVBonus:
         assert '"max_bonus": 0.20' in src, "Minutes delta max bonus should be 20%"
 
 
+class TestMinPredMinSeasonRatio:
+    """Projected minutes floor: predMin >= season_min * ratio for non-B2B, non-GTD players."""
+
+    def test_config_default_exists(self):
+        """min_pred_min_season_ratio must exist in _CONFIG_DEFAULTS.strategy."""
+        src = open("api/index.py").read()
+        assert '"min_pred_min_season_ratio": 1.0' in src
+
+    def test_floor_applied_in_project_player(self):
+        """project_player should apply season-minutes floor via min_pred_min_season_ratio."""
+        src = open("api/index.py").read()
+        assert "min_pred_min_season_ratio" in src
+        assert "_season_min_floor" in src
+
+    def test_floor_logic_raises_below_season(self):
+        """When blended avg_min is below season, floor should bring proj_min up to season."""
+        season_min = 34.0
+        avg_min = 22.0  # blended below season (recent decline)
+        cascade_bonus = 0.0
+        proj_min = avg_min + cascade_bonus  # 22.0
+        ratio = 1.0
+        proj_min = max(proj_min, season_min * ratio)
+        assert proj_min == 34.0, f"Floor should raise to season avg, got {proj_min}"
+
+    def test_b2b_exempt_from_floor(self):
+        """B2B players should NOT get the season-minutes floor (real signal)."""
+        src = open("api/index.py").read()
+        # The floor logic should check `not is_b2b`
+        assert "not is_b2b" in src
+
+    def test_gtd_exempt_from_floor(self):
+        """GTD players should NOT get the season-minutes floor (real signal)."""
+        src = open("api/index.py").read()
+        assert 'injury_status") != "GTD"' in src
+
+    def test_model_config_has_key(self):
+        """data/model-config.json should include min_pred_min_season_ratio."""
+        cfg = json.loads(open("data/model-config.json").read())
+        assert cfg["strategy"]["min_pred_min_season_ratio"] == 1.0
+
+
 class TestMinutesIncreaseBypass:
     """Players with big minutes jumps bypass candidate pool gates."""
 

@@ -795,6 +795,7 @@
     "max_per_team": 1,
     "anti_popularity_enabled": true,
     "anti_popularity_strength": 0.2,
+    "min_pred_min_season_ratio": 1.0,
     "minutes_delta": {
       "enabled": true,
       "neutral_zone": 2.0,
