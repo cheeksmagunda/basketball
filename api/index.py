@@ -1684,6 +1684,12 @@ def _is_locked(start_time_iso: Optional[str]) -> bool:
     except Exception:
         return False
 
+def _any_locked(start_times):
+    """True if any game in the list is currently in its lock window.
+    Handles None/empty lists gracefully. Uses any() pattern per CLAUDE.md
+    split-window documentation."""
+    return bool(start_times) and any(_is_locked(st) for st in start_times)
+
 def _is_past_lock_window(start_time_iso):
     """Returns True if the game has passed its lock window (now >= start - lock_buf).
     Intentionally has no 6-hour ceiling: once a game is past the lock window it is
@@ -5708,7 +5714,7 @@ def _get_slate_impl():
     # any() not min() — on split-window days (e.g. 2 PM + 9 PM CT), the earliest
     # game's 6h ceiling can expire while late games are still live. any() stays
     # locked as long as ANY game is within its lock window.
-    locked = any(_is_locked(st) for st in all_start_times) if all_start_times else False
+    locked = _any_locked(all_start_times)
     lock_time = None
     if earliest_all:
         try:
@@ -6197,7 +6203,7 @@ async def save_predictions():
     # long as ANY game is within its lock window.
     _games_now = fetch_games()
     _start_times = [g["startTime"] for g in _games_now if g.get("startTime")]
-    if _start_times and not any(_is_locked(st) for st in _start_times):
+    if _start_times and not _any_locked(_start_times):
         return _err("Slate not locked yet — predictions not finalized", 409)
 
     # Gather slate predictions — try all cache layers before giving up
@@ -6374,7 +6380,7 @@ def _force_regenerate_sync(scope: str):
     except Exception:
         pass
     _fr_starts = [g["startTime"] for g in games if g.get("startTime")]
-    _fr_any_locked = bool(_fr_starts) and any(_is_locked(st) for st in _fr_starts)
+    _fr_any_locked = _any_locked(_fr_starts)
     _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
     chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data)
     lineups = {"chalk": chalk, "upside": upside}
@@ -6513,7 +6519,7 @@ async def slate_check(request: Request):
 
     # Don't check after lock — picks are frozen
     start_times = [g["startTime"] for g in games if g.get("startTime")]
-    if start_times and any(_is_locked(st) for st in start_times):
+    if _any_locked(start_times):
         return {"changed": False, "triggers": [], "recommendation": "hold",
                 "reason": "locked"}
 
@@ -6623,7 +6629,7 @@ async def force_regenerate(request: Request, scope: str = Query("full")):
         try:
             _fg_games = fetch_games()
             _fg_starts = [g["startTime"] for g in _fg_games if g.get("startTime")]
-            if _fg_starts and any(_is_locked(st) for st in _fg_starts):
+            if _any_locked(_fg_starts):
                 return _err("Slate is locked — predictions are frozen. Use scope=remaining for late draft.", 423)
         except Exception:
             pass
@@ -7496,7 +7502,7 @@ def _run_cold_pipeline(trigger: str) -> dict:
             try:
                 _cp_games = fetch_games()
                 _cp_starts = [g["startTime"] for g in _cp_games if g.get("startTime")]
-                if _cp_starts and any(_is_locked(st) for st in _cp_starts):
+                if _any_locked(_cp_starts):
                     print(f"[cold-pipeline] BLOCKED — slate is locked, trigger={trigger}")
                     return {
                         "status": "locked",
@@ -7517,7 +7523,7 @@ def _run_cold_pipeline(trigger: str) -> dict:
         try:
             games = fetch_games()
             starts = [g["startTime"] for g in games if g.get("startTime")]
-            if starts and any(_is_locked(st) for st in starts):
+            if _any_locked(starts):
                 try:
                     _sp = asyncio.run(save_predictions())
                     auto_saved = bool(isinstance(_sp, dict) and _sp.get("status") in ("ok", "unchanged"))
@@ -7770,7 +7776,7 @@ async def _deploy_startup_safe_prewarm():
         try:
             _deploy_games = fetch_games()
             _deploy_starts = [g["startTime"] for g in _deploy_games if g.get("startTime")]
-            if _deploy_starts and any(_is_locked(st) for st in _deploy_starts):
+            if _any_locked(_deploy_starts):
                 print(f"[startup] slate is LOCKED — skipping cold pipeline to preserve predictions")
                 return
         except Exception as _lk_err:
@@ -7904,7 +7910,7 @@ async def injury_check(request: Request):
     # Don't run if slate is locked — picks are frozen post-lock
     games = fetch_games()
     start_times = [g["startTime"] for g in games if g.get("startTime")]
-    if start_times and any(_is_locked(st) for st in start_times):
+    if _any_locked(start_times):
         return {"status": "locked", "skipped": True}
 
     if not games:
@@ -9178,7 +9184,7 @@ async def refresh_line_odds():
     # Slate locked → no point refreshing odds (props frozen, API won't return new data)
     # Save quota: skip expensive fetch during locked period
     all_start_times = [g["startTime"] for g in games if g.get("startTime")]
-    if any(_is_locked(st) for st in all_start_times):
+    if _any_locked(all_start_times):
         print("[refresh-line-odds] slate locked, skipping odds fetch (quota conservation)")
         return {"status": "locked", "message": "Slate locked — odds frozen"}
 
@@ -9809,7 +9815,7 @@ async def auto_resolve_line(request: Request):
     try:
         _sp_games = fetch_games()
         _sp_starts = [g["startTime"] for g in _sp_games if g.get("startTime")]
-        if _sp_starts and any(_is_locked(st) for st in _sp_starts):
+        if _any_locked(_sp_starts):
             sp_result = await save_predictions()
             # save_predictions returns dict on success, JSONResponse on error
             if isinstance(sp_result, dict):
@@ -10024,7 +10030,7 @@ def _all_games_final(games):
 
     # Determine if slate is locked. During locked slate, use 60s TTL for responsiveness.
     # This enables event-driven unlock detection without hammering ESPN API.
-    slate_locked = any(_is_locked(g.get("startTime", "")) for g in games if g.get("startTime"))
+    slate_locked = _any_locked([g.get("startTime", "") for g in games if g.get("startTime")])
     cache_ttl = 60 if slate_locked else 180
 
     # Cache valid only if within TTL AND still the same ET date
@@ -10123,7 +10129,7 @@ async def lab_status():
         # the earliest game (e.g. 2 PM) expires its 6h lock window by 8 PM, but late
         # games (7-10 PM tips) are still live. Using min() caused Ben to unlock mid-slate.
         start_times = [g["startTime"] for g in games if g.get("startTime")]
-        slate_locked = any(_is_locked(st) for st in start_times) if start_times else False
+        slate_locked = _any_locked(start_times)
         earliest = min(start_times) if start_times else None
 
         # Fast path: pre-slate (no game has started). Return unlocked without calling ESPN scoreboard.
@@ -10361,7 +10367,7 @@ async def lab_update_config(payload: dict = Body(...)):
     try:
         _uc_games = fetch_games()
         _uc_starts = [g["startTime"] for g in _uc_games if g.get("startTime")]
-        if _uc_starts and any(_is_locked(st) for st in _uc_starts):
+        if _any_locked(_uc_starts):
             return _err("Slate is active — config changes are locked until all games finish", 423)
     except Exception:
         pass  # if games check fails, allow the write
@@ -10455,7 +10461,7 @@ async def lab_rollback(payload: dict = Body(...)):
     try:
         _rb_games = fetch_games()
         _rb_starts = [g["startTime"] for g in _rb_games if g.get("startTime")]
-        if _rb_starts and any(_is_locked(st) for st in _rb_starts):
+        if _any_locked(_rb_starts):
             return _err("Slate is active — config changes are locked until all games finish", 423)
     except Exception:
         pass
@@ -11912,7 +11918,7 @@ async def get_parlay(request: Request):
         # ticket the endpoint is currently serving.
         games = fetch_games(today)
         start_times = [g["startTime"] for g in games if g.get("startTime")]
-        slate_locked = bool(start_times) and any(_is_locked(st) for st in start_times)
+        slate_locked = _any_locked(start_times)
         all_final, _remaining, _finals, _latest_remaining_start = _all_games_final(games) if bool(games) else (False, 0, 0, None)
         slate_all_final = bool(games) and bool(all_final)
 
@@ -11979,7 +11985,7 @@ async def get_parlay(request: Request):
         _parlay_is_future = today > _parlay_target_date
         _parlay_target_games = fetch_games(_parlay_target_date)
         _parlay_target_starts = [g["startTime"] for g in (_parlay_target_games or []) if g.get("startTime")]
-        _parlay_target_locked = bool(_parlay_target_starts) and any(_is_locked(st) for st in _parlay_target_starts)
+        _parlay_target_locked = _any_locked(_parlay_target_starts)
         # Allow generation if: (a) target date is in the future, or (b) no existing parlay found
         # Block only if: slate is locked AND a parlay already existed (would be re-generation)
         # Since we already checked cache + GitHub above and found nothing, reaching here means
@@ -12116,7 +12122,7 @@ async def parlay_force_regenerate(request: Request):
     try:
         games = fetch_games(target_date)
         starts = [g["startTime"] for g in games if g.get("startTime")]
-        slate_locked = bool(starts) and any(_is_locked(st) for st in starts)
+        slate_locked = _any_locked(starts)
     except Exception:
         slate_locked = False
 
@@ -12318,7 +12324,7 @@ async def parlay_history(request: Request):
                         continue
                     _sync_g = fetch_games(today)
                     _sync_st = [g["startTime"] for g in _sync_g if g.get("startTime")] if _sync_g else []
-                    _sync_locked = bool(_sync_st) and any(_is_locked(st) for st in _sync_st)
+                    _sync_locked = _any_locked(_sync_st)
                     _sync_payload = json.loads(json.dumps(_pd))
                     _sync_payload["locked"] = _sync_locked
                     _sync_payload["_cached_at"] = datetime.now(timezone.utc).isoformat()

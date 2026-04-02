@@ -33,7 +33,7 @@ index.html             — Legacy vanilla JS frontend (fallback when frontend/di
 api/index.py           — FastAPI backend (all endpoints, projection engine, Lab/Line/Parlay)
 api/fair_value.py      — Deterministic fair-value engine for prop betting (Line + Parlay only; pure functions)
 api/odds_math.py       — Shared American-odds implied probability helpers
-api/real_score.py      — Monte Carlo Real Score engine (retained for reference; not used by draft pipeline)
+api/real_score.py      — DFS scoring weights used by draft pipeline; Monte Carlo simulation retained for reference only
 api/asset_optimizer.py — MILP lineup optimizer (PuLP, used by per-game pipeline only)
 api/line_engine.py     — Prop edge detection pipeline (Odds API + confidence model)
 api/parlay_engine.py   — Safest 3-leg parlay optimizer (Z-score + correlation scoring)
@@ -125,6 +125,7 @@ grep: PREDICTION PERSISTENCE   — savePredictions, dedup guard
 grep: LINE TAB DOM             — index.html tab-line, linePickModal (logic: LINE PAGE)
 grep: LINE PAGE                — initLinePage, renderLinePickCard, switchLineDir, filterLineHistory, LINE_DIR
 grep: LINE ENGINE MODULE       — api/line_engine.py (run_line_engine; HTTP in api/index grep: LINE OF THE DAY)
+grep: DIFFERENT GAMES          — _same_game() in api/line_engine.py, over/under from different games
 grep: PARLAY TAB DOM           — index.html tab-parlay, parlayModal (logic: PARLAY PAGE)
 grep: PARLAY PAGE              — initParlayPage, fetchParlay, renderParlayTicket, PARLAY_STATE
 grep: PARLAY LIVE SSE          — /api/parlay-live-stream, _parlay_live_tick_payload, EventSource
@@ -547,6 +548,7 @@ The following systems were removed or replaced in the strategy-report-aligned ar
 The Over/Under inline sub-nav (`#lineSubNav`) and the inline All/Over/Under tabs in Recent Picks both call `filterLineHistory(dir)`. Selecting a direction also controls the **main pick card visibility**:
 
 - `switchLineDir(dir)`: renders the appropriate pick (`LINE_OVER_PICK` or `LINE_UNDER_PICK`) via `renderLinePickCard()`
+- **Different-games constraint** — over and under picks are always from different NBA games (`_same_game()` helper in `api/line_engine.py`). Enforced in all three selection paths: main candidates, Claude path, and last-resort. The higher-confidence pick keeps its game; the weaker pick swaps to the next-best candidate from a different game.
 - **Slate-bound picks** — over and under stay tied to the active slate. Resolved picks remain visible until the global cold-reset pipeline advances to the next slate.
 - Resolved picks appear only in Recent Picks history.
 - Picks loaded from GitHub CSV lack `books_consensus/odds_over/odds_under` — render as `MODEL` label. Picks refreshed via `/api/refresh-line-odds` show actual book odds + count.
@@ -770,7 +772,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 | **api/line_engine.py** | Line of the Day engine | Claude Haiku prompts, _STAT_META (points/rebounds/assists), Odds API integration. Receives `edge_map` from fair_value for `fv_boost` on confidence. Called by api/index.py `/api/line-of-the-day`. No direct HTTP; all I/O via index. |
 | **api/parlay_engine.py** | Safest 3-leg parlay optimizer | Z-score hit probability, anti-fragility filters (blowout/CV/GTD), market alignment, correlation scoring. Receives `fair_value_data` with `_fv_hit_probs` to override baseline model_prob. Called by api/index.py `/api/parlay`. Pure computation; no external I/O. |
 | **api/rotowire.py** | RotoWire lineup scraper | Free-tier scrape for availability (OUT, questionable). 30 min cache. Used by slate/Moonshot filtering. |
-| **api/real_score.py** | Monte Carlo Real Score (retained) | RS projection (closeness, clutch, momentum). **No longer used by draft pipeline** — retained for reference and potential reactivation. |
+| **api/real_score.py** | DFS scoring weights + Monte Carlo (reference) | DFS stat weights (`dfs_weights`) used by `project_player()`. Monte Carlo simulation (closeness, clutch, momentum) retained for reference only — not called by draft pipeline. |
 | **api/asset_optimizer.py** | MILP lineup optimizer | PuLP/CBC. **Used by per-game pipeline only** (`_build_game_lineups`). Slate-wide drafts use sort-based selection in `_build_lineups`. |
 | **server.py** | Local dev server | Serves index.html at `/` and re-exports FastAPI app for `uvicorn server:app`. Production runs as a persistent Docker container on Railway. |
 | **scripts/check-env.py** | Env verification | Validates REQUIRED (GITHUB_TOKEN, GITHUB_REPO, ANTHROPIC_API_KEY) and OPTIONAL vars. Run before local dev. |
@@ -1020,6 +1022,8 @@ If slate and/or line fail to load:
 | Mar 27 draft review — S5 coverage + RS inflation fix | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | **Problem**: Mar 27 slate — moonshot hit 1/5 (Jenkins #1, but Sasser/McDermott/Alvarado/Carter all missed). S5 blocked top RS performers (Duren +0.6x, Knueppel +0.8x, DeRozan +1.0x) via 1.5x chalk boost floor. RS over-projection: 4 stacked post-compression multipliers (cascade_rs × role_spike × breakout × archetype = 1.87×) inflated Sasser from RS 3.0 to 6.1. **Fix 1**: `chalk_min_boost_floor` 1.5→0.3, star anchor widened (min_season_pts 20→12, min_rating 4.5→3.5, max_count 2→3) so top RS performers enter chalk pool and MILP (rs_focus=0.75) selects them. **Fix 2**: Post-compression multiplier cap (`max_post_compression_mult: 1.40`) — tracks `_pre_boost_rs` before archetype/cascade/spike/breakout boosts; clamps total inflation to 1.40×. Prevents bench players from inflating from RS 3 to 6+. **Fix 3**: HBR `min_rating: 2.5` (already in config+code from prior session). **Goal**: S5 catches top RS carries (Duren, Knueppel, DeRozan, Banchero), Moonshot catches one-slate-ahead contrarians (Jenkins, Plowden, Huerter); 2-3 "lock" players overlap in both lineups. |
 
 | 3-Tier Cascade Boost Prediction | `api/boost_model.py` (new), `api/index.py`, `tests/test_fixes.py`, `tests/test_core.py` | **Architecture**: Replaced LightGBM `boost_model.pkl` + `drafts_model.pkl` with deterministic 3-tier cascade calibrated from 2,234 player-date records. **Tier 1** (returning, ≤14d): prev_boost + 6 adjustment factors (RS decay, draft popularity, mean reversion, trend, gap blend, boundary persistence). **Tier 2** (stale, >14d): staleness-weighted blend of historical mean and API-derived PQI estimate. **Tier 3** (cold start): Player Quality Index from season stats. Post-prediction star PPG caps and per-team ceilings. Key insight: prev_boost correlates +0.957 with actual boost; 88.2% of day-over-day changes are within ±0.3. Removed: `_ensure_boost_model_loaded()`, `_lgbm_predict_boost()`, `_ensure_drafts_model_loaded()`, `_lgbm_predict_log1p_drafts()`, `_ensure_boost_priors_loaded()`, `_get_boost_prior()`, `BOOST_MODEL/FEATURES` globals, `DRAFTS_MODEL/FEATURES` globals. Updated `_CONFIG_DEFAULTS.card_boost` (ceiling 3.5→3.0, floor 0.2→0.0, removed `ml_additive_correction`/`max_prior_weight`, added `star_ppg_tiers`/`team_boost_ceiling`). 17 new tests (13 cascade + 4 integration). 693 tests pass. |
+
+| Over/under different games constraint | `api/line_engine.py`, `tests/test_fixes.py` | Over and under Line picks were frequently from the same game (e.g. both ORL vs ATL), reducing coverage diversity. Added `_same_game()` helper and enforced constraint across all 3 selection paths: main candidates, Claude path, and last-resort. Higher-confidence pick keeps its game; weaker swaps to next-best from a different game. 3 new tests. |
 
 ## Loading audit
 

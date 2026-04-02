@@ -58,7 +58,9 @@ def _lookup_player_odds(player_odds_map, player_name, stat_type):
 
 
 def _same_game(pick_a, pick_b):
-    """Return True if two picks are from the same NBA game (order-independent)."""
+    """Return True if two picks are from the same NBA game (order-independent).
+    # grep: DIFFERENT GAMES — over/under must come from different NBA games
+    """
     if not pick_a or not pick_b:
         return False
     game_a = tuple(sorted((pick_a.get("team", ""), pick_a.get("opponent", ""))))
@@ -696,6 +698,28 @@ def _generate_signals(p, gctx, direction, stat_type, season_val, recent_val, pro
     return signals, signal_bonus
 
 
+def _build_line_candidate(p, team_abbr, opponent, stat_type, line, direction,
+                          proj_val, edge, confidence, book_odds, signals,
+                          season_val, pred_min, avg_min, recent_form_bars):
+    """Build a candidate pick dict — shared between main and last-resort paths."""
+    return {
+        "player_name": p["name"], "player_id": p.get("id", ""),
+        "team": team_abbr, "opponent": opponent,
+        "stat_type": stat_type, "line": line, "direction": direction,
+        "projection": proj_val, "edge": edge, "confidence": confidence,
+        "odds_over": book_odds["odds_over"] if book_odds else None,
+        "odds_under": book_odds["odds_under"] if book_odds else None,
+        "books_consensus": book_odds["books_consensus"] if book_odds else 0,
+        "model_only": not bool(book_odds), "signals": signals,
+        "season_avg": round(season_val, 1),
+        "proj_min": round(pred_min, 1),
+        "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
+        "game_time": "",
+        "game_start_iso": "",
+        "recent_form_bars": recent_form_bars,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ALGORITHMIC FALLBACK — pure ESPN model, no external API calls
 # ─────────────────────────────────────────────────────────────────────────────
@@ -817,22 +841,14 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             ratio = min(1.2, recent_val / max(season_val, 0.01)) if season_val else 1.0
             recent_form_bars = [round(ratio, 2)] * 5
             avg_min = p.get("season_min", p.get("min", 0))
-            candidates.append({
-                "player_name": p["name"], "player_id": p.get("id", ""),
-                "team": team_abbr, "opponent": opponent,
-                "stat_type": stat_type, "line": line, "direction": direction,
-                "projection": proj_val, "edge": edge, "confidence": confidence,
-                "odds_over": book_odds["odds_over"] if book_odds else None,
-                "odds_under": book_odds["odds_under"] if book_odds else None,
-                "books_consensus": book_odds["books_consensus"] if book_odds else 0,
-                "model_only": not bool(book_odds), "signals": signals,
-                "season_avg": round(season_val, 1),
-                "proj_min": round(pred_min, 1),
-                "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
-                "game_time": gctx.get("game_time", ""),
-                "game_start_iso": gctx.get("game_start_iso", ""),
-                "recent_form_bars": recent_form_bars,
-            })
+            cand = _build_line_candidate(
+                p, team_abbr, opponent, stat_type, line, direction,
+                proj_val, edge, confidence, book_odds, signals,
+                season_val, pred_min, avg_min, recent_form_bars,
+            )
+            cand["game_time"] = gctx.get("game_time", "")
+            cand["game_start_iso"] = gctx.get("game_start_iso", "")
+            candidates.append(cand)
 
     candidates.sort(key=lambda c: c["confidence"], reverse=True)
     over_candidates  = [c for c in candidates if c["direction"] == "over"]
@@ -897,22 +913,14 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
                     p, gctx, direction, stat_type, season_val, recent_val, proj_val, line, cfg
                 )
                 avg_min = p.get("season_min", p.get("min", 0))
-                last_resort.append({
-                    "player_name": p["name"], "player_id": p.get("id", ""),
-                    "team": team_abbr, "opponent": gctx.get("opponent", ""),
-                    "stat_type": stat_type, "line": line, "direction": direction,
-                    "projection": proj_val, "edge": edge, "confidence": 52,
-                    "odds_over": lr_book["odds_over"] if lr_book else None,
-                    "odds_under": lr_book["odds_under"] if lr_book else None,
-                    "books_consensus": lr_book["books_consensus"] if lr_book else 0,
-                    "model_only": not bool(lr_book), "signals": lr_signals,
-                    "season_avg": round(season_val, 1),
-                    "proj_min": round(pred_min, 1),
-                    "avg_min": round(avg_min, 1) if isinstance(avg_min, (int, float)) else 0,
-                    "game_time": gctx.get("game_time", ""),
-                    "game_start_iso": gctx.get("game_start_iso", ""),
-                    "recent_form_bars": [1.0] * 5,
-                })
+                lr_cand = _build_line_candidate(
+                    p, team_abbr, gctx.get("opponent", ""), stat_type, line, direction,
+                    proj_val, edge, 52, lr_book, lr_signals,
+                    season_val, pred_min, avg_min, [1.0] * 5,
+                )
+                lr_cand["game_time"] = gctx.get("game_time", "")
+                lr_cand["game_start_iso"] = gctx.get("game_start_iso", "")
+                last_resort.append(lr_cand)
         if last_resort:
             last_resort.sort(key=lambda c: abs(c["edge"]), reverse=True)
             if not over_pick:
