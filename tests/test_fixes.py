@@ -5712,8 +5712,6 @@ class TestMoonshotMinRecentMinutes:
         """min_recent_minutes must exist in _CONFIG_DEFAULTS."""
         src = open("api/index.py").read()
         assert "min_recent_minutes" in src
-        # Also check moonshot swap filter still exists
-        assert "moonshot_min_recent" in src
 
     def test_morales_scenario(self):
         """A player like Morales (recent_min=12, season_min=14.2) should be filtered from candidate pool."""
@@ -5760,10 +5758,13 @@ class TestMoonshotSwapLogic:
         boost_diff = c_boost - s_boost  # -0.9
         assert boost_diff <= 0, "Lower-boost candidate should be blocked"
 
-    def test_ev_threshold_widened(self):
-        """Config default for moonshot_ev_swap_threshold should be 4.0."""
+    def test_no_dead_swap_config(self):
+        """Old swap config keys should be removed from _CONFIG_DEFAULTS."""
         src = open("api/index.py").read()
-        assert '"moonshot_ev_swap_threshold": 4.0' in src
+        defaults_section = src.split("_CONFIG_DEFAULTS")[1].split("\ndef ")[0]
+        assert "moonshot_ev_swap_threshold" not in defaults_section
+        assert "ev_swap_threshold" not in defaults_section
+        assert "max_upside_swaps" not in defaults_section
 
     def test_moonshot_independent_selection(self):
         """Moonshot should be built independently from candidate pool, not as copy of safe."""
@@ -5849,30 +5850,34 @@ class TestMinutesIncreaseEVBonus:
         assert '"max_bonus": 0.20' in src, "Minutes delta max bonus should be 20%"
 
 
-class TestMoonshotMinEV:
-    """Moonshot swap rejects candidates with low upside EV."""
+class TestMinutesIncreaseBypass:
+    """Players with big minutes jumps bypass candidate pool gates."""
 
     def test_config_key_exists(self):
-        """moonshot_min_ev must exist in _CONFIG_DEFAULTS."""
+        """minutes_increase_bypass must exist in _CONFIG_DEFAULTS."""
         src = open("api/index.py").read()
-        assert "moonshot_min_ev" in src
+        assert '"minutes_increase_bypass": 15.0' in src
 
-    def test_default_value(self):
-        """Default moonshot_min_ev should be 10.0."""
+    def test_bypass_logic_in_build_lineups(self):
+        """_build_lineups should check predMin - season_min for bypass."""
         src = open("api/index.py").read()
-        assert '"moonshot_min_ev": 10.0' in src, "Default should be 10.0"
+        pool_section = src.split("Step 1")[1].split("Step 2")[0]
+        assert "minutes_increase_bypass" in pool_section
+        assert "_mi_bypass" in pool_section
 
-    def test_low_ev_blocked(self):
-        """Player with upside_ev=8 should be blocked from Moonshot swaps."""
-        candidate = {"upside_ev": 8.0, "recent_min": 25.0}
-        moonshot_min_ev = 10.0
-        assert candidate["upside_ev"] < moonshot_min_ev, "Low-EV player should be blocked"
+    def test_bypass_skips_both_gates(self):
+        """A 15+ minute jump should bypass both minutes floor and rotation-bubble filter."""
+        pred_min, season_min = 28.0, 12.0
+        threshold = 15.0
+        bypass = (pred_min - season_min) >= threshold
+        assert bypass, "28-12=16 >= 15 should trigger bypass"
 
-    def test_high_ev_passes(self):
-        """Player with upside_ev=15 should pass."""
-        candidate = {"upside_ev": 15.0, "recent_min": 25.0}
-        moonshot_min_ev = 10.0
-        assert candidate["upside_ev"] >= moonshot_min_ev
+    def test_small_jump_no_bypass(self):
+        """A 10-minute jump should NOT bypass."""
+        pred_min, season_min = 22.0, 12.0
+        threshold = 15.0
+        bypass = (pred_min - season_min) >= threshold
+        assert not bypass, "22-12=10 < 15 should not bypass"
 
 
 class TestContextLayerMinutesRisk:
