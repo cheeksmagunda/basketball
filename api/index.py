@@ -905,7 +905,16 @@ _CONFIG_DEFAULTS = {
             "bonus_td": 1.15,
         },
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"partial_cascade_cap_minutes":4.0,"center_forward_share":0.30,"gtd_sit_probability":0.30,"dtd_sit_probability":0.10,"gtd_minute_reduction":0.15,"max_cascade_pct":0.40},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"partial_cascade_cap_minutes":4.0,"center_forward_share":0.30,"gtd_sit_probability":0.30,"dtd_sit_probability":0.10,"gtd_minute_reduction":0.15,"max_cascade_pct":0.40,
+        "team_detector": {
+            "enabled": True,
+            "star_ppg_threshold": 20.0,     # PPG that qualifies as "star" for cascade detection
+            "rs_multiplier": 1.3,           # RS boost for teammates when star is OUT
+            "boost_floor": 2.5,             # Minimum boost prediction for cascade teammates
+            "deep_rotation_rs_floor": 1.5,  # Relaxed RS floor for cascade deep rotation (normally 2.0)
+            "deep_rotation_min_minutes": 12.0,  # Relaxed minutes floor for cascade (normally 25)
+        },
+    },
     # fair_value config — powers deterministic prop betting pipeline (Line + Parlay only; NOT DFS drafts)
     "fair_value": {
         "primary_window": 15,
@@ -3452,10 +3461,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     if pinfo.get("injury_status") == "GTD":
         proj_min *= proj_cfg.get("gtd_minute_penalty", 0.75)
 
-    # Minutes gate — boost-aware: low-PPG players get a lower rough_boost from the
-    # PPG proxy, raising the minutes bar (high-PPG stars assumed low boost).
-    # Formula: effective_gate = max(8, min_gate - (rough_boost - 1.5) * 3)
-    min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
+    # Minutes gate — cascade team players get relaxed gate (12 min vs 25).
+    # Deep rotation players on cascade teams historically produce avg value 16.1.
+    _cascade_team = bool(pinfo.get("_cascade_team"))
+    if _cascade_team:
+        _ct_cfg_gate = _cfg("cascade.team_detector", {}) or {}
+        min_gate = float(_ct_cfg_gate.get("deep_rotation_min_minutes", 12.0))
+    else:
+        min_gate = _cfg("projection.min_gate_minutes", MIN_GATE)
     if proj_min < min_gate: return None
 
     pts = stats["pts"]
@@ -3633,6 +3646,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     raw_score += game_context_bonus
     raw_score = min(raw_score, rs_cap)
 
+    # ── Cascade Team RS Multiplier ─────────────────────────────────────────
+    # grep: CASCADE TEAM DETECTOR
+    # When a star (20+ PPG) is OUT, teammates get an RS multiplier (default 1.3x).
+    # Historical data: deep rotation players on cascade teams avg RS 3.83, value 16.1.
+    _cascade_team = bool(pinfo.get("_cascade_team"))
+    _ct_rs_mult = 1.0
+    if _cascade_team:
+        _ct_cfg = _cfg("cascade.team_detector", {}) or {}
+        _ct_rs_mult = float(_ct_cfg.get("rs_multiplier", 1.3))
+        raw_score = min(raw_score * _ct_rs_mult, rs_cap)
+
     # Estimated card boost (ADDITIVE, not multiplicative)
     # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
     # Card boost is INVERSELY proportional to ownership — the app rewards
@@ -3653,6 +3677,17 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         season_reb=float(stats.get("season_reb", reb)),
         season_ast=float(stats.get("season_ast", ast)),
     )
+
+    # ── Cascade Team Boost Floor ───────────────────────────────────────────
+    # When a star is OUT, cascade teammates get a minimum boost of 2.5.
+    # Data shows 3.0x boost players on cascade teams avg value 15-16.
+    if _cascade_team:
+        _ct_cfg = _cfg("cascade.team_detector", {}) or {}
+        _ct_boost_floor = float(_ct_cfg.get("boost_floor", 2.5))
+        if card_boost < _ct_boost_floor:
+            card_boost = _ct_boost_floor
+            if boost_band:
+                boost_band = (max(boost_band[0], _ct_boost_floor), max(boost_band[1], _ct_boost_floor))
 
     # ── EV score: the dominant formula from strategy report ──────────────
     # Strategy report Finding 2: EV = RS × (2.0 + boost). Boost is 40% more
@@ -3691,6 +3726,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
+        "_cascade_team": _cascade_team,
+        "_ct_rs_mult": round(_ct_rs_mult, 2),
         "_min_delta": round(_md_delta, 1),
         "_min_delta_mult": round(_md_mult, 3),
         # Recent vs season stats — used by line engine for trend detection
@@ -4566,6 +4603,25 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
         if p.get("is_out"):
             team_out_counts[ab] = team_out_counts.get(ab, 0) + 1
 
+    # ── Cascade Team Detector ──────────────────────────────────────────────
+    # grep: CASCADE TEAM DETECTOR
+    # When a star (20+ PPG) is OUT on a team, flag all active teammates.
+    # Historical data: 192 mega-stack instances, avg combined value 50-80+.
+    # Flagged players get: RS multiplier (1.3x), boost floor (2.5), relaxed
+    # gates in _build_lineups (deep rotation sweet spot targeting).
+    _ct_cfg = _cfg("cascade.team_detector", {}) or {}
+    _ct_enabled = _ct_cfg.get("enabled", True)
+    cascade_teams = set()  # teams with a star OUT
+    if _ct_enabled:
+        _ct_star_ppg = float(_ct_cfg.get("star_ppg_threshold", 20.0))
+        for p, ab, _ in players_in:
+            if p.get("is_out"):
+                _p_stats = stats_map.get(p["id"])
+                _p_ppg = _p_stats.get("pts", 0) if _p_stats else 0
+                if _p_ppg >= _ct_star_ppg:
+                    cascade_teams.add(ab)
+                    print(f"[cascade-team] {ab} star OUT: {p.get('name','')} ({_p_ppg:.1f} PPG) — flagging teammates")
+
     # Fetch team rest days for rest_days feature (fixes training skew — was always 2.0)
     team_rest = _fetch_team_rest_days()
 
@@ -4574,8 +4630,10 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
         stats = stats_map.get(p["id"])
         if not stats:
             continue
+        _is_cascade_team = ab in cascade_teams and not p.get("is_out")
         p = {**p, "teammate_out_count": team_out_counts.get(ab, 0),
-             "rest_days": team_rest.get(ab, 3)}
+             "rest_days": team_rest.get(ab, 3),
+             "_cascade_team": _is_cascade_team}
         cascade_bonus = cascade_flags.get(p["id"], 0.0)
         # Check if this player's team is on a back-to-back
         b2b = game.get("home_b2b") if sd == "home" else game.get("away_b2b")
@@ -4762,13 +4820,22 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 
     # ── Step 1: Build single candidate pool ────────────────────────────────
     # Gates: RS floor + minutes floor + recent_min floor (rotation-bubble filter)
+    # Deep Rotation Sweet Spot: cascade team players get relaxed gates because
+    # historically 5-20 draft players on cascade teams produce avg value 16.1.
     min_recent_minutes = float(_strat.get("min_recent_minutes", 15.0))
     minutes_increase_bypass = float(_strat.get("minutes_increase_bypass", 15.0))
+    _ct_cfg = _cfg("cascade.team_detector", {}) or {}
+    _ct_rs_floor = float(_ct_cfg.get("deep_rotation_rs_floor", 1.5))
+    _ct_min_minutes = float(_ct_cfg.get("deep_rotation_min_minutes", 12.0))
     candidate_pool = []
     for p in projections:
         if p.get("name") in BLACKLISTED_PLAYERS:
             continue
-        if p.get("rating", 0) < rs_floor:
+        # Cascade team players get relaxed RS floor (1.5 vs 2.0) and minutes floor (12 vs 25)
+        _is_ct = p.get("_cascade_team", False)
+        _effective_rs_floor = _ct_rs_floor if _is_ct else rs_floor
+        _effective_min_minutes = _ct_min_minutes if _is_ct else min_minutes
+        if p.get("rating", 0) < _effective_rs_floor:
             continue
         # Minutes-increase bypass: if projected minutes jump is huge (cascade, injury),
         # skip the minutes floor and rotation-bubble gates. These are deep bench players
@@ -4776,8 +4843,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _pred_min = float(p.get("predMin", 0))
         _season_min = float(p.get("season_min", 0))
         _mi_bypass = (_pred_min - _season_min) >= minutes_increase_bypass
-        if not _mi_bypass:
-            if _pred_min < min_minutes and _season_min < min_minutes:
+        if not _mi_bypass and not _is_ct:
+            if _pred_min < _effective_min_minutes and _season_min < _effective_min_minutes:
                 continue
             # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
             # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot

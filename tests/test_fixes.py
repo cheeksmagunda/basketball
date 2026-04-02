@@ -2705,6 +2705,79 @@ class TestPartialCascade:
         # Projected: 16 + 6.4 = 22.4 max, NOT 26+
         assert 16 + flags["bones"] <= 22.4
 
+class TestCascadeTeamDetector:
+    """Cascade team detector: star OUT → flag teammates for RS mult + boost floor."""
+
+    def test_cascade_team_config_exists(self):
+        """cascade.team_detector config section present in defaults."""
+        from api.index import _CONFIG_DEFAULTS
+        ct = _CONFIG_DEFAULTS["cascade"]["team_detector"]
+        assert ct["enabled"] is True
+        assert ct["star_ppg_threshold"] == 20.0
+        assert ct["rs_multiplier"] == 1.3
+        assert ct["boost_floor"] == 2.5
+        assert ct["deep_rotation_rs_floor"] == 1.5
+        assert ct["deep_rotation_min_minutes"] == 12.0
+
+    def test_cascade_team_flag_in_code(self):
+        """_cascade_team flag set in _run_game and used in project_player."""
+        src = open("api/index.py").read()
+        assert "_cascade_team" in src
+        assert "cascade_teams" in src
+        assert "CASCADE TEAM DETECTOR" in src
+
+    def test_cascade_team_rs_multiplier_in_project_player(self):
+        """project_player applies RS multiplier when _cascade_team is True."""
+        src = open("api/index.py").read()
+        # The RS multiplier is applied after game context bonus
+        assert "_ct_rs_mult" in src
+        assert "rs_multiplier" in src
+
+    def test_cascade_team_boost_floor_in_project_player(self):
+        """project_player applies boost floor when _cascade_team is True."""
+        src = open("api/index.py").read()
+        assert "_ct_boost_floor" in src
+        assert "boost_floor" in src
+
+    def test_deep_rotation_relaxed_gates_in_build_lineups(self):
+        """_build_lineups relaxes RS and minutes floors for cascade team players."""
+        src = open("api/index.py").read()
+        assert "_ct_rs_floor" in src
+        assert "_ct_min_minutes" in src
+        assert "_effective_rs_floor" in src
+
+    def test_deep_rotation_relaxed_min_gate_in_project_player(self):
+        """project_player uses relaxed min_gate for cascade team players."""
+        src = open("api/index.py").read()
+        # Find the minutes gate section
+        gate_section = src[src.find("Minutes gate"):]
+        assert "_cascade_team" in gate_section[:500]
+        assert "deep_rotation_min_minutes" in gate_section[:500]
+
+    def test_no_hardcoded_player_names(self):
+        """Never hardcode player names — cascade detection is purely stat-based."""
+        src = open("api/index.py").read()
+        # Find ALL cascade team detector sections (there are two: _run_game + project_player)
+        idx = 0
+        while True:
+            pos = src.find("CASCADE TEAM DETECTOR", idx)
+            if pos < 0:
+                break
+            section = src[pos:pos + 2000]
+            assert "Bones" not in section
+            assert "Hyland" not in section
+            assert "Lopez" not in section
+            idx = pos + 1
+        # The _run_game section uses star_ppg_threshold for detection
+        assert "_ct_star_ppg" in src
+
+    def test_max_per_team_allows_cascade_split(self):
+        """max_per_team=2 allows S5+Moonshot to each pick from cascade team."""
+        from api.index import _CONFIG_DEFAULTS
+        # max_per_team in strategy allows 2 per team (one S5, one Moonshot)
+        assert _CONFIG_DEFAULTS["strategy"]["max_per_team"] == 2
+
+
     def test_context_pass_minutes_delta_in_prompt(self):
         """Context pass prompt must mention minutes_delta for injury narrative adjustments."""
         src = open("api/index.py").read()

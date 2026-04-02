@@ -177,7 +177,15 @@
     "gtd_sit_probability": 0.30,
     "dtd_sit_probability": 0.10,
     "gtd_minute_reduction": 0.15,
-    "max_cascade_pct": 0.40
+    "max_cascade_pct": 0.40,
+    "team_detector": {
+      "enabled": true,
+      "star_ppg_threshold": 20.0,
+      "rs_multiplier": 1.3,
+      "boost_floor": 2.5,
+      "deep_rotation_rs_floor": 1.5,
+      "deep_rotation_min_minutes": 12.0
+    }
   },
   "projection": {
     "min_gate_minutes": 25,

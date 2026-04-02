@@ -140,6 +140,7 @@ grep: SLATE CACHE GITHUB       — _slate_cache_to_github, _games_cache_from_git
 grep: CONSTANTS & CACHE        — _cp, _cg, _cs, _lp, _lg, ESPN, MIN_GATE
 grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
 grep: INJURY CASCADE           — _cascade_minutes, _pos_group
+grep: CASCADE TEAM DETECTOR    — star OUT detection in _run_game, RS mult + boost floor in project_player, relaxed gates in _build_lineups
 grep: CARD BOOST               — _est_card_boost, _dfs_score (cascade in api/boost_model.py grep: BOOST CASCADE MODEL)
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
@@ -539,6 +540,14 @@ No pre-game boost uploads or per-player overrides at inference. Pipeline uses a 
 
 Post-game **ownership CSVs** remain for `/api/lab/calibrate-boost` (proposed formula tweaks).
 
+### Cascade Team Detector + Deep Rotation Sweet Spot (grep: CASCADE TEAM DETECTOR)
+Based on analysis of 2,299 top performer entries across 151 dates:
+
+- **Cascade Team Detector**: When a star (20+ PPG season avg) is marked OUT on a team, all active teammates are flagged with `_cascade_team=True`. Flagged players receive: RS multiplier (1.3x, configurable), boost floor (2.5, configurable). Historical data: 192 mega-stack instances where 3+ same-team players hit the leaderboard with combined values of 50-80+. Detection is purely stat-based (PPG threshold) — no hardcoded player names.
+- **Deep Rotation Sweet Spot**: Cascade team players get relaxed gates in both `project_player` (min_gate 12 min vs 25) and `_build_lineups` (RS floor 1.5 vs 2.0, minutes floor 12 vs 25, rotation-bubble filter bypassed). The 5-20 draft archetype historically produces the highest avg value (16.1) — higher than superstars (8.4) and starters (14.9).
+- **Proportional Cascade Cap**: Cascade minute bonus capped at 40% of player's avg minutes (`max_cascade_pct`). Prevents bench players (16 avg min) from being projected at 26+.
+- **Config**: `cascade.team_detector.*` section in model-config.json (`enabled`, `star_ppg_threshold`, `rs_multiplier`, `boost_floor`, `deep_rotation_rs_floor`, `deep_rotation_min_minutes`). All tunable via Ben.
+
 ### Removed Systems (v82 Strategy Simplification)
 The following systems were removed or replaced in the strategy-report-aligned architecture:
 - **Monte Carlo simulation** (`real_score_projection`, `closeness_coefficient`, `clutch_coefficient`) — replaced by simple additive game context. Module `api/real_score.py` retained for reference.
@@ -845,6 +854,7 @@ TestLineSignals             — _generate_signals produces driver signals for na
 TestHighBoostRolePathway    — high-boost role players bypass minutes floor in moonshot + chalk pools
 TestRsCalibrationWeights    — DFS weight recalibration, archetype detection + calibration, scorer upside
 TestCascadeCapFix           — per_player_cap_minutes raised to 10.0 for meaningful cascade propagation
+TestCascadeTeamDetector     — cascade team config, flag propagation, RS multiplier, boost floor, relaxed gates, no hardcoded names, max_per_team (9 tests)
 TestRotoConfirmedRatingException — confirmed rotation players with high boost bypass min_rating_floor
 TestMaxPerGameConstraint    — MILP max_per_game limits players from same game matchup
 TestMinHighBoostConstraint  — MILP min_big_boost ensures minimum high-boost players in lineup
@@ -1035,6 +1045,8 @@ If slate and/or line fail to load:
 | 3-Tier Cascade Boost Prediction | `api/boost_model.py` (new), `api/index.py`, `tests/test_fixes.py`, `tests/test_core.py` | **Architecture**: Replaced LightGBM `boost_model.pkl` + `drafts_model.pkl` with deterministic 3-tier cascade calibrated from 2,234 player-date records. **Tier 1** (returning, ≤14d): prev_boost + 6 adjustment factors (RS decay, draft popularity, mean reversion, trend, gap blend, boundary persistence). **Tier 2** (stale, >14d): staleness-weighted blend of historical mean and API-derived PQI estimate. **Tier 3** (cold start): Player Quality Index from season stats. Post-prediction star PPG caps and per-team ceilings. Key insight: prev_boost correlates +0.957 with actual boost; 88.2% of day-over-day changes are within ±0.3. Removed: `_ensure_boost_model_loaded()`, `_lgbm_predict_boost()`, `_ensure_drafts_model_loaded()`, `_lgbm_predict_log1p_drafts()`, `_ensure_boost_priors_loaded()`, `_get_boost_prior()`, `BOOST_MODEL/FEATURES` globals, `DRAFTS_MODEL/FEATURES` globals. Updated `_CONFIG_DEFAULTS.card_boost` (ceiling 3.5→3.0, floor 0.2→0.0, removed `ml_additive_correction`/`max_prior_weight`, added `star_ppg_tiers`/`team_boost_ceiling`). 17 new tests (13 cascade + 4 integration). 693 tests pass. |
 
 | Over/under different games constraint | `api/line_engine.py`, `tests/test_fixes.py` | Over and under Line picks were frequently from the same game (e.g. both ORL vs ATL), reducing coverage diversity. Added `_same_game()` helper and enforced constraint across all 3 selection paths: main candidates, Claude path, and last-resort. Higher-confidence pick keeps its game; weaker swaps to next-best from a different game. 3 new tests. |
+| Cascade team detector + deep rotation | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | Analysis of 2,299 top performer entries across 151 dates. **Cascade Team Detector**: star (20+ PPG) OUT → flag all teammates with `_cascade_team=True` → RS multiplier 1.3x + boost floor 2.5. **Deep Rotation Sweet Spot**: cascade team players get relaxed gates (RS floor 1.5 vs 2.0, min_gate 12 vs 25, rotation-bubble filter bypassed). The 5-20 draft archetype has the highest historical avg value (16.1). **Proportional cascade cap**: `max_cascade_pct=0.40` prevents bench players from inflating to 26+ projected minutes. Config: `cascade.team_detector.*`. 9 new tests. |
+| Cascade config sync + proportional cap | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | Fixed `data/model-config.json` missing cascade params (dtd_sit_probability, partial_cascade_cap_minutes, etc.) — `_cfg()` was falling through to old hardcoded fallbacks. Added `max_cascade_pct=0.40` proportional cap: cascade bonus cannot exceed 40% of player's avg minutes. 3 updated tests. |
 
 ## Loading audit
 
