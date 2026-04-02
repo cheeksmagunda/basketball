@@ -4792,13 +4792,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     """Strategy-report-aligned lineup builder.
 
     Single pipeline:
-      1. Filter: RS >= 2.5, minutes >= 12, not OUT, not blacklisted
-      2. Score: safe_ev = RS × (2.0 + cb_low); upside_ev = RS × (2.0 + cb_high)
-         where cb_low/cb_high come from the boost confidence band (Finding 2)
+      1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
+      2. Score: EV = RS × boost (slot multiplier NOT factored in — that's Step 6)
+         safe_ev = RS × cb_low; upside_ev = RS × cb_high (confidence band)
       3. Rank by safe_ev descending
-      4. Safe (Starting 5): top 5 by safe_ev, tie-break low variance (Finding 6)
-      5. Upside (Moonshot): 1-2 swaps using upside_ev within ~2 EV threshold
-      6. Slot assignment: sort by RS descending (Finding 3: provably optimal)
+      4. Safe (Starting 5): top 5 by safe_ev, tie-break low variance
+      5. Moonshot: top 5 by upside_ev from REMAINING pool (excludes Starting 5)
+      6. Slot assignment: sort by RS descending (provably optimal)
     """
     # ── Configuration ──────────────────────────────────────────────────────
     _strat = _cfg("strategy", {}) or {}
@@ -4872,12 +4872,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             if len(candidate_pool) >= 10:
                 break
 
-    # ── Step 2: Score by safe_ev / upside_ev from confidence band ────────
-    # safe_ev  = RS × (2.0 + cb_low)  — conservative floor EV for safe lineup
-    # upside_ev = RS × (2.0 + cb_high) — optimistic ceiling EV for moonshot swaps
-    # When no band is available, both default to the point estimate (draft_ev).
-    # Minutes increase EV bonus: players with big minutes jumps (cascade, expanded role)
-    # get an EV uplift — winning draft data shows these players outperform their RS alone.
+    # ── Step 2: Score by EV = RS × boost ─────────────────────────────────
+    # EV does NOT factor in slot multiplier — slot assignment happens in Step 6
+    # via RS-descending sort (provably optimal). EV here is purely about which
+    # players to SELECT, not where to slot them.
+    # safe_ev uses the low end of the boost confidence band (conservative floor).
+    # upside_ev uses the high end (optimistic ceiling for moonshot).
+    # Minutes increase bonus rewards players stepping into expanded roles.
     _mi_cfg = _strat.get("minutes_increase_ev_bonus", {})
     _mi_enabled = _mi_cfg.get("enabled", True)
     _mi_min_delta = float(_mi_cfg.get("min_delta", 4.0))
@@ -4899,9 +4900,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             mi_delta = pred_min - season_min
             if mi_delta >= _mi_min_delta:
                 mi_mult = 1.0 + min(_mi_bonus_per_min * (mi_delta - _mi_min_delta), _mi_max_bonus)
-        p["draft_ev"]   = round(rs * (2.0 + boost) * mi_mult, 2)
-        p["safe_ev"]    = round(rs * (2.0 + cb_low) * mi_mult, 2)
-        p["upside_ev"]  = round(rs * (2.0 + cb_high) * mi_mult, 2)
+        p["draft_ev"]   = round(rs * boost * mi_mult, 2)
+        p["safe_ev"]    = round(rs * cb_low * mi_mult, 2)
+        p["upside_ev"]  = round(rs * cb_high * mi_mult, 2)
         p["_mi_mult"] = round(mi_mult, 3)
         # Compute moonshot_ev for backward compatibility
         p["moonshot_ev"] = p["draft_ev"]
@@ -4932,14 +4933,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 
     chalk = _select_with_team_cap(safe_pool, 5, max_per_team)
 
-    # ── Step 5: Upside lineup (Moonshot) — independent selection ──────────
-    # Built independently from the same candidate pool, NOT as a copy of safe.
-    # Safe optimizes for floor (safe_ev, low variance); Moonshot optimizes for
-    # ceiling (upside_ev, high boost). This allows fundamentally different lineups:
-    # e.g. Safe = star-heavy (high RS, low boost), Moonshot = role-player-heavy
-    # (moderate RS, high boost) which is where winning drafts actually come from.
+    # ── Step 5: Upside lineup (Moonshot) — DIFFERENT players from Starting 5 ─
+    # Moonshot must cover different players than Starting 5 so the two lineups
+    # together give the user 10 unique picks. Moonshot optimizes for ceiling
+    # (upside_ev, high boost) from the remaining candidate pool.
     # Finding 2: boost is 40% more valuable per unit than RS.
-    moonshot_pool = list(candidate_pool)
+    chalk_names = {p.get("name") for p in chalk}
+    moonshot_pool = [p for p in candidate_pool if p.get("name") not in chalk_names]
     # Sort by upside_ev descending; tiebreak by boost descending (prefer high-boost)
     moonshot_pool.sort(key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0)))
     upside = _select_with_team_cap(moonshot_pool, 5, max_per_team)
