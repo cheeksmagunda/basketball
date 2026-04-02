@@ -905,7 +905,7 @@ _CONFIG_DEFAULTS = {
             "bonus_td": 1.15,
         },
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"partial_cascade_cap_minutes":4.0,"center_forward_share":0.30,"gtd_sit_probability":0.30,"dtd_sit_probability":0.10,"gtd_minute_reduction":0.15},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"partial_cascade_cap_minutes":4.0,"center_forward_share":0.30,"gtd_sit_probability":0.30,"dtd_sit_probability":0.10,"gtd_minute_reduction":0.15,"max_cascade_pct":0.40},
     # fair_value config — powers deterministic prop betting pipeline (Line + Parlay only; NOT DFS drafts)
     "fair_value": {
         "primary_window": 15,
@@ -2991,16 +2991,17 @@ def _cascade_minutes(roster, stats_map):
     the probability they sit. This prevents the binary 0-or-10 cascade gap where
     a star listed day-to-day generates zero cascade for teammates.
 
-    Config:  cascade.gtd_sit_probability  (default 0.40)
-             cascade.dtd_sit_probability  (default 0.25)
-             cascade.gtd_minute_reduction (default 0.20) — expected minute cut when they DO play
+    Config:  cascade.gtd_sit_probability  (default 0.30)
+             cascade.dtd_sit_probability  (default 0.10)
+             cascade.gtd_minute_reduction (default 0.15) — expected minute cut when they DO play
+             cascade.max_cascade_pct      (default 0.40) — proportional cap (% of avg_min)
     """
     cascade_flags = {}
 
     # Sit-probability weights for partial cascade
-    gtd_sit_prob = float(_cfg("cascade.gtd_sit_probability", 0.40))
-    dtd_sit_prob = float(_cfg("cascade.dtd_sit_probability", 0.25))
-    gtd_min_reduction = float(_cfg("cascade.gtd_minute_reduction", 0.20))
+    gtd_sit_prob = float(_cfg("cascade.gtd_sit_probability", 0.30))
+    dtd_sit_prob = float(_cfg("cascade.dtd_sit_probability", 0.10))
+    gtd_min_reduction = float(_cfg("cascade.gtd_minute_reduction", 0.15))
 
     # Group players by team
     teams = {}
@@ -3086,23 +3087,27 @@ def _cascade_minutes(roster, stats_map):
                 redist_rate = _cfg("cascade.redistribution_rate", 0.70)
                 bonus = freed_min * weight * redist_rate
                 pid = rp["id"]
+                avg_min = rs.get("min", 0)
                 if pid not in cascade_flags:
-                    cascade_flags[pid] = {"bonus": 0.0, "partial_only": is_partial_group}
+                    cascade_flags[pid] = {"bonus": 0.0, "partial_only": is_partial_group, "avg_min": avg_min}
                 cascade_flags[pid]["bonus"] += bonus
                 # If any group contributing is full (OUT), mark as not partial-only
                 if not is_partial_group:
                     cascade_flags[pid]["partial_only"] = False
 
-    # Cap per-player cascade
-    # Full OUT cascade: per_player_cap_minutes (10.0)
-    # Partial-only (GTD/DTD): partial_cascade_cap_minutes (4.0) — prevents DTD star
-    # from inflating bench teammates by 10+ minutes
+    # Cap per-player cascade (3 layers, take the minimum):
+    # 1. Hard cap: per_player_cap_minutes (10.0 full, 4.0 partial)
+    # 2. Proportional cap: max_cascade_pct × avg_min — prevents bench players
+    #    (16 min avg) from getting +10 minutes. At 40%, Bones Hyland (16 min)
+    #    maxes out at +6.4 instead of +10.
     cap_full = _cfg("cascade.per_player_cap_minutes", _CONFIG_DEFAULTS["cascade"]["per_player_cap_minutes"])
     cap_partial = _cfg("cascade.partial_cascade_cap_minutes", _CONFIG_DEFAULTS["cascade"].get("partial_cascade_cap_minutes", 4.0))
+    max_cascade_pct = float(_cfg("cascade.max_cascade_pct", 0.40))
     result = {}
     for pid, info in cascade_flags.items():
-        cap = cap_partial if info["partial_only"] else cap_full
-        result[pid] = min(info["bonus"], cap)
+        hard_cap = cap_partial if info["partial_only"] else cap_full
+        pct_cap = info["avg_min"] * max_cascade_pct if info["avg_min"] > 0 else hard_cap
+        result[pid] = min(info["bonus"], hard_cap, pct_cap)
 
     return result
 

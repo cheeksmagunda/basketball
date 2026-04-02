@@ -2639,7 +2639,7 @@ class TestPartialCascade:
         assert total < 8.0, f"Total DTD cascade should be modest, got {total}"
 
     def test_cascade_out_still_full(self):
-        """OUT players should still cascade at 100% (no regression)."""
+        """OUT players cascade at 100%, proportional cap limits bench players."""
         from api.index import _cascade_minutes
         roster = [
             {"id": "out_star", "team_abbr": "MIN", "pos": "PG", "is_out": True, "injury_status": ""},
@@ -2658,11 +2658,52 @@ class TestPartialCascade:
                 "cascade.redistribution_rate": 0.70,
                 "cascade.per_player_cap_minutes": 10.0,
                 "cascade.partial_cascade_cap_minutes": 4.0,
+                "cascade.max_cascade_pct": 0.40,
             }.get(key, default)
             flags = _cascade_minutes(roster, stats_map)
-        # OUT = full cascade (36 * 1.0 * 0.70 = 25.2, capped at 10)
+        # OUT = full cascade (36 * 1.0 * 0.70 = 25.2)
+        # Hard cap = 10.0, proportional cap = 16 * 0.40 = 6.4
+        # Result = min(25.2, 10.0, 6.4) = 6.4
         assert "backup" in flags
-        assert flags["backup"] == 10.0, f"OUT should cascade full amount (capped), got {flags['backup']}"
+        assert flags["backup"] == 6.4, f"OUT cascade capped by proportional limit, got {flags['backup']}"
+
+    def test_cascade_mixed_out_dtd_proportional_cap(self):
+        """Bones Hyland scenario: OUT guard + DTD star → bench player capped proportionally.
+
+        Even when the G group has both OUT and DTD donors (making partial_only=False),
+        the proportional cap (40% of avg_min) prevents a 16-min bench player from
+        projecting at 26+ minutes.
+        """
+        from api.index import _cascade_minutes
+        roster = [
+            {"id": "out_guard", "team_abbr": "MIN", "pos": "SG", "is_out": True, "injury_status": ""},
+            {"id": "dtd_star", "team_abbr": "MIN", "pos": "SG", "is_out": False, "injury_status": "DTD"},
+            {"id": "bones", "team_abbr": "MIN", "pos": "PG", "is_out": False, "injury_status": ""},
+            {"id": "starter_g", "team_abbr": "MIN", "pos": "PG", "is_out": False, "injury_status": ""},
+        ]
+        stats_map = {
+            "out_guard": {"min": 24},
+            "dtd_star": {"min": 36},
+            "bones": {"min": 16},
+            "starter_g": {"min": 32},
+        }
+        with patch("api.index._cfg") as mock_cfg:
+            mock_cfg.side_effect = lambda key, default=None: {
+                "cascade.gtd_sit_probability": 0.30,
+                "cascade.dtd_sit_probability": 0.10,
+                "cascade.gtd_minute_reduction": 0.15,
+                "cascade.center_forward_share": 0.30,
+                "cascade.redistribution_rate": 0.70,
+                "cascade.per_player_cap_minutes": 10.0,
+                "cascade.partial_cascade_cap_minutes": 4.0,
+                "cascade.max_cascade_pct": 0.40,
+            }.get(key, default)
+            flags = _cascade_minutes(roster, stats_map)
+        # Bones (16 avg) should be capped at 16 * 0.40 = 6.4 max
+        assert "bones" in flags
+        assert flags["bones"] <= 6.4, f"Bones cascade should be ≤6.4, got {flags['bones']}"
+        # Projected: 16 + 6.4 = 22.4 max, NOT 26+
+        assert 16 + flags["bones"] <= 22.4
 
     def test_context_pass_minutes_delta_in_prompt(self):
         """Context pass prompt must mention minutes_delta for injury narrative adjustments."""
@@ -5778,8 +5819,8 @@ class TestMinutesDeltaSignal:
         bonus = min(md["bonus_per_min"] * (delta - md["neutral_zone"]), md["max_bonus"])
         mult = 1.0 + bonus
         assert mult > 1.0
-        assert round(bonus, 4) == round(0.015 * 6, 4)  # 0.09
-        assert mult == 1.09
+        assert round(bonus, 4) == round(0.03 * 6, 4)  # 0.18
+        assert mult == 1.18
 
     def test_penalty_for_negative_delta(self):
         """B2B player projecting below season avg gets RS penalty."""
