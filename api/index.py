@@ -1117,7 +1117,7 @@ _CONFIG_DEFAULTS = {
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
-        "max_per_team": 2,              # Max players from the same team in a lineup (winners stack 2 ~40% of the time)
+        "max_per_team": 1,              # Max 1 player per team per lineup — diversified coverage across both S5 and Moonshot
         "minutes_delta": {
             "enabled": True,
             "neutral_zone": 2.0,        # ±2 min band = "business as usual" (no catalyst)
