@@ -5765,21 +5765,21 @@ class TestMoonshotSwapLogic:
         src = open("api/index.py").read()
         assert '"moonshot_ev_swap_threshold": 4.0' in src
 
-    def test_upside_ev_comparison(self):
-        """Code should compare upside_ev to upside_ev (not safe_ev to upside_ev)."""
+    def test_moonshot_independent_selection(self):
+        """Moonshot should be built independently from candidate pool, not as copy of safe."""
         src = open("api/index.py").read()
-        # Should use upside_ev for safe player comparison
-        assert 's_up_ev = safe_p.get("upside_ev", 0)' in src
-        # Should NOT use safe_ev in the moonshot swap comparison
-        assert 's_ev = safe_p.get("safe_ev", 0)' not in src.split("Step 5")[1].split("Step 6")[0]
+        moonshot_section = src.split("Step 5")[1].split("Step 6")[0]
+        # Should NOT start as copy of safe
+        assert "upside = list(chalk)" not in moonshot_section, "Moonshot should not copy safe"
+        # Should select from moonshot_pool independently
+        assert "moonshot_pool" in moonshot_section, "Moonshot should use independent pool"
 
-    def test_boost_is_primary_swap_signal(self):
-        """Swap scoring should weight boost difference, not variance."""
+    def test_moonshot_sorts_by_upside_ev(self):
+        """Moonshot pool should be sorted by upside_ev descending with boost tiebreak."""
         src = open("api/index.py").read()
-        swap_section = src.split("Step 5")[1].split("Step 6")[0]
-        assert "boost_diff * 2.0" in swap_section, "Boost should be primary swap signal"
-        # Should NOT use player_variance in swap scoring
-        assert "c_var" not in swap_section, "Variance should not be in swap logic"
+        moonshot_section = src.split("Step 5")[1].split("Step 6")[0]
+        assert "upside_ev" in moonshot_section, "Moonshot should rank by upside_ev"
+        assert "est_mult" in moonshot_section, "Moonshot should tiebreak by boost"
 
     def test_strategy_report_scenario(self):
         """A 3.0x boost player with RS 3.0 should swap out a 1.5x boost player with RS 4.5."""
@@ -5889,11 +5889,11 @@ class TestContextLayerMinutesRisk:
         src = open("api/index.py").read()
         assert "any roto_status" in src, "New rule should apply regardless of roto_status"
 
-    def test_moonshot_swap_has_recent_min_check(self):
-        """The Moonshot swap loop should check recent_min."""
+    def test_moonshot_uses_team_cap(self):
+        """The Moonshot selection should respect team cap via _select_with_team_cap."""
         src = open("api/index.py").read()
-        # Find the moonshot swap section
-        assert 'candidate.get("recent_min", 0) < moonshot_min_recent' in src
+        moonshot_section = src.split("Step 5")[1].split("Step 6")[0]
+        assert "_select_with_team_cap" in moonshot_section, "Moonshot should use team cap"
 
 
 if __name__ == "__main__":

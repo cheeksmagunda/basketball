@@ -1097,6 +1097,7 @@ _CONFIG_DEFAULTS = {
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
         "min_minutes": 25.0,            # Minimum projected minutes to be draft-eligible
         "min_recent_minutes": 15.0,     # Minimum recent minutes for candidate pool (rotation-bubble filter)
+        "minutes_increase_bypass": 15.0, # If predMin - season_min >= this, bypass minutes gates (cascade/injury expanded role)
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
         "ev_swap_threshold": 2.0,       # Max EV gap for safe→upside swap
@@ -4617,18 +4618,26 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # ── Step 1: Build single candidate pool ────────────────────────────────
     # Gates: RS floor + minutes floor + recent_min floor (rotation-bubble filter)
     min_recent_minutes = float(_strat.get("min_recent_minutes", 15.0))
+    minutes_increase_bypass = float(_strat.get("minutes_increase_bypass", 15.0))
     candidate_pool = []
     for p in projections:
         if p.get("name") in BLACKLISTED_PLAYERS:
             continue
         if p.get("rating", 0) < rs_floor:
             continue
-        if p.get("predMin", 0) < min_minutes and p.get("season_min", 0) < min_minutes:
-            continue
-        # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
-        # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot
-        if p.get("recent_min", 0) < min_recent_minutes and p.get("season_min", 0) < min_recent_minutes + 3:
-            continue
+        # Minutes-increase bypass: if projected minutes jump is huge (cascade, injury),
+        # skip the minutes floor and rotation-bubble gates. These are deep bench players
+        # stepping into expanded roles — exactly the high-boost role players that win.
+        _pred_min = float(p.get("predMin", 0))
+        _season_min = float(p.get("season_min", 0))
+        _mi_bypass = (_pred_min - _season_min) >= minutes_increase_bypass
+        if not _mi_bypass:
+            if _pred_min < min_minutes and _season_min < min_minutes:
+                continue
+            # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
+            # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot
+            if p.get("recent_min", 0) < min_recent_minutes and _season_min < min_recent_minutes + 3:
+                continue
         if rw_statuses and not is_safe_to_draft(p.get("name", "")):
             continue
         if p.get("injury_status", "").upper() == "OUT":
@@ -4716,66 +4725,20 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 
     chalk = _select_with_team_cap(safe_pool, 5, max_per_team)
 
-    # ── Step 5: Upside lineup (Moonshot) ───────────────────────────────────
-    # Strategy report: "Start from the same ranked list but make 1-2 swaps
-    # that push toward higher ceiling." The moonshot prefers:
-    #   - Higher boost (3.0× role player over 1.5× starter when EV is close)
-    #   - Optimistic boost band (cb_high vs cb_low)
-    # Compare upside_ev to upside_ev (apples-to-apples, not safe_ev vs upside_ev).
-    # Strategy report Finding 2: boost is 40% more valuable per unit than RS,
-    # so the swap signal is boost difference, not variance.
-    upside = list(chalk)  # start as copy of safe
-    chalk_names = {p.get("name") for p in chalk}
+    # ── Step 5: Upside lineup (Moonshot) — independent selection ──────────
+    # Built independently from the same candidate pool, NOT as a copy of safe.
+    # Safe optimizes for floor (safe_ev, low variance); Moonshot optimizes for
+    # ceiling (upside_ev, high boost). This allows fundamentally different lineups:
+    # e.g. Safe = star-heavy (high RS, low boost), Moonshot = role-player-heavy
+    # (moderate RS, high boost) which is where winning drafts actually come from.
+    # Finding 2: boost is 40% more valuable per unit than RS.
     moonshot_min_recent = float(_strat.get("moonshot_min_recent_minutes", 16.0))
     moonshot_min_ev = float(_strat.get("moonshot_min_ev", 10.0))
-    moonshot_ev_threshold = float(_strat.get("moonshot_ev_swap_threshold", 4.0))
-    # Find swap candidates: NOT in safe lineup, ranked by upside_ev
-    swap_candidates = sorted(
-        [p for p in candidate_pool if p.get("name") not in chalk_names],
-        key=lambda x: -x.get("upside_ev", 0),
-    )
-    swaps_made = 0
-    for candidate in swap_candidates:
-        if swaps_made >= max_swaps:
-            break
-        # Moonshot rotation-bubble filter: reject low-minutes players (Morales fix)
-        if candidate.get("recent_min", 0) < moonshot_min_recent:
-            continue
-        # Moonshot minimum EV floor: winning-draft data shows only 4% of winners had EV < 10
-        if candidate.get("upside_ev", 0) < moonshot_min_ev:
-            continue
-        c_ev = candidate.get("upside_ev", 0)
-        c_boost = candidate.get("est_mult", 0)
-        c_team = (candidate.get("team") or "").upper()
-        # Find the S5 player with the lowest boost where candidate has higher boost
-        # and EV is within the swap threshold (apples-to-apples: upside_ev vs upside_ev)
-        best_swap_idx = -1
-        best_swap_score = -1
-        for i, safe_p in enumerate(upside):
-            s_up_ev = safe_p.get("upside_ev", 0)
-            s_boost = safe_p.get("est_mult", 0)
-            # EV proximity: candidate must be within threshold of safe player's upside_ev
-            ev_diff = abs(c_ev - s_up_ev)
-            if ev_diff > moonshot_ev_threshold:
-                continue
-            # Team cap check
-            s_team = (safe_p.get("team") or "").upper()
-            if c_team:
-                team_count_after = sum(1 for p in upside if (p.get("team") or "").upper() == c_team and p.get("name") != safe_p.get("name"))
-                if team_count_after >= max_per_team:
-                    continue
-            # Swap signal: candidate must have HIGHER boost (Finding 2: boost > RS in value)
-            boost_diff = c_boost - s_boost
-            if boost_diff <= 0:
-                continue  # only swap IN players with higher boost
-            # Score by boost difference — the primary moonshot differentiator
-            swap_score = boost_diff * 2.0
-            if swap_score > best_swap_score:
-                best_swap_score = swap_score
-                best_swap_idx = i
-        if best_swap_idx >= 0:
-            upside[best_swap_idx] = candidate
-            swaps_made += 1
+    moonshot_rs_floor = float(_strat.get("moonshot_rs_floor", rs_floor))
+    moonshot_pool = list(candidate_pool)
+    # Sort by upside_ev descending; tiebreak by boost descending (prefer high-boost)
+    moonshot_pool.sort(key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0)))
+    upside = _select_with_team_cap(moonshot_pool, 5, max_per_team)
 
     # ── Step 6: Assign slots by RS descending (Finding 3) ──────────────────
     # Provably optimal: highest RS → 2.0x, next → 1.8x, etc.
