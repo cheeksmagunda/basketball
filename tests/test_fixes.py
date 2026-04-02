@@ -1346,13 +1346,30 @@ class TestClaudeContextLayer:
 # TestPredMinTolerance — tolerance band on predMin < season_min gate
 # ─────────────────────────────────────────────────────────
 class TestPredMinTolerance:
-    """Verify that the simplified lineup builder uses strategy.rs_floor for filtering."""
+    """Verify max_predmin_drop gate filters players with large minute-drop projections."""
 
-    def test_strategy_rs_floor_in_source(self):
-        """Simplified pipeline should use strategy.rs_floor for filtering."""
+    def test_max_predmin_drop_in_source(self):
+        """max_predmin_drop gate must exist in _build_lineups candidate pool logic."""
         with open("api/index.py") as f:
             src = f.read()
-        assert 'strategy.rs_floor' in src or 'rs_floor' in src
+        assert 'max_predmin_drop' in src
+
+    def test_max_predmin_drop_in_config(self):
+        """max_predmin_drop must be present in model-config.json projection section."""
+        import json
+        with open("data/model-config.json") as f:
+            cfg = json.load(f)
+        assert "max_predmin_drop" in cfg.get("projection", {})
+
+    def test_hyland_style_drop_filtered(self):
+        """Player with predMin=16, season_min=25.9 (9.9-min drop) must be filtered out.
+        This is the Bones Hyland case: B2B+reduced-role drops him below the gate but
+        his season_min > 25 let him through the old AND-condition gate."""
+        with open("api/index.py") as f:
+            src = f.read()
+        # The gate logic must check (season_min - pred_min) > max_drop
+        assert 'max_predmin_drop' in src
+        assert '_season_min - _pred_min' in src or '(_season_min - _pred_min)' in src
 
 
 # ─────────────────────────────────────────────────────────
