@@ -898,7 +898,7 @@ _CONFIG_DEFAULTS = {
             "bonus_td": 1.15,
         },
     },
-    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"center_forward_share":0.30,"gtd_sit_probability":0.40,"dtd_sit_probability":0.25,"gtd_minute_reduction":0.20},
+    "cascade": {"redistribution_rate":0.70,"per_player_cap_minutes":10.0,"partial_cascade_cap_minutes":4.0,"center_forward_share":0.30,"gtd_sit_probability":0.30,"dtd_sit_probability":0.10,"gtd_minute_reduction":0.15},
     # fair_value config — powers deterministic prop betting pipeline (Line + Parlay only; NOT DFS drafts)
     "fair_value": {
         "primary_window": 15,
@@ -3006,8 +3006,9 @@ def _cascade_minutes(roster, stats_map):
     for team, team_players in teams.items():
         # Find OUT + GTD/DTD players with known minutes, and active players
         # Each donor has a cascade_weight: 1.0 for OUT, partial for GTD/DTD
-        donor_players = []  # (player, stats, cascade_weight)
+        donor_players = []  # (player, stats, cascade_weight, is_partial)
         active_players = []
+        has_full_donor = False
         for p in team_players:
             pid = p["id"]
             s = stats_map.get(pid)
@@ -3015,16 +3016,16 @@ def _cascade_minutes(roster, stats_map):
                 continue
             inj = (p.get("injury_status") or "").upper()
             if p.get("is_out"):
-                donor_players.append((p, s, 1.0))
+                donor_players.append((p, s, 1.0, False))
+                has_full_donor = True
             elif inj in ("GTD",):
                 # GTD: expected cascade = sit_prob * full_minutes + play_prob * minute_reduction
-                # e.g., 40% sit × 36 min + 60% × 20% reduction × 36 min = 18.7 min freed
                 weight = gtd_sit_prob + (1.0 - gtd_sit_prob) * gtd_min_reduction
-                donor_players.append((p, s, weight))
+                donor_players.append((p, s, weight, True))
                 active_players.append((p, s))  # Still active (might play)
             elif inj in ("DTD", "DOUBT"):
                 weight = dtd_sit_prob + (1.0 - dtd_sit_prob) * gtd_min_reduction
-                donor_players.append((p, s, weight))
+                donor_players.append((p, s, weight, True))
                 active_players.append((p, s))  # Still active (might play)
             else:
                 active_players.append((p, s))
@@ -3033,18 +3034,30 @@ def _cascade_minutes(roster, stats_map):
             continue
 
         # Calculate total minutes freed per position group, weighted by cascade probability
-        freed_by_group = {}
-        for op, os, cw in donor_players:
+        # Track whether freed minutes came from partial (GTD/DTD) vs full (OUT) donors
+        freed_by_group = {}       # group -> freed_min
+        partial_by_group = {}     # group -> True if ALL donors for this group are partial
+        for op, os, cw, is_partial in donor_players:
             pg = _pos_group(op["pos"])
             freed = os.get("min", 0) * cw
             freed_by_group[pg] = freed_by_group.get(pg, 0) + freed
+            # A group is "partial-only" if it has zero full (OUT) donors
+            if pg not in partial_by_group:
+                partial_by_group[pg] = is_partial
+            elif not is_partial:
+                partial_by_group[pg] = False
             # Centers also share with forwards
             if pg == "C":
                 cf_share = _cfg("cascade.center_forward_share", 0.30)
                 freed_by_group["F"] = freed_by_group.get("F", 0) + freed * cf_share
+                if "F" not in partial_by_group:
+                    partial_by_group["F"] = is_partial
+                elif not is_partial:
+                    partial_by_group["F"] = False
 
         # Distribute freed minutes to active players in same position group
         for group, freed_min in freed_by_group.items():
+            is_partial_group = partial_by_group.get(group, False)
             # Find eligible recipients: same group, sorted by current minutes (lowest first = biggest benefit)
             recipients = []
             for ap, astat in active_players:
@@ -3067,15 +3080,24 @@ def _cascade_minutes(roster, stats_map):
                 bonus = freed_min * weight * redist_rate
                 pid = rp["id"]
                 if pid not in cascade_flags:
-                    cascade_flags[pid] = 0.0
-                cascade_flags[pid] += bonus
+                    cascade_flags[pid] = {"bonus": 0.0, "partial_only": is_partial_group}
+                cascade_flags[pid]["bonus"] += bonus
+                # If any group contributing is full (OUT), mark as not partial-only
+                if not is_partial_group:
+                    cascade_flags[pid]["partial_only"] = False
 
-    # Cap per-player cascade (config: cascade.per_player_cap_minutes)
-    cap_min = _cfg("cascade.per_player_cap_minutes", _CONFIG_DEFAULTS["cascade"]["per_player_cap_minutes"])
-    for pid in cascade_flags:
-        cascade_flags[pid] = min(cascade_flags[pid], cap_min)
+    # Cap per-player cascade
+    # Full OUT cascade: per_player_cap_minutes (10.0)
+    # Partial-only (GTD/DTD): partial_cascade_cap_minutes (4.0) — prevents DTD star
+    # from inflating bench teammates by 10+ minutes
+    cap_full = _cfg("cascade.per_player_cap_minutes", _CONFIG_DEFAULTS["cascade"]["per_player_cap_minutes"])
+    cap_partial = _cfg("cascade.partial_cascade_cap_minutes", _CONFIG_DEFAULTS["cascade"].get("partial_cascade_cap_minutes", 4.0))
+    result = {}
+    for pid, info in cascade_flags.items():
+        cap = cap_partial if info["partial_only"] else cap_full
+        result[pid] = min(info["bonus"], cap)
 
-    return cascade_flags
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

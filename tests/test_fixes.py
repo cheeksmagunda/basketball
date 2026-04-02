@@ -2581,7 +2581,7 @@ class TestPartialCascade:
         assert 0 < cascade["dtd_sit_probability"] < 1, "dtd_sit_probability must be between 0 and 1"
 
     def test_cascade_gtd_produces_partial_minutes(self):
-        """A GTD guard should produce partial cascade for same-position teammates."""
+        """A GTD guard should produce partial cascade for same-position teammates, capped at partial cap."""
         from api.index import _cascade_minutes
         roster = [
             {"id": "star", "team_abbr": "MIN", "pos": "PG", "is_out": False, "injury_status": "GTD"},
@@ -2593,18 +2593,50 @@ class TestPartialCascade:
         }
         with patch("api.index._cfg") as mock_cfg:
             mock_cfg.side_effect = lambda key, default=None: {
-                "cascade.gtd_sit_probability": 0.40,
-                "cascade.dtd_sit_probability": 0.25,
-                "cascade.gtd_minute_reduction": 0.20,
+                "cascade.gtd_sit_probability": 0.30,
+                "cascade.dtd_sit_probability": 0.10,
+                "cascade.gtd_minute_reduction": 0.15,
                 "cascade.center_forward_share": 0.30,
                 "cascade.redistribution_rate": 0.70,
                 "cascade.per_player_cap_minutes": 10.0,
+                "cascade.partial_cascade_cap_minutes": 4.0,
             }.get(key, default)
             flags = _cascade_minutes(roster, stats_map)
-        # Backup should get SOME cascade (not 0, and not full 36 * 0.7 = 25.2)
+        # Backup should get SOME cascade (not 0), capped at partial cap (4.0)
         assert "backup" in flags, "GTD star should cascade partial minutes to backup"
         assert flags["backup"] > 0, "partial cascade must be positive"
-        assert flags["backup"] < 25.0, "partial cascade must be less than full OUT cascade"
+        assert flags["backup"] <= 4.0, f"partial cascade capped at 4.0, got {flags['backup']}"
+
+    def test_cascade_dtd_capped_low(self):
+        """DTD player (like Edwards) should produce modest cascade, not 10+ min for bench guards."""
+        from api.index import _cascade_minutes
+        roster = [
+            {"id": "edwards", "team_abbr": "MIN", "pos": "SG", "is_out": False, "injury_status": "DTD"},
+            {"id": "bones", "team_abbr": "MIN", "pos": "PG", "is_out": False, "injury_status": ""},
+            {"id": "conley", "team_abbr": "MIN", "pos": "PG", "is_out": False, "injury_status": ""},
+        ]
+        stats_map = {
+            "edwards": {"min": 36},
+            "bones": {"min": 16},
+            "conley": {"min": 32},
+        }
+        with patch("api.index._cfg") as mock_cfg:
+            mock_cfg.side_effect = lambda key, default=None: {
+                "cascade.gtd_sit_probability": 0.30,
+                "cascade.dtd_sit_probability": 0.10,
+                "cascade.gtd_minute_reduction": 0.15,
+                "cascade.center_forward_share": 0.30,
+                "cascade.redistribution_rate": 0.70,
+                "cascade.per_player_cap_minutes": 10.0,
+                "cascade.partial_cascade_cap_minutes": 4.0,
+            }.get(key, default)
+            flags = _cascade_minutes(roster, stats_map)
+        # Bones should get some cascade but NOT 10+ min — DTD is "likely playing"
+        assert "bones" in flags, "DTD guard should cascade to backup guard"
+        assert flags["bones"] <= 4.0, f"DTD cascade for bench guard should be ≤4.0 min, got {flags['bones']}"
+        # Total cascade to all guards should be modest
+        total = sum(flags.values())
+        assert total < 8.0, f"Total DTD cascade should be modest, got {total}"
 
     def test_cascade_out_still_full(self):
         """OUT players should still cascade at 100% (no regression)."""
@@ -2619,12 +2651,13 @@ class TestPartialCascade:
         }
         with patch("api.index._cfg") as mock_cfg:
             mock_cfg.side_effect = lambda key, default=None: {
-                "cascade.gtd_sit_probability": 0.40,
-                "cascade.dtd_sit_probability": 0.25,
-                "cascade.gtd_minute_reduction": 0.20,
+                "cascade.gtd_sit_probability": 0.30,
+                "cascade.dtd_sit_probability": 0.10,
+                "cascade.gtd_minute_reduction": 0.15,
                 "cascade.center_forward_share": 0.30,
                 "cascade.redistribution_rate": 0.70,
                 "cascade.per_player_cap_minutes": 10.0,
+                "cascade.partial_cascade_cap_minutes": 4.0,
             }.get(key, default)
             flags = _cascade_minutes(roster, stats_map)
         # OUT = full cascade (36 * 1.0 * 0.70 = 25.2, capped at 10)
