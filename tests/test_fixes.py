@@ -2778,11 +2778,10 @@ class TestCascadeTeamDetector:
         # The _run_game section uses star_ppg_threshold for detection
         assert "_ct_star_ppg" in src
 
-    def test_max_per_team_allows_cascade_split(self):
-        """max_per_team=2 allows S5+Moonshot to each pick from cascade team."""
+    def test_max_per_team_diversified(self):
+        """max_per_team=1 enforces diversified coverage — no teammate stacking per lineup."""
         from api.index import _CONFIG_DEFAULTS
-        # max_per_team in strategy allows 2 per team (one S5, one Moonshot)
-        assert _CONFIG_DEFAULTS["strategy"]["max_per_team"] == 2
+        assert _CONFIG_DEFAULTS["strategy"]["max_per_team"] == 1
 
 
     def test_context_pass_minutes_delta_in_prompt(self):
