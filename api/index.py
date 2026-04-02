@@ -1097,6 +1097,7 @@ _CONFIG_DEFAULTS = {
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
         "min_minutes": 25.0,            # Minimum projected minutes to be draft-eligible
         "min_recent_minutes": 15.0,     # Minimum recent minutes for candidate pool (rotation-bubble filter)
+        "minutes_increase_bypass": 15.0, # If predMin - season_min >= this, bypass minutes gates (cascade/injury expanded role)
         "close_game_rs_bonus": 0.3,     # Finding 7: close games (spread ≤ 5) → +0.3 RS
         "pace_rs_bonus_per_10": 0.15,   # Finding 7: +0.15 RS per 10pts of game total above 220
         "ev_swap_threshold": 2.0,       # Max EV gap for safe→upside swap
@@ -4611,18 +4612,26 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # ── Step 1: Build single candidate pool ────────────────────────────────
     # Gates: RS floor + minutes floor + recent_min floor (rotation-bubble filter)
     min_recent_minutes = float(_strat.get("min_recent_minutes", 15.0))
+    minutes_increase_bypass = float(_strat.get("minutes_increase_bypass", 15.0))
     candidate_pool = []
     for p in projections:
         if p.get("name") in BLACKLISTED_PLAYERS:
             continue
         if p.get("rating", 0) < rs_floor:
             continue
-        if p.get("predMin", 0) < min_minutes and p.get("season_min", 0) < min_minutes:
-            continue
-        # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
-        # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot
-        if p.get("recent_min", 0) < min_recent_minutes and p.get("season_min", 0) < min_recent_minutes + 3:
-            continue
+        # Minutes-increase bypass: if projected minutes jump is huge (cascade, injury),
+        # skip the minutes floor and rotation-bubble gates. These are deep bench players
+        # stepping into expanded roles — exactly the high-boost role players that win.
+        _pred_min = float(p.get("predMin", 0))
+        _season_min = float(p.get("season_min", 0))
+        _mi_bypass = (_pred_min - _season_min) >= minutes_increase_bypass
+        if not _mi_bypass:
+            if _pred_min < min_minutes and _season_min < min_minutes:
+                continue
+            # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk
+            # Players with 12-14 recent min are rotation-bubble — high risk of wasting a draft slot
+            if p.get("recent_min", 0) < min_recent_minutes and _season_min < min_recent_minutes + 3:
+                continue
         if rw_statuses and not is_safe_to_draft(p.get("name", "")):
             continue
         if p.get("injury_status", "").upper() == "OUT":
