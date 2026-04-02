@@ -272,15 +272,26 @@ The cold pipeline runs from three triggers only: (1) deploy SHA change startup h
 
 ### Cache Helpers (grep: SLATE CACHE GITHUB)
 - `_cg(key)` / `_cs(key, value)` — Redis-first read/write with `/tmp` fallback and automatic backfill
-- `_bust_slate_cache()` — **Atomic bust of all layers**: in-memory + Redis (`rflush()`) + `/tmp` + GitHub tombstones
+- `_bust_slate_cache(_caller)` — **Bust all layers**: in-memory + Redis (`rflush()`) + `/tmp` + GitHub tombstones. **Must only be called from paths that subsequently regenerate** — orphan tombstones cause infinite loading. Logs caller for debugging.
 - `_slate_cache_to_github(slate_data)` — writes today's slate to `data/slate/{date}_slate.json`
 - `_slate_cache_from_github()` — reads today's slate; returns `None` if missing or busted
 
 ### Cache Invalidation
-- **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → busts all layers → next request regenerates
-- **Manual cold reset** (`/api/cold-reset`): calls global cold pipeline and regenerates slate + LOTD + parlay
-- **Injury check** (`/api/injury-check` cron, afternoon): invokes the same global cold pipeline when injuries hit cached lineups
-- **New deploy**: startup hook detects SHA mismatch → `_bust_slate_cache()` → background regeneration
+
+**CRITICAL: Cache only regenerates cold on deploys. Deploys only happen on 3 triggers:**
+1. **Slate turnover** (cron/automated) — `_run_cold_pipeline("slate_turnover")`
+2. **Afternoon pre-slate injury/news update** (cron/automated) — `/api/injury-check` → `_run_cold_pipeline("injury_check")`
+3. **Manual dev pushes to main** — Railway deploy → startup SHA mismatch → `_run_cold_pipeline("deploy_sha_change")`
+
+**NEVER write bust tombstones to GitHub `data/slate/` manually** (via MCP tools, GitHub API, or ad-hoc scripts). `_bust_slate_cache()` writes tombstones that tell the cache layer "skip me, regenerate from pipeline." If no pipeline runs after the bust, the tombstones persist forever → Layer 2 always returns None → Layer 3 runs the full pipeline on every request → infinite loading when concurrent requests collide. Only the cold pipeline (bust + regen as an atomic unit) should write these files.
+
+**Invalidation paths:**
+- **Config change** (`/api/lab/update-config`): calls `_bust_slate_cache()` → busts all layers → next `/api/slate` request regenerates via Layer 3
+- **Manual cold reset** (`/api/cold-reset`): calls `_run_cold_pipeline()` (bust + regen atomic)
+- **Injury check** (`/api/injury-check` cron): calls `_run_cold_pipeline()` when injuries affect cached lineups
+- **New deploy**: startup hook detects SHA mismatch → `_run_cold_pipeline()` (bust + regen atomic)
+
+`_bust_slate_cache()` logs its caller (`_caller` param) for debugging orphan busts. All 4 call sites are tagged: `cold_pipeline:{trigger}`, `force_regenerate`, `lab_update_config`, `lab_rollback`.
 
 ### Version-Aware Startup (grep: deploy_sha)
 On container start, `_deploy_startup_safe_prewarm()` compares `RAILWAY_GIT_COMMIT_SHA` against a `deploy_sha` key in Redis:
@@ -740,7 +751,7 @@ Explicit TTLs protect against stale data while minimizing API calls:
 
 **GitHub vs `/tmp`** — Slate: Layer 1 `/tmp` → Layer 2 `data/slate/*` → Layer 3 pipeline. Line/parlay enrichment: `_hydrate_game_projs_from_github()` before `_run_game()` when `/tmp` is cold. Single read replaces N× ESPN/LGBM for the same ET day when a prior instance already wrote `data/slate/{date}_games.json`.
 
-**Bust / reset** — `_bust_slate_cache()` tombstones GitHub slate + games + locks and clears local `/tmp` JSON. `GET /api/cold-reset` runs the global bust+regen pipeline and reloads config/cache layers.
+**Bust / reset** — `_bust_slate_cache(_caller)` tombstones GitHub slate + games + locks and clears local `/tmp` JSON. **NEVER call directly or write tombstones to GitHub manually** — orphan tombstones without a subsequent pipeline regen cause infinite loading. `GET /api/cold-reset` runs the global bust+regen pipeline (atomic) and reloads config/cache layers. Cache only regenerates cold on deploys (3 triggers: slate turnover cron, injury-check cron, dev push to main).
 
 ### Midnight Rollover Handling
 `auto_resolve_line()` correctly handles games finishing after midnight ET:
