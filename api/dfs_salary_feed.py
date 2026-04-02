@@ -18,10 +18,11 @@ grep: DFS SALARY FEED
 import csv
 import io
 import json
-import re
 import time
 from pathlib import Path
 from typing import Optional
+
+from api.shared import normalize_player_name as _normalize_name
 
 
 CACHE_DIR = Path("/tmp/nba_cache_v19")
@@ -29,11 +30,7 @@ DATA_DIR = Path("data/dfs_salaries")
 _CACHE_TTL = 7200  # 2 hours
 
 
-def _normalize_name(name: str) -> str:
-    n = str(name).lower().strip()
-    n = re.sub(r"['\.\-]", "", n)
-    n = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
-    return re.sub(r"\s+", " ", n).strip()
+# _normalize_name imported from api.shared (DRY — handles accents/diacritics)
 
 
 def _cache_path(key: str) -> Path:

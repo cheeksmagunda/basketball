@@ -31,18 +31,21 @@ def espn_scoreboard_url(date_str_ymd: str) -> str:
 def normalize_player_name(name: str) -> str:
     """Normalize player name for consistent joining across datasets.
 
-    Strips accents/diacritics, periods, common suffixes (Jr., Sr., III, II, IV),
-    lowercases. Works for ESPN, RotoWire, CSV pipelines.
+    Strips accents/diacritics, periods, hyphens, apostrophes, common suffixes
+    (Jr., Sr., III, II, IV), lowercases, collapses whitespace.
+    Works for ESPN, RotoWire, Odds API, CSV pipelines.
 
     Examples:
         'Nikola Jokić' → 'nikola jokic'
         'P.J. Washington' → 'pj washington'
         'Marcus Morris Sr.' → 'marcus morris'
+        'Shai Gilgeous-Alexander' → 'shai gilgeousalexander'
+        "De'Aaron Fox" → 'deaaron fox'
     """
     n = unicodedata.normalize("NFKD", name or "").encode("ASCII", "ignore").decode("ASCII")
-    n = n.replace(".", "")
+    n = re.sub(r"['\.\-]", "", n)
     n = re.sub(r'\s+(jr\.?|sr\.?|iii|ii|iv)\s*$', '', n, flags=re.IGNORECASE)
-    return n.strip().lower()
+    return re.sub(r'\s+', ' ', n).strip().lower()
 
 
 def et_date():

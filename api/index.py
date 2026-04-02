@@ -186,6 +186,13 @@ def _data_ref(path: str):
     """Return branch override for GitHub API calls, or None for default (main)."""
     return None
 
+def _github_headers() -> dict:
+    """Standardized GitHub API headers (DRY — single source of truth)."""
+    return {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
 def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """Get file content and SHA from GitHub. Returns (content_str, sha) or (None, None)."""
     if not GITHUB_TOKEN or not GITHUB_REPO:
@@ -194,10 +201,7 @@ def _github_get_file(path: str, ref_override: Optional[str] = None) -> Tuple[Opt
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
     if ref:
         url += f"?ref={ref}"
-    r = requests.get(url, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-    }, timeout=_T_DEFAULT)
+    r = requests.get(url, headers=_github_headers(), timeout=_T_DEFAULT)
     if r.status_code == 200:
         data = r.json()
         content = base64.b64decode(data["content"]).decode("utf-8")
@@ -212,10 +216,7 @@ def _github_list_dir(path: str, ref_override: Optional[str] = None) -> list:
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
     if ref:
         url += f"?ref={ref}"
-    r = requests.get(url, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-    }, timeout=_T_DEFAULT)
+    r = requests.get(url, headers=_github_headers(), timeout=_T_DEFAULT)
     if r.status_code == 200:
         return r.json()
     return []
@@ -238,10 +239,7 @@ def _github_write_file(path: str, content: str, message: str = "auto-update", ma
             payload["sha"] = sha
 
         try:
-            r = requests.put(url, json=payload, headers={
-                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github.v3+json",
-            }, timeout=_T_GITHUB)
+            r = requests.put(url, json=payload, headers=_github_headers(), timeout=_T_GITHUB)
 
             if r.status_code in (200, 201):
                 return {"ok": True, "path": path}
@@ -290,7 +288,7 @@ def _github_write_batch(files: list, message: str = "auto-update") -> dict:
     if not GITHUB_TOKEN or not GITHUB_REPO or not files:
         return {"error": "no files or credentials"}
     branch = "main"
-    h = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    h = _github_headers()
     try:
         # Get the current commit SHA for the target branch
         ref_r = requests.get(
@@ -368,10 +366,7 @@ def _github_delete_file(path, sha, message="auto-delete"):
     payload = {"message": message, "sha": sha}
     if branch:
         payload["branch"] = branch
-    r = requests.delete(url, json=payload, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-    }, timeout=_T_GITHUB)
+    r = requests.delete(url, json=payload, headers=_github_headers(), timeout=_T_GITHUB)
     return r.status_code in (200, 204)
 
 
@@ -826,7 +821,7 @@ def _data_path(kind, date, ext="json", suffix=""):
     return f"{_DATA_PREFIXES[kind]}/{date}{suffix}.{ext}"
 
 # Shared slot multipliers (imported from api.shared for single source of truth)
-from api.shared import SLOT_MULTIPLIERS as _SLOT_MULTS_SHARED
+from api.shared import SLOT_MULTIPLIERS as _SLOT_MULTS_SHARED, ESPN_BASE as ESPN
 
 # Hardcoded draft-lineup blacklist (Starting 5, Moonshot, THE LINE UP only).
 # This is an application-layer override and is intentionally NOT part of
@@ -1423,7 +1418,7 @@ def _lgbm_feature_vector(
 # grep: ESPN, MIN_GATE, DEFAULT_TOTAL, _cp, _cg, _cs, _lp, _lg, _ls
 # _cg/cs = prediction cache (date-keyed, /tmp); _lg/ls = lock cache (warm instance).
 # ─────────────────────────────────────────────────────────────────────────────
-ESPN      = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+# ESPN imported from api.shared as ESPN (DRY — single source of truth)
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
@@ -6069,27 +6064,30 @@ def _get_slate_impl():
             _enrich_projections_with_odds(all_proj, draftable_games)
         except Exception as _odds_err:
             print(f"[odds_enrich] call-site error: {_odds_err}")
-        # Matchup data: opponent defensive stats + game opponent map (used by Layer 1.5 and _build_lineups)
-        try:
-            _def_stats = _fetch_team_def_stats()
-        except Exception as _def_err:
-            print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
-        try:
-            _dvp_data = _fetch_dvp_data()
-        except Exception as _dvp_err:
-            print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
-        # Optional Claude context pass: adjust RS projections for game narrative
-        # (blowout risk, defensive value, rivalry closeness). No-op when disabled.
-        _slate_news_text = ""
-        try:
-            _slate_news_text = _fetch_nba_news_context(draftable_games, all_proj=all_proj)
-        except Exception:
-            pass
+        # Matchup data + news + context pass — run in parallel (saves 2-4s vs serial)
         _matchup_intel = {}
-        try:
-            _claude_context_pass(all_proj, draftable_games)
-        except Exception as _ctx_err:
-            print(f"[context_pass] call-site error: {_ctx_err}")
+        _slate_news_text = ""
+        with ThreadPoolExecutor(max_workers=4) as _enrich_pool:
+            _def_fut = _enrich_pool.submit(_fetch_team_def_stats)
+            _dvp_fut = _enrich_pool.submit(_fetch_dvp_data)
+            _news_fut = _enrich_pool.submit(_fetch_nba_news_context, draftable_games, all_proj=all_proj)
+            _ctx_fut = _enrich_pool.submit(_claude_context_pass, all_proj, draftable_games)
+            try:
+                _def_stats = _def_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _def_err:
+                print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+            try:
+                _dvp_data = _dvp_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _dvp_err:
+                print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
+            try:
+                _slate_news_text = _news_fut.result(timeout=_T_EXECUTOR) or ""
+            except Exception:
+                pass
+            try:
+                _ctx_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _ctx_err:
+                print(f"[context_pass] call-site error: {_ctx_err}")
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
         chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data)
         lineups = {"chalk": chalk, "upside": upside}
@@ -7687,7 +7685,7 @@ def _run_cold_pipeline(trigger: str) -> dict:
         auto_saved = False
         cleared = 0
         try:
-            games = fetch_games()
+            games = _cp_games if trigger != "manual_redeploy" else fetch_games()
             starts = [g["startTime"] for g in games if g.get("startTime")]
             if _any_locked(starts):
                 try:
@@ -8853,27 +8851,37 @@ def _run_line_engine_for_date(date, full_enrichment=True, prefer_fallback=False)
     fv_edge_map = {}
     fv_full_data = {}
     if full_enrichment:
-        # Fetch web search news context for the line engine (reuses Layer 1 cache).
-        # This gives Claude injury/rotation/rest intel that can improve pick quality.
-        try:
-            news_context = _fetch_nba_news_context(target_games, date=date, all_proj=all_proj)
-        except Exception as _news_err:
-            print(f"[line] web search for news context failed (non-fatal): {_news_err}")
-        try:
-            dvp_data = _fetch_dvp_data()
-        except Exception as _dvp_err:
-            print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
-        # Fair Value enrichment — deterministic edge maps for prop betting confidence
-        try:
-            fv_edge_map, fv_full_data = _compute_betting_fair_value(all_proj, target_games, player_odds_map)
-        except Exception as _fv_err:
-            print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
+        # Parallel enrichment: news + DvP + fair value (saves 1-2s vs serial)
+        with ThreadPoolExecutor(max_workers=3) as _le_pool:
+            _le_news_fut = _le_pool.submit(_fetch_nba_news_context, target_games, date=date, all_proj=all_proj)
+            _le_dvp_fut = _le_pool.submit(_fetch_dvp_data)
+            _le_fv_fut = _le_pool.submit(_compute_betting_fair_value, all_proj, target_games, player_odds_map)
+            try:
+                news_context = _le_news_fut.result(timeout=_T_EXECUTOR) or ""
+            except Exception as _news_err:
+                print(f"[line] web search for news context failed (non-fatal): {_news_err}")
+            try:
+                dvp_data = _le_dvp_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _dvp_err:
+                print(f"[line] DvP fetch failed (non-fatal): {_dvp_err}")
+            try:
+                fv_edge_map, fv_full_data = _le_fv_fut.result(timeout=_T_EXECUTOR)
+            except Exception as _fv_err:
+                print(f"[line] fair value enrichment failed (non-fatal): {_fv_err}")
+    _line_odds_source = "model_only" if not player_odds_map else "live"
     result = run_line_engine(
         all_proj, target_games, line_config, player_odds_map,
         news_context=news_context, dvp_data=dvp_data, edge_map=fv_edge_map or None,
         fair_value_data=fv_full_data or None,
         prefer_fallback=prefer_fallback,
     )
+    # Stamp odds source on each pick so frontend/API consumers know data quality
+    if result:
+        for _pk_key in ("pick", "over_pick", "under_pick"):
+            if result.get(_pk_key):
+                result[_pk_key]["odds_source"] = _line_odds_source
+        result["odds_source"] = _line_odds_source
+        result["odds_entries"] = len(player_odds_map)
     # Enrich picks with real L5 game values from ESPN gamelogs
     _enrich_line_picks_l5(result, all_proj)
     return result, None
@@ -11841,6 +11849,7 @@ def _compute_betting_fair_value(all_proj, games, player_odds_map):
                 side=ctx["side"],
                 book_lines=book_lines or None,
                 config=fv_config,
+                gs_config=_cfg("game_script", _CONFIG_DEFAULTS.get("game_script", {})),
             )
         except Exception as e:
             print(f"[fair-value] projection error for {pid}: {e}")
@@ -12016,11 +12025,10 @@ def _run_parlay_engine_sync(today, *, allow_synthetic=False):
 
     parlay_config = sanitize_parlay_config(_cfg("parlay", _CONFIG_DEFAULTS.get("parlay", {})))
 
-    # Loosen thresholds when using synthetic lines (no Vegas signal)
+    # When running on synthetic lines, keep thresholds tight — don't silently
+    # lower quality gates.  Log a clear WARNING so we know when this path fires.
     if projection_only:
-        parlay_config["min_blended_conf"] = min(parlay_config.get("min_blended_conf", 0.52), 0.50)
-        parlay_config["max_minutes_cv"] = max(parlay_config.get("max_minutes_cv", 0.30), 0.35)
-        print(f"[parlay] synthetic mode — loosened min_blended_conf={parlay_config['min_blended_conf']}, max_minutes_cv={parlay_config['max_minutes_cv']}")
+        print(f"[parlay] WARNING: running on synthetic/model-only lines — no real Vegas odds backing this parlay")
 
     gamelog_id_list = select_parlay_gamelog_player_ids(
         all_proj, target_games, player_odds_map, rw_statuses, parlay_config, projection_only
@@ -12060,6 +12068,8 @@ def _run_parlay_engine_sync(today, *, allow_synthetic=False):
     )
     if result:
         result["projection_only"] = projection_only
+        result["odds_source"] = "synthetic" if projection_only else ("cached" if not player_odds_map else "live")
+        result["odds_entries"] = len(player_odds_map)
         if result.get("filter_funnel"):
             debug["filter_funnel"] = result["filter_funnel"]
     return result, None, debug
@@ -12297,7 +12307,7 @@ async def parlay_force_regenerate(request: Request):
 
     try:
         result, err, debug = await asyncio.wait_for(
-            asyncio.to_thread(_run_parlay_engine_sync, target_date, allow_synthetic=True),
+            asyncio.to_thread(_run_parlay_engine_sync, target_date, allow_synthetic=False),
             timeout=150,
         )
     except asyncio.TimeoutError:

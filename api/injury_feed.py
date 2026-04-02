@@ -10,12 +10,13 @@ _build_game_lineups (per-game), closing the per-game RotoWire gap.
 grep: INJURY FEED
 """
 
-import re
 import json
 import time
 import requests
 from pathlib import Path
 from typing import Optional
+
+from api.shared import normalize_player_name as _normalize_name
 
 
 CACHE_DIR = Path("/tmp/nba_cache_v19")
@@ -33,11 +34,7 @@ _HEADERS = {
 }
 
 
-def _normalize_name(name: str) -> str:
-    n = str(name).lower().strip()
-    n = re.sub(r"['\.\-]", "", n)
-    n = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
-    return re.sub(r"\s+", " ", n).strip()
+# _normalize_name imported from api.shared (DRY — handles accents/diacritics)
 
 
 def _cache_path(key: str) -> Path:
