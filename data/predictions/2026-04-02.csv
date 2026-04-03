@@ -1,11 +1,31 @@
 scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
 slate,chalk,2.0x,Deni Avdija,4683021,POR,F,7.9,2.5,34.7,23.6,9.2,6.6,0.9,0.4
-slate,chalk,1.8x,Ayo Dosunmu,4397002,MIN,G,6.2,2.5,35.0,17.4,11.6,9.1,1.7,0.7
-slate,chalk,1.6x,Pat Spencer,4592714,GS,G,5.9,2.5,30.1,11.4,6.3,6.2,1.3,0.4
-slate,chalk,1.4x,Brook Lopez,3448,LAC,C,5.9,2.7,33.5,14.2,7.4,2.1,1.0,2.4
-slate,chalk,1.2x,Yves Missi,5061589,NO,C,4.8,2.8,27.6,6.3,3.8,1.0,0.0,2.6
-slate,upside,2.0x,Toumani Camara,4431736,POR,F,7.5,2.5,34.5,17.0,6.6,1.0,2.1,0.7
-slate,upside,1.8x,Kristaps Porzingis,3102531,GS,C,5.8,2.5,32.1,23.3,5.1,2.3,0.4,0.0
-slate,upside,1.6x,Julius Randle,3064514,MIN,F,5.8,2.5,34.0,19.7,5.3,4.4,0.4,0.3
-slate,upside,1.4x,Kris Dunn,2991139,LAC,G,5.3,2.4,27.4,5.1,2.2,2.8,1.6,0.4
-slate,upside,1.2x,Oso Ighodaro,4601023,PHX,F,4.6,2.5,29.5,8.8,7.9,5.3,0.0,1.0
+slate,chalk,1.8x,Brook Lopez,3448,LAC,C,6.8,2.7,33.5,14.2,7.4,2.1,1.0,2.4
+slate,chalk,1.6x,Pat Spencer,4592714,GS,G,6.6,2.5,30.1,11.4,6.3,6.2,1.3,0.4
+slate,chalk,1.4x,Keon Ellis,4702177,CLE,G,5.2,1.7,26.0,9.7,1.6,0.8,1.3,0.3
+slate,chalk,1.2x,Yves Missi,5061589,NO,C,4.9,2.8,27.6,6.3,3.8,1.0,0.0,2.6
+slate,upside,2.0x,Toumani Camara,4431736,POR,F,7.9,2.5,34.5,17.0,6.6,1.0,2.1,0.7
+slate,upside,1.8x,Kristaps Porzingis,3102531,GS,C,6.4,2.5,32.1,23.3,5.1,2.3,0.4,0.0
+slate,upside,1.6x,Jeremiah Fears,5144091,NO,G,5.8,2.0,25.9,11.6,2.7,4.6,1.1,0.8
+slate,upside,1.4x,Kris Dunn,2991139,LAC,G,5.0,2.4,27.4,5.1,2.2,2.8,1.6,0.4
+slate,upside,1.2x,Jake LaRavia,4592691,LAL,F,4.9,1.8,30.2,7.6,4.6,0.7,1.7,0.3
+LAL @ OKC,the_lineup,2.0x,Luka Doncic,3945274,LAL,G,8.4,0.0,37.1,41.9,6.2,7.9,2.1,0.3
+LAL @ OKC,the_lineup,1.8x,Shai Gilgeous-Alexander,4278073,OKC,G,8.1,0.0,37.1,36.4,3.7,3.8,1.2,0.7
+LAL @ OKC,the_lineup,1.6x,LeBron James,1966,LAL,F,7.5,0.0,33.5,16.3,6.9,8.4,0.7,0.8
+LAL @ OKC,the_lineup,1.4x,Deandre Ayton,4278129,LAL,C,7.1,0.0,27.4,14.0,7.9,0.8,0.7,2.1
+LAL @ OKC,the_lineup,1.2x,Chet Holmgren,4433255,OKC,C,6.6,0.0,30.1,13.3,8.1,1.1,1.2,0.9
+CLE @ GS,the_lineup,2.0x,Pat Spencer,4592714,GS,G,7.3,0.0,30.1,11.4,6.3,6.2,1.3,0.4
+CLE @ GS,the_lineup,1.8x,Evan Mobley,4432158,CLE,C,7.0,0.0,32.1,19.1,9.7,3.4,0.6,1.0
+CLE @ GS,the_lineup,1.6x,Jarrett Allen,4066328,CLE,C,6.6,0.0,27.2,15.8,5.8,0.9,0.7,0.3
+CLE @ GS,the_lineup,1.4x,Max Strus,4065778,CLE,G,6.6,0.0,25.3,17.0,4.7,1.4,0.2,0.0
+CLE @ GS,the_lineup,1.2x,Kristaps Porzingis,3102531,GS,C,6.5,0.0,32.1,23.3,5.1,2.3,0.4,0.0
+NO @ POR,the_lineup,2.0x,Toumani Camara,4431736,POR,F,9.1,0.0,34.5,17.0,6.6,1.0,2.1,0.7
+NO @ POR,the_lineup,1.8x,Deni Avdija,4683021,POR,F,8.3,0.0,34.7,23.6,9.2,6.6,0.9,0.4
+NO @ POR,the_lineup,1.6x,Jrue Holiday,3995,POR,G,7.5,0.0,31.2,22.1,3.9,2.2,1.1,0.0
+NO @ POR,the_lineup,1.4x,Derik Queen,4869780,NO,C,7.2,0.0,27.1,12.6,6.4,0.9,0.6,0.8
+NO @ POR,the_lineup,1.2x,Saddiq Bey,4397136,NO,G,6.9,0.0,31.3,18.1,4.3,1.8,0.7,0.8
+SA @ LAC,the_lineup,2.0x,Darius Garland,4396907,LAC,G,8.9,0.0,33.7,20.6,1.6,6.6,1.6,0.4
+SA @ LAC,the_lineup,1.8x,John Collins,3908845,LAC,F,7.6,0.0,31.9,16.0,5.0,1.7,1.3,0.3
+SA @ LAC,the_lineup,1.6x,Julian Champagnie,4592479,SA,F,7.5,0.0,23.5,13.4,4.9,1.9,0.4,0.0
+SA @ LAC,the_lineup,1.4x,Brook Lopez,3448,LAC,C,7.3,0.0,33.5,14.2,7.4,2.1,1.0,2.4
+SA @ LAC,the_lineup,1.2x,Dylan Harper,5037871,SA,G,7.3,0.0,20.5,13.2,3.1,3.7,1.4,0.3
