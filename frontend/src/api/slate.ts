@@ -26,8 +26,8 @@ export function useSlate() {
     queryFn: () => fetchJson<SlateData>('/api/slate', 30_000),
     staleTime: 60 * 1000, // 60s — matches backend _CACHE_TTLS["slate"]
     refetchOnWindowFocus: true,
-    retry: 3,
-    retryDelay: (attempt) => [8_000, 20_000, 40_000][attempt] ?? 40_000,
+    retry: 1,
+    retryDelay: 8_000,
   });
 }
 
