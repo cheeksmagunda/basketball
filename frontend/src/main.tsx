@@ -15,16 +15,12 @@ const queryClient = new QueryClient({
 });
 
 // ---------------------------------------------------------------------------
-// Prefetch ALL tab data immediately — before React even renders.
-// When components mount and call hooks with matching queryKeys, React Query
-// joins the in-flight request instead of firing a new one.
+// Prefetch only the critical first-tab data (slate).
+// Other tabs (Line, Parlay, Ben) load lazily on first visit — their endpoints
+// can take 30-90s and hammering them all on cold start blocks the slate
+// request and makes the app appear frozen for 1-3 minutes.
 // ---------------------------------------------------------------------------
 queryClient.prefetchQuery({ queryKey: ['slate'], queryFn: () => fetchJson('/api/slate', 30_000) });
-queryClient.prefetchQuery({ queryKey: ['line-of-the-day', undefined], queryFn: () => fetchJson('/api/line-of-the-day', 90_000) });
-queryClient.prefetchQuery({ queryKey: ['line-history'], queryFn: () => fetchJson('/api/line-history', 15_000) });
-queryClient.prefetchQuery({ queryKey: ['parlay'], queryFn: () => fetchJson('/api/parlay', 90_000) });
-queryClient.prefetchQuery({ queryKey: ['parlay-history'], queryFn: () => fetchJson('/api/parlay-history', 15_000) });
-queryClient.prefetchQuery({ queryKey: ['lab-briefing'], queryFn: () => fetchJson('/api/lab/briefing', 30_000) });
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
