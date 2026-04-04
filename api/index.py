@@ -972,6 +972,10 @@ _CONFIG_DEFAULTS = {
         # Gamelog-based projection: use per-game data from last N days instead of
         # ESPN averaged splits. Fixes rotation-loss blindness (e.g. Payne 17→2 min).
         "gamelog_window_days": 7,
+        "season_recent_blend": 0.70,          # 70% recent / 30% season
+        "injury_return_blend": 0.30,           # Injury return players: 30% recent / 70% season
+        "injury_return_gp_ratio": 0.60,        # GP < 60% of expected = likely missed time
+        "injury_return_min_spike": 1.12,       # Recent min > 112% of season = ramp-up signal
     },
     "matchup": {
         "enabled": True,
@@ -2423,14 +2427,28 @@ def _fetch_athlete(pid):
             major_w     = proj.get("major_role_change_recent_weight", 0.80)
             mod_thr     = proj.get("moderate_decline_threshold", 0.90)
             mod_w       = proj.get("moderate_decline_recent_weight", 0.65)
-            blend_w     = proj.get("season_recent_blend", 0.5)
+            blend_w     = proj.get("season_recent_blend", 0.70)
 
             min_ratio = recent["min"] / max(season["min"], 1)
-            # Injury return exception: if recent min is much HIGHER than season
-            # (player returning, ramping up), trust season more to avoid over-projection.
-            # Recent < season = role change (trust recent); Recent > season = ramp-up (trust season).
-            _is_injury_return = min_ratio > 1.15 and recent["min"] > season["min"] + 3
-            _effective_blend_w = min(blend_w, 0.35) if _is_injury_return else blend_w
+            # ── Injury return detection using ESPN data ──────────────────────
+            # Signal 1: Games played (GP) — ESPN provides this in season splits.
+            # If player has played <60% of expected games, they missed significant time.
+            # Signal 2: Recent minutes spike — recent min > 112% of season avg = ramp-up.
+            # Signal 3: RotoWire "questionable" status (already handled elsewhere).
+            # When detected, cap blend weight to trust season more (avoid over-projecting
+            # a player ramping back from injury whose recent 5-game sample is inflated).
+            _ir_blend = float(proj.get("injury_return_blend", 0.30))
+            _ir_gp_ratio = float(proj.get("injury_return_gp_ratio", 0.60))
+            _ir_min_spike = float(proj.get("injury_return_min_spike", 1.12))
+            _expected_gp = _estimate_games_played()
+            _actual_gp = float(season.get("gp", 0))
+            _gp_ratio = _actual_gp / max(_expected_gp, 1)
+            # ESPN GP-based: player missed 40%+ of games → injury return
+            _is_injury_return_gp = _actual_gp > 0 and _gp_ratio < _ir_gp_ratio
+            # Minutes spike: recent min significantly higher than season (ramp-up)
+            _is_injury_return_min = min_ratio > _ir_min_spike and recent["min"] > season["min"] + 2
+            _is_injury_return = _is_injury_return_gp or _is_injury_return_min
+            _effective_blend_w = min(blend_w, _ir_blend) if _is_injury_return else blend_w
             if min_ratio < major_thr:
                 min_blend = round(season["min"] * (1 - major_w) + recent["min"] * major_w, 2)
             elif min_ratio < mod_thr:
@@ -2452,6 +2470,9 @@ def _fetch_athlete(pid):
             blended["season_stl"] = season["stl"]
             blended["recent_blk"] = recent["blk"]
             blended["season_blk"] = season["blk"]
+            blended["_injury_return"] = _is_injury_return
+            blended["_gp"] = _actual_gp
+            blended["_expected_gp"] = _expected_gp
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]

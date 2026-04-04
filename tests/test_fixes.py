@@ -6561,21 +6561,56 @@ class TestSmallSlateOptimization:
 
 
 class TestRecentWeightedBlend:
-    """Season/recent blend should weight recent (65%) over season (35%),
-    except for injury returns where season is trusted more."""
+    """Season/recent blend should weight recent (70%) over season (30%),
+    with ESPN data-driven injury return detection."""
 
     def test_blend_weight_config(self):
-        """Config should have season_recent_blend at 0.65 (recent-heavy)."""
+        """Config should have season_recent_blend at 0.70 (recent-heavy)."""
         import json
         cfg = json.loads(open("data/model-config.json").read())
         blend = cfg.get("projection", {}).get("season_recent_blend", 0.5)
-        assert blend == 0.65, f"Expected 0.65 (recent-heavy), got {blend}"
+        assert blend == 0.70, f"Expected 0.70 (recent-heavy), got {blend}"
 
-    def test_injury_return_exception(self):
-        """Injury return players should use lower blend weight (trust season more)."""
+    def test_injury_return_blend_config(self):
+        """Config should have injury_return_blend at 0.30 (season-heavy for returning players)."""
+        import json
+        cfg = json.loads(open("data/model-config.json").read())
+        proj = cfg.get("projection", {})
+        assert proj.get("injury_return_blend") == 0.30, "Injury return should trust season (0.30 recent)"
+        assert proj.get("injury_return_gp_ratio") == 0.60, "GP ratio threshold for injury detection"
+        assert proj.get("injury_return_min_spike") == 1.12, "Min spike threshold for ramp-up detection"
+
+    def test_injury_return_espn_gp_detection(self):
+        """Injury return detection should use ESPN games played (GP) data."""
         src = open("api/index.py").read()
-        assert "_is_injury_return" in src, "Should detect injury returns"
-        assert "_effective_blend_w" in src, "Should use adjusted blend for injury returns"
+        assert "_is_injury_return_gp" in src, "Should detect injury via ESPN GP ratio"
+        assert "_actual_gp" in src, "Should read actual GP from season splits"
+        assert "_expected_gp" in src, "Should compute expected GP from season progress"
+        assert "_estimate_games_played()" in src, "Should use _estimate_games_played helper"
+
+    def test_injury_return_min_spike_detection(self):
+        """Injury return detection should catch recent minutes spike (ramp-up)."""
+        src = open("api/index.py").read()
+        assert "_is_injury_return_min" in src, "Should detect min spike as injury signal"
+        assert "_ir_min_spike" in src, "Should read min spike threshold from config"
+
+    def test_injury_return_uses_config_blend(self):
+        """Injury return players should use configurable blend weight, not hardcoded."""
+        src = open("api/index.py").read()
+        assert "_ir_blend" in src, "Should read injury return blend from config"
+        assert "injury_return_blend" in src, "Config key for injury return blend"
+
+    def test_config_defaults_have_blend(self):
+        """_CONFIG_DEFAULTS should include season_recent_blend and injury return params."""
+        src = open("api/index.py").read()
+        assert '"season_recent_blend": 0.70' in src, "Default blend should be 0.70"
+        assert '"injury_return_blend": 0.30' in src, "Default injury return blend should be 0.30"
+
+    def test_blended_output_carries_injury_flag(self):
+        """Blended output should include _injury_return flag for downstream visibility."""
+        src = open("api/index.py").read()
+        assert '["_injury_return"]' in src, "Should set _injury_return flag on blended output"
+        assert '["_gp"]' in src, "Should carry actual GP on blended output"
 
 
 class TestRedisOptimization:
