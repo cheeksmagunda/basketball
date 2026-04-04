@@ -1,10 +1,1 @@
-[
-  {
-    "role": "user",
-    "content": "why is bones hyland expected to have more mins tonight?"
-  },
-  {
-    "role": "assistant",
-    "content": "Bones Hyland isn't on our most recent prediction slate (April 1st), and he doesn't appear to be playing tonight (April 2nd) based on the live scoreboard.\n\n**A few possible reasons our model might project elevated minutes for a player like Hyland in general:**\n\n1. **Teammate injuries/absences** \u2014 If a backcourt teammate is out (e.g., on the Clippers, if key guards are resting or injured), the model would bump his projected minutes.\n2. **Season-ending context** \u2014 Late-season games often see teams resting veterans, which pushes bench guards into bigger roles.\n3. **Recent usage trends** \u2014 Our model uses rolling averages, so if Hyland has been getting more run recently, that feeds into the minutes projection.\n\nAre you looking at a specific source that shows a Bones Hyland projection? If you can point me to where you saw it, I can dig in further. Otherwise, he doesn't seem to be on tonight's slate."
-  }
-]
+[]
