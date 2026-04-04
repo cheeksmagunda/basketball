@@ -47,18 +47,19 @@ function renderMarkdown(text: string): React.ReactNode[] {
 }
 
 export default function ChatMessage({ message }: ChatMessageProps) {
-  // Thinking state: pulsing dots
+  // Thinking state: Ben typing indicator
   if (message.isStatus) {
     return (
-      <div className={`${styles.msg} ${styles.thinking}`}>
+      <div className={`${styles.msg} ${styles.assistant} ${styles.thinking}`}>
+        <span className={styles.label}>BEN</span>
         <div className={styles.thinkingDots}>
           <span />
           <span />
           <span />
         </div>
-        {message.content && (
-          <div className={styles.thinkStatus}>{message.content}</div>
-        )}
+        <div className={styles.thinkStatus}>
+          {message.content || 'Thinking'}
+        </div>
       </div>
     );
   }
