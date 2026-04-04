@@ -6245,16 +6245,15 @@ class TestHybridLineupConstruction:
         from api.index import _CONFIG_DEFAULTS
         strat = _CONFIG_DEFAULTS["strategy"]
         assert strat.get("hybrid_lineup_enabled") is True
-        assert strat.get("star_slots_count") == 2
+        assert strat.get("star_slots_count") == 1
         assert strat.get("star_rs_min") == 4.0
-        assert strat.get("boost_slots_count") == 2
 
     def test_hybrid_in_model_config(self):
         """model-config.json includes hybrid lineup keys."""
         cfg = json.loads(open("data/model-config.json").read())
         strat = cfg.get("strategy", {})
         assert strat.get("hybrid_lineup_enabled") is True
-        assert strat.get("star_slots_count") == 2
+        assert strat.get("star_slots_count") == 1
         assert strat.get("star_rs_min") == 4.0
 
     def test_build_lineups_has_hybrid_phases(self):
@@ -6442,6 +6441,81 @@ class TestMaxPerTeamUnchanged:
         cfg = json.loads(open("data/model-config.json").read())
         strat = cfg.get("strategy", {})
         assert strat.get("max_per_team") == 1
+
+
+class TestContrarianBonus:
+    """Verify contrarian bonus gives EV uplift to low-draft role players with high boost.
+
+    Finding 4: Spearman drafts-boost = -0.732 (strongest signal).
+    Contrarian players (≤20 drafts, value ≥15) = 22.7% of leaderboard, avg value 18.0.
+    Low-draft + high-boost players keep boost 98.9% of the time."""
+
+    def test_contrarian_config_defaults(self):
+        """Config defaults include contrarian bonus parameters."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        ct = strat.get("contrarian_bonus", {})
+        assert ct.get("enabled") is True
+        assert ct.get("max_bonus") == 0.10
+        assert ct.get("min_boost") == 2.0
+        assert ct.get("max_season_ppg") == 16.0
+
+    def test_contrarian_in_model_config(self):
+        """model-config.json includes contrarian bonus config."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        ct = strat.get("contrarian_bonus", {})
+        assert ct.get("enabled") is True
+        assert ct.get("min_boost") == 2.0
+
+    def test_contrarian_in_build_lineups_code(self):
+        """_build_lineups code should contain contrarian bonus logic."""
+        src = open("api/index.py").read()
+        assert "ct_mult" in src, "Should have contrarian multiplier"
+        assert "_contrarian" in src, "Should tag contrarian players"
+        assert "contrarian_bonus" in src, "Should read contrarian config"
+
+    def test_contrarian_scales_with_boost(self):
+        """Contrarian bonus should scale: 2.0 boost → 0%, 3.0 boost → full bonus."""
+        src = open("api/index.py").read()
+        # The formula should scale by boost distance from min_boost
+        assert "boost - _ct_min_boost" in src, "Should scale by boost above threshold"
+
+    def test_stars_dont_get_contrarian(self):
+        """Stars (high PPG) should NOT get contrarian bonus — they get drafted heavily."""
+        src = open("api/index.py").read()
+        assert "_season_ppg <= _ct_max_ppg" in src, "Should exclude high-PPG stars"
+
+    def test_total_mult_includes_contrarian(self):
+        """total_mult should combine mi_mult * lb_mult * ct_mult."""
+        src = open("api/index.py").read()
+        assert "mi_mult * lb_mult * ct_mult" in src, "total_mult should include contrarian"
+
+
+class TestHybridOneStar:
+    """Verify HYBRID lineup uses exactly 1 star in top slot, 4 boost players."""
+
+    def test_star_slots_count_is_1(self):
+        """star_slots_count should be 1 (not 2)."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        assert strat["star_slots_count"] == 1
+
+    def test_model_config_star_slots_1(self):
+        """model-config.json star_slots_count should be 1."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat["star_slots_count"] == 1
+
+    def test_phase_a_selects_1_player(self):
+        """Phase A comment should say 'top 1' not 'top 2'."""
+        src = open("api/index.py").read()
+        assert "Phase A: Select top 1 player by PURE RS" in src
+
+    def test_phase_b_fills_4_slots(self):
+        """Phase B comment should say 'remaining 4' not 'remaining 3'."""
+        src = open("api/index.py").read()
+        assert "Fill remaining 4 slots" in src
 
 
 if __name__ == "__main__":

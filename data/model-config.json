@@ -1,7 +1,7 @@
 {
-  "version": 87,
+  "version": 88,
   "updated_at": "2026-04-04T00:00:00Z",
-  "updated_by": "v87-winning-draft-audit-hybrid-lineup",
+  "updated_by": "v88-hybrid-1star-contrarian-bonus",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -803,10 +803,14 @@
     "anti_popularity_strength": 0.2,
     "min_pred_min_season_ratio": 1.0,
     "hybrid_lineup_enabled": true,
-    "star_slots_count": 2,
+    "star_slots_count": 1,
     "star_rs_min": 4.0,
-    "boost_slots_count": 2,
-    "mid_slot_metric": "ev",
+    "contrarian_bonus": {
+      "enabled": true,
+      "max_bonus": 0.10,
+      "min_boost": 2.0,
+      "max_season_ppg": 16.0
+    },
     "leaderboard_frequency": {
       "enabled": true,
       "min_appearances": 5,

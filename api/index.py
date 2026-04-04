@@ -1131,10 +1131,17 @@ _CONFIG_DEFAULTS = {
         # Top 2 slots (2.0x, 1.8x) avg RS 5.80 with 0.69 boost — pure RS selection.
         # Bottom 2 slots (1.4x, 1.2x) avg boost 2.33 — boost-weighted selection.
         "hybrid_lineup_enabled": True,  # Enable 2-phase lineup construction
-        "star_slots_count": 2,          # Number of top slots filled by pure RS
-        "star_rs_min": 4.0,             # Minimum RS to be considered for star slots (even with 0 boost)
-        "boost_slots_count": 2,         # Number of bottom slots filled by EV (boost-weighted)
-        "mid_slot_metric": "ev",        # Middle slot(s) use standard EV formula
+        "star_slots_count": 1,          # Number of top slots filled by pure RS (1 star at 2.0x)
+        "star_rs_min": 4.0,             # Minimum RS to be considered for star slot (even with 0 boost)
+        # ── Contrarian bonus (Finding 4: 22.7% of leaderboard, avg value 18.0)
+        # Low-PPG role players with high boost are under-drafted. They keep their
+        # boost 98.9% of the time and produce outsized value. Small EV uplift.
+        "contrarian_bonus": {
+            "enabled": True,
+            "max_bonus": 0.10,       # Up to 10% EV boost for contrarian picks
+            "min_boost": 2.0,        # Must have ≥2.0 predicted boost to qualify
+            "max_season_ppg": 16.0,  # Only role players (not stars who get drafted heavily)
+        },
         # ── Leaderboard frequency bonus ───────────────────────────────────
         # Data-driven: players appearing 5+ times on the leaderboard are proven.
         # No hardcoded names — loaded from data/top_performers.csv dynamically.
@@ -4859,8 +4866,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
       1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
       2. Score: EV = RS × (2.0 + boost), safe_ev, upside_ev
       3. HYBRID Starting 5:
-         Phase A — Top 2 slots by PURE RS (ensures stars at 2.0x, 1.8x)
-         Phase B — Bottom 3 slots by EV (boost-weighted, catches role players)
+         Phase A — Top 1 slot by PURE RS (star anchor at 2.0x)
+         Phase B — Bottom 4 slots by EV (boost-weighted, catches role players)
       4. Moonshot: top 5 by upside_ev from REMAINING pool
       5. Slot assignment: sort by RS descending (provably optimal)
     """
@@ -4972,6 +4979,16 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         except Exception:
             pass
 
+    # ── Contrarian bonus (Finding 4: low-draft role players are under-valued) ─
+    # Data: Spearman drafts-boost = -0.732. Low-PPG players with high boost keep
+    # boost 98.9% of the time and make up 22.7% of the leaderboard (avg value 18.0).
+    # Give them a small EV uplift so they rank above similarly-projected players.
+    _ct_cfg = _strat.get("contrarian_bonus", {})
+    _ct_enabled = _ct_cfg.get("enabled", True)
+    _ct_max_bonus = float(_ct_cfg.get("max_bonus", 0.10))
+    _ct_min_boost = float(_ct_cfg.get("min_boost", 2.0))
+    _ct_max_ppg = float(_ct_cfg.get("max_season_ppg", 16.0))
+
     for p in candidate_pool:
         rs = float(p.get("rating", 0))
         boost = float(p.get("est_mult", 0))
@@ -4998,12 +5015,22 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 lb_mult = 1.0 + _lb_bonus
                 p["_lb_freq"] = _lb_data["count"]
                 p["_lb_avg_value"] = _lb_data["avg_value"]
-        total_mult = mi_mult * lb_mult
+        # Contrarian bonus: under-drafted role players with high boost
+        ct_mult = 1.0
+        if _ct_enabled:
+            _season_ppg = float(p.get("season_pts") or p.get("pts") or 0)
+            if boost >= _ct_min_boost and _season_ppg <= _ct_max_ppg and _season_ppg > 0:
+                # Scale bonus by how much boost exceeds threshold (2.0→0%, 3.0→full)
+                _ct_ratio = min((boost - _ct_min_boost) / max(1.0, 3.0 - _ct_min_boost), 1.0)
+                ct_mult = 1.0 + (_ct_max_bonus * _ct_ratio)
+                p["_contrarian"] = True
+        total_mult = mi_mult * lb_mult * ct_mult
         p["draft_ev"]   = round(rs * boost * total_mult, 2)
         p["safe_ev"]    = round(rs * cb_low * total_mult, 2)
         p["upside_ev"]  = round(rs * cb_high * total_mult, 2)
         p["_mi_mult"] = round(mi_mult, 3)
         p["_lb_mult"] = round(lb_mult, 3)
+        p["_ct_mult"] = round(ct_mult, 3)
         # Compute moonshot_ev for backward compatibility
         p["moonshot_ev"] = p["draft_ev"]
 
@@ -5030,15 +5057,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     # ── Step 4: HYBRID Starting 5 (Winning Draft Audit) ────────────────────
     # Data: rank-1 winners show 2.0x slot avg RS=5.80, boost=0.69 (RS is king).
     # 1.2x slot avg RS=3.76, boost=2.33 (boost is king). HYBRID approach:
-    # Phase A: fill top N slots by pure RS (ensures stars at 2.0x, 1.8x).
-    # Phase B: fill remaining slots by EV (catches high-boost role players).
+    # Phase A: fill top 1 slot by pure RS (star anchor at 2.0x).
+    # Phase B: fill remaining 4 slots by EV (catches high-boost role players).
     _hybrid_enabled = bool(_strat.get("hybrid_lineup_enabled", True))
-    _star_slots = int(_strat.get("star_slots_count", 2))
+    _star_slots = int(_strat.get("star_slots_count", 1))
     _star_rs_min = float(_strat.get("star_rs_min", 4.0))
 
     if _hybrid_enabled and len(candidate_pool) >= 5:
-        # Phase A: Select top star_slots_count players by PURE RS
-        # These go to 2.0x, 1.8x — where RS drives 81% of value
+        # Phase A: Select top 1 player by PURE RS
+        # This goes to 2.0x — where RS drives 81% of value
         star_pool = sorted(candidate_pool, key=lambda x: (-float(x.get("rating", 0)), x.get("player_variance", 0)))
         # Only consider players meeting star RS minimum
         star_eligible = [p for p in star_pool if float(p.get("rating", 0)) >= _star_rs_min]
@@ -5046,7 +5073,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             star_eligible = star_pool  # fall back to all if not enough stars
         star_picks, star_teams = _select_with_team_cap(star_eligible, _star_slots, max_per_team)
 
-        # Phase B: Fill remaining slots (3) by EV from remaining candidates
+        # Phase B: Fill remaining 4 slots by EV from remaining candidates
+        # No stars allowed in Phase B — these slots are for boost players
         star_names = {p.get("name") for p in star_picks}
         boost_pool = [p for p in candidate_pool if p.get("name") not in star_names]
         # Sort by safe_ev descending for reliable floor
