@@ -6238,8 +6238,7 @@ class TestContextLayerMinutesRisk:
 # ─────────────────────────────────────────────────────────
 
 class TestHybridLineupConstruction:
-    """Verify the HYBRID lineup builder selects stars for top slots
-    and boost players for bottom slots (Winning Draft Audit)."""
+    """Verify the HYBRID lineup builder: 1 star + 1 starter + 3 boost per lineup."""
 
     def test_hybrid_config_defaults(self):
         """Config defaults include hybrid lineup parameters."""
@@ -6248,6 +6247,9 @@ class TestHybridLineupConstruction:
         assert strat.get("hybrid_lineup_enabled") is True
         assert strat.get("star_slots_count") == 1
         assert strat.get("star_rs_min") == 4.0
+        assert strat.get("starter_slots_count") == 1
+        assert strat.get("starter_rs_min") == 3.0
+        assert strat.get("boost_pool_min_boost") == 2.0
 
     def test_hybrid_in_model_config(self):
         """model-config.json includes hybrid lineup keys."""
@@ -6256,33 +6258,30 @@ class TestHybridLineupConstruction:
         assert strat.get("hybrid_lineup_enabled") is True
         assert strat.get("star_slots_count") == 1
         assert strat.get("star_rs_min") == 4.0
+        assert strat.get("starter_slots_count") == 1
+        assert strat.get("starter_rs_min") == 3.0
 
-    def test_build_lineups_has_hybrid_phases(self):
-        """_build_lineups code contains Phase A (pure RS) and Phase B (EV)."""
+    def test_build_lineups_has_three_phases(self):
+        """_build_lineups code contains Phase A (star), B (starter), C (boost)."""
         src = open("api/index.py").read()
-        assert "Phase A" in src, "Should have Phase A (pure RS selection)"
-        assert "Phase B" in src, "Should have Phase B (EV-weighted selection)"
+        assert "Phase A" in src, "Should have Phase A (star anchor)"
+        assert "Phase B" in src, "Should have Phase B (high-production starter)"
+        assert "Phase C" in src, "Should have Phase C (high-boost players)"
 
-    def test_select_with_team_cap_exclude_names(self):
-        """_select_with_team_cap supports exclude_names parameter."""
+    def test_build_hybrid_lineup_function_exists(self):
+        """_build_hybrid_lineup helper exists in code."""
         src = open("api/index.py").read()
-        assert "exclude_names" in src, "Should support exclude_names to prevent Phase A/B overlap"
+        assert "def _build_hybrid_lineup(" in src
 
-    def test_star_pool_sorted_by_rating(self):
-        """Star pool should be sorted by rating (pure RS) descending."""
+    def test_both_lineups_use_hybrid(self):
+        """Both S5 and Moonshot use _build_hybrid_lineup."""
         src = open("api/index.py").read()
-        # Find the Phase A section
-        assert 'star_pool = sorted(candidate_pool, key=lambda x: (-float(x.get("rating", 0))' in src
-
-    def test_moonshot_still_uses_upside_ev(self):
-        """Moonshot (upside) lineup still sorts by upside_ev."""
-        src = open("api/index.py").read()
-        moonshot_section = src.split("Step 5")[1].split("Step 6")[0] if "Step 5" in src else ""
-        assert "upside_ev" in moonshot_section
+        # Should be called twice — once for chalk, once for moonshot
+        assert src.count("_build_hybrid_lineup(candidate_pool") >= 2
 
 
-class TestBoostPoolMinBoost:
-    """Verify Phase B boost pool enforces minimum boost floor for the 4 non-star picks."""
+class TestHybridArchetype:
+    """Verify HYBRID lineup: 1 star + 1 starter + 3 boost per lineup."""
 
     def test_boost_pool_min_boost_config_default(self):
         """Config defaults include boost_pool_min_boost."""
@@ -6290,22 +6289,37 @@ class TestBoostPoolMinBoost:
         strat = _CONFIG_DEFAULTS["strategy"]
         assert strat.get("boost_pool_min_boost") == 2.0
 
-    def test_boost_pool_min_boost_in_model_config(self):
-        """model-config.json includes boost_pool_min_boost."""
+    def test_starter_config_defaults(self):
+        """Config defaults include starter slot parameters."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        assert strat.get("starter_slots_count") == 1
+        assert strat.get("starter_rs_min") == 3.0
+
+    def test_config_in_model_config_json(self):
+        """model-config.json includes all hybrid archetype keys."""
         cfg = json.loads(open("data/model-config.json").read())
         strat = cfg.get("strategy", {})
         assert strat.get("boost_pool_min_boost") == 2.0
+        assert strat.get("starter_slots_count") == 1
+        assert strat.get("starter_rs_min") == 3.0
 
-    def test_boost_pool_filter_in_code(self):
-        """_build_lineups Phase B filters candidates by boost_pool_min_boost."""
+    def test_three_phases_in_code(self):
+        """_build_hybrid_lineup has Phase A (star), Phase B (starter), Phase C (boost)."""
         src = open("api/index.py").read()
-        assert "boost_pool_min_boost" in src, "Should read boost_pool_min_boost from config"
-        assert 'est_mult' in src and '>= _boost_pool_min_boost' in src, "Should filter boost pool by min boost"
+        assert "Phase A" in src, "Should have Phase A (star anchor)"
+        assert "Phase B" in src, "Should have Phase B (starter)"
+        assert "Phase C" in src, "Should have Phase C (high-boost)"
 
-    def test_boost_pool_fallback_on_thin_pool(self):
-        """When not enough players meet boost floor, code falls back to full pool."""
+    def test_starter_filters_low_boost(self):
+        """Phase B starter must have boost < boost_pool_min_boost."""
         src = open("api/index.py").read()
-        assert "relaxing" in src and "boost floor" in src, "Should log fallback when boost pool is thin"
+        assert "< _boost_pool_min_boost" in src, "Starter must have boost below the boost floor"
+
+    def test_moonshot_uses_hybrid_pattern(self):
+        """Moonshot lineup also uses the 1 star + 1 starter + 3 boost pattern."""
+        src = open("api/index.py").read()
+        assert "_build_hybrid_lineup(candidate_pool, exclude_names=chalk_names)" in src
 
 
 class TestRSRegressionGuard:
@@ -6521,10 +6535,10 @@ class TestContrarianBonus:
 
 
 class TestHybridOneStar:
-    """Verify HYBRID lineup uses exactly 1 star in top slot, 4 boost players."""
+    """Verify HYBRID lineup uses exactly 1 star anchor per lineup."""
 
     def test_star_slots_count_is_1(self):
-        """star_slots_count should be 1 (not 2)."""
+        """star_slots_count should be 1."""
         from api.index import _CONFIG_DEFAULTS
         strat = _CONFIG_DEFAULTS["strategy"]
         assert strat["star_slots_count"] == 1
@@ -6535,15 +6549,15 @@ class TestHybridOneStar:
         strat = cfg.get("strategy", {})
         assert strat["star_slots_count"] == 1
 
-    def test_phase_a_selects_1_player(self):
-        """Phase A comment should say 'top 1' not 'top 2'."""
+    def test_phase_a_is_star_anchor(self):
+        """Phase A should select 1 star anchor."""
         src = open("api/index.py").read()
-        assert "Phase A: Select top 1 player by PURE RS" in src
+        assert "Phase A: 1 star anchor" in src
 
-    def test_phase_b_fills_4_slots(self):
-        """Phase B comment should say 'remaining 4' not 'remaining 3'."""
+    def test_phase_b_is_starter(self):
+        """Phase B should select 1 high-production starter."""
         src = open("api/index.py").read()
-        assert "Fill remaining 4 slots" in src
+        assert "Phase B: 1 high-production starter" in src
 
 
 class TestSmallSlateOptimization:

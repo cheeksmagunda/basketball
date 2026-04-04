@@ -59,9 +59,15 @@ def simulate_date(
     top_k: int = 15,
     star_rs_min: float = 4.0,
     boost_min: float = 2.0,
+    starter_rs_min: float = 3.0,
     max_per_team: int = 1,
 ) -> dict:
-    """Simulate 2 HYBRID lineups (1 star + 4 boost each) from top-K performers.
+    """Simulate 2 HYBRID lineups (1 star + 1 starter + 3 boost each) from top-K.
+
+    Per lineup:
+      Phase A: 1 star anchor (highest RS, RS >= star_rs_min)
+      Phase B: 1 high-production starter (high RS, boost < boost_min)
+      Phase C: 3 high-boost players (boost >= boost_min)
 
     Returns dict with coverage count, diagnostics, and selected players.
     """
@@ -71,8 +77,9 @@ def simulate_date(
     # Classify
     n_stars = sum(1 for p in top if p["actual_rs"] >= star_rs_min)
     n_boost = sum(1 for p in top if p["actual_card_boost"] >= boost_min)
+    n_starters = sum(1 for p in top if p["actual_rs"] >= starter_rs_min and p["actual_card_boost"] < boost_min)
     n_both = sum(1 for p in top if p["actual_rs"] >= star_rs_min and p["actual_card_boost"] >= boost_min)
-    n_neither = sum(1 for p in top if p["actual_rs"] < star_rs_min and p["actual_card_boost"] < boost_min)
+    n_neither = sum(1 for p in top if p["actual_rs"] < starter_rs_min and p["actual_card_boost"] < boost_min)
 
     available = list(top)
     all_selected = []
@@ -100,7 +107,24 @@ def simulate_date(
         lineup_teams.add(star["team"])
         lineup_players.append(star)
 
-        # Phase B: pick 4 boost players (boost >= boost_min, max_per_team)
+        # Phase B: pick 1 high-production starter (high RS, boost < boost_min)
+        # These are productive starters who don't get high boosts (popular players)
+        starter_candidates = [
+            p for p in available
+            if p["actual_rs"] >= starter_rs_min
+            and p["actual_card_boost"] < boost_min
+            and p["team"] not in lineup_teams
+        ]
+        starter_candidates.sort(key=lambda p: -p["actual_rs"])
+
+        starter = starter_candidates[0] if starter_candidates else None
+        if starter:
+            available.remove(starter)
+            lineup_teams.add(starter["team"])
+            lineup_players.append(starter)
+
+        # Phase C: pick 3 high-boost players (boost >= boost_min, max_per_team)
+        boost_needed = 5 - len(lineup_players)  # 3 if starter found, 4 if not
         boost_candidates = [
             p for p in available
             if p["actual_card_boost"] >= boost_min and p["team"] not in lineup_teams
@@ -112,7 +136,7 @@ def simulate_date(
             if c["team"] not in lineup_teams:
                 boost_picks.append(c)
                 lineup_teams.add(c["team"])
-                if len(boost_picks) == 4:
+                if len(boost_picks) == boost_needed:
                     break
 
         for bp in boost_picks:
@@ -133,8 +157,10 @@ def simulate_date(
     if coverage < min(10, len(top)):
         if n_stars < 2:
             failure_mode = "insufficient_stars"
-        elif n_boost < 8:
+        elif n_boost < 6:
             failure_mode = "insufficient_boost"
+        elif n_starters < 2 and n_boost < 8:
+            failure_mode = "insufficient_starters"
         elif n_neither > 5:
             failure_mode = "neither_eligible"
         else:
@@ -144,6 +170,7 @@ def simulate_date(
         "top_k_actual": len(top),
         "n_stars": n_stars,
         "n_boost": n_boost,
+        "n_starters": n_starters,
         "n_both": n_both,
         "n_neither": n_neither,
         "selected": len(all_selected),
@@ -161,17 +188,19 @@ def main():
     parser.add_argument("--top-k", type=int, default=15, help="Top K performers per date (default: 15)")
     parser.add_argument("--star-rs", type=float, default=4.0, help="Star RS minimum (default: 4.0)")
     parser.add_argument("--boost-min", type=float, default=2.0, help="Boost floor (default: 2.0)")
+    parser.add_argument("--starter-rs", type=float, default=3.0, help="Starter RS minimum (default: 3.0)")
     parser.add_argument("--verbose", action="store_true", help="Show per-player detail on miss dates")
     args = parser.parse_args()
 
     data = load_top_performers()
     dates = sorted(data.keys())
 
-    print(f"\n{'='*90}")
-    print(f"  HYBRID DRAFT COVERAGE ANALYSIS  |  star_rs >= {args.star_rs}  |  boost >= {args.boost_min}  |  target: {args.target}/{args.top_k}")
-    print(f"{'='*90}")
-    print(f"{'DATE':<12} {'TOP-K':>5} {'STARS':>5} {'BOOST':>7} {'BOTH':>5} {'NEITHER':>7} {'SEL':>4} {'COV':>7} {'STATUS':>6}  REASON")
-    print(f"{'-'*90}")
+    print(f"\n{'='*100}")
+    print(f"  HYBRID DRAFT COVERAGE (1 star + 1 starter + 3 boost per lineup)")
+    print(f"  star_rs >= {args.star_rs}  |  starter_rs >= {args.starter_rs}  |  boost >= {args.boost_min}  |  target: {args.target}/{args.top_k}")
+    print(f"{'='*100}")
+    print(f"{'DATE':<12} {'TOP-K':>5} {'STARS':>5} {'START':>5} {'BOOST':>7} {'NEITHER':>7} {'SEL':>4} {'COV':>7} {'STATUS':>6}  REASON")
+    print(f"{'-'*100}")
 
     hits = 0
     misses = 0
@@ -187,6 +216,7 @@ def main():
             top_k=args.top_k,
             star_rs_min=args.star_rs,
             boost_min=args.boost_min,
+            starter_rs_min=args.starter_rs,
         )
 
         top_k_actual = result["top_k_actual"]
@@ -208,7 +238,7 @@ def main():
         reason_str = result["failure_mode"] or ""
         print(
             f"{date:<12} {top_k_actual:>5} {result['n_stars']:>5} "
-            f"{result['n_boost']:>7} {result['n_both']:>5} {result['n_neither']:>7} "
+            f"{result['n_starters']:>5} {result['n_boost']:>7} {result['n_neither']:>7} "
             f"{result['selected']:>4} {result['coverage']:>3}/{top_k_actual:<3} "
             f"{'✓' if is_hit else '✗':>4}   {reason_str}"
         )
@@ -229,6 +259,8 @@ def main():
                     ptype.append("STAR")
                 if p["actual_card_boost"] >= args.boost_min:
                     ptype.append("BOOST")
+                elif p["actual_rs"] >= args.starter_rs:
+                    ptype.append("START")
                 if not ptype:
                     ptype.append("--")
                 sel = "✓" if p["player_name"] in selected_names else ""
