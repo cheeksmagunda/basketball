@@ -56,6 +56,8 @@ try:
     from api.nba_api_feed import prefetch_enrichment as _nba_api_prefetch, enrich_stats_map as _nba_api_enrich
     from api.injury_feed import is_available as _injury_available, fetch_espn_injuries as _espn_injuries_fetch
     from api.dfs_salary_feed import get_anti_popularity_adjustment as _dfs_pop_adj, save_dfs_salaries as _save_dfs_sal, compute_popularity_scores as _dfs_pop_scores
+    from api.mlb_strategy import run_filter_pipeline as _mlb_run_filter_pipeline, MLB_STRATEGY_DEFAULTS as _MLB_DEFAULTS
+    from api.mlb_data import fetch_mlb_games as _fetch_mlb_games, fetch_all_game_data as _fetch_mlb_game_data, fetch_mlb_player_stats as _fetch_mlb_player_stats, fetch_mlb_team_stats as _fetch_mlb_team_stats, canonicalize_team as _mlb_canon_team, get_park_factor as _mlb_park_factor
 except ImportError:
     from .asset_optimizer import optimize_lineup
     from .line_engine import run_line_engine, _enrich_pick_from_projections, _game_lookup_from_games, _lookup_player_odds
@@ -70,6 +72,8 @@ except ImportError:
     from .nba_api_feed import prefetch_enrichment as _nba_api_prefetch, enrich_stats_map as _nba_api_enrich
     from .injury_feed import is_available as _injury_available, fetch_espn_injuries as _espn_injuries_fetch
     from .dfs_salary_feed import get_anti_popularity_adjustment as _dfs_pop_adj, save_dfs_salaries as _save_dfs_sal, compute_popularity_scores as _dfs_pop_scores
+    from .mlb_strategy import run_filter_pipeline as _mlb_run_filter_pipeline, MLB_STRATEGY_DEFAULTS as _MLB_DEFAULTS
+    from .mlb_data import fetch_mlb_games as _fetch_mlb_games, fetch_all_game_data as _fetch_mlb_game_data, fetch_mlb_player_stats as _fetch_mlb_player_stats, fetch_mlb_team_stats as _fetch_mlb_team_stats, canonicalize_team as _mlb_canon_team, get_park_factor as _mlb_park_factor
 DOCS_SECRET = os.getenv("DOCS_SECRET", "")  # optional: require ?docs_key=DOCS_SECRET or X-Docs-Key for /docs, /redoc, /openapi.json
 
 app = FastAPI()
@@ -1198,6 +1202,52 @@ _CONFIG_DEFAULTS = {
         # NOTE: Injury return penalties REMOVED after historical audit (2,316 entries, 152 dates).
         # Returning players produce +11.5% higher value than baseline due to boost reset mechanism.
         # The contrarian signal (72% under-drafted, avg 297 drafts vs 647) is too valuable to penalize.
+    },
+    # ── MLB "Filter, Not Forecast" Strategy ──────────────────────────────
+    # grep: MLB STRATEGY CONFIG
+    # External-variables framework: instead of predicting RS, identify CONDITIONS
+    # under which high RS is most likely to emerge, then select from that filtered pool.
+    # Core formula: total_value = RS × (slot_multiplier + card_boost) [ADDITIVE]
+    "mlb_strategy": {
+        "enabled": True,  # Toggle between MLB filter pipeline and NBA projection pipeline
+        "sport": "mlb",   # "mlb" or "nba" — determines which fetch/project/build path to use
+        "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
+        "slot_labels": ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"],
+        "min_environment_score": 20,
+        # ── Filter 1: Slate classification thresholds ──
+        "pitcher_day_threshold": 5,
+        "hitter_day_ou_threshold": 9.0,
+        "hitter_day_game_count": 5,
+        "tiny_slate_max_games": 3,
+        # ── Filter 2: Environmental scoring thresholds ──
+        "ace_era_threshold": 3.50,
+        "ace_k9_threshold": 8.0,
+        "weak_starter_era": 4.50,
+        "high_total_threshold": 8.5,
+        "elite_total_threshold": 9.5,
+        # ── Filter 3: Ownership leverage ──
+        "ghost_drafts_threshold": 100,
+        "chalk_drafts_threshold": 2000,
+        "ownership_leverage_weights": {
+            "ghost": 0.50,       # < 20 drafts + env > 50
+            "low": 0.30,         # < 100 drafts
+            "contrarian": 0.15,  # 100-500 drafts
+            "neutral": 0.0,      # 500-2000 drafts
+            "chalk": -0.30,      # > 2000 drafts
+        },
+        # ── Filter 4: Boost optimization ──
+        "boost_trap_env_threshold": 30,
+        "boost_leveraged_min_boost": 2.5,
+        "boost_leveraged_min_env": 50,
+        # ── Filter 5: Lineup construction ──
+        "max_same_team": 3,
+        "min_games_represented": 2,
+        "composition": {
+            "tiny":        {"min_pitchers": 1, "max_pitchers": 1},
+            "pitcher_day": {"min_pitchers": 4, "max_pitchers": 5},
+            "hitter_day":  {"min_pitchers": 0, "max_pitchers": 1},
+            "standard":    {"min_pitchers": 2, "max_pitchers": 3},
+        },
     },
 }
 
@@ -5216,6 +5266,233 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     return [_normalize_player(p) for p in chalk], [_normalize_player(p) for p in upside], core_pool
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MLB "FILTER, NOT FORECAST" PIPELINE
+# grep: MLB PIPELINE
+#
+# When mlb_strategy.enabled = True, the slate endpoint uses this path instead
+# of the NBA projection pipeline. It implements the 5-filter strategy:
+#   1. Slate Architecture (classify day type)
+#   2. Environmental Advantage (pitcher/hitter conditions)
+#   3. Ownership Leverage (contrarian value)
+#   4. Boost Optimization (amplify environment, not names)
+#   5. Lineup Construction (slot sequencing)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_mlb_game(game: dict) -> list[dict]:
+    """Fetch rosters and build MLB candidate list for a single game.
+
+    Returns list of candidate dicts with:
+      name, id, team, pos, is_pitcher, bats, throws, gameId,
+      batting_order, season stats, is_out, injury_status,
+      boost (est_mult), boost_band
+    """
+    cache_key = _ck_game_proj(game["gameId"])
+    cached = _cg(cache_key)
+    if cached:
+        return cached
+
+    from api.mlb_data import fetch_mlb_roster, fetch_mlb_player_stats, canonicalize_team
+
+    home_id = game.get("home_id", "")
+    away_id = game.get("away_id", "")
+    home_abbr = canonicalize_team(game.get("home", ""))
+    away_abbr = canonicalize_team(game.get("away", ""))
+
+    home_roster = fetch_mlb_roster(home_id, home_abbr) if home_id else []
+    away_roster = fetch_mlb_roster(away_id, away_abbr) if away_id else []
+
+    candidates = []
+    for roster, team_abbr, side in [(home_roster, home_abbr, "home"), (away_roster, away_abbr, "away")]:
+        for p in roster:
+            if p.get("is_out"):
+                continue
+            if p.get("injury_status", "").upper() in ("OUT", "IL"):
+                continue
+
+            # Fetch season stats
+            stats = {}
+            try:
+                stats = fetch_mlb_player_stats(p["id"])
+            except Exception as e:
+                print(f"[mlb_pipeline] Stats fetch failed for {p.get('name')}: {e}")
+
+            # Estimate card boost using the same cascade model
+            # MLB players use similar boost mechanics (based on drafts/popularity)
+            season_ppg = _safe_float(stats.get("avg", 0)) * 100  # proxy: batting avg as popularity signal
+            boost_val, boost_band = 3.0, (2.5, 3.0)  # Default high boost for unknown players
+            try:
+                boost_val, boost_band = _est_card_boost(
+                    proj_min=0,
+                    pts=_safe_float(stats.get("hr", 0)),
+                    team_abbr=team_abbr,
+                    player_name=p.get("name"),
+                    season_pts=_safe_float(stats.get("hr", 0)) + _safe_float(stats.get("rbi", 0)),
+                    recent_pts=_safe_float(stats.get("hr", 0)),
+                    season_avg_min=0,
+                    player_pos=p.get("pos", ""),
+                    season_reb=_safe_float(stats.get("sb", 0)),
+                    season_ast=_safe_float(stats.get("runs", 0)),
+                )
+            except Exception:
+                pass
+
+            is_pitcher = p.get("is_pitcher", False) or p.get("pos", "") in ("SP", "RP", "P", "CL")
+
+            candidate = {
+                "id": p.get("id", ""),
+                "name": p.get("name", ""),
+                "pos": p.get("pos", ""),
+                "team": team_abbr,
+                "gameId": game["gameId"],
+                "game_id": game["gameId"],
+                "is_pitcher": is_pitcher,
+                "bats": p.get("bats", stats.get("bats", "")),
+                "throws": p.get("throws", stats.get("throws", "")),
+                "batting_order": 0,  # populated from lineup data if available
+                "injury_status": p.get("injury_status", ""),
+                "is_out": False,
+                # Season stats
+                "avg": _safe_float(stats.get("avg", 0)),
+                "hr": _safe_float(stats.get("hr", 0)),
+                "rbi": _safe_float(stats.get("rbi", 0)),
+                "runs": _safe_float(stats.get("runs", 0)),
+                "sb": _safe_float(stats.get("sb", 0)),
+                "obp": _safe_float(stats.get("obp", 0)),
+                "slg": _safe_float(stats.get("slg", 0)),
+                "ops": _safe_float(stats.get("ops", 0)),
+                "games": _safe_float(stats.get("games", 0)),
+                # Pitcher stats
+                "era": _safe_float(stats.get("era", 0)),
+                "whip": _safe_float(stats.get("whip", 0)),
+                "k9": _safe_float(stats.get("k9", 0)),
+                "ip": _safe_float(stats.get("ip", 0)),
+                "k_rate": _safe_float(stats.get("k_rate", 0)),
+                # Boost
+                "est_mult": round(float(boost_val), 2),
+                "boost": round(float(boost_val), 2),
+                "boost_band": boost_band,
+                # Probable starter flag
+                "is_probable_starter": _is_probable_starter(p, game, side),
+                "is_starter": _is_probable_starter(p, game, side),
+                # Drafts (estimated from name recognition — populated from ownership data if available)
+                "drafts": 0,
+                # Frontend compat fields
+                "rating": 0.0,      # Will be set from environment_score
+                "predMin": 0.0,
+                "pts": _safe_float(stats.get("hr", 0)),
+                "reb": _safe_float(stats.get("sb", 0)),
+                "ast": _safe_float(stats.get("runs", 0)),
+                "stl": 0.0,
+                "blk": 0.0,
+                "draft_ev": 0.0,
+                "chalk_ev": 0.0,
+                "moonshot_ev": 0.0,
+                "_decline": 0.0,
+            }
+            candidates.append(candidate)
+
+    _cs(cache_key, candidates)
+    print(f"[mlb_pipeline] {game.get('away', '')} @ {game.get('home', '')}: {len(candidates)} candidates")
+    return candidates
+
+
+def _is_probable_starter(player: dict, game: dict, side: str) -> bool:
+    """Check if a pitcher is the probable starter for their team in this game."""
+    pitcher_key = f"{side}_probable_pitcher"
+    probable = game.get(pitcher_key)
+    if not probable or not isinstance(probable, dict):
+        return False
+    # Match by ID or normalized name
+    if probable.get("id") and str(probable.get("id")) == str(player.get("id")):
+        return True
+    prob_name = (probable.get("name") or "").lower().strip()
+    player_name = (player.get("name") or "").lower().strip()
+    return prob_name and player_name and (prob_name == player_name or prob_name in player_name or player_name in prob_name)
+
+
+def _build_mlb_lineups(games: list[dict]) -> dict:
+    """Run the complete MLB Filter-Not-Forecast pipeline.
+
+    # grep: MLB LINEUP BUILDER
+
+    Pipeline:
+      1. Fetch MLB games
+      2. Fetch all rosters + player stats (parallel)
+      3. Run 5-filter strategy pipeline
+      4. Return Starting 5 + Moonshot with slot assignments
+
+    Returns dict matching the slate response format.
+    """
+    mlb_cfg = _cfg("mlb_strategy", _CONFIG_DEFAULTS.get("mlb_strategy", {}))
+
+    # Fetch all game rosters and candidates in parallel
+    all_candidates = []
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
+        futs = {pool.submit(_run_mlb_game, g): g for g in games}
+        for fut in as_completed(futs):
+            g = futs[fut]
+            try:
+                candidates = fut.result()
+                all_candidates.extend(candidates)
+            except Exception as e:
+                print(f"[mlb_pipeline] Game {g.get('gameId', '')} error: {e}")
+
+    print(f"[mlb_pipeline] Total candidates across {len(games)} games: {len(all_candidates)}")
+
+    if not all_candidates:
+        return {
+            "lineups": {"chalk": [], "upside": []},
+            "slate_type": "standard",
+            "strategy_label": "No Data",
+            "strategy_description": "No candidates available.",
+        }
+
+    # Fetch team stats for environmental scoring (parallel)
+    team_stats = {}
+    team_ids = set()
+    for g in games:
+        if g.get("home_id"):
+            team_ids.add((g["home_id"], g.get("home", "")))
+        if g.get("away_id"):
+            team_ids.add((g["away_id"], g.get("away", "")))
+
+    from api.mlb_data import fetch_mlb_team_stats, canonicalize_team
+    with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
+        futs = {pool.submit(fetch_mlb_team_stats, tid): (tid, abbr) for tid, abbr in team_ids}
+        for fut in as_completed(futs):
+            tid, abbr = futs[fut]
+            try:
+                ts = fut.result()
+                if ts:
+                    team_stats[canonicalize_team(abbr)] = ts
+            except Exception:
+                pass
+
+    # Run the 5-filter pipeline
+    result = _mlb_run_filter_pipeline(games, all_candidates, team_stats, mlb_cfg)
+
+    # Normalize output for frontend compat
+    starting_5 = [_normalize_player(p) for p in result.get("starting_5", [])]
+    moonshot = [_normalize_player(p) for p in result.get("moonshot", [])]
+
+    # Set rating from environment_score for frontend display
+    for p in starting_5 + moonshot:
+        if not p.get("rating") and p.get("environment_score"):
+            p["rating"] = round(_safe_float(p.get("environment_score", 0)) / 10.0, 1)
+        if not p.get("draft_ev") and p.get("expected_value"):
+            p["draft_ev"] = round(_safe_float(p.get("expected_value", 0)), 2)
+
+    return {
+        "lineups": {"chalk": starting_5, "upside": moonshot},
+        "slate_type": result.get("slate_type", "standard"),
+        "strategy_label": result.get("strategy_label", "Standard Build"),
+        "strategy_description": result.get("strategy_description", ""),
+        "candidates_scored": result.get("candidates_scored", 0),
+        "candidates_filtered": result.get("candidates_filtered", 0),
+    }
+
+
 # grep: WATCHLIST — _build_watchlist, lineup-sensitive players, Pass 2 triggers
 def _build_watchlist(chalk, upside, all_proj, games):
     """Identify players whose value is sensitive to late-breaking news.
@@ -6282,124 +6559,173 @@ def _get_slate_impl():
                 return _warm
 
     try:
-        all_proj = []
-        game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-        gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
-
-        # Pre-fetch nba_api enrichment (usage_share, team_pace, min_volatility, etc.)
-        # before parallel game runs. Cached per slate date — one heavy call per day.
-        try:
-            _nba_api_prefetch(today_str)
-        except Exception as _nba_err:
-            print(f"[nba-api-feed] prefetch error (non-fatal): {_nba_err}")
-
-        # Pre-fetch ESPN injury report (secondary source alongside RotoWire)
-        try:
-            _espn_injuries_fetch()
-        except Exception:
-            pass
-
-        # Overlay Odds API game-level spreads/totals onto games (more accurate than ESPN)
-        try:
-            _odds_updated = _apply_odds_snapshot_to_games(draftable_games)
-            if _odds_updated:
-                print(f"[slate] odds snapshot: {_odds_updated}/{len(draftable_games)} games updated")
-        except Exception as _odds_snap_err:
-            print(f"[game-odds] snapshot error (non-fatal): {_odds_snap_err}")
-
-        with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
-            futs = {
-                pool.submit(_run_game, g, gamelog_map, _dvp_data, player_odds_prefetch): g
-                for g in draftable_games
-            }
-            for fut in as_completed(futs):
+        # ── MLB "Filter, Not Forecast" pipeline ──────────────────────────
+        # When mlb_strategy.enabled = True, use the filter-based MLB pipeline
+        # instead of the NBA projection pipeline. This implements the 5 filters:
+        # Slate Architecture → Environmental Advantage → Ownership Leverage →
+        # Boost Optimization → Lineup Construction.
+        _mlb_enabled = _cfg("mlb_strategy.enabled", False)
+        _mlb_sport = _cfg("mlb_strategy.sport", "nba")
+        if _mlb_enabled or _mlb_sport == "mlb":
+            print(f"[slate] MLB Filter-Not-Forecast pipeline active")
+            # Fetch MLB games if not already using them
+            mlb_games = draftable_games
+            if not mlb_games or not any(g.get("home_probable_pitcher") for g in mlb_games):
                 try:
-                    game = futs[fut]
-                    projs = fut.result()
-                    all_proj.extend(projs)
-                    game_proj_map[game["gameId"]] = projs
-                except Exception as e:
-                    print(f"slate err: {e}")
-        # Optional Odds API enrichment: blend sportsbook player props into projections.
-        # Books see information our model can't (rotation changes, matchup exploitation).
-        try:
-            _enrich_projections_with_odds(all_proj, draftable_games)
-        except Exception as _odds_err:
-            print(f"[odds_enrich] call-site error: {_odds_err}")
-        # Matchup data + news + context pass — run in parallel (saves 2-4s vs serial)
-        _matchup_intel = {}
-        _slate_news_text = ""
-        with ThreadPoolExecutor(max_workers=4) as _enrich_pool:
-            _def_fut = _enrich_pool.submit(_fetch_team_def_stats)
-            _dvp_fut = _enrich_pool.submit(_fetch_dvp_data)
-            _news_fut = _enrich_pool.submit(_fetch_nba_news_context, draftable_games, all_proj=all_proj)
-            _ctx_fut = _enrich_pool.submit(_claude_context_pass, all_proj, draftable_games)
+                    mlb_games = _fetch_mlb_games(today_str.replace("-", "") if "-" in today_str else None)
+                    mlb_games = [g for g in mlb_games if g.get("status", "") != "STATUS_FINAL"]
+                except Exception as _mlb_err:
+                    print(f"[mlb_pipeline] MLB games fetch error: {_mlb_err}")
+                    mlb_games = draftable_games
+
+            mlb_result = _build_mlb_lineups(mlb_games)
+            lineups = mlb_result.get("lineups", {"chalk": [], "upside": []})
+            chalk = lineups.get("chalk", [])
+            upside = lineups.get("upside", [])
+            core_pool = chalk + upside
+            # Watchlist: empty for now in MLB mode
+            _watchlist = []
+            _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+            result = {"date": today_str, "games": games,
+                      "lineups": lineups, "locked": locked,
+                      "all_complete": False, "draftable_count": len(draftable_games),
+                      "lock_time": lock_time,
+                      "watchlist": _watchlist,
+                      "pass": 1,
+                      "slate_type": mlb_result.get("slate_type", "standard"),
+                      "strategy_label": mlb_result.get("strategy_label", ""),
+                      "strategy_description": mlb_result.get("strategy_description", ""),
+                      "score_bounds": _score_bounds_for_lineups(lineups),
+                      "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
+            if chalk or upside:
+                _cs(_CK_SLATE, result, today_str)
+        else:
+            # ── Original NBA projection pipeline ──────────────────────────
+            pass  # fall through to NBA pipeline below
+
+        # --- NBA Pipeline (only runs when MLB is disabled) ---
+        if not (_mlb_enabled or _mlb_sport == "mlb"):
+            all_proj = []
+            game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
+            gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
+
+            # Pre-fetch nba_api enrichment (usage_share, team_pace, min_volatility, etc.)
+            # before parallel game runs. Cached per slate date — one heavy call per day.
             try:
-                _def_stats = _def_fut.result(timeout=_T_EXECUTOR)
-            except Exception as _def_err:
-                print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+                _nba_api_prefetch(today_str)
+            except Exception as _nba_err:
+                print(f"[nba-api-feed] prefetch error (non-fatal): {_nba_err}")
+
+            # Pre-fetch ESPN injury report (secondary source alongside RotoWire)
             try:
-                _dvp_data = _dvp_fut.result(timeout=_T_EXECUTOR)
-            except Exception as _dvp_err:
-                print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
-            try:
-                _slate_news_text = _news_fut.result(timeout=_T_EXECUTOR) or ""
+                _espn_injuries_fetch()
             except Exception:
                 pass
+
+            # Overlay Odds API game-level spreads/totals onto games (more accurate than ESPN)
             try:
-                _ctx_fut.result(timeout=_T_EXECUTOR)
-            except Exception as _ctx_err:
-                print(f"[context_pass] call-site error: {_ctx_err}")
-        _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
-        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data, n_games=len(draftable_games))
-        lineups = {"chalk": chalk, "upside": upside}
-        # Watchlist: players near the lineup bubble sensitive to late-breaking news
-        _watchlist = []
-        try:
-            _watchlist = _build_watchlist(chalk, upside, all_proj, draftable_games)
-        except Exception as _wl_err:
-            print(f"[watchlist] build error: {_wl_err}")
-        _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
-        result = {"date": today_str, "games": games,
-                  "lineups": lineups, "locked": locked,
-                  "all_complete": False, "draftable_count": len(draftable_games),
-                  "lock_time": lock_time,
-                  "watchlist": _watchlist,
-                  "pass": 1,
-                  "score_bounds": _score_bounds_for_lineups(lineups),
-                  "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
-        if chalk or upside:  # Don't cache empty results — allow retry on next request
-            _cs(_CK_SLATE, result, today_str)
-            # GitHub writes are fire-and-forget: store to /tmp first so any concurrent
-            # request is served immediately, then persist to GitHub in the background.
-            # This removes 2-3s of blocking I/O from the hot path — the user gets
-            # the slate response as soon as the pipeline finishes, not after writes.
-            _bg_result       = result
-            _bg_game_proj    = game_proj_map
-            _bg_today        = today_str
-            def _slate_persist_bg():
-                try:
-                    _slate_cache_to_github(_bg_result, _bg_today)
-                except Exception as _e:
-                    print(f"[slate-cache] bg write err: {_e}")
-                try:
-                    _github_write_file(f"data/slate/{_bg_today}_bust.json", "{}", f"clear bust {_bg_today}")
-                except Exception as _e:
-                    print(f"[slate-cache] bg clear bust err: {_e}")
-                if _bg_game_proj:
+                _odds_updated = _apply_odds_snapshot_to_games(draftable_games)
+                if _odds_updated:
+                    print(f"[slate] odds snapshot: {_odds_updated}/{len(draftable_games)} games updated")
+            except Exception as _odds_snap_err:
+                print(f"[game-odds] snapshot error (non-fatal): {_odds_snap_err}")
+
+            with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
+                futs = {
+                    pool.submit(_run_game, g, gamelog_map, _dvp_data, player_odds_prefetch): g
+                    for g in draftable_games
+                }
+                for fut in as_completed(futs):
                     try:
-                        _games_cache_to_github(_bg_game_proj, _bg_today)
-                    except Exception as _e:
-                        print(f"[slate-cache] bg games write err: {_e}")
+                        game = futs[fut]
+                        projs = fut.result()
+                        all_proj.extend(projs)
+                        game_proj_map[game["gameId"]] = projs
+                    except Exception as e:
+                        print(f"slate err: {e}")
+            # Optional Odds API enrichment: blend sportsbook player props into projections.
+            # Books see information our model can't (rotation changes, matchup exploitation).
+            try:
+                _enrich_projections_with_odds(all_proj, draftable_games)
+            except Exception as _odds_err:
+                print(f"[odds_enrich] call-site error: {_odds_err}")
+            # Matchup data + news + context pass — run in parallel (saves 2-4s vs serial)
+            _matchup_intel = {}
+            _slate_news_text = ""
+            with ThreadPoolExecutor(max_workers=4) as _enrich_pool:
+                _def_fut = _enrich_pool.submit(_fetch_team_def_stats)
+                _dvp_fut = _enrich_pool.submit(_fetch_dvp_data)
+                _news_fut = _enrich_pool.submit(_fetch_nba_news_context, draftable_games, all_proj=all_proj)
+                _ctx_fut = _enrich_pool.submit(_claude_context_pass, all_proj, draftable_games)
                 try:
-                    _slate_backup_to_github(_bg_result, _bg_today)
-                except Exception as _e:
-                    print(f"[slate-cache] bg backup err: {_e}")
-            threading.Thread(target=_slate_persist_bg, daemon=True).start()
+                    _def_stats = _def_fut.result(timeout=_T_EXECUTOR)
+                except Exception as _def_err:
+                    print(f"[matchup] def stats fetch error (non-fatal): {_def_err}")
+                try:
+                    _dvp_data = _dvp_fut.result(timeout=_T_EXECUTOR)
+                except Exception as _dvp_err:
+                    print(f"[matchup] DvP fetch error (non-fatal): {_dvp_err}")
+                try:
+                    _slate_news_text = _news_fut.result(timeout=_T_EXECUTOR) or ""
+                except Exception:
+                    pass
+                try:
+                    _ctx_fut.result(timeout=_T_EXECUTOR)
+                except Exception as _ctx_err:
+                    print(f"[context_pass] call-site error: {_ctx_err}")
+            _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
+            chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data, n_games=len(draftable_games))
+            lineups = {"chalk": chalk, "upside": upside}
+            # Watchlist: players near the lineup bubble sensitive to late-breaking news
+            _watchlist = []
+            try:
+                _watchlist = _build_watchlist(chalk, upside, all_proj, draftable_games)
+            except Exception as _wl_err:
+                print(f"[watchlist] build error: {_wl_err}")
+            _deploy_sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+            result = {"date": today_str, "games": games,
+                      "lineups": lineups, "locked": locked,
+                      "all_complete": False, "draftable_count": len(draftable_games),
+                      "lock_time": lock_time,
+                      "watchlist": _watchlist,
+                      "pass": 1,
+                      "score_bounds": _score_bounds_for_lineups(lineups),
+                      "deploy_sha": _deploy_sha[:7] if _deploy_sha else ""}
+            if chalk or upside:  # Don't cache empty results — allow retry on next request
+                _cs(_CK_SLATE, result, today_str)
+                # GitHub writes are fire-and-forget: store to /tmp first so any concurrent
+                # request is served immediately, then persist to GitHub in the background.
+                # This removes 2-3s of blocking I/O from the hot path — the user gets
+                # the slate response as soon as the pipeline finishes, not after writes.
+                _bg_result       = result
+                _bg_game_proj    = game_proj_map
+                _bg_today        = today_str
+                def _slate_persist_bg():
+                    try:
+                        _slate_cache_to_github(_bg_result, _bg_today)
+                    except Exception as _e:
+                        print(f"[slate-cache] bg write err: {_e}")
+                    try:
+                        _github_write_file(f"data/slate/{_bg_today}_bust.json", "{}", f"clear bust {_bg_today}")
+                    except Exception as _e:
+                        print(f"[slate-cache] bg clear bust err: {_e}")
+                    if _bg_game_proj:
+                        try:
+                            _games_cache_to_github(_bg_game_proj, _bg_today)
+                        except Exception as _e:
+                            print(f"[slate-cache] bg games write err: {_e}")
+                    try:
+                        _slate_backup_to_github(_bg_result, _bg_today)
+                    except Exception as _e:
+                        print(f"[slate-cache] bg backup err: {_e}")
+                threading.Thread(target=_slate_persist_bg, daemon=True).start()
+        # ── Common post-generation path (both MLB and NBA) ──────────────
         if locked:
             _ls(_CK_SLATE_LOCKED, result, today_str)
         # Sync-clear bust so other Railway instances stop dropping /tmp on every
         # locked request (bg-only clear races multi-instance).
+        chalk = result.get("lineups", {}).get("chalk", [])
+        upside = result.get("lineups", {}).get("upside", [])
         if chalk or upside:
             try:
                 _github_write_file(

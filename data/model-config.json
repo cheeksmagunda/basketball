@@ -1,7 +1,7 @@
 {
-  "version": 89,
+  "version": 90,
   "updated_at": "2026-04-04T00:00:00Z",
-  "updated_by": "v89-70-30-blend-espn-injury-return",
+  "updated_by": "v90-mlb-filter-not-forecast-strategy",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -125,7 +125,7 @@
     "compression_divisor": 6.0,
     "compression_power": 0.65,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.30,
+    "ai_blend_weight": 0.3,
     "max_post_compression_mult": 1.2,
     "regression_guard": {
       "enabled": true,
@@ -176,14 +176,14 @@
     }
   },
   "cascade": {
-    "redistribution_rate": 0.70,
+    "redistribution_rate": 0.7,
     "per_player_cap_minutes": 10.0,
     "partial_cascade_cap_minutes": 4.0,
-    "center_forward_share": 0.30,
-    "gtd_sit_probability": 0.30,
-    "dtd_sit_probability": 0.10,
+    "center_forward_share": 0.3,
+    "gtd_sit_probability": 0.3,
+    "dtd_sit_probability": 0.1,
     "gtd_minute_reduction": 0.15,
-    "max_cascade_pct": 0.40,
+    "max_cascade_pct": 0.4,
     "team_detector": {
       "enabled": true,
       "star_ppg_threshold": 20.0,
@@ -195,9 +195,9 @@
   "projection": {
     "min_gate_minutes": 25,
     "lock_buffer_minutes": 5,
-    "season_recent_blend": 0.70,
-    "injury_return_blend": 0.30,
-    "injury_return_gp_ratio": 0.60,
+    "season_recent_blend": 0.7,
+    "injury_return_blend": 0.3,
+    "injury_return_gp_ratio": 0.6,
     "injury_return_min_spike": 1.12,
     "major_role_change_threshold": 0.75,
     "major_role_change_recent_weight": 0.8,
@@ -425,12 +425,12 @@
     {
       "version": 86,
       "date": "2026-04-01",
-      "change": "MINUTES DELTA SIGNAL: RS multiplier based on projected vs season minutes gap. Players at normal minutes (±2 min, no catalyst) get 0.97x RS discount. Players with significant minutes jumps (cascade/injury, +5-10 min) get up to 1.12x RS bonus. Players projecting below season avg get up to 0.92x RS penalty. Fixes Bub Carrington case: projected 27.6 min vs 29.5 season (-1.9 delta, neutral zone) → 3% RS haircut drops him from #1 slot. Cascade beneficiaries with +8 min delta get 9% RS boost, properly rewarding expanded-role upside. Config: strategy.minutes_delta.* (enabled, neutral_zone, neutral_discount, bonus_per_min, max_bonus, penalty_per_min, max_penalty)."
+      "change": "MINUTES DELTA SIGNAL: RS multiplier based on projected vs season minutes gap. Players at normal minutes (\u00b12 min, no catalyst) get 0.97x RS discount. Players with significant minutes jumps (cascade/injury, +5-10 min) get up to 1.12x RS bonus. Players projecting below season avg get up to 0.92x RS penalty. Fixes Bub Carrington case: projected 27.6 min vs 29.5 season (-1.9 delta, neutral zone) \u2192 3% RS haircut drops him from #1 slot. Cascade beneficiaries with +8 min delta get 9% RS boost, properly rewarding expanded-role upside. Config: strategy.minutes_delta.* (enabled, neutral_zone, neutral_discount, bonus_per_min, max_bonus, penalty_per_min, max_penalty)."
     },
     {
       "version": 85,
       "date": "2026-04-01",
-      "change": "REVERT TEAMMATE STACKS: strategy.max_per_team 2->1. The v83 stacking allowance backfired on Mar 31: Moonshot drafted Trent Jr. (MIL, RS 1.7) + Lopez (MIL, RS 3.0) — bad MIL player occupied 5x slot, dragging total value to 45.11. Highest-value leaderboard had 5 different teams in top 5 (Eason HOU 17.3, Dieng OKC 15.6, Jenkins CHA 14.7, Lopez MIL 14.6, Duren DET 14.4). Today's S5 also stacked 2 WSH players. Model cannot reliably predict which teammate pair will both outperform. One player per team is the safer structural constraint."
+      "change": "REVERT TEAMMATE STACKS: strategy.max_per_team 2->1. The v83 stacking allowance backfired on Mar 31: Moonshot drafted Trent Jr. (MIL, RS 1.7) + Lopez (MIL, RS 3.0) \u2014 bad MIL player occupied 5x slot, dragging total value to 45.11. Highest-value leaderboard had 5 different teams in top 5 (Eason HOU 17.3, Dieng OKC 15.6, Jenkins CHA 14.7, Lopez MIL 14.6, Duren DET 14.4). Today's S5 also stacked 2 WSH players. Model cannot reliably predict which teammate pair will both outperform. One player per team is the safer structural constraint."
     },
     {
       "version": 84,
@@ -813,7 +813,7 @@
     "starter_rs_min": 3.0,
     "contrarian_bonus": {
       "enabled": true,
-      "max_bonus": 0.10,
+      "max_bonus": 0.1,
       "min_boost": 2.0,
       "max_season_ppg": 16.0
     },
@@ -821,18 +821,78 @@
       "enabled": true,
       "min_appearances": 5,
       "bonus_per_appearance": 0.01,
-      "max_bonus": 0.10
+      "max_bonus": 0.1
     },
     "minutes_delta": {
       "enabled": true,
       "neutral_zone": 2.0,
       "neutral_discount": 0.97,
       "bonus_per_min": 0.03,
-      "max_bonus": 0.20,
+      "max_bonus": 0.2,
       "penalty_per_min": 0.01,
       "max_penalty": 0.08
     },
     "injury_return_ev_penalty": 0.0,
     "injury_return_rs_penalty": 0.0
+  },
+  "mlb_strategy": {
+    "enabled": true,
+    "sport": "mlb",
+    "slot_multipliers": [
+      2.0,
+      1.8,
+      1.6,
+      1.4,
+      1.2
+    ],
+    "slot_labels": [
+      "2.0x",
+      "1.8x",
+      "1.6x",
+      "1.4x",
+      "1.2x"
+    ],
+    "min_environment_score": 20,
+    "pitcher_day_threshold": 5,
+    "hitter_day_ou_threshold": 9.0,
+    "hitter_day_game_count": 5,
+    "tiny_slate_max_games": 3,
+    "ace_era_threshold": 3.5,
+    "ace_k9_threshold": 8.0,
+    "weak_starter_era": 4.5,
+    "high_total_threshold": 8.5,
+    "elite_total_threshold": 9.5,
+    "ghost_drafts_threshold": 100,
+    "chalk_drafts_threshold": 2000,
+    "ownership_leverage_weights": {
+      "ghost": 0.5,
+      "low": 0.3,
+      "contrarian": 0.15,
+      "neutral": 0.0,
+      "chalk": -0.3
+    },
+    "boost_trap_env_threshold": 30,
+    "boost_leveraged_min_boost": 2.5,
+    "boost_leveraged_min_env": 50,
+    "max_same_team": 3,
+    "min_games_represented": 2,
+    "composition": {
+      "tiny": {
+        "min_pitchers": 1,
+        "max_pitchers": 1
+      },
+      "pitcher_day": {
+        "min_pitchers": 4,
+        "max_pitchers": 5
+      },
+      "hitter_day": {
+        "min_pitchers": 0,
+        "max_pitchers": 1
+      },
+      "standard": {
+        "min_pitchers": 2,
+        "max_pitchers": 3
+      }
+    }
   }
 }
