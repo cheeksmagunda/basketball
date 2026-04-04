@@ -11,33 +11,33 @@ const TABS: { id: TabName; label: string; Icon: typeof Activity }[] = [
   { id: 'lab', label: 'Ben', Icon: MessageCircle },
 ];
 
-/** Accent color per tab — pill background tint */
+/** Accent color per tab — pill background tint (gold for all) */
 const TAB_ACCENT: Record<TabName, string> = {
-  predictions: 'rgba(20,184,166,0.14)',
+  predictions: 'rgba(212,166,64,0.14)',
   line: 'rgba(212,166,64,0.14)',
-  parlay: 'rgba(20,184,166,0.14)',
-  lab: 'rgba(20,184,166,0.14)',
+  parlay: 'rgba(212,166,64,0.14)',
+  lab: 'rgba(212,166,64,0.14)',
 };
 
 const TAB_ACCENT_BORDER: Record<TabName, string> = {
-  predictions: 'rgba(20,184,166,0.10)',
+  predictions: 'rgba(212,166,64,0.10)',
   line: 'rgba(212,166,64,0.10)',
-  parlay: 'rgba(20,184,166,0.10)',
-  lab: 'rgba(20,184,166,0.10)',
+  parlay: 'rgba(212,166,64,0.10)',
+  lab: 'rgba(212,166,64,0.10)',
 };
 
 const TAB_ACCENT_GLOW: Record<TabName, string> = {
-  predictions: 'rgba(20,184,166,0.10)',
+  predictions: 'rgba(212,166,64,0.10)',
   line: 'rgba(212,166,64,0.10)',
-  parlay: 'rgba(20,184,166,0.10)',
-  lab: 'rgba(20,184,166,0.10)',
+  parlay: 'rgba(212,166,64,0.10)',
+  lab: 'rgba(212,166,64,0.10)',
 };
 
 const TAB_ACTIVE_COLOR: Record<TabName, string> = {
-  predictions: 'var(--chalk)',
+  predictions: 'var(--line)',
   line: 'var(--line)',
-  parlay: 'var(--chalk)',
-  lab: 'var(--chalk)',
+  parlay: 'var(--line)',
+  lab: 'var(--line)',
 };
 
 export default function BottomNav() {
