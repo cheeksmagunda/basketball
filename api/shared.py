@@ -19,8 +19,9 @@ STAT_ABBR = {"points": "PTS", "rebounds": "REB", "assists": "AST"}
 STAT_FIELDS = {"points": "pts", "rebounds": "reb", "assists": "ast"}
 
 
-# ── ESPN scoreboard URL helper ──────────────────────────────────────────────
+# ── ESPN scoreboard URL helpers ─────────────────────────────────────────────
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+ESPN_MLB_BASE = "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb"
 
 def espn_scoreboard_url(date_str_ymd: str) -> str:
     """Build ESPN scoreboard URL. date_str_ymd should be YYYYMMDD format."""
