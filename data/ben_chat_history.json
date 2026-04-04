@@ -2,5 +2,9 @@
   {
     "role": "user",
     "content": "Hi"
+  },
+  {
+    "role": "assistant",
+    "content": "Hey! \ud83d\udc4b I'm Ben, your Basketball Oracle assistant.\n\nHere's a quick snapshot of where things stand:\n\n**Tonight's Slate (Apr 3)** \u2014 9 games locked:\n- **Starting 5 (Safe):** Devin Carter (SAC) at the 2.0x slot \u2014 RS 5.9, +2.8x card boost, 30.4 min projected\n- **Moonshot (Upside):** Nique Clifford (SAC) at the 2.0x slot \u2014 RS 6.1, +2.8x card boost, 36.6 min projected\n\n**Latest Accuracy (Apr 1):**\n- MAE: 2.48 (rolling 2.42 over 2 slates)\n- \u26a0\ufe0f Systematic over-projection: all 5 players with actuals came in lower than predicted\n- Biggest misses: Kobe Brown & John Konchar both off by -2.6 RS\n\n**What can I help with?**\n- \ud83d\udd0d Dig into tonight's picks or any game matchups\n- \ud83d\udcca Analyze prediction accuracy & patterns\n- \u2699\ufe0f Tune model config parameters\n- \ud83c\udfc0 Pull live NBA scores/stats\n\nWhat's on your mind?"
   }
 ]
