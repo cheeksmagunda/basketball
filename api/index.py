@@ -2426,14 +2426,19 @@ def _fetch_athlete(pid):
             blend_w     = proj.get("season_recent_blend", 0.5)
 
             min_ratio = recent["min"] / max(season["min"], 1)
+            # Injury return exception: if recent min is much HIGHER than season
+            # (player returning, ramping up), trust season more to avoid over-projection.
+            # Recent < season = role change (trust recent); Recent > season = ramp-up (trust season).
+            _is_injury_return = min_ratio > 1.15 and recent["min"] > season["min"] + 3
+            _effective_blend_w = min(blend_w, 0.35) if _is_injury_return else blend_w
             if min_ratio < major_thr:
                 min_blend = round(season["min"] * (1 - major_w) + recent["min"] * major_w, 2)
             elif min_ratio < mod_thr:
                 min_blend = round(season["min"] * (1 - mod_w) + recent["min"] * mod_w, 2)
             else:
-                min_blend = round(season["min"] * (1 - blend_w) + recent["min"] * blend_w, 2)
+                min_blend = round(season["min"] * (1 - _effective_blend_w) + recent["min"] * _effective_blend_w, 2)
 
-            blended = {k: round(season[k] * (1 - blend_w) + recent[k] * blend_w, 2) for k in season}
+            blended = {k: round(season[k] * (1 - _effective_blend_w) + recent[k] * _effective_blend_w, 2) for k in season}
             blended["min"] = min_blend  # Override minutes with smart blend
             blended["season_min"] = season["min"]
             blended["recent_min"] = recent["min"]
@@ -4852,7 +4857,7 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
     return core_pool
 
 
-def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
+def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None, n_games=None):
     """HYBRID lineup builder (Winning Draft Audit v2).
 
     Data-driven 2-phase pipeline based on 94 rank-1 winning lineups:
@@ -4876,6 +4881,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     rs_floor = float(_strat.get("rs_floor", 2.0))
     min_minutes = float(_strat.get("min_minutes", 25.0))
     max_per_team = int(_strat.get("max_per_team", 1))
+
+    # ── Small-slate detection ──────────────────────────────────────────────
+    # 3-game slates have only ~18 eligible players across 6 teams.
+    # Aggressive gates (25 min, 2.0 RS) collapse the pool below 5.
+    # Detect small slates and relax gates proportionally.
+    if n_games is None:
+        n_games = 6  # default to medium if unknown
+    _small_slate = n_games <= 4
+    if _small_slate:
+        # Relax min_minutes: 25 → 16 for 3-game, 20 for 4-game
+        min_minutes = max(16.0, min_minutes - (5 - n_games) * 3.0)
+        # RS floor stays at 2.0 — keeps quality bar, fallback handles the rest
+        print(f"[build_lineups] small slate detected ({n_games} games), min_minutes relaxed to {min_minutes}")
 
     # RotoWire availability check
     rw_statuses = {}
@@ -4949,6 +4967,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             candidate_pool.append(p)
             if len(candidate_pool) >= 10:
                 break
+
+    # ── Small-slate team cap relaxation ────────────────────────────────────
+    # 3-game slate = 6 teams. With max_per_team=1 we can only select 6 unique
+    # players total. Need 10 (5 chalk + 5 moonshot). Auto-relax to 2 when the
+    # pool can't fill both lineups under current team cap.
+    _unique_teams = len({(p.get("team") or "").upper() for p in candidate_pool if p.get("team")})
+    if max_per_team == 1 and _unique_teams < 10 and len(candidate_pool) >= 8:
+        max_per_team = 2
+        print(f"[build_lineups] only {_unique_teams} teams in pool, relaxing max_per_team to 2 for coverage")
 
     # ── Step 2: Score by EV = RS × boost ─────────────────────────────────
     # EV does NOT factor in slot multiplier — slot assignment happens in Step 6
@@ -6249,7 +6276,7 @@ def _get_slate_impl():
             except Exception as _ctx_err:
                 print(f"[context_pass] call-site error: {_ctx_err}")
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
-        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data)
+        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data, n_games=len(draftable_games))
         lineups = {"chalk": chalk, "upside": upside}
         # Watchlist: players near the lineup bubble sensitive to late-breaking news
         _watchlist = []
@@ -6706,7 +6733,7 @@ def _force_regenerate_sync(scope: str):
     _fr_starts = [g["startTime"] for g in games if g.get("startTime")]
     _fr_any_locked = _any_locked(_fr_starts)
     _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
-    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data)
+    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data, n_games=len(games))
     lineups = {"chalk": chalk, "upside": upside}
     # Watchlist for force-regen (Pass 2)
     _fr_watchlist = []

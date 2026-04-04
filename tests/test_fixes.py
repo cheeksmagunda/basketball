@@ -1727,7 +1727,8 @@ class TestBriefingSimulatedDraftScore:
 
 
 class TestMinGateMinutes:
-    """min_gate_minutes enforces a hard 25-minute floor for draft eligibility."""
+    """min_gate_minutes enforces a hard 25-minute floor for draft eligibility.
+    Small-slate relaxation happens in _build_lineups, not here."""
 
     def test_min_gate_default_is_25(self):
         from api.index import MIN_GATE
@@ -6516,6 +6517,98 @@ class TestHybridOneStar:
         """Phase B comment should say 'remaining 4' not 'remaining 3'."""
         src = open("api/index.py").read()
         assert "Fill remaining 4 slots" in src
+
+
+class TestSmallSlateOptimization:
+    """Verify small-slate detection and adaptive gate relaxation.
+
+    3-game slates have only ~18 eligible players across 6 teams.
+    Gates must relax to build viable lineups."""
+
+    def test_small_slate_detection_in_code(self):
+        """_build_lineups should detect small slates and relax gates."""
+        src = open("api/index.py").read()
+        assert "_small_slate" in src, "Should have small-slate detection"
+        assert "n_games <= 4" in src, "Should detect 4 or fewer games as small"
+
+    def test_min_minutes_relaxed_for_small_slate(self):
+        """min_minutes should be relaxed from 25 to ~16 for 3-game slates."""
+        src = open("api/index.py").read()
+        assert "min_minutes - (5 - n_games)" in src or "min_minutes relaxed" in src.lower()
+
+    def test_team_cap_auto_relaxation(self):
+        """max_per_team auto-relaxes to 2 when fewer than 10 teams available."""
+        src = open("api/index.py").read()
+        assert "_unique_teams < 10" in src, "Should check unique team count"
+        assert "max_per_team = 2" in src, "Should relax team cap to 2"
+
+    def test_n_games_parameter(self):
+        """_build_lineups should accept n_games parameter."""
+        import inspect
+        from api.index import _build_lineups
+        sig = inspect.signature(_build_lineups)
+        assert "n_games" in sig.parameters
+
+    def test_min_gate_stays_25(self):
+        """MIN_GATE stays at 25 for normal slates; small-slate relaxation is in _build_lineups."""
+        from api.index import MIN_GATE
+        assert MIN_GATE == 25, "MIN_GATE should stay at 25; small-slate relaxation is in _build_lineups"
+
+    def test_build_lineups_called_with_n_games(self):
+        """Both _build_lineups call sites should pass n_games."""
+        src = open("api/index.py").read()
+        assert "n_games=len(draftable_games)" in src or "n_games=len(games)" in src
+
+
+class TestRecentWeightedBlend:
+    """Season/recent blend should weight recent (65%) over season (35%),
+    except for injury returns where season is trusted more."""
+
+    def test_blend_weight_config(self):
+        """Config should have season_recent_blend at 0.65 (recent-heavy)."""
+        import json
+        cfg = json.loads(open("data/model-config.json").read())
+        blend = cfg.get("projection", {}).get("season_recent_blend", 0.5)
+        assert blend == 0.65, f"Expected 0.65 (recent-heavy), got {blend}"
+
+    def test_injury_return_exception(self):
+        """Injury return players should use lower blend weight (trust season more)."""
+        src = open("api/index.py").read()
+        assert "_is_injury_return" in src, "Should detect injury returns"
+        assert "_effective_blend_w" in src, "Should use adjusted blend for injury returns"
+
+
+class TestRedisOptimization:
+    """Verify Redis connection pooling, error logging, and reconnect interval."""
+
+    def test_redis_connection_pool_config(self):
+        """Redis should be configured with explicit max_connections and keepalive."""
+        src = open("api/cache.py").read()
+        assert "max_connections=" in src, "Should configure max_connections"
+        assert "socket_keepalive=True" in src, "Should enable socket keepalive"
+        assert "health_check_interval=" in src, "Should set health check interval"
+
+    def test_redis_error_logging(self):
+        """Redis GET and DELETE should log errors, not swallow silently."""
+        src = open("api/cache.py").read()
+        assert 'Redis GET error' in src, "rcg should log errors"
+        assert 'Redis DELETE error' in src, "rcd should log errors"
+
+    def test_reconnect_interval_short(self):
+        """Reconnect interval should be ≤15 seconds for fast recovery."""
+        src = open("api/cache.py").read()
+        assert "_RECONNECT_INTERVAL = 10" in src, "Reconnect should be 10s"
+
+
+class TestRotoWireAdaptiveTTL:
+    """Verify RotoWire cache TTL adapts near game-time."""
+
+    def test_adaptive_ttl_in_code(self):
+        """RotoWire cache should use shorter TTL during game window."""
+        src = open("api/rotowire.py").read()
+        assert "_game_window" in src, "Should detect game window hours"
+        assert "600" in src, "Should use 10-min TTL during game window"
+        assert "1800" in src, "Should use 30-min TTL outside game window"
 
 
 if __name__ == "__main__":

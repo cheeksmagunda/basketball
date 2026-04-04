@@ -91,12 +91,23 @@ def fetch_rotowire_lineups():
 
     Caches result for 30 minutes (re-scrape on next call after TTL).
     """
-    # Check cache (30-min TTL)
+    # Check cache — adaptive TTL: 10 min during game-window hours (5PM-1AM ET),
+    # 30 min otherwise. Late-breaking injuries announced 1-2h before game-time
+    # need faster detection.
     cp = _cache_path()
     if cp.exists():
         try:
             age = datetime.now(timezone.utc).timestamp() - cp.stat().st_mtime
-            if age < 1800:  # 30 minutes
+            _et_hour = _et_date().today().hour if hasattr(_et_date(), 'today') else datetime.now(timezone.utc).hour
+            try:
+                from datetime import datetime as _dt
+                from zoneinfo import ZoneInfo
+                _et_hour = _dt.now(ZoneInfo("America/New_York")).hour
+            except Exception:
+                _et_hour = (datetime.now(timezone.utc).hour - 5) % 24
+            _game_window = 17 <= _et_hour or _et_hour <= 1  # 5PM-1AM ET
+            _ttl = 600 if _game_window else 1800  # 10 min vs 30 min
+            if age < _ttl:
                 return json.loads(cp.read_text())
         except Exception:
             pass

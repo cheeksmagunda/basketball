@@ -38,7 +38,7 @@ _PREFIX = "oracle:"  # namespace prefix to avoid key collisions
 _r = None  # redis.Redis client (lazy-init)
 _r_available = None  # tri-state: None = not tried, True/False = last probe result
 _r_last_check = 0.0
-_RECONNECT_INTERVAL = 30  # seconds between reconnect attempts after failure
+_RECONNECT_INTERVAL = 10  # seconds between reconnect attempts after failure
 _r_lock = threading.Lock()  # guards reconnect cooldown check + state mutation
 
 
@@ -69,9 +69,12 @@ def _redis_client():
             _r = _redis_mod.from_url(
                 _REDIS_URL,
                 decode_responses=True,
+                max_connections=100,
                 socket_connect_timeout=3,
                 socket_timeout=3,
+                socket_keepalive=True,
                 retry_on_timeout=True,
+                health_check_interval=30,
             )
             _r.ping()
             _r_available = True
@@ -105,7 +108,8 @@ def rcg(key: str, date_str: str | None = None):
         if raw is None:
             return None
         return json.loads(raw)
-    except Exception:
+    except Exception as e:
+        print(f"[cache] Redis GET error for {key}: {e}")
         return None
 
 
@@ -133,7 +137,8 @@ def rcd(key: str, date_str: str | None = None):
         return False
     try:
         return bool(client.delete(_make_key(key, date_str)))
-    except Exception:
+    except Exception as e:
+        print(f"[cache] Redis DELETE error for {key}: {e}")
         return False
 
 
