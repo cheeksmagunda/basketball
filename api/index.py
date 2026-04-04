@@ -1137,6 +1137,7 @@ _CONFIG_DEFAULTS = {
         "hybrid_lineup_enabled": True,  # Enable 2-phase lineup construction
         "star_slots_count": 1,          # Number of top slots filled by pure RS (1 star at 2.0x)
         "star_rs_min": 4.0,             # Minimum RS to be considered for star slot (even with 0 boost)
+        "boost_pool_min_boost": 2.0,    # Minimum boost for Phase B picks (4 high-boost slots)
         # ── Contrarian bonus (Finding 4: 22.7% of leaderboard, avg value 18.0)
         # Low-PPG role players with high boost are under-drafted. They keep their
         # boost 98.9% of the time and produce outsized value. Small EV uplift.
@@ -5114,6 +5115,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     _hybrid_enabled = bool(_strat.get("hybrid_lineup_enabled", True))
     _star_slots = int(_strat.get("star_slots_count", 1))
     _star_rs_min = float(_strat.get("star_rs_min", 4.0))
+    _boost_pool_min_boost = float(_strat.get("boost_pool_min_boost", 2.0))
 
     if _hybrid_enabled and len(candidate_pool) >= 5:
         # Phase A: Select top 1 player by PURE RS
@@ -5127,11 +5129,17 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 
         # Phase B: Fill remaining 4 slots by EV from remaining candidates
         # No stars allowed in Phase B — these slots are for boost players
+        # Enforce minimum boost floor so all 4 boost picks have meaningful card boost
         star_names = {p.get("name") for p in star_picks}
-        boost_pool = [p for p in candidate_pool if p.get("name") not in star_names]
+        boost_pool = [p for p in candidate_pool if p.get("name") not in star_names and float(p.get("est_mult", 0)) >= _boost_pool_min_boost]
         # Sort by safe_ev descending for reliable floor
         boost_pool.sort(key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
         remaining_needed = 5 - len(star_picks)
+        # Fallback: if not enough players meet boost floor, relax to full pool
+        if len(boost_pool) < remaining_needed:
+            print(f"[build_lineups] only {len(boost_pool)} players meet boost floor {_boost_pool_min_boost}, relaxing")
+            boost_pool = [p for p in candidate_pool if p.get("name") not in star_names]
+            boost_pool.sort(key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
         boost_picks, _ = _select_with_team_cap(boost_pool, remaining_needed, max_per_team, exclude_names=star_names)
 
         chalk = star_picks + boost_picks
