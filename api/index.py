@@ -972,6 +972,10 @@ _CONFIG_DEFAULTS = {
         # Gamelog-based projection: use per-game data from last N days instead of
         # ESPN averaged splits. Fixes rotation-loss blindness (e.g. Payne 17→2 min).
         "gamelog_window_days": 7,
+        "season_recent_blend": 0.70,          # 70% recent / 30% season
+        "injury_return_blend": 0.30,           # Injury return players: 30% recent / 70% season
+        "injury_return_gp_ratio": 0.60,        # GP < 60% of expected = likely missed time
+        "injury_return_min_spike": 1.12,       # Recent min > 112% of season = ramp-up signal
     },
     "matchup": {
         "enabled": True,
@@ -1166,6 +1170,9 @@ _CONFIG_DEFAULTS = {
             "bonus_per_min": 0.02,      # 2% EV bonus per minute above min_delta
             "max_bonus": 0.15,          # Cap at 15% EV uplift
         },
+        # NOTE: Injury return penalties REMOVED after historical audit (2,316 entries, 152 dates).
+        # Returning players produce +11.5% higher value than baseline due to boost reset mechanism.
+        # The contrarian signal (72% under-drafted, avg 297 drafts vs 647) is too valuable to penalize.
     },
 }
 
@@ -2423,17 +2430,36 @@ def _fetch_athlete(pid):
             major_w     = proj.get("major_role_change_recent_weight", 0.80)
             mod_thr     = proj.get("moderate_decline_threshold", 0.90)
             mod_w       = proj.get("moderate_decline_recent_weight", 0.65)
-            blend_w     = proj.get("season_recent_blend", 0.5)
+            blend_w     = proj.get("season_recent_blend", 0.70)
 
             min_ratio = recent["min"] / max(season["min"], 1)
+            # ── Injury return detection using ESPN data ──────────────────────
+            # Signal 1: Games played (GP) — ESPN provides this in season splits.
+            # If player has played <60% of expected games, they missed significant time.
+            # Signal 2: Recent minutes spike — recent min > 112% of season avg = ramp-up.
+            # Signal 3: RotoWire "questionable" status (already handled elsewhere).
+            # When detected, cap blend weight to trust season more (avoid over-projecting
+            # a player ramping back from injury whose recent 5-game sample is inflated).
+            _ir_blend = float(proj.get("injury_return_blend", 0.30))
+            _ir_gp_ratio = float(proj.get("injury_return_gp_ratio", 0.60))
+            _ir_min_spike = float(proj.get("injury_return_min_spike", 1.12))
+            _expected_gp = _estimate_games_played()
+            _actual_gp = float(season.get("gp", 0))
+            _gp_ratio = _actual_gp / max(_expected_gp, 1)
+            # ESPN GP-based: player missed 40%+ of games → injury return
+            _is_injury_return_gp = _actual_gp > 0 and _gp_ratio < _ir_gp_ratio
+            # Minutes spike: recent min significantly higher than season (ramp-up)
+            _is_injury_return_min = min_ratio > _ir_min_spike and recent["min"] > season["min"] + 2
+            _is_injury_return = _is_injury_return_gp or _is_injury_return_min
+            _effective_blend_w = min(blend_w, _ir_blend) if _is_injury_return else blend_w
             if min_ratio < major_thr:
                 min_blend = round(season["min"] * (1 - major_w) + recent["min"] * major_w, 2)
             elif min_ratio < mod_thr:
                 min_blend = round(season["min"] * (1 - mod_w) + recent["min"] * mod_w, 2)
             else:
-                min_blend = round(season["min"] * (1 - blend_w) + recent["min"] * blend_w, 2)
+                min_blend = round(season["min"] * (1 - _effective_blend_w) + recent["min"] * _effective_blend_w, 2)
 
-            blended = {k: round(season[k] * (1 - blend_w) + recent[k] * blend_w, 2) for k in season}
+            blended = {k: round(season[k] * (1 - _effective_blend_w) + recent[k] * _effective_blend_w, 2) for k in season}
             blended["min"] = min_blend  # Override minutes with smart blend
             blended["season_min"] = season["min"]
             blended["recent_min"] = recent["min"]
@@ -2447,6 +2473,9 @@ def _fetch_athlete(pid):
             blended["season_stl"] = season["stl"]
             blended["recent_blk"] = recent["blk"]
             blended["season_blk"] = season["blk"]
+            blended["_injury_return"] = _is_injury_return
+            blended["_gp"] = _actual_gp
+            blended["_expected_gp"] = _expected_gp
         else:
             blended = dict(season)
             blended["season_min"] = season["min"]
@@ -3803,6 +3832,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "season_blk": round(stats.get("season_blk", blk), 1),
         "recent_blk": round(stats.get("recent_blk", blk), 1),
         "injury_status": pinfo.get("injury_status", ""),
+        "_injury_return": bool(stats.get("_injury_return", False)),
         # Overperform signals — surfaced as pills on player cards.
         # _hot_streak: recent pts >= 1.15x season avg (configurable via signals.hot_streak_ratio)
         "_hot_streak": bool(
@@ -4852,7 +4882,7 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
     return core_pool
 
 
-def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None):
+def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None, n_games=None):
     """HYBRID lineup builder (Winning Draft Audit v2).
 
     Data-driven 2-phase pipeline based on 94 rank-1 winning lineups:
@@ -4876,6 +4906,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     rs_floor = float(_strat.get("rs_floor", 2.0))
     min_minutes = float(_strat.get("min_minutes", 25.0))
     max_per_team = int(_strat.get("max_per_team", 1))
+
+    # ── Small-slate detection ──────────────────────────────────────────────
+    # 3-game slates have only ~18 eligible players across 6 teams.
+    # Aggressive gates (25 min, 2.0 RS) collapse the pool below 5.
+    # Detect small slates and relax gates proportionally.
+    if n_games is None:
+        n_games = 6  # default to medium if unknown
+    _small_slate = n_games <= 4
+    if _small_slate:
+        # Relax min_minutes: 25 → 16 for 3-game, 20 for 4-game
+        min_minutes = max(16.0, min_minutes - (5 - n_games) * 3.0)
+        # RS floor stays at 2.0 — keeps quality bar, fallback handles the rest
+        print(f"[build_lineups] small slate detected ({n_games} games), min_minutes relaxed to {min_minutes}")
 
     # RotoWire availability check
     rw_statuses = {}
@@ -4949,6 +4992,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             candidate_pool.append(p)
             if len(candidate_pool) >= 10:
                 break
+
+    # ── Small-slate team cap relaxation ────────────────────────────────────
+    # 3-game slate = 6 teams. With max_per_team=1 we can only select 6 unique
+    # players total. Need 10 (5 chalk + 5 moonshot). Auto-relax to 2 when the
+    # pool can't fill both lineups under current team cap.
+    _unique_teams = len({(p.get("team") or "").upper() for p in candidate_pool if p.get("team")})
+    if max_per_team == 1 and _unique_teams < 10 and len(candidate_pool) >= 8:
+        max_per_team = 2
+        print(f"[build_lineups] only {_unique_teams} teams in pool, relaxing max_per_team to 2 for coverage")
 
     # ── Step 2: Score by EV = RS × boost ─────────────────────────────────
     # EV does NOT factor in slot multiplier — slot assignment happens in Step 6
@@ -6249,7 +6301,7 @@ def _get_slate_impl():
             except Exception as _ctx_err:
                 print(f"[context_pass] call-site error: {_ctx_err}")
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
-        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data)
+        chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data, n_games=len(draftable_games))
         lineups = {"chalk": chalk, "upside": upside}
         # Watchlist: players near the lineup bubble sensitive to late-breaking news
         _watchlist = []
@@ -6706,7 +6758,7 @@ def _force_regenerate_sync(scope: str):
     _fr_starts = [g["startTime"] for g in games if g.get("startTime")]
     _fr_any_locked = _any_locked(_fr_starts)
     _apply_post_lock_rs_calibration(all_proj, slate_locked=_fr_any_locked)
-    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data)
+    chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_fr_def_stats, dvp_data=_fr_dvp_data, n_games=len(games))
     lineups = {"chalk": chalk, "upside": upside}
     # Watchlist for force-regen (Pass 2)
     _fr_watchlist = []

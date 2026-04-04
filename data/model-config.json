@@ -1,7 +1,7 @@
 {
-  "version": 88,
+  "version": 89,
   "updated_at": "2026-04-04T00:00:00Z",
-  "updated_by": "v88-hybrid-1star-contrarian-bonus",
+  "updated_by": "v89-70-30-blend-espn-injury-return",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -195,7 +195,10 @@
   "projection": {
     "min_gate_minutes": 25,
     "lock_buffer_minutes": 5,
-    "season_recent_blend": 0.2,
+    "season_recent_blend": 0.70,
+    "injury_return_blend": 0.30,
+    "injury_return_gp_ratio": 0.60,
+    "injury_return_min_spike": 1.12,
     "major_role_change_threshold": 0.75,
     "major_role_change_recent_weight": 0.8,
     "moderate_decline_threshold": 0.9,
@@ -825,6 +828,8 @@
       "max_bonus": 0.20,
       "penalty_per_min": 0.01,
       "max_penalty": 0.08
-    }
+    },
+    "injury_return_ev_penalty": 0.0,
+    "injury_return_rs_penalty": 0.0
   }
 }

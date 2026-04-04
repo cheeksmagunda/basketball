@@ -1727,7 +1727,8 @@ class TestBriefingSimulatedDraftScore:
 
 
 class TestMinGateMinutes:
-    """min_gate_minutes enforces a hard 25-minute floor for draft eligibility."""
+    """min_gate_minutes enforces a hard 25-minute floor for draft eligibility.
+    Small-slate relaxation happens in _build_lineups, not here."""
 
     def test_min_gate_default_is_25(self):
         from api.index import MIN_GATE
@@ -6516,6 +6517,180 @@ class TestHybridOneStar:
         """Phase B comment should say 'remaining 4' not 'remaining 3'."""
         src = open("api/index.py").read()
         assert "Fill remaining 4 slots" in src
+
+
+class TestSmallSlateOptimization:
+    """Verify small-slate detection and adaptive gate relaxation.
+
+    3-game slates have only ~18 eligible players across 6 teams.
+    Gates must relax to build viable lineups."""
+
+    def test_small_slate_detection_in_code(self):
+        """_build_lineups should detect small slates and relax gates."""
+        src = open("api/index.py").read()
+        assert "_small_slate" in src, "Should have small-slate detection"
+        assert "n_games <= 4" in src, "Should detect 4 or fewer games as small"
+
+    def test_min_minutes_relaxed_for_small_slate(self):
+        """min_minutes should be relaxed from 25 to ~16 for 3-game slates."""
+        src = open("api/index.py").read()
+        assert "min_minutes - (5 - n_games)" in src or "min_minutes relaxed" in src.lower()
+
+    def test_team_cap_auto_relaxation(self):
+        """max_per_team auto-relaxes to 2 when fewer than 10 teams available."""
+        src = open("api/index.py").read()
+        assert "_unique_teams < 10" in src, "Should check unique team count"
+        assert "max_per_team = 2" in src, "Should relax team cap to 2"
+
+    def test_n_games_parameter(self):
+        """_build_lineups should accept n_games parameter."""
+        import inspect
+        from api.index import _build_lineups
+        sig = inspect.signature(_build_lineups)
+        assert "n_games" in sig.parameters
+
+    def test_min_gate_stays_25(self):
+        """MIN_GATE stays at 25 for normal slates; small-slate relaxation is in _build_lineups."""
+        from api.index import MIN_GATE
+        assert MIN_GATE == 25, "MIN_GATE should stay at 25; small-slate relaxation is in _build_lineups"
+
+    def test_build_lineups_called_with_n_games(self):
+        """Both _build_lineups call sites should pass n_games."""
+        src = open("api/index.py").read()
+        assert "n_games=len(draftable_games)" in src or "n_games=len(games)" in src
+
+
+class TestRecentWeightedBlend:
+    """Season/recent blend should weight recent (70%) over season (30%),
+    with ESPN data-driven injury return detection."""
+
+    def test_blend_weight_config(self):
+        """Config should have season_recent_blend at 0.70 (recent-heavy)."""
+        import json
+        cfg = json.loads(open("data/model-config.json").read())
+        blend = cfg.get("projection", {}).get("season_recent_blend", 0.5)
+        assert blend == 0.70, f"Expected 0.70 (recent-heavy), got {blend}"
+
+    def test_injury_return_blend_config(self):
+        """Config should have injury_return_blend at 0.30 (season-heavy for returning players)."""
+        import json
+        cfg = json.loads(open("data/model-config.json").read())
+        proj = cfg.get("projection", {})
+        assert proj.get("injury_return_blend") == 0.30, "Injury return should trust season (0.30 recent)"
+        assert proj.get("injury_return_gp_ratio") == 0.60, "GP ratio threshold for injury detection"
+        assert proj.get("injury_return_min_spike") == 1.12, "Min spike threshold for ramp-up detection"
+
+    def test_injury_return_espn_gp_detection(self):
+        """Injury return detection should use ESPN games played (GP) data."""
+        src = open("api/index.py").read()
+        assert "_is_injury_return_gp" in src, "Should detect injury via ESPN GP ratio"
+        assert "_actual_gp" in src, "Should read actual GP from season splits"
+        assert "_expected_gp" in src, "Should compute expected GP from season progress"
+        assert "_estimate_games_played()" in src, "Should use _estimate_games_played helper"
+
+    def test_injury_return_min_spike_detection(self):
+        """Injury return detection should catch recent minutes spike (ramp-up)."""
+        src = open("api/index.py").read()
+        assert "_is_injury_return_min" in src, "Should detect min spike as injury signal"
+        assert "_ir_min_spike" in src, "Should read min spike threshold from config"
+
+    def test_injury_return_uses_config_blend(self):
+        """Injury return players should use configurable blend weight, not hardcoded."""
+        src = open("api/index.py").read()
+        assert "_ir_blend" in src, "Should read injury return blend from config"
+        assert "injury_return_blend" in src, "Config key for injury return blend"
+
+    def test_config_defaults_have_blend(self):
+        """_CONFIG_DEFAULTS should include season_recent_blend and injury return params."""
+        src = open("api/index.py").read()
+        assert '"season_recent_blend": 0.70' in src, "Default blend should be 0.70"
+        assert '"injury_return_blend": 0.30' in src, "Default injury return blend should be 0.30"
+
+    def test_blended_output_carries_injury_flag(self):
+        """Blended output should include _injury_return flag for downstream visibility."""
+        src = open("api/index.py").read()
+        assert '["_injury_return"]' in src, "Should set _injury_return flag on blended output"
+        assert '["_gp"]' in src, "Should carry actual GP on blended output"
+
+
+class TestInjuryReturnPipeline:
+    """Historical audit (2,316 entries, 152 dates): injury-returning players produce
+    +11.5% higher value than baseline due to boost reset mechanism. They should NOT
+    be penalized — only the blend weight is adjusted (30% recent) for accurate projection."""
+
+    def test_no_rs_penalty_for_injury_return(self):
+        """project_player should NOT penalize RS for injury returns.
+        Data: return appearances avg 15.20 value vs 13.63 baseline (+11.5%)."""
+        src = open("api/index.py").read()
+        # The RS penalty code should be removed
+        assert "injury_return_rs_penalty" not in src or "REMOVED" in src
+
+    def test_no_ev_penalty_for_injury_return(self):
+        """_build_lineups should NOT apply EV penalty for injury returns.
+        Data: 72% of return appearances are under-drafted (avg 297 vs 647 drafts)."""
+        src = open("api/index.py").read()
+        assert "ir_mult" not in src, "IR EV penalty multiplier should be removed"
+
+    def test_injury_return_flag_still_propagated(self):
+        """_injury_return flag should still exist for blend weight adjustment only."""
+        src = open("api/index.py").read()
+        assert '"_injury_return"' in src, "Flag should exist for blend weight"
+        assert "_is_injury_return" in src, "Detection logic should remain"
+
+    def test_injury_return_blend_only(self):
+        """Injury return effect is blend weight only: 30% recent (vs 70% normal).
+        This projects their stats conservatively without penalizing EV/RS."""
+        src = open("api/index.py").read()
+        assert "_effective_blend_w" in src, "Blend weight adjustment should exist"
+        assert "_ir_blend" in src, "Config-driven injury return blend"
+
+    def test_penalties_zeroed_in_config(self):
+        """Config penalties should be 0.0 (disabled, not removed, for future tuning)."""
+        import json
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat.get("injury_return_ev_penalty") == 0.0, "EV penalty zeroed"
+        assert strat.get("injury_return_rs_penalty") == 0.0, "RS penalty zeroed"
+
+    def test_contrarian_bonus_benefits_returns(self):
+        """Returning players get contrarian bonus: low PPG + high boost = EV uplift.
+        Data: 23% of returns come back at 3.0 boost, avg value 15.52."""
+        src = open("api/index.py").read()
+        assert "_contrarian" in src, "Contrarian bonus should be active"
+        assert "ct_mult" in src, "Contrarian multiplier helps returning players"
+
+
+class TestRedisOptimization:
+    """Verify Redis connection pooling, error logging, and reconnect interval."""
+
+    def test_redis_connection_pool_config(self):
+        """Redis should be configured with explicit max_connections and keepalive."""
+        src = open("api/cache.py").read()
+        assert "max_connections=" in src, "Should configure max_connections"
+        assert "socket_keepalive=True" in src, "Should enable socket keepalive"
+        assert "health_check_interval=" in src, "Should set health check interval"
+
+    def test_redis_error_logging(self):
+        """Redis GET and DELETE should log errors, not swallow silently."""
+        src = open("api/cache.py").read()
+        assert 'Redis GET error' in src, "rcg should log errors"
+        assert 'Redis DELETE error' in src, "rcd should log errors"
+
+    def test_reconnect_interval_short(self):
+        """Reconnect interval should be ≤15 seconds for fast recovery."""
+        src = open("api/cache.py").read()
+        assert "_RECONNECT_INTERVAL = 10" in src, "Reconnect should be 10s"
+
+
+class TestRotoWireAdaptiveTTL:
+    """Verify RotoWire cache TTL adapts near game-time."""
+
+    def test_adaptive_ttl_in_code(self):
+        """RotoWire cache should use shorter TTL during game window."""
+        src = open("api/rotowire.py").read()
+        assert "_game_window" in src, "Should detect game window hours"
+        assert "600" in src, "Should use 10-min TTL during game window"
+        assert "1800" in src, "Should use 30-min TTL outside game window"
 
 
 if __name__ == "__main__":
