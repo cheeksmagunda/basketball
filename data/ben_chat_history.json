@@ -10,5 +10,9 @@
   {
     "role": "assistant",
     "content": "Games haven't tipped yet, so no live stats available. But here's what we know from context:\n\n**Christian Braun (DEN G/F)** \u2014 SA @ DEN tonight (spread 2, total 242.5)\n\nBraun is a key starter for Denver. The question is how he compares to **Cameron Johnson** in the 1.2x slot:\n\n| | Cameron Johnson | Christian Braun |\n|---|---|---|\n| **Slot** | 1.2x | 1.2x (your swap) |\n| **Model RS** | 4.3 | Not in our top pool |\n| **Card Boost** | 1.6x | ? |\n| **Min Proj** | 30.2 | Likely ~32-34 |\n\nThe key factors:\n\n1. **Card boost matters a lot** \u2014 Johnson has a 1.6x card. If Braun's card is 1.0x (no boost), he'd need to produce ~37% more raw stats just to break even.\n2. **Braun wasn't selected by the model** \u2014 which means either his projected RS was lower than 4.3 or he didn't meet the boost/value thresholds.\n\n**Do you know what Braun's card boost is tonight?** That's really the make-or-break factor here. If he's got a solid boost (1.5x+), it could be a reasonable pivot. At 1.0x, Johnson at 1.6x is almost certainly the better play in that slot."
+  },
+  {
+    "role": "user",
+    "content": "why do we like johnson ?"
   }
 ]
