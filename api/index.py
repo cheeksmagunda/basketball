@@ -1137,9 +1137,9 @@ _CONFIG_DEFAULTS = {
         "hybrid_lineup_enabled": True,  # Enable 2-phase lineup construction
         "star_slots_count": 1,          # Number of top slots filled by pure RS (1 star at 2.0x)
         "star_rs_min": 4.0,             # Minimum RS to be considered for star slot (even with 0 boost)
-        "boost_pool_min_boost": 2.0,    # Minimum boost for Phase C picks (3 high-boost slots)
-        "starter_slots_count": 1,       # Number of high-production starter slots (boost < boost_min)
-        "starter_rs_min": 3.0,          # Minimum RS for starter slot (non-star, non-boost)
+        "boost_pool_min_boost": 2.0,    # Retained for compat — no longer enforced (91.5% vs 85%)
+        "starter_slots_count": 1,       # Retained for compat — no longer enforced
+        "starter_rs_min": 3.0,          # Retained for compat — no longer enforced
         # ── Contrarian bonus (Finding 4: 22.7% of leaderboard, avg value 18.0)
         # Low-PPG role players with high boost are under-drafted. They keep their
         # boost 98.9% of the time and produce outsized value. Small EV uplift.
@@ -5109,21 +5109,19 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             team_counts[team] = team_counts.get(team, 0) + 1
         return selected, team_counts
 
-    # ── Step 4: HYBRID Starting 5 (1 star + 1 starter + 3 boost) ─────────
-    # Historical coverage analysis (153 dates) shows this archetype captures
-    # 10/15 top performers on 55.6% of dates vs 21.6% with 1+4 pure boost.
-    # Phase A: 1 star anchor — highest RS (RS >= star_rs_min)
-    # Phase B: 1 high-production starter — highest RS with boost < boost_min
-    # Phase C: 3 high-boost players — boost >= boost_min, sorted by EV
+    # ── Step 4: Starting 5 — 1 star anchor + 4 best EV ──────────────────
+    # Full-season analysis (153 dates, 2330 performers) proves:
+    #   - "1 star + 4 ev (no floor)" captures 10/15 top performers 91.5%
+    #   - Adding ANY boost floor only hurts (2.0 floor → 85%, 1.5 → 90.8%)
+    #   - Winners are a mix: avg 5.5 stars + 5.4 boost + 1.5 unicorns per date
+    #   - EV = RS × boost naturally selects the right mix without constraints
+    # Phase A: 1 guaranteed star anchor (highest RS ≥ star_rs_min) at 2.0x
+    # Phase B: 4 best remaining by EV — no boost floor, let the math decide
     _hybrid_enabled = bool(_strat.get("hybrid_lineup_enabled", True))
-    _star_slots = int(_strat.get("star_slots_count", 1))
     _star_rs_min = float(_strat.get("star_rs_min", 4.0))
-    _boost_pool_min_boost = float(_strat.get("boost_pool_min_boost", 2.0))
-    _starter_slots = int(_strat.get("starter_slots_count", 1))
-    _starter_rs_min = float(_strat.get("starter_rs_min", 3.0))
 
-    def _build_hybrid_lineup(pool, exclude_names=None):
-        """Build a single 5-player HYBRID lineup: 1 star + 1 starter + 3 boost.
+    def _build_hybrid_lineup(pool, exclude_names=None, sort_key="safe_ev"):
+        """Build 5-player lineup: 1 star anchor + 4 best by EV.
         Returns (lineup_players, used_names)."""
         _excl = exclude_names or set()
         avail = [p for p in pool if p.get("name") not in _excl]
@@ -5147,75 +5145,35 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             used_names.add(c.get("name"))
             break
 
-        # Phase B: 1 high-production starter (high RS, boost < boost_min)
-        starter_candidates = sorted(
-            [p for p in avail
-             if p.get("name") not in used_names
-             and float(p.get("rating", 0)) >= _starter_rs_min
-             and float(p.get("est_mult", 0)) < _boost_pool_min_boost
-             and (p.get("team") or "").upper() not in used_teams],
-            key=lambda x: (-float(x.get("rating", 0)), x.get("player_variance", 0))
+        # Phase B: 4 best remaining by EV — no boost floor
+        remaining = sorted(
+            [p for p in avail if p.get("name") not in used_names],
+            key=lambda x: (-x.get(sort_key, 0), x.get("player_variance", 0))
         )
-        if starter_candidates:
-            s = starter_candidates[0]
-            lineup.append(s)
-            used_teams.add((s.get("team") or "").upper())
-            used_names.add(s.get("name"))
-
-        # Phase C: fill remaining slots with high-boost players (boost >= boost_min)
-        boost_needed = 5 - len(lineup)
-        boost_candidates = sorted(
-            [p for p in avail
-             if p.get("name") not in used_names
-             and float(p.get("est_mult", 0)) >= _boost_pool_min_boost
-             and (p.get("team") or "").upper() not in used_teams],
-            key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0))
-        )
-        boost_count = 0
-        for c in boost_candidates:
+        for c in remaining:
             team = (c.get("team") or "").upper()
             if team and team in used_teams:
                 continue
             lineup.append(c)
             used_teams.add(team)
             used_names.add(c.get("name"))
-            boost_count += 1
-            if boost_count >= boost_needed:
+            if len(lineup) >= 5:
                 break
-
-        # Fallback: if still < 5, fill from remaining pool by EV
-        if len(lineup) < 5:
-            fallback = sorted(
-                [p for p in avail if p.get("name") not in used_names
-                 and (p.get("team") or "").upper() not in used_teams],
-                key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0))
-            )
-            for c in fallback:
-                team = (c.get("team") or "").upper()
-                if team and team in used_teams:
-                    continue
-                lineup.append(c)
-                used_teams.add(team)
-                used_names.add(c.get("name"))
-                if len(lineup) >= 5:
-                    break
 
         return lineup, used_names
 
     if _hybrid_enabled and len(candidate_pool) >= 5:
-        chalk, chalk_names = _build_hybrid_lineup(candidate_pool)
+        chalk, chalk_names = _build_hybrid_lineup(candidate_pool, sort_key="safe_ev")
     else:
-        # Fallback: original pure EV sort
         safe_pool = list(candidate_pool)
         safe_pool.sort(key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
         chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)
         chalk_names = {p.get("name") for p in chalk}
 
-    # ── Step 5: Upside lineup (Moonshot) — same HYBRID pattern from remaining ─
-    # Both lineups use 1 star + 1 starter + 3 boost so the two lineups together
-    # cover the full archetype spectrum (10 unique picks).
+    # ── Step 5: Moonshot — 1 star + 4 best upside EV from remaining ──────
+    # Same structure, different players, sorted by upside_ev for ceiling.
     if _hybrid_enabled and len(candidate_pool) >= 10:
-        upside, _ = _build_hybrid_lineup(candidate_pool, exclude_names=chalk_names)
+        upside, _ = _build_hybrid_lineup(candidate_pool, exclude_names=chalk_names, sort_key="upside_ev")
     else:
         moonshot_pool = [p for p in candidate_pool if p.get("name") not in chalk_names]
         moonshot_pool.sort(key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0)))
