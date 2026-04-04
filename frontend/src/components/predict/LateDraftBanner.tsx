@@ -9,13 +9,16 @@ import { useState } from 'react';
 import { fetchWithTimeout } from '../../api/client';
 import styles from './LateDraftBanner.module.css';
 
+import type { SlateLineups } from '../../types';
+
 interface Props {
-  onRegenerated: () => void;
+  onRegenerated: (lineups: SlateLineups) => void;
 }
 
 export default function LateDraftBanner({ onRegenerated }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [triggered, setTriggered] = useState(false);
 
   async function handleGenerate() {
     setLoading(true);
@@ -27,7 +30,13 @@ export default function LateDraftBanner({ onRegenerated }: Props) {
         60_000,
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      onRegenerated();
+      const data = await r.json();
+      if (data.status === 'no_remaining_games') {
+        setError(true);
+        return;
+      }
+      setTriggered(true);
+      onRegenerated(data.lineups);
     } catch (e) {
       console.warn('[late-draft] regeneration failed:', e);
       setError(true);
@@ -36,12 +45,23 @@ export default function LateDraftBanner({ onRegenerated }: Props) {
     }
   }
 
+  if (triggered) {
+    return (
+      <div className={styles.banner}>
+        <div className={styles.text}>
+          <strong>Picks updated.</strong>{' '}
+          Lineups regenerated for remaining games.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.banner}>
       <div className={styles.text}>
         <strong>Late to the party?</strong>{' '}
         {error
-          ? 'Generation failed -- try again.'
+          ? 'No remaining games to generate picks for.'
           : 'Generate picks for remaining games.'}
       </div>
       <button
