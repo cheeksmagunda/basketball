@@ -1,0 +1,18 @@
+player,team,draft_count,slot_position,source
+Luka Doncic,LAL,14400,1st,most_popular
+Shai Gilgeous-Alexander,OKC,9700,2nd,most_popular
+Kawhi Leonard,LAC,6100,3rd,most_popular
+Victor Wembanyama,SA,5700,2nd,most_popular
+Jalen Duren,DET,4900,4th,most_popular
+Stephon Castle,SA,4800,2nd,most_popular
+Kon Knueppel,CHA,4400,4th,most_popular
+Devin Booker,PHX,4200,4th,most_popular
+Donovan Mitchell,CLE,3900,4th,most_popular
+Daniss Jenkins,DET,3600,3rd,most_popular
+James Harden,LAC,3500,3rd,most_popular
+LaMelo Ball,CHA,3400,3rd,most_popular
+Brook Lopez,MIL,2900,4th,most_popular
+Deni Avdija,POR,2800,3rd,most_popular
+Donovan Clingan,POR,2700,5th,most_popular
+Ayo Dosunmu,CHI,2700,2nd,most_popular
+De'Aaron Fox,SA,2300,4th,most_popular
