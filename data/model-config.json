@@ -809,6 +809,8 @@
     "star_slots_count": 1,
     "star_rs_min": 4.0,
     "boost_pool_min_boost": 2.0,
+    "starter_slots_count": 1,
+    "starter_rs_min": 3.0,
     "contrarian_bonus": {
       "enabled": true,
       "max_bonus": 0.10,
