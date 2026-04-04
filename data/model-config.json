@@ -1,7 +1,7 @@
 {
-  "version": 86,
-  "updated_at": "2026-04-01T16:00:00Z",
-  "updated_by": "v86-minutes-delta-signal",
+  "version": 87,
+  "updated_at": "2026-04-04T00:00:00Z",
+  "updated_by": "v87-winning-draft-audit-hybrid-lineup",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -122,11 +122,17 @@
       "bonus_td": 1.15
     },
     "mc_strength": 0.5,
-    "compression_divisor": 5.5,
-    "compression_power": 0.8,
-    "rs_cap": 25.0,
-    "ai_blend_weight": 1.0,
-    "max_post_compression_mult": 1.4,
+    "compression_divisor": 6.0,
+    "compression_power": 0.65,
+    "rs_cap": 20.0,
+    "ai_blend_weight": 0.30,
+    "max_post_compression_mult": 1.2,
+    "regression_guard": {
+      "enabled": true,
+      "bench_cap": 4.5,
+      "role_cap": 5.5,
+      "starter_cap": 7.0
+    },
     "bucket_calibration": {
       "enabled": false,
       "high_pts_threshold": 18.462,
@@ -796,12 +802,23 @@
     "anti_popularity_enabled": true,
     "anti_popularity_strength": 0.2,
     "min_pred_min_season_ratio": 1.0,
+    "hybrid_lineup_enabled": true,
+    "star_slots_count": 2,
+    "star_rs_min": 4.0,
+    "boost_slots_count": 2,
+    "mid_slot_metric": "ev",
+    "leaderboard_frequency": {
+      "enabled": true,
+      "min_appearances": 5,
+      "bonus_per_appearance": 0.01,
+      "max_bonus": 0.10
+    },
     "minutes_delta": {
       "enabled": true,
       "neutral_zone": 2.0,
       "neutral_discount": 0.97,
-      "bonus_per_min": 0.015,
-      "max_bonus": 0.12,
+      "bonus_per_min": 0.03,
+      "max_bonus": 0.20,
       "penalty_per_min": 0.01,
       "max_penalty": 0.08
     }
