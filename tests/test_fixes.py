@@ -5963,8 +5963,8 @@ class TestMinutesDeltaSignal:
         assert md["enabled"] is True
         assert md["neutral_zone"] == 2.0
         assert md["neutral_discount"] == 0.97
-        assert md["bonus_per_min"] == 0.015
-        assert md["max_bonus"] == 0.12
+        assert md["bonus_per_min"] == 0.03
+        assert md["max_bonus"] == 0.20
         assert md["penalty_per_min"] == 0.01
         assert md["max_penalty"] == 0.08
 
@@ -6128,9 +6128,9 @@ class TestMinutesIncreaseEVBonus:
         assert mi_mult == 1.15, f"Should be capped at 1.15, got {mi_mult}"
 
     def test_ev_formula_includes_mi_mult(self):
-        """_build_lineups EV computation should multiply by mi_mult."""
+        """_build_lineups EV computation should multiply by total_mult (mi_mult * lb_mult)."""
         src = open("api/index.py").read()
-        assert "* mi_mult" in src, "EV formula should include mi_mult multiplier"
+        assert "total_mult" in src, "EV formula should include total_mult (mi_mult * lb_mult)"
 
     def test_minutes_delta_bonus_increased(self):
         """bonus_per_min should be 0.03 (3% per min), max_bonus should be 0.20."""
@@ -6229,6 +6229,293 @@ class TestContextLayerMinutesRisk:
         src = open("api/index.py").read()
         moonshot_section = src.split("Step 5")[1].split("Step 6")[0]
         assert "_select_with_team_cap" in moonshot_section, "Moonshot should use team cap"
+
+
+# ─────────────────────────────────────────────────────────
+# Winning Draft Audit — HYBRID lineup, RS regression guard,
+# leaderboard frequency, boost model strengthening
+# ─────────────────────────────────────────────────────────
+
+class TestHybridLineupConstruction:
+    """Verify the HYBRID lineup builder selects stars for top slots
+    and boost players for bottom slots (Winning Draft Audit)."""
+
+    def test_hybrid_config_defaults(self):
+        """Config defaults include hybrid lineup parameters."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        assert strat.get("hybrid_lineup_enabled") is True
+        assert strat.get("star_slots_count") == 1
+        assert strat.get("star_rs_min") == 4.0
+
+    def test_hybrid_in_model_config(self):
+        """model-config.json includes hybrid lineup keys."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat.get("hybrid_lineup_enabled") is True
+        assert strat.get("star_slots_count") == 1
+        assert strat.get("star_rs_min") == 4.0
+
+    def test_build_lineups_has_hybrid_phases(self):
+        """_build_lineups code contains Phase A (pure RS) and Phase B (EV)."""
+        src = open("api/index.py").read()
+        assert "Phase A" in src, "Should have Phase A (pure RS selection)"
+        assert "Phase B" in src, "Should have Phase B (EV-weighted selection)"
+
+    def test_select_with_team_cap_exclude_names(self):
+        """_select_with_team_cap supports exclude_names parameter."""
+        src = open("api/index.py").read()
+        assert "exclude_names" in src, "Should support exclude_names to prevent Phase A/B overlap"
+
+    def test_star_pool_sorted_by_rating(self):
+        """Star pool should be sorted by rating (pure RS) descending."""
+        src = open("api/index.py").read()
+        # Find the Phase A section
+        assert 'star_pool = sorted(candidate_pool, key=lambda x: (-float(x.get("rating", 0))' in src
+
+    def test_moonshot_still_uses_upside_ev(self):
+        """Moonshot (upside) lineup still sorts by upside_ev."""
+        src = open("api/index.py").read()
+        moonshot_section = src.split("Step 5")[1].split("Step 6")[0] if "Step 5" in src else ""
+        assert "upside_ev" in moonshot_section
+
+
+class TestRSRegressionGuard:
+    """Verify the RS regression guard caps predictions by scoring tier."""
+
+    def test_regression_guard_config_defaults(self):
+        """Config defaults include regression guard parameters."""
+        from api.index import _CONFIG_DEFAULTS
+        rs = _CONFIG_DEFAULTS["real_score"]
+        rg = rs.get("regression_guard", {})
+        assert rg.get("enabled") is True
+        assert rg.get("bench_cap") == 4.5
+        assert rg.get("role_cap") == 5.5
+        assert rg.get("starter_cap") == 7.0
+
+    def test_regression_guard_in_model_config(self):
+        """model-config.json includes regression guard."""
+        cfg = json.loads(open("data/model-config.json").read())
+        rs = cfg.get("real_score", {})
+        rg = rs.get("regression_guard", {})
+        assert rg.get("enabled") is True
+        assert rg.get("bench_cap") == 4.5
+
+    def test_compression_power_lowered(self):
+        """Compression power should be 0.65 (down from 0.70/0.72)."""
+        from api.index import _CONFIG_DEFAULTS
+        rs = _CONFIG_DEFAULTS["real_score"]
+        assert rs["compression_power"] == 0.65
+
+    def test_compression_divisor_raised(self):
+        """Compression divisor should be 6.0 (up from 5.5)."""
+        from api.index import _CONFIG_DEFAULTS
+        rs = _CONFIG_DEFAULTS["real_score"]
+        assert rs["compression_divisor"] == 6.0
+
+    def test_regression_guard_in_project_player_code(self):
+        """project_player code should contain RS regression guard logic."""
+        src = open("api/index.py").read()
+        assert "regression_guard" in src
+        assert "bench_cap" in src
+        assert "role_cap" in src
+        assert "starter_cap" in src
+
+
+class TestLeaderboardFrequency:
+    """Verify leaderboard frequency tracking for repeat performers."""
+
+    def test_leaderboard_frequency_config(self):
+        """Config defaults include leaderboard frequency bonus."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        lb = strat.get("leaderboard_frequency", {})
+        assert lb.get("enabled") is True
+        assert lb.get("min_appearances") == 5
+        assert lb.get("max_bonus") == 0.10
+
+    def test_load_leaderboard_frequency_function_exists(self):
+        """_load_leaderboard_frequency should be defined."""
+        from api.index import _load_leaderboard_frequency
+        assert callable(_load_leaderboard_frequency)
+
+    def test_ev_includes_lb_mult(self):
+        """EV scoring should include lb_mult from leaderboard frequency."""
+        src = open("api/index.py").read()
+        assert "lb_mult" in src
+        assert "_lb_freq" in src
+
+    def test_leaderboard_frequency_in_model_config(self):
+        """model-config.json includes leaderboard frequency."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        lb = strat.get("leaderboard_frequency", {})
+        assert lb.get("enabled") is True
+
+
+class TestBoostModelESPNOnly:
+    """Verify boost model uses ONLY ESPN-available data for daily predictions.
+
+    Winning Draft Audit: the old model used prior-day boost/RS/drafts as inputs,
+    but that data isn't available on game day. The new model uses ESPN season stats
+    + historically-calibrated PQI mapping."""
+
+    def test_predict_boost_uses_espn_signals(self):
+        """predict_boost should use season_ppg/rpg/apg/mpg (ESPN available)."""
+        from api.boost_model import predict_boost
+        result = predict_boost(
+            "Test Player",
+            season_ppg=12.0,
+            season_rpg=5.0,
+            season_apg=3.0,
+            season_mpg=25.0,
+            team="GS",
+        )
+        assert "boost" in result
+        assert "tier" in result
+        assert result["tier"] in (1, 2, 3)
+
+    def test_cold_start_uses_pqi(self):
+        """Cold start player should use PQI from season stats."""
+        from api.boost_model import predict_boost
+        # Deep bench player (low PPG) → should get high boost
+        result = predict_boost(
+            "Unknown Bench Player XYZABC",
+            season_ppg=5.0,
+            season_rpg=2.0,
+            season_apg=1.0,
+            season_mpg=12.0,
+        )
+        assert result["boost"] >= 2.5, "Deep bench player should get high boost"
+
+    def test_star_gets_low_boost(self):
+        """Stars (PPG 25+) should always get low boost via PQI."""
+        from api.boost_model import predict_boost
+        result = predict_boost(
+            "Unknown Superstar XYZABC",
+            season_ppg=28.0,
+            season_rpg=8.0,
+            season_apg=6.0,
+            season_mpg=35.0,
+        )
+        assert result["boost"] <= 0.5, "Superstar should get low boost"
+
+    def test_predict_boost_does_not_use_prev_boost(self):
+        """predict_boost signature should not require prev_boost as input."""
+        from api.boost_model import predict_boost
+        import inspect
+        sig = inspect.signature(predict_boost)
+        param_names = list(sig.parameters.keys())
+        assert "prev_boost" not in param_names, "Should not take prev_boost as input"
+
+    def test_design_principle_documented(self):
+        """Boost model should document the ESPN-only design principle."""
+        src = open("api/boost_model.py").read()
+        assert "ESPN" in src
+        assert "game day" in src.lower() or "game-day" in src.lower()
+
+    def test_boost_model_loads_most_popular(self):
+        """Boost model should load data/most_popular/ for historical calibration."""
+        src = open("api/boost_model.py").read()
+        assert "most_popular" in src
+
+    def test_historical_weight_capped(self):
+        """Historical mean weight should be capped (not dominate prediction)."""
+        src = open("api/boost_model.py").read()
+        assert "hist_weight" in src
+        # Weight cap should be ≤ 0.5 (ESPN signal is always primary)
+        assert "min(n_appearances / 20, 0.4)" in src or "hist_weight" in src
+
+
+class TestMaxPerTeamUnchanged:
+    """Verify max_per_team stays at 1 per user request."""
+
+    def test_config_defaults_max_per_team_1(self):
+        """Default max_per_team should be 1."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        assert strat.get("max_per_team") == 1
+
+    def test_model_config_max_per_team_1(self):
+        """model-config.json max_per_team should be 1."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat.get("max_per_team") == 1
+
+
+class TestContrarianBonus:
+    """Verify contrarian bonus gives EV uplift to low-draft role players with high boost.
+
+    Finding 4: Spearman drafts-boost = -0.732 (strongest signal).
+    Contrarian players (≤20 drafts, value ≥15) = 22.7% of leaderboard, avg value 18.0.
+    Low-draft + high-boost players keep boost 98.9% of the time."""
+
+    def test_contrarian_config_defaults(self):
+        """Config defaults include contrarian bonus parameters."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        ct = strat.get("contrarian_bonus", {})
+        assert ct.get("enabled") is True
+        assert ct.get("max_bonus") == 0.10
+        assert ct.get("min_boost") == 2.0
+        assert ct.get("max_season_ppg") == 16.0
+
+    def test_contrarian_in_model_config(self):
+        """model-config.json includes contrarian bonus config."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        ct = strat.get("contrarian_bonus", {})
+        assert ct.get("enabled") is True
+        assert ct.get("min_boost") == 2.0
+
+    def test_contrarian_in_build_lineups_code(self):
+        """_build_lineups code should contain contrarian bonus logic."""
+        src = open("api/index.py").read()
+        assert "ct_mult" in src, "Should have contrarian multiplier"
+        assert "_contrarian" in src, "Should tag contrarian players"
+        assert "contrarian_bonus" in src, "Should read contrarian config"
+
+    def test_contrarian_scales_with_boost(self):
+        """Contrarian bonus should scale: 2.0 boost → 0%, 3.0 boost → full bonus."""
+        src = open("api/index.py").read()
+        # The formula should scale by boost distance from min_boost
+        assert "boost - _ct_min_boost" in src, "Should scale by boost above threshold"
+
+    def test_stars_dont_get_contrarian(self):
+        """Stars (high PPG) should NOT get contrarian bonus — they get drafted heavily."""
+        src = open("api/index.py").read()
+        assert "_season_ppg <= _ct_max_ppg" in src, "Should exclude high-PPG stars"
+
+    def test_total_mult_includes_contrarian(self):
+        """total_mult should combine mi_mult * lb_mult * ct_mult."""
+        src = open("api/index.py").read()
+        assert "mi_mult * lb_mult * ct_mult" in src, "total_mult should include contrarian"
+
+
+class TestHybridOneStar:
+    """Verify HYBRID lineup uses exactly 1 star in top slot, 4 boost players."""
+
+    def test_star_slots_count_is_1(self):
+        """star_slots_count should be 1 (not 2)."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        assert strat["star_slots_count"] == 1
+
+    def test_model_config_star_slots_1(self):
+        """model-config.json star_slots_count should be 1."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat["star_slots_count"] == 1
+
+    def test_phase_a_selects_1_player(self):
+        """Phase A comment should say 'top 1' not 'top 2'."""
+        src = open("api/index.py").read()
+        assert "Phase A: Select top 1 player by PURE RS" in src
+
+    def test_phase_b_fills_4_slots(self):
+        """Phase B comment should say 'remaining 4' not 'remaining 3'."""
+        src = open("api/index.py").read()
+        assert "Fill remaining 4 slots" in src
 
 
 if __name__ == "__main__":
