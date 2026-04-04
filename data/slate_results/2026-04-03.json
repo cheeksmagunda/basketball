@@ -1,0 +1,99 @@
+{
+  "date": "2026-04-03",
+  "game_count": 9,
+  "games": [
+    {
+      "home": "PHI",
+      "away": "MIN",
+      "home_score": 115,
+      "away_score": 103,
+      "winner": "PHI",
+      "loser": "MIN",
+      "winner_score": 115,
+      "loser_score": 103
+    },
+    {
+      "home": "SAC",
+      "away": "NO",
+      "home_score": 117,
+      "away_score": 113,
+      "winner": "SAC",
+      "loser": "NO",
+      "winner_score": 117,
+      "loser_score": 113
+    },
+    {
+      "home": "DAL",
+      "away": "ORL",
+      "home_score": 127,
+      "away_score": 138,
+      "winner": "ORL",
+      "loser": "DAL",
+      "winner_score": 138,
+      "loser_score": 127
+    },
+    {
+      "home": "HOU",
+      "away": "UTAH",
+      "home_score": 140,
+      "away_score": 106,
+      "winner": "HOU",
+      "loser": "UTAH",
+      "winner_score": 140,
+      "loser_score": 106
+    },
+    {
+      "home": "MEM",
+      "away": "TOR",
+      "home_score": 96,
+      "away_score": 128,
+      "winner": "TOR",
+      "loser": "MEM",
+      "winner_score": 128,
+      "loser_score": 96
+    },
+    {
+      "home": "MIL",
+      "away": "BOS",
+      "home_score": 101,
+      "away_score": 133,
+      "winner": "BOS",
+      "loser": "MIL",
+      "winner_score": 133,
+      "loser_score": 101
+    },
+    {
+      "home": "BKN",
+      "away": "ATL",
+      "home_score": 107,
+      "away_score": 141,
+      "winner": "ATL",
+      "loser": "BKN",
+      "winner_score": 141,
+      "loser_score": 107
+    },
+    {
+      "home": "NY",
+      "away": "CHI",
+      "home_score": 136,
+      "away_score": 96,
+      "winner": "NY",
+      "loser": "CHI",
+      "winner_score": 136,
+      "loser_score": 96
+    },
+    {
+      "home": "CHA",
+      "away": "IND",
+      "home_score": 129,
+      "away_score": 108,
+      "winner": "CHA",
+      "loser": "IND",
+      "winner_score": 129,
+      "loser_score": 108
+    }
+  ],
+  "season_stage": "regular-season",
+  "source": "screenshot_ingest",
+  "saved_at": "2026-04-04T12:00:00Z"
+}
