@@ -1170,10 +1170,9 @@ _CONFIG_DEFAULTS = {
             "bonus_per_min": 0.02,      # 2% EV bonus per minute above min_delta
             "max_bonus": 0.15,          # Cap at 15% EV uplift
         },
-        # Injury return penalties: players flagged via ESPN GP or minutes spike
-        # get both RS and EV haircuts so healthy players rank above them.
-        "injury_return_ev_penalty": 0.15,  # 15% EV reduction for returning players
-        "injury_return_rs_penalty": 0.10,  # 10% RS reduction in project_player
+        # NOTE: Injury return penalties REMOVED after historical audit (2,316 entries, 152 dates).
+        # Returning players produce +11.5% higher value than baseline due to boost reset mechanism.
+        # The contrarian signal (72% under-drafted, avg 297 drafts vs 647) is too valuable to penalize.
     },
 }
 
@@ -3734,13 +3733,6 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
             _md_mult = float(_md_cfg.get("neutral_discount", 0.97))
         raw_score *= _md_mult
 
-    # ── Injury return RS penalty: low-GP players get RS haircut ─────────
-    # Players who missed 40%+ of the season (injury) have unreliable projections.
-    # Apply a small RS penalty so healthy players rank higher in lineup selection.
-    if stats.get("_injury_return", False):
-        _ir_rs_penalty = float(_cfg("strategy.injury_return_rs_penalty", 0.10))
-        raw_score *= (1.0 - _ir_rs_penalty)
-
     # ── Game context bonus (additive, applied after compression) ─────────
     # Strategy report Finding 7: simple additive RS adjustments.
     raw_score += game_context_bonus
@@ -4967,14 +4959,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _max_min_drop = float(_cfg("projection.max_predmin_drop", 8.0))
         if _season_min > 0 and (_season_min - _pred_min) > _max_min_drop:
             continue
-        # ── Injury return gate: players returning from injury get stricter filtering ──
-        # ESPN GP-based detection: if player missed 40%+ of season games, they're returning
-        # from injury and their stats are unreliable. Require recent_min >= floor (no OR bypass).
-        _is_ir = p.get("_injury_return", False)
-        if _is_ir and not _is_ct:
-            # Injury returns must prove recent minutes — no season_min OR bypass
-            if p.get("recent_min", 0) < min_recent_minutes:
-                continue
         if not _mi_bypass and not _is_ct:
             if _pred_min < _effective_min_minutes and _season_min < _effective_min_minutes:
                 continue
@@ -5092,21 +5076,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 _ct_ratio = min((boost - _ct_min_boost) / max(1.0, 3.0 - _ct_min_boost), 1.0)
                 ct_mult = 1.0 + (_ct_max_bonus * _ct_ratio)
                 p["_contrarian"] = True
-        # Injury return penalty: deprioritize players returning from injury
-        # They pass gates but get 15% EV haircut so healthy players rank higher
-        ir_mult = 1.0
-        if p.get("_injury_return", False):
-            _ir_penalty = float(_strat.get("injury_return_ev_penalty", 0.15))
-            ir_mult = 1.0 - _ir_penalty
-            p["_injury_return_penalized"] = True
-        total_mult = mi_mult * lb_mult * ct_mult * ir_mult
+        total_mult = mi_mult * lb_mult * ct_mult
         p["draft_ev"]   = round(rs * boost * total_mult, 2)
         p["safe_ev"]    = round(rs * cb_low * total_mult, 2)
         p["upside_ev"]  = round(rs * cb_high * total_mult, 2)
         p["_mi_mult"] = round(mi_mult, 3)
         p["_lb_mult"] = round(lb_mult, 3)
         p["_ct_mult"] = round(ct_mult, 3)
-        p["_ir_mult"] = round(ir_mult, 3)
         # Compute moonshot_ev for backward compatibility
         p["moonshot_ev"] = p["draft_ev"]
 

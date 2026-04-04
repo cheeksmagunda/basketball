@@ -829,7 +829,7 @@
       "penalty_per_min": 0.01,
       "max_penalty": 0.08
     },
-    "injury_return_ev_penalty": 0.15,
-    "injury_return_rs_penalty": 0.10
+    "injury_return_ev_penalty": 0.0,
+    "injury_return_rs_penalty": 0.0
   }
 }
