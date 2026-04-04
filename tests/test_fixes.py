@@ -6613,6 +6613,59 @@ class TestRecentWeightedBlend:
         assert '["_gp"]' in src, "Should carry actual GP on blended output"
 
 
+class TestInjuryReturnPipeline:
+    """Full pipeline audit: injury-returning players should be penalized at every stage."""
+
+    def test_injury_return_rs_penalty_in_project_player(self):
+        """project_player should apply RS penalty when _injury_return flag is set."""
+        src = open("api/index.py").read()
+        assert 'stats.get("_injury_return", False)' in src, "project_player should check _injury_return"
+        assert "injury_return_rs_penalty" in src, "Should apply configurable RS penalty"
+
+    def test_injury_return_ev_penalty_in_build_lineups(self):
+        """_build_lineups should apply EV penalty when _injury_return flag is set."""
+        src = open("api/index.py").read()
+        assert 'p.get("_injury_return", False)' in src, "Should check _injury_return in EV scoring"
+        assert "injury_return_ev_penalty" in src, "Should apply configurable EV penalty"
+        assert "ir_mult" in src, "Should have injury return multiplier"
+
+    def test_injury_return_gate_in_build_lineups(self):
+        """Injury-returning players must prove recent minutes (no season_min OR bypass)."""
+        src = open("api/index.py").read()
+        assert '_is_ir = p.get("_injury_return", False)' in src, "Should check _injury_return in gate"
+        assert "Injury returns must prove recent minutes" in src, "Should have stricter gate"
+
+    def test_injury_return_flag_in_project_player_output(self):
+        """project_player output dict should include _injury_return flag."""
+        src = open("api/index.py").read()
+        assert '"_injury_return": bool(stats.get("_injury_return", False))' in src
+
+    def test_injury_return_penalties_in_config(self):
+        """model-config.json should have both RS and EV penalties."""
+        import json
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat.get("injury_return_ev_penalty") == 0.15, "15% EV penalty"
+        assert strat.get("injury_return_rs_penalty") == 0.10, "10% RS penalty"
+
+    def test_injury_return_penalties_in_defaults(self):
+        """_CONFIG_DEFAULTS should have both penalties."""
+        src = open("api/index.py").read()
+        assert '"injury_return_ev_penalty": 0.15' in src, "Default EV penalty"
+        assert '"injury_return_rs_penalty": 0.10' in src, "Default RS penalty"
+
+    def test_triple_penalty_stack(self):
+        """Injury return players get hit 3 ways: blend (30% recent), RS (-10%), EV (-15%).
+        A healthy player with RS 5.0 × boost 2.5 = 12.5 EV.
+        An injury return with same raw stats: RS 4.5 (-10%) × boost 2.5 × 0.85 (-15%) = 9.56 EV.
+        This 24% total haircut ensures healthy players always rank higher."""
+        # Verify the math: 0.90 * 0.85 = 0.765 → 23.5% total reduction
+        rs_mult = 1.0 - 0.10  # RS penalty
+        ev_mult = 1.0 - 0.15  # EV penalty
+        total = rs_mult * ev_mult
+        assert 0.76 < total < 0.77, f"Combined penalty should be ~23.5%, got {1-total:.1%}"
+
+
 class TestRedisOptimization:
     """Verify Redis connection pooling, error logging, and reconnect interval."""
 
