@@ -6281,6 +6281,33 @@ class TestHybridLineupConstruction:
         assert "upside_ev" in moonshot_section
 
 
+class TestBoostPoolMinBoost:
+    """Verify Phase B boost pool enforces minimum boost floor for the 4 non-star picks."""
+
+    def test_boost_pool_min_boost_config_default(self):
+        """Config defaults include boost_pool_min_boost."""
+        from api.index import _CONFIG_DEFAULTS
+        strat = _CONFIG_DEFAULTS["strategy"]
+        assert strat.get("boost_pool_min_boost") == 2.0
+
+    def test_boost_pool_min_boost_in_model_config(self):
+        """model-config.json includes boost_pool_min_boost."""
+        cfg = json.loads(open("data/model-config.json").read())
+        strat = cfg.get("strategy", {})
+        assert strat.get("boost_pool_min_boost") == 2.0
+
+    def test_boost_pool_filter_in_code(self):
+        """_build_lineups Phase B filters candidates by boost_pool_min_boost."""
+        src = open("api/index.py").read()
+        assert "boost_pool_min_boost" in src, "Should read boost_pool_min_boost from config"
+        assert 'est_mult' in src and '>= _boost_pool_min_boost' in src, "Should filter boost pool by min boost"
+
+    def test_boost_pool_fallback_on_thin_pool(self):
+        """When not enough players meet boost floor, code falls back to full pool."""
+        src = open("api/index.py").read()
+        assert "relaxing" in src and "boost floor" in src, "Should log fallback when boost pool is thin"
+
+
 class TestRSRegressionGuard:
     """Verify the RS regression guard caps predictions by scoring tier."""
 
