@@ -61,9 +61,14 @@ export default function SlateView() {
       ? lineups?.chalk || []
       : lineups?.upside || [];
 
-  // Determine if late-draft banner should show
-  // Slate is locked but not all games are complete -- remaining games exist
-  const showLateDraft = slate.locked && !slate.all_complete;
+  // Determine if late-draft banner should show.
+  // Slate is locked, games aren't all done, AND at least one game hasn't tipped yet
+  // (startTime more than 5 min in the future). Mirrors the old app.js showLateDraftBanner check.
+  const now = Date.now();
+  const hasRemainingGames = (slate.games ?? []).some(
+    (g) => g.startTime && new Date(g.startTime).getTime() - now > 5 * 60 * 1000,
+  );
+  const showLateDraft = slate.locked && !slate.all_complete && hasRemainingGames;
 
   return (
     <div>
