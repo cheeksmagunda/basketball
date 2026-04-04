@@ -1,5 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { Activity, TrendingUp, Layers, MessageCircle } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { fetchJson } from '../../api/client';
 import { useUiStore } from '../../store/uiStore';
 import type { TabName } from '../../types';
 import styles from './BottomNav.module.css';
@@ -45,6 +47,17 @@ export default function BottomNav() {
   const setActiveTab = useUiStore((s) => s.setActiveTab);
   const pillRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+
+  // Prefetch tab data on hover/touch-start (~100-300ms head start)
+  const prefetchTab = useCallback((tab: TabName) => {
+    if (tab === activeTab) return;
+    if (tab === 'line') {
+      qc.prefetchQuery({ queryKey: ['line-of-the-day', false], queryFn: () => fetchJson('/api/line-of-the-day', 90_000) });
+    } else if (tab === 'parlay') {
+      qc.prefetchQuery({ queryKey: ['parlay'], queryFn: () => fetchJson('/api/parlay', 90_000) });
+    }
+  }, [activeTab, qc]);
 
   const movePill = useCallback(() => {
     const pill = pillRef.current;
@@ -81,6 +94,7 @@ export default function BottomNav() {
             key={id}
             className={`${styles['bnav-icon-btn']} ${activeTab === id ? styles.active : ''}`}
             style={activeTab === id ? { color: TAB_ACTIVE_COLOR[id] } : undefined}
+            onPointerEnter={() => prefetchTab(id)}
             onClick={() => setActiveTab(id)}
             aria-label={label}
             aria-current={activeTab === id ? 'page' : undefined}

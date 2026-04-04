@@ -15,12 +15,14 @@ const queryClient = new QueryClient({
 });
 
 // ---------------------------------------------------------------------------
-// Prefetch only the critical first-tab data (slate).
+// Prefetch critical first-tab data in parallel.
+// Slate + Games are both needed by the Predict tab (default tab).
 // Other tabs (Line, Parlay, Ben) load lazily on first visit — their endpoints
 // can take 30-90s and hammering them all on cold start blocks the slate
 // request and makes the app appear frozen for 1-3 minutes.
 // ---------------------------------------------------------------------------
 queryClient.prefetchQuery({ queryKey: ['slate'], queryFn: () => fetchJson('/api/slate', 30_000) });
+queryClient.prefetchQuery({ queryKey: ['games'], queryFn: () => fetchJson('/api/games', 10_000) });
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
