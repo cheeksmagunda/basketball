@@ -6,5 +6,9 @@
   {
     "role": "assistant",
     "content": "That's an interesting swap! Let me look at what Christian Brown brings to the table tonight. He'd be slotting into the **1.2x slot** replacing Cameron Johnson.\n\nLet me check if he's in tonight's player pool:\n\n**Cameron Johnson (current 1.2x pick):**\n- RS 4.3 | 30.2 min proj | +1.6x card\n- 13.1/5.2/3.7/1.4/0.3 PTS/REB/AST/STL/BLK\n\n**Christian Brown** would be on Denver (SA @ DEN game). A few things to consider:\n\n1. **Johnson's 1.6x card boost** is meaningful in the 1.2x slot \u2014 it inflates his raw score nicely. Does Brown have a card boost tonight? If he's at 1.0x (no boost), he'd need to significantly outperform Johnson in raw stats to match.\n\n2. **The DEN rotation** \u2014 with Jamal Murray already in the Moonshot lineup, Brown could be a solid play if he's getting starter minutes. But Denver has a pretty deep wing rotation.\n\n3. **The spread context** \u2014 SA @ DEN is essentially a pick'em (spread 2), so game script should be neutral for both sides' role players.\n\n**My honest take:** Johnson at 1.6x boost with a projected 4.3 RS is a pretty efficient floor play for the 1.2x slot. Unless Brown has a comparable or better boost and you're expecting a big minutes night, you might be leaving value on the table.\n\nThat said, if you have a strong read on Brown's role tonight (injury-driven opportunity, matchup advantage, etc.), the model doesn't capture everything \u2014 go with your gut! What's your reasoning for the swap? I can dig into the numbers further if you want."
+  },
+  {
+    "role": "user",
+    "content": "christian braun can you look him up"
   }
 ]
