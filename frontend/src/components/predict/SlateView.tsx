@@ -3,8 +3,10 @@
 // Shows the chalk/upside lineup toggle and PlayerCard list.
 // ============================================================================
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useSlate } from '../../api/slate';
 import { useUiStore } from '../../store/uiStore';
+import type { SlateData, SlateLineups } from '../../types';
 import SlidingPillNav from '../shared/SlidingPillNav';
 import PlayerCard from '../shared/PlayerCard';
 import EmptyState from '../shared/EmptyState';
@@ -19,6 +21,7 @@ const SLATE_MODES = [
 ] as const;
 
 export default function SlateView() {
+  const queryClient = useQueryClient();
   const { data: slate, isLoading, error, refetch } = useSlate();
   const slateMode = useUiStore((s) => s.slateMode);
   const setSlateMode = useUiStore((s) => s.setSlateMode);
@@ -98,7 +101,18 @@ export default function SlateView() {
         </div>
       )}
 
-      {showLateDraft && <LateDraftBanner onRegenerated={() => refetch()} />}
+      {showLateDraft && (
+        <LateDraftBanner
+          onRegenerated={(newLineups: SlateLineups) => {
+            // Apply new lineups immediately from the API response — don't wait for /api/slate
+            // to propagate through its cache layers (lock cache, response cache, etc.)
+            queryClient.setQueryData<SlateData>(['slate'], (old) =>
+              old ? { ...old, lineups: newLineups } : old,
+            );
+            refetch();
+          }}
+        />
+      )}
     </div>
   );
 }

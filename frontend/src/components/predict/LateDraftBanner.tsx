@@ -9,8 +9,10 @@ import { useState } from 'react';
 import { fetchWithTimeout } from '../../api/client';
 import styles from './LateDraftBanner.module.css';
 
+import type { SlateLineups } from '../../types';
+
 interface Props {
-  onRegenerated: () => void;
+  onRegenerated: (lineups: SlateLineups) => void;
 }
 
 export default function LateDraftBanner({ onRegenerated }: Props) {
@@ -34,7 +36,7 @@ export default function LateDraftBanner({ onRegenerated }: Props) {
         return;
       }
       setTriggered(true);
-      onRegenerated();
+      onRegenerated(data.lineups);
     } catch (e) {
       console.warn('[late-draft] regeneration failed:', e);
       setError(true);
