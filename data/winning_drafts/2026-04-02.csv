@@ -1,0 +1,61 @@
+winner_rank,drafter_label,total_score,slot_index,player_name,team,actual_rs,slot_mult,card_boost,saved_at
+1,pordkl,63.20,1,Brandin Podziemski,GS,3.9,3.3,,2026-04-02T12:00:00+00:00
+1,pordkl,63.20,2,Draymond Green,GS,3.6,3.7,,2026-04-02T12:00:00+00:00
+1,pordkl,63.20,3,Gary Payton II,GS,2.4,4.5,,2026-04-02T12:00:00+00:00
+1,pordkl,63.20,4,Gui Santos,GS,3.5,3.6,,2026-04-02T12:00:00+00:00
+1,pordkl,63.20,5,Daniss Jenkins,DET,4.0,3.5,,2026-04-02T12:00:00+00:00
+2,depressedminnesotafan,59.84,1,Ayo Dosunmu,CHI,3.0,3.3,,2026-04-02T12:00:00+00:00
+2,depressedminnesotafan,59.84,2,Jalen Green,PHX,4.1,3.0,,2026-04-02T12:00:00+00:00
+2,depressedminnesotafan,59.84,3,Daniss Jenkins,DET,4.0,3.9,,2026-04-02T12:00:00+00:00
+2,depressedminnesotafan,59.84,4,Gui Santos,GS,3.5,3.6,,2026-04-02T12:00:00+00:00
+2,depressedminnesotafan,59.84,5,Gary Payton II,GS,2.4,4.1,,2026-04-02T12:00:00+00:00
+3,christian.1,59.51,1,Ayo Dosunmu,CHI,3.0,3.3,,2026-04-02T12:00:00+00:00
+3,christian.1,59.51,2,Brandin Podziemski,GS,3.9,3.1,,2026-04-02T12:00:00+00:00
+3,christian.1,59.51,3,Toumani Camara,POR,3.6,3.1,,2026-04-02T12:00:00+00:00
+3,christian.1,59.51,4,Daniss Jenkins,DET,4.0,3.7,,2026-04-02T12:00:00+00:00
+3,christian.1,59.51,5,Gui Santos,GS,3.5,3.4,,2026-04-02T12:00:00+00:00
+3,bizzybonezzzz,59.51,1,Ayo Dosunmu,CHI,3.0,3.3,,2026-04-02T12:00:00+00:00
+3,bizzybonezzzz,59.51,2,Brandin Podziemski,GS,3.9,3.1,,2026-04-02T12:00:00+00:00
+3,bizzybonezzzz,59.51,3,Toumani Camara,POR,3.6,3.1,,2026-04-02T12:00:00+00:00
+3,bizzybonezzzz,59.51,4,Daniss Jenkins,DET,4.0,3.7,,2026-04-02T12:00:00+00:00
+3,bizzybonezzzz,59.51,5,Gui Santos,GS,3.5,3.4,,2026-04-02T12:00:00+00:00
+5,cpapi,59.08,1,Julian Champagnie,SA,3.3,3.9,,2026-04-02T12:00:00+00:00
+5,cpapi,59.08,2,Brandin Podziemski,GS,3.9,3.1,,2026-04-02T12:00:00+00:00
+5,cpapi,59.08,3,Toumani Camara,POR,3.6,3.1,,2026-04-02T12:00:00+00:00
+5,cpapi,59.08,4,Isaiah Joe,OKC,3.3,3.8,,2026-04-02T12:00:00+00:00
+5,cpapi,59.08,5,Jeremiah Fears,CHA,3.3,3.2,,2026-04-02T12:00:00+00:00
+6,achuiwa,58.04,1,Jalen Duren,DET,4.2,2.6,,2026-04-02T12:00:00+00:00
+6,achuiwa,58.04,2,Luke Kornet,BOS,2.4,3.9,,2026-04-02T12:00:00+00:00
+6,achuiwa,58.04,3,Gui Santos,GS,3.5,3.8,,2026-04-02T12:00:00+00:00
+6,achuiwa,58.04,4,Daniss Jenkins,DET,4.0,3.7,,2026-04-02T12:00:00+00:00
+6,achuiwa,58.04,5,Gary Payton II,GS,2.4,4.1,,2026-04-02T12:00:00+00:00
+7,jackc2,57.92,1,Jalen Duren,DET,4.2,2.6,,2026-04-02T12:00:00+00:00
+7,jackc2,57.92,2,Ayo Dosunmu,CHI,3.0,3.1,,2026-04-02T12:00:00+00:00
+7,jackc2,57.92,3,Brandin Podziemski,GS,3.9,2.9,,2026-04-02T12:00:00+00:00
+7,jackc2,57.92,4,Daniss Jenkins,DET,4.0,3.7,,2026-04-02T12:00:00+00:00
+7,jackc2,57.92,5,Gui Santos,GS,3.5,3.4,,2026-04-02T12:00:00+00:00
+8,gotnext.1,57.70,1,Deni Avdija,POR,4.5,2.5,,2026-04-02T12:00:00+00:00
+8,gotnext.1,57.70,2,Brandin Podziemski,GS,3.9,3.1,,2026-04-02T12:00:00+00:00
+8,gotnext.1,57.70,3,Julian Champagnie,SA,3.3,3.5,,2026-04-02T12:00:00+00:00
+8,gotnext.1,57.70,4,Jeremiah Fears,CHA,3.3,3.4,,2026-04-02T12:00:00+00:00
+8,gotnext.1,57.70,5,Gui Santos,GS,3.5,3.4,,2026-04-02T12:00:00+00:00
+9,zayo523,57.54,1,Mike Conley,MIN,2.6,5.0,,2026-04-02T12:00:00+00:00
+9,zayo523,57.54,2,Luke Kornet,BOS,2.4,3.9,,2026-04-02T12:00:00+00:00
+9,zayo523,57.54,3,Daniss Jenkins,DET,4.0,3.9,,2026-04-02T12:00:00+00:00
+9,zayo523,57.54,4,Scoot Henderson,POR,2.5,3.2,,2026-04-02T12:00:00+00:00
+9,zayo523,57.54,5,Gui Santos,GS,3.5,3.4,,2026-04-02T12:00:00+00:00
+10,lg09,57.22,1,Jalen Duren,DET,4.2,2.6,,2026-04-02T12:00:00+00:00
+10,lg09,57.22,2,Deni Avdija,POR,4.5,2.3,,2026-04-02T12:00:00+00:00
+10,lg09,57.22,3,Jrue Holiday,BOS,4.4,2.6,,2026-04-02T12:00:00+00:00
+10,lg09,57.22,4,Brandin Podziemski,GS,3.9,2.7,,2026-04-02T12:00:00+00:00
+10,lg09,57.22,5,Daniss Jenkins,DET,4.0,3.5,,2026-04-02T12:00:00+00:00
+11,dom_canzonelover,57.12,1,Jalen Duren,DET,4.2,2.6,,2026-04-02T12:00:00+00:00
+11,dom_canzonelover,57.12,2,Daniss Jenkins,DET,4.0,4.1,,2026-04-02T12:00:00+00:00
+11,dom_canzonelover,57.12,3,Gui Santos,GS,3.5,3.8,,2026-04-02T12:00:00+00:00
+11,dom_canzonelover,57.12,4,Gary Payton II,GS,2.4,4.3,,2026-04-02T12:00:00+00:00
+11,dom_canzonelover,57.12,5,Brook Lopez,MIL,1.6,4.0,,2026-04-02T12:00:00+00:00
+12,nexes,57.06,1,Jalen Duren,DET,4.2,2.6,,2026-04-02T12:00:00+00:00
+12,nexes,57.06,2,Daniss Jenkins,DET,4.0,4.1,,2026-04-02T12:00:00+00:00
+12,nexes,57.06,3,Gui Santos,GS,3.5,3.8,,2026-04-02T12:00:00+00:00
+12,nexes,57.06,4,Gary Payton II,GS,2.4,4.3,,2026-04-02T12:00:00+00:00
+12,nexes,57.06,5,Oso Ighodaro,PHX,1.7,3.8,,2026-04-02T12:00:00+00:00
