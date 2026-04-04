@@ -6588,11 +6588,17 @@ async def get_picks(gameId: str = Query(...)):
     cache_key = _ck_game_proj(gameId)
     projections = _cg(cache_key)
     if not projections:
-        # Try GitHub persistent cache (populated by first slate run of the day)
+        # Try GitHub persistent cache (populated by first slate run of the day).
+        # Batch-warm ALL games into /tmp + Redis in a single GitHub read so
+        # subsequent clicks on other games don't trigger another round-trip.
         gh_games = _games_cache_from_github()
-        if gh_games and gameId in gh_games:
-            projections = gh_games[gameId]
-            _cs(cache_key, projections)  # warm /tmp for next call
+        if gh_games and not gh_games.get("_busted"):
+            for gid, gprojs in gh_games.items():
+                if gid.startswith("_"):  # skip sentinel keys (_busted etc.)
+                    continue
+                if isinstance(gprojs, list) and gprojs:
+                    _cs(_ck_game_proj(gid), gprojs)
+            projections = gh_games.get(gameId)
     if not projections:
         # True cold start with no cache anywhere — run engine (rare after first daily run)
         projections = _run_game(game)
