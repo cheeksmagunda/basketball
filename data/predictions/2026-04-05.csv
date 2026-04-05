@@ -1,0 +1,6 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+WSH @ BKN,the_lineup,2.0x,Will Riley,5144126,WSH,G,5.2,0.0,34.0,24.2,3.0,1.4,2.4,0.0
+WSH @ BKN,the_lineup,1.8x,Nolan Traore,5279130,BKN,G,4.9,0.0,29.9,12.9,3.2,4.4,1.6,0.4
+WSH @ BKN,the_lineup,1.6x,Jaden Hardy,4868423,WSH,G,4.9,0.0,25.8,13.2,2.0,2.6,0.8,0.4
+WSH @ BKN,the_lineup,1.4x,Sharife Cooper,4432173,WSH,G,4.6,0.0,25.1,13.2,2.7,5.2,0.0,0.0
+WSH @ BKN,the_lineup,1.2x,Josh Minott,4687718,BKN,F,4.5,0.0,31.9,13.1,3.3,0.0,1.0,0.3
