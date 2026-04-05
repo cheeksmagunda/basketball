@@ -53,9 +53,12 @@ export default function BottomNav() {
   const prefetchTab = useCallback((tab: TabName) => {
     if (tab === activeTab) return;
     if (tab === 'line') {
-      qc.prefetchQuery({ queryKey: ['line-of-the-day', false], queryFn: () => fetchJson('/api/line-of-the-day', 90_000) });
+      // Key must match useLineOfTheDay() with no args → nocache=undefined
+      qc.prefetchQuery({ queryKey: ['line-of-the-day', undefined], queryFn: () => fetchJson('/api/line-of-the-day', 90_000) });
     } else if (tab === 'parlay') {
       qc.prefetchQuery({ queryKey: ['parlay'], queryFn: () => fetchJson('/api/parlay', 90_000) });
+    } else if (tab === 'lab') {
+      qc.prefetchQuery({ queryKey: ['lab-briefing'], queryFn: () => fetchJson('/api/lab/briefing', 30_000) });
     }
   }, [activeTab, qc]);
 
