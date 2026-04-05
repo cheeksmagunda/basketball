@@ -48,7 +48,7 @@ export function useGames() {
       const res = await fetchJson<{ data: GamesResponse }>('/api/games', 10_000);
       return res.data ?? [];
     },
-    staleTime: 5 * 60 * 1000, // 5 min
+    staleTime: 60 * 1000, // 60s — matches backend cache TTL so lock status stays fresh
   });
 }
 

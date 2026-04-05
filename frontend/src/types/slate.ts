@@ -20,6 +20,8 @@ export interface GameInfo {
   away_b2b?: boolean;
   /** Added client-side by populateGameSelector */
   locked?: boolean;
+  /** False once past the lock window — permanent (no 6h ceiling). Use this for UI lock icons. */
+  draftable?: boolean;
   _odds_source?: string;      // "espn" | "odds_api"
 }
 
