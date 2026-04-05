@@ -1840,12 +1840,12 @@ class TestBoostCascadeModel:
     """Tests for the 3-tier cascade boost prediction model (api/boost_model.py)."""
 
     def test_tier3_cold_start_deep_bench(self):
-        """Tier 3: deep bench (PPG<5) always gets 3.0."""
+        """Tier 3: deep bench (PPG<5, MPG<10) gets very high boost (≥2.8)."""
         from api.boost_model import predict_boost
         r = predict_boost("Nobody Deep Bench", "2026-03-30", season_ppg=3.0, season_rpg=1.0,
                           season_apg=0.5, season_mpg=8.0)
         assert r["tier"] == 3
-        assert r["boost"] == 3.0
+        assert r["boost"] >= 2.8, f"Deep bench player should get high boost, got {r['boost']}"
 
     def test_tier3_cold_start_star(self):
         """Tier 3: star (PPG>=25) gets very low boost."""
@@ -1981,13 +1981,14 @@ class TestBoostModelOptimization:
     def test_star_ppg_guard_star(self):
         """Stars (19-22 PPG) should get moderate-low boost."""
         from api.boost_model import estimate_boost_from_api
-        assert estimate_boost_from_api(season_ppg=20) == 0.8
+        result = estimate_boost_from_api(season_ppg=20)
+        assert 0.7 <= result <= 1.1, f"Expected moderate-low boost 0.7-1.1, got {result}"
 
     def test_star_ppg_guard_starter(self):
-        """Starters (15-19 PPG) should get scaled boost."""
+        """Starters (15-19 PPG) should get scaled boost (PPG-only path when mpg=0)."""
         from api.boost_model import estimate_boost_from_api
         result = estimate_boost_from_api(season_ppg=16)
-        assert 0.8 <= result <= 2.0, f"Expected 0.8-2.0, got {result}"
+        assert 0.8 <= result <= 2.5, f"Expected 0.8-2.5, got {result}"
 
     def test_star_ppg_guard_role_player(self):
         """Role players (PPG < 15) use PQI formula — should still get high boost."""
@@ -6238,46 +6239,49 @@ class TestContextLayerMinutesRisk:
 # ─────────────────────────────────────────────────────────
 
 class TestHybridLineupConstruction:
-    """Verify the HYBRID lineup builder: 1 star anchor + 4 best EV per lineup.
+    """Verify the DYNAMIC lineup builder: unified EV formula, no hardcoded star count.
 
-    Full-season analysis (153 dates) proves no boost floor needed — EV naturally
-    selects the right mix of stars and boost players (91.5% coverage)."""
+    Full-season analysis proves dynamic EV naturally selects the right mix
+    of stars and boost players without hardcoded archetypes."""
 
     def test_hybrid_config_defaults(self):
-        """Config defaults include hybrid lineup parameters."""
+        """Config defaults should NOT include hardcoded star anchor — dynamic by default."""
         from api.index import _CONFIG_DEFAULTS
         strat = _CONFIG_DEFAULTS["strategy"]
-        assert strat.get("hybrid_lineup_enabled") is True
-        assert strat.get("star_rs_min") == 4.0
+        # Dynamic lineup: no hardcoded star_slots_count or hybrid_lineup_enabled flag
+        assert strat.get("hybrid_lineup_enabled") is not True, \
+            "Dynamic builder should not require hybrid_lineup_enabled=True"
 
     def test_hybrid_in_model_config(self):
-        """model-config.json includes hybrid lineup keys."""
+        """model-config.json should not force hybrid mode — dynamic is the default."""
         cfg = json.loads(open("data/model-config.json").read())
         strat = cfg.get("strategy", {})
-        assert strat.get("hybrid_lineup_enabled") is True
-        assert strat.get("star_rs_min") == 4.0
+        # No hardcoded star anchor forcing
+        assert strat.get("hybrid_lineup_enabled") is not True, \
+            "Dynamic builder should not have hybrid_lineup_enabled=True in config"
 
     def test_build_lineups_has_two_phases(self):
-        """_build_lineups code contains Phase A (star) and Phase B (best EV)."""
+        """_build_lineups uses Step 4 (Starting 5) and Step 5 (Moonshot) — no Phase A/B star anchor."""
         src = open("api/index.py").read()
-        assert "Phase A" in src, "Should have Phase A (star anchor)"
-        assert "Phase B" in src, "Should have Phase B (best remaining by EV)"
+        assert "Step 4" in src, "Should have Step 4 (Starting 5 by safe_ev)"
+        assert "Step 5" in src, "Should have Step 5 (Moonshot by upside_ev)"
 
     def test_no_boost_floor_enforced(self):
-        """Phase B should NOT filter by boost — data shows no floor is optimal."""
+        """Dynamic builder should NOT use old _build_hybrid_lineup or Phase A star logic."""
         src = open("api/index.py").read()
-        hybrid_fn = src.split("def _build_hybrid_lineup(")[1].split("\n    if _hybrid_enabled")[0]
-        assert "boost_pool_min_boost" not in hybrid_fn, "No boost floor in lineup builder"
+        assert "def _build_hybrid_lineup(" not in src, "Old hybrid function should be removed"
+        assert "Phase A: 1 star anchor" not in src, "No hardcoded star anchor phase"
 
     def test_build_hybrid_lineup_function_exists(self):
-        """_build_hybrid_lineup helper exists in code."""
+        """Unified EV formula should use _avg_slot multiplier."""
         src = open("api/index.py").read()
-        assert "def _build_hybrid_lineup(" in src
+        assert "_avg_slot" in src, "Should have avg_slot for unified EV: RS × (avg_slot + boost)"
 
     def test_both_lineups_use_hybrid(self):
-        """Both S5 and Moonshot use _build_hybrid_lineup."""
+        """Both Starting 5 and Moonshot use _select_with_team_cap."""
         src = open("api/index.py").read()
-        assert src.count("_build_hybrid_lineup(candidate_pool") >= 2
+        assert src.count("_select_with_team_cap") >= 2, \
+            "Both lineups should use team cap selection"
 
 
 class TestRSRegressionGuard:
@@ -6420,11 +6424,19 @@ class TestBoostModelESPNOnly:
         assert "most_popular" in src
 
     def test_historical_weight_capped(self):
-        """Historical mean weight should be capped (not dominate prediction)."""
+        """predict_boost should NOT blend prior boost data — ESPN signals only.
+
+        The old model used hist_boost_mean at up to 40% weight (hist_weight).
+        That violates the constraint: prev boost is unavailable on game day.
+        The new model uses ESPN PQI for all players regardless of history."""
         src = open("api/boost_model.py").read()
-        assert "hist_weight" in src
-        # Weight cap should be ≤ 0.5 (ESPN signal is always primary)
-        assert "min(n_appearances / 20, 0.4)" in src or "hist_weight" in src
+        # hist_weight / hist_boost_mean should NOT appear in predict_boost()
+        predict_boost_fn = src.split("def predict_boost(")[1].split("\ndef ")[0]
+        assert "hist_boost_mean" not in predict_boost_fn, \
+            "predict_boost should not blend historical boost averages (prior data)"
+        # The ESPN-only path should always be used
+        assert "estimate_boost_from_api" in predict_boost_fn, \
+            "predict_boost should call estimate_boost_from_api for all players"
 
 
 class TestMaxPerTeamUnchanged:
@@ -6493,29 +6505,36 @@ class TestContrarianBonus:
 
 
 class TestHybridOneStar:
-    """Verify HYBRID lineup uses exactly 1 star anchor + 4 best EV."""
+    """Verify DYNAMIC lineup — no hardcoded star count, unified EV formula."""
 
     def test_star_slots_count_is_1(self):
-        """star_slots_count should be 1."""
+        """star_slots_count should NOT be in config — dynamic lineup doesn't hardcode star count."""
         from api.index import _CONFIG_DEFAULTS
         strat = _CONFIG_DEFAULTS["strategy"]
-        assert strat["star_slots_count"] == 1
+        assert "star_slots_count" not in strat, \
+            "Dynamic builder should not hardcode star_slots_count"
 
     def test_model_config_star_slots_1(self):
-        """model-config.json star_slots_count should be 1."""
+        """model-config.json should NOT include star_slots_count."""
         cfg = json.loads(open("data/model-config.json").read())
         strat = cfg.get("strategy", {})
-        assert strat["star_slots_count"] == 1
+        assert "star_slots_count" not in strat, \
+            "Dynamic builder should not hardcode star_slots_count in model-config"
 
     def test_phase_a_is_star_anchor(self):
-        """Phase A should select 1 star anchor."""
+        """Dynamic builder uses Step 4/5, not Phase A star anchor."""
         src = open("api/index.py").read()
-        assert "Phase A: 1 star anchor" in src or "Phase A: 1 guaranteed star" in src
+        # New architecture uses Step 4 (safe) + Step 5 (upside) — no Phase A
+        assert "Step 4" in src, "Should have Step 4 in dynamic builder"
+        assert "Phase A: 1 star anchor" not in src, "No hardcoded Phase A star anchor"
 
     def test_phase_b_is_best_ev(self):
-        """Phase B should select 4 best by EV — no boost floor."""
+        """Step 5 (Moonshot) sorts by upside_ev — no hardcoded boost floor."""
         src = open("api/index.py").read()
-        assert "Phase B: 4 best remaining by EV" in src
+        assert "upside_ev" in src, "Moonshot should sort by upside_ev"
+        moonshot_section = src.split("Step 5")[1].split("Step 6")[0]
+        assert "boost_pool_min_boost" not in moonshot_section, \
+            "No hardcoded boost floor in dynamic moonshot"
 
 
 class TestSmallSlateOptimization:

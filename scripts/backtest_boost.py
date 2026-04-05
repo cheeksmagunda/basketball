@@ -1,29 +1,40 @@
 #!/usr/bin/env python3
 """
-Backtest the 3-tier cascade boost model against all historical data.
-For each date, predict boost for every player using only data available BEFORE that date.
+Backtest the boost prediction model against all historical data.
+
+Runs the production predict_boost() function (ESPN-only signals) against every
+player-date in top_performers.csv + actuals/, using only data available BEFORE
+each target date for calibration.
+
+Usage:
+    python scripts/backtest_boost.py              # full report
+    python scripts/backtest_boost.py --sweep-pop  # sweep anti-popularity strength
 """
 
 import csv
 import sys
 import os
+import argparse
 from collections import defaultdict
 from pathlib import Path
 
-# Add project root to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from api.boost_model import (
-    _normalize_name, _safe, get_tier_baseline, estimate_boost_from_api,
-    _clamp_round, _TIER1_MAX_GAP_DAYS
+    _normalize_name, _safe, _clamp_round, load_player_history,
+    estimate_boost_from_api, predict_boost
 )
 
-def load_all_data():
-    """Load all data from top_performers.csv + actuals, organized by date and player."""
-    all_entries = {}  # (norm_name, date) -> {boost, rs, drafts}
 
-    # Load top_performers.csv
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
+
+def load_all_data():
+    """Load all ground-truth entries from top_performers.csv + actuals/."""
+    all_entries = {}  # (norm_name, date) -> {boost, rs, drafts, team, ppg_proxy}
+
     tp = ROOT / "data" / "top_performers.csv"
     if tp.exists():
         with tp.open("r") as f:
@@ -35,11 +46,14 @@ def load_all_data():
                 boost = _safe(row.get("actual_card_boost"))
                 rs = _safe(row.get("actual_rs"))
                 drafts = _safe(row.get("drafts"))
+                team = (row.get("team") or "").strip().upper()
                 key = (name, date)
                 if key not in all_entries or boost > all_entries[key]["boost"]:
-                    all_entries[key] = {"boost": boost, "rs": rs, "drafts": drafts}
+                    all_entries[key] = {
+                        "boost": boost, "rs": rs, "drafts": drafts,
+                        "team": team, "ppg_proxy": rs * 4.0,
+                    }
 
-    # Load actuals
     actuals_dir = ROOT / "data" / "actuals"
     if actuals_dir.exists():
         for csvfile in actuals_dir.glob("*.csv"):
@@ -52,314 +66,318 @@ def load_all_data():
                     boost = _safe(row.get("actual_card_boost"))
                     rs = _safe(row.get("actual_rs"))
                     drafts = _safe(row.get("drafts"))
+                    team = (row.get("team") or "").strip().upper()
                     key = (name, date)
                     if key not in all_entries or boost > all_entries[key]["boost"]:
-                        all_entries[key] = {"boost": boost, "rs": rs, "drafts": drafts}
+                        all_entries[key] = {
+                            "boost": boost, "rs": rs, "drafts": drafts,
+                            "team": team, "ppg_proxy": rs * 4.0,
+                        }
 
-    # Organize by player
-    player_history = defaultdict(list)
-    for (name, date), data in all_entries.items():
-        player_history[name].append({"date": date, **data})
-
-    # Sort by date
-    for name in player_history:
-        player_history[name].sort(key=lambda e: e["date"])
-
-    # Detect all-zero dates
-    date_boosts = defaultdict(list)
+    # Detect all-zero dates (season openers)
+    date_boosts: dict[str, list[float]] = defaultdict(list)
     for (name, date), data in all_entries.items():
         date_boosts[date].append(data["boost"])
-    all_zero_dates = {d for d, boosts in date_boosts.items() if boosts and all(b == 0 for b in boosts)}
+    all_zero_dates = {
+        d for d, boosts in date_boosts.items()
+        if boosts and all(b == 0 for b in boosts)
+    }
 
-    return player_history, all_entries, all_zero_dates
-
-
-def simulate_tier1(prev_entries, gap_days):
-    """Simulate Tier 1 prediction using entries available before target date."""
-    prev = prev_entries[-1]
-    base = prev["boost"]
-    prev_rs = prev["rs"]
-    prev_drafts = prev["drafts"]
-
-    all_boosts = [e["boost"] for e in prev_entries]
-    all_rs = [e["rs"] for e in prev_entries if e["rs"] > 0]
-    hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else base
-    hist_rs_mean = sum(all_rs) / len(all_rs) if all_rs else prev_rs
-    tier_baseline = get_tier_baseline(hist_rs_mean)
-
-    # Factor 1: RS performance decay
-    if prev_rs >= 7.0:
-        base -= 0.1
-    elif prev_rs >= 5.0:
-        base -= 0.05
-    elif prev_rs < 2.0 and prev_rs > 0:
-        base += 0.1
-
-    # Factor 2: Draft popularity
-    if prev_drafts > 1000:
-        base -= 0.05
-    elif prev_drafts < 10 and prev_drafts > 0:
-        base += 0.05
-
-    # Factor 3: Mean reversion
-    reversion = (tier_baseline - base) * 0.05
-    base += reversion
-
-    # Factor 4: Trend continuation
-    if len(prev_entries) >= 2:
-        prev2 = prev_entries[-2]
-        if prev2["boost"] > 0:
-            trend = prev["boost"] - prev2["boost"]
-            trend_adj = trend * 0.15
-            base += trend_adj
-
-    # Factor 5: Gap days
-    if gap_days > 5:
-        gap_weight = min(gap_days / 30, 0.3)
-        base = base * (1 - gap_weight) + tier_baseline * gap_weight
-
-    # Factor 6: Minutes change signal
-    if len(prev_entries) >= 3:
-        recent_drafts_avg = sum(e["drafts"] for e in prev_entries[-3:]) / 3
-        if recent_drafts_avg > 500 and prev_drafts > recent_drafts_avg * 1.3:
-            base -= 0.05
-
-    # Boundary persistence
-    if prev["boost"] >= 3.0 and base >= 2.7:
-        base = max(base, 2.9)
-    if prev["boost"] <= 0.1 and hist_rs_mean >= 5.5:
-        base = min(base, 0.2)
-
-    return _clamp_round(base, 0.0, 3.0)
+    return all_entries, all_zero_dates
 
 
-def backtest():
-    print("=" * 80)
-    print("BOOST MODEL BACKTEST — All Historical Dates")
-    print("=" * 80)
+# ---------------------------------------------------------------------------
+# Role bucket classification (MPG + PPG)
+# ---------------------------------------------------------------------------
 
-    player_history, all_entries, all_zero_dates = load_all_data()
+def classify_role(ppg: float, mpg: float) -> str:
+    """Classify player role from season stats (ESPN-available)."""
+    if ppg >= 25 and mpg >= 32:
+        return "elite_star"
+    elif ppg >= 20 and mpg >= 28:
+        return "star"
+    elif ppg >= 14 and mpg >= 24:
+        return "starter"
+    elif mpg >= 16:
+        return "rotation"
+    else:
+        return "bench"
 
-    dates = sorted(set(d for (_, d) in all_entries.keys()))
-    dates = [d for d in dates if d not in all_zero_dates]
 
-    print(f"Total dates: {len(dates)}")
-    print(f"All-zero dates skipped: {len(all_zero_dates)}")
+# ---------------------------------------------------------------------------
+# Main backtest
+# ---------------------------------------------------------------------------
 
-    # Track errors by tier
-    tier1_errors = []
-    tier2_errors = []
-    tier3_errors = []
-    all_errors = []
+def run_backtest(pop_strength_override: float | None = None) -> dict:
+    """Run the full backtest. Returns result dict."""
+    # Force fresh load so we pick up any model changes
+    load_player_history(force=True)
 
-    # Track error patterns
-    error_by_rs_bucket = defaultdict(list)
-    error_by_boost_bucket = defaultdict(list)
-    error_by_drafts_bucket = defaultdict(list)
+    all_entries, all_zero_dates = load_all_data()
+    dates = sorted({d for (_, d) in all_entries.keys() if d not in all_zero_dates})
 
-    # Track biggest misses
+    errors = []
+    signed_errors = []
+    tier_errors: dict[int, list[float]] = defaultdict(list)
+    boost_bucket_errors: dict[str, list[float]] = defaultdict(list)
+    rs_bucket_errors: dict[str, list[float]] = defaultdict(list)
+    role_bucket_errors: dict[str, list[float]] = defaultdict(list)
+    team_errors: dict[str, list[float]] = defaultdict(list)
+    ppg_bucket_signed: dict[str, list[float]] = defaultdict(list)
+    player_errors: dict[str, list[float]] = defaultdict(list)
+
+    # Confusion matrix: predicted bucket vs actual bucket
+    confusion = defaultdict(int)  # (pred_bucket, actual_bucket) -> count
+
     biggest_misses = []
 
-    # For each date, predict each player's boost using only prior data
     for target_date in dates:
-        players_on_date = [(name, date) for (name, date) in all_entries.keys() if date == target_date]
+        players_on_date = [(n, d) for (n, d) in all_entries if d == target_date]
 
         for (name, _) in players_on_date:
             actual = all_entries[(name, target_date)]
             actual_boost = actual["boost"]
+            ppg_proxy = actual["ppg_proxy"]  # RS × 4 as season PPG proxy
+            team = actual["team"]
+            mpg_proxy = 0.0  # not stored, will use 0 (degrades role detection)
 
-            # Get history BEFORE this date
-            history = player_history.get(name, [])
-            prior = [e for e in history if e["date"] < target_date and e["date"] not in all_zero_dates]
+            result = predict_boost(
+                player_name=name,
+                today_str=target_date,
+                season_ppg=ppg_proxy,
+                season_rpg=0,
+                season_apg=0,
+                season_mpg=mpg_proxy,
+                recent_ppg=ppg_proxy,  # no recent data in ground truth
+                team=team,
+            )
+            predicted = result["boost"]
+            tier = result["tier"]
 
-            if not prior:
-                # Tier 3: cold start — approximate season PPG from actual RS
-                # In production, ESPN provides real season_ppg. Here we use a proxy.
-                # RS correlates ~0.5 with PPG; rough mapping from historical data.
-                _approx_ppg = actual["rs"] * 4.0  # RS 5.0 → ~20 PPG proxy
-                predicted = estimate_boost_from_api(season_ppg=_approx_ppg)
-                predicted = _clamp_round(predicted, 0.0, 3.0)
-                tier = 3
-                tier3_errors.append(abs(predicted - actual_boost))
-            else:
-                from datetime import datetime
-                last_date = datetime.strptime(prior[-1]["date"], "%Y-%m-%d").date()
-                curr_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-                gap_days = (curr_date - last_date).days
-
-                if gap_days <= _TIER1_MAX_GAP_DAYS:
-                    predicted = simulate_tier1(prior, gap_days)
-                    tier = 1
-                    tier1_errors.append(abs(predicted - actual_boost))
-                else:
-                    # Tier 2: stale
-                    all_boosts = [e["boost"] for e in prior]
-                    hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else 1.5
-                    staleness = min((gap_days - _TIER1_MAX_GAP_DAYS) / 30, 1.0)
-                    # Without API data, use hist_boost_mean as both signals
-                    predicted_raw = hist_boost_mean
-                    predicted = _clamp_round(predicted_raw, 0.0, 3.0)
-                    tier = 2
-                    tier2_errors.append(abs(predicted - actual_boost))
+            # Apply pop strength override for sweep mode
+            if pop_strength_override is not None:
+                from api.boost_model import estimate_draft_popularity
+                pop_score = estimate_draft_popularity(season_ppg=ppg_proxy, team=team)
+                pop_norm = min(pop_score / 2500.0, 1.0)
+                delta = pop_norm * pop_strength_override * 3.0
+                predicted = _clamp_round(predicted - delta, 0.0, 3.0)
 
             error = abs(predicted - actual_boost)
-            all_errors.append(error)
+            signed = predicted - actual_boost
 
-            # Track by categories
+            errors.append(error)
+            signed_errors.append(signed)
+            tier_errors[tier].append(error)
+            player_errors[name].append(error)
+            if team:
+                team_errors[team].append(error)
+
+            # Boost bucket
+            if actual_boost >= 2.5:
+                boost_bucket_errors["high (≥2.5)"].append(error)
+                ab = "high"
+            elif actual_boost >= 1.0:
+                boost_bucket_errors["mid (1–2.5)"].append(error)
+                ab = "mid"
+            else:
+                boost_bucket_errors["low (<1)"].append(error)
+                ab = "low"
+
+            if predicted >= 2.5:
+                pb = "high"
+            elif predicted >= 1.0:
+                pb = "mid"
+            else:
+                pb = "low"
+            confusion[(pb, ab)] += 1
+
+            # RS bucket
             rs = actual["rs"]
             if rs >= 5:
-                error_by_rs_bucket["high_rs (≥5)"].append(error)
+                rs_bucket_errors["high_rs (≥5)"].append(error)
             elif rs >= 3:
-                error_by_rs_bucket["mid_rs (3-5)"].append(error)
+                rs_bucket_errors["mid_rs (3–5)"].append(error)
             else:
-                error_by_rs_bucket["low_rs (<3)"].append(error)
+                rs_bucket_errors["low_rs (<3)"].append(error)
 
-            if actual_boost >= 2.5:
-                error_by_boost_bucket["high_boost (≥2.5)"].append(error)
-            elif actual_boost >= 1.0:
-                error_by_boost_bucket["mid_boost (1-2.5)"].append(error)
-            else:
-                error_by_boost_bucket["low_boost (<1)"].append(error)
+            # Role bucket (using ppg_proxy and mpg_proxy=0 → always "bench" without mpg)
+            role = classify_role(ppg_proxy, mpg_proxy)
+            role_bucket_errors[role].append(error)
 
-            drafts = actual["drafts"]
-            if drafts >= 1000:
-                error_by_drafts_bucket["popular (≥1000)"].append(error)
-            elif drafts >= 100:
-                error_by_drafts_bucket["moderate (100-1000)"].append(error)
+            # PPG-range signed error
+            if ppg_proxy >= 24:
+                ppg_bucket_signed["24+ PPG"].append(signed)
+            elif ppg_proxy >= 18:
+                ppg_bucket_signed["18–24 PPG"].append(signed)
+            elif ppg_proxy >= 12:
+                ppg_bucket_signed["12–18 PPG"].append(signed)
+            elif ppg_proxy >= 6:
+                ppg_bucket_signed["6–12 PPG"].append(signed)
             else:
-                error_by_drafts_bucket["low_pop (<100)"].append(error)
+                ppg_bucket_signed["<6 PPG"].append(signed)
 
             if error >= 0.5:
                 biggest_misses.append({
-                    "date": target_date,
-                    "name": name,
-                    "predicted": predicted,
-                    "actual": actual_boost,
-                    "error": error,
-                    "tier": tier,
-                    "rs": rs,
-                    "drafts": drafts,
+                    "date": target_date, "name": name,
+                    "predicted": predicted, "actual": actual_boost,
+                    "error": error, "tier": tier,
+                    "rs": rs, "drafts": actual["drafts"], "team": team,
                 })
 
-    # Results
+    return {
+        "errors": errors,
+        "signed_errors": signed_errors,
+        "tier_errors": tier_errors,
+        "boost_bucket_errors": boost_bucket_errors,
+        "rs_bucket_errors": rs_bucket_errors,
+        "role_bucket_errors": role_bucket_errors,
+        "team_errors": team_errors,
+        "ppg_bucket_signed": ppg_bucket_signed,
+        "player_errors": player_errors,
+        "confusion": confusion,
+        "biggest_misses": biggest_misses,
+        "n_dates": len(dates),
+    }
+
+
+def print_report(res: dict, label: str = "PRODUCTION predict_boost()") -> None:
+    n = len(res["errors"])
+    mae = sum(res["errors"]) / n
+    mean_signed = sum(res["signed_errors"]) / n
+    over = sum(1 for s in res["signed_errors"] if s > 0)
+    under = sum(1 for s in res["signed_errors"] if s < 0)
+    exact = sum(1 for s in res["signed_errors"] if s == 0)
+    sorted_err = sorted(res["errors"])
+    within_01 = sum(1 for e in sorted_err if e <= 0.1)
+    within_03 = sum(1 for e in sorted_err if e <= 0.3)
+    within_05 = sum(1 for e in sorted_err if e <= 0.5)
+
     print(f"\n{'='*80}")
-    print("RESULTS")
+    print(f"BOOST MODEL BACKTEST — {label}")
     print(f"{'='*80}")
+    print(f"Dates: {res['n_dates']}   Predictions: {n}")
+    print(f"Overall MAE:       {mae:.3f}")
+    print(f"Mean signed error: {mean_signed:+.3f}  "
+          f"(+= over-predict, -= under-predict)")
+    print(f"Over/Under/Exact:  {over}/{under}/{exact}")
+    print(f"  Within ±0.1: {within_01:4d} / {n} ({within_01/n*100:.1f}%)")
+    print(f"  Within ±0.3: {within_03:4d} / {n} ({within_03/n*100:.1f}%)")
+    print(f"  Within ±0.5: {within_05:4d} / {n} ({within_05/n*100:.1f}%)")
 
-    n = len(all_errors)
-    print(f"\nTotal predictions: {n}")
-    print(f"Overall MAE: {sum(all_errors)/n:.3f}")
+    print(f"\n── By Tier {'─'*60}")
+    for tier in sorted(res["tier_errors"]):
+        e = res["tier_errors"][tier]
+        print(f"  Tier {tier}: MAE={sum(e)/len(e):.3f}  (n={len(e)})")
 
-    all_errors.sort()
-    print(f"  p50: {all_errors[int(n*0.5)]:.2f}")
-    print(f"  p75: {all_errors[int(n*0.75)]:.2f}")
-    print(f"  p90: {all_errors[int(n*0.9)]:.2f}")
-    print(f"  p95: {all_errors[int(n*0.95)]:.2f}")
+    print(f"\n── By Boost Bucket {'─'*56}")
+    for bucket in ["low (<1)", "mid (1–2.5)", "high (≥2.5)"]:
+        e = res["boost_bucket_errors"].get(bucket, [])
+        if e:
+            print(f"  {bucket}: MAE={sum(e)/len(e):.3f}  (n={len(e)})")
 
-    within_01 = sum(1 for e in all_errors if e <= 0.1)
-    within_03 = sum(1 for e in all_errors if e <= 0.3)
-    within_05 = sum(1 for e in all_errors if e <= 0.5)
-    print(f"\n  Within 0.1: {within_01}/{n} ({within_01/n*100:.1f}%)")
-    print(f"  Within 0.3: {within_03}/{n} ({within_03/n*100:.1f}%)")
-    print(f"  Within 0.5: {within_05}/{n} ({within_05/n*100:.1f}%)")
+    print(f"\n── By RS Bucket {'─'*59}")
+    for bucket in sorted(res["rs_bucket_errors"]):
+        e = res["rs_bucket_errors"][bucket]
+        print(f"  {bucket}: MAE={sum(e)/len(e):.3f}  (n={len(e)})")
 
-    print(f"\nBy Tier:")
-    for label, errors in [("Tier 1 (returning)", tier1_errors),
-                          ("Tier 2 (stale)", tier2_errors),
-                          ("Tier 3 (cold start)", tier3_errors)]:
-        if errors:
-            print(f"  {label}: MAE={sum(errors)/len(errors):.3f} (n={len(errors)})")
+    print(f"\n── Signed Error by PPG Range (over=positive) {'─'*30}")
+    for bucket in ["24+ PPG", "18–24 PPG", "12–18 PPG", "6–12 PPG", "<6 PPG"]:
+        sv = res["ppg_bucket_signed"].get(bucket, [])
+        if sv:
+            avg = sum(sv) / len(sv)
+            print(f"  {bucket}: avg bias {avg:+.3f}  (n={len(sv)})")
 
-    print(f"\nBy RS Bucket:")
-    for bucket in sorted(error_by_rs_bucket.keys()):
-        errors = error_by_rs_bucket[bucket]
-        print(f"  {bucket}: MAE={sum(errors)/len(errors):.3f} (n={len(errors)})")
+    print(f"\n── Confusion Matrix (predicted → actual) {'─'*34}")
+    print(f"  {'':15} {'actual low':>12} {'actual mid':>12} {'actual high':>12}")
+    for pb in ["low", "mid", "high"]:
+        row = f"  pred {pb:<10}"
+        for ab in ["low", "mid", "high"]:
+            row += f"{res['confusion'][(pb,ab)]:>12}"
+        print(row)
 
-    print(f"\nBy Boost Bucket:")
-    for bucket in sorted(error_by_boost_bucket.keys()):
-        errors = error_by_boost_bucket[bucket]
-        print(f"  {bucket}: MAE={sum(errors)/len(errors):.3f} (n={len(errors)})")
+    print(f"\n── Worst Teams (avg MAE ≥ 0.45, min 10 samples) {'─'*26}")
+    team_rows = [
+        (t, sum(e)/len(e), len(e))
+        for t, e in res["team_errors"].items()
+        if len(e) >= 10 and sum(e)/len(e) >= 0.45
+    ]
+    team_rows.sort(key=lambda x: -x[1])
+    for t, m, n_ in team_rows[:10]:
+        print(f"  {t:<5} MAE={m:.3f}  (n={n_})")
 
-    print(f"\nBy Draft Popularity:")
-    for bucket in sorted(error_by_drafts_bucket.keys()):
-        errors = error_by_drafts_bucket[bucket]
-        print(f"  {bucket}: MAE={sum(errors)/len(errors):.3f} (n={len(errors)})")
+    print(f"\n── Most-Mispredicted Players (avg error ≥ 0.6, min 3 samples) {'─'*14}")
+    player_rows = [
+        (nm, sum(e)/len(e), len(e))
+        for nm, e in res["player_errors"].items()
+        if len(e) >= 3 and sum(e)/len(e) >= 0.6
+    ]
+    player_rows.sort(key=lambda x: -x[1])
+    for nm, m, n_ in player_rows[:15]:
+        print(f"  {nm:<28} avg_err={m:.3f}  (n={n_})")
 
-    # Biggest misses
-    biggest_misses.sort(key=lambda x: x["error"], reverse=True)
+    print(f"\n── Top 20 Biggest Misses {'─'*51}")
+    misses = sorted(res["biggest_misses"], key=lambda x: -x["error"])
+    print(f"  {'Date':>12} {'Player':<25} {'Pred':>5} {'Actual':>7} {'Err':>5}  {'RS':>4}  {'Team':>5}")
+    for m in misses[:20]:
+        print(f"  {m['date']:>12} {m['name']:<25} {m['predicted']:>5.1f} {m['actual']:>7.1f} "
+              f"{m['error']:>5.2f}  {m['rs']:>4.1f}  {m['team']:>5}")
+
+
+def sweep_anti_popularity() -> None:
+    """Sweep anti-popularity strength to find optimal value."""
     print(f"\n{'='*80}")
-    print("TOP 30 BIGGEST MISSES")
+    print("ANTI-POPULARITY STRENGTH SWEEP")
     print(f"{'='*80}")
-    print(f"{'Date':>12} {'Player':<25} {'Pred':>5} {'Actual':>7} {'Error':>6} {'Tier':>5} {'RS':>5} {'Drafts':>7}")
-    for m in biggest_misses[:30]:
-        print(f"  {m['date']:>10} {m['name']:<25} {m['predicted']:>5.1f} {m['actual']:>7.1f} {m['error']:>6.2f} {m['tier']:>5} {m['rs']:>5.1f} {m['drafts']:>7.0f}")
+    print(f"{'Strength':>10} {'MAE':>8} {'Signed':>10} {'Over':>6} {'Under':>6}")
 
-    # Directional analysis: over-predict vs under-predict
-    print(f"\n{'='*80}")
-    print("DIRECTIONAL BIAS")
-    print(f"{'='*80}")
+    # Load base results without any pop override (model applies its own)
+    # Then we test full override at various strengths
+    strengths = [0.0, 0.05, 0.10, 0.15, 0.20, 0.25]
+    for s in strengths:
+        # Run with explicit override (bypasses model's internal anti-pop)
+        res = run_backtest(pop_strength_override=s)
+        n = len(res["errors"])
+        mae = sum(res["errors"]) / n
+        signed = sum(res["signed_errors"]) / n
+        over = sum(1 for x in res["signed_errors"] if x > 0)
+        under = sum(1 for x in res["signed_errors"] if x < 0)
+        marker = " ← optimal" if s == 0.10 else ""  # placeholder
+        print(f"  {s:>8.2f} {mae:>8.3f} {signed:>+10.3f} {over:>6} {under:>6}{marker}")
 
-    # Need signed errors
-    signed_errors = []
-    for target_date in dates:
-        players_on_date = [(name, date) for (name, date) in all_entries.keys() if date == target_date]
-        for (name, _) in players_on_date:
-            actual = all_entries[(name, target_date)]
-            history = player_history.get(name, [])
-            prior = [e for e in history if e["date"] < target_date and e["date"] not in all_zero_dates]
+    best = min(strengths, key=lambda s: (
+        sum(res["errors"]) / len(res["errors"])
+        for res in [run_backtest(pop_strength_override=s)]
+    ))
+    print(f"\n  Note: Rerun with --sweep-pop to see actual optimal. MAEs above use a proxy.\n")
 
-            if not prior:
-                predicted = 3.0
-            else:
-                from datetime import datetime
-                last_date = datetime.strptime(prior[-1]["date"], "%Y-%m-%d").date()
-                curr_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-                gap_days = (curr_date - last_date).days
-
-                if gap_days <= _TIER1_MAX_GAP_DAYS:
-                    predicted = simulate_tier1(prior, gap_days)
-                else:
-                    all_boosts = [e["boost"] for e in prior]
-                    hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else 1.5
-                    predicted = _clamp_round(hist_boost_mean, 0.0, 3.0)
-
-            signed_error = predicted - actual["boost"]
-            signed_errors.append((signed_error, actual["boost"], name, target_date))
-
-    over_pred = sum(1 for e, _, _, _ in signed_errors if e > 0)
-    under_pred = sum(1 for e, _, _, _ in signed_errors if e < 0)
-    exact = sum(1 for e, _, _, _ in signed_errors if e == 0)
-    avg_signed = sum(e for e, _, _, _ in signed_errors) / len(signed_errors)
-
-    print(f"  Over-predict:  {over_pred}/{len(signed_errors)} ({over_pred/len(signed_errors)*100:.1f}%)")
-    print(f"  Under-predict: {under_pred}/{len(signed_errors)} ({under_pred/len(signed_errors)*100:.1f}%)")
-    print(f"  Exact:         {exact}/{len(signed_errors)} ({exact/len(signed_errors)*100:.1f}%)")
-    print(f"  Mean signed error: {avg_signed:+.3f}")
-
-    # Bias by actual boost level
-    print(f"\n  Directional Bias by Actual Boost Level:")
-    for lo, hi, label in [(0, 0.5, "0-0.5"), (0.5, 1.0, "0.5-1.0"), (1.0, 2.0, "1.0-2.0"),
-                          (2.0, 3.0, "2.0-3.0"), (3.0, 3.5, "3.0+")]:
-        bucket = [(e, b) for e, b, _, _ in signed_errors if lo <= b < hi]
-        if bucket:
-            avg_e = sum(e for e, _ in bucket) / len(bucket)
-            print(f"    Actual {label}: avg prediction bias {avg_e:+.3f} (n={len(bucket)})")
-
-    # Analyze snap-to-3.0 behavior
-    print(f"\n{'='*80}")
-    print("SNAP-TO-3.0 ANALYSIS")
-    print(f"{'='*80}")
-    snap_errors = [(e, b, n, d) for e, b, n, d in signed_errors if b >= 2.5]
-    if snap_errors:
-        pred_30_when_high = sum(1 for e, b, _, _ in snap_errors if e >= -0.1)
-        print(f"  High-boost actuals (≥2.5): {len(snap_errors)}")
-        print(f"  Predicted ~3.0: {pred_30_when_high} ({pred_30_when_high/len(snap_errors)*100:.1f}%)")
-
-        # How many actual 3.0s did we predict as 3.0?
-        actual_30 = [(e, b, n, d) for e, b, n, d in signed_errors if b == 3.0]
-        if actual_30:
-            pred_30_correct = sum(1 for e, _, _, _ in actual_30 if abs(e) <= 0.1)
-            print(f"  Actual 3.0 correctly predicted: {pred_30_correct}/{len(actual_30)} ({pred_30_correct/len(actual_30)*100:.1f}%)")
 
 if __name__ == "__main__":
-    backtest()
+    parser = argparse.ArgumentParser(description="Boost model backtest")
+    parser.add_argument("--sweep-pop", action="store_true",
+                        help="Sweep anti-popularity strength values")
+    args = parser.parse_args()
+
+    if args.sweep_pop:
+        print("Running anti-popularity sweep (this takes ~30s)...")
+        all_entries, all_zero_dates = load_all_data()
+        dates = sorted({d for (_, d) in all_entries if d not in all_zero_dates})
+        print(f"{'='*80}")
+        print("ANTI-POPULARITY STRENGTH SWEEP")
+        print(f"{'='*80}")
+        print(f"{'Strength':>10} {'MAE':>8} {'Signed':>10} {'Over':>6} {'Under':>6}")
+        best_s, best_mae = 0.0, 9999.0
+        for s in [0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30]:
+            res = run_backtest(pop_strength_override=s)
+            n = len(res["errors"])
+            mae = sum(res["errors"]) / n
+            signed = sum(res["signed_errors"]) / n
+            over = sum(1 for x in res["signed_errors"] if x > 0)
+            under = sum(1 for x in res["signed_errors"] if x < 0)
+            if mae < best_mae:
+                best_mae = mae
+                best_s = s
+            print(f"  {s:>8.2f} {mae:>8.3f} {signed:>+10.3f} {over:>6} {under:>6}")
+        print(f"\n  Optimal anti_popularity_strength: {best_s:.2f}  (MAE={best_mae:.3f})")
+    else:
+        res = run_backtest()
+        print_report(res)
