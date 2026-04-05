@@ -51,22 +51,22 @@ MLB_STRATEGY_DEFAULTS: dict[str, Any] = {
     "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
     "slot_labels": ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"],
     "min_environment_score": 20,
+    # Filter 1: Slate classification
     "pitcher_day_threshold": 5,
     "hitter_day_ou_threshold": 9.0,
     "hitter_day_game_count": 5,
     "tiny_slate_max_games": 3,
-    "max_same_team": 3,
-    "min_games_represented": 2,
-    "ghost_drafts_threshold": 100,
-    "chalk_drafts_threshold": 2000,
+    # Filter 2: Environmental scoring
     "ace_era_threshold": 3.50,
     "ace_k9_threshold": 8.0,
     "weak_starter_era": 4.50,
     "high_total_threshold": 8.5,
     "elite_total_threshold": 9.5,
-    "boost_trap_env_threshold": 30,
-    "boost_leveraged_min_boost": 2.5,
-    "boost_leveraged_min_env": 50,
+    "debut_return_env_bonus": 10,
+    "debut_games_threshold": 5,
+    # Filter 3: Ownership leverage
+    "ghost_drafts_threshold": 100,
+    "chalk_drafts_threshold": 2000,
     "ownership_leverage_weights": {
         "ghost": 0.50,
         "low": 0.30,
@@ -74,6 +74,17 @@ MLB_STRATEGY_DEFAULTS: dict[str, Any] = {
         "neutral": 0.0,
         "chalk": -0.30,
     },
+    "big_market_teams_mlb": ["NYY", "LAD", "NYM", "BOS", "CHC", "PHI", "HOU", "ATL", "SF", "SD"],
+    # Filter 4: Boost optimization
+    "boost_trap_env_threshold": 30,
+    "boost_leveraged_min_boost": 2.5,
+    "boost_leveraged_min_env": 50,
+    # Filter 5: Lineup construction
+    "max_same_team": 3,
+    "max_same_team_tiny": 4,
+    "min_games_represented": 2,
+    "team_stack_bonus": 1.20,
+    "team_stack_min_ml": -150,
     "composition": {
         "tiny":        {"min_pitchers": 1, "max_pitchers": 1},
         "pitcher_day": {"min_pitchers": 4, "max_pitchers": 5},
@@ -177,49 +188,84 @@ def score_pitcher_environment(
 ) -> float:
     """Score a pitcher's environmental advantage (0-100).
 
-    Factors:
+    Strategy doc Section 2.1 — pitcher RS correlates with:
       - Facing weak offense (bottom-10 K% or wOBA): +25
       - Pitcher-friendly park (factor <= 96): +15
       - Pitching at home: +10
-      - High K/9 (>9.0: +20, >8.0: +10)
+      - High K/9 (>9.0: +20, >8.0: +10) — K upside is PRIMARY RS driver
       - Confirmed probable starter: +10
       - Low ERA (<3.00: +15, <3.50: +10)
+      - Team favored (moneyline < -150): +10 (Condition A: run support)
+      - Debut/return premium: +10 (Condition C)
+      - Weather factor: +5/-5 (pitcher-friendly cold/wind-in)
     """
     score = 0.0
 
-    # Opponent weakness
+    # ── Opponent weakness (top signal for pitcher RS) ─────────────────────
     if opp_team_stats:
         opp_k_rate = _sf(opp_team_stats.get("team_k_rate", 0))
         opp_woba = _sf(opp_team_stats.get("team_woba", 0))
-        # High K rate or low wOBA = weak offense
         if opp_k_rate >= 0.25 or (opp_woba > 0 and opp_woba <= 0.300):
             score += 25
 
-    # Park factor
+    # ── Park factor ───────────────────────────────────────────────────────
     if park_factor <= 96:
         score += 15
+    elif park_factor <= 98:
+        score += 5  # Mild pitcher-friendly bonus
 
-    # Home advantage
+    # ── Home advantage ────────────────────────────────────────────────────
     if is_home:
         score += 10
 
-    # K rate
+    # ── K/9 upside — "strikeouts are the primary RS driver for pitchers" ──
     k9 = _sf(pitcher_stats.get("k9", 0))
-    if k9 > 9.0:
+    if k9 > 10.0:
+        score += 25  # Elite K upside
+    elif k9 > 9.0:
         score += 20
     elif k9 > 8.0:
         score += 10
 
-    # Confirmed starter
+    # ── Confirmed probable starter ────────────────────────────────────────
     if pitcher_stats.get("is_probable_starter") or pitcher_stats.get("is_starter"):
         score += 10
 
-    # ERA quality
+    # ── ERA quality ───────────────────────────────────────────────────────
     era = _sf(pitcher_stats.get("era", 99))
-    if era < 3.00:
+    if era < 2.50:
+        score += 20  # Elite ace
+    elif era < 3.00:
         score += 15
     elif era < 3.50:
         score += 10
+
+    # ── WHIP quality (additional signal) ──────────────────────────────────
+    whip = _sf(pitcher_stats.get("whip", 99))
+    if whip < 1.00:
+        score += 5
+
+    # ── Team favored — Condition A: "Starting Pitcher in a Winning Team" ──
+    # Every pitcher with RS >= 5.0 was on a team that won. Run support matters.
+    team = canonicalize_team(pitcher_stats.get("team", ""))
+    home_team = canonicalize_team(game.get("home", ""))
+    if team == home_team:
+        ml = _sf(game.get("home_moneyline", 0))
+    else:
+        ml = _sf(game.get("away_moneyline", 0))
+    if ml < -150:
+        score += 10
+    elif ml < -120:
+        score += 5
+
+    # ── Debut/return premium — Condition C ────────────────────────────────
+    if pitcher_stats.get("is_debut_or_return", False):
+        score += 10
+
+    # ── Weather factor (pitcher-friendly conditions boost) ────────────────
+    weather_factor = _sf(game.get("weather_factor", 1.0))
+    if weather_factor < 0.98:
+        score += 5  # Cold/wind-in favors pitchers
 
     return round(min(score, 100.0), 2)
 
@@ -234,18 +280,22 @@ def score_hitter_environment(
 ) -> float:
     """Score a hitter's environmental advantage (0-100).
 
-    Factors:
+    Strategy doc Section 2.2 + Conditions B-E:
       - High Vegas total (>=9.5: +25, >=8.5: +15)
       - Weak opposing starter (ERA >4.50: +20, >4.00: +10)
       - Platoon advantage (opposite hand): +15
       - Top of lineup (1-4: +20, 5-6: +10)
       - Hitter-friendly park (factor >= 104): +15
       - Team favored (moneyline < -150): +10
+      - Debut/return premium: +10 (Condition C)
+      - Weather factor: +5 (warm/wind-out)
+      - Opposing pitcher high HR/9: +5
     """
     cfg = config or {}
     score = 0.0
 
-    # Vegas total
+    # ── Vegas total — Condition B: "Hitters in High-Run Games" ────────────
+    # "Hitters virtually never achieve RS > 5.0 in games with < 6 total runs"
     total = _sf(game.get("total", 0))
     elite_total = _cfg_val(cfg, "elite_total_threshold", 9.5)
     high_total = _cfg_val(cfg, "high_total_threshold", 8.5)
@@ -253,42 +303,69 @@ def score_hitter_environment(
         score += 25
     elif total >= high_total:
         score += 15
+    elif total > 0 and total < 7.0:
+        score -= 10  # Low-total games are hitter deserts
 
-    # Opposing starter quality
+    # ── Opposing starter quality ──────────────────────────────────────────
     if opp_pitcher and isinstance(opp_pitcher, dict):
         opp_era = _sf(opp_pitcher.get("era", 0))
         weak_era = _cfg_val(cfg, "weak_starter_era", 4.50)
-        if opp_era > weak_era:
+        if opp_era > 5.00:
+            score += 25  # Very weak starter
+        elif opp_era > weak_era:
             score += 20
         elif opp_era > 4.00:
             score += 10
 
-        # Platoon advantage
+        # Platoon advantage — Condition D
         batter_bats = hitter_stats.get("bats", "")
         pitcher_throws = opp_pitcher.get("hand", opp_pitcher.get("throws", ""))
         if has_platoon_advantage(batter_bats, pitcher_throws):
             score += 15
 
-    # Batting order
+        # Opposing pitcher HR vulnerability
+        opp_hr9 = _sf(opp_pitcher.get("hr9", 0))
+        if opp_hr9 > 1.5:
+            score += 5
+
+    # ── Batting order — more PA = more RS opportunity ─────────────────────
     if 1 <= batting_order <= 4:
         score += 20
     elif 5 <= batting_order <= 6:
         score += 10
+    elif 7 <= batting_order <= 9:
+        score += 3  # Still in lineup, small bonus
 
-    # Park factor
-    if park_factor >= 104:
+    # ── Park factor ───────────────────────────────────────────────────────
+    if park_factor >= 110:
+        score += 20  # Coors-level
+    elif park_factor >= 104:
         score += 15
+    elif park_factor >= 101:
+        score += 5
 
-    # Team favored
-    # Determine team's moneyline from game data
+    # ── Team favored ──────────────────────────────────────────────────────
     team = canonicalize_team(hitter_stats.get("team", ""))
     home = canonicalize_team(game.get("home", ""))
     if team == home:
         ml = _sf(game.get("home_moneyline", 0))
     else:
         ml = _sf(game.get("away_moneyline", 0))
-    if ml < -150:
+    if ml < -200:
+        score += 15  # Heavy favorite — Condition E: team stack potential
+    elif ml < -150:
         score += 10
+
+    # ── Debut/return premium — Condition C ────────────────────────────────
+    # "Debut players have near-zero draft ownership... yet they often perform
+    # at elite levels due to adrenaline, preparation, and opponent unfamiliarity."
+    if hitter_stats.get("is_debut_or_return", False):
+        score += 10
+
+    # ── Weather factor (hitter-friendly conditions) ───────────────────────
+    weather_factor = _sf(game.get("weather_factor", 1.0))
+    if weather_factor > 1.02:
+        score += 5  # Warm/wind-out favors hitters
 
     return round(min(score, 100.0), 2)
 
@@ -385,6 +462,24 @@ def optimize_boost_allocation(
 # grep: LINEUP CONSTRUCTION
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _detect_two_way(candidate: dict) -> bool:
+    """Detect two-way players (Ohtani playbook).
+
+    Strategy doc "Two-Way Day": Ohtani is almost always the highest-EV
+    Slot 1 or 2 when pitching and hitting. Two-way players get pitcher
+    environmental scoring PLUS hitter batting order bonus.
+    """
+    is_p = candidate.get("is_pitcher", False)
+    # Two-way: pitcher who also bats (non-zero batting stats)
+    if is_p:
+        hr = _sf(candidate.get("hr", 0))
+        rbi = _sf(candidate.get("rbi", 0))
+        avg = _sf(candidate.get("avg", 0))
+        if hr >= 3 or rbi >= 10 or avg >= 0.200:
+            return True
+    return False
+
+
 def build_optimal_lineup(
     candidates: list[dict],
     slate_type: str,
@@ -392,35 +487,54 @@ def build_optimal_lineup(
     exclude_names: set | None = None,
     prefer_contrarian: bool = False,
 ) -> list[dict]:
-    """Build optimal 5-player lineup using filter-based selection.
+    """Build optimal 5-player lineup using the "Filter, Not Forecast" strategy.
 
-    Slot sequencing:
-      Slot 1 (2.0x): Highest conviction — unboosted ace or best-env 3.0-boosted
-      Slot 2 (1.8x): Second-highest conviction
-      Slots 3-5: Fill with remaining, prefer boosted (slot penalty is minimal)
+    # grep: LINEUP CONSTRUCTION
 
-    Constraints:
-      - At least 2 different games represented
-      - No more than 3 players from same team
+    Strategy doc Section 4.2 — The Decision Tree + 10 Commandments:
+
+    Slot sequencing (Section 3.4):
+      Slot 1 (2.0x): Highest-conviction play.
+        - Unboosted ace vs weakest offense, OR
+        - 3.0-boosted player in best environment
+      Slot 2 (1.8x): Second-highest conviction (backup ace or boosted)
+      Slots 3-5: Boosted players (slot penalty is minimal: only 16% for 3.0x boost)
+
+    Constraints (Commandments 2, 7, 10):
+      - At least 2 different games represented (Commandment 10)
+      - Boost diversification: boosted players across 2-3 games (Commandment 10)
+      - No more than 3 players from same team (relaxed to 4 for tiny/stack days)
       - Composition follows day-type rules (pitcher/hitter mix)
+      - Never draft boost without environment (Commandment 6)
 
-    Expected value formula (since we don't predict RS):
-      ev = environment_score * (slot_mult + card_boost) * (1 + ownership_leverage)
+    Team stacking (Condition E):
+      For tiny/stack days, actively seek 3-4 from the heavy favorite.
+
+    Two-way players (Ohtani playbook):
+      Two-way players combine pitcher + hitter environmental advantages.
     """
     cfg = config or {}
     _excl = exclude_names or set()
     slot_mults = _cfg_val(cfg, "slot_multipliers", [2.0, 1.8, 1.6, 1.4, 1.2])
     slot_labels = _cfg_val(cfg, "slot_labels", ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"])
-    max_same_team = _cfg_val(cfg, "max_same_team", 3)
     min_games = _cfg_val(cfg, "min_games_represented", 2)
     min_env = _cfg_val(cfg, "min_environment_score", 20)
+
+    # Team cap: relaxed for tiny/stack days (Condition E: team stack correlation)
+    max_same_team = _cfg_val(cfg, "max_same_team", 3)
+    if slate_type == "tiny":
+        max_same_team = max(max_same_team, 4)  # Allow 4-1 team split on tiny slates
 
     comp = _cfg_val(cfg, "composition", MLB_STRATEGY_DEFAULTS["composition"])
     day_comp = comp.get(slate_type, comp.get("standard", {}))
     min_pitchers = day_comp.get("min_pitchers", 0)
     max_pitchers = day_comp.get("max_pitchers", 5)
 
-    # Filter available candidates
+    # ── Tag two-way players ───────────────────────────────────────────────
+    for c in candidates:
+        c["is_two_way"] = _detect_two_way(c)
+
+    # ── Filter available candidates ───────────────────────────────────────
     available = [
         c for c in candidates
         if c.get("name") not in _excl
@@ -429,25 +543,45 @@ def build_optimal_lineup(
         and not c.get("is_out", False)
     ]
 
+    if not available:
+        print(f"[mlb_strategy] WARNING: No candidates pass environment filter (min_env={min_env})")
+        # Fallback: relax to min_env/2
+        available = [
+            c for c in candidates
+            if c.get("name") not in _excl
+            and not c.get("is_out", False)
+        ]
+
+    # ── Sort candidates ───────────────────────────────────────────────────
     if prefer_contrarian:
-        # For moonshot: prefer low-ownership, high-variance plays
+        # Moonshot: prefer ghost players with environmental support
+        # Strategy doc: "The contrarian principle: If a player has the environmental
+        # conditions for a big day but low ownership, they are the highest-EV pick"
         available.sort(key=lambda x: (
             -_sf(x.get("ownership_leverage", 0)),
             -_sf(x.get("boost_ev", 0)),
             -_sf(x.get("environment_score", 0)),
+            -_sf(x.get("is_debut_or_return", False)),  # Debut edge
         ))
     else:
-        # Default: sort by expected value
+        # Starting 5: sort by expected value (environment-weighted)
         available.sort(key=lambda x: (
             -_sf(x.get("expected_value", 0)),
             -_sf(x.get("environment_score", 0)),
             -_sf(x.get("boost_ev", 0)),
         ))
 
-    # Greedy selection with constraints
-    lineup = []
+    # ── Team stacking for tiny/stack days (Condition E) ───────────────────
+    # "When one hitter on a team has a big game, teammates often do too"
+    # For tiny slates, identify the heavy favorite and boost their candidates
+    if slate_type == "tiny" and not prefer_contrarian:
+        _apply_team_stack_bonus(available, candidates, cfg)
+
+    # ── Greedy selection with constraints ─────────────────────────────────
+    lineup: list[dict] = []
     team_counts: dict[str, int] = {}
     game_ids: set[str] = set()
+    boost_game_ids: set[str] = set()  # Track which games have boosted players
     pitcher_count = 0
 
     def _can_add(c: dict) -> bool:
@@ -455,6 +589,7 @@ def build_optimal_lineup(
         team = canonicalize_team(c.get("team", ""))
         gid = c.get("gameId", c.get("game_id", ""))
         is_p = c.get("is_pitcher", False)
+        boost = _sf(c.get("boost", c.get("est_mult", 0)))
 
         # Team cap
         if team and team_counts.get(team, 0) >= max_same_team:
@@ -464,8 +599,16 @@ def build_optimal_lineup(
         if is_p and pitcher_count >= max_pitchers:
             return False
         if not is_p and (5 - len(lineup)) <= (min_pitchers - pitcher_count) and pitcher_count < min_pitchers:
-            # Need to reserve remaining slots for pitchers
             return False
+
+        # Boost diversification: don't stack all boosted players in one game
+        # Commandment 10: "Diversify across games. A 2-1 pitcher's duel kills
+        # concentrated lineups."
+        if boost >= 2.0 and len(boost_game_ids) >= 1 and gid in boost_game_ids:
+            # Already have a boosted player from this game
+            # Allow if we have <2 games represented yet, or if no better option
+            if len(game_ids) >= 2:
+                return False  # Force diversification
 
         return True
 
@@ -478,6 +621,8 @@ def build_optimal_lineup(
         gid = c.get("gameId", c.get("game_id", ""))
         if gid:
             game_ids.add(gid)
+        if _sf(c.get("boost", c.get("est_mult", 0))) >= 2.0:
+            boost_game_ids.add(gid)
         if c.get("is_pitcher", False):
             pitcher_count += 1
 
@@ -488,31 +633,57 @@ def build_optimal_lineup(
         if _can_add(c):
             _add(c)
 
-    # Ensure minimum games constraint — swap last player if needed
+    # If we couldn't fill 5 due to strict constraints, relax boost diversification
+    if len(lineup) < 5:
+        for c in available:
+            if len(lineup) >= 5:
+                break
+            if c.get("name") in {p.get("name") for p in lineup}:
+                continue
+            team = canonicalize_team(c.get("team", ""))
+            if team and team_counts.get(team, 0) >= max_same_team:
+                continue
+            _add(c)
+
+    # ── Ensure minimum games constraint ───────────────────────────────────
+    # Commandment 10: "Never put all 5 players in the same game"
     if len(game_ids) < min_games and len(lineup) >= 5 and len(available) > 5:
         for swap_candidate in available:
             if swap_candidate.get("name") in {p.get("name") for p in lineup}:
                 continue
             swap_gid = swap_candidate.get("gameId", swap_candidate.get("game_id", ""))
             if swap_gid and swap_gid not in game_ids:
-                # Replace last player with this one to diversify games
                 lineup[-1] = swap_candidate
                 game_ids.add(swap_gid)
                 break
 
-    # Assign slots: highest expected value → Slot 1 (2.0x), etc.
-    # Key insight from strategy doc: unboosted players MUST go in top slots.
-    # Boosted players are slot-flexible (16% loss vs 40% for unboosted).
-    # Sort by: unboosted first to top slots, then by expected value
+    # ── SLOT ASSIGNMENT (Strategy Doc Section 3.3-3.4) ────────────────────
+    # "Place your highest-conviction unboosted player in Slot 1."
+    # "Distribute boosted players across remaining slots freely."
+    #
+    # The optimal construction rule:
+    #   1. Unboosted players MUST go in top slots (67% value loss Slot 1→5)
+    #   2. Boosted players are slot-flexible (only 16% loss for 3.0x boost)
+    #   3. Two-way players get Slot 1 or 2 (combined pitcher+hitter advantage)
+    #
+    # Sort priority: two-way → unboosted by env → boosted by EV
     def _slot_priority(p):
         boost = _sf(p.get("boost", p.get("est_mult", 0)))
         ev = _sf(p.get("expected_value", 0))
         env = _sf(p.get("environment_score", 0))
-        # Unboosted high-env players go to Slot 1 (RS dominates there)
-        if boost < 0.5:
-            return (-env, -ev)
-        # Boosted players can go anywhere — sort by EV
-        return (0, -ev)
+        is_two_way = p.get("is_two_way", False)
+
+        # Two-way players (Ohtani) → highest slot priority
+        if is_two_way:
+            return (0, -env, -ev)
+        # Unboosted players → high slot priority (RS dominates slot value)
+        if boost < 1.0:
+            return (1, -env, -ev)
+        # Medium boost (1.0-2.0) → middle slots
+        if boost < 2.0:
+            return (2, -ev, -env)
+        # High boost (2.0+) → flexible, sort by EV
+        return (3, -ev, -env)
 
     lineup.sort(key=_slot_priority)
 
@@ -526,9 +697,43 @@ def build_optimal_lineup(
 
     print(f"[mlb_strategy] Built lineup: {len(lineup)} players, "
           f"{pitcher_count}P/{len(lineup)-pitcher_count}H, "
-          f"{len(game_ids)} games, slate_type={slate_type}")
+          f"{len(game_ids)} games, slate_type={slate_type}"
+          f"{' (contrarian)' if prefer_contrarian else ''}")
 
     return lineup
+
+
+def _apply_team_stack_bonus(available: list[dict], all_candidates: list[dict],
+                            config: dict) -> None:
+    """Boost EV for players on the heaviest favorite team.
+
+    # grep: TEAM STACK BONUS
+
+    Strategy doc Condition E — "Team-Stack Correlation":
+      When one hitter on a team has a big game, teammates often do too
+      (because runs require baserunners). Winning lineups exploit this.
+
+    For tiny slates (1-3 games), identify the heaviest moneyline favorite
+    and boost their candidates' expected_value by +20% to encourage stacking.
+    """
+    # Find heaviest favorite team
+    best_team = ""
+    best_ml = 0
+    for c in all_candidates:
+        team = canonicalize_team(c.get("team", ""))
+        # Check moneyline from the game data
+        ml = _sf(c.get("_team_moneyline", 0))
+        if ml < best_ml:
+            best_ml = ml
+            best_team = team
+
+    if best_team and best_ml < -150:
+        stack_bonus = 1.20  # 20% EV bonus for stacking
+        for c in available:
+            if canonicalize_team(c.get("team", "")) == best_team:
+                c["expected_value"] = round(_sf(c.get("expected_value", 0)) * stack_bonus, 2)
+                c["_team_stack"] = True
+        print(f"[mlb_strategy] Team stack bonus: {best_team} (ML={best_ml})")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -582,6 +787,12 @@ def run_filter_pipeline(
         pk = get_park_factor(game.get("home", ""))
         team = canonicalize_team(c.get("team", ""))
         is_home = team == canonicalize_team(game.get("home", ""))
+
+        # Inject team moneyline for team stack bonus (Condition E)
+        if is_home:
+            c["_team_moneyline"] = _sf(game.get("home_moneyline", 0))
+        else:
+            c["_team_moneyline"] = _sf(game.get("away_moneyline", 0))
 
         if c.get("is_pitcher", False):
             # Get opposing team stats

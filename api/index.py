@@ -1205,43 +1205,52 @@ _CONFIG_DEFAULTS = {
     },
     # ── MLB "Filter, Not Forecast" Strategy ──────────────────────────────
     # grep: MLB STRATEGY CONFIG
+    # Master Strategy Document: Daily Draft Domination
     # External-variables framework: instead of predicting RS, identify CONDITIONS
     # under which high RS is most likely to emerge, then select from that filtered pool.
     # Core formula: total_value = RS × (slot_multiplier + card_boost) [ADDITIVE]
+    # The 10 Commandments: classify slate → environmental filters → low ownership edge →
+    # boost + environment → slot sequencing → diversify across games.
     "mlb_strategy": {
         "enabled": True,  # Toggle between MLB filter pipeline and NBA projection pipeline
-        "sport": "mlb",   # "mlb" or "nba" — determines which fetch/project/build path to use
+        "sport": "mlb",   # "mlb" or "nba"
         "slot_multipliers": [2.0, 1.8, 1.6, 1.4, 1.2],
         "slot_labels": ["2.0x", "1.8x", "1.6x", "1.4x", "1.2x"],
         "min_environment_score": 20,
         # ── Filter 1: Slate classification thresholds ──
-        "pitcher_day_threshold": 5,
-        "hitter_day_ou_threshold": 9.0,
-        "hitter_day_game_count": 5,
-        "tiny_slate_max_games": 3,
+        "pitcher_day_threshold": 5,     # 5+ quality SP matchups → pitcher_day
+        "hitter_day_ou_threshold": 9.0, # O/U >= 9.0 → high-total game
+        "hitter_day_game_count": 5,     # 5+ high-total games → hitter_day
+        "tiny_slate_max_games": 3,      # 1-3 games → tiny (team stack mode)
         # ── Filter 2: Environmental scoring thresholds ──
-        "ace_era_threshold": 3.50,
-        "ace_k9_threshold": 8.0,
-        "weak_starter_era": 4.50,
-        "high_total_threshold": 8.5,
-        "elite_total_threshold": 9.5,
+        "ace_era_threshold": 3.50,      # ERA < 3.50 qualifies as "ace"
+        "ace_k9_threshold": 8.0,        # K/9 > 8.0 qualifies as "ace"
+        "weak_starter_era": 4.50,       # Opposing starter ERA > 4.50 = weak
+        "high_total_threshold": 8.5,    # O/U >= 8.5 = hitter-friendly game
+        "elite_total_threshold": 9.5,   # O/U >= 9.5 = elite run environment
+        "debut_return_env_bonus": 10,   # Condition C: debut/return premium
+        "debut_games_threshold": 5,     # <= 5 games played = debut/return
         # ── Filter 3: Ownership leverage ──
-        "ghost_drafts_threshold": 100,
-        "chalk_drafts_threshold": 2000,
+        "ghost_drafts_threshold": 100,  # < 100 drafts = ghost player edge
+        "chalk_drafts_threshold": 2000, # > 2000 drafts = chalk penalty
         "ownership_leverage_weights": {
-            "ghost": 0.50,       # < 20 drafts + env > 50
+            "ghost": 0.50,       # < 20 drafts + env > 50 → max ghost edge
             "low": 0.30,         # < 100 drafts
             "contrarian": 0.15,  # 100-500 drafts
             "neutral": 0.0,      # 500-2000 drafts
-            "chalk": -0.30,      # > 2000 drafts
+            "chalk": -0.30,      # > 2000 drafts — crowd chases names
         },
+        "big_market_teams_mlb": ["NYY", "LAD", "NYM", "BOS", "CHC", "PHI", "HOU", "ATL", "SF", "SD"],
         # ── Filter 4: Boost optimization ──
-        "boost_trap_env_threshold": 30,
-        "boost_leveraged_min_boost": 2.5,
+        "boost_trap_env_threshold": 30,       # boost >= 2.0 AND env < 30 = trap
+        "boost_leveraged_min_boost": 2.5,     # boost >= 2.5 AND env >= 50 = leveraged
         "boost_leveraged_min_env": 50,
         # ── Filter 5: Lineup construction ──
-        "max_same_team": 3,
-        "min_games_represented": 2,
+        "max_same_team": 3,                   # Default team cap
+        "max_same_team_tiny": 4,              # Relaxed for tiny/stack days
+        "min_games_represented": 2,           # Commandment 10: diversify across games
+        "team_stack_bonus": 1.20,             # 20% EV bonus for heavy-favorite stack
+        "team_stack_min_ml": -150,            # ML threshold for stack activation
         "composition": {
             "tiny":        {"min_pitchers": 1, "max_pitchers": 1},
             "pitcher_day": {"min_pitchers": 4, "max_pitchers": 5},
@@ -5280,19 +5289,31 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run_mlb_game(game: dict) -> list[dict]:
-    """Fetch rosters and build MLB candidate list for a single game.
+    """Fetch rosters, lineups, and build MLB candidate list for a single game.
+
+    # grep: MLB GAME RUNNER
+
+    Strategy doc alignment:
+      - Only include probable starting pitchers (not full bullpen)
+      - Only include hitters in the starting lineup (not 40-man roster bench)
+      - Populate batting_order from ESPN lineup data (Filter 2 needs it)
+      - Estimate ownership/drafts from name recognition (Filter 3 needs it)
+      - Detect debut/return players (Condition C premium)
 
     Returns list of candidate dicts with:
       name, id, team, pos, is_pitcher, bats, throws, gameId,
       batting_order, season stats, is_out, injury_status,
-      boost (est_mult), boost_band
+      boost (est_mult), boost_band, is_debut_or_return, estimated_drafts
     """
     cache_key = _ck_game_proj(game["gameId"])
     cached = _cg(cache_key)
     if cached:
         return cached
 
-    from api.mlb_data import fetch_mlb_roster, fetch_mlb_player_stats, canonicalize_team
+    from api.mlb_data import (
+        fetch_mlb_roster, fetch_mlb_player_stats, canonicalize_team,
+        fetch_batting_lineup,
+    )
 
     home_id = game.get("home_id", "")
     away_id = game.get("away_id", "")
@@ -5302,6 +5323,25 @@ def _run_mlb_game(game: dict) -> list[dict]:
     home_roster = fetch_mlb_roster(home_id, home_abbr) if home_id else []
     away_roster = fetch_mlb_roster(away_id, away_abbr) if away_id else []
 
+    # ── Fetch batting lineups (available closer to game time) ──────────────
+    lineup_data = fetch_batting_lineup(game["gameId"])
+    # Build name→order lookup for each side
+    _order_map: dict[str, dict[str, int]] = {"home": {}, "away": {}}
+    _lineup_names: dict[str, set] = {"home": set(), "away": set()}
+    for side_key in ("home", "away"):
+        for entry in lineup_data.get(side_key, []):
+            nm = (entry.get("name") or "").lower().strip()
+            order = int(_safe_float(entry.get("order", 0)))
+            if nm and order > 0:
+                _order_map[side_key][nm] = order
+                _lineup_names[side_key].add(nm)
+            elif nm:
+                # Player in lineup data but no order → still in starting lineup
+                _lineup_names[side_key].add(nm)
+
+    # Whether we have lineup data at all (if not, fall back to roster-based)
+    _have_lineup = bool(_lineup_names["home"] or _lineup_names["away"])
+
     candidates = []
     for roster, team_abbr, side in [(home_roster, home_abbr, "home"), (away_roster, away_abbr, "away")]:
         for p in roster:
@@ -5310,23 +5350,59 @@ def _run_mlb_game(game: dict) -> list[dict]:
             if p.get("injury_status", "").upper() in ("OUT", "IL"):
                 continue
 
+            is_pitcher = p.get("is_pitcher", False) or p.get("pos", "") in ("SP", "RP", "P", "CL")
+            player_name = p.get("name", "")
+            player_name_lower = player_name.lower().strip()
+
+            # ── PITCHER FILTER: Only include probable starters ─────────────
+            # Strategy doc: "Being the probable starter (not a bullpen game or opener)"
+            # Only confirmed probable starters qualify as pitcher candidates.
+            if is_pitcher:
+                if not _is_probable_starter(p, game, side):
+                    continue  # Skip relievers and non-confirmed starters
+
+            # ── HITTER FILTER: Only include starting lineup players ────────
+            # Strategy doc: "Batting in the top 4 of the lineup (more plate appearances)"
+            # If lineup data is available, only include players in the starting lineup.
+            if not is_pitcher and _have_lineup:
+                side_lineup = _lineup_names.get(side, set())
+                if side_lineup and player_name_lower not in side_lineup:
+                    # Check partial name match (ESPN uses different name formats)
+                    matched = False
+                    for ln in side_lineup:
+                        if ln in player_name_lower or player_name_lower in ln:
+                            matched = True
+                            break
+                    if not matched:
+                        continue  # Not in starting lineup
+
             # Fetch season stats
             stats = {}
             try:
                 stats = fetch_mlb_player_stats(p["id"])
             except Exception as e:
-                print(f"[mlb_pipeline] Stats fetch failed for {p.get('name')}: {e}")
+                print(f"[mlb_pipeline] Stats fetch failed for {player_name}: {e}")
 
-            # Estimate card boost using the same cascade model
-            # MLB players use similar boost mechanics (based on drafts/popularity)
-            season_ppg = _safe_float(stats.get("avg", 0)) * 100  # proxy: batting avg as popularity signal
-            boost_val, boost_band = 3.0, (2.5, 3.0)  # Default high boost for unknown players
+            # ── Batting order from lineup data ────────────────────────────
+            batting_order = 0
+            side_orders = _order_map.get(side, {})
+            if player_name_lower in side_orders:
+                batting_order = side_orders[player_name_lower]
+            else:
+                # Fuzzy match
+                for ln, order in side_orders.items():
+                    if ln in player_name_lower or player_name_lower in ln:
+                        batting_order = order
+                        break
+
+            # ── Estimate card boost ───────────────────────────────────────
+            boost_val, boost_band = 3.0, (2.5, 3.0)  # Default high for unknown
             try:
                 boost_val, boost_band = _est_card_boost(
                     proj_min=0,
                     pts=_safe_float(stats.get("hr", 0)),
                     team_abbr=team_abbr,
-                    player_name=p.get("name"),
+                    player_name=player_name,
                     season_pts=_safe_float(stats.get("hr", 0)) + _safe_float(stats.get("rbi", 0)),
                     recent_pts=_safe_float(stats.get("hr", 0)),
                     season_avg_min=0,
@@ -5337,11 +5413,21 @@ def _run_mlb_game(game: dict) -> list[dict]:
             except Exception:
                 pass
 
-            is_pitcher = p.get("is_pitcher", False) or p.get("pos", "") in ("SP", "RP", "P", "CL")
+            # ── Estimate ownership/drafts from name recognition ───────────
+            # Strategy doc Filter 3: ownership leverage is critical.
+            # Players with more name recognition / star power get drafted more.
+            estimated_drafts = _estimate_mlb_drafts(stats, is_pitcher, team_abbr)
+
+            # ── Debut/return detection (Condition C) ──────────────────────
+            # Strategy doc: "Debut players have near-zero draft ownership because
+            # the crowd has no history to anchor to, yet they often perform at
+            # elite levels due to adrenaline, preparation, and opponent unfamiliarity."
+            games_played = _safe_float(stats.get("games", 0))
+            is_debut_or_return = games_played <= 5  # Few games = debut/return
 
             candidate = {
                 "id": p.get("id", ""),
-                "name": p.get("name", ""),
+                "name": player_name,
                 "pos": p.get("pos", ""),
                 "team": team_abbr,
                 "gameId": game["gameId"],
@@ -5349,9 +5435,10 @@ def _run_mlb_game(game: dict) -> list[dict]:
                 "is_pitcher": is_pitcher,
                 "bats": p.get("bats", stats.get("bats", "")),
                 "throws": p.get("throws", stats.get("throws", "")),
-                "batting_order": 0,  # populated from lineup data if available
+                "batting_order": batting_order,
                 "injury_status": p.get("injury_status", ""),
                 "is_out": False,
+                "is_debut_or_return": is_debut_or_return,
                 # Season stats
                 "avg": _safe_float(stats.get("avg", 0)),
                 "hr": _safe_float(stats.get("hr", 0)),
@@ -5361,7 +5448,7 @@ def _run_mlb_game(game: dict) -> list[dict]:
                 "obp": _safe_float(stats.get("obp", 0)),
                 "slg": _safe_float(stats.get("slg", 0)),
                 "ops": _safe_float(stats.get("ops", 0)),
-                "games": _safe_float(stats.get("games", 0)),
+                "games": games_played,
                 # Pitcher stats
                 "era": _safe_float(stats.get("era", 0)),
                 "whip": _safe_float(stats.get("whip", 0)),
@@ -5373,12 +5460,12 @@ def _run_mlb_game(game: dict) -> list[dict]:
                 "boost": round(float(boost_val), 2),
                 "boost_band": boost_band,
                 # Probable starter flag
-                "is_probable_starter": _is_probable_starter(p, game, side),
-                "is_starter": _is_probable_starter(p, game, side),
-                # Drafts (estimated from name recognition — populated from ownership data if available)
-                "drafts": 0,
+                "is_probable_starter": _is_probable_starter(p, game, side) if is_pitcher else False,
+                "is_starter": not is_pitcher,  # Hitters in lineup are starters
+                # Drafts (estimated from name recognition)
+                "drafts": estimated_drafts,
                 # Frontend compat fields
-                "rating": 0.0,      # Will be set from environment_score
+                "rating": 0.0,
                 "predMin": 0.0,
                 "pts": _safe_float(stats.get("hr", 0)),
                 "reb": _safe_float(stats.get("sb", 0)),
@@ -5393,8 +5480,64 @@ def _run_mlb_game(game: dict) -> list[dict]:
             candidates.append(candidate)
 
     _cs(cache_key, candidates)
-    print(f"[mlb_pipeline] {game.get('away', '')} @ {game.get('home', '')}: {len(candidates)} candidates")
+    print(f"[mlb_pipeline] {game.get('away', '')} @ {game.get('home', '')}: "
+          f"{len(candidates)} candidates ({sum(1 for c in candidates if c['is_pitcher'])}P/"
+          f"{sum(1 for c in candidates if not c['is_pitcher'])}H)")
     return candidates
+
+
+def _estimate_mlb_drafts(stats: dict, is_pitcher: bool, team_abbr: str) -> int:
+    """Estimate draft count from name recognition signals.
+
+    # grep: MLB OWNERSHIP ESTIMATION
+
+    Strategy doc Filter 3: The most consistent edge comes from players who are
+    barely drafted but deliver elite RS. Without actual draft count data,
+    we estimate from star power signals:
+      - High HR/RBI hitters or low ERA pitchers → popular → high drafts
+      - Big market teams → more drafts
+      - Low stats / unknown players → ghost territory → low drafts
+    """
+    drafts = 50  # Base: most MLB players are low-drafted
+
+    if is_pitcher:
+        era = _safe_float(stats.get("era", 99))
+        wins = _safe_float(stats.get("wins", 0))
+        ip = _safe_float(stats.get("ip", 0))
+        k9 = _safe_float(stats.get("k9", 0))
+        # Ace pitchers with name recognition
+        if era < 3.00 and ip > 30:
+            drafts += 800
+        elif era < 3.50 and ip > 20:
+            drafts += 400
+        if wins >= 5:
+            drafts += 200
+        if k9 >= 10.0:
+            drafts += 200
+    else:
+        hr = _safe_float(stats.get("hr", 0))
+        rbi = _safe_float(stats.get("rbi", 0))
+        avg = _safe_float(stats.get("avg", 0))
+        ops = _safe_float(stats.get("ops", 0))
+        games = _safe_float(stats.get("games", 0))
+        # Superstar hitters
+        if hr >= 10 or rbi >= 30:
+            drafts += 1500
+        elif hr >= 5 or rbi >= 15:
+            drafts += 500
+        elif hr >= 2 or rbi >= 8:
+            drafts += 150
+        if avg >= 0.300 and games >= 20:
+            drafts += 500
+        if ops >= 0.900:
+            drafts += 400
+
+    # Big market team bonus
+    _BIG_MARKET_MLB = {"NYY", "LAD", "NYM", "BOS", "CHC", "PHI", "HOU", "ATL", "SF", "SD"}
+    if team_abbr in _BIG_MARKET_MLB:
+        drafts = int(drafts * 1.4)
+
+    return min(drafts, 15000)
 
 
 def _is_probable_starter(player: dict, game: dict, side: str) -> bool:

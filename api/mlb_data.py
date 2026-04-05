@@ -223,11 +223,6 @@ def fetch_mlb_games(date: str | None = None) -> list[dict]:
                 "moneyline": 0,
                 "probable_pitcher": _extract_probable_pitcher(c),
             }
-            # Extract moneyline from odds if available
-            for odds_item in comp.get("odds", []):
-                for aw in odds_item.get("awayTeamOdds", {}).get("moneyLine", [None]):
-                    pass  # structure varies
-                break
 
             if c.get("homeAway") == "home":
                 home = entry
@@ -293,11 +288,32 @@ def _extract_probable_pitcher(competitor: dict) -> dict | None:
     if probables:
         p = probables[0]
         athlete = p.get("athlete", {})
+        # Parse all available stats from the probables statistics array
+        stats_map: dict[str, float] = {}
+        for stat_group in p.get("statistics", []):
+            if isinstance(stat_group, dict):
+                for s in stat_group.get("stats", []):
+                    stats_map[s.get("name", "")] = _safe_float(s.get("value", s.get("displayValue")))
+                # Flat structure: {displayValue, name, ...}
+                dv = stat_group.get("displayValue")
+                nm = stat_group.get("name", stat_group.get("abbreviation", ""))
+                if dv is not None and nm:
+                    stats_map[nm] = _safe_float(dv)
+        era = _safe_float(stats_map.get("ERA", stats_map.get("earnedRunAverage",
+               p.get("statistics", [{}])[0].get("displayValue") if p.get("statistics") else None)))
         return {
             "id": athlete.get("id", ""),
             "name": athlete.get("displayName", athlete.get("fullName", "")),
             "hand": athlete.get("hand", {}).get("abbreviation", "R"),
-            "era": _safe_float(p.get("statistics", [{}])[0].get("displayValue") if p.get("statistics") else None),
+            "throws": athlete.get("throws", {}).get("abbreviation",
+                      athlete.get("hand", {}).get("abbreviation", "R")),
+            "era": era,
+            "k9": _safe_float(stats_map.get("strikeoutsPerNineInnings", stats_map.get("SO9", 0))),
+            "whip": _safe_float(stats_map.get("WHIP", 0)),
+            "wins": _safe_float(stats_map.get("wins", 0)),
+            "losses": _safe_float(stats_map.get("losses", 0)),
+            "ip": _safe_float(stats_map.get("inningsPitched", stats_map.get("IP", 0))),
+            "is_probable_starter": True,
         }
     return None
 
