@@ -1,27 +1,24 @@
-"""Boost Prediction Model — ESPN-only signals.
+"""Boost Prediction Model — 3-Tier Historical Cascade.
 
 # grep: BOOST CASCADE MODEL
 
-Predicts Real Sports card boost (0.0–3.0) using ESPN-available signals only.
-No prior boost data is used — boost changes dynamically every slate.
+Predicts Real Sports card boost (0.0–3.0) using a 3-tier cascade that
+prioritizes historical boost data from top_performers.csv.
 
-  predict_boost() — Primary entry point. ESPN PQI for all players.
-                    Confidence band narrows with more historical appearances,
-                    but the point prediction never uses prior boost values.
+Key insight: prev_boost → actual_boost correlation is +0.955 (1,846 pairs).
+88.2% of day-over-day changes are within ±0.3. MAE of naive prev_boost
+predictor is 0.140 vs 0.996 for a static 2.5 predictor (7x better).
 
-  estimate_boost_from_api() — Core PQI formula.
-                    MPG-based role detection (primary signal) + PPG quality
-                    (secondary) + recent form modifier.
-                    Calibrated from 2,234 player-date records (151 dates).
+  predict_boost() — Primary entry point. Routes to tier based on history.
+  _predict_tier1() — Returning player (≤14d gap): prev_boost + adjustments.
+  _predict_tier2() — Stale player (>14d gap): blend hist mean with PQI.
+  _predict_tier3() — Cold start (never seen): PQI from ESPN season stats.
+  estimate_boost_from_api() — PQI formula (used by Tier 2/3 only).
 
-Tier classification (for confidence/band only, NOT prediction):
-  Tier 1 — Player has 3+ prior appearances   (confidence: medium/high, band ±0.25–0.35)
-  Tier 2 — Player has 1–2 prior appearances  (confidence: medium, band ±0.40)
-  Tier 3 — Cold start (never seen)           (confidence: low, band ±0.50)
-
-DEPRECATED (kept for reference):
-  _predict_tier1() — old prev_boost + adjustments approach (used prior boost data)
-  _predict_tier2() — old historical blend approach (used prior boost data)
+Tier routing:
+  Tier 1 — Last appearance ≤14 days ago     (prev_boost + 6 adjustment factors)
+  Tier 2 — Last appearance >14 days ago     (hist mean blended with PQI estimate)
+  Tier 3 — Never seen on Real Sports        (PQI from season stats)
 """
 
 from __future__ import annotations
@@ -366,7 +363,7 @@ def predict_boost(
     player_name: str,
     today_str: str | None = None,
     *,
-    # ESPN-available stats (the ONLY inputs available on game day)
+    # ESPN-available stats
     season_ppg: float = 0,
     season_rpg: float = 0,
     season_apg: float = 0,
@@ -377,24 +374,20 @@ def predict_boost(
     ceiling: float = 3.0,
     floor: float = 0.0,
 ) -> dict:
-    """Predict card boost using ESPN-available signals only.
+    """Predict card boost via 3-tier historical cascade.
 
-    DESIGN PRINCIPLE: Boost changes dynamically every slate based on Real Sports'
-    algorithm. Prior boost values are NOT available on game day and must NOT be
-    used as inputs — doing so would leak post-game information into pre-game
-    predictions.
+    Routing logic:
+      1. Load player's appearance history from top_performers.csv
+      2. If player has appearances AND most recent is ≤14 days ago → Tier 1
+         (prev_boost + adjustment factors; MAE ~0.14)
+      3. If player has appearances but most recent is >14 days ago → Tier 2
+         (blend historical boost mean with PQI estimate)
+      4. If player has no appearances → Tier 3
+         (PQI from ESPN season stats; reasonable for unknowns)
 
-    The model predicts from only ESPN-available pre-game data:
-      - Season stats (PPG, RPG, APG, MPG)
-      - Recent performance vs season average (L5 rolling via ESPN gamelogs)
-      - Team / market context (applied in _est_card_boost() in index.py)
-
-    Historical data (top_performers.csv) is used ONLY to calibrate the
-    PQI → boost mapping (e.g., what boost does a 14 PPG / 28 MPG player
-    typically get?). Individual player boost history is never an input.
-
-    Tier classification affects confidence band width only — not the point
-    prediction. More history = tighter confidence band.
+    Historical boost data (prev_boost, prev_rs, prev_drafts) is known post-game
+    data from PRIOR slates — it is NOT leaked future data. Real Sports publishes
+    leaderboards after each slate, making this information available.
 
     Returns dict with:
       - boost: predicted boost (rounded to 0.1, clamped to [floor, ceiling])
@@ -409,51 +402,38 @@ def predict_boost(
     entries_with_boost = [e for e in player_entries if e.get("has_boost_data", False)]
     n_appearances = len(entries_with_boost)
 
-    # ── Core prediction: ESPN PQI only ───────────────────────────────────
-    # Same formula for ALL players — no prior boost data used at any level.
-    # MPG + PPG + recent form → predicted boost.
-    api_estimate = estimate_boost_from_api(
-        season_ppg, season_rpg, season_apg, season_mpg,
-        recent_ppg=recent_ppg,
-    )
-    predicted = _clamp_round(api_estimate, floor, ceiling)
+    # ── Route to appropriate tier ─────────────────────────────────────────
+    today = _parse_date(today_str) if today_str else date.today()
 
-    # ── Tier / confidence band ────────────────────────────────────────────
-    # More historical appearances → tighter confidence band.
-    # Band width reflects prediction uncertainty, not a blend adjustment.
-    if n_appearances >= 10:
-        tier = 1
-        confidence = "high"
-        band_width = 0.25
-    elif n_appearances >= 3:
-        tier = 1
-        confidence = "medium"
-        band_width = 0.35
-    elif n_appearances >= 1:
-        tier = 2
-        confidence = "medium"
-        band_width = 0.40
+    # Only use entries from BEFORE today (can't use today's boost to predict today)
+    if today:
+        prior_entries = [e for e in entries_with_boost
+                         if (_parse_date(e["date"]) or date.min) < today]
     else:
-        tier = 3
-        confidence = "low"
-        band_width = 0.50
+        prior_entries = entries_with_boost
 
-    reason = (
-        f"Tier {tier} (ESPN PQI, {n_appearances} appearances): "
-        f"ppg={season_ppg:.1f}, mpg={season_mpg:.1f}, "
-        f"recent={recent_ppg:.1f} → {predicted:.1f}"
-    )
+    if prior_entries:
+        last_date = _parse_date(prior_entries[-1]["date"])
+        gap_days = (today - last_date).days if last_date and today else 999
 
-    return {
-        "boost": predicted,
-        "tier": tier,
-        "confidence": confidence,
-        "confidence_band": (
-            _clamp_round(predicted - band_width, floor, ceiling),
-            _clamp_round(predicted + band_width, floor, ceiling),
-        ),
-        "reason": reason,
-    }
+        if gap_days <= _TIER1_MAX_GAP_DAYS:
+            # Tier 1: Returning player — use prev_boost + adjustments
+            return _predict_tier1(
+                prior_entries, gap_days, season_mpg, ceiling, floor,
+            )
+        else:
+            # Tier 2: Stale player — blend historical mean with PQI
+            return _predict_tier2(
+                prior_entries, gap_days,
+                season_ppg, season_rpg, season_apg, season_mpg,
+                ceiling, floor,
+            )
+    else:
+        # Tier 3: Cold start — PQI from ESPN season stats
+        return _predict_tier3(
+            season_ppg, season_rpg, season_apg, season_mpg,
+            ceiling, floor,
+        )
 
 
 def _predict_tier1(
@@ -463,16 +443,22 @@ def _predict_tier1(
     ceiling: float,
     floor: float,
 ) -> dict:
-    """DEPRECATED — Do not call. Retained for reference only.
+    """Tier 1: Returning player (last appearance ≤14 days ago).
 
-    Used prior-day boost, RS, and draft counts as inputs — data that is NOT
-    available on game day. The new predict_boost() uses ESPN-only signals.
+    Uses prev_boost as base, then applies 6 adjustment factors calibrated
+    from 1,846 prev→actual pairs across 151 dates:
+      - Factor 0: General downward drift (-0.03, corrects +0.242 bias)
+      - Factor 1: RS performance decay (high RS → drop, bust → rise)
+      - Factor 2: Draft popularity (Spearman -0.732 with boost)
+      - Factor 3: Mean reversion toward tier baseline (5-8%)
+      - Factor 4: Trend continuation (15% of last direction)
+      - Factor 5: Gap-day blend toward baseline
+      - Factor 6: Rising popularity signal
 
-    Calibrated from 148-date backtest (2024-12 – 2026-03):
-    - Overall day-over-day boost changes: median 0.0, mean -0.052
-    - Mid-RS (3-5) average drift: -0.077/appearance
-    - Low-pop (<50 drafts) drift: -0.094/appearance
-    - High-RS (≥5) drift: -0.040/appearance
+    Boundary persistence: 3.0 stays 3.0 in ~75% of cases; stars at 0.0
+    almost never gain boost.
+
+    Expected MAE: ~0.14 (vs 0.996 for static 2.5 predictor).
     """
     prev = entries[-1]
     base = prev["boost"]
@@ -629,7 +615,11 @@ def _predict_tier2(
     ceiling: float,
     floor: float,
 ) -> dict:
-    """DEPRECATED — Do not call. Retained for reference only."""
+    """Tier 2: Known player, stale (last appearance >14 days ago).
+
+    Blends historical boost mean with PQI estimate, weighted by staleness.
+    At 14 days: 100% historical mean. At 44+ days: 50/50 blend.
+    """
     all_boosts = [e["boost"] for e in entries]
     hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else 1.5
 
@@ -668,7 +658,12 @@ def _predict_tier3(
     ceiling: float,
     floor: float,
 ) -> dict:
-    """DEPRECATED — Cold start path. predict_boost() now handles all players identically."""
+    """Tier 3: Cold start (never seen on Real Sports).
+
+    Uses PQI from ESPN season stats. Stars (25+ PPG) get low boost;
+    bench players (low PPG/MPG) get high boost. Reasonable default
+    when no historical data exists.
+    """
     api_estimate = estimate_boost_from_api(season_ppg, season_rpg, season_apg, season_mpg)
     predicted = _clamp_round(api_estimate, floor, ceiling)
 
@@ -690,6 +685,16 @@ def _predict_tier3(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _parse_date(s: str | None) -> date | None:
+    """Parse YYYY-MM-DD string to date, or None on failure."""
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s.strip(), "%Y-%m-%d").date()
+    except (ValueError, AttributeError):
+        return None
+
 
 def _clamp_round(x: float, floor_val: float, ceiling: float) -> float:
     """Clamp to [floor, ceiling] and round to nearest 0.1 (Real Sports precision)."""
