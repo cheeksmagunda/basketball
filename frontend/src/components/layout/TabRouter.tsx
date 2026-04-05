@@ -7,15 +7,38 @@ const LineTab = lazy(() => import('../line/LineTab'));
 const ParlayTab = lazy(() => import('../parlay/ParlayTab'));
 const BenTab = lazy(() => import('../ben/BenTab'));
 
+// Shown only during lazy JS chunk download (~50-200ms). After the chunk loads,
+// each tab renders its own skeleton/loading state via React Query.
+function TabLoadingFallback() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '200px', opacity: 0.5,
+    }}>
+      <div style={{
+        width: '24px', height: '24px', border: '3px solid rgba(212,166,64,0.3)',
+        borderTopColor: 'var(--line)', borderRadius: '50%',
+        animation: 'spin 0.8s linear infinite',
+      }} />
+    </div>
+  );
+}
+
 export default function TabRouter() {
   const activeTab = useUiStore((s) => s.activeTab);
 
   return (
-    <Suspense fallback={null}>
+    <>
       {activeTab === 'predictions' && <PredictTab />}
-      {activeTab === 'line' && <LineTab />}
-      {activeTab === 'parlay' && <ParlayTab />}
-      {activeTab === 'lab' && <BenTab />}
-    </Suspense>
+      {activeTab === 'line' && (
+        <Suspense fallback={<TabLoadingFallback />}><LineTab /></Suspense>
+      )}
+      {activeTab === 'parlay' && (
+        <Suspense fallback={<TabLoadingFallback />}><ParlayTab /></Suspense>
+      )}
+      {activeTab === 'lab' && (
+        <Suspense fallback={<TabLoadingFallback />}><BenTab /></Suspense>
+      )}
+    </>
   );
 }
