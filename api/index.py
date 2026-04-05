@@ -1151,17 +1151,10 @@ _CONFIG_DEFAULTS = {
         "anti_popularity_enabled": True, # Finding 4: -0.457 correlation, 24% value edge
         "anti_popularity_strength": 0.2, # Boost penalty per unit of estimated popularity
         "max_per_team": 1,              # Keep at 1 for now — team stacking risk too high
-        # ── HYBRID lineup construction (Winning Draft Audit) ──────────────
-        # Data: 94 rank-1 winners show 38.4% zero-boost players, HYBRID archetype
-        # (star anchor + boost wings) scores 73.7 avg vs 48.4 for boost-hunters.
-        # Top 2 slots (2.0x, 1.8x) avg RS 5.80 with 0.69 boost — pure RS selection.
-        # Bottom 2 slots (1.4x, 1.2x) avg boost 2.33 — boost-weighted selection.
-        "hybrid_lineup_enabled": True,  # Enable 2-phase lineup construction
-        "star_slots_count": 1,          # Number of top slots filled by pure RS (1 star at 2.0x)
-        "star_rs_min": 4.0,             # Minimum RS to be considered for star slot (even with 0 boost)
-        "boost_pool_min_boost": 2.0,    # Retained for compat — no longer enforced (91.5% vs 85%)
-        "starter_slots_count": 1,       # Retained for compat — no longer enforced
-        "starter_rs_min": 3.0,          # Retained for compat — no longer enforced
+        # ── Unified EV lineup construction ────────────────────────────────
+        # EV = RS × (avg_slot + boost). No hardcoded star/role archetype.
+        # The formula naturally selects stars when RS is dominant, role players
+        # when boost is dominant — slate composition determines the mix each day.
         # ── Contrarian bonus (Finding 4: 22.7% of leaderboard, avg value 18.0)
         # Low-PPG role players with high boost are under-drafted. They keep their
         # boost 98.9% of the time and produce outsized value. Small EV uplift.
@@ -4908,23 +4901,22 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
 
 
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None, n_games=None):
-    """HYBRID lineup builder (Winning Draft Audit v2).
+    """Dynamic lineup builder — unified EV formula, no hardcoded archetypes.
 
-    Data-driven 2-phase pipeline based on 94 rank-1 winning lineups:
-      - 70.4% of winning value comes from slot multipliers (RS × slot)
-      - 29.6% from card boosts (RS × boost)
-      - HYBRID archetype (star + boost wings) scores 73.7 avg vs 48.4 boost-hunters
-      - 2.0x slot winners avg RS 5.80, boost 0.69 (RS is king at top)
-      - 1.2x slot winners avg RS 3.76, boost 2.33 (boost is king at bottom)
+    EV formula: RS × (1.6 + boost) × data_multipliers
+      Where 1.6 = mean slot multiplier ([2.0, 1.8, 1.6, 1.4, 1.2]).
+      This correctly values both RS and boost relative to actual game scoring.
+      Stars (high RS, low boost) and role players (moderate RS, high boost)
+      rank on equal footing — the slate's player pool determines the mix.
 
     Pipeline:
       1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
-      2. Score: EV = RS × (2.0 + boost), safe_ev, upside_ev
-      3. HYBRID Starting 5:
-         Phase A — Top 1 slot by PURE RS (star anchor at 2.0x)
-         Phase B — Bottom 4 slots by EV (boost-weighted, catches role players)
-      4. Moonshot: top 5 by upside_ev from REMAINING pool
-      5. Slot assignment: sort by RS descending (provably optimal)
+      2. Score: safe_ev = RS × (1.6 + cb_low), upside_ev = RS × (1.6 + cb_high)
+         Plus data-driven multipliers (minutes delta, leaderboard frequency,
+         contrarian bonus for under-drafted high-boost role players)
+      3. Starting 5: top 5 by safe_ev (floor reliability), team cap applied
+      4. Moonshot: top 5 by upside_ev from remaining pool (ceiling)
+      5. Slot assignment: sort both lineups by RS descending (provably optimal)
     """
     # ── Configuration ──────────────────────────────────────────────────────
     _strat = _cfg("strategy", {}) or {}
@@ -5027,23 +5019,33 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         max_per_team = 2
         print(f"[build_lineups] only {_unique_teams} teams in pool, relaxing max_per_team to 2 for coverage")
 
-    # ── Step 2: Score by EV = RS × boost ─────────────────────────────────
-    # EV does NOT factor in slot multiplier — slot assignment happens in Step 6
-    # via RS-descending sort (provably optimal). EV here is purely about which
-    # players to SELECT, not where to slot them.
-    # safe_ev uses the low end of the boost confidence band (conservative floor).
-    # upside_ev uses the high end (optimistic ceiling for moonshot).
-    # Minutes increase bonus rewards players stepping into expanded roles.
+    # ── Step 2: Score by unified EV = RS × (avg_slot + boost) ────────────
+    # Formula: EV = RS × (1.6 + boost), where 1.6 = avg([2.0,1.8,1.6,1.4,1.2]).
+    #
+    # Why 1.6 + boost (not just boost):
+    #   A star (RS=6, boost=0.3) at the 2.0x slot earns 6×(2.0+0.3)=13.8 total.
+    #   A role player (RS=3, boost=3.0) at the 1.2x slot earns 3×(1.2+3.0)=12.6.
+    #   RS × boost alone gives 1.8 vs 9.0, wildly wrong relative to actual scoring.
+    #   RS × (1.6 + boost) gives 11.4 vs 13.8 — much closer to reality, and both
+    #   players could legitimately be optimal depending on the full slate pool.
+    #   The formula naturally selects stars when they're valuable, role players when
+    #   they're not — no hardcoded archetype required.
+    #
+    # safe_ev uses cb_low (conservative boost floor) — prefer for Starting 5.
+    # upside_ev uses cb_high (optimistic boost ceiling) — prefer for Moonshot.
+    #
+    # Data-driven multipliers still applied:
+    #   - minutes_increase_ev_bonus: rewards players stepping into expanded roles
+    #   - leaderboard_frequency: proven repeat leaderboard performers get small edge
+    #   - contrarian_bonus: under-drafted role players with high boost get small edge
+    _avg_slot = float(_cfg("lineup.avg_slot_multiplier", 1.6) or 1.6)
+
     _mi_cfg = _strat.get("minutes_increase_ev_bonus", {})
     _mi_enabled = _mi_cfg.get("enabled", True)
     _mi_min_delta = float(_mi_cfg.get("min_delta", 4.0))
     _mi_bonus_per_min = float(_mi_cfg.get("bonus_per_min", 0.02))
     _mi_max_bonus = float(_mi_cfg.get("max_bonus", 0.15))
 
-    # ── Leaderboard frequency bonus (Winning Draft Audit) ─────────────────
-    # Players who appear 5+ times on the leaderboard are proven performers.
-    # Data: 25+ players appear 5+ times with avg value 12-17. Give them a
-    # small EV bonus (up to 10%) to prefer proven winners over unknowns.
     _lb_freq = {}
     _lb_cfg = _strat.get("leaderboard_frequency", {})
     _lb_enabled = _lb_cfg.get("enabled", True)
@@ -5056,10 +5058,6 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         except Exception:
             pass
 
-    # ── Contrarian bonus (Finding 4: low-draft role players are under-valued) ─
-    # Data: Spearman drafts-boost = -0.732. Low-PPG players with high boost keep
-    # boost 98.9% of the time and make up 22.7% of the leaderboard (avg value 18.0).
-    # Give them a small EV uplift so they rank above similarly-projected players.
     _ct_cfg = _strat.get("contrarian_bonus", {})
     _ct_enabled = _ct_cfg.get("enabled", True)
     _ct_max_bonus = float(_ct_cfg.get("max_bonus", 0.10))
@@ -5074,7 +5072,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             cb_low, cb_high = float(band[0]), float(band[1])
         else:
             cb_low = cb_high = boost
-        # Minutes increase EV multiplier: reward players stepping into expanded roles
+        # Minutes increase multiplier: reward expanded-role players
         mi_mult = 1.0
         if _mi_enabled:
             pred_min = float(p.get("predMin", 0))
@@ -5082,7 +5080,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             mi_delta = pred_min - season_min
             if mi_delta >= _mi_min_delta:
                 mi_mult = 1.0 + min(_mi_bonus_per_min * (mi_delta - _mi_min_delta), _mi_max_bonus)
-        # Leaderboard frequency bonus: proven repeat performers get an EV edge
+        # Leaderboard frequency bonus
         lb_mult = 1.0
         if _lb_enabled and _lb_freq:
             _pname_norm = _normalize_player_name(p.get("name", ""))
@@ -5097,21 +5095,20 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if _ct_enabled:
             _season_ppg = float(p.get("season_pts") or p.get("pts") or 0)
             if boost >= _ct_min_boost and _season_ppg <= _ct_max_ppg and _season_ppg > 0:
-                # Scale bonus by how much boost exceeds threshold (2.0→0%, 3.0→full)
                 _ct_ratio = min((boost - _ct_min_boost) / max(1.0, 3.0 - _ct_min_boost), 1.0)
                 ct_mult = 1.0 + (_ct_max_bonus * _ct_ratio)
                 p["_contrarian"] = True
         total_mult = mi_mult * lb_mult * ct_mult
-        p["draft_ev"]   = round(rs * boost * total_mult, 2)
-        p["safe_ev"]    = round(rs * cb_low * total_mult, 2)
-        p["upside_ev"]  = round(rs * cb_high * total_mult, 2)
-        p["_mi_mult"] = round(mi_mult, 3)
-        p["_lb_mult"] = round(lb_mult, 3)
-        p["_ct_mult"] = round(ct_mult, 3)
-        # Compute moonshot_ev for backward compatibility
+        # Unified EV: RS × (avg_slot + boost) captures both RS and boost value
+        p["draft_ev"]  = round(rs * (_avg_slot + boost)    * total_mult, 2)
+        p["safe_ev"]   = round(rs * (_avg_slot + cb_low)   * total_mult, 2)
+        p["upside_ev"] = round(rs * (_avg_slot + cb_high)  * total_mult, 2)
+        p["_mi_mult"]  = round(mi_mult, 3)
+        p["_lb_mult"]  = round(lb_mult, 3)
+        p["_ct_mult"]  = round(ct_mult, 3)
         p["moonshot_ev"] = p["draft_ev"]
 
-    # ── Step 3: Rank by safe_ev descending ─────────────────────────────────
+    # ── Step 3: Sort candidate pool by safe_ev ──────────────────────────────
     candidate_pool.sort(key=lambda x: (-x.get("safe_ev", 0), -x.get("rating", 0)))
 
     def _select_with_team_cap(pool, n, max_team, exclude_names=None):
@@ -5131,75 +5128,26 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             team_counts[team] = team_counts.get(team, 0) + 1
         return selected, team_counts
 
-    # ── Step 4: Starting 5 — 1 star anchor + 4 best EV ──────────────────
-    # Full-season analysis (153 dates, 2330 performers) proves:
-    #   - "1 star + 4 ev (no floor)" captures 10/15 top performers 91.5%
-    #   - Adding ANY boost floor only hurts (2.0 floor → 85%, 1.5 → 90.8%)
-    #   - Winners are a mix: avg 5.5 stars + 5.4 boost + 1.5 unicorns per date
-    #   - EV = RS × boost naturally selects the right mix without constraints
-    # Phase A: 1 guaranteed star anchor (highest RS ≥ star_rs_min) at 2.0x
-    # Phase B: 4 best remaining by EV — no boost floor, let the math decide
-    _hybrid_enabled = bool(_strat.get("hybrid_lineup_enabled", True))
-    _star_rs_min = float(_strat.get("star_rs_min", 4.0))
+    # ── Step 4: Starting 5 — top 5 by safe_ev with team cap ─────────────
+    # No hardcoded archetypes. The unified EV formula (RS × (1.6 + boost))
+    # naturally balances stars vs role players per-slate:
+    #   - Star slates: high RS pushes stars to top even with low boost
+    #   - Role-player slates: high boost dominates when RS is moderate
+    #   - Mixed slates: the formula finds the true optimal mix
+    # Both lineups drawn from the same pool. Starting 5 uses safe_ev (cb_low)
+    # for floor reliability. Moonshot uses upside_ev (cb_high) for ceiling.
+    safe_pool = sorted(candidate_pool, key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
+    chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)
+    chalk_names = {p.get("name") for p in chalk}
 
-    def _build_hybrid_lineup(pool, exclude_names=None, sort_key="safe_ev"):
-        """Build 5-player lineup: 1 star anchor + 4 best by EV.
-        Returns (lineup_players, used_names)."""
-        _excl = exclude_names or set()
-        avail = [p for p in pool if p.get("name") not in _excl]
-        lineup = []
-        used_teams = set()
-        used_names = set()
-
-        # Phase A: 1 star anchor (highest RS, RS >= star_rs_min)
-        star_candidates = sorted(
-            [p for p in avail if float(p.get("rating", 0)) >= _star_rs_min],
-            key=lambda x: (-float(x.get("rating", 0)), x.get("player_variance", 0))
-        )
-        if not star_candidates:
-            star_candidates = sorted(avail, key=lambda x: -float(x.get("rating", 0)))
-        for c in star_candidates:
-            team = (c.get("team") or "").upper()
-            if team and team in used_teams:
-                continue
-            lineup.append(c)
-            used_teams.add(team)
-            used_names.add(c.get("name"))
-            break
-
-        # Phase B: 4 best remaining by EV — no boost floor
-        remaining = sorted(
-            [p for p in avail if p.get("name") not in used_names],
-            key=lambda x: (-x.get(sort_key, 0), x.get("player_variance", 0))
-        )
-        for c in remaining:
-            team = (c.get("team") or "").upper()
-            if team and team in used_teams:
-                continue
-            lineup.append(c)
-            used_teams.add(team)
-            used_names.add(c.get("name"))
-            if len(lineup) >= 5:
-                break
-
-        return lineup, used_names
-
-    if _hybrid_enabled and len(candidate_pool) >= 5:
-        chalk, chalk_names = _build_hybrid_lineup(candidate_pool, sort_key="safe_ev")
-    else:
-        safe_pool = list(candidate_pool)
-        safe_pool.sort(key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
-        chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)
-        chalk_names = {p.get("name") for p in chalk}
-
-    # ── Step 5: Moonshot — 1 star + 4 best upside EV from remaining ──────
-    # Same structure, different players, sorted by upside_ev for ceiling.
-    if _hybrid_enabled and len(candidate_pool) >= 10:
-        upside, _ = _build_hybrid_lineup(candidate_pool, exclude_names=chalk_names, sort_key="upside_ev")
-    else:
-        moonshot_pool = [p for p in candidate_pool if p.get("name") not in chalk_names]
-        moonshot_pool.sort(key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0)))
-        upside, _ = _select_with_team_cap(moonshot_pool, 5, max_per_team)
+    # ── Step 5: Moonshot — top 5 by upside_ev from remaining pool ───────
+    # Same candidates as chalk pool, different ordering (upside_ev vs safe_ev).
+    # Moonshot players are expected to diverge 1-3 players from the Starting 5.
+    moonshot_pool = sorted(
+        [p for p in candidate_pool if p.get("name") not in chalk_names],
+        key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0))
+    )
+    upside, _ = _select_with_team_cap(moonshot_pool, 5, max_per_team)
 
     # ── Step 6: Assign slots by RS descending (Finding 3) ──────────────────
     # Provably optimal: highest RS → 2.0x, next → 1.8x, etc.

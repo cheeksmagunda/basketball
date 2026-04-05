@@ -1,7 +1,7 @@
 {
-  "version": 89,
-  "updated_at": "2026-04-04T00:00:00Z",
-  "updated_by": "v89-70-30-blend-espn-injury-return",
+  "version": 90,
+  "updated_at": "2026-04-05T00:00:00Z",
+  "updated_by": "v90-dynamic-lineup-boost-espn-only",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -49,16 +49,8 @@
       "intercept": 3.34,
       "slope": -0.71
     },
-    "team_boost_ceiling": {
-      "GS": 1.8,
-      "GSW": 1.8,
-      "CLE": 1.7,
-      "MEM": 1.5,
-      "OKC": 1.8,
-      "BOS": 1.8,
-      "DEN": 2.0,
-      "MIL": 2.0
-    }
+    "team_boost_ceiling": {}
+
   },
   "game_script": {
     "defensive_grind_ceiling": 220,
@@ -802,15 +794,10 @@
     "ev_swap_threshold": 2.0,
     "max_upside_swaps": 2,
     "max_per_team": 1,
-    "anti_popularity_enabled": true,
-    "anti_popularity_strength": 0.2,
+    "anti_popularity_enabled": false,
+    "anti_popularity_strength": 0.0,
     "min_pred_min_season_ratio": 1.0,
-    "hybrid_lineup_enabled": true,
-    "star_slots_count": 1,
-    "star_rs_min": 4.0,
-    "boost_pool_min_boost": 2.0,
-    "starter_slots_count": 1,
-    "starter_rs_min": 3.0,
+    "hybrid_lineup_enabled": false,
     "contrarian_bonus": {
       "enabled": true,
       "max_bonus": 0.10,
