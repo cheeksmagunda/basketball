@@ -3,11 +3,8 @@
 // 2-column game card grid → header row + THE LINE UP (5-player optimal lineup).
 // ============================================================================
 
-import { useState, useCallback, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState, useCallback } from 'react';
 import { useGames, usePicks } from '../../api/slate';
-import { fetchJson } from '../../api/client';
-import type { PicksData } from '../../types';
 import PlayerCard from '../shared/PlayerCard';
 import SkeletonCard from '../shared/SkeletonCard';
 import EmptyState from '../shared/EmptyState';
@@ -47,21 +44,16 @@ export default function GameView() {
     setSelectedGame(null);
   }, []);
 
-  // Prefetch all game picks as soon as the games list loads so card clicks are instant.
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    if (!games || games.length === 0) return;
-    for (const g of games) {
-      queryClient.prefetchQuery({
-        queryKey: ['picks', g.gameId],
-        queryFn: () => fetchJson<PicksData>(`/api/picks?gameId=${g.gameId}`, 15_000),
-        staleTime: 5 * 60 * 1000,
-      });
-    }
-  }, [games, queryClient]);
-
-  // Loading games list
-  if (gamesLoading) return <SkeletonCard count={1} />;
+  // Loading games list — show skeleton grid matching game card layout
+  if (gamesLoading) {
+    return (
+      <div className={styles.grid}>
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className={styles.gameCardSkeleton} />
+        ))}
+      </div>
+    );
+  }
 
   // ── VIEW A: Game card grid (no game selected) ──
   if (!selectedGame) {

@@ -7,6 +7,7 @@ import { useUiStore } from '../../store/uiStore';
 import SlidingPillNav from '../shared/SlidingPillNav';
 import SlateView from './SlateView';
 import GameView from './GameView';
+import styles from './PredictTab.module.css';
 
 const PREDICT_SUBS = [
   { key: 'slate', label: 'Slate-Wide' },
@@ -18,7 +19,7 @@ export default function PredictTab() {
   const setPredictSub = useUiStore((s) => s.setPredictSub);
 
   return (
-    <div className="tab-page active">
+    <div className={styles.root}>
       <SlidingPillNav
         items={[...PREDICT_SUBS]}
         activeKey={predictSub}

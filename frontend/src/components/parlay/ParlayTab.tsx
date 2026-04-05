@@ -27,7 +27,7 @@ export default function ParlayTab() {
     return (
       <div className={styles.root}>
         <EmptyState
-          icon="&nbsp;"
+          icon=""
           message="Couldn't load parlay."
           action={{ label: 'Retry', onClick: () => refetch() }}
         />
@@ -39,7 +39,7 @@ export default function ParlayTab() {
     return (
       <div className={styles.root}>
         <EmptyState
-          icon="&nbsp;"
+          icon=""
           message={parlay.error || "No valid parlay found for today's slate."}
         />
         <ParlayHistory

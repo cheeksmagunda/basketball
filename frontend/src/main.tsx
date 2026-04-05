@@ -25,7 +25,7 @@ queryClient.prefetchQuery({ queryKey: ['slate'], queryFn: () => fetchJson('/api/
 queryClient.prefetchQuery({
   queryKey: ['games'],
   queryFn: async () => {
-    const res = await fetchJson<{ data: unknown[] }>('/api/games', 10_000);
+    const res = await fetchJson<{ data: unknown[] }>('/api/games', 15_000);
     return res.data ?? [];
   },
 });
