@@ -33,14 +33,6 @@ body::after {
 /* Uppercase letter-spacing for readability (buttons, labels, metadata) */
 [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: var(--tracking-caps); }
 
-/* ── TAB PAGES ── */
-.tab-page { display: none; }
-.tab-page.active { display: block; padding-top: 10px; padding-bottom: 90px; }
-
-/* Predict sub-pages */
-.predict-sub-page { display: none; }
-.predict-sub-page.active { display: block; padding-bottom: 0; }
-
 /* ── DIVIDER ── */
 .divider {
   height: 1px;

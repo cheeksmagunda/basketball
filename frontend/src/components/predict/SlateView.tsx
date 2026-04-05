@@ -9,6 +9,7 @@ import { useUiStore } from '../../store/uiStore';
 import type { SlateData, SlateLineups } from '../../types';
 import SlidingPillNav from '../shared/SlidingPillNav';
 import PlayerCard from '../shared/PlayerCard';
+import SkeletonCard from '../shared/SkeletonCard';
 import EmptyState from '../shared/EmptyState';
 import LateDraftBanner from './LateDraftBanner';
 import { TEAM_COLORS } from '../../utils/teamColors';
@@ -26,8 +27,9 @@ export default function SlateView() {
   const slateMode = useUiStore((s) => s.slateMode);
   const setSlateMode = useUiStore((s) => s.setSlateMode);
 
-  // Initial load handled by App-level OracleLoader; nothing to render yet
-  if (isLoading && !slate) return null;
+  // Show skeleton while loading (OracleLoader covers initial app load;
+  // this handles re-navigation after cache expiry)
+  if (isLoading && !slate) return <SkeletonCard count={5} />;
 
   // Error or failed slate
   if (error || !slate || slate.error) {

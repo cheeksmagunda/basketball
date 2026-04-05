@@ -45,10 +45,12 @@ export function useGames() {
   return useQuery<GamesResponse>({
     queryKey: ['games'],
     queryFn: async () => {
-      const res = await fetchJson<{ data: GamesResponse }>('/api/games', 10_000);
+      const res = await fetchJson<{ data: GamesResponse }>('/api/games', 15_000);
       return res.data ?? [];
     },
     staleTime: 60 * 1000, // 60s — matches backend cache TTL so lock status stays fresh
+    retry: 1,
+    retryDelay: 5_000,
   });
 }
 
@@ -63,9 +65,11 @@ export function useGames() {
 export function usePicks(gameId: string | null) {
   return useQuery<PicksData>({
     queryKey: ['picks', gameId],
-    queryFn: () => fetchJson<PicksData>(`/api/picks?gameId=${gameId}`, 15_000),
+    queryFn: () => fetchJson<PicksData>(`/api/picks?gameId=${gameId}`, 30_000),
     enabled: !!gameId,
     staleTime: 5 * 60 * 1000, // 5 min
+    retry: 1,
+    retryDelay: 5_000,
   });
 }
 
