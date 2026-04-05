@@ -101,7 +101,7 @@ export default function GameView() {
               </div>
               <div className={styles.gameCardMeta}>
                 {meta || '\u00a0'}
-                {g.locked ? ' \uD83D\uDD12' : ''}
+                {(g.draftable === false || g.locked) ? ' \uD83D\uDD12' : ''}
               </div>
             </div>
           );

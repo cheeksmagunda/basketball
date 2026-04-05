@@ -768,7 +768,7 @@ _CACHE_KEYS = {
 # Response cache TTLs per endpoint (seconds). Override defaults here.
 _CACHE_TTLS = {
     "slate": 60,            # 60s — burst protection; short TTL ensures lock state propagates promptly
-    "games": 300,           # 5min — ESPN updates periodically
+    "games": 60,            # 60s — matches slate TTL; lock status must propagate promptly
     "line": 1800,           # 30min — line picks are static after generation
     "line_history": 600,    # 10min — historical picks rarely change
     "parlay": 1800,         # 30min — odds refresh cron updates it once-per-slate
