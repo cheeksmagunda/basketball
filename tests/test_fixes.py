@@ -6357,15 +6357,15 @@ class TestLeaderboardFrequency:
         assert lb.get("enabled") is True
 
 
-class TestBoostModelESPNOnly:
-    """Verify boost model uses ONLY ESPN-available data for daily predictions.
+class TestBoostModelHistoricalCascade:
+    """Verify boost model uses 3-tier historical cascade for predictions.
 
-    Winning Draft Audit: the old model used prior-day boost/RS/drafts as inputs,
-    but that data isn't available on game day. The new model uses ESPN season stats
-    + historically-calibrated PQI mapping."""
+    Key insight: prev_boost → actual_boost correlation is +0.955 (1,846 pairs).
+    88.2% of day-over-day changes are within ±0.3. MAE of naive prev_boost
+    predictor is 0.140 vs 0.996 for a static 2.5 predictor (7x better)."""
 
     def test_predict_boost_uses_espn_signals(self):
-        """predict_boost should use season_ppg/rpg/apg/mpg (ESPN available)."""
+        """predict_boost should accept season_ppg/rpg/apg/mpg (ESPN available)."""
         from api.boost_model import predict_boost
         result = predict_boost(
             "Test Player",
@@ -6382,7 +6382,6 @@ class TestBoostModelESPNOnly:
     def test_cold_start_uses_pqi(self):
         """Cold start player should use PQI from season stats."""
         from api.boost_model import predict_boost
-        # Deep bench player (low PPG) → should get high boost
         result = predict_boost(
             "Unknown Bench Player XYZABC",
             season_ppg=5.0,
@@ -6404,39 +6403,35 @@ class TestBoostModelESPNOnly:
         )
         assert result["boost"] <= 0.5, "Superstar should get low boost"
 
-    def test_predict_boost_does_not_use_prev_boost(self):
-        """predict_boost signature should not require prev_boost as input."""
+    def test_tier1_uses_prev_boost(self):
+        """Tier 1 should route to _predict_tier1 which uses prev_boost data."""
         from api.boost_model import predict_boost
-        import inspect
-        sig = inspect.signature(predict_boost)
-        param_names = list(sig.parameters.keys())
-        assert "prev_boost" not in param_names, "Should not take prev_boost as input"
-
-    def test_design_principle_documented(self):
-        """Boost model should document the ESPN-only design principle."""
         src = open("api/boost_model.py").read()
-        assert "ESPN" in src
-        assert "game day" in src.lower() or "game-day" in src.lower()
+        predict_fn = src.split("def predict_boost(")[1].split("\ndef ")[0]
+        assert "_predict_tier1" in predict_fn, \
+            "predict_boost should call _predict_tier1 for returning players"
+
+    def test_cascade_design_documented(self):
+        """Boost model should document the 3-tier cascade design."""
+        src = open("api/boost_model.py").read()
+        assert "3-Tier" in src or "3-tier" in src
+        assert "prev_boost" in src
 
     def test_boost_model_loads_most_popular(self):
         """Boost model should load data/most_popular/ for historical calibration."""
         src = open("api/boost_model.py").read()
         assert "most_popular" in src
 
-    def test_historical_weight_capped(self):
-        """predict_boost should NOT blend prior boost data — ESPN signals only.
-
-        The old model used hist_boost_mean at up to 40% weight (hist_weight).
-        That violates the constraint: prev boost is unavailable on game day.
-        The new model uses ESPN PQI for all players regardless of history."""
+    def test_tier_routing_uses_history(self):
+        """predict_boost should route to Tier 1/2 when player has history,
+        and to Tier 3 only for cold-start (never seen) players."""
         src = open("api/boost_model.py").read()
-        # hist_weight / hist_boost_mean should NOT appear in predict_boost()
-        predict_boost_fn = src.split("def predict_boost(")[1].split("\ndef ")[0]
-        assert "hist_boost_mean" not in predict_boost_fn, \
-            "predict_boost should not blend historical boost averages (prior data)"
-        # The ESPN-only path should always be used
-        assert "estimate_boost_from_api" in predict_boost_fn, \
-            "predict_boost should call estimate_boost_from_api for all players"
+        predict_fn = src.split("def predict_boost(")[1].split("\ndef ")[0]
+        assert "_predict_tier1" in predict_fn, "Should route to Tier 1"
+        assert "_predict_tier2" in predict_fn, "Should route to Tier 2"
+        assert "_predict_tier3" in predict_fn, "Should route to Tier 3"
+        assert "prior_entries" in predict_fn or "gap_days" in predict_fn, \
+            "Should compute gap from history to determine tier"
 
 
 class TestMaxPerTeamUnchanged:
