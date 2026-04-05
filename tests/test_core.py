@@ -61,13 +61,13 @@ class TestHelpers:
         from api.index import _est_card_boost
 
         # Star: high PPG → low PQI → low boost
-        star_boost, _ = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL",
-                                         player_name="Test Star XYZ", season_pts=28.0,
-                                         season_avg_min=35.0)
+        star_boost, _, _t = _est_card_boost(proj_min=35, pts=28, team_abbr="LAL",
+                                             player_name="Test Star XYZ", season_pts=28.0,
+                                             season_avg_min=35.0)
         # Bench: low PPG → high PQI → high boost
-        bench_boost, _ = _est_card_boost(proj_min=12, pts=6, team_abbr="MEM",
-                                          player_name="Test Bench XYZ", season_pts=6.0,
-                                          season_avg_min=12.0)
+        bench_boost, _, _t = _est_card_boost(proj_min=12, pts=6, team_abbr="MEM",
+                                              player_name="Test Bench XYZ", season_pts=6.0,
+                                              season_avg_min=12.0)
 
         assert bench_boost > star_boost, (
             f"bench boost {bench_boost:.2f} should exceed star boost {star_boost:.2f}"
@@ -76,7 +76,7 @@ class TestHelpers:
     def test_est_card_boost_nonnegative(self):
         from api.index import _est_card_boost
         for mins, pts in [(5, 2), (20, 10), (38, 30)]:
-            boost, _ = _est_card_boost(mins, pts, "GSW")
+            boost, _, _t = _est_card_boost(mins, pts, "GSW")
             assert boost >= 0
 
     def test_cache_roundtrip(self):

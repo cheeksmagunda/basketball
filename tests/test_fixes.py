@@ -286,7 +286,7 @@ class TestPerTierCalibration:
         def mock_cfg(key, default=None):
             return cfg_overrides.get(key, original_cfg(key, default))
         with patch('api.index._cfg', side_effect=mock_cfg):
-            with patch('api.index._est_card_boost', return_value=(1.5, (1.2, 1.8))):
+            with patch('api.index._est_card_boost', return_value=(1.5, (1.2, 1.8), 1)):
                 with patch('api.index._github_get_file', return_value=(None, None)):
                     result = project_player(pinfo, stats, 2.0, 222.0, "away", "SAS", 0.0, False)
         # With scale 1.50 for role players, RS should be higher than with 1.00
@@ -311,7 +311,7 @@ class TestPerTierCalibration:
         def mock_cfg(key, default=None):
             return cfg_overrides.get(key, original_cfg(key, default))
         with patch('api.index._cfg', side_effect=mock_cfg):
-            with patch('api.index._est_card_boost', return_value=(0.3, (0.2, 0.4))):
+            with patch('api.index._est_card_boost', return_value=(0.3, (0.2, 0.4), 1)):
                 with patch('api.index._github_get_file', return_value=(None, None)):
                     star_result = project_player(pinfo, stats, 2.0, 222.0, "home", "OKC", 0.0, False)
         # Just verify it ran without error — exact RS comparison is fragile due to LightGBM
@@ -1799,37 +1799,39 @@ class TestBoostModelInference:
         """Cold start (Tier 3): unknown role player should get high boost (2.5+).
         Uses a small-market team to avoid per-team boost ceiling caps."""
         from api.index import _est_card_boost
-        b, _ = _est_card_boost(
+        b, _, tier = _est_card_boost(
             20.0, 8.0, "SAS", "Nobody Cold Start XYZ",
             season_pts=8.0, recent_pts=9.0, cascade_bonus=0.0, is_home=True,
             projected_rs=3.5, season_avg_min=20.0, player_pos="G",
         )
         assert b >= 2.0, f"Cold start role player should get high boost, got {b}"
+        assert tier == 3
 
     def test_est_card_boost_tier3_cold_start_star(self):
         """Cold start (Tier 3): unknown star should get low boost."""
         from api.index import _est_card_boost
-        b, _ = _est_card_boost(
+        b, _, tier = _est_card_boost(
             35.0, 25.0, "MIN", "Nobody Star XYZ",
             season_pts=25.0, recent_pts=24.0, cascade_bonus=0.0, is_home=False,
             projected_rs=7.0, season_avg_min=35.0, player_pos="G",
         )
         # Star profile → low boost via PQI
         assert b <= 1.0, f"Cold start star should get low boost, got {b}"
+        assert tier == 3
 
     def test_est_card_boost_nonnegative_all_tiers(self):
         """Boost is always non-negative regardless of tier."""
         from api.index import _est_card_boost
         for mins, pts in [(5, 2), (20, 10), (38, 30)]:
-            b, _ = _est_card_boost(mins, pts, "GSW", player_name=f"Test {pts} XYZ",
-                                   season_pts=float(pts), season_avg_min=float(mins))
+            b, _, _t = _est_card_boost(mins, pts, "GSW", player_name=f"Test {pts} XYZ",
+                                       season_pts=float(pts), season_avg_min=float(mins))
             assert b >= 0, f"Boost should be non-negative, got {b}"
 
     def test_est_card_boost_star_ppg_tier_cap(self):
         """Star PPG tier caps should limit boost for high-PPG players."""
         from api.index import _est_card_boost
         # 26+ PPG player gets capped at 0.2 by star_ppg_tiers config
-        b, _ = _est_card_boost(
+        b, _, _t = _est_card_boost(
             35.0, 28.0, "WAS", "Nobody Star26 XYZ",
             season_pts=28.0, season_avg_min=35.0,
         )
