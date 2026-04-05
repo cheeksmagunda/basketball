@@ -3391,6 +3391,7 @@ def _est_card_boost(
             _clamp_round_boost(cb_low, floor_val, ceiling),
             _clamp_round_boost(cb_high, floor_val, ceiling),
         ),
+        result.get("tier", 3),
     )
 
 def _dfs_score(pts, reb, ast, stl, blk, tov):
@@ -3769,7 +3770,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     # Card boost is INVERSELY proportional to ownership — the app rewards
     # contrarian picks. Stars get crushed, obscure role players get huge boosts.
     is_home = side == "home"
-    card_boost, boost_band = _est_card_boost(
+    card_boost, boost_band, _boost_tier = _est_card_boost(
         proj_min,
         pts,
         team_abbr,
@@ -3786,9 +3787,14 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     )
 
     # ── Cascade Team Boost Floor ───────────────────────────────────────────
-    # When a star is OUT, cascade teammates get a minimum boost of 2.5.
-    # Data shows 3.0x boost players on cascade teams avg value 15-16.
-    if _cascade_team:
+    # When a star is OUT, cascade teammates with NO historical boost data
+    # (Tier 3 cold start) get a minimum boost of 2.5 — they're likely
+    # underdrafted unknowns who will see elevated boosts.
+    # Tier 1/2 players (with recent history) are NOT floored — the 3-tier
+    # cascade already predicts their boost accurately from prior appearances.
+    # Over-applying the 2.5 floor to Tier 1 players with known boosts of
+    # 1.3–2.0 inflates predictions by 0.5–1.2x (observed Apr 5 2026).
+    if _cascade_team and _boost_tier == 3:
         _ct_cfg = _cfg("cascade.team_detector", {}) or {}
         _ct_boost_floor = float(_ct_cfg.get("boost_floor", 2.5))
         if card_boost < _ct_boost_floor:
