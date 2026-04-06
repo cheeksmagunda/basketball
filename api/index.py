@@ -85,6 +85,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 _BROWSER_CACHE: dict[str, str] = {
     "/api/games":           "public, max-age=120, stale-while-revalidate=180",
     "/api/slate":           "public, max-age=60, stale-while-revalidate=120",
+    "/api/picks":           "public, max-age=120, stale-while-revalidate=300",
     "/api/line-of-the-day": "public, max-age=120, stale-while-revalidate=300",
     "/api/line-history":    "public, max-age=120, stale-while-revalidate=300",
     "/api/parlay":          "public, max-age=300, stale-while-revalidate=600",
@@ -6307,6 +6308,31 @@ def _get_slate_impl():
         _apply_post_lock_rs_calibration(all_proj, slate_locked=locked)
         chalk, upside, core_pool = _build_lineups(all_proj, def_stats=_def_stats, matchup_intel=_matchup_intel, dvp_data=_dvp_data, n_games=len(draftable_games))
         lineups = {"chalk": chalk, "upside": upside}
+
+        # Pre-warm per-game caches so /api/picks is instant on first click
+        # This runs in the background without blocking the slate response
+        try:
+            for g in draftable_games:
+                gid = g["gameId"]
+                g_projs = game_proj_map.get(gid)
+                if g_projs:
+                    try:
+                        game_lineups = _build_game_lineups(g_projs, g)
+                        pg_strat = game_lineups.pop("strategy", None)
+                        pg_result = {
+                            "date": today_str, "game": g,
+                            "gameScript": _game_script_label(g.get("total")),
+                            "lineups": game_lineups,
+                            "strategy": pg_strat,
+                            "locked": locked, "injuries": _get_injuries(g),
+                            "score_bounds": _score_bounds_for_lineups(game_lineups)
+                        }
+                        _cs(_ck_picks(gid), pg_result)
+                    except Exception as pg_err:
+                        print(f"[picks-prewarm] Failed to pre-build picks for {gid}: {pg_err}")
+        except Exception as prewarm_err:
+            print(f"[picks-prewarm] Loop error: {prewarm_err}")
+
         # Watchlist: players near the lineup bubble sensitive to late-breaking news
         _watchlist = []
         try:
@@ -6537,6 +6563,11 @@ async def get_picks(gameId: str = Query(...)):
                 "gameScript": None,
                 "lineups": {"the_lineup": []},
                 "locked": True, "injuries": []}
+
+    # Try fully-built picks cache first (populated by /api/slate pre-warm or previous /api/picks)
+    cached_picks = _cg(_ck_picks(gameId))
+    if cached_picks:
+        return cached_picks
 
     # Try /tmp cache first (populated by /api/slate or previous /api/picks)
     cache_key = _ck_game_proj(gameId)
