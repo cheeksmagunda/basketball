@@ -83,14 +83,16 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # round-trips on tab re-visits.  Server-side cache busting (cold pipeline,
 # config change, injury check) is unaffected — these TTLs are ≤5 min.
 _BROWSER_CACHE: dict[str, str] = {
-    "/api/games":           "public, max-age=120, stale-while-revalidate=180",
-    "/api/slate":           "public, max-age=60, stale-while-revalidate=120",
-    "/api/picks":           "public, max-age=120, stale-while-revalidate=300",
-    "/api/line-of-the-day": "public, max-age=120, stale-while-revalidate=300",
-    "/api/line-history":    "public, max-age=120, stale-while-revalidate=300",
-    "/api/parlay":          "public, max-age=300, stale-while-revalidate=600",
-    "/api/parlay-history":  "public, max-age=300, stale-while-revalidate=300",
-    "/api/lab/briefing":    "public, max-age=120, stale-while-revalidate=300",
+    "/api/games":            "public, max-age=120, stale-while-revalidate=180",
+    "/api/slate":            "public, max-age=60, stale-while-revalidate=120",
+    "/api/picks":            "public, max-age=120, stale-while-revalidate=300",
+    "/api/line-of-the-day":  "public, max-age=120, stale-while-revalidate=300",
+    "/api/line-history":     "public, max-age=120, stale-while-revalidate=300",
+    "/api/parlay":           "public, max-age=300, stale-while-revalidate=600",
+    "/api/parlay-history":   "public, max-age=300, stale-while-revalidate=300",
+    "/api/lab/briefing":     "public, max-age=120, stale-while-revalidate=300",
+    "/api/lab/status":       "public, max-age=60, stale-while-revalidate=120",
+    "/api/lab/config-history": "public, max-age=300, stale-while-revalidate=600",
 }
 
 

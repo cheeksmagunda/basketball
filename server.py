@@ -36,6 +36,16 @@ if REACT_MODE:
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
+    # ── Immutable cache for Vite hashed assets ──
+    @app.middleware("http")
+    async def add_static_asset_cache_headers(request: Request, call_next):
+        """Apply immutable 1-year cache to Vite hashed assets in /assets/."""
+        response = await call_next(request)
+        if request.url.path.startswith("/assets/") and response.status_code == 200:
+            # Vite hashes filenames; they never change. Cache for 1 year (31536000 seconds).
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
     @app.get("/manifest.json")
     async def serve_manifest_react():
         p = DIST / "manifest.json"
