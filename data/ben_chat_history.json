@@ -18,5 +18,9 @@
   {
     "role": "assistant",
     "content": "Alright, so the **GS vs HOU game hasn't started yet** (10 PM EDT), which is good \u2014 there's still time to adjust. But with Curry back, Spencer's minutes projection of 29.2 is going to take a massive hit. He was benefiting from Curry's absence.\n\nLooking at the predictions file, I notice Spencer isn't showing up in the top game-level lineups, which makes sense \u2014 with Curry back, the model likely already downgraded him at the game level.\n\nHere's the issue though: **tonight's slate is marked as LOCKED**, meaning the Starting 5 and Moonshot lineups have already been submitted. If this is for a platform where you can still edit before the GS/HOU game tips, here are some swap candidates from games that haven't started:\n\n### Best Replacement Options for the 1.6x Slot (S5):\n\n| Player | Team | Game | Pred RS | Boost | Proj Min | Why |\n|--------|------|------|---------|-------|----------|-----|\n| **Bones Hyland** | MIN | vs CHA | 4.4 | 3.0x | 25.1 | Already in your S5 at 1.2x \u2014 could bump him up |\n| **AJ Green** | MIL | vs MEM | 4.8 | \u2014 | 40.1 | Game is still in 4th Q though |\n| **Jake LaRavia** | LAL | @ DAL | 4.8 | \u2014 | 33.6 | 3rd quarter, still live |\n\nFrom the **GS/HOU game** specifically (hasn't tipped yet):\n- Without Spencer benefiting from Curry's absence, there may not be a great GS role player option anymore.\n\n**My recommendation:** If you can still edit, the cleanest swap is to move **Bones Hyland up to the 1.6x slot** and slot in another high-boost role player at 1.2x from a game that hasn't started \u2014 or simply drop the GS exposure entirely since Curry's return compresses everyone's value on that roster.\n\nWant me to dig deeper into available players from the LAL/DAL, LAC/SAC, or GS/HOU games for a replacement?"
+  },
+  {
+    "role": "user",
+    "content": "rockets vs warriors is the only ones haven't started"
   }
 ]
