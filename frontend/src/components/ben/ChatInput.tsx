@@ -143,9 +143,6 @@ export default function ChatInput({ inputRef }: ChatInputProps) {
         throw new Error('No response body');
       }
 
-      // Remove thinking message and start streaming content
-      removeThinkingMessage();
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -170,8 +167,8 @@ export default function ChatInput({ inputRef }: ChatInputProps) {
           if (!event) continue;
 
           if (event.type === 'status') {
-            // Update thinking status (re-add thinking with status text)
-            // For simplicity we just accumulate content and show it
+            // Status events update the thinking label in the bubble
+            updateThinkingStatus(event.text);
             continue;
           }
 
@@ -179,30 +176,23 @@ export default function ChatInput({ inputRef }: ChatInputProps) {
             accumulatedContent += event.text;
 
             if (!streamMsgAdded) {
-              // Add the initial assistant message
-              addMessage({
-                role: 'assistant',
-                content: accumulatedContent,
-              });
+              // Transition the thinking bubble into the first content message
+              // in-place — no flash between "Thinking…" disappearing and text appearing
+              transitionThinkingToContent(accumulatedContent);
               streamMsgAdded = true;
             } else {
-              // Update the last assistant message by replacing it
               updateLastAssistantMessage(accumulatedContent);
             }
           }
         }
       }
 
-      // If no content was streamed at all, add a fallback
-      if (!streamMsgAdded && !accumulatedContent) {
-        addMessage({
-          role: 'assistant',
-          content: 'No response received.',
-        });
+      // If no content was streamed at all, replace thinking bubble with fallback
+      if (!streamMsgAdded) {
+        transitionThinkingToContent('No response received.');
       }
     } catch (err: unknown) {
       clearTimeout(timeoutId);
-      removeThinkingMessage();
 
       const message =
         err instanceof DOMException && err.name === 'AbortError'
@@ -211,10 +201,8 @@ export default function ChatInput({ inputRef }: ChatInputProps) {
             ? err.message
             : 'Something went wrong.';
 
-      addMessage({
-        role: 'assistant',
-        content: message,
-      });
+      // Replace thinking bubble with error message (or append if already gone)
+      transitionThinkingToContent(message);
     } finally {
       setIsSending(false);
       abortRef.current = null;
@@ -222,14 +210,30 @@ export default function ChatInput({ inputRef }: ChatInputProps) {
   }, [text, pendingImage, isSending, messages, system, addMessage, setPendingImage]);
 
   // Helpers to manipulate the lab store messages for streaming
-  const removeThinkingMessage = useCallback(() => {
+
+  /** Update the status text inside the thinking bubble while it's still showing */
+  const updateThinkingStatus = useCallback((statusText: string) => {
     const store = useLabStore.getState();
-    const msgs = store.messages;
+    const msgs = [...store.messages];
     const lastIdx = msgs.length - 1;
     if (lastIdx >= 0 && msgs[lastIdx].isStatus) {
-      // Remove the last message (thinking indicator)
+      msgs[lastIdx] = { ...msgs[lastIdx], content: statusText };
+      useLabStore.setState({ messages: msgs });
+    }
+  }, []);
+
+  /** Replace the thinking bubble in-place with the first chunk of real content */
+  const transitionThinkingToContent = useCallback((content: string) => {
+    const store = useLabStore.getState();
+    const msgs = [...store.messages];
+    const lastIdx = msgs.length - 1;
+    if (lastIdx >= 0 && msgs[lastIdx].isStatus) {
+      msgs[lastIdx] = { role: 'assistant', content };
+      useLabStore.setState({ messages: msgs });
+    } else {
+      // Thinking message already gone — just append
       useLabStore.setState({
-        messages: msgs.slice(0, lastIdx),
+        messages: [...msgs, { role: 'assistant', content }],
       });
     }
   }, []);
@@ -309,10 +313,10 @@ export default function ChatInput({ inputRef }: ChatInputProps) {
         {/* Send button */}
         <button
           type="button"
-          className={styles.sendBtn}
+          className={`${styles.sendBtn}${isSending ? ` ${styles.sendBtnSending}` : ''}`}
           onClick={handleSend}
           disabled={isSending || (!text.trim() && !pendingImage)}
-          aria-label="Send message"
+          aria-label={isSending ? 'Sending…' : 'Send message'}
         >
           {isSending ? (
             <div className={styles.spinner} />

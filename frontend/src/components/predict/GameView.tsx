@@ -74,15 +74,16 @@ export default function GameView() {
           const totalStr = g.total ? `O/U ${g.total}` : '';
           const meta = [timeStr, totalStr].filter(Boolean).join(' \u00b7 ');
 
+          const isLocked = g.draftable === false || g.locked;
           return (
             <div
               key={g.gameId}
-              className={styles.gameCard}
+              className={`${styles.gameCard}${isLocked ? ` ${styles.gameCardLocked}` : ''}`}
               role="button"
-              tabIndex={0}
-              onClick={() => handleSelectGame(g.gameId)}
+              tabIndex={isLocked ? -1 : 0}
+              onClick={() => !isLocked && handleSelectGame(g.gameId)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (!isLocked && (e.key === 'Enter' || e.key === ' ')) {
                   e.preventDefault();
                   handleSelectGame(g.gameId);
                 }
