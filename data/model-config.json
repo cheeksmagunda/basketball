@@ -50,7 +50,6 @@
       "slope": -0.71
     },
     "team_boost_ceiling": {}
-
   },
   "game_script": {
     "defensive_grind_ceiling": 220,
@@ -117,7 +116,7 @@
     "compression_divisor": 6.0,
     "compression_power": 0.65,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.30,
+    "ai_blend_weight": 0.3,
     "max_post_compression_mult": 1.2,
     "regression_guard": {
       "enabled": true,
@@ -168,14 +167,14 @@
     }
   },
   "cascade": {
-    "redistribution_rate": 0.70,
+    "redistribution_rate": 0.7,
     "per_player_cap_minutes": 10.0,
     "partial_cascade_cap_minutes": 4.0,
-    "center_forward_share": 0.30,
-    "gtd_sit_probability": 0.30,
-    "dtd_sit_probability": 0.10,
+    "center_forward_share": 0.3,
+    "gtd_sit_probability": 0.3,
+    "dtd_sit_probability": 0.1,
     "gtd_minute_reduction": 0.15,
-    "max_cascade_pct": 0.40,
+    "max_cascade_pct": 0.4,
     "team_detector": {
       "enabled": true,
       "star_ppg_threshold": 20.0,
@@ -187,9 +186,9 @@
   "projection": {
     "min_gate_minutes": 25,
     "lock_buffer_minutes": 5,
-    "season_recent_blend": 0.70,
-    "injury_return_blend": 0.30,
-    "injury_return_gp_ratio": 0.60,
+    "season_recent_blend": 0.7,
+    "injury_return_blend": 0.3,
+    "injury_return_gp_ratio": 0.6,
     "injury_return_min_spike": 1.12,
     "major_role_change_threshold": 0.75,
     "major_role_change_recent_weight": 0.8,
@@ -417,12 +416,12 @@
     {
       "version": 86,
       "date": "2026-04-01",
-      "change": "MINUTES DELTA SIGNAL: RS multiplier based on projected vs season minutes gap. Players at normal minutes (±2 min, no catalyst) get 0.97x RS discount. Players with significant minutes jumps (cascade/injury, +5-10 min) get up to 1.12x RS bonus. Players projecting below season avg get up to 0.92x RS penalty. Fixes Bub Carrington case: projected 27.6 min vs 29.5 season (-1.9 delta, neutral zone) → 3% RS haircut drops him from #1 slot. Cascade beneficiaries with +8 min delta get 9% RS boost, properly rewarding expanded-role upside. Config: strategy.minutes_delta.* (enabled, neutral_zone, neutral_discount, bonus_per_min, max_bonus, penalty_per_min, max_penalty)."
+      "change": "MINUTES DELTA SIGNAL: RS multiplier based on projected vs season minutes gap. Players at normal minutes (\u00b12 min, no catalyst) get 0.97x RS discount. Players with significant minutes jumps (cascade/injury, +5-10 min) get up to 1.12x RS bonus. Players projecting below season avg get up to 0.92x RS penalty. Fixes Bub Carrington case: projected 27.6 min vs 29.5 season (-1.9 delta, neutral zone) \u2192 3% RS haircut drops him from #1 slot. Cascade beneficiaries with +8 min delta get 9% RS boost, properly rewarding expanded-role upside. Config: strategy.minutes_delta.* (enabled, neutral_zone, neutral_discount, bonus_per_min, max_bonus, penalty_per_min, max_penalty)."
     },
     {
       "version": 85,
       "date": "2026-04-01",
-      "change": "REVERT TEAMMATE STACKS: strategy.max_per_team 2->1. The v83 stacking allowance backfired on Mar 31: Moonshot drafted Trent Jr. (MIL, RS 1.7) + Lopez (MIL, RS 3.0) — bad MIL player occupied 5x slot, dragging total value to 45.11. Highest-value leaderboard had 5 different teams in top 5 (Eason HOU 17.3, Dieng OKC 15.6, Jenkins CHA 14.7, Lopez MIL 14.6, Duren DET 14.4). Today's S5 also stacked 2 WSH players. Model cannot reliably predict which teammate pair will both outperform. One player per team is the safer structural constraint."
+      "change": "REVERT TEAMMATE STACKS: strategy.max_per_team 2->1. The v83 stacking allowance backfired on Mar 31: Moonshot drafted Trent Jr. (MIL, RS 1.7) + Lopez (MIL, RS 3.0) \u2014 bad MIL player occupied 5x slot, dragging total value to 45.11. Highest-value leaderboard had 5 different teams in top 5 (Eason HOU 17.3, Dieng OKC 15.6, Jenkins CHA 14.7, Lopez MIL 14.6, Duren DET 14.4). Today's S5 also stacked 2 WSH players. Model cannot reliably predict which teammate pair will both outperform. One player per team is the safer structural constraint."
     },
     {
       "version": 84,
@@ -800,22 +799,23 @@
     "hybrid_lineup_enabled": false,
     "contrarian_bonus": {
       "enabled": true,
-      "max_bonus": 0.10,
+      "max_bonus": 0.1,
       "min_boost": 2.0,
       "max_season_ppg": 16.0
     },
     "leaderboard_frequency": {
       "enabled": true,
-      "min_appearances": 5,
-      "bonus_per_appearance": 0.01,
-      "max_bonus": 0.10
+      "min_appearances": 2,
+      "ghost_quality_weight": 0.8,
+      "max_bonus": 0.35,
+      "bonus_per_appearance": 0.008
     },
     "minutes_delta": {
       "enabled": true,
       "neutral_zone": 2.0,
       "neutral_discount": 0.97,
       "bonus_per_min": 0.03,
-      "max_bonus": 0.20,
+      "max_bonus": 0.2,
       "penalty_per_min": 0.01,
       "max_penalty": 0.08
     },

@@ -1172,9 +1172,10 @@ _CONFIG_DEFAULTS = {
         # No hardcoded names — loaded from data/top_performers.csv dynamically.
         "leaderboard_frequency": {
             "enabled": True,
-            "min_appearances": 5,       # Minimum leaderboard appearances to qualify
-            "bonus_per_appearance": 0.01, # 1% EV bonus per appearance above threshold
-            "max_bonus": 0.10,          # Cap at 10% EV uplift
+            "min_appearances": 2,          # 2+ appearances qualify; ghost pattern visible fast
+            "ghost_quality_weight": 0.80,  # 80% of bonus from ghost quality; 20% raw count
+            "max_bonus": 0.35,             # Up to 35% EV uplift for proven ghost players
+            "bonus_per_appearance": 0.008, # Small residual count bonus (secondary signal)
         },
         "minutes_delta": {
             "enabled": True,
@@ -5058,9 +5059,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     _lb_freq = {}
     _lb_cfg = _strat.get("leaderboard_frequency", {})
     _lb_enabled = _lb_cfg.get("enabled", True)
-    _lb_min_appearances = int(_lb_cfg.get("min_appearances", 5))
-    _lb_max_bonus = float(_lb_cfg.get("max_bonus", 0.10))
-    _lb_per_appearance = float(_lb_cfg.get("bonus_per_appearance", 0.01))
+    _lb_min_appearances = int(_lb_cfg.get("min_appearances", 2))
+    _lb_max_bonus = float(_lb_cfg.get("max_bonus", 0.35))
+    _lb_per_appearance = float(_lb_cfg.get("bonus_per_appearance", 0.008))
+    _lb_ghost_weight = float(_lb_cfg.get("ghost_quality_weight", 0.80))
     if _lb_enabled:
         try:
             _lb_freq = _load_leaderboard_frequency()
@@ -5089,16 +5091,26 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             mi_delta = pred_min - season_min
             if mi_delta >= _mi_min_delta:
                 mi_mult = 1.0 + min(_mi_bonus_per_min * (mi_delta - _mi_min_delta), _mi_max_bonus)
-        # Leaderboard frequency bonus
+        # Leaderboard frequency + ghost quality bonus
+        # Two-part signal:
+        #   Ghost quality (80% weight): data-driven from low-ownership high-boost appearances.
+        #   Saturates at ~3 ghost appearances, scales with avg value delivered.
+        #   Answers: "does this player reliably produce when nobody drafts them?"
+        # Raw count (20% weight): rewards consistent leaderboard presence regardless of ownership.
         lb_mult = 1.0
         if _lb_enabled and _lb_freq:
             _pname_norm = _normalize_player_name(p.get("name", ""))
             _lb_data = _lb_freq.get(_pname_norm)
             if _lb_data and _lb_data["count"] >= _lb_min_appearances:
-                _lb_bonus = min(_lb_per_appearance * (_lb_data["count"] - _lb_min_appearances + 1), _lb_max_bonus)
-                lb_mult = 1.0 + _lb_bonus
+                _ghost_quality = float(_lb_data.get("ghost_quality", 0.0))
+                _ghost_bonus = _ghost_quality * _lb_max_bonus * _lb_ghost_weight
+                _count_factor = min((_lb_data["count"] - _lb_min_appearances + 1) * _lb_per_appearance,
+                                    _lb_max_bonus * (1.0 - _lb_ghost_weight))
+                lb_mult = 1.0 + _ghost_bonus + _count_factor
                 p["_lb_freq"] = _lb_data["count"]
                 p["_lb_avg_value"] = _lb_data["avg_value"]
+                p["_ghost_quality"] = round(_ghost_quality, 3)
+                p["_ghost_count"] = _lb_data.get("ghost_count", 0)
         # Contrarian bonus: under-drafted role players with high boost
         ct_mult = 1.0
         if _ct_enabled:
@@ -7474,32 +7486,56 @@ def _load_leaderboard_frequency() -> dict:
         if not raw:
             return _LEADERBOARD_FREQ_CACHE or {}
         rows = _parse_top_performers_mega_rows(raw)
+        # Config thresholds for ghost appearances (low-ownership, high-boost)
+        _ghost_boost_floor = 2.8
+        _ghost_draft_ceil = 50
         freq: dict = {}
         for r in rows:
             name = _normalize_player_name(r.get("player_name", ""))
             if not name:
                 continue
             if name not in freq:
-                freq[name] = {"count": 0, "rs_sum": 0.0, "boost_sum": 0.0, "value_sum": 0.0, "draft_sum": 0.0}
+                freq[name] = {
+                    "count": 0, "rs_sum": 0.0, "boost_sum": 0.0,
+                    "value_sum": 0.0, "draft_sum": 0.0,
+                    "ghost_count": 0, "ghost_value_sum": 0.0,
+                }
+            boost_val = float(r.get("actual_card_boost", 0) or 0)
+            drafts_val = float(r.get("drafts", 0) or 0)
+            value_val = float(r.get("total_value", 0) or 0)
             freq[name]["count"] += 1
             freq[name]["rs_sum"] += float(r.get("actual_rs", 0) or 0)
-            freq[name]["boost_sum"] += float(r.get("actual_card_boost", 0) or 0)
-            freq[name]["value_sum"] += float(r.get("total_value", 0) or 0)
-            freq[name]["draft_sum"] += float(r.get("drafts", 0) or 0)
-        # Compute averages
+            freq[name]["boost_sum"] += boost_val
+            freq[name]["value_sum"] += value_val
+            freq[name]["draft_sum"] += drafts_val
+            # Ghost appearance: low-ownership + high-boost = structural contrarian edge
+            if boost_val >= _ghost_boost_floor and drafts_val < _ghost_draft_ceil:
+                freq[name]["ghost_count"] += 1
+                freq[name]["ghost_value_sum"] += value_val
+        # Compute averages + ghost quality signal
         result = {}
         for name, d in freq.items():
             n = d["count"]
+            gc = d["ghost_count"]
+            avg_ghost_value = d["ghost_value_sum"] / gc if gc > 0 else 0.0
+            # Ghost quality: saturation × value scaling
+            # (gc / (gc+2)): reaches 0.5 at gc=2, 0.6 at gc=3, 0.83 at gc=10
+            # min(avg_ghost_value/15, 1.5): normalised; 15 = slate avg value baseline
+            ghost_quality = (gc / (gc + 2)) * min(avg_ghost_value / 15.0, 1.5) if gc > 0 else 0.0
             result[name] = {
                 "count": n,
                 "avg_rs": round(d["rs_sum"] / n, 2) if n else 0,
                 "avg_boost": round(d["boost_sum"] / n, 2) if n else 0,
                 "avg_value": round(d["value_sum"] / n, 2) if n else 0,
                 "avg_drafts": round(d["draft_sum"] / n, 0) if n else 0,
+                "ghost_count": gc,
+                "avg_ghost_value": round(avg_ghost_value, 2),
+                "ghost_quality": round(ghost_quality, 3),
             }
         _LEADERBOARD_FREQ_CACHE = result
         _LEADERBOARD_FREQ_TS = now
-        print(f"[leaderboard_freq] Loaded {len(result)} players from top_performers.csv")
+        print(f"[leaderboard_freq] Loaded {len(result)} players from top_performers.csv"
+              f" ({sum(1 for v in result.values() if v['ghost_count'] >= 2)} ghost players)")
         return result
     except Exception as e:
         print(f"[leaderboard_freq] Error loading: {e}")
