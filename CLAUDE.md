@@ -69,7 +69,7 @@ The backend uses:
 
 **Historical outcomes** for audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
-**2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Mar 25 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
+**2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Apr 4 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
