@@ -15,17 +15,16 @@ import type { SlateData, PicksData, GamesResponse } from '../types';
  * Full-slate predictions (Starting 5 + Moonshot).
  *
  * - 30s timeout (generation can be slow on cold starts)
- * - staleTime 5 min so repeated tab switches don't re-fetch
+ * - staleTime 60s for aggressive revalidation paired with prefetch
  * - When locked and not all_complete, refetchInterval 60s for game-final detection
- * - retry 3 with escalating delays [8s, 20s, 40s]
- * - refetchOnWindowFocus so returning from background picks up fresh data
+ * - retry 1 with 8s delay on failure
+ * - respects global refetchOnWindowFocus: false (no alt-tab thrashing)
  */
 export function useSlate() {
   return useQuery<SlateData>({
     queryKey: ['slate'],
     queryFn: () => fetchJson<SlateData>('/api/slate', 30_000),
-    staleTime: 60 * 1000, // 60s — matches backend _CACHE_TTLS["slate"]
-    refetchOnWindowFocus: true,
+    staleTime: 60 * 1000, // 60s — aggressive revalidation with prefetch
     retry: 1,
     retryDelay: 8_000,
   });
