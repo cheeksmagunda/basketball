@@ -38,6 +38,13 @@
   transform: scale(0.98);
 }
 
+/* Locked / undraftable state */
+.gameCardLocked {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* Staggered entrance */
 .gameCard:nth-child(1) { animation-delay: 0s; }
 .gameCard:nth-child(2) { animation-delay: 0.04s; }
@@ -93,7 +100,8 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
-  padding: 0;
+  padding: 12px 12px 12px 0;
+  margin-left: -8px;
   transition: color 0.15s;
   white-space: nowrap;
   flex-shrink: 0;

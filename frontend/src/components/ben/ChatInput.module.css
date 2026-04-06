@@ -148,6 +148,12 @@
   cursor: not-allowed;
 }
 
+/* Keep full opacity + visible spinner while a request is in-flight */
+.sendBtnSending {
+  opacity: 1 !important;
+  cursor: default;
+}
+
 /* Spinner */
 .spinner {
   width: 16px;
