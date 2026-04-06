@@ -245,7 +245,7 @@ def _build_claude_prompt(
         if inj:                  flags.append(inj)
         flag_str = f" [{', '.join(flags)}]" if flags else ""
         book_odds = _lookup_player_odds(player_odds_map, p["name"], stat_focus)
-        book_str = f" [book: {book_odds['line']:.1f}{lbl}]" if book_odds else ""
+        book_str = f" [book: {book_odds['line']:.1f}{lbl}]" if book_odds and book_odds.get("line") is not None else ""
         # Recent form trend indicator
         trend = ""
         if season_val > 0:
@@ -777,6 +777,8 @@ def run_model_fallback(projections, games, line_config=None, player_odds_map=Non
             if not book_odds:
                 continue  # Stop making up lines; require real Vegas odds
             line      = book_odds["line"]
+            if line is None:
+                continue  # Odds API returned null line (prop pulled off the board)
             edge      = round(proj_val - line, 1)
             direction = "over" if edge > 0 else "under"
 

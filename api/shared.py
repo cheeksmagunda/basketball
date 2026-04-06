@@ -58,7 +58,12 @@ def et_date():
         from zoneinfo import ZoneInfo
         return datetime.now(ZoneInfo("America/New_York")).date()
     except ImportError:
-        # Fallback: EST=UTC-5 (Nov–Mar), EDT=UTC-4 (Mar–Nov)
+        # Fallback approximation when tzdata is unavailable.
+        # US DST starts 2nd Sunday of March (~Mar 8–14) and ends 1st Sunday of Nov (~Nov 1–7).
+        # Day-based bounds are more accurate than month-boundary-only checks, which would
+        # produce the wrong offset for 1–2 weeks in March and November every year.
         now_utc = datetime.now(timezone.utc)
-        offset = timedelta(hours=-4 if 3 < now_utc.month < 11 else -5)
+        m, d = now_utc.month, now_utc.day
+        is_dst = (m == 3 and d >= 8) or (4 <= m <= 10) or (m == 11 and d < 8)
+        offset = timedelta(hours=-4 if is_dst else -5)
         return (now_utc + offset).date()
