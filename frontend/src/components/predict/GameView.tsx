@@ -3,8 +3,10 @@
 // 2-column game card grid → header row + THE LINE UP (5-player optimal lineup).
 // ============================================================================
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useGames, usePicks } from '../../api/slate';
+import { fetchJson } from '../../api/client';
 import PlayerCard from '../shared/PlayerCard';
 import SkeletonCard from '../shared/SkeletonCard';
 import EmptyState from '../shared/EmptyState';
@@ -27,6 +29,7 @@ function formatTime(iso: string): string {
 }
 
 export default function GameView() {
+  const queryClient = useQueryClient();
   const { data: games, isLoading: gamesLoading } = useGames();
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const {
@@ -43,6 +46,22 @@ export default function GameView() {
   const handleBack = useCallback(() => {
     setSelectedGame(null);
   }, []);
+
+  // PREFETCH EFFECT: Silently load all game picks into React Query cache
+  // This eliminates network latency when the user clicks a game card
+  useEffect(() => {
+    if (games && games.length > 0) {
+      games.forEach((g) => {
+        if (g.draftable !== false && !g.locked) {
+          queryClient.prefetchQuery({
+            queryKey: ['picks', g.gameId],
+            queryFn: () => fetchJson(`/api/picks?gameId=${g.gameId}`, 30_000),
+            staleTime: 5 * 60 * 1000,
+          });
+        }
+      });
+    }
+  }, [games, queryClient]);
 
   // Loading games list — show skeleton grid matching game card layout
   if (gamesLoading) {
