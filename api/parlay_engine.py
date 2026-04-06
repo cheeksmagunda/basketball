@@ -87,7 +87,8 @@ def _minutes_cv(gamelog_minutes):
     avg = sum(gamelog_minutes) / len(gamelog_minutes)
     if avg <= 0:
         return 999.0
-    variance = sum((m - avg) ** 2 for m in gamelog_minutes) / len(gamelog_minutes)
+    n = len(gamelog_minutes)
+    variance = sum((m - avg) ** 2 for m in gamelog_minutes) / (n - 1)  # Bessel's correction
     return math.sqrt(variance) / avg
 
 
@@ -246,8 +247,8 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
           "switch_heavy": 0, "fake_juice": 0, "accepted": 0}
     _pool = set(gamelog_player_ids) if gamelog_player_ids is not None else None
 
-    # Auto-fade config
-    auto_fade_cfg = cfg.get("auto_fade", {})
+    # Auto-fade config — use `or {}` so a null JSON value doesn't crash the subsequent .get() calls
+    auto_fade_cfg = cfg.get("auto_fade") or {}
     _switch_heavy = set(t.upper() for t in auto_fade_cfg.get("switch_heavy_teams", []))
     _fake_juice_recent = float(auto_fade_cfg.get("fake_juice_recent_threshold", 0.80))
     _fake_juice_season = float(auto_fade_cfg.get("fake_juice_season_ceiling", 0.55))
@@ -338,10 +339,13 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
                 continue  # No sportsbook line → can't build a parlay leg
 
             # Ensure float preservation throughout pipeline (6.5, 21.5, 8.5 must not become 6, 21, 8)
-            book_line = float(round(float(odds_data.get("line", 0)) * 2) / 2)  # Snap to nearest 0.5
-            if book_line <= 0:
+            # Guard against null line values from the Odds API ({"line": null} is valid and common
+            # when a sportsbook pulls a prop off the board mid-session).
+            raw_line = odds_data.get("line")
+            if raw_line is None or float(raw_line) <= 0:
                 _f["no_odds"] += 1
                 continue
+            book_line = float(round(float(raw_line) * 2) / 2)  # Snap to nearest 0.5
 
             # Minimum line floor — filter trivially easy props (e.g. 0.5 ast, 1.5 reb)
             line_floor = _LINE_FLOORS.get(stat, 0)
@@ -490,12 +494,15 @@ def build_candidate_legs(projections, games, player_odds_map, gamelogs,
 
 
 def _std_dev(values):
-    """Population standard deviation of a list of numbers."""
+    """Sample standard deviation of a list of numbers (Bessel's correction, divides by n-1).
+    Using sample std dev because we're working with small slices (L5-L15 games), not a full
+    population. Population std dev (/ n) artificially lowers dispersion on small samples,
+    inflating hit probability estimates."""
     if not values or len(values) < 2:
         return 0.0
     n = len(values)
     avg = sum(values) / n
-    variance = sum((v - avg) ** 2 for v in values) / n
+    variance = sum((v - avg) ** 2 for v in values) / (n - 1)  # Bessel's correction
     return math.sqrt(variance)
 
 
@@ -521,7 +528,7 @@ def _correlation_modifier(legs, parlay_config=None):
     pace_boost_threshold = cfg.get("pace_boost_total_threshold", 232.0)
     pace_boost = cfg.get("pace_boost", 1.06)
     rest_adv_boost = cfg.get("rest_advantage_boost", 1.08)
-    auto_fade_cfg = cfg.get("auto_fade", {})
+    auto_fade_cfg = cfg.get("auto_fade") or {}
     perimeter_reb_floor = float(auto_fade_cfg.get("perimeter_scorer_reb_floor", 4.0))
 
     multiplier = 1.0
@@ -775,7 +782,7 @@ def _score_structure(legs, parlay_config=None):
                 reasons.append(f"Risk: {l['player_name']} assists over in {spread}-pt spread game")
 
     # B2B penalty on correlated pairs — fatigue breaks assists→points chain
-    b2b_penalty = float(cfg.get("auto_fade", {}).get("b2b_correlated_pair_penalty", 0.75))
+    b2b_penalty = float((cfg.get("auto_fade") or {}).get("b2b_correlated_pair_penalty", 0.75))
     for team, team_legs in by_team.items():
         ast_overs = [l for l in team_legs if l["stat_type"] == "assists" and l["direction"] == "over"]
         pts_overs = [l for l in team_legs if l["stat_type"] == "points" and l["direction"] == "over"]
@@ -823,7 +830,7 @@ def _find_best_correlated_pair(pool, cfg=None):
     cfg = cfg or {}
     max_spread = cfg.get("correlated_pair_max_spread", 5.0)
     min_total = cfg.get("min_game_total", 225.5)
-    b2b_penalty = float(cfg.get("auto_fade", {}).get("b2b_correlated_pair_penalty", 0.75))
+    b2b_penalty = float((cfg.get("auto_fade") or {}).get("b2b_correlated_pair_penalty", 0.75))
 
     # Collect all assists-over legs from playmakers in non-blowout, tight-spread, high-total games
     ast_overs = [
@@ -875,7 +882,7 @@ def _find_best_market_match(pool, pair, cfg=None):
     juice_threshold = cfg.get("market_match_juice_threshold", -140)
     min_conf = cfg.get("market_match_min_conf", 0.58)
     max_cv = cfg.get("market_match_max_cv", 0.25)
-    auto_fade_cfg = cfg.get("auto_fade", {})
+    auto_fade_cfg = cfg.get("auto_fade") or {}
     rebound_fade = set(t.upper() for t in auto_fade_cfg.get("rebound_fade_teams", []))
 
     pair_game_id = pair[0]["gameId"]
