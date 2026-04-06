@@ -6,5 +6,9 @@
   {
     "role": "assistant",
     "content": "Hey! \ud83d\udc4b I'm Ben, your Basketball Oracle assistant.\n\nHere's a quick snapshot of where things stand:\n\n**Tonight's Slate (Apr 5)** \u2014 11 games, lineups are **LOCKED** \ud83d\udd12\n- **Starting 5** led by Will Riley (WSH, 5.4 RS, 2.0x slot) \u2014 all high-boost role players, zero stars\n- **Moonshot** led by Brice Sensabaugh (UTAH, 5.9 RS, 2.0x slot) \u2014 slightly more upside-oriented\n\n**Last Slate (Apr 4) Results:**\n- **MAE: 0.88** \u2014 actually pretty solid!\n- **Directional Accuracy: 33%** \u2014 not great, we over-projected 6 of 9 players\n- **Draft Score: 86.5**\n- Biggest miss: Cameron Johnson (predicted 4.8, actual 2.8)\n\n**Rolling 5-Slate MAE: 2.34** \u2014 still room to improve\n\nWhat can I help with? I can:\n- \ud83d\udcca Pull **live scores** or **player stats** from tonight's games\n- \ud83d\udd0d Dig into **prediction accuracy** or **past slates**\n- \u2699\ufe0f Review or **tune model config** parameters\n- \ud83d\udcc8 Analyze patterns and suggest improvements\n\nWhat's on your mind?"
+  },
+  {
+    "role": "user",
+    "content": "Hey if you were to take a two prop parlay for the rockets warriors game who\u2019d you take"
   }
 ]
