@@ -5733,7 +5733,7 @@ class TestPerGameSleeperPool:
         pg = _CONFIG_DEFAULTS["per_game"]
         assert pg["sleeper_rating_floor"] == 2.5
         assert pg["sleeper_min_floor"] == 12.0
-        assert pg["sleeper_min_pts"] == 5.0
+        assert pg["sleeper_min_pts"] == 3.0
 
     def test_sleeper_replaces_weakest_core(self):
         """Sleeper with higher rating than weakest core pick should sub in."""
@@ -5889,7 +5889,7 @@ class TestPerGameModelConfigV84:
         assert pg["moderate_blowout_underdog_star"] == 0.98
         assert pg["sleeper_rating_floor"] == 2.5
         assert pg["sleeper_min_floor"] == 12.0
-        assert pg["sleeper_min_pts"] == 5.0
+        assert pg["sleeper_min_pts"] == 3.0
 
     def test_config_version_bumped(self):
         import json
