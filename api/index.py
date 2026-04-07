@@ -1132,7 +1132,9 @@ _CONFIG_DEFAULTS = {
         # Two-tier pool: core (standard) + sleeper (relaxed) for the decisive 5th pick.
         "sleeper_rating_floor": 2.5,     # relaxed RS floor for 5th player candidates
         "sleeper_min_floor": 12.0,       # relaxed minutes floor
-        "sleeper_min_pts": 5.0,          # relaxed points floor
+        "sleeper_min_pts": 3.0,          # relaxed points floor — includes young/fringe players on rebuilding teams
+        "star_carry_threshold": 6.0,     # min projected RS to classify a player as superstar-carry
+        "star_carry_role_bonus": 0.10,   # bonus for role players on a superstar-carry team (Jokić/Wemby effect)
     },
     "scoring_thresholds": {
         "min_chalk_rating": 3.5,
@@ -5382,6 +5384,19 @@ def _per_game_adjust_projections(projections, game, strategy):
     anchor_min = cfg.get("value_anchor_min_rating", 3.8)
     anchor_pts = cfg.get("value_anchor_pts_ceiling", 16)
     anchor_bonus = cfg.get("value_anchor_bonus", 0.08)
+    star_carry_thr = cfg.get("star_carry_threshold", 6.0)
+    star_carry_bonus = cfg.get("star_carry_role_bonus", 0.10)
+
+    # Pre-compute max projected rating per team to detect superstar-carry games.
+    # When Jokić/Wemby/Durant projects RS >= 6.0, their role teammates get a
+    # +10% boost — the superstar creates extra opportunities (assists, putbacks,
+    # transition) that lift everyone on the same team.
+    team_max_rating: dict[str, float] = {}
+    for p in projections:
+        t = p.get("team", "")
+        r = float(p.get("rating") or 0)
+        if r > team_max_rating.get(t, 0.0):
+            team_max_rating[t] = r
 
     adjusted = []
     for p in projections:
@@ -5457,6 +5472,18 @@ def _per_game_adjust_projections(projections, game, strategy):
             rating *= (1.0 + anchor_bonus)
         ap["_is_value_anchor"] = is_anchor
         ap["_favored_team"] = (team == favored)
+
+        # ── Superstar-carry stack bonus ──
+        # When a teammate is projected RS >= 6.0 (Jokić/Wemby/Durant tier),
+        # role players on the same team get +10%. The superstar creates extra
+        # scoring opportunities — assists, putback situations, transition —
+        # that inflate their teammates' RS beyond what season averages predict.
+        # Only applies to role players (season_pts <= role_ceil) to avoid
+        # double-boosting the superstar's own projection.
+        team_max = team_max_rating.get(team, 0.0)
+        if team_max >= star_carry_thr and is_role and float(ap.get("rating") or 0) < team_max:
+            rating *= (1.0 + star_carry_bonus)
+            ap["_star_carry"] = True
 
         ap["rating"] = round(rating, 2)
         ap["_pg_total_mult"] = strategy["total_mult"]
