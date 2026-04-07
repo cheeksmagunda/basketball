@@ -1,0 +1,11 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+slate,chalk,2.0x,Brice Sensabaugh,5105839,UTAH,F,6.4,2.0,46.5,28.0,4.1,4.8,0.7,0.6
+slate,chalk,1.8x,Will Riley,5144126,WSH,G,5.9,2.9,38.2,27.7,3.7,3.3,1.7,0.0
+slate,chalk,1.6x,Cormac Ryan,4397114,MIL,G,5.2,2.9,40.8,18.6,2.6,2.9,2.4,0.3
+slate,chalk,1.4x,Ja'Kobe Walter,4684272,TOR,G,4.9,3.0,31.4,11.2,4.4,1.4,2.2,0.4
+slate,chalk,1.2x,Nique Clifford,4702384,SAC,G,4.9,2.9,41.6,17.7,4.3,4.9,1.0,0.4
+slate,upside,2.0x,Anthony Gill,2581184,WSH,F,5.2,3.0,43.3,14.2,5.2,3.7,0.0,0.4
+slate,upside,1.8x,Nolan Traore,5279130,BKN,G,4.9,2.9,31.9,16.8,2.7,5.3,1.0,0.3
+slate,upside,1.6x,Ousmane Dieng,4997526,MIL,F,4.8,2.7,34.8,18.6,6.6,5.2,0.2,0.0
+slate,upside,1.4x,Bones Hyland,4592492,MIN,G,4.7,2.9,28.0,16.3,5.0,4.1,1.6,0.4
+slate,upside,1.2x,Quenton Jackson,4592829,IND,G,4.6,2.9,35.0,13.8,3.9,4.8,1.4,0.0
