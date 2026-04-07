@@ -5514,9 +5514,13 @@ def _build_game_lineups(projections, game):
     strategy = _per_game_strategy(game)
     adjusted = _per_game_adjust_projections(rescored, game, strategy)
 
-    # Step 3: Eligibility gating — TWO TIERS (grep: PER-GAME ELIGIBILITY)
+    # Step 3: Eligibility gating — TWO TIERS + CASCADE (grep: PER-GAME ELIGIBILITY)
     # Tier A (core): standard gates for top-4 consensus picks
     # Tier B (sleeper): relaxed gates for the decisive 5th player pick
+    # Tier C (cascade): star is OUT on team — deep rotation players bypass normal
+    #   floors and go straight into core_pool so MILP can slot them at any position.
+    #   _cascade_team flag is already set by _run_game; project_player has already
+    #   applied the RS boost and relaxed the minutes gate. Here we just respect it.
     # Data (6 games, 48 lineups): winners differ from mid-pack by exactly
     # 1 player in 5/6 games. That 5th player averages +0.9 RS over the
     # mid-pack's 5th pick. Many winning 5th picks (Plowden 3.3, Camara 3.1,
@@ -5526,7 +5530,10 @@ def _build_game_lineups(projections, game):
     game_min_floor = _cfg("lineup.game_recent_min_floor", 15.0)
     game_sleeper_min_floor = _cfg("per_game.sleeper_min_floor", 12.0)
     min_game_pts = _cfg("scoring_thresholds.min_game_pts", 8.0)
-    sleeper_min_pts = _cfg("per_game.sleeper_min_pts", 5.0)
+    sleeper_min_pts = _cfg("per_game.sleeper_min_pts", 3.0)
+    _ct_pg_cfg = _cfg("cascade.team_detector", {}) or {}
+    _ct_pg_rs_floor = float(_ct_pg_cfg.get("deep_rotation_rs_floor", 1.5))
+    _ct_pg_min_floor = float(_ct_pg_cfg.get("deep_rotation_min_minutes", 12.0))
     rw_statuses = {}
     try:
         rw_statuses = get_all_statuses()
@@ -5548,16 +5555,27 @@ def _build_game_lineups(projections, game):
                 continue
         except Exception:
             pass
-        # Tier A: core pool (standard gates)
-        if (p.get("recent_min", 0) >= game_min_floor
-                and p["rating"] >= game_chalk_floor
-                and p.get("pts", 0) >= min_game_pts):
-            core_pool.append(p)
-        # Tier B: sleeper pool (relaxed gates — the 5th player edge)
-        elif (p.get("recent_min", 0) >= game_sleeper_min_floor
-              and p["rating"] >= game_sleeper_floor
-              and p.get("pts", 0) >= sleeper_min_pts):
-            sleeper_pool.append(p)
+        _is_cascade = p.get("_cascade_team", False)
+        if _is_cascade:
+            # Tier C: cascade — star is OUT on this player's team.
+            # Use deep-rotation relaxed floors (rating 1.5, min 12, pts 3.0).
+            # Go directly into core_pool so MILP can place them at any slot,
+            # not just as a last-resort sleeper replacement.
+            if (p.get("recent_min", 0) >= _ct_pg_min_floor
+                    and p["rating"] >= _ct_pg_rs_floor
+                    and p.get("pts", 0) >= sleeper_min_pts):
+                core_pool.append(p)
+        else:
+            # Tier A: core pool (standard gates)
+            if (p.get("recent_min", 0) >= game_min_floor
+                    and p["rating"] >= game_chalk_floor
+                    and p.get("pts", 0) >= min_game_pts):
+                core_pool.append(p)
+            # Tier B: sleeper pool (relaxed gates — the 5th player edge)
+            elif (p.get("recent_min", 0) >= game_sleeper_min_floor
+                  and p["rating"] >= game_sleeper_floor
+                  and p.get("pts", 0) >= sleeper_min_pts):
+                sleeper_pool.append(p)
 
     # Step 4: MILP optimization with sleeper-aware candidate pool
     # Per-game: card boost is irrelevant — zero out est_mult.
