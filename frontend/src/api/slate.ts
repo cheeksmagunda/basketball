@@ -17,6 +17,7 @@ import type { SlateData, PicksData, GamesResponse } from '../types';
  * - 30s timeout (generation can be slow on cold starts)
  * - staleTime 60s for aggressive revalidation paired with prefetch
  * - When locked and not all_complete, refetchInterval 60s for game-final detection
+ * - When warming_up (cold pipeline running in background), polls every 5s automatically
  * - retry 1 with 8s delay on failure
  * - respects global refetchOnWindowFocus: false (no alt-tab thrashing)
  */
@@ -27,6 +28,12 @@ export function useSlate() {
     staleTime: 60 * 1000, // 60s — aggressive revalidation with prefetch
     retry: 1,
     retryDelay: 8_000,
+    // Poll every 5s while the cold pipeline is generating picks server-side.
+    // Stops automatically once the backend returns a fully populated response.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.warming_up ? 5_000 : false;
+    },
   });
 }
 

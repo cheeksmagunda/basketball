@@ -31,6 +31,11 @@ export default function SlateView() {
   // this handles re-navigation after cache expiry)
   if (isLoading && !slate) return <SkeletonCard count={5} />;
 
+  // Cold pipeline is running server-side — auto-polls every 5s via refetchInterval
+  if (slate?.warming_up) {
+    return <SkeletonCard count={5} />;
+  }
+
   // Error or failed slate
   if (error || !slate || slate.error) {
     return (

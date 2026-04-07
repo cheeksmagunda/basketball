@@ -98,6 +98,7 @@ export interface SlateData extends CacheMetadata {
   all_complete: boolean;
   lock_time: string | null;           // ISO 8601 or null
   error?: string;                     // "slate_failed" on pipeline error
+  warming_up?: boolean;               // true while cold pipeline is running — poll and retry
   no_games?: boolean;
   next_slate_date?: string | null;    // YYYY-MM-DD when no games today
   games: GameInfo[];
