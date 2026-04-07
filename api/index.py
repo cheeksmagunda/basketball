@@ -6418,6 +6418,29 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
         return _get_mock_slate()
     try:
         today = _today_str()
+
+        # Warming-up guard: if the cold pipeline is already running in background
+        # and no usable cache exists yet, return immediately with warming_up=True
+        # so the frontend can poll instead of blocking for 30-60s on a second
+        # inline pipeline run that would compete with the background one.
+        with _COLD_PIPELINE_LOCK:
+            _pipe_in_flight = _COLD_PIPELINE_IN_FLIGHT
+        if _pipe_in_flight:
+            _quick = _cg(_CK_SLATE) or _lg(_CK_SLATE_LOCKED)
+            if not _quick:
+                return JSONResponse(
+                    content={
+                        "warming_up": True,
+                        "date": today,
+                        "games": [],
+                        "lineups": {"chalk": [], "upside": []},
+                        "locked": False,
+                        "draftable_count": 0,
+                        "cache_status": "warming",
+                    },
+                    status_code=200,
+                )
+
         cache_key = _CACHE_KEYS["slate"].format(today)
         result, is_hit = _with_response_cache(cache_key, "slate", _get_slate_impl)
         # Same-day rollover: when _get_slate_impl switched to a future date, also cache
@@ -8304,13 +8327,16 @@ async def _deploy_startup_safe_prewarm():
         threading.Thread(target=_bg_deploy_regen, daemon=True).start()
         return
 
-    # Same SHA (container restart) — hydrate /tmp from Redis or GitHub
+    # Same SHA (container restart) — hydrate /tmp from Redis or GitHub.
+    # If both miss, run the full cold pipeline in background so picks are
+    # ready before the first frontend request instead of blocking it.
     try:
         cached = _cg(_CK_SLATE)
         if cached:
             print(f"[startup] Redis hit — slate already cached for {today}")
             return
 
+        slate_hydrated = False
         gh_slate, _ = _github_get_file(f"data/slate/{today}_slate.json")
         if gh_slate:
             try:
@@ -8318,6 +8344,7 @@ async def _deploy_startup_safe_prewarm():
                 if not slate_data.get("_busted"):
                     _cs(_CK_SLATE, slate_data)
                     print(f"[startup] hydrated slate cache from GitHub for {today}")
+                    slate_hydrated = True
             except Exception as e:
                 print(f"[startup] hydration error: {e}")
 
@@ -8331,7 +8358,21 @@ async def _deploy_startup_safe_prewarm():
             except Exception as e:
                 print(f"[startup] games hydration error: {e}")
 
-        print(f"[startup] cache rehydration completed")
+        if slate_hydrated:
+            print(f"[startup] cache rehydration completed")
+        else:
+            # Both Redis and GitHub miss (busted, absent, or stale) — run cold pipeline
+            # in background so Redis is populated before the frontend's first request.
+            print(f"[startup] no warm cache found — starting background pipeline for {today}")
+            def _bg_cold_restart():
+                try:
+                    _run_cold_pipeline("container_restart_cold")
+                    if current_sha:
+                        rcs("deploy_sha", current_sha, "global", ttl=604800)
+                    print("[startup] background restart pipeline completed")
+                except Exception as e:
+                    print(f"[startup] background restart pipeline failed: {e}")
+            threading.Thread(target=_bg_cold_restart, daemon=True).start()
     except Exception as e:
         print(f"[startup] initialization failed (non-fatal, will regenerate on first request): {e}")
 
