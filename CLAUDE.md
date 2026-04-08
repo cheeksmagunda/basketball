@@ -69,7 +69,7 @@ The backend uses:
 
 **Historical outcomes** for audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
-**2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Apr 4 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
+**2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Apr 7 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
@@ -142,6 +142,9 @@ grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
 grep: INJURY CASCADE           — _cascade_minutes, _pos_group
 grep: CASCADE TEAM DETECTOR    — star OUT detection in _run_game, RS mult + boost floor in project_player, relaxed gates in _build_lineups
 grep: CARD BOOST               — _est_card_boost, _dfs_score (cascade in api/boost_model.py grep: BOOST CASCADE MODEL)
+grep: HISTORICAL RS DISCOUNT   — project_player() soft pull-back when predicted RS exceeds player's historical track record
+grep: MOMENTUM CURVE           — _build_lineups() hype trap penalty + rising wave bonus detection
+grep: MOMENTUM CURVE SCORING   — per-player mc_mult calculation in _build_lineups() scoring loop
 grep: GAME SCRIPT              — _game_script_weights, _game_script_label
 grep: PLAYER PROJECTION        — project_player, pinfo, rating, est_mult
 grep: FAIR VALUE ENGINE        — project_player_fv in api/fair_value.py (pure functions, no I/O)
@@ -459,6 +462,13 @@ No Monte Carlo, no post-compression multiplier stack, no archetype calibration, 
 **Draft strategy** in `strategy`: `rs_floor` (2.0), `min_pts_projection` (2.0), `min_minutes` (12.0),
 `close_game_rs_bonus` (0.3), `pace_rs_bonus_per_10` (0.15), `ev_swap_threshold` (2.0),
 `max_upside_swaps` (2), `anti_popularity_enabled` (true), `anti_popularity_strength` (0.1).
+
+**Historical RS discount** in `strategy.historical_rs_discount`: `enabled` (true), `min_appearances` (3),
+`saturation_k` (8.0), `max_prior_strength` (0.5), `discount_scale` (0.4), `max_discount_frac` (0.6).
+
+**Momentum curve** in `strategy.momentum_curve`: `enabled` (true), `min_history` (3),
+`hype_trap_max_penalty` (0.20), `draft_growth_threshold` (0.5), `boost_decline_threshold` (0.4),
+`rising_wave_max_bonus` (0.20), `rs_trend_min` (0.3), `wave_max_drafts` (200), `wave_min_boost` (1.5).
 
 **Parlay**, **Per-game**, **Line**, **Context layer**, **Odds enrichment** config sections remain unchanged.
 
@@ -1047,6 +1057,8 @@ If slate and/or line fail to load:
 | Over/under different games constraint | `api/line_engine.py`, `tests/test_fixes.py` | Over and under Line picks were frequently from the same game (e.g. both ORL vs ATL), reducing coverage diversity. Added `_same_game()` helper and enforced constraint across all 3 selection paths: main candidates, Claude path, and last-resort. Higher-confidence pick keeps its game; weaker swaps to next-best from a different game. 3 new tests. |
 | Cascade team detector + deep rotation | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | Analysis of 2,299 top performer entries across 151 dates. **Cascade Team Detector**: star (20+ PPG) OUT → flag all teammates with `_cascade_team=True` → RS multiplier 1.3x + boost floor 2.5. **Deep Rotation Sweet Spot**: cascade team players get relaxed gates (RS floor 1.5 vs 2.0, min_gate 12 vs 25, rotation-bubble filter bypassed). The 5-20 draft archetype has the highest historical avg value (16.1). **Proportional cascade cap**: `max_cascade_pct=0.40` prevents bench players from inflating to 26+ projected minutes. Config: `cascade.team_detector.*`. 9 new tests. |
 | Cascade config sync + proportional cap | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | Fixed `data/model-config.json` missing cascade params (dtd_sit_probability, partial_cascade_cap_minutes, etc.) — `_cfg()` was falling through to old hardcoded fallbacks. Added `max_cascade_pct=0.40` proportional cap: cascade bonus cannot exceed 40% of player's avg minutes. 3 updated tests. |
+| Historical RS confidence discount | `api/index.py` | **Bayesian RS regression** in `project_player()`: cross-references predicted RS against player's actual historical RS distribution from `top_performers.csv`. When predicted RS exceeds P75, applies soft pull-back weighted by history depth (more appearances = stronger prior). NOT a hard cap — players can still pop off, but extreme over-projections are tempered. Prior strength saturates at ~15 appearances via `n/(n+k)`. Example: Sensabaugh predicted 6.4 RS with median 3.3 → discount of ~0.5 RS. Config: `strategy.historical_rs_discount.*` (6 params). |
+| Momentum curve detection | `api/index.py` | **Hype trap penalty + rising wave bonus** in `_build_lineups()` EV scoring. Loads player history from `boost_model.load_player_history()`. **Hype trap**: drafts exploding (200%+) AND boost declining (0.5+) = player peaked → up to 20% EV penalty. Catches Sensabaugh-type players (2→207 drafts, boost 3.0→2.0). **Rising wave**: RS trending up (0.3+) AND low drafts (<200) AND high boost (≥2.0) → up to 20% EV bonus. Catches Fears/Hawkins-type players coming up the curve. Config: `strategy.momentum_curve.*` (9 params). |
 
 ## Loading audit
 

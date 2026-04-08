@@ -1194,6 +1194,37 @@ _CONFIG_DEFAULTS = {
             "bonus_per_min": 0.02,      # 2% EV bonus per minute above min_delta
             "max_bonus": 0.15,          # Cap at 15% EV uplift
         },
+        # ── Historical RS confidence discount (project_player) ────────────
+        # Soft pull-back when predicted RS is far above player's historical track record.
+        # NOT a hard cap — players can still pop off. Bayesian approach:
+        # history is the prior, projection is the likelihood. More history = stronger prior.
+        "historical_rs_discount": {
+            "enabled": True,
+            "min_appearances": 3,       # Need 3+ historical datapoints for meaningful prior
+            "saturation_k": 8.0,        # Prior strength saturates: n/(n+k). k=8 → 50% at 8 appearances
+            "max_prior_strength": 0.5,  # Maximum weight of historical prior (never fully override model)
+            "discount_scale": 0.4,      # How aggressively to scale the pull-back per unit overshoot
+            "max_discount_frac": 0.6,   # Maximum fraction of overshoot to discount (never pull back >60%)
+        },
+        # ── Momentum curve detection (_build_lineups) ─────────────────────
+        # Detects two patterns in player historical data:
+        #   HYPE TRAP: Drafts exploding + boost declining = player peaked. Penalty.
+        #     (e.g., Sensabaugh: 2→207 drafts, boost 3.0→2.0 over the season)
+        #   RISING WAVE: RS trending up + low drafts + high boost = coming up. Bonus.
+        #     (e.g., Fears/Hawkins: rising RS, still low-drafted, high boost)
+        "momentum_curve": {
+            "enabled": True,
+            "min_history": 3,                  # Need 3+ appearances to detect momentum
+            # Hype trap
+            "hype_trap_max_penalty": 0.20,     # Up to 20% EV penalty for trapped players
+            "draft_growth_threshold": 0.5,     # 50%+ draft count increase triggers trap
+            "boost_decline_threshold": 0.4,    # 0.4+ boost decline confirms trap
+            # Rising wave
+            "rising_wave_max_bonus": 0.20,     # Up to 20% EV bonus for rising players
+            "rs_trend_min": 0.3,               # Minimum RS increase trend to qualify
+            "wave_max_drafts": 200.0,          # Must still be under-drafted (<200 drafts)
+            "wave_min_boost": 1.5,             # Must still have meaningful boost (≥1.5)
+        },
         # NOTE: Injury return penalties REMOVED after historical audit (2,316 entries, 152 dates).
         # Returning players produce +11.5% higher value than baseline due to boost reset mechanism.
         # The contrarian signal (72% under-drafted, avg 297 drafts vs 647) is too valuable to penalize.
@@ -3737,6 +3768,56 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     else:
         raw_score = heuristic_rs
 
+    # ── Historical RS confidence discount ─────────────────────────────────
+    # grep: HISTORICAL RS DISCOUNT
+    # Cross-reference predicted RS against the player's ACTUAL historical RS
+    # distribution from top_performers.csv. When we predict far above their
+    # proven range, apply a soft pull-back toward their track record.
+    #
+    # NOT a hard cap — players CAN pop off. But the further above history,
+    # the more the model discounts the projection. Think Bayesian: history
+    # is the prior, today's projection is the likelihood. With thin history
+    # (few appearances), the prior is weak and projections dominate. With
+    # deep history (10+ appearances), the prior is strong.
+    #
+    # Example: Sensabaugh median RS 3.3, predicted 6.4 → +3.1 above median.
+    # With 12 appearances, prior_weight ≈ 0.35. Pull-back = 0.35 × 3.1 × 0.5 = 0.54.
+    # Adjusted RS ≈ 5.86 instead of 6.4. Still allows upside, just tempered.
+    _hrs_cfg = _cfg("strategy.historical_rs_discount", {})
+    _hrs_player_name = pinfo.get("name", "")
+    if _hrs_cfg.get("enabled", True) and _hrs_player_name:
+        try:
+            from api.boost_model import load_player_history
+            _hist = load_player_history()
+            _pname_norm = _normalize_player_name(_hrs_player_name)
+            _player_hist = _hist.get(_pname_norm, [])
+            _hrs_min_appearances = int(_hrs_cfg.get("min_appearances", 3))
+            if len(_player_hist) >= _hrs_min_appearances:
+                _hist_rs_vals = sorted([e["rs"] for e in _player_hist if e.get("rs", 0) > 0])
+                if _hist_rs_vals:
+                    _hist_median = _hist_rs_vals[len(_hist_rs_vals) // 2]
+                    _hist_p75 = _hist_rs_vals[int(len(_hist_rs_vals) * 0.75)]
+                    _hist_max = _hist_rs_vals[-1]
+                    # Only discount when predicting ABOVE the player's P75
+                    # (don't penalize projections within their normal range)
+                    _overshoot = raw_score - _hist_p75
+                    if _overshoot > 0:
+                        # Prior strength scales with # of appearances (saturates at ~15)
+                        # Few games = weak prior (let projection dominate)
+                        # Many games = strong prior (history speaks loud)
+                        _n = len(_hist_rs_vals)
+                        _prior_strength = min(_n / (_n + float(_hrs_cfg.get("saturation_k", 8.0))), float(_hrs_cfg.get("max_prior_strength", 0.5)))
+                        # Pull-back fraction: how much of the overshoot to discount
+                        # Scaled by how far above P75 relative to their range
+                        _range = max(_hist_max - _hist_median, 0.5)
+                        _relative_overshoot = min(_overshoot / _range, 2.0)  # cap at 2x their range
+                        _discount = _prior_strength * _overshoot * min(_relative_overshoot * float(_hrs_cfg.get("discount_scale", 0.4)), float(_hrs_cfg.get("max_discount_frac", 0.6)))
+                        raw_score -= _discount
+                        if raw_score < _hist_p75:
+                            raw_score = _hist_p75  # never pull below P75
+        except Exception as _hrs_err:
+            pass  # Non-fatal — proceed with unmodified raw_score
+
     # ── Minutes delta signal: reward expanded role, discount business-as-usual ──
     # Players with significant minutes jumps (cascade/injury) have a concrete
     # upside catalyst. Players at normal minutes are "business as usual" — no
@@ -5077,6 +5158,23 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     _ct_min_boost = float(_ct_cfg.get("min_boost", 2.0))
     _ct_max_ppg = float(_ct_cfg.get("max_season_ppg", 16.0))
 
+    # ── Momentum curve detection ──────────────────────────────────────────
+    # grep: MOMENTUM CURVE
+    # Load player history to detect two critical patterns:
+    #   HYPE TRAP: Drafts exploding + boost declining = player at TOP of curve.
+    #     Sensabaugh went 2 → 207 drafts, boost 3.0 → 2.0. Classic trap.
+    #   RISING WAVE: RS trending up + low drafts + high boost = COMING UP curve.
+    #     Fears/Hawkins: high RS, low drafts, contrarian edge. These are our targets.
+    _mc_cfg = _strat.get("momentum_curve", {})
+    _mc_enabled = _mc_cfg.get("enabled", True)
+    _mc_history = {}
+    if _mc_enabled:
+        try:
+            from api.boost_model import load_player_history
+            _mc_history = load_player_history()
+        except Exception:
+            pass
+
     for p in candidate_pool:
         rs = float(p.get("rating", 0))
         boost = float(p.get("est_mult", 0))
@@ -5121,7 +5219,82 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                 _ct_ratio = min((boost - _ct_min_boost) / max(1.0, 3.0 - _ct_min_boost), 1.0)
                 ct_mult = 1.0 + (_ct_max_bonus * _ct_ratio)
                 p["_contrarian"] = True
-        total_mult = mi_mult * lb_mult * ct_mult
+
+        # ── Momentum curve multiplier ─────────────────────────────────────
+        # grep: MOMENTUM CURVE SCORING
+        mc_mult = 1.0
+        if _mc_enabled and _mc_history:
+            _pname_mc = _normalize_player_name(p.get("name", ""))
+            _phist = _mc_history.get(_pname_mc, [])
+            _mc_min_hist = int(_mc_cfg.get("min_history", 3))
+            if len(_phist) >= _mc_min_hist:
+                # Recent entries (last 5 appearances)
+                _recent_n = min(5, len(_phist))
+                _recent = _phist[-_recent_n:]
+                _older = _phist[:-_recent_n] if len(_phist) > _recent_n else _phist[:1]
+
+                _recent_rs = [e["rs"] for e in _recent if e.get("rs", 0) > 0]
+                _recent_drafts = [e["drafts"] for e in _recent if e.get("drafts", 0) > 0]
+                _recent_boosts = [e["boost"] for e in _recent if e.get("boost") is not None]
+                _older_drafts = [e["drafts"] for e in _older if e.get("drafts", 0) > 0]
+                _older_boosts = [e["boost"] for e in _older if e.get("boost") is not None]
+
+                # === HYPE TRAP DETECTION ===
+                # Signal: drafts rising sharply AND boost declining
+                # Player is getting more popular → Real Sports lowers their boost → trap
+                _trap_penalty = float(_mc_cfg.get("hype_trap_max_penalty", 0.20))
+                if _recent_drafts and _older_drafts and _recent_boosts and _older_boosts:
+                    _avg_recent_drafts = sum(_recent_drafts) / len(_recent_drafts)
+                    _avg_older_drafts = sum(_older_drafts) / len(_older_drafts)
+                    _avg_recent_boost = sum(_recent_boosts) / len(_recent_boosts)
+                    _avg_older_boost = sum(_older_boosts) / len(_older_boosts)
+
+                    # Drafts going up AND boost going down = hype trap
+                    _draft_growth = (_avg_recent_drafts / max(_avg_older_drafts, 1.0)) - 1.0  # % increase
+                    _boost_decline = _avg_older_boost - _avg_recent_boost  # positive = declining
+
+                    # Both conditions must be true (AND not OR)
+                    _draft_growth_threshold = float(_mc_cfg.get("draft_growth_threshold", 2.0))  # 200% draft increase
+                    _boost_decline_threshold = float(_mc_cfg.get("boost_decline_threshold", 0.5))  # 0.5 boost drop
+
+                    if _draft_growth >= _draft_growth_threshold and _boost_decline >= _boost_decline_threshold:
+                        # Scale penalty by how extreme the trap is
+                        _trap_severity = min(_draft_growth / 10.0, 1.0) * min(_boost_decline / 1.5, 1.0)
+                        mc_mult *= (1.0 - _trap_penalty * _trap_severity)
+                        p["_hype_trap"] = True
+                        p["_hype_trap_severity"] = round(_trap_severity, 3)
+
+                # === RISING WAVE DETECTION ===
+                # Signal: RS trending up in recent appearances + still low drafts + high boost
+                # These are the players "coming up on the curve" — exactly who we want
+                _wave_bonus = float(_mc_cfg.get("rising_wave_max_bonus", 0.20))
+                if len(_recent_rs) >= 2 and _recent_boosts:
+                    # RS trending up: last 2-3 appearances higher than first 2-3
+                    _first_half = _recent_rs[:len(_recent_rs)//2] or _recent_rs[:1]
+                    _second_half = _recent_rs[len(_recent_rs)//2:] or _recent_rs[-1:]
+                    _rs_trend = (sum(_second_half) / len(_second_half)) - (sum(_first_half) / len(_first_half))
+
+                    _latest_boost = _recent_boosts[-1]
+                    _latest_drafts = _recent_drafts[-1] if _recent_drafts else 0
+
+                    # Rising: RS going up + boost still high (≥ 2.0) + drafts still low (< 200)
+                    _rs_trend_min = float(_mc_cfg.get("rs_trend_min", 0.3))
+                    _wave_max_drafts = float(_mc_cfg.get("wave_max_drafts", 200.0))
+                    _wave_min_boost = float(_mc_cfg.get("wave_min_boost", 2.0))
+
+                    if (_rs_trend >= _rs_trend_min
+                            and _latest_boost >= _wave_min_boost
+                            and _latest_drafts < _wave_max_drafts):
+                        # Scale by trend strength and boost level
+                        _trend_strength = min(_rs_trend / 1.5, 1.0)
+                        _boost_strength = min((_latest_boost - _wave_min_boost) / 1.0, 1.0)
+                        _draft_contrarian = min(1.0, ((_wave_max_drafts - _latest_drafts) / _wave_max_drafts))
+                        _wave_score = _trend_strength * _boost_strength * _draft_contrarian
+                        mc_mult *= (1.0 + _wave_bonus * _wave_score)
+                        p["_rising_wave"] = True
+                        p["_rising_wave_score"] = round(_wave_score, 3)
+
+        total_mult = mi_mult * lb_mult * ct_mult * mc_mult
         # Unified EV: RS × (avg_slot + boost) captures both RS and boost value
         p["draft_ev"]  = round(rs * (_avg_slot + boost)    * total_mult, 2)
         p["safe_ev"]   = round(rs * (_avg_slot + cb_low)   * total_mult, 2)
@@ -5129,6 +5302,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         p["_mi_mult"]  = round(mi_mult, 3)
         p["_lb_mult"]  = round(lb_mult, 3)
         p["_ct_mult"]  = round(ct_mult, 3)
+        p["_mc_mult"]  = round(mc_mult, 3)
         p["moonshot_ev"] = p["draft_ev"]
 
     # ── Step 3: Sort candidate pool by safe_ev ──────────────────────────────
