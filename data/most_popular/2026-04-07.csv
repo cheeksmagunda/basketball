@@ -1,0 +1,18 @@
+player,team,draft_count,slot_position,source
+Cooper Flagg,BOS,10400,1st,most_popular
+Shai Gilgeous-Alexander,OKC,8500,1st,most_popular
+Kevin Durant,PHX,5600,3rd,most_popular
+Kawhi Leonard,LAC,5500,2nd,most_popular
+Jaylen Brown,BOS,5000,2nd,most_popular
+Kon Knueppel,BOS,4700,2nd,most_popular
+Devin Booker,PHX,4600,3rd,most_popular
+Ousmane Dieng,OKC,4200,1st,most_popular
+LaMelo Ball,CHA,4000,3rd,most_popular
+Will Riley,WAS,3400,3rd,most_popular
+Alperen Sengun,HOU,2500,3rd,most_popular
+Stephen Curry,GSW,2500,1st,most_popular
+Luke Kennard,LAL,2500,5th,most_popular
+Leonard Miller,,2400,5th,most_popular
+Bam Adebayo,MIA,2300,4th,most_popular
+Scottie Barnes,TOR,2200,4th,most_popular
+Amen Thompson,HOU,2100,3rd,most_popular
