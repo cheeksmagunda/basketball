@@ -1,0 +1,6 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+CHI @ WSH,the_lineup,2.0x,Tre Jones,4395626,CHI,G,11.7,0.0,32.6,21.4,2.6,7.8,1.1,0.0
+CHI @ WSH,the_lineup,1.8x,Bub Carrington,4845374,WSH,G,11.2,0.0,35.9,13.0,3.2,5.2,0.4,0.0
+CHI @ WSH,the_lineup,1.6x,Collin Sexton,4277811,CHI,G,11.0,0.0,34.3,16.9,7.4,3.7,3.0,0.0
+CHI @ WSH,the_lineup,1.4x,Julian Reese,4683742,WSH,F,10.4,0.0,42.9,13.2,12.2,2.6,2.3,0.9
+CHI @ WSH,the_lineup,1.2x,Sharife Cooper,4432173,WSH,G,10.0,0.0,26.0,12.7,0.9,3.7,0.3,0.0
