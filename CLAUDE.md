@@ -402,7 +402,7 @@ No Monte Carlo, no post-compression multiplier stack, no archetype calibration, 
 
 **Momentum curve** in `strategy.momentum_curve`: `enabled` (true), `min_history` (3),
 `hype_trap_max_penalty` (0.20), `draft_growth_threshold` (0.5), `boost_decline_threshold` (0.4),
-`rising_wave_max_bonus` (0.20), `rs_trend_min` (0.3), `wave_max_drafts` (200), `wave_min_boost` (1.5).
+`rising_wave_max_bonus` (0.35), `rs_trend_min` (0.15), `wave_max_drafts` (300), `wave_min_boost` (1.5).
 
 **Per-game**, **Context layer** config sections remain unchanged.
 
@@ -416,8 +416,8 @@ Both lineups use a **single EV formula**: `draft_ev = RS × (2.0 + boost)`. Stra
 1. **Filter**: RS ≥ 2.0 (`strategy.rs_floor`), minutes ≥ 12 (`strategy.min_minutes`), not OUT, not blacklisted
 2. **Score**: `draft_ev = RS × (2.0 + boost)` for each candidate
 3. **Rank**: Candidates sorted by `draft_ev` descending
-4. **Safe Lineup (Starting 5)**: Top 5 by EV. Ties broken by lower variance (reliable floor).
-5. **Upside Lineup (Moonshot)**: Starts as copy of safe. Up to 2 swaps (`strategy.max_upside_swaps`) from remaining pool — prefers higher-variance or higher-boost players within a 2.0 EV threshold (`strategy.ev_swap_threshold`).
+4. **Safe Lineup (Starting 5)**: Top 5 by `safe_ev` (cb_low). Ties broken by lower variance (reliable floor).
+5. **Upside Lineup (Moonshot)**: Top 5 by `upside_ev` (cb_high) from the full candidate pool (independent selection, 2-3 overlap with S5 expected).
 6. **Slot Assignment**: Both lineups sorted by RS descending → 2.0x, 1.8x, 1.6x, 1.4x, 1.2x. This is provably optimal: `d(Value)/d(slot) = RS`, so highest RS → highest slot.
 
 **Anti-popularity** (Finding 4): Draft popularity has -0.457 correlation with boost. The cascade in `boost_model.py` estimates popularity from season PPG + team market + hot streak, then penalizes popular players' boost predictions. The least-drafted 50% produce 24-26% more total value.
@@ -428,7 +428,7 @@ Config: All draft strategy parameters in `strategy.*` section of model-config de
 Top 5 by `draft_ev`. Tie-breaking prefers lower variance for floor reliability. No MILP, no boost floors, no star anchor pathway — the EV formula naturally selects the right mix.
 
 ### Slate-Wide: Moonshot (Upside)
-Starts from safe lineup, swaps 1-2 players for higher-variance/higher-boost alternatives from the candidate pool. Swaps only happen when replacement EV is within `ev_swap_threshold` of the displaced player's EV — ensures upside without sacrificing expected value.
+Top 5 by `upside_ev` from the **full** candidate pool (independent selection, not filtered by S5). Best EV players can appear in both lineups (2-3 overlap expected — matches winning draft patterns where the top players belong in every lineup). Divergence comes from `upside_ev` (cb_high) vs `safe_ev` (cb_low) ranking differences + team cap.
 
 ### Per-Game: THE LINE UP (v60 — Strategy-Aware Draft Model)
 Redesigned from 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23, 2026). Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant.
@@ -846,6 +846,8 @@ If slate fails to load:
 **docs/LOADING_AUDIT.md** — Catalogs frontend loading states, fetch timeouts, skeletons, async state pattern. All blocking API calls use `fetchWithTimeout`; no critical gaps for production.
 
 | Apr 8 post-mortem — EV formula fix + high-boost bypass + RS discount | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py`, `tests/test_core.py` | **Problem**: Apr 8 slate — chalk 0/5, moonshot 2/5 (Clayton, Dieng). ALL winning players had 3.0x boost with <25 drafts. Bones Hyland predicted RS 5.0, actual 0.5 (catastrophic). Keon Ellis predicted RS 5.0, actual 0.9. Winning draft (73.96) = 5 players with 3.0x boost: Clayton, Dieng, Sims, Shannon Jr, Hendricks. **Fix 1**: `avg_slot_multiplier` 1.6→2.0 — EV formula was `RS × (1.6 + boost)` instead of documented `RS × (2.0 + boost)`, undervaluing boost by ~8%. **Fix 2**: High-boost bypass — players with predicted boost ≥2.5 AND RS ≥2.0 now bypass the min_minutes gate (uses 12 min like cascade teams). Deep bench 3.0x contrarians (Shannon, Bitadze, Sims, Hendricks, Bryant) were ALL filtered by 25-min gate. **Fix 3**: `min_minutes` 25→15 (global relaxation). **Fix 4**: Historical RS discount strengthened — `min_appearances` 3→2, `saturation_k` 8→6, `max_prior_strength` 0.5→0.65, `discount_scale` 0.4→0.6, `max_discount_frac` 0.6→0.8. Prevents Hyland-type 5.0→0.5 busts. **Fix 5**: `anti_popularity_enabled` true + `strength` 0.2 in model-config.json (was disabled). Config v91. |
+
+| Apr 9 pipeline + picks quality overhaul | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | **Problem**: Pipeline not running (empty `{}` slate cache, unprotected exception in `_run_cold_pipeline`), and 0/5 picks hitting on recent slates (Apr 5–8: ALL winners had boost 2.9–3.0 with <25 drafts; model predicted none of them). **6 fixes**: (1) **Pipeline crash fix**: wrapped unprotected `_prewarm_current_slate_sync()` call in `_run_cold_pipeline` with try/except — was silently crashing the entire cold pipeline, leaving empty tombstones. (2) **EV formula consistency**: `_build_lineups()` code default was 1.6 instead of config value 2.0 for `avg_slot_multiplier` — boost undervalued by ~8% in lineup selection relative to `project_player()`. Fixed default to 2.0. (3) **Anti-popularity 3x multiplier removed**: hidden `* 3.0` on line 3024 made `anti_popularity_strength: 0.2` effectively 0.6 — way too harsh, over-penalizing popular players' boost predictions. Now strength is directly applied. (4) **Rising wave tuning**: `rs_trend_min` 0.3→0.15 (slow-building players qualify), `rising_wave_max_bonus` 0.20→0.35, `wave_max_drafts` 200→300. (5) **Moonshot from full pool**: was excluding S5 players from moonshot pool, preventing best EV players from appearing in both lineups. Now moonshot selects independently — 2-3 overlap expected (matches winning draft patterns). (6) **ai_blend_weight config drift**: was 0.3 in config but v82 changelog says 1.0 (100% LightGBM). DFS heuristic was causing catastrophic RS over-projection for role players (Trent Jr. projected 5.7, actual 1.7). Fixed config + code default to 1.0. |
 
 ## Production audit
 

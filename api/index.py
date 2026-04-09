@@ -816,7 +816,7 @@ _CONFIG_DEFAULTS = {
         "compression_divisor": 6.0,
         "compression_power": 0.65,
         "rs_cap": 20.0,
-        "ai_blend_weight": 0.30,
+        "ai_blend_weight": 1.0,
         # RS regression guard: cap heuristic_rs by scoring tier to prevent
         # bench players (PPG < 12) from being projected at RS 6.0+.
         # Data: avg top performer RS = 4.16, median = 3.9. Role players rarely
@@ -1055,9 +1055,9 @@ _CONFIG_DEFAULTS = {
             "draft_growth_threshold": 0.5,     # 50%+ draft count increase triggers trap
             "boost_decline_threshold": 0.4,    # 0.4+ boost decline confirms trap
             # Rising wave
-            "rising_wave_max_bonus": 0.20,     # Up to 20% EV bonus for rising players
-            "rs_trend_min": 0.3,               # Minimum RS increase trend to qualify
-            "wave_max_drafts": 200.0,          # Must still be under-drafted (<200 drafts)
+            "rising_wave_max_bonus": 0.35,     # Up to 35% EV bonus for rising players
+            "rs_trend_min": 0.15,              # Lower bar — slow-building players qualify
+            "wave_max_drafts": 300.0,          # Under-drafted threshold (<300 drafts)
             "wave_min_boost": 1.5,             # Must still have meaningful boost (≥1.5)
         },
         # NOTE: Injury return penalties REMOVED after historical audit (2,316 entries, 152 dates).
@@ -3019,9 +3019,9 @@ def _est_card_boost(
             recent_ppg=float(recent_pts or _spts or 0.0),
         )
         # Normalize popularity: 2500 = typical star draft count (top quartile)
-        # Penalty scales from 0 (unknown player) to ~0.6 (heavily drafted star)
+        # Penalty scales from 0 (unknown player) to strength (heavily drafted star)
         _pop_normalized = min(_pop_score / 2500.0, 1.0)
-        _anti_pop_delta = _pop_normalized * _pop_strength * 3.0
+        _anti_pop_delta = _pop_normalized * _pop_strength
     raw_boost -= _anti_pop_delta
     cb_low -= _anti_pop_delta
     cb_high -= _anti_pop_delta
@@ -3386,7 +3386,8 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         # Stars (20+ PPG): no cap — they produce RS 5-12 naturally
 
     # ── Late blend: AI (native RS units) + heuristic RS ───────────────────────
-    # LightGBM outputs native RS units. 30% AI / 70% heuristic.
+    # LightGBM outputs native RS units. Default 100% AI (v82: DFS heuristic
+    # caused catastrophic over-projection for role players).
     ai_weight = rs_cfg.get("ai_blend_weight", _rs_defaults["ai_blend_weight"])
     if ai_pred is not None:
         raw_score = min((ai_pred * ai_weight) + (heuristic_rs * (1.0 - ai_weight)), rs_cap)
@@ -4502,15 +4503,14 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None, n_games=None):
     """Dynamic lineup builder — unified EV formula, no hardcoded archetypes.
 
-    EV formula: RS × (1.6 + boost) × data_multipliers
-      Where 1.6 = mean slot multiplier ([2.0, 1.8, 1.6, 1.4, 1.2]).
-      This correctly values both RS and boost relative to actual game scoring.
-      Stars (high RS, low boost) and role players (moderate RS, high boost)
-      rank on equal footing — the slate's player pool determines the mix.
+    EV formula: RS × (2.0 + boost) × data_multipliers
+      Where 2.0 = top slot multiplier. Strategy report Finding 2: boost is 40%
+      more valuable per unit than RS. Using the top slot multiplier properly
+      weights boost's contribution relative to RS.
 
     Pipeline:
       1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
-      2. Score: safe_ev = RS × (1.6 + cb_low), upside_ev = RS × (1.6 + cb_high)
+      2. Score: safe_ev = RS × (2.0 + cb_low), upside_ev = RS × (2.0 + cb_high)
          Plus data-driven multipliers (minutes delta, leaderboard frequency,
          contrarian bonus for under-drafted high-boost role players)
       3. Starting 5: top 5 by safe_ev (floor reliability), team cap applied
@@ -4624,16 +4624,9 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         print(f"[build_lineups] only {_unique_teams} teams in pool, relaxing max_per_team to 2 for coverage")
 
     # ── Step 2: Score by unified EV = RS × (avg_slot + boost) ────────────
-    # Formula: EV = RS × (1.6 + boost), where 1.6 = avg([2.0,1.8,1.6,1.4,1.2]).
-    #
-    # Why 1.6 + boost (not just boost):
-    #   A star (RS=6, boost=0.3) at the 2.0x slot earns 6×(2.0+0.3)=13.8 total.
-    #   A role player (RS=3, boost=3.0) at the 1.2x slot earns 3×(1.2+3.0)=12.6.
-    #   RS × boost alone gives 1.8 vs 9.0, wildly wrong relative to actual scoring.
-    #   RS × (1.6 + boost) gives 11.4 vs 13.8 — much closer to reality, and both
-    #   players could legitimately be optimal depending on the full slate pool.
-    #   The formula naturally selects stars when they're valuable, role players when
-    #   they're not — no hardcoded archetype required.
+    # Formula: EV = RS × (2.0 + boost). Strategy report Finding 2: boost is 40%
+    # more valuable per unit than RS. Using the top slot (2.0) properly weights
+    # boost's contribution. This matches project_player()'s draft_ev formula.
     #
     # safe_ev uses cb_low (conservative boost floor) — prefer for Starting 5.
     # upside_ev uses cb_high (optimistic boost ceiling) — prefer for Moonshot.
@@ -4642,7 +4635,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     #   - minutes_increase_ev_bonus: rewards players stepping into expanded roles
     #   - leaderboard_frequency: proven repeat leaderboard performers get small edge
     #   - contrarian_bonus: under-drafted role players with high boost get small edge
-    _avg_slot = float(_cfg("lineup.avg_slot_multiplier", 1.6) or 1.6)
+    _avg_slot = float(_cfg("lineup.avg_slot_multiplier", 2.0) or 2.0)
 
     _mi_cfg = _strat.get("minutes_increase_ev_bonus", {})
     _mi_enabled = _mi_cfg.get("enabled", True)
@@ -4848,11 +4841,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)
     chalk_names = {p.get("name") for p in chalk}
 
-    # ── Step 5: Moonshot — top 5 by upside_ev from remaining pool ───────
-    # Same candidates as chalk pool, different ordering (upside_ev vs safe_ev).
-    # Moonshot players are expected to diverge 1-3 players from the Starting 5.
+    # ── Step 5: Moonshot — top 5 by upside_ev from full pool ─────────────
+    # Moonshot selects independently from the full candidate pool by upside_ev.
+    # This allows 2-3 overlap players with Starting 5 (the best EV players
+    # should appear in both lineups) while diverging on the remaining spots
+    # via upside_ev vs safe_ev ranking differences.
     moonshot_pool = sorted(
-        [p for p in candidate_pool if p.get("name") not in chalk_names],
+        candidate_pool,
         key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0))
     )
     upside, _ = _select_with_team_cap(moonshot_pool, 5, max_per_team)
@@ -7842,7 +7837,18 @@ def _run_cold_pipeline(trigger: str) -> dict:
         except Exception:
             pass
 
-        prewarm = _prewarm_current_slate_sync(force=True, include_slate=True)
+        try:
+            prewarm = _prewarm_current_slate_sync(force=True, include_slate=True)
+        except Exception as e:
+            import traceback
+            print(f"[cold-pipeline] prewarm failed: {e}")
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "trigger": trigger,
+                "message": f"Prewarm failed: {e}",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
         return {
             "status": "ok",
             "trigger": trigger,
