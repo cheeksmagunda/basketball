@@ -24,8 +24,8 @@ export function idleState<T>(): AsyncState<T> {
 // Navigation types
 // ---------------------------------------------------------------------------
 
-/** Top-level tab identifiers (matches the 4-tab segmented control) */
-export type Tab = 'predict' | 'line' | 'parlay' | 'lab';
+/** Top-level tab identifiers (matches the 2-tab segmented control) */
+export type Tab = 'predict' | 'lab';
 
 /** Predict sub-nav: Slate-Wide vs Per-Game */
 export type PredictSubNav = 'slate' | 'game';
@@ -33,27 +33,6 @@ export type PredictSubNav = 'slate' | 'game';
 /** Slate lineup mode: Starting 5 (chalk) vs Moonshot (upside) */
 export type SlateMode = 'chalk' | 'upside';
 
-/** Line of the Day direction filter */
-export type LineDirection = 'over' | 'under';
-
-// ---------------------------------------------------------------------------
-// Stat type (used across Line + Parlay)
-// ---------------------------------------------------------------------------
-
-export type StatType = 'points' | 'rebounds' | 'assists';
-
-/** Short display label for stat types */
-export const STAT_LABEL: Record<StatType, string> = {
-  points: 'PTS',
-  rebounds: 'REB',
-  assists: 'AST',
-};
-
-// ---------------------------------------------------------------------------
-// Pick / bet result
-// ---------------------------------------------------------------------------
-
-export type PickResult = 'pending' | 'hit' | 'miss';
 
 // ---------------------------------------------------------------------------
 // Team info (from ESPN via fetch_games)

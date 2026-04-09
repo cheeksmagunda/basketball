@@ -9,9 +9,6 @@ export type {
   Tab,
   PredictSubNav,
   SlateMode,
-  LineDirection,
-  StatType,
-  PickResult,
   TeamInfo,
   ScoreBounds,
   ScoreBoundsMap,
@@ -19,16 +16,13 @@ export type {
   CacheMetadata,
 } from './common';
 
-export { idleState, STAT_LABEL } from './common';
+export { idleState } from './common';
 
 // Navigation aliases (used by stores and hooks)
 // Note: Tab in common.ts uses 'predict' but the vanilla JS app uses 'predictions'.
-// TabName matches the actual DOM tab IDs (tab-predictions, tab-line, etc.)
-export type TabName = 'predictions' | 'line' | 'parlay' | 'lab';
+// TabName matches the actual DOM tab IDs (tab-predictions, tab-lab)
+export type TabName = 'predictions' | 'lab';
 export type PredictSub = 'slate' | 'game';
-
-/** Line history section filter: all picks, or filtered by direction */
-export type LineHistoryFilter = 'all' | 'over' | 'under';
 
 // Slate / Predict
 export type {
@@ -44,25 +38,6 @@ export type {
   GamesResponse,
 } from './slate';
 
-// Line of the Day
-export type {
-  LinePick,
-  LineSlateInfo,
-  LineOfTheDayResponse,
-  LineLiveStatResponse,
-  LineHistoryResponse,
-} from './line';
-
-// Parlay
-export type {
-  ParlayLeg,
-  ParlayData,
-  ParlayMarketMatch,
-  ParlayLiveLeg,
-  ParlayLivePayload,
-  ParlayHistoryItem,
-  ParlayHistoryResponse,
-} from './parlay';
 
 // Lab / Ben
 export type {

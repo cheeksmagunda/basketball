@@ -243,29 +243,12 @@ function TransformPicksData(raw) {
 // TAB NAVIGATION — grep: switchTab, movePill, setPillAccent, segmented control
 // ════════════════════════════════════════════════════════════════════
 function switchTab(tab) {
-  closeLinePickModal();
-  closeParlayModal();
   hideLoader(); // Dismiss 8-ball overlay on ANY tab switch (scoped to Predict but belt-and-suspenders)
 
   // Abort in-flight fetches for tabs we're leaving (prevents stale response processing)
-  ['predictions', 'line', 'parlay', 'lab'].forEach(function(t) {
+  ['predictions', 'lab'].forEach(function(t) {
     if (t !== tab) _abortTab(t);
   });
-
-  // Live stat poll lifecycle: stop when leaving Line tab, restart when returning
-  if (tab !== 'line' && LINE_LIVE_POLL) {
-    clearInterval(LINE_LIVE_POLL); LINE_LIVE_POLL = null;
-  }
-  if (tab !== 'line' && LINE_RESOLVE_POLL) {
-    clearInterval(LINE_RESOLVE_POLL); LINE_RESOLVE_POLL = null;
-  }
-  if (tab !== 'line' && _lineLiveScheduleTimer) {
-    clearTimeout(_lineLiveScheduleTimer); _lineLiveScheduleTimer = null;
-  }
-
-  if (tab !== 'parlay') {
-    _stopParlayLiveSse();
-  }
 
   document.querySelectorAll('.bnav-icon-btn').forEach(b => {
     const isActive = b.dataset.tab === tab;
@@ -290,25 +273,14 @@ function switchTab(tab) {
 
   movePill(tab);
   setPillAccent(tab);
-  const tabGlows = { predictions: 'rgba(20,184,166,0.06)', line: 'rgba(212,166,64,0.06)', parlay: 'rgba(20,184,166,0.06)', lab: 'rgba(20,184,166,0.06)' };
+  const tabGlows = { predictions: 'rgba(20,184,166,0.06)', lab: 'rgba(20,184,166,0.06)' };
   document.documentElement.style.setProperty('--tab-glow', tabGlows[tab] || tabGlows.predictions);
   if (tab === 'predictions') {
     let stale = SLATE_LOADED_AT > 0 && (Date.now() - SLATE_LOADED_AT) > 5 * 60 * 1000;
     let dateStale = SLATE && SLATE.locked && SLATE.date && SLATE.date !== _etToday();
     if (stale || dateStale) loadSlate();
   }
-  if (tab === 'line') {
-    // Keep Line cache ownership in the Line page initializer only.
-    // Do not bust LINE_LOADED_DATE from unrelated SLATE staleness, or hydrated
-    // picks can briefly render and then regress to skeleton loading.
-    initLinePage();  // has its own cache guard (LINE_LOADED_DATE === todayET)
-  }
-  if (tab === 'parlay') initParlayPage();  // has its own staleness guard
   if (tab === 'lab') initLabPage();  // has its own staleness guard
-  // Resume live poll on returning to Line tab if picks already loaded and no poll running
-  if (tab === 'line' && (LINE_OVER_PICK || LINE_UNDER_PICK) && !LINE_LIVE_POLL) {
-    _startLineLivePoll(LINE_OVER_PICK, LINE_UNDER_PICK);
-  }
   // Re-position toggle pills in newly visible tab (elements may have been hidden)
   setTimeout(_initAllTogglePills, 30);
 }
@@ -488,9 +460,6 @@ let _HydrationState = {
 const _HYDRATION_ENDPOINTS = [
   { name: 'slate', url: '/api/slate', timeout: 30000, init: null },
   { name: 'games', url: '/api/games', timeout: 10000, init: function(data) { populateGameSelector(data.data || data); } },
-  { name: 'line', url: '/api/line-of-the-day', timeout: 30000, init: null },
-  { name: 'line_history', url: '/api/line-history', timeout: 10000, init: null },
-  { name: 'parlay', url: '/api/parlay', timeout: 45000, init: null, optional: true },
 ];
 
 /**
@@ -513,19 +482,6 @@ async function _hydrateApp() {
         SLATE_LOADED_AT = Date.now();
       } else if (ep.name === 'games') {
         if (ep.init) ep.init(data);
-      } else if (ep.name === 'line') {
-        LINE_LOTD_STATE = asyncStateSuccess(LINE_LOTD_STATE || {}, data);
-        LINE_LOTD_STATE.loadedAt = Date.now();
-      } else if (ep.name === 'line_history') {
-        LINE_HISTORY_DATA = data;
-        if (data) {
-          LINE_HIST_DATA = data;
-          LINE_HISTORY_STATE = asyncStateSuccess(LINE_HISTORY_STATE || {}, data);
-        }
-      } else if (ep.name === 'parlay') {
-        PARLAY_STATE = asyncStateSuccess(PARLAY_STATE || {}, data);
-        PARLAY_STATE.loadedAt = Date.now();
-        _labSyncParlayContext(data);
       }
 
       _HydrationState.loaded[ep.name] = true;
@@ -541,37 +497,14 @@ async function _hydrateApp() {
     }
   };
 
-  // Tiered hydration waterfall: prevent thundering herd on cold backend.
-  // Tier 1 (critical, blocks first paint): slate + games
-  // Tier 2 (after Tier 1): line + line_history — lightweight reads
-  // Tier 3 (after Tier 2): parlay — heaviest endpoint, runs last when backend is free
-  const _tier1Names = new Set(['slate', 'games']);
-  const _tier2Names = new Set(['line', 'line_history']);
-  const _tier1 = _HYDRATION_ENDPOINTS.filter(ep => _tier1Names.has(ep.name));
-  const _tier2 = _HYDRATION_ENDPOINTS.filter(ep => _tier2Names.has(ep.name));
-  const _tier3 = _HYDRATION_ENDPOINTS.filter(ep => !_tier1Names.has(ep.name) && !_tier2Names.has(ep.name));
-
-  // Tier 1: slate + games — must complete before app is interactive
-  const criticalResults = await Promise.allSettled(_tier1.map(_fetchHydrationEndpoint));
+  // Hydrate: slate + games — must complete before app is interactive
+  const criticalResults = await Promise.allSettled(_HYDRATION_ENDPOINTS.map(_fetchHydrationEndpoint));
   _HydrationState.completedAt = Date.now();
   const critical_ms = _HydrationState.completedAt - _HydrationState.startedAt;
-  console.log(`[hydrate] tier1 (critical) complete in ${critical_ms}ms`);
+  console.log(`[hydrate] complete in ${critical_ms}ms`);
 
   hideLoader();
   _postHydrateRender();
-
-  // Tier 2: line + log — lightweight reads, won't compete with slate generation
-  Promise.allSettled(_tier2.map(_fetchHydrationEndpoint)).then(function(t2results) {
-    const t2_ms = Date.now() - _HydrationState.startedAt;
-    console.log(`[hydrate] tier2 (line+log) complete in ${t2_ms}ms`);
-
-    // Tier 3: parlay — heaviest endpoint, only after tier 2 frees up backend workers
-    return Promise.allSettled(_tier3.map(_fetchHydrationEndpoint));
-  }).then(function(t3results) {
-    _HydrationState.deferredCompletedAt = Date.now();
-    const total_ms = _HydrationState.deferredCompletedAt - _HydrationState.startedAt;
-    console.log(`[hydrate] tier3 (parlay) complete in ${total_ms}ms — all tiers done`);
-  }).catch(function() {});
 
   return criticalResults;
 }
@@ -626,8 +559,6 @@ function _postHydrateRender() {
     // Populate game selector from slate games
     if (SLATE.games && SLATE.games.length) { populateGameSelector(SLATE.games); }
 
-    // Pre-warm Line and Parlay (background fetches for tabs not yet visited)
-    _prewarmLineAndParlay(SLATE.date || _etToday());
 
     // Header meta badges
     const headerMeta = _el('headerMeta');
@@ -2828,14 +2759,15 @@ function openLinePickModalByIdx(el) {
 }
 
 function closeLinePickModal() {
-  document.getElementById('linePickModal').style.display = 'none';
+  const modal = document.getElementById('linePickModal');
+  if (modal) modal.style.display = 'none';
   document.body.style.overflow = '';
 }
 
 
 
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeLinePickModal(); closeParlayModal(); }
+  if (e.key === 'Escape') { document.body.style.overflow = ''; }
 });
 
 function filterLineHistory(dir) {
@@ -3133,32 +3065,16 @@ async function showLabUnlocked(status) {
   if (!LAB.system) LAB.system = buildLabSystemPrompt();
 
   // Load context data in background (non-blocking) — chat is usable while this runs
-  // Reuse cached data from other tabs when available to avoid redundant API calls
-  let _cachedLine = (LINE_LOTD_STATE && LINE_LOTD_STATE.status === 'success' && LINE_LOTD_STATE.data)
-    ? Promise.resolve(LINE_LOTD_STATE.data) : _fetchJson('/api/line-of-the-day', 30000);
   let _cachedSlate = SLATE
     ? Promise.resolve(SLATE) : _fetchJson('/api/slate', 10000);
-  const _labEt = _etToday();
-  let _cachedParlay =
-    (PARLAY_STATE && PARLAY_STATE.status === 'success' && PARLAY_STATE.data &&
-      (PARLAY_STATE.data.date === _labEt || PARLAY_LOADED_DATE === _labEt))
-      ? Promise.resolve(PARLAY_STATE.data)
-      : _fetchJson('/api/parlay', 45000).catch(function(e) {
-        console.warn('[lab] parlay context:', e && e.message ? e.message : e);
-        return null;
-      });
   Promise.allSettled([
     _fetchJson('/api/lab/briefing', 30000),
     _fetchJson('/api/lab/config-history', 10000),
-    _cachedLine,
     _cachedSlate,
-    _cachedParlay,
-  ]).then(function([briefingRes, configRes, lineRes, slateRes, parlayRes]) {
+  ]).then(function([briefingRes, configRes, slateRes]) {
     if (briefingRes.status === 'fulfilled') LAB.briefing  = briefingRes.value;
     if (configRes.status === 'fulfilled')   LAB.config    = configRes.value;
-    if (lineRes.status === 'fulfilled')     LAB.lineData  = lineRes.value;
     if (slateRes.status === 'fulfilled')    LAB.slateData = slateRes.value;
-    LAB.parlayData = (parlayRes.status === 'fulfilled' && parlayRes.value) ? parlayRes.value : null;
     // Rebuild system prompt with full context
     LAB.system = buildLabSystemPrompt();
   });
@@ -3167,51 +3083,6 @@ async function showLabUnlocked(status) {
 function buildLabSystemPrompt() {
   const briefStr = LAB.briefing ? JSON.stringify(LAB.briefing, null, 2) : 'No briefing available yet.';
   const cfgStr   = LAB.config   ? JSON.stringify(LAB.config.config || LAB.config, null, 2) : 'Config unavailable.';
-  const fmtLinePick = p => !p ? null : `${p.player_name} (${p.team}) — ${p.direction?.toUpperCase()} ${p.line} ${p.stat_type} | proj ${p.projection} | edge ${p.edge > 0 ? '+' : ''}${p.edge} | conf ${p.confidence}/100`;
-  const lineStr = LAB.lineData
-    ? (() => {
-        const over  = LAB.lineData.over_pick;
-        const under = LAB.lineData.under_pick;
-        const primary = LAB.lineData.pick;
-        const lines = [];
-        if (over)   lines.push('OVER:  ' + fmtLinePick(over));
-        if (under)  lines.push('UNDER: ' + fmtLinePick(under));
-        if (!over && !under && primary) lines.push('PICK:  ' + fmtLinePick(primary));
-        return lines.length ? lines.join('\n') : 'No line picks available today.';
-      })()
-    : 'Line data unavailable.';
-
-  const parlayStr = LAB.parlayData
-    ? (() => {
-        const p = LAB.parlayData;
-        const legs = p.legs || [];
-        if (!legs.length) {
-          const hint = (p.narrative && String(p.narrative).trim()) || p.error || '';
-          return hint ? `No active 3-leg ticket. ${hint}` : 'No active 3-leg ticket (odds or filters).';
-        }
-        const statShort = t => ({ points: 'PTS', rebounds: 'REB', assists: 'AST' }[t] || (t || '').toString().toUpperCase());
-        const fmtLeg = (leg, i) => {
-          const dir = (leg.direction || 'over').toUpperCase();
-          const st = statShort(leg.stat_type);
-          const line = leg.line != null ? Number(leg.line).toFixed(1) : '—';
-          const proj = leg.projection != null ? Number(leg.projection).toFixed(1) : '—';
-          const bc = leg.blended_confidence != null ? (Math.round(leg.blended_confidence * 1000) / 10) : null;
-          const ju = leg.american_odds != null ? leg.american_odds : (leg.odds != null ? leg.odds : '');
-          return `  ${i + 1}. ${leg.player_name} (${leg.team} vs ${leg.opponent}) — ${dir} ${line} ${st} | proj ${proj}${bc != null ? ` | blended ${bc}%` : ''}${ju !== '' ? ` | odds ${ju}` : ''}`;
-        };
-        const comb = p.combined_probability != null ? (Math.round(p.combined_probability * 1000) / 10) : null;
-        const cm = p.correlation_multiplier != null ? Number(p.correlation_multiplier).toFixed(3) : null;
-        const reasons = (p.correlation_reasons || []).filter(Boolean).join('; ');
-        const narr = (p.narrative && String(p.narrative).trim()) || '';
-        return `Date: ${p.date || ''}${p.projection_only ? ' (projection-only lines)' : ''}
-Combined hit probability (independent product): ${comb != null ? comb + '%' : 'n/a'}
-Correlation multiplier: ${cm != null ? cm : 'n/a'}${reasons ? '\nCorrelation notes: ' + reasons : ''}
-Legs:
-${legs.map(fmtLeg).join('\n')}
-${narr ? 'Narrative: ' + narr : ''}`.trim();
-      })()
-    : 'Parlay ticket not loaded in this session yet (or fetch failed).';
-
   const slateStr = (() => {
     const s = LAB.slateData;
     if (!s || !s.lineups) return 'Slate not loaded yet.';
@@ -3246,11 +3117,9 @@ ${upside.map(fmtPlayer).join('\n') || '  (none)'}`;
 
   return `You are Ben — the Oracle's autonomous NBA analytics and engineering assistant. Full authority: data, config, and code.
 
-APP STRUCTURE (4 tabs):
+APP STRUCTURE (2 tabs):
 - PREDICT: Daily lineup optimizer. Slate-Wide: Starting 5 = chalk (conservative, high-RS + moderate boost, 20-min avg/recent floor). Moonshot = high-boost upside plays (low ownership, 17+ min projected floor, RotoWire cleared). Per-Game: single "THE LINE UP" format (5 players, 20-min projected floor, no card boost — same 2-team pool). Slate locks 5 min before first tip.
-- LINE: Line of the Day — Over and Under prop picks. Over/Under sub-nav defaults to Under. History strip shows streak and hit rate.
-- PARLAY: Safest 3-leg player prop parlay on the slate — certainty-optimized (Z-score + Vegas blend, anti-fragility filters, correlation score). Shown on the Parlay tab and summarized below.
-- BEN (here): Chat with model context from Predict + Line + Parlay when loaded.
+- BEN (here): Chat with model context from Predict when loaded.
 
 DATA PIPELINE (this season):
 - Historical outcomes for Log/audit: data/top_performers.csv (mega rollup by date) is primary; legacy data/actuals/{date}.csv still supported as fallback.
@@ -3258,16 +3127,14 @@ DATA PIPELINE (this season):
 - Most popular lists → data/most_popular/{date}.csv (POST /api/save-ownership is an alias of the same path).
 - Predictions saved at lock → data/predictions/{date}.csv
 - Audit JSON → data/audit/{date}.json (from predictions vs top_performers / actuals)
-- Line picks → data/lines/{date}_pick.json (over_pick + under_pick) + data/lines/{date}.csv
-- Parlay ticket → data/parlays/{date}.json (three legs, combined_probability, narrative)
 - Card boost calibration: GET /api/lab/calibrate-boost → fits log_a/log_b from ownership data → propose via update_config action${LAB.briefing?.ownership_calibration_available ? `\n- OWNERSHIP DATA AVAILABLE for dates: ${(LAB.briefing.ownership_dates || []).join(', ')}. Run GET /api/lab/calibrate-boost to fit the boost formula to real data.` : ''}
 
 VISION: You have full image analysis capability. When the user attaches a photo using the 📷 button (left of the input box), you will see the image directly and can read every number, name, and stat visible. Use this for ownership screens, leaderboards, RS results, draft compositions, anything. If asked whether you can process images, say YES and tell them to use the camera button.
 
 CAPABILITIES:
 - Analyze any attached screenshot (use read from image content sent with the message)
-- Answer questions about today's slate, games, picks, line, or parlay (3-leg ticket)
-- Read any file: use read_repo_file (CSVs, audit JSONs, code, config, line history)
+- Answer questions about today's slate, games, and picks
+- Read any file: use read_repo_file (CSVs, audit JSONs, code, config)
 - Browse directories: use list_repo_directory to discover available dates/files
 - Config changes: <action>update_config</action> for parameter tuning (shows confirm UI), or write_repo_file for data/model-config.json for structural additions
 - Validate params: backtest action before applying any config change
@@ -3277,7 +3144,6 @@ WHEN TO USE WHAT:
 - Algorithmic changes (formulas, logic, filters) → read_repo_file the function → describe the exact change needed → tell the user to implement it via a developer push (you cannot write code files)
 - Investigating accuracy → read_repo_file data/audit/{date}.json; actual RS labels: data/top_performers.csv (filter by date) or legacy data/actuals/{date}.csv
 - Historical pick analysis → list_repo_directory data/predictions, then read specific files
-- Parlay ticket file → read_repo_file data/parlays/{date}.json if user needs detail beyond the PARLAY section above
 - Full player projections (card boosts, RS ratings for ALL players, not just the top 10 in context) → read_repo_file data/predictions/{date}.csv (available after slate locks; has all projected players with RS, boost, minutes, pts/reb/ast). Pre-lock: slate context above shows top 10 only — tell user projections save at lock.
 - Card boost for a specific player not in the lineups above → read predictions CSV or note the player is outside the model's top picks for today
 
@@ -3289,12 +3155,6 @@ ACTIONS (show confirm UI — use for config changes requiring user approval):
 
 TODAY'S SLATE:
 ${slateStr}
-
-TODAY'S LINE OF THE DAY:
-${lineStr}
-
-TODAY'S PARLAY (Parlay tab):
-${parlayStr}
 
 CURRENT MODEL CONFIG:
 ${cfgStr}

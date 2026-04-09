@@ -3923,6 +3923,7 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
         "tov":     round(tov, 1),
         "est_mult": card_boost,
         "boost_band": boost_band,
+        "_boost_tier": _boost_tier,
         "slot":    "1.0x",
         "_decline": round(decline_factor, 2),
         "_cascade_bonus": round(cascade_bonus, 1),
@@ -4699,11 +4700,14 @@ def _run_game(game, gamelog_map=None, dvp_data=None, player_odds_map=None):
         [(p, game["away"]["abbr"], "away") for p in away_r]
     )
 
-    # Bulk fetch: get all player stats per team in 2 calls instead of ~30 individual
-    # _fetch_athlete calls. Falls back to individual fetches for any missing players.
+    # Bulk fetch: get all player stats per team in 2 parallel calls instead of ~30
+    # individual _fetch_athlete calls. Falls back to individual fetches for missing.
     stats_map = {}
-    home_bulk = _fetch_team_player_stats(game["home"]["id"])
-    away_bulk = _fetch_team_player_stats(game["away"]["id"])
+    with ThreadPoolExecutor(max_workers=2) as _team_pool:
+        _home_fut = _team_pool.submit(_fetch_team_player_stats, game["home"]["id"])
+        _away_fut = _team_pool.submit(_fetch_team_player_stats, game["away"]["id"])
+        home_bulk = _home_fut.result()
+        away_bulk = _away_fut.result()
     bulk_stats = {**home_bulk, **away_bulk}
 
     # Populate stats_map from bulk results

@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { Activity, TrendingUp, Layers, MessageCircle } from 'lucide-react';
+import { Activity, MessageCircle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { fetchJson } from '../../api/client';
 import { useUiStore } from '../../store/uiStore';
@@ -8,37 +8,27 @@ import styles from './BottomNav.module.css';
 
 const TABS: { id: TabName; label: string; Icon: typeof Activity }[] = [
   { id: 'predictions', label: 'Predict', Icon: Activity },
-  { id: 'line', label: 'Line', Icon: TrendingUp },
-  { id: 'parlay', label: 'Parlay', Icon: Layers },
   { id: 'lab', label: 'Ben', Icon: MessageCircle },
 ];
 
 /** Accent color per tab — pill background tint (gold for all) */
 const TAB_ACCENT: Record<TabName, string> = {
   predictions: 'rgba(212,166,64,0.14)',
-  line: 'rgba(212,166,64,0.14)',
-  parlay: 'rgba(212,166,64,0.14)',
   lab: 'rgba(212,166,64,0.14)',
 };
 
 const TAB_ACCENT_BORDER: Record<TabName, string> = {
   predictions: 'rgba(212,166,64,0.10)',
-  line: 'rgba(212,166,64,0.10)',
-  parlay: 'rgba(212,166,64,0.10)',
   lab: 'rgba(212,166,64,0.10)',
 };
 
 const TAB_ACCENT_GLOW: Record<TabName, string> = {
   predictions: 'rgba(212,166,64,0.10)',
-  line: 'rgba(212,166,64,0.10)',
-  parlay: 'rgba(212,166,64,0.10)',
   lab: 'rgba(212,166,64,0.10)',
 };
 
 const TAB_ACTIVE_COLOR: Record<TabName, string> = {
   predictions: 'var(--line)',
-  line: 'var(--line)',
-  parlay: 'var(--line)',
   lab: 'var(--line)',
 };
 
@@ -52,12 +42,7 @@ export default function BottomNav() {
   // Prefetch tab data on hover/touch-start (~100-300ms head start)
   const prefetchTab = useCallback((tab: TabName) => {
     if (tab === activeTab) return;
-    if (tab === 'line') {
-      // Key must match useLineOfTheDay() with no args → nocache=undefined
-      qc.prefetchQuery({ queryKey: ['line-of-the-day', undefined], queryFn: () => fetchJson('/api/line-of-the-day', 90_000) });
-    } else if (tab === 'parlay') {
-      qc.prefetchQuery({ queryKey: ['parlay'], queryFn: () => fetchJson('/api/parlay', 90_000) });
-    } else if (tab === 'lab') {
+    if (tab === 'lab') {
       qc.prefetchQuery({ queryKey: ['lab-briefing'], queryFn: () => fetchJson('/api/lab/briefing', 30_000) });
     }
   }, [activeTab, qc]);
