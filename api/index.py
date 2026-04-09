@@ -3541,6 +3541,144 @@ def _fetch_matchup_intelligence(games: list, all_proj: list, def_stats: dict,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# WEB INTELLIGENCE (Layer 1 of 3-layer pipeline)
+# grep: WEB INTELLIGENCE
+# _fetch_nba_news_context: once-per-slate Claude web_search call for NBA news.
+# Config-gated: context_layer.web_search_enabled (default False).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ABBR_TO_TEAM_NAME = {
+    "ATL": "Hawks", "BOS": "Celtics", "BKN": "Nets", "CHA": "Hornets",
+    "CHI": "Bulls", "CLE": "Cavaliers", "DAL": "Mavericks", "DEN": "Nuggets",
+    "DET": "Pistons", "GSW": "Warriors", "GS": "Warriors", "HOU": "Rockets",
+    "IND": "Pacers", "LAC": "Clippers", "LAL": "Lakers", "MEM": "Grizzlies",
+    "MIA": "Heat", "MIL": "Bucks", "MIN": "Timberwolves", "NOP": "Pelicans",
+    "NY": "Knicks", "NYK": "Knicks", "OKC": "Thunder", "ORL": "Magic",
+    "PHI": "76ers", "PHX": "Suns", "POR": "Trail Blazers", "SAC": "Kings",
+    "SAS": "Spurs", "TOR": "Raptors", "UTA": "Jazz", "WAS": "Wizards",
+}
+
+
+def _fetch_nba_news_context(games: list, date=None, all_proj: list = None) -> str:
+    """Fetch recent NBA news for teams on today's slate via Claude web_search tool.
+
+    Layer 1 of the 3-layer Opus pipeline: once-per-slate intelligence gathering.
+    Uses Opus (config: context_layer.web_search_model) with web_search so quality
+    matters most. When all_proj is provided, the prompt includes key players (top
+    by projected RS) so the model can prioritize news affecting likely draft picks.
+
+    Uses the existing ANTHROPIC_API_KEY — no separate search API key needed.
+    Reads `context_layer.web_search_enabled` from model config. Returns empty
+    string if disabled or on any failure. Results cached per slate date in /tmp.
+    """
+    if not _cfg("context_layer.web_search_enabled", False):
+        return ""
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        print("[web_search] ANTHROPIC_API_KEY not set — skipping")
+        return ""
+
+    today = (date or _et_date()).isoformat()
+    cache_key = f"nba_news_{today}"
+    cached = _cg(cache_key)
+    if cached:
+        return cached.get("text", "")
+
+    # Collect unique teams from the slate
+    teams = set()
+    for g in games:
+        home = g.get("home", {}).get("abbr", "")
+        away = g.get("away", {}).get("abbr", "")
+        if home:
+            teams.add(home)
+        if away:
+            teams.add(away)
+
+    if not teams:
+        return ""
+
+    # Build team list for the prompt
+    team_names = []
+    for abbr in sorted(teams):
+        full = _ABBR_TO_TEAM_NAME.get(abbr, abbr)
+        team_names.append(f"{abbr} ({full})")
+
+    team_list = ", ".join(team_names)
+
+    # Player/RS-aware: when all_proj provided, add key players (top 20–25 by rating)
+    # so the model can prioritize news that affects likely draft picks.
+    key_players_blurb = ""
+    if all_proj:
+        top = sorted(all_proj, key=lambda p: p.get("rating", 0), reverse=True)[:25]
+        lines = [f"- {p.get('name', '')} ({p.get('team', '')}): proj RS {p.get('rating', 0):.1f}" for p in top]
+        key_players_blurb = (
+            "\n\nKEY PLAYERS ON TONIGHT'S SLATE (prioritize news affecting these):\n"
+            + "\n".join(lines)
+            + "\n"
+        )
+
+    timeout_s = float(_cfg("context_layer.timeout_seconds", 20))
+    web_search_model = _cfg("context_layer.web_search_model", "claude-sonnet-4-6-20250514")
+
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=anthropic_key, max_retries=0)
+        msg = client.messages.create(
+            model=web_search_model,
+            max_tokens=1500,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Today is {today}. I need a concise NBA intelligence briefing for these teams "
+                    f"playing tonight: {team_list}.{key_players_blurb}\n\n"
+                    "PRIORITY: Search for confirmed OUT players and their positional backups who will "
+                    f"inherit 15+ minutes tonight (e.g. 'NBA OUT tonight {today}', 'NBA injury report "
+                    f"{today}'). Name the starter who is OUT and the specific backup likely to start "
+                    "or play extended minutes. These cascade situations are the highest-value signals.\n\n"
+                    "Also search for:\n"
+                    "1. Coach press conference quotes about rotation changes or minute increases\n"
+                    "2. Notable rest days, back-to-backs, or load management\n"
+                    "3. Any breaking roster news (trades, call-ups, returns from injury)\n\n"
+                    "Return ONLY a bullet-point summary of actionable findings. Each bullet should name "
+                    "the specific player(s) affected and why. Skip teams with no relevant news. "
+                    "Keep it under 2000 characters total. No preamble — start with the first bullet."
+                ),
+            }],
+            timeout=timeout_s,
+        )
+        # Extract text from the response (skip tool_use blocks)
+        text_parts = []
+        for block in msg.content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text.strip())
+        text = "\n".join(text_parts)
+
+        if len(text) > 2000:
+            text = text[:2000] + "..."
+
+        # Cache for the slate date
+        _cs(cache_key, {"text": text, "ts": datetime.now(timezone.utc).isoformat()})
+        print(f"[web_search] fetched news for {len(teams)} teams via Claude web_search ({len(text)} chars)")
+        return text
+
+    except Exception as e:
+        print(f"[web_search] Claude web_search error (non-fatal): {e}")
+        return ""
+
+
+def _enrich_projections_with_odds(all_proj: list, games: list) -> None:
+    """Enrich player projections with Odds API player props.
+
+    No-op stub: the Odds API integration was removed. Returns immediately
+    unless odds_enrichment.enabled is explicitly set to True in model config.
+    """
+    if not _cfg("odds_enrichment.enabled", False):
+        return
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLAUDE CONTEXT PASS (Layer 2 of 3-layer Opus pipeline)
 # grep: _claude_context_pass
 # Optional post-projection RS adjustment using Claude (Opus) game narrative.
