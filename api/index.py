@@ -4614,14 +4614,8 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             if len(candidate_pool) >= 10:
                 break
 
-    # ── Small-slate team cap relaxation ────────────────────────────────────
-    # 3-game slate = 6 teams. With max_per_team=1 we can only select 6 unique
-    # players total. Need 10 (5 chalk + 5 moonshot). Auto-relax to 2 when the
-    # pool can't fill both lineups under current team cap.
-    _unique_teams = len({(p.get("team") or "").upper() for p in candidate_pool if p.get("team")})
-    if max_per_team == 1 and _unique_teams < 10 and len(candidate_pool) >= 8:
-        max_per_team = 2
-        print(f"[build_lineups] only {_unique_teams} teams in pool, relaxing max_per_team to 2 for coverage")
+    # max_per_team is strictly enforced — no auto-relaxation.
+    # On small slates (3 games = 6 teams), S5 and Moonshot share teams; that's fine.
 
     # ── Step 2: Score by unified EV = RS × (avg_slot + boost) ────────────
     # Formula: EV = RS × (2.0 + boost). Strategy report Finding 2: boost is 40%
