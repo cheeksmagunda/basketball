@@ -572,6 +572,7 @@ class TestParlayEndpointExists:
 
 # ── Frontend JS Integration Tests ────────────────────────────────────────────
 
+@pytest.mark.skip(reason="Parlay frontend removed — only Predict and Ben tabs remain")
 class TestParlayFrontend:
     """Verify frontend HTML/JS for the Parlay tab."""
 

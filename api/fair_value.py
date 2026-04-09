@@ -400,19 +400,14 @@ def compute_fair_value(
     # Edge class
     edge_class = "no_edge"
     if abs(edge_pct) >= min_edge_pct or max(abs(ev_over), abs(ev_under)) >= min_ev:
+        edge_class = "model_only"
         if pinnacle_line is not None:
             try:
                 pl = float(pinnacle_line)
                 if abs(proj - pl) <= abs(proj - line) * 0.5:
                     edge_class = "sharp_aligned"
-                elif max(abs(ev_over), abs(ev_under)) >= min_ev * sharp_bonus:
-                    edge_class = "model_only"
-                else:
-                    edge_class = "model_only"
             except (TypeError, ValueError):
-                edge_class = "model_only"
-        else:
-            edge_class = "model_only"
+                pass
     if edge_class == "no_edge" and max(abs(ev_over), abs(ev_under)) >= min_ev * 1.2:
         edge_class = "public_fade"
 

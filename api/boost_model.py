@@ -242,13 +242,11 @@ def estimate_boost_from_api(
     # ── Star PPG guard (unchanged, correct) ──────────────────────────────
     # Calibrated from 148-date backtest: stars with PPG ≥ 22 always have boost ≤ 0.5.
     # Applied BEFORE role detection to prevent over-prediction for superstars.
-    if season_ppg >= 25:
+    if season_ppg >= 26:
         return 0.0    # Elite superstars (Jokic, SGA, Luka, Curry)
-    elif season_ppg >= 22:
-        return 0.3    # Borderline superstars
     elif season_ppg >= 19:
-        # Linear ramp: 19 PPG → 1.2, 22 PPG → 0.3
-        return round(max(0.3, 1.2 - (season_ppg - 19) * 0.30), 1)
+        # Linear ramp: 19 PPG → 1.2, 26 PPG → 0.0 (smooth gradient, no hard steps)
+        return round(max(0.0, 1.2 - (season_ppg - 19) * (1.2 / 7.0)), 1)
 
     # ── MPG-based role detection (primary signal) ─────────────────────────
     # Minutes per game reflects rotation role more reliably than scoring.
@@ -469,11 +467,9 @@ def _predict_tier1(
     # Recent appearances are more predictive than older ones
     all_boosts = [e["boost"] for e in entries]
     if len(all_boosts) >= 3:
-        # Weighted: last 3 appearances get 3x, 2x, 1x weight
+        # Weighted: last 3 appearances get 3x, 2x, 1x weight; older entries get 1x
         recent_3 = all_boosts[-3:]
         weights = [1.0] * max(0, len(all_boosts) - 3) + [1.0, 2.0, 3.0][-len(recent_3):]
-        if len(weights) < len(all_boosts):
-            weights = [1.0] * (len(all_boosts) - len(recent_3)) + weights
         hist_boost_mean = sum(b * w for b, w in zip(all_boosts, weights)) / sum(weights)
     else:
         hist_boost_mean = sum(all_boosts) / len(all_boosts) if all_boosts else base
@@ -517,12 +513,18 @@ def _predict_tier1(
     elif prev_drafts > 500:
         base -= 0.03
         adjustments.append(f"moderately drafted ({int(prev_drafts)}) (-0.03)")
+    elif prev_drafts >= 200:
+        base -= 0.01
+        adjustments.append(f"mid-draft ({int(prev_drafts)}) (-0.01)")
+    elif prev_drafts >= 50:
+        base += 0.01
+        adjustments.append(f"low-mid draft ({int(prev_drafts)}) (+0.01)")
+    elif prev_drafts < 50 and prev_drafts >= 10:
+        base += 0.03
+        adjustments.append(f"low-draft ({int(prev_drafts)}) (+0.03)")
     elif prev_drafts < 10 and prev_drafts > 0:
         base += 0.05
         adjustments.append(f"ignored ({int(prev_drafts)} drafts) (+0.05)")
-    elif prev_drafts < 50 and prev_drafts > 0:
-        base += 0.03
-        adjustments.append(f"low-draft ({int(prev_drafts)}) (+0.03)")
 
     # Factor 3: Mean reversion toward tier baseline
     # Strengthened from 5% to 8% for mid-RS players (RS 3-5) where drift is largest (-0.077).

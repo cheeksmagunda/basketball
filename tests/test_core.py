@@ -1447,15 +1447,16 @@ class TestFrontendAuditFixes:
             "H1 regression: LINE_HIST_DATA.picks without optional chain — throws if null"
         )
 
-    def test_line_resolve_poll_cleared_on_tab_switch(self, script_source):
-        """M5: LINE_RESOLVE_POLL must be cleared in switchTab()."""
-        # Check both polls are cleared
-        assert "LINE_RESOLVE_POLL" in script_source
-        # The fix adds clearing of LINE_RESOLVE_POLL in switchTab — verify it's there
-        # by checking the pattern appears near LINE_LIVE_POLL clearing
-        live_idx = script_source.find("clearInterval(LINE_LIVE_POLL)")
-        resolve_idx = script_source.find("clearInterval(LINE_RESOLVE_POLL)")
-        assert resolve_idx != -1, "M5 regression: LINE_RESOLVE_POLL never cleared"
+    def test_line_tab_removed_from_switch(self, script_source):
+        """M5: Line tab removed from switchTab — no Line/Parlay init in tab switch."""
+        # switchTab should NOT call initLinePage or initParlayPage
+        switch_idx = script_source.find("function switchTab(tab)")
+        assert switch_idx != -1, "switchTab function must exist"
+        # Find the end of the switchTab function (next function declaration)
+        next_fn = script_source.find("\nfunction ", switch_idx + 10)
+        switch_body = script_source[switch_idx:next_fn] if next_fn != -1 else script_source[switch_idx:switch_idx+2000]
+        assert "initLinePage" not in switch_body, "switchTab should not call initLinePage"
+        assert "initParlayPage" not in switch_body, "switchTab should not call initParlayPage"
 
     def test_mutation_observer_dedup(self, script_source):
         """M6: MutationObserver must use disconnect() before re-attaching."""

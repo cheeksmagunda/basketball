@@ -3,8 +3,6 @@ import { useUiStore } from '../../store/uiStore';
 import PredictTab from '../predict/PredictTab';
 
 // Code-split non-default tabs — only loaded when first visited
-const LineTab = lazy(() => import('../line/LineTab'));
-const ParlayTab = lazy(() => import('../parlay/ParlayTab'));
 const BenTab = lazy(() => import('../ben/BenTab'));
 
 // Shown only during lazy JS chunk download (~50-200ms). After the chunk loads,
@@ -30,12 +28,6 @@ export default function TabRouter() {
   return (
     <>
       {activeTab === 'predictions' && <PredictTab />}
-      {activeTab === 'line' && (
-        <Suspense fallback={<TabLoadingFallback />}><LineTab /></Suspense>
-      )}
-      {activeTab === 'parlay' && (
-        <Suspense fallback={<TabLoadingFallback />}><ParlayTab /></Suspense>
-      )}
       {activeTab === 'lab' && (
         <Suspense fallback={<TabLoadingFallback />}><BenTab /></Suspense>
       )}
