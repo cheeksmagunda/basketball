@@ -1,0 +1,36 @@
+scope,lineup_type,slot,player_name,player_id,team,pos,predicted_rs,est_card_boost,pred_min,pts,reb,ast,stl,blk
+CHI @ WSH,the_lineup,2.0x,Tre Jones,4395626,CHI,G,11.7,0.0,32.6,21.4,2.6,7.8,1.1,0.0
+CHI @ WSH,the_lineup,1.8x,Bub Carrington,4845374,WSH,G,11.2,0.0,35.9,13.0,3.2,5.2,0.4,0.0
+CHI @ WSH,the_lineup,1.6x,Collin Sexton,4277811,CHI,G,11.0,0.0,34.3,16.9,7.4,3.7,3.0,0.0
+CHI @ WSH,the_lineup,1.4x,Julian Reese,4683742,WSH,F,10.4,0.0,42.9,13.2,12.2,2.6,2.3,0.9
+CHI @ WSH,the_lineup,1.2x,Sharife Cooper,4432173,WSH,G,10.0,0.0,26.0,12.7,0.9,3.7,0.3,0.0
+slate,chalk,2.0x,Drake Powell,5037873,BKN,G,7.8,2.8,40.6,10.6,2.6,2.0,2.3,0.7
+slate,chalk,1.8x,Gary Payton II,3134903,GS,G,7.5,2.8,32.4,11.8,5.4,2.4,1.8,0.2
+slate,chalk,1.6x,Kam Jones,4697268,IND,G,6.9,2.9,30.3,6.2,2.2,5.7,0.7,0.0
+slate,chalk,1.4x,Luke Kennard,3913174,LAL,G,6.7,2.9,36.2,11.0,7.1,8.3,0.8,0.0
+slate,chalk,1.2x,Quenton Jackson,4592829,IND,G,6.2,2.8,36.3,12.6,2.8,4.2,1.3,0.0
+slate,upside,2.0x,Drake Powell,5037873,BKN,G,7.8,2.8,40.6,10.6,2.6,2.0,2.3,0.7
+slate,upside,1.8x,Gary Payton II,3134903,GS,G,7.5,2.8,32.4,11.8,5.4,2.4,1.8,0.2
+slate,upside,1.6x,Kam Jones,4697268,IND,G,6.9,2.9,30.3,6.2,2.2,5.7,0.7,0.0
+slate,upside,1.4x,Luke Kennard,3913174,LAL,G,6.7,2.9,36.2,11.0,7.1,8.3,0.8,0.0
+slate,upside,1.2x,Pat Spencer,4592714,GS,G,6.3,2.8,32.6,11.2,1.4,2.8,0.8,0.0
+IND @ BKN,the_lineup,2.0x,Drake Powell,5037873,BKN,G,8.5,0.0,40.6,10.6,2.6,2.0,2.3,0.7
+IND @ BKN,the_lineup,1.8x,Jay Huff,4065731,IND,C,8.1,0.0,32.0,10.0,4.1,2.9,0.6,0.6
+IND @ BKN,the_lineup,1.6x,Jalen Slawson,4398207,IND,F,7.8,0.0,38.3,14.3,4.7,1.8,1.6,1.1
+IND @ BKN,the_lineup,1.4x,Obi Toppin,4278355,IND,F,7.7,0.0,30.6,15.7,4.9,2.4,0.8,0.0
+IND @ BKN,the_lineup,1.2x,Trevon Scott,3934620,BKN,F,7.3,0.0,38.9,6.2,5.3,2.1,2.1,1.1
+BOS @ NY,the_lineup,2.0x,Neemias Queta,4397424,BOS,C,8.2,0.0,28.9,15.6,6.8,3.1,0.0,2.3
+BOS @ NY,the_lineup,1.8x,Jayson Tatum,4065648,BOS,F,7.7,0.0,35.6,23.0,9.0,6.1,2.1,0.0
+BOS @ NY,the_lineup,1.6x,Karl-Anthony Towns,3136195,NY,C,7.1,0.0,31.4,20.9,10.8,7.0,0.9,0.8
+BOS @ NY,the_lineup,1.4x,Mikal Bridges,3147657,NY,G,6.5,0.0,33.3,16.0,3.3,1.1,0.9,0.7
+BOS @ NY,the_lineup,1.2x,OG Anunoby,3934719,NY,F,6.1,0.0,35.7,25.7,7.8,1.8,0.2,1.7
+PHI @ HOU,the_lineup,2.0x,Paul George,4251,PHI,F,6.9,0.0,35.7,18.9,4.8,4.4,2.4,0.2
+PHI @ HOU,the_lineup,1.8x,Amen Thompson,4684740,HOU,G,6.8,0.0,37.3,20.4,7.7,6.8,2.1,0.4
+PHI @ HOU,the_lineup,1.6x,Reed Sheppard,4711272,HOU,G,6.8,0.0,26.4,11.7,2.7,2.7,1.3,0.6
+PHI @ HOU,the_lineup,1.4x,VJ Edgecombe,5124612,PHI,G,6.8,0.0,38.5,14.3,6.0,2.3,1.6,0.8
+PHI @ HOU,the_lineup,1.2x,Alperen Sengun,4871144,HOU,C,6.6,0.0,33.4,17.6,9.1,6.1,0.0,0.7
+LAL @ GS,the_lineup,2.0x,Brandin Podziemski,4709138,GS,G,8.6,0.0,38.7,20.4,2.0,3.2,1.2,0.0
+LAL @ GS,the_lineup,1.8x,De'Anthony Melton,4066436,GS,G,8.2,0.0,33.0,12.4,3.4,4.2,1.1,0.3
+LAL @ GS,the_lineup,1.6x,Gary Payton II,3134903,GS,G,8.0,0.0,32.4,11.8,5.4,2.4,1.8,0.2
+LAL @ GS,the_lineup,1.4x,Luke Kennard,3913174,LAL,G,7.3,0.0,36.2,11.0,7.1,8.3,0.8,0.0
+LAL @ GS,the_lineup,1.2x,LeBron James,1966,LAL,F,6.9,0.0,33.9,20.8,7.1,8.7,1.0,0.6
