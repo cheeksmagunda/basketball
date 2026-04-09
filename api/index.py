@@ -120,7 +120,7 @@ async def docs_auth_and_log(request, call_next):
     print(log_line, flush=True)
     # Inject browser Cache-Control on success responses for configured endpoints
     cc = _BROWSER_CACHE.get(request.url.path)
-    if cc and 200 <= response.status_code < 300:
+    if cc and 200 <= response.status_code < 300 and "Cache-Control" not in response.headers:
         response.headers["Cache-Control"] = cc
     return response
 
@@ -5878,6 +5878,7 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
                             "cache_status": "warming",
                         },
                         status_code=200,
+                        headers={"Cache-Control": "no-store"},
                     )
                 return JSONResponse(
                     content={
@@ -5890,6 +5891,7 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
                         "cache_status": "warming",
                     },
                     status_code=200,
+                    headers={"Cache-Control": "no-store"},
                 )
 
         cache_key = _CACHE_KEYS["slate"].format(today)
