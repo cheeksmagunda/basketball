@@ -31,3 +31,20 @@
 .skel-line.narrow { width: 40%; }
 
 .skel-score { width: 48px; height: 44px; }
+
+.skel-message {
+  text-align: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin: 0 0 12px;
+  animation: shimmer 1.4s infinite;
+  background: linear-gradient(90deg, var(--color-text-muted) 25%, rgba(255,255,255,0.5) 50%, var(--color-text-muted) 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

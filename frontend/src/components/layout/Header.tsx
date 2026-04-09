@@ -24,12 +24,18 @@ export default function Header() {
 
   if (slate && !slate.error) {
     const isLocked = slate.locked === true;
+    const isWarmingUp = Boolean(slate.warming_up);
     const totalGames = (slate.games || []).length;
     const draftable = (slate.games || []).filter(g => !g.locked).length;
     const gameCount = isLocked ? totalGames : draftable;
     const dateStr = slate.date ? fmtDateShort(slate.date) : '';
 
-    countBadge = `${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}`;
+    // During cold pipeline startup, show "Loading" instead of "0 Games"
+    if (isWarmingUp && totalGames === 0) {
+      countBadge = `Loading · ${dateStr}`;
+    } else {
+      countBadge = `${gameCount} Game${gameCount !== 1 ? 's' : ''} · ${dateStr}`;
+    }
 
     if (isLocked && slate.lock_time) {
       const ltStr = fmtTimeCT(slate.lock_time);
@@ -38,6 +44,8 @@ export default function Header() {
     } else if (isLocked) {
       statusBadge = 'Locked';
       statusLocked = true;
+    } else if (isWarmingUp) {
+      statusBadge = 'Generating\u2026';
     } else {
       const timeNow = new Date().toLocaleTimeString('en-US', {
         hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
