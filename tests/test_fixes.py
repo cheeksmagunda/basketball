@@ -4769,15 +4769,17 @@ class TestMoonshotSwapLogic:
         assert "ev_swap_threshold" not in defaults_section
         assert "max_upside_swaps" not in defaults_section
 
-    def test_moonshot_excludes_starting5(self):
-        """Moonshot must exclude Starting 5 players so all 10 picks are unique."""
+    def test_moonshot_selects_from_full_pool(self):
+        """Moonshot selects independently from full candidate pool by upside_ev.
+
+        Best EV players can appear in both S5 and Moonshot (2-3 overlap expected).
+        This matches the winning draft pattern where top players are in both lineups.
+        """
         src = open("api/index.py").read()
         moonshot_section = src.split("Step 5")[1].split("Step 6")[0]
-        # Must filter out chalk (Starting 5) players
-        assert "chalk_names" in moonshot_section, "Moonshot should exclude S5 players by name"
-        assert "not in chalk_names" in moonshot_section, "Moonshot pool must filter S5"
-        # Should select from moonshot_pool independently
-        assert "moonshot_pool" in moonshot_section, "Moonshot should use filtered pool"
+        # Should select from full candidate_pool, not filtered by chalk_names
+        assert "candidate_pool" in moonshot_section, "Moonshot should use full candidate pool"
+        assert "moonshot_pool" in moonshot_section, "Moonshot should use sorted pool"
 
     def test_moonshot_sorts_by_upside_ev(self):
         """Moonshot pool should be sorted by upside_ev descending with boost tiebreak."""

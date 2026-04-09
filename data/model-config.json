@@ -116,7 +116,7 @@
     "compression_divisor": 6.0,
     "compression_power": 0.65,
     "rs_cap": 20.0,
-    "ai_blend_weight": 0.3,
+    "ai_blend_weight": 1.0,
     "max_post_compression_mult": 1.2,
     "regression_guard": {
       "enabled": false,
