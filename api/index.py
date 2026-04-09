@@ -3411,8 +3411,171 @@ def project_player(pinfo, stats, spread, total, side, team_abbr="",
     _hrs_cfg = _cfg("strategy.historical_rs_discount", {})
     _hrs_player_name = pinfo.get("name", "")
     if _hrs_cfg.get("enabled", True) and _hrs_player_name:
-        print(f"[web_search] Claude web_search error (non-fatal): {e}")
-        return ""
+        try:
+            from api.boost_model import load_player_history
+            _hist = load_player_history()
+            _pname_norm = _normalize_player_name(_hrs_player_name)
+            _player_hist = _hist.get(_pname_norm, [])
+            _hrs_min_appearances = int(_hrs_cfg.get("min_appearances", 3))
+            if len(_player_hist) >= _hrs_min_appearances:
+                _hist_rs_vals = sorted([e["rs"] for e in _player_hist if e.get("rs", 0) > 0])
+                if _hist_rs_vals:
+                    _hist_median = _hist_rs_vals[len(_hist_rs_vals) // 2]
+                    _hist_p75 = _hist_rs_vals[int(len(_hist_rs_vals) * 0.75)]
+                    _hist_max = _hist_rs_vals[-1]
+                    # Only discount when predicting ABOVE the player's P75
+                    # (don't penalize projections within their normal range)
+                    _overshoot = raw_score - _hist_p75
+                    if _overshoot > 0:
+                        # Prior strength scales with # of appearances (saturates at ~15)
+                        # Few games = weak prior (let projection dominate)
+                        # Many games = strong prior (history speaks loud)
+                        _n = len(_hist_rs_vals)
+                        _prior_strength = min(_n / (_n + float(_hrs_cfg.get("saturation_k", 8.0))), float(_hrs_cfg.get("max_prior_strength", 0.5)))
+                        # Pull-back fraction: how much of the overshoot to discount
+                        # Scaled by how far above P75 relative to their range
+                        _range = max(_hist_max - _hist_median, 0.5)
+                        _relative_overshoot = min(_overshoot / _range, 2.0)  # cap at 2x their range
+                        _discount = _prior_strength * _overshoot * min(_relative_overshoot * float(_hrs_cfg.get("discount_scale", 0.4)), float(_hrs_cfg.get("max_discount_frac", 0.6)))
+                        raw_score -= _discount
+                        if raw_score < _hist_p75:
+                            raw_score = _hist_p75  # never pull below P75
+        except Exception as _hrs_err:
+            pass  # Non-fatal — proceed with unmodified raw_score
+
+    # ── Minutes delta signal: reward expanded role, discount business-as-usual ──
+    # Players with significant minutes jumps (cascade/injury) have a concrete
+    # upside catalyst. Players at normal minutes are "business as usual" — no
+    # catalyst to justify top-tier ranking. A +2 min increase isn't strong enough.
+    _md_cfg = _cfg("strategy.minutes_delta", {})
+    _md_delta = 0.0
+    _md_mult = 1.0
+    if _md_cfg.get("enabled", True):
+        _md_neutral = float(_md_cfg.get("neutral_zone", 2.0))
+        _md_season = stats.get("season_min", avg_min)
+        _md_delta = proj_min - _md_season
+        if _md_delta >= _md_neutral:
+            _md_bonus = min(float(_md_cfg.get("bonus_per_min", 0.015)) * (_md_delta - _md_neutral), float(_md_cfg.get("max_bonus", 0.12)))
+            _md_mult = 1.0 + _md_bonus
+        elif _md_delta <= -_md_neutral:
+            _md_pen = min(float(_md_cfg.get("penalty_per_min", 0.01)) * abs(_md_delta + _md_neutral), float(_md_cfg.get("max_penalty", 0.08)))
+            _md_mult = 1.0 - _md_pen
+        else:
+            _md_mult = float(_md_cfg.get("neutral_discount", 0.97))
+        raw_score *= _md_mult
+
+    # ── Game context bonus (additive, applied after compression) ─────────
+    # Strategy report Finding 7: simple additive RS adjustments.
+    raw_score += game_context_bonus
+    raw_score = min(raw_score, rs_cap)
+
+    # ── Cascade Team flag ────────────────────────────────────────────────
+    # grep: CASCADE TEAM DETECTOR
+    # When a star (20+ PPG) is OUT, teammates are flagged. The cascade signal
+    # flows through the boost floor (2.5) and relaxed gates — NOT through an RS
+    # multiplier, which would artificially inflate projections and cause both
+    # lineups to overfit to injury plays. RS must reflect actual expected production.
+    _cascade_team = bool(pinfo.get("_cascade_team"))
+
+    # Estimated card boost (ADDITIVE, not multiplicative)
+    # Real Sports formula: Value = Real Score × (Slot_Mult + Card_Boost)
+    # Card boost is INVERSELY proportional to ownership — the app rewards
+    # contrarian picks. Stars get crushed, obscure role players get huge boosts.
+    is_home = side == "home"
+    card_boost, boost_band, _boost_tier = _est_card_boost(
+        proj_min,
+        pts,
+        team_abbr,
+        player_name=pinfo["name"],
+        season_pts=season_pts,
+        recent_pts=recent_pts,
+        cascade_bonus=cascade_bonus,
+        is_home=is_home,
+        projected_rs=raw_score,
+        season_avg_min=float(avg_min or 0.0),
+        player_pos=str(pinfo.get("pos") or ""),
+        season_reb=float(stats.get("season_reb", reb)),
+        season_ast=float(stats.get("season_ast", ast)),
+    )
+
+    # ── Cascade Team Boost Floor ───────────────────────────────────────────
+    # When a star is OUT, cascade teammates with NO historical boost data
+    # (Tier 3 cold start) get a minimum boost of 2.5 — they're likely
+    # underdrafted unknowns who will see elevated boosts.
+    # Tier 1/2 players (with recent history) are NOT floored — the 3-tier
+    # cascade already predicts their boost accurately from prior appearances.
+    # Over-applying the 2.5 floor to Tier 1 players with known boosts of
+    # 1.3–2.0 inflates predictions by 0.5–1.2x (observed Apr 5 2026).
+    if _cascade_team and _boost_tier == 3:
+        _ct_cfg = _cfg("cascade.team_detector", {}) or {}
+        _ct_boost_floor = float(_ct_cfg.get("boost_floor", 2.5))
+        if card_boost < _ct_boost_floor:
+            card_boost = _ct_boost_floor
+            if boost_band:
+                boost_band = (max(boost_band[0], _ct_boost_floor), max(boost_band[1], _ct_boost_floor))
+
+    # ── EV score: the dominant formula from strategy report ──────────────
+    # Strategy report Finding 2: EV = RS × (2.0 + boost). Boost is 40% more
+    # valuable per unit than RS. This single formula drives all selection.
+    draft_ev = round(raw_score * (2.0 + card_boost), 2)
+
+    # Legacy chalk_ev kept for backward compatibility with frontend/cache
+    avg_slot = _cfg("lineup.avg_slot_multiplier", 1.6)
+    chalk_ev = round(raw_score * (avg_slot + card_boost), 2)
+
+    # Ceiling score — player's upside (variance-adjusted)
+    ceiling_score = raw_score * (1.0 + (player_variance * 0.5))
+    ceiling_ev = round(ceiling_score * (2.0 + card_boost), 2)
+    ceiling_score = round(ceiling_score, 1)
+
+    return {
+        "id":           pinfo["id"],
+        "name":         pinfo["name"],
+        "player_variance": round(player_variance, 3),
+        "pos":     pinfo["pos"],
+        "team":    team_abbr,
+        "rating":        round(raw_score, 1),
+        "draft_ev":      draft_ev,
+        "chalk_ev":      chalk_ev,
+        "ceiling_score": ceiling_score,
+        "ceiling_ev":    ceiling_ev,
+        "predMin": round(proj_min, 1),
+        "pts":     round(pts, 1),
+        "reb":     round(reb, 1),
+        "ast":     round(ast, 1),
+        "stl":     round(stl, 1),
+        "blk":     round(blk, 1),
+        "tov":     round(tov, 1),
+        "est_mult": card_boost,
+        "boost_band": boost_band,
+        "slot":    "1.0x",
+        "_decline": round(decline_factor, 2),
+        "_cascade_bonus": round(cascade_bonus, 1),
+        "_cascade_team": _cascade_team,
+        "_min_delta": round(_md_delta, 1),
+        "_min_delta_mult": round(_md_mult, 3),
+        # Recent vs season stats — used by line engine for trend detection
+        "season_min": round(stats.get("season_min", avg_min), 1),
+        "recent_min": round(recent_min, 1),
+        "season_pts": round(stats.get("season_pts", pts), 1),
+        "recent_pts": round(stats.get("recent_pts", pts), 1),
+        "season_reb": round(stats.get("season_reb", reb), 1),
+        "recent_reb": round(stats.get("recent_reb", reb), 1),
+        "season_ast": round(stats.get("season_ast", ast), 1),
+        "recent_ast": round(stats.get("recent_ast", ast), 1),
+        "season_stl": round(stats.get("season_stl", stl), 1),
+        "recent_stl": round(stats.get("recent_stl", stl), 1),
+        "season_blk": round(stats.get("season_blk", blk), 1),
+        "recent_blk": round(stats.get("recent_blk", blk), 1),
+        "injury_status": pinfo.get("injury_status", ""),
+        "_injury_return": bool(stats.get("_injury_return", False)),
+        # Overperform signals — surfaced as pills on player cards.
+        # _hot_streak: recent pts >= 1.15x season avg (configurable via signals.hot_streak_ratio)
+        "_hot_streak": bool(
+            season_pts > 0
+            and recent_pts / season_pts >= float(_cfg("signals.hot_streak_ratio", 1.15))
+        ),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
