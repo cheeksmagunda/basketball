@@ -1378,9 +1378,9 @@ class TestPredMinTolerance:
         # The max_predmin_drop check must appear BEFORE the cascade bypass block,
         # not inside it. Verify it's outside the 'if not _mi_bypass and not _is_ct:' guard.
         drop_idx = src.index('_max_min_drop = float(_cfg("projection.max_predmin_drop"')
-        cascade_guard_idx = src.index('if not _mi_bypass and not _is_ct:')
+        cascade_guard_idx = src.index('if not _mi_bypass and not _is_ct and not _is_high_boost:')
         assert drop_idx < cascade_guard_idx, (
-            "max_predmin_drop check must run before the cascade team bypass, "
+            "max_predmin_drop check must run before the cascade/high-boost bypass, "
             "so cascade team players with big minutes drops are still filtered"
         )
 

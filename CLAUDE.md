@@ -69,7 +69,7 @@ The backend uses:
 
 **Historical outcomes** for audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
-**2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Apr 7 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
+**2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Apr 8 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
 
 The deterministic fair-value engine remains isolated to prop betting surfaces.
 
@@ -1063,6 +1063,8 @@ If slate and/or line fail to load:
 ## Loading audit
 
 **docs/LOADING_AUDIT.md** — Catalogs frontend loading states, fetch timeouts, skeletons, async state pattern, and Line tab fixes (card flash, first-load-after-hit). All blocking API calls use `fetchWithTimeout`; no critical gaps for production.
+
+| Apr 8 post-mortem — EV formula fix + high-boost bypass + RS discount | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py`, `tests/test_core.py` | **Problem**: Apr 8 slate — chalk 0/5, moonshot 2/5 (Clayton, Dieng). ALL winning players had 3.0x boost with <25 drafts. Bones Hyland predicted RS 5.0, actual 0.5 (catastrophic). Keon Ellis predicted RS 5.0, actual 0.9. Winning draft (73.96) = 5 players with 3.0x boost: Clayton, Dieng, Sims, Shannon Jr, Hendricks. **Fix 1**: `avg_slot_multiplier` 1.6→2.0 — EV formula was `RS × (1.6 + boost)` instead of documented `RS × (2.0 + boost)`, undervaluing boost by ~8%. **Fix 2**: High-boost bypass — players with predicted boost ≥2.5 AND RS ≥2.0 now bypass the min_minutes gate (uses 12 min like cascade teams). Deep bench 3.0x contrarians (Shannon, Bitadze, Sims, Hendricks, Bryant) were ALL filtered by 25-min gate. **Fix 3**: `min_minutes` 25→15 (global relaxation). **Fix 4**: Historical RS discount strengthened — `min_appearances` 3→2, `saturation_k` 8→6, `max_prior_strength` 0.5→0.65, `discount_scale` 0.4→0.6, `max_discount_frac` 0.6→0.8. Prevents Hyland-type 5.0→0.5 busts. **Fix 5**: `anti_popularity_enabled` true + `strength` 0.2 in model-config.json (was disabled). Config v91. |
 
 ## Production audit
 
