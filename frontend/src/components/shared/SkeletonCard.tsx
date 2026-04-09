@@ -2,6 +2,8 @@ import styles from './SkeletonCard.module.css';
 
 interface SkeletonCardProps {
   count?: number;
+  /** Optional status message shown above the skeleton cards (e.g. "Generating picks...") */
+  message?: string;
 }
 
 function SingleSkeleton() {
@@ -24,9 +26,10 @@ function SingleSkeleton() {
   );
 }
 
-export default function SkeletonCard({ count = 5 }: SkeletonCardProps) {
+export default function SkeletonCard({ count = 5, message }: SkeletonCardProps) {
   return (
     <>
+      {message && <p className={styles['skel-message']}>{message}</p>}
       {Array.from({ length: count }, (_, i) => (
         <SingleSkeleton key={i} />
       ))}

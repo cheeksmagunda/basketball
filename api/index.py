@@ -6656,14 +6656,38 @@ async def get_slate(mock: bool = Query(False, description="Return deterministic 
         if _pipe_in_flight:
             _quick = _cg(_CK_SLATE) or _lg(_CK_SLATE_LOCKED)
             if not _quick:
+                # Use games fetched at startup so the header shows real game count.
+                # If startup confirmed 0 games, skip warming_up entirely and return
+                # no_games so the frontend shows "No NBA games today" immediately.
+                _wu_games = _WARMUP_GAMES or []
+                if not _wu_games:
+                    # Try a quick ESPN check before returning no_games —
+                    # _WARMUP_GAMES might not be populated yet on container restart.
+                    try:
+                        _wu_games = fetch_games()
+                    except Exception:
+                        pass
+                if not _wu_games:
+                    return JSONResponse(
+                        content={
+                            "date": today,
+                            "games": [],
+                            "lineups": {"chalk": [], "upside": []},
+                            "locked": False,
+                            "draftable_count": 0,
+                            "no_games": True,
+                            "cache_status": "warming",
+                        },
+                        status_code=200,
+                    )
                 return JSONResponse(
                     content={
                         "warming_up": True,
                         "date": today,
-                        "games": [],
+                        "games": _wu_games,
                         "lineups": {"chalk": [], "upside": []},
                         "locked": False,
-                        "draftable_count": 0,
+                        "draftable_count": len(_wu_games),
                         "cache_status": "warming",
                     },
                     status_code=200,
@@ -8245,6 +8269,9 @@ async def hindsight(payload: dict = Body(...)):
 
 _COLD_PIPELINE_LOCK = threading.Lock()
 _COLD_PIPELINE_IN_FLIGHT = False
+# Populated by startup hook with games from ESPN so the warming_up response
+# can show the real game count instead of an empty array.
+_WARMUP_GAMES: list = []
 
 
 def _run_cold_pipeline(trigger: str) -> dict:
@@ -8534,8 +8561,11 @@ async def _deploy_startup_safe_prewarm():
         # Lock guard: if slate is locked, do NOT bust cache or regenerate.
         # Locked predictions must never change — even on a new deploy.
         # The new code will take effect on the next slate.
+        global _WARMUP_GAMES
         try:
             _deploy_games = fetch_games()
+            # Save games so the warming_up response can show real game count
+            _WARMUP_GAMES = _deploy_games
             _deploy_starts = [g["startTime"] for g in _deploy_games if g.get("startTime")]
             if _any_locked(_deploy_starts):
                 print(f"[startup] slate is LOCKED — skipping cold pipeline to preserve predictions")
@@ -8592,6 +8622,11 @@ async def _deploy_startup_safe_prewarm():
             # Both Redis and GitHub miss (busted, absent, or stale) — run cold pipeline
             # in background so Redis is populated before the frontend's first request.
             print(f"[startup] no warm cache found — starting background pipeline for {today}")
+            # Pre-fetch games so warming_up response shows real game count
+            try:
+                _WARMUP_GAMES = fetch_games()
+            except Exception:
+                pass
             def _bg_cold_restart():
                 try:
                     _run_cold_pipeline("container_restart_cold")

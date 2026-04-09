@@ -33,7 +33,7 @@ export default function SlateView() {
 
   // Cold pipeline is running server-side — auto-polls every 5s via refetchInterval
   if (slate?.warming_up) {
-    return <SkeletonCard count={5} />;
+    return <SkeletonCard count={5} message="Generating picks\u2026" />;
   }
 
   // Error or failed slate
