@@ -4835,16 +4835,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)
     chalk_names = {p.get("name") for p in chalk}
 
-    # ── Step 5: Moonshot — top 5 by upside_ev from full pool ─────────────
-    # Moonshot selects independently from the full candidate pool by upside_ev.
-    # This allows 2-3 overlap players with Starting 5 (the best EV players
-    # should appear in both lineups) while diverging on the remaining spots
-    # via upside_ev vs safe_ev ranking differences.
+    # ── Step 5: Moonshot — top 5 by upside_ev, excluding S5 players ──────
+    # Moonshot must be completely separate from Starting 5 — no shared players.
+    # This forces real diversification: S5 = safe floor picks, Moonshot = different
+    # high-ceiling contrarians. Sorted by upside_ev (cb_high).
     moonshot_pool = sorted(
         candidate_pool,
         key=lambda x: (-x.get("upside_ev", 0), -x.get("est_mult", 0))
     )
-    upside, _ = _select_with_team_cap(moonshot_pool, 5, max_per_team)
+    upside, _ = _select_with_team_cap(moonshot_pool, 5, max_per_team, exclude_names=chalk_names)
 
     # ── Step 6: Assign slots by RS descending (Finding 3) ──────────────────
     # Provably optimal: highest RS → 2.0x, next → 1.8x, etc.
