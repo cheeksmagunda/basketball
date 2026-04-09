@@ -1,7 +1,7 @@
 {
-  "version": 91,
+  "version": 92,
   "updated_at": "2026-04-09T00:00:00Z",
-  "updated_by": "v91-apr8-postmortem-ev2.0-highboost-bypass-antipop",
+  "updated_by": "v92-fix-dfs-weights-disable-endseason-guardrails",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -95,12 +95,12 @@
   },
   "real_score": {
     "dfs_weights": {
-      "pts": 1.5,
-      "reb": 0.5,
-      "ast": 1.2,
-      "stl": 2.5,
-      "blk": 1.5,
-      "tov": -1.0
+      "pts": 1.0,
+      "reb": 1.0,
+      "ast": 1.5,
+      "stl": 4.5,
+      "blk": 4.0,
+      "tov": -1.2
     },
     "stat_stuffer": {
       "enabled": false,
@@ -119,7 +119,7 @@
     "ai_blend_weight": 0.3,
     "max_post_compression_mult": 1.2,
     "regression_guard": {
-      "enabled": true,
+      "enabled": false,
       "bench_cap": 4.5,
       "role_cap": 5.5,
       "starter_cap": 7.0
@@ -738,6 +738,9 @@
       "max_penalty": 0.08
     },
     "injury_return_ev_penalty": 0.0,
-    "injury_return_rs_penalty": 0.0
+    "injury_return_rs_penalty": 0.0,
+    "historical_rs_discount": {
+      "enabled": false
+    }
   }
 }
