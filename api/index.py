@@ -1017,7 +1017,7 @@ _CONFIG_DEFAULTS = {
     },
     "lineup": {
         "game_chalk_rating_floor": 3.5,
-        "avg_slot_multiplier": 1.6,
+        "avg_slot_multiplier": 2.0,
         "slot_multipliers": _SLOT_MULTS_SHARED,
     },
     "line": {
@@ -1147,7 +1147,7 @@ _CONFIG_DEFAULTS = {
         "rs_floor": 2.0,               # Finding 2: 0% of winners below RS 2.0; 2.7% below 3.0
                                         # RS 2 + Boost 3.0 combo has 18 winning appearances (avg value 13.3)
         "min_pts_projection": 2.0,      # Universal scoring floor in project_player
-        "min_minutes": 25.0,            # Minimum projected minutes to be draft-eligible
+        "min_minutes": 15.0,            # Lowered from 25: deep bench 3.0x boost players win slates
         "min_recent_minutes": 15.0,     # Minimum recent minutes for candidate pool (rotation-bubble filter)
         "min_pred_min_season_ratio": 1.0, # Floor: predMin >= season_min * ratio (1.0 = at least season avg; exempt: B2B, GTD)
         "minutes_increase_bypass": 15.0, # If predMin - season_min >= this, bypass minutes gates (cascade/injury expanded role)
@@ -1200,11 +1200,11 @@ _CONFIG_DEFAULTS = {
         # history is the prior, projection is the likelihood. More history = stronger prior.
         "historical_rs_discount": {
             "enabled": True,
-            "min_appearances": 3,       # Need 3+ historical datapoints for meaningful prior
-            "saturation_k": 8.0,        # Prior strength saturates: n/(n+k). k=8 → 50% at 8 appearances
-            "max_prior_strength": 0.5,  # Maximum weight of historical prior (never fully override model)
-            "discount_scale": 0.4,      # How aggressively to scale the pull-back per unit overshoot
-            "max_discount_frac": 0.6,   # Maximum fraction of overshoot to discount (never pull back >60%)
+            "min_appearances": 2,       # Lowered from 3: even 2 datapoints inform the prior
+            "saturation_k": 6.0,        # Prior strength saturates faster: n/(n+k). k=6 → 50% at 6 appearances
+            "max_prior_strength": 0.65, # Raised from 0.5: history is a stronger signal (Hyland 5.0→0.5 post-mortem)
+            "discount_scale": 0.6,      # Raised from 0.4: more aggressive pull-back per unit overshoot
+            "max_discount_frac": 0.8,   # Raised from 0.6: can pull back up to 80% of overshoot
         },
         # ── Momentum curve detection (_build_lineups) ─────────────────────
         # Detects two patterns in player historical data:
@@ -5056,8 +5056,13 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
             continue
         # Cascade team players get relaxed RS floor (1.5 vs 2.0) and minutes floor (12 vs 25)
         _is_ct = p.get("_cascade_team", False)
+        # High-boost bypass: players with predicted boost ≥ 2.5 get relaxed minutes gate (12 min)
+        # Apr 8 post-mortem: ALL winning players had 3.0x boost with low minutes — these
+        # deep bench contrarians were filtered by the 25-min gate despite massive EV.
+        _est_boost = float(p.get("est_mult", 0) or p.get("card_boost", 0) or 0)
+        _is_high_boost = _est_boost >= 2.5 and p.get("rating", 0) >= rs_floor
         _effective_rs_floor = _ct_rs_floor if _is_ct else rs_floor
-        _effective_min_minutes = _ct_min_minutes if _is_ct else min_minutes
+        _effective_min_minutes = _ct_min_minutes if (_is_ct or _is_high_boost) else min_minutes
         if p.get("rating", 0) < _effective_rs_floor:
             continue
         # Minutes-increase bypass: if projected minutes jump is huge (cascade, injury),
@@ -5073,7 +5078,7 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         _max_min_drop = float(_cfg("projection.max_predmin_drop", 8.0))
         if _season_min > 0 and (_season_min - _pred_min) > _max_min_drop:
             continue
-        if not _mi_bypass and not _is_ct:
+        if not _mi_bypass and not _is_ct and not _is_high_boost:
             if _pred_min < _effective_min_minutes and _season_min < _effective_min_minutes:
                 continue
             # Rotation-bubble filter: recent_min must meet floor to avoid DNP/early-hook risk

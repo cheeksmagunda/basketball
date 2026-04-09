@@ -1006,7 +1006,7 @@ class TestConfigCoverage:
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
             val = _cfg("lineup.avg_slot_multiplier", None)
-        assert val == 1.6, f"Expected 1.6, got {val}"
+        assert val == 2.0, f"Expected 2.0, got {val}"
 
     def test_game_chalk_rating_floor_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS
@@ -1018,7 +1018,7 @@ class TestConfigCoverage:
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
             val = _cfg("lineup.avg_slot_multiplier", None)
-        assert val == 1.6, f"Expected 1.6, got {val}"
+        assert val == 2.0, f"Expected 2.0, got {val}"
 
     def test_slot_multipliers_readable(self):
         from api.index import _cfg, _CONFIG_DEFAULTS

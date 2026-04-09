@@ -1,7 +1,7 @@
 {
-  "version": 90,
-  "updated_at": "2026-04-05T00:00:00Z",
-  "updated_by": "v90-dynamic-lineup-boost-espn-only",
+  "version": 91,
+  "updated_at": "2026-04-09T00:00:00Z",
+  "updated_by": "v91-apr8-postmortem-ev2.0-highboost-bypass-antipop",
   "scoring_thresholds": {
     "min_pts_projection": 7.0,
     "min_pts_projection_moonshot": 5.0,
@@ -266,7 +266,7 @@
     "chalk_rating_floor": 2.0,
     "game_recent_min_floor": 15.0,
     "game_chalk_rating_floor": 3.5,
-    "avg_slot_multiplier": 1.6,
+    "avg_slot_multiplier": 2.0,
     "slot_multipliers": [
       2.0,
       1.8,
@@ -789,14 +789,14 @@
   "strategy": {
     "rs_floor": 2.0,
     "min_pts_projection": 2.0,
-    "min_minutes": 25.0,
+    "min_minutes": 15.0,
     "close_game_rs_bonus": 0.3,
     "pace_rs_bonus_per_10": 0.15,
     "ev_swap_threshold": 2.0,
     "max_upside_swaps": 2,
     "max_per_team": 1,
-    "anti_popularity_enabled": false,
-    "anti_popularity_strength": 0.0,
+    "anti_popularity_enabled": true,
+    "anti_popularity_strength": 0.2,
     "min_pred_min_season_ratio": 1.0,
     "hybrid_lineup_enabled": false,
     "contrarian_bonus": {
