@@ -4480,8 +4480,10 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         try:
             from api.boost_model import load_player_history
             _mc_history = load_player_history()
-        except Exception:
-            pass
+            if not _mc_history:
+                print(f"[build_lineups] load_player_history returned empty — all players use draft estimate fallback")
+        except Exception as _hist_err:
+            print(f"[build_lineups] load_player_history failed: {_hist_err} — using draft estimates fallback")
 
     # Lazy imports for condition matrix
     _condition_coeff_fn = None
@@ -4663,7 +4665,15 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         if _dead:
             print(f"[build_lineups] condition matrix filtered {len(_dead)} dead capital player(s): "
                   f"{[p.get('name') for p in _dead[:5]]}")
-        candidate_pool = [p for p in candidate_pool if not p.get("_dead_capital")]
+        _pool_after = [p for p in candidate_pool if not p.get("_dead_capital")]
+        # Safety guard: if dead capital filter is too aggressive (removes >60% of pool
+        # or leaves fewer than 10 candidates), disable it and keep all candidates.
+        # This prevents empty lineups when the filter miscategorizes players.
+        if len(_pool_after) < 10 or (len(candidate_pool) > 0 and len(_pool_after) / len(candidate_pool) < 0.4):
+            print(f"[build_lineups] dead capital filter too aggressive ({len(candidate_pool)}→{len(_pool_after)}), "
+                  f"disabling — keeping all {len(candidate_pool)} candidates")
+        else:
+            candidate_pool = _pool_after
 
     # ── Step 3: Sort candidate pool by safe_ev ──────────────────────────────
     candidate_pool.sort(key=lambda x: (-x.get("safe_ev", 0), -x.get("rating", 0)))
