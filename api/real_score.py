@@ -7,12 +7,13 @@
 #   1. Game Closeness (C_c) — actions in tight games worth exponentially more
 #   2. Clutch Factor (C_k) — late-game, lead-changing plays get massive boosts
 #   3. Momentum Bonus (M_m) — streaky/high-variance players score more
+#   4. Condition Coefficient (C_cond) — DFS ownership × card boost meta-game layer
 #
 # This module uses vectorized numpy Monte Carlo simulation to derive these
 # coefficients from game spread and total, then applies them to the baseline
 # statistical projection to produce a Real Score estimate.
 #
-# E(RealScore) = S_base × C_c × C_k × M_m
+# E(RealScore) = S_base × C_c × C_k × M_m × C_cond
 #
 # grep: REAL SCORE ENGINE — real_score_projection, closeness_coefficient, clutch_factor
 # ─────────────────────────────────────────────────────────────────────────────
@@ -151,9 +152,112 @@ def momentum_bonus(player_variance):
     return round(float(m_m), 3)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# META-GAME CONDITION ENGINE (Ported from Baseball Condition Classifier)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The (boost_tier × ownership_tier) matrix is the core edge. Historical HV
+# rates show ghost+elite-boost dominates across formats. This is format-agnostic
+# — it exploits how DFS value is calculated and how the crowd drafts, not
+# anything sport-specific.
+#
+# Basketball-specific notes:
+#   - Ownership clusters tighter in playoffs (smaller player pool)
+#   - Boost leverage is HIGHER because RS floors are higher (less variance)
+#   - "Ghost hunting" in playoffs = role players in high-usage situations
+#     (backup PG who becomes starter due to injury, stretch-4 getting extra
+#     minutes in a specific matchup, 3-and-D wing getting hot in high-pace game)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Historical HV (Highest Value) rate by (ownership_tier, boost_tier)
+CONDITION_MATRIX = {
+    "ghost": {
+        "no_boost": 0.35, "low_boost": 0.55, "mid_boost": 0.75,
+        "elite_boost": 0.88, "max_boost": 1.00,
+    },
+    "low": {
+        "no_boost": 0.28, "low_boost": 0.42, "mid_boost": 0.55,
+        "elite_boost": 0.62, "max_boost": 0.70,
+    },
+    "medium": {
+        "no_boost": 0.22, "low_boost": 0.35, "mid_boost": 0.38,
+        "elite_boost": 0.28, "max_boost": 0.23,
+    },
+    "chalk": {
+        "no_boost": 0.18, "low_boost": 0.25, "mid_boost": 0.28,
+        "elite_boost": 0.25, "max_boost": 0.23,
+    },
+    "mega_chalk": {
+        "no_boost": 0.15, "low_boost": 0.18, "mid_boost": 0.20,
+        "elite_boost": 0.15, "max_boost": 0.12,
+    },
+}
+
+# Dead capital: Trap plays where the crowd is too heavy for positive EV.
+# If a player hits one of these conditions, their projection is zeroed out
+# so the lineup optimizer automatically skips them.
+DEAD_CAPITAL_CONDITIONS = {
+    ("chalk", "elite_boost"),
+    ("chalk", "max_boost"),
+    ("chalk", "low_boost"),
+    ("mega_chalk", "low_boost"),
+    ("mega_chalk", "no_boost"),
+}
+
+
+def condition_coefficient(drafts, card_boost):
+    """
+    Evaluates DFS ownership and boost tier to return a meta-game multiplier.
+
+    This is the format exploit layer. It doesn't care about basketball —
+    it cares about how value is calculated and how the crowd drafts.
+
+    Returns:
+        float: 0.0 for DEAD_CAPITAL (auto-filtered), otherwise the
+               historical HV rate as an EV multiplier (0.12 – 1.00).
+    """
+    # 1. Determine Ownership Tier
+    if drafts is None:
+        ownership_tier = "medium"  # Conservative default
+    elif drafts < 100:
+        ownership_tier = "ghost"
+    elif drafts < 500:
+        ownership_tier = "low"
+    elif drafts < 1000:
+        ownership_tier = "medium"
+    elif drafts < 2000:
+        ownership_tier = "chalk"
+    else:
+        ownership_tier = "mega_chalk"
+
+    # 2. Determine Boost Tier
+    boost = card_boost or 1.0
+    if boost < 1.2:
+        boost_tier = "no_boost"
+    elif boost < 1.6:
+        boost_tier = "low_boost"
+    elif boost < 1.8:
+        boost_tier = "mid_boost"
+    elif boost <= 2.0:
+        boost_tier = "elite_boost"
+    else:
+        boost_tier = "max_boost"
+
+    # 3. Guard against trap plays (Dead Capital)
+    if (ownership_tier, boost_tier) in DEAD_CAPITAL_CONDITIONS:
+        return 0.0
+
+    # 4. Return the historical HV rate as EV multiplier
+    c_cond = CONDITION_MATRIX[ownership_tier][boost_tier]
+    return round(float(c_cond), 3)
+
+
 def real_score_projection(s_base, spread, total, usage_rate, player_variance,
-                          rng=None):
+                          drafts=None, card_boost=1.0, rng=None):
     """Master Real Score projection combining all contextual coefficients.
+
+    On-court layer:  C_c (closeness), C_k (clutch), M_m (momentum)
+    Meta-game layer: C_cond (ownership × boost condition matrix)
 
     Args:
         s_base: Baseline statistical projection (from LightGBM/heuristic blend)
@@ -161,6 +265,8 @@ def real_score_projection(s_base, spread, total, usage_rate, player_variance,
         total: Over/under total
         usage_rate: Player's usage rate proxy (pts / minutes * scaling)
         player_variance: |recent_performance - season_average| / season_average
+        drafts: Number of times this player has been drafted (ownership proxy)
+        card_boost: Player's current card boost multiplier
         rng: Optional numpy RNG for deterministic results
 
     Returns:
@@ -169,18 +275,25 @@ def real_score_projection(s_base, spread, total, usage_rate, player_variance,
     if rng is None:
         rng = _make_rng(spread, total)
 
+    # On-Court Game Mechanics
     c_c = closeness_coefficient(spread, total, rng)
     c_k = clutch_coefficient(spread, total, usage_rate, player_variance, rng)
     m_m = momentum_bonus(player_variance)
 
-    real_score = s_base * c_c * c_k * m_m
+    # Meta-Game Mechanics (DFS Ownership/Boost conditions)
+    c_cond = condition_coefficient(drafts, card_boost)
+
+    # Master Equation
+    real_score = s_base * c_c * c_k * m_m * c_cond
 
     metadata = {
         "c_closeness": c_c,
         "c_clutch": c_k,
         "m_momentum": m_m,
-        "composite_mult": round(c_c * c_k * m_m, 3),
+        "c_condition": c_cond,
+        "composite_mult": round(c_c * c_k * m_m * c_cond, 3),
         "s_base": round(s_base, 3),
+        "is_dead_capital": c_cond == 0.0,
     }
 
     return real_score, metadata
