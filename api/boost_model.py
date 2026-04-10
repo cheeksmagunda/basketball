@@ -318,8 +318,15 @@ def estimate_draft_popularity(
     n_games: int = 6,
     recent_ppg: float = 0,
 ) -> float:
-    """Estimate how many users will draft this player (used for boost movement)."""
-    base_score = season_ppg * 100
+    """Estimate how many users will draft this player (used for condition matrix).
+
+    Real Sports draft counts (from data/top_performers.csv):
+      Median: 37, P75: 255, P90: 1900, Max: 16200
+      64% ghost (<100), 18.5% low (100-499), 5.5% medium (500-999)
+    Calibrated so: 8 PPG → ~80 (ghost), 15 PPG → ~150 (low),
+      20 PPG star → ~300 (low), 25 PPG superstar → ~650 (medium/chalk).
+    """
+    base_score = season_ppg * 10
 
     # Star name recognition multiplier
     if season_ppg >= 25:

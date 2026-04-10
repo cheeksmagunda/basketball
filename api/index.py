@@ -4667,11 +4667,31 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                   f"{[p.get('name') for p in _dead[:5]]}")
         _pool_after = [p for p in candidate_pool if not p.get("_dead_capital")]
         # Safety guard: if dead capital filter is too aggressive (removes >60% of pool
-        # or leaves fewer than 10 candidates), disable it and keep all candidates.
-        # This prevents empty lineups when the filter miscategorizes players.
+        # or leaves fewer than 10 candidates), disable condition matrix entirely and
+        # recalculate EVs with cond_mult=1.0. This prevents empty lineups when the
+        # draft popularity fallback miscategorizes players.
         if len(_pool_after) < 10 or (len(candidate_pool) > 0 and len(_pool_after) / len(candidate_pool) < 0.4):
             print(f"[build_lineups] dead capital filter too aggressive ({len(candidate_pool)}→{len(_pool_after)}), "
-                  f"disabling — keeping all {len(candidate_pool)} candidates")
+                  f"DISABLING condition matrix — recalculating all EVs with cond_mult=1.0")
+            for p in candidate_pool:
+                p.pop("_dead_capital", None)
+                rs = float(p.get("rating", 0))
+                boost = float(p.get("est_mult", 0))
+                band = p.get("boost_band")
+                if band and isinstance(band, (list, tuple)) and len(band) == 2:
+                    cb_low, cb_high = float(band[0]), float(band[1])
+                else:
+                    cb_low = cb_high = boost
+                # Recalculate with cond_mult=1.0 (pure RS × boost scoring)
+                _other_mult = float(p.get("_mi_mult", 1)) * float(p.get("_lb_mult", 1)) * \
+                              float(p.get("_ct_mult", 1)) * float(p.get("_mc_mult", 1))
+                p["_cond_mult"] = 1.0
+                p["_cond_coeff"] = 1.0
+                total_mult = _other_mult  # cond_mult is now 1.0
+                p["draft_ev"]  = round(rs * (_avg_slot + boost)   * total_mult, 2)
+                p["safe_ev"]   = round(rs * (_avg_slot + cb_low)  * total_mult, 2)
+                p["upside_ev"] = round(rs * (_avg_slot + cb_high) * total_mult, 2)
+                p["moonshot_ev"] = p["draft_ev"]
         else:
             candidate_pool = _pool_after
 
