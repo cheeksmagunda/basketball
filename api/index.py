@@ -3438,7 +3438,7 @@ def _fetch_matchup_intelligence(games: list, all_proj: list, def_stats: dict,
 
     try:
         import anthropic as _anthropic
-        client = _anthropic.Anthropic(api_key=anthropic_key)
+        client = _anthropic.Anthropic(api_key=anthropic_key, max_retries=0)
         msg = client.messages.create(
             model=model_id,
             max_tokens=2000,

@@ -961,11 +961,12 @@ class TestConfigCoverage:
             val = _cfg("strategy.rs_floor", None)
         assert val == 2.0, f"Expected 2.0, got {val}"
 
-    def test_line_min_confidence_readable(self):
+    def test_cfg_returns_none_for_missing_section(self):
+        """_cfg returns fallback for sections that don't exist in config."""
         from api.index import _cfg, _CONFIG_DEFAULTS
         with patch("api.index._load_config", return_value=_CONFIG_DEFAULTS):
             val = _cfg("line.min_confidence", None)
-        assert val == 50, f"Expected 50, got {val}"
+        assert val is None, f"Expected None for missing config section, got {val}"
 
     def test_cfg_fallback_for_missing_key(self):
         """_cfg must return the fallback value for a key that doesn't exist."""
