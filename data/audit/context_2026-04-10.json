@@ -1,0 +1,22 @@
+{
+  "date": "2026-04-10",
+  "model": "claude-haiku-4-5-20251001",
+  "adjustments": [
+    {
+      "player": "Draymond Green",
+      "team": "GSW",
+      "multiplier": 1.3,
+      "old_rating": 2.5,
+      "new_rating": 3.2,
+      "minutes_delta": 0,
+      "reason": "defensive value",
+      "reason_class": "other"
+    }
+  ],
+  "total_impact": 0.75,
+  "news_available": false,
+  "signals": {
+    "cascade": false,
+    "b2b": true
+  }
+}
