@@ -16,9 +16,8 @@ const queryClient = new QueryClient({
 });
 
 // ---------------------------------------------------------------------------
-// Prefetch critical first-tab data in parallel.
-// Slate + Games are both needed by the Predict tab (default tab).
-// Lab Briefing is prefetched in the background for instant Ben tab switch.
+// Prefetch critical data in parallel.
+// Slate + Games are both needed by the Predict tab.
 // ---------------------------------------------------------------------------
 queryClient.prefetchQuery({ queryKey: ['slate'], queryFn: () => fetchJson('/api/slate', 30_000) });
 queryClient.prefetchQuery({
@@ -27,12 +26,6 @@ queryClient.prefetchQuery({
     const res = await fetchJson<{ data: unknown[] }>('/api/games', 15_000);
     return res.data ?? [];
   },
-});
-
-queryClient.prefetchQuery({
-  queryKey: ['lab-briefing'],
-  queryFn: () => fetchJson('/api/lab/briefing', 30_000),
-  staleTime: 5 * 60 * 1000,
 });
 
 createRoot(document.getElementById('root')!).render(

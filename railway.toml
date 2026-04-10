@@ -14,12 +14,6 @@ restartPolicyMaxRetries = 3
 # Example command:
 # python -c "import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/cold-reset',headers=h)"
 
-# Auto-tune model if >=3% MAE improvement (Wed + Sun, 9am UTC)
-# Reduced from daily to 2x/week — model changes don't need daily evaluation
-[[crons.jobs]]
-schedule = "0 9 * * 0,3"
-command = "python -c \"import requests,os; h={'Authorization':f'Bearer {os.environ.get(\"CRON_SECRET\",\"\")}'};requests.get(f'http://localhost:{os.environ.get(\"PORT\",8080)}/api/lab/auto-improve',headers=h)\""
-
 # Injury check — reduced to 3 key windows (pre-tip + mid-evening + late)
 # Triggers the same global cold-reset pipeline when injuries impact cached lineups
 [[crons.jobs]]

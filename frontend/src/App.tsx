@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import { useSlate } from './api/slate';
 import ErrorBoundary from './components/shared/ErrorBoundary';
 import Header from './components/layout/Header';
-import BottomNav from './components/layout/BottomNav';
-import TabRouter from './components/layout/TabRouter';
 import OracleLoader from './components/shared/OracleLoader';
+import PredictTab from './components/predict/PredictTab';
 
 // After this many ms of loading with no data, show a "taking too long" retry UI
 // instead of an infinite spinner. With retry:1 + 30s timeout + 8s delay the
@@ -75,8 +74,7 @@ function AppInner() {
       <OracleLoader visible={showLoader} />
       <Header />
       <div className="divider" style={{ margin: '8px 0 0' }} />
-      <TabRouter />
-      <BottomNav />
+      <PredictTab />
     </div>
   );
 }
