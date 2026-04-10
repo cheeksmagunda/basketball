@@ -5859,7 +5859,7 @@ def _get_slate_impl():
     try:
         all_proj = []
         game_proj_map = {}  # {gameId: [projections...]} for GitHub persistence
-        gamelog_map, _dvp_data, player_odds_prefetch, _def_stats = {}, {}, {}, {}
+        gamelog_map, _dvp_data, _def_stats = {}, {}, {}
 
         # Pre-fetch nba_api enrichment (usage_share, team_pace, min_volatility, etc.)
         # before parallel game runs. Cached per slate date — one heavy call per day.
@@ -5884,7 +5884,7 @@ def _get_slate_impl():
 
         with ThreadPoolExecutor(max_workers=_W_STANDARD) as pool:
             futs = {
-                pool.submit(_run_game, g, gamelog_map, _dvp_data, player_odds_prefetch): g
+                pool.submit(_run_game, g, gamelog_map, _dvp_data): g
                 for g in draftable_games
             }
             for fut in as_completed(futs):
