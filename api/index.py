@@ -401,6 +401,7 @@ def _slate_cache_from_github(date_str: str = None):
     try:
         today = date_str or _today_str()
         bust_path = f"data/slate/{today}_bust.json"
+        bust_expired = False
         for ref in (None, "main"):  # data branch first, then main (retrain writes bust to main)
             bust_content, _ = _github_get_file(bust_path, ref_override=ref)
             if bust_content:
@@ -413,6 +414,7 @@ def _slate_cache_from_github(date_str: str = None):
                                       datetime.fromisoformat(bust_data["at"])).total_seconds()
                         if bust_age_s > 5400:  # 90 minutes
                             print(f"[slate-cache] bust expired ({bust_age_s:.0f}s old), ignoring")
+                            bust_expired = True
                             break  # Treat as expired — fall through to normal cache read
                     except Exception:
                         pass
@@ -423,6 +425,21 @@ def _slate_cache_from_github(date_str: str = None):
         if content:
             data = json.loads(content)
             if data.get("_busted"):
+                # Check if this tombstone has its own "at" timestamp and is expired.
+                # All tombstones now include "at" — orphan tombstones auto-expire
+                # after 90 minutes so failed regenerations can't block cache forever.
+                if bust_expired:
+                    print(f"[slate-cache] slate.json busted + bust sentinel expired — no cache")
+                    return None
+                if data.get("at"):
+                    try:
+                        _slate_age = (datetime.now(timezone.utc) -
+                                      datetime.fromisoformat(data["at"])).total_seconds()
+                        if _slate_age > 5400:  # 90 minutes
+                            print(f"[slate-cache] slate.json tombstone expired ({_slate_age:.0f}s old) — no cache")
+                            return None
+                    except Exception:
+                        pass
                 return None
             return data
     except Exception as e:
@@ -490,6 +507,16 @@ def _games_cache_from_github(date_str: str = None):
         if content:
             data = json.loads(content)
             if data.get("_busted"):
+                # Auto-expire tombstone after 90 minutes (same as bust sentinel)
+                if data.get("at"):
+                    try:
+                        _age = (datetime.now(timezone.utc) -
+                                datetime.fromisoformat(data["at"])).total_seconds()
+                        if _age > 5400:
+                            print(f"[games-cache] tombstone expired ({_age:.0f}s old)")
+                            return None
+                    except Exception:
+                        pass
                 return None
             return data
     except Exception as e:
@@ -556,8 +583,12 @@ def _bust_slate_cache(_caller: str = ""):
         pass
     # Bust GitHub cache: single batched commit with all tombstones + sentinel.
     # Previously 4 separate commits per bust — now 1 commit via Git Trees API.
-    bust_tombstone = json.dumps({"_busted": True})
-    bust_sentinel = json.dumps({"_busted": True, "at": datetime.now(timezone.utc).isoformat()})
+    # All tombstones include "at" timestamp so they auto-expire after 90 minutes.
+    # This prevents orphan tombstones from permanently blocking the cache if the
+    # subsequent regeneration fails to overwrite them on GitHub.
+    _bust_ts = datetime.now(timezone.utc).isoformat()
+    bust_tombstone = json.dumps({"_busted": True, "at": _bust_ts})
+    bust_sentinel = json.dumps({"_busted": True, "at": _bust_ts})
     bust_files = [
         {"path": f"data/slate/{today}_slate.json", "content": bust_tombstone},
         {"path": f"data/slate/{today}_games.json", "content": bust_tombstone},
