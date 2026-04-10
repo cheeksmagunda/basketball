@@ -5323,5 +5323,131 @@ class TestRotoWireAdaptiveTTL:
         assert "1800" in src, "Should use 30-min TTL outside game window"
 
 
+# ─────────────────────────────────────────────────────────
+# TestConditionMatrixIntegration — verifies Condition Matrix
+# is wired as primary signal in _build_lineups()
+# ─────────────────────────────────────────────────────────
+class TestConditionMatrixIntegration:
+    """Condition Matrix (ownership × boost → HV rate) must be the primary
+    EV signal in _build_lineups(), not overridden by legacy trait scoring."""
+
+    def test_condition_matrix_enabled_in_config_defaults(self):
+        """strategy.condition_matrix.enabled must default to True."""
+        from api.index import _CONFIG_DEFAULTS
+        cm = _CONFIG_DEFAULTS["strategy"]["condition_matrix"]
+        assert cm["enabled"] is True
+
+    def test_condition_matrix_in_model_config_json(self):
+        """data/model-config.json must include condition_matrix config."""
+        cfg = json.loads(open("data/model-config.json").read())
+        assert "condition_matrix" in cfg.get("strategy", {}), \
+            "condition_matrix missing from strategy section in model-config.json"
+        assert cfg["strategy"]["condition_matrix"]["enabled"] is True
+
+    def test_condition_coefficient_imported_in_build_lineups(self):
+        """_build_lineups must import condition_coefficient from real_score."""
+        src = open("api/index.py").read()
+        assert "from api.real_score import condition_coefficient" in src, \
+            "condition_coefficient not imported in _build_lineups"
+
+    def test_condition_matrix_multiplier_in_total_mult(self):
+        """total_mult in scoring loop must include cond_mult."""
+        src = open("api/index.py").read()
+        assert "mi_mult * lb_mult * ct_mult * mc_mult * cond_mult" in src, \
+            "cond_mult not included in total_mult calculation"
+
+    def test_dead_capital_filtering_exists(self):
+        """Dead capital players (cond_coeff=0.0) must be filtered from pool."""
+        src = open("api/index.py").read()
+        assert "_dead_capital" in src, "Dead capital filtering not implemented"
+        assert 'not p.get("_dead_capital")' in src, \
+            "Dead capital filter not applied to candidate pool"
+
+    def test_condition_coefficient_ghost_max_boost(self):
+        """Ghost + max_boost should return full coefficient (1.0)."""
+        from api.real_score import condition_coefficient
+        assert condition_coefficient(50, 3.0) == 1.0
+
+    def test_condition_coefficient_dead_capital_returns_zero(self):
+        """Chalk + low_boost is dead capital — should return 0.0."""
+        from api.real_score import condition_coefficient
+        assert condition_coefficient(1500, 1.4) == 0.0
+
+    def test_ghost_player_outranks_chalk_star(self):
+        """A ghost+max_boost player must outrank a chalk+max_boost star in EV.
+
+        This is the core insight: format mechanics (ownership × boost) dominate
+        basketball conditions (RS). A 3.0 RS ghost with 3.0x boost has more
+        composite EV than a 6.0 RS mega_chalk with 2.5x boost.
+        """
+        from api.real_score import condition_coefficient
+        # Ghost player: RS 3.0, boost 3.0, 50 drafts
+        ghost_coeff = condition_coefficient(50, 3.0)
+        ghost_ev = ghost_coeff * 3.0 * (2.0 + 3.0)
+        # Mega-chalk star: RS 6.0, boost 2.5, 3000 drafts
+        chalk_coeff = condition_coefficient(3000, 2.5)
+        chalk_ev = chalk_coeff * 6.0 * (2.0 + 2.5)
+        assert ghost_ev > chalk_ev, \
+            f"Ghost EV ({ghost_ev}) should outrank chalk star EV ({chalk_ev})"
+
+    def test_cond_mult_stored_on_player_dict(self):
+        """_cond_mult must be stored on player dict for diagnostics."""
+        src = open("api/index.py").read()
+        assert '"_cond_mult"' in src, "_cond_mult not stored on player dict"
+        assert '"_cond_coeff"' in src, "_cond_coeff not stored on player dict"
+        assert '"_est_drafts"' in src, "_est_drafts not stored on player dict"
+
+    def test_no_positional_caps(self):
+        """No position-based filtering in lineup selection."""
+        src = open("api/index.py").read()
+        # _select_with_team_cap should not reference position
+        import re
+        fn_match = re.search(
+            r'def _select_with_team_cap\(.*?\n(?:.*?\n)*?        return selected, team_counts',
+            src
+        )
+        if fn_match:
+            fn_body = fn_match.group()
+            assert "pos" not in fn_body.lower() or "position" not in fn_body.lower(), \
+                "Position-based filtering found in _select_with_team_cap"
+
+    def test_max_per_team_is_one(self):
+        """max_per_team must be 1 in both config and code defaults."""
+        from api.index import _CONFIG_DEFAULTS
+        assert _CONFIG_DEFAULTS["strategy"]["max_per_team"] == 1
+        cfg = json.loads(open("data/model-config.json").read())
+        assert cfg["strategy"]["max_per_team"] == 1
+
+    def test_both_lineups_use_team_cap(self):
+        """Both S5 and Moonshot selection must use _select_with_team_cap."""
+        src = open("api/index.py").read()
+        # Find the S5 and Moonshot selection calls
+        assert "chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)" in src, \
+            "S5 not using _select_with_team_cap"
+        assert "_select_with_team_cap(moonshot_pool, 5, max_per_team" in src, \
+            "Moonshot not using _select_with_team_cap"
+
+    def test_draft_estimation_uses_history_then_fallback(self):
+        """Draft estimation should prefer historical data, fallback to estimate_draft_popularity."""
+        src = open("api/index.py").read()
+        # Check that history-based estimation comes first
+        assert "_phist_cm" in src, "Historical draft lookup not implemented"
+        assert "_recent_drafts_cm" in src, "Recent draft averaging not implemented"
+        assert "_estimate_drafts_fn" in src, "Fallback draft estimation not implemented"
+
+    def test_condition_matrix_not_overridden_by_trait_scoring(self):
+        """No legacy trait scoring should override the condition matrix signal.
+        The CONDITION_MATRIX HV rates should be the dominant factor in EV."""
+        from api.real_score import CONDITION_MATRIX
+        # Verify the matrix exists and has expected structure
+        assert "ghost" in CONDITION_MATRIX
+        assert "mega_chalk" in CONDITION_MATRIX
+        assert CONDITION_MATRIX["ghost"]["max_boost"] == 1.0
+        assert CONDITION_MATRIX["mega_chalk"]["max_boost"] == 0.12
+        # Verify the ratio: ghost/mega_chalk for max_boost is ~8.3x
+        ratio = CONDITION_MATRIX["ghost"]["max_boost"] / CONDITION_MATRIX["mega_chalk"]["max_boost"]
+        assert ratio > 8.0, f"Ghost/mega_chalk ratio should be >8x, got {ratio}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -60,17 +60,17 @@ server.py              — Local dev server (uvicorn)
 The backend uses:
 1. **`lgbm_model.pkl` (Real Score Projection)**: 12-feature LightGBM model predicting player RS. Blended with heuristic DFS score, compressed, then simple additive game context adjustments applied (+0.3 RS close games, +0.15/10pts pace). No Monte Carlo — removed in v82 strategy simplification. Trained nightly via GitHub Actions.
 2. **`api/boost_model.py` (3-Tier Cascade Boost Prediction)**: Deterministic cascade that predicts card boost (0.0–3.0) from historical Real Sports data. **Tier 1** (returning player, ≤14 days): uses prev_boost + adjustments for RS, drafts, trend, gap, mean reversion (MAE ~0.10–0.15). **Tier 2** (stale, >14 days): blends historical boost mean with API-derived estimate. **Tier 3** (cold start): Player Quality Index from season stats. **Anti-popularity penalty** applied post-cascade: estimates draft popularity from season PPG + team market + hot streak; high-popularity players get boost depressed (Finding 4: -0.457 correlation).
-3. **Draft Lineup Builder** (`_build_lineups` in `api/index.py`): Sort-based pipeline replacing the prior MILP optimizer for slate-wide drafts. Single EV formula: `RS × (2.0 + boost)`. Two gates only: RS ≥ 2.0, minutes ≥ 12. Safe lineup = top 5 by EV (tie-break low variance). Upside lineup = 1-2 variance/boost swaps. Slot assignment = sort by RS descending (provably optimal per strategy report Finding 3).
+3. **Draft Lineup Builder** (`_build_lineups` in `api/index.py`): Condition-Matrix-driven sort-based pipeline. Composite EV: `condition_coeff × RS × (2.0 + boost) × data_multipliers`. The **Condition Matrix** (`CONDITION_MATRIX` in `api/real_score.py`) maps ownership tier × boost tier → historical HV rate (0.0–1.0) and is the PRIMARY signal. Dead capital combos auto-filtered. No positional caps — composition driven by composite EV. Max 1 player per team per lineup. Two gates: RS ≥ 2.0, minutes ≥ 12. Safe lineup = top 5 by safe_ev (cb_low). Upside lineup = top 5 by upside_ev (cb_high). Slot assignment = sort by RS descending (provably optimal).
 
 **Historical outcomes** for audit: **`data/top_performers.csv`** is primary (filter by `date`); **`data/actuals/{date}.csv`** remains a transition fallback. **Simplest ingest:** **`docs/historical-ingest/INSTRUCTIONS.md`** — rasterize PDF → transcribe PNGs → write `data/` (no server). Alternate: **`docs/HISTORICAL_DATA.md`** (API `parse-screenshot` + `save-*` POSTs if you prefer). `data/predictions/` supplies pre-game features for training joins.
 
 **2025-26 data coverage:** Oct 21 – Nov 29 ✅ | Nov 30 – Jan 16 ✅ (gap closed) | Jan 17 – Feb 11 ✅ | Feb 12–18 All-Star break | Feb 19 – Apr 8 ✅. Dec 24 = no games. Full map: `docs/HISTORICAL_DATA.md`.
 
-### Strategy-Report-Aligned Draft Pipeline (Starting 5 + Moonshot)
-- **Pipeline**: ESPN → LightGBM + heuristic blend → compression → simple game context (+0.3 close, +pace) → Card Boost (cascade + anti-popularity) → `EV = RS × (2.0 + boost)` → Sort-based selection → RS-descending slot assignment
-- **Why**: Strategy report (90 dates) proves boost is 40% more valuable per unit than RS. The game is structurally solvable with `RS × (2.0 + boost)`. Monte Carlo and MILP were over-engineering a problem that data shows is simple. Anti-popularity captures a 24% value edge from going contrarian.
+### Condition-Matrix-Driven Draft Pipeline (Starting 5 + Moonshot)
+- **Pipeline**: ESPN → LightGBM + heuristic blend → compression → simple game context (+0.3 close, +pace) → Card Boost (cascade + anti-popularity) → **Condition Matrix** (ownership tier × boost tier → HV rate) → `Composite EV = condition_coeff × RS × (2.0 + boost) × data_multipliers` → Sort-based selection → RS-descending slot assignment
+- **Why**: Historical analysis proves format mechanics (ownership × boost interaction) dominate basketball conditions. Ghost players (+max boost) have 100% HV rate; mega-chalk stars have 12%. The Condition Matrix (`api/real_score.py`) is the PRIMARY signal. Dead capital combos (e.g. chalk+low_boost) auto-filtered. No positional caps — composition driven by composite EV. Max 1 player per team per lineup (S5 and Moonshot each independent).
 - **Endpoints**: `/api/slate`, `/api/picks`, `/api/force-regenerate`, `/api/injury-check`
-- **Code**: `project_player()` and `_build_lineups()` in `api/index.py`, `api/boost_model.py`
+- **Code**: `project_player()` and `_build_lineups()` in `api/index.py`, `api/boost_model.py`, `condition_coefficient()` in `api/real_score.py`
 
 ## UI Structure
 
@@ -107,6 +107,7 @@ grep: ESPN DATA FETCHERS       — fetch_games, fetch_roster, _fetch_athlete
 grep: INJURY CASCADE           — _cascade_minutes, _pos_group
 grep: CASCADE TEAM DETECTOR    — star OUT detection in _run_game, RS mult + boost floor in project_player, relaxed gates in _build_lineups
 grep: CARD BOOST               — _est_card_boost, _dfs_score (cascade in api/boost_model.py grep: BOOST CASCADE MODEL)
+grep: CONDITION MATRIX         — _build_lineups() condition_coefficient integration, ownership × boost → HV rate (api/real_score.py)
 grep: HISTORICAL RS DISCOUNT   — project_player() soft pull-back when predicted RS exceeds player's historical track record
 grep: MOMENTUM CURVE           — _build_lineups() hype trap penalty + rising wave bonus detection
 grep: MOMENTUM CURVE SCORING   — per-player mc_mult calculation in _build_lineups() scoring loop
@@ -408,27 +409,32 @@ No Monte Carlo, no post-compression multiplier stack, no archetype calibration, 
 
 ---
 
-## Two Draft Strategies (Strategy-Report-Aligned Architecture)
+## Two Draft Strategies (Condition-Matrix-Driven Architecture)
 
-Both lineups use a **single EV formula**: `draft_ev = RS × (2.0 + boost)`. Strategy report (90 dates) proves boost is 40% more valuable per unit than RS, so both terms must be maximized. No separate chalk/moonshot pools or MILP optimizer — the problem is structurally solvable with a sort.
+Both lineups use the **Condition Matrix** as the PRIMARY signal: `composite_ev = condition_coeff × RS × (2.0 + boost) × data_multipliers`. The `condition_coeff` comes from `CONDITION_MATRIX[ownership_tier][boost_tier]` in `api/real_score.py` — a historical HV rate lookup (0.0–1.0). Format mechanics (who drafts whom × what boost they get) dominate basketball conditions (RS, matchups, pace). No positional caps — composition driven entirely by composite EV. Max 1 player per team per lineup.
 
-**Pipeline** (6-step in `_build_lineups`):
+**Pipeline** (7-step in `_build_lineups`):
 1. **Filter**: RS ≥ 2.0 (`strategy.rs_floor`), minutes ≥ 12 (`strategy.min_minutes`), not OUT, not blacklisted
-2. **Score**: `draft_ev = RS × (2.0 + boost)` for each candidate
-3. **Rank**: Candidates sorted by `draft_ev` descending
-4. **Safe Lineup (Starting 5)**: Top 5 by `safe_ev` (cb_low). Ties broken by lower variance (reliable floor).
-5. **Upside Lineup (Moonshot)**: Top 5 by `upside_ev` (cb_high) from the full candidate pool (independent selection, 2-3 overlap with S5 expected).
-6. **Slot Assignment**: Both lineups sorted by RS descending → 2.0x, 1.8x, 1.6x, 1.4x, 1.2x. This is provably optimal: `d(Value)/d(slot) = RS`, so highest RS → highest slot.
+2. **Score**: `composite_ev = condition_coeff × RS × (2.0 + boost) × data_multipliers` for each candidate
+   - `condition_coeff`: ownership tier (from historical draft counts or `estimate_draft_popularity()` fallback) × boost tier → HV rate
+   - `data_multipliers`: minutes increase, leaderboard frequency, contrarian bonus, momentum curve
+3. **Dead Capital Filter**: Remove players with `condition_coeff = 0.0` (trap plays: chalk+low_boost, mega_chalk+no_boost, etc.)
+4. **Safe Lineup (Starting 5)**: Top 5 by `safe_ev` (cb_low). Ties broken by lower variance (reliable floor). Max 1 per team.
+5. **Upside Lineup (Moonshot)**: Top 5 by `upside_ev` (cb_high) from remaining pool (excluding S5 players). Max 1 per team.
+6. **Slot Assignment**: Both lineups sorted by RS descending → 2.0x, 1.8x, 1.6x, 1.4x, 1.2x. Provably optimal: `d(Value)/d(slot) = RS`.
+7. **Core Pool**: Top 20 candidates for watchlist/review.
 
 **Anti-popularity** (Finding 4): Draft popularity has -0.457 correlation with boost. The cascade in `boost_model.py` estimates popularity from season PPG + team market + hot streak, then penalizes popular players' boost predictions. The least-drafted 50% produce 24-26% more total value.
 
-Config: All draft strategy parameters in `strategy.*` section of model-config defaults (~15 params replacing ~120 prior scattered params).
+**Dead Capital** (`DEAD_CAPITAL_CONDITIONS` in `api/real_score.py`): Specific ownership × boost combos with zero historical HV rate. These are auto-filtered before lineup selection: chalk+elite_boost, chalk+max_boost, chalk+low_boost, mega_chalk+low_boost, mega_chalk+no_boost.
+
+Config: All draft strategy parameters in `strategy.*` section of model-config defaults. `strategy.condition_matrix.enabled` (default True) controls the meta-game layer.
 
 ### Slate-Wide: Starting 5 (Safe)
-Top 5 by `draft_ev`. Tie-breaking prefers lower variance for floor reliability. No MILP, no boost floors, no star anchor pathway — the EV formula naturally selects the right mix.
+Top 5 by `safe_ev` (using `cb_low` conservative boost floor). Tie-breaking prefers lower variance for floor reliability. No MILP, no boost floors, no star anchor pathway — the composite EV formula naturally selects the right mix. Max 1 player per team.
 
 ### Slate-Wide: Moonshot (Upside)
-Top 5 by `upside_ev` from the **full** candidate pool (independent selection, not filtered by S5). Best EV players can appear in both lineups (2-3 overlap expected — matches winning draft patterns where the top players belong in every lineup). Divergence comes from `upside_ev` (cb_high) vs `safe_ev` (cb_low) ranking differences + team cap.
+Top 5 by `upside_ev` (using `cb_high` optimistic boost ceiling) from the pool excluding S5 players. Sorted by upside_ev descending, tie-break on boost. Max 1 player per team. Divergence from S5 comes from `upside_ev` (cb_high) vs `safe_ev` (cb_low) ranking differences + team cap.
 
 ### Per-Game: THE LINE UP (v60 — Strategy-Aware Draft Model)
 Redesigned from 18-game / 76-lineup empirical analysis (Jan 6 – Mar 23, 2026). Single 5-player format for single-game drafts. **No Starting 5 / Moonshot split** — both users draft from the same 2-team pool, making card boost irrelevant.
@@ -848,6 +854,8 @@ If slate fails to load:
 | Apr 8 post-mortem — EV formula fix + high-boost bypass + RS discount | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py`, `tests/test_core.py` | **Problem**: Apr 8 slate — chalk 0/5, moonshot 2/5 (Clayton, Dieng). ALL winning players had 3.0x boost with <25 drafts. Bones Hyland predicted RS 5.0, actual 0.5 (catastrophic). Keon Ellis predicted RS 5.0, actual 0.9. Winning draft (73.96) = 5 players with 3.0x boost: Clayton, Dieng, Sims, Shannon Jr, Hendricks. **Fix 1**: `avg_slot_multiplier` 1.6→2.0 — EV formula was `RS × (1.6 + boost)` instead of documented `RS × (2.0 + boost)`, undervaluing boost by ~8%. **Fix 2**: High-boost bypass — players with predicted boost ≥2.5 AND RS ≥2.0 now bypass the min_minutes gate (uses 12 min like cascade teams). Deep bench 3.0x contrarians (Shannon, Bitadze, Sims, Hendricks, Bryant) were ALL filtered by 25-min gate. **Fix 3**: `min_minutes` 25→15 (global relaxation). **Fix 4**: Historical RS discount strengthened — `min_appearances` 3→2, `saturation_k` 8→6, `max_prior_strength` 0.5→0.65, `discount_scale` 0.4→0.6, `max_discount_frac` 0.6→0.8. Prevents Hyland-type 5.0→0.5 busts. **Fix 5**: `anti_popularity_enabled` true + `strength` 0.2 in model-config.json (was disabled). Config v91. |
 
 | Apr 9 pipeline + picks quality overhaul | `api/index.py`, `data/model-config.json`, `tests/test_fixes.py` | **Problem**: Pipeline not running (empty `{}` slate cache, unprotected exception in `_run_cold_pipeline`), and 0/5 picks hitting on recent slates (Apr 5–8: ALL winners had boost 2.9–3.0 with <25 drafts; model predicted none of them). **6 fixes**: (1) **Pipeline crash fix**: wrapped unprotected `_prewarm_current_slate_sync()` call in `_run_cold_pipeline` with try/except — was silently crashing the entire cold pipeline, leaving empty tombstones. (2) **EV formula consistency**: `_build_lineups()` code default was 1.6 instead of config value 2.0 for `avg_slot_multiplier` — boost undervalued by ~8% in lineup selection relative to `project_player()`. Fixed default to 2.0. (3) **Anti-popularity 3x multiplier removed**: hidden `* 3.0` on line 3024 made `anti_popularity_strength: 0.2` effectively 0.6 — way too harsh, over-penalizing popular players' boost predictions. Now strength is directly applied. (4) **Rising wave tuning**: `rs_trend_min` 0.3→0.15 (slow-building players qualify), `rising_wave_max_bonus` 0.20→0.35, `wave_max_drafts` 200→300. (5) **Moonshot from full pool**: was excluding S5 players from moonshot pool, preventing best EV players from appearing in both lineups. Now moonshot selects independently — 2-3 overlap expected (matches winning draft patterns). (6) **ai_blend_weight config drift**: was 0.3 in config but v82 changelog says 1.0 (100% LightGBM). DFS heuristic was causing catastrophic RS over-projection for role players (Trent Jr. projected 5.7, actual 1.7). Fixed config + code default to 1.0. |
+
+| Condition Matrix as primary signal | `api/index.py`, `api/real_score.py`, `data/model-config.json`, `tests/test_fixes.py` | **Problem**: Condition Matrix (ownership × boost → HV rate) existed in `api/real_score.py` but was disconnected from `_build_lineups()`. Pipeline used `EV = RS × (2.0 + boost)` — trait-based scoring with format bonus as afterthought. Historical data shows format mechanics dominate: ghost+max_boost=100% HV rate, mega_chalk+max_boost=12%. **Fix**: Wired `condition_coefficient()` into `_build_lineups()` as multiplicative EV factor. Draft counts estimated from player history (primary) or `estimate_draft_popularity()` (fallback). Dead capital combos (condition_coeff=0.0) auto-filtered from candidate pool. New formula: `composite_ev = condition_coeff × RS × (2.0 + boost) × data_multipliers`. No positional caps removed (already absent). Max 1 per team enforced for both S5 and Moonshot independently. Config: `strategy.condition_matrix.enabled` (default true). 14 new tests. |
 
 ## Production audit
 
