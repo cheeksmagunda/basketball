@@ -636,7 +636,97 @@ class TestRealScoreEngine:
 
 
 # ---------------------------------------------------------------------------
-# 10. MILP Lineup Optimizer — asset_optimizer.py
+# 10. Condition Coefficient — meta-game ownership × boost matrix
+# ---------------------------------------------------------------------------
+
+class TestConditionCoefficient:
+    """
+    condition_coefficient() maps (drafts, card_boost) → HV rate multiplier.
+    Tests cover ownership tier classification, boost tier classification,
+    dead capital detection, matrix lookups, and real_score_projection integration.
+    """
+
+    def test_ghost_max_boost_returns_one(self):
+        """Ghost ownership + max boost → maximum EV multiplier (1.0)."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=50, card_boost=3.0)
+        assert c_cond == 1.0
+
+    def test_mega_chalk_no_boost_is_dead_capital(self):
+        """Mega-chalk + no boost → dead capital (0.0)."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=3000, card_boost=1.0)
+        assert c_cond == 0.0
+
+    def test_medium_mid_boost_returns_0_38(self):
+        """Medium ownership + mid boost → 0.38 per the condition matrix."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=750, card_boost=1.7)
+        assert c_cond == pytest.approx(0.38)
+
+    def test_none_drafts_uses_medium_tier(self):
+        """drafts=None defaults to 'medium' ownership tier (conservative)."""
+        from api.real_score import condition_coefficient
+        # medium + no_boost (card_boost=1.0 < 1.2) → 0.22
+        c_cond = condition_coefficient(drafts=None, card_boost=1.0)
+        assert c_cond == pytest.approx(0.22)
+
+    def test_chalk_low_boost_is_dead_capital(self):
+        """Chalk ownership + low boost is a trap — dead capital."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=1500, card_boost=1.4)
+        assert c_cond == 0.0
+
+    def test_chalk_elite_boost_is_dead_capital(self):
+        """Chalk ownership + elite boost is a trap — dead capital."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=1500, card_boost=1.9)
+        assert c_cond == 0.0
+
+    def test_mega_chalk_low_boost_is_dead_capital(self):
+        """Mega-chalk + low boost is dead capital."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=2500, card_boost=1.4)
+        assert c_cond == 0.0
+
+    def test_low_ownership_max_boost_returns_0_70(self):
+        """Low ownership + max boost → 0.70 per the condition matrix."""
+        from api.real_score import condition_coefficient
+        c_cond = condition_coefficient(drafts=200, card_boost=2.5)
+        assert c_cond == pytest.approx(0.70)
+
+    def test_result_is_float(self):
+        """condition_coefficient always returns a float."""
+        from api.real_score import condition_coefficient
+        result = condition_coefficient(drafts=100, card_boost=1.8)
+        assert isinstance(result, float)
+
+    def test_real_score_projection_includes_c_condition_metadata(self):
+        """real_score_projection metadata includes c_condition and is_dead_capital."""
+        from api.real_score import real_score_projection, _make_rng
+        rng = _make_rng(5, 222, seed_date="2026-03-07")
+        _, meta = real_score_projection(5.0, spread=5, total=222,
+                                        usage_rate=1.0, player_variance=0.2,
+                                        drafts=50, card_boost=3.0, rng=rng)
+        assert "c_condition" in meta
+        assert "is_dead_capital" in meta
+        assert meta["c_condition"] == 1.0
+        assert meta["is_dead_capital"] is False
+
+    def test_dead_capital_zeroes_real_score(self):
+        """Dead capital condition produces real_score = 0 regardless of s_base."""
+        from api.real_score import real_score_projection, _make_rng
+        rng = _make_rng(5, 222, seed_date="2026-03-07")
+        rs, meta = real_score_projection(8.0, spread=5, total=222,
+                                         usage_rate=1.5, player_variance=0.3,
+                                         drafts=3000, card_boost=1.0, rng=rng)
+        assert rs == 0.0
+        assert meta["is_dead_capital"] is True
+        assert meta["c_condition"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# 11. MILP Lineup Optimizer — asset_optimizer.py
 # ---------------------------------------------------------------------------
 
 class TestAssetOptimizer:
