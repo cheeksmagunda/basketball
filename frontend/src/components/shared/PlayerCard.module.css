@@ -276,6 +276,19 @@
   display: block; margin-top: 3px;
 }
 
+/* ── DESKTOP RESPONSIVE ── */
+@media (min-width: 768px) {
+  .player-card {
+    padding: 14px 18px 14px 28px;
+    gap: 14px;
+  }
+  .player-name { font-size: 1.2rem; }
+  .stat-col { min-width: 42px; }
+  .stat-val-proj { font-size: 0.95rem; }
+  .score-num { font-size: 2.2rem; }
+  .score-zone { min-width: 62px; padding-left: 14px; }
+}
+
 /* Slot badge — now rendered in subtitle-row (right side) */
 .slot-badge {
   font-family: 'Barlow Condensed', sans-serif;

@@ -95,7 +95,7 @@ export default function SlateView() {
           message="No players in this lineup."
         />
       ) : (
-        <div>
+        <div className="player-grid">
           {players.map((p, i) => (
             <PlayerCard
               key={p.id || p.name}

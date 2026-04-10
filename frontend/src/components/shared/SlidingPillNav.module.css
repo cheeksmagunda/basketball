@@ -144,3 +144,10 @@
 .mode-tab.active[data-t="upside"] {
   color: var(--upside);
 }
+
+/* ── DESKTOP RESPONSIVE — cap pill nav width so it doesn't stretch across full container ── */
+@media (min-width: 768px) {
+  .slide-pill-wrap { max-width: 400px; }
+  .predict-sub-nav { max-width: 400px; }
+  .mode-tabs { max-width: 400px; }
+}

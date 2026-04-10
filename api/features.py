@@ -36,9 +36,13 @@ RS_FEATURES = [
     "teammate_out_count",
     "game_total",
     "spread_abs",
+    # v93: Playoff features
+    "playoff_projected_min",      # rotation shrink: starters→40, bench→0
+    "season_series_pts_per_min",  # player-specific matchup history vs this opponent
+    "spike_usage_interaction",    # superstar overdrive: high usage × low volatility
 ]
 
-N_RS_FEATURES = len(RS_FEATURES)  # 22
+N_RS_FEATURES = len(RS_FEATURES)  # 25
 
 # Clipping constants — shared between training (Pandas) and inference (scalar)
 USAGE_TREND_MIN = 0.90
@@ -83,8 +87,11 @@ def compute_rs_features(
     game_total: float = GAME_TOTAL_DEFAULT,
     spread_abs: float = 0.0,
     recent_3g_pts: float | None = None,
+    # v93: Playoff features
+    is_top2_usage: bool = False,
+    season_series_pts_per_min: float | None = None,
 ) -> dict[str, float]:
-    """Compute all 22 RS features from scalar inputs.
+    """Compute all 25 RS features from scalar inputs.
 
     Formulas match train_lgbm.py Pandas operations exactly.
     Called by api/index.py at inference time.
@@ -135,6 +142,28 @@ def compute_rs_features(
     # 9. starter_proxy — binary: 1.0 if avg_min >= 26
     starter_proxy = 1.0 if avg_min >= STARTER_PROXY_THRESHOLD else 0.0
 
+    # v93: Playoff features
+    # 10. playoff_projected_min — rotation shrink proxy
+    #     Starters w/ top-2 usage: project toward 38-40 min
+    #     Deep bench (avg_min < 18): project to ~60% (rotation shrinks)
+    if is_top2_usage and starter_proxy == 1.0:
+        _playoff_min = min(max(avg_min, 36.0) * 1.05, 42.0)
+    elif avg_min < 18.0:
+        _playoff_min = avg_min * 0.60
+    else:
+        _playoff_min = avg_min
+    playoff_projected_min = float(min(_playoff_min, 42.0))
+
+    # 11. season_series_pts_per_min — player-specific matchup history
+    #     At inference, caller passes the player's h2h PPM vs this opponent if
+    #     available; otherwise falls back to general pts_per_min.
+    _series_ppm = season_series_pts_per_min if season_series_pts_per_min is not None else pts_per_min
+    _series_ppm = float(np.clip(_series_ppm, 0.0, 2.5))
+
+    # 12. spike_usage_interaction — superstar overdrive detector
+    #     High usage × low volatility = superstar pushing 40+ stable min
+    _spike_interaction = float(np.clip(usage_share * (1.0 - min_volatility), 0.0, 0.55))
+
     return {
         "avg_min": float(avg_min),
         "avg_pts": float(avg_pts),
@@ -158,6 +187,9 @@ def compute_rs_features(
         "teammate_out_count": float(teammate_out_count),
         "game_total": float(game_total),
         "spread_abs": float(spread_abs),
+        "playoff_projected_min": playoff_projected_min,
+        "season_series_pts_per_min": _series_ppm,
+        "spike_usage_interaction": _spike_interaction,
     }
 
 

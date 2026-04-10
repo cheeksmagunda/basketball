@@ -197,7 +197,7 @@ export default function GameView() {
               message="No lineup available for this game."
             />
           ) : (
-            <div style={{ marginTop: 12 }}>
+            <div className="player-grid" style={{ marginTop: 12 }}>
               {lineup.map((p, i) => (
                 <PlayerCard
                   key={p.id || p.name}

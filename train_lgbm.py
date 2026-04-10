@@ -6,6 +6,8 @@ Head B (spike): predicts positive residual above baseline (role-player eruption 
 
 Training objectives:
 - Sample weights up-weight high actual_rs within each game date (top-10 RS days matter more).
+- Playoff-intensity weighting: up-weight competitive games between playoff-bound teams,
+  down-weight late-season rest/blowout games. Spike model tuned for superstar overdrive.
 - Evaluation: top-5 RS recall, NDCG@5 RS, MAE (reported on held-out dates).
 
 Feature list and scalar computation shared with api/index.py via api/features.py.
@@ -282,6 +284,55 @@ df["cascade_signal"] = np.where(
 
 del df["_team_avg_pts_pg"]
 
+# ── v93: Playoff features ──────────────────────────────────────────────────
+# 1. playoff_projected_min — rotation shrink proxy.
+#    Starters (usage top-2 on team by avg_pts share) get bumped toward 40 min;
+#    deep bench (avg_min < 18) gets projected near 0 in playoff context.
+#    During regular season training this captures the same signal: starters
+#    play more minutes in high-stakes games.
+df["_team_rank"] = df.groupby(["GAME_ID", "TEAM_ABBREVIATION"])["avg_pts"].rank(
+    ascending=False, method="first"
+)
+df["playoff_projected_min"] = df["avg_min"].copy()
+# Top-2 usage on their team: project toward 38-40 min
+_top2_mask = (df["_team_rank"] <= 2) & (df["starter_proxy"] == 1.0)
+df.loc[_top2_mask, "playoff_projected_min"] = df.loc[_top2_mask, "avg_min"].clip(lower=36.0) * 1.05
+df["playoff_projected_min"] = df["playoff_projected_min"].clip(upper=42.0)
+# Deep bench (avg_min < 18): project to ~60% of their avg (rotation shrinks in playoffs)
+_bench_mask = df["avg_min"] < 18.0
+df.loc[_bench_mask, "playoff_projected_min"] = df.loc[_bench_mask, "avg_min"] * 0.60
+del df["_team_rank"]
+
+# 2. season_series_pts_per_min — player-specific matchup history.
+#    How does this player perform against THIS specific opponent? In playoffs,
+#    you face the same team 4-7 times, so head-to-head history is gold.
+_h2h = (
+    df.groupby(["PLAYER_ID", "SEASON", "OPP_TEAM"])
+    .apply(lambda g: g.assign(
+        _h2h_pts_sum=g["PTS"].shift(1).expanding().sum(),
+        _h2h_min_sum=g["MIN"].shift(1).expanding().sum(),
+    ), include_groups=False)
+)
+if "_h2h_pts_sum" in _h2h.columns:
+    df["_h2h_pts_sum"] = _h2h["_h2h_pts_sum"]
+    df["_h2h_min_sum"] = _h2h["_h2h_min_sum"]
+else:
+    df["_h2h_pts_sum"] = np.nan
+    df["_h2h_min_sum"] = np.nan
+df["season_series_pts_per_min"] = np.where(
+    df["_h2h_min_sum"] > 10.0,
+    df["_h2h_pts_sum"] / df["_h2h_min_sum"],
+    df["pts_per_min"],  # fallback to general pts_per_min if insufficient h2h data
+).clip(0.0, 2.5)
+del df["_h2h_pts_sum"], df["_h2h_min_sum"]
+
+# 3. spike_usage_interaction — superstar overdrive detector.
+#    In playoffs, spikes come from high-usage stars pushing 40+ min with stable
+#    minutes (low volatility). This interaction lets the spike model key on
+#    exactly that profile. Also captures contrarian bench eruptions via high
+#    volatility + low usage (unexpected playoff start).
+df["spike_usage_interaction"] = (df["usage_share"] * (1.0 - df["min_volatility"])).clip(0.0, 0.55)
+
 assert len(FEATURES) == N_FEATURES
 
 if actuals_df is not None:
@@ -337,9 +388,13 @@ _skew_map = compute_rs_features(
     game_total=_skew_sample["game_total"],
     spread_abs=_skew_sample["spread_abs"],
     recent_3g_pts=_skew_sample["roll3_pts"],
+    # v93: playoff features for skew check
+    is_top2_usage=False,  # skew check only — actual value computed at inference
+    season_series_pts_per_min=_skew_sample["season_series_pts_per_min"],
 )
 _skew_checks = ["usage_trend", "ast_rate", "def_rate", "pts_per_min", "recent_vs_season",
-                "reb_per_min", "starter_proxy", "home_away", "rest_days", "games_played"]
+                "reb_per_min", "starter_proxy", "home_away", "rest_days", "games_played",
+                "spike_usage_interaction", "season_series_pts_per_min"]
 for _sf in _skew_checks:
     _train_val = float(_skew_sample[_sf])
     _infer_val = float(_skew_map[_sf])
@@ -364,7 +419,57 @@ def _assign_weights(y_series: pd.Series) -> pd.Series:
     return w
 
 
+# ── v93: Playoff-intensity game weighting ──────────────────────────────────
+# 2025-26 confirmed playoff teams (updated for training; auto-detected at inference).
+# These are the teams that made or are making the playoffs this season.
+PLAYOFF_TEAMS_2026 = {
+    # Eastern Conference
+    "CLE", "BOS", "NYK", "NY", "IND", "MIL", "DET", "ORL", "ATL", "MIA",
+    # Western Conference
+    "OKC", "HOU", "LAC", "DEN", "MIN", "LAL", "GSW", "GS", "MEM", "SAC",
+}
+
+def _playoff_intensity_weights(game_df: pd.DataFrame) -> pd.Series:
+    """Compute per-row playoff-intensity multipliers for sample weighting.
+
+    Strategy:
+    - Games between two playoff-bound teams with tight spreads get 2.0× weight
+      (simulates playoff conditions: tight rotation, high stakes).
+    - Games between two playoff teams generally get 1.5× weight.
+    - Late-season rest games (high teammate_out_count, last 3 weeks) get 0.5× weight.
+    - All other games: 1.0× (baseline).
+    """
+    w = pd.Series(1.0, index=game_df.index)
+
+    team_is_playoff = game_df["TEAM_ABBREVIATION"].isin(PLAYOFF_TEAMS_2026)
+    opp_is_playoff = game_df["OPP_TEAM"].isin(PLAYOFF_TEAMS_2026)
+    both_playoff = team_is_playoff & opp_is_playoff
+
+    # Tight playoff-intensity games (spread < 5) between playoff teams
+    tight_game = game_df["spread_abs"] < 5.0
+    w = w.where(~(both_playoff & tight_game), 2.0)
+    # Other playoff-vs-playoff games
+    w = w.where(~(both_playoff & ~tight_game & (w == 1.0)), 1.5)
+
+    # Down-weight late-season rest games: last 3 weeks of season + high teammate_out
+    if "GAME_DATE" in game_df.columns:
+        season_end_cutoff = game_df["GAME_DATE"].max() - pd.Timedelta(days=21)
+        late_season = game_df["GAME_DATE"] >= season_end_cutoff
+        high_rest = game_df["teammate_out_count"] >= 3.0
+        rest_game = late_season & high_rest
+        w = w.where(~rest_game, 0.5)
+
+    return w
+
+
 sample_weight = df.groupby(date_col, group_keys=False)[target].transform(_assign_weights)
+
+# v93: Playoff-intensity game weighting — up-weight playoff-style games, down-weight rest games
+playoff_w = _playoff_intensity_weights(df)
+sample_weight = sample_weight * playoff_w
+n_boosted = int((playoff_w > 1.0).sum())
+n_rested = int((playoff_w < 1.0).sum())
+print(f"   Playoff intensity: {n_boosted} games up-weighted, {n_rested} rest games down-weighted")
 
 # v62: Top-performers sample weighting — players on the actual leaderboard get 3x weight
 top_perf_parquet = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "top_performers.parquet")
@@ -425,17 +530,17 @@ y = df[target].astype(float)
     shuffle=False,  # v63: Temporal split (not random) to avoid leakage
 )
 
-print(f"2. Training dual-head LightGBM on {len(X_train)} samples...")
+print(f"2. Training dual-head LightGBM on {len(X_train)} samples (25 features, playoff-tuned)...")
 print(f"   Features ({len(FEATURES)}): {FEATURES}")
 
 base_params = dict(
-    n_estimators=900,       # v62: 700→900 for 22 features
-    learning_rate=0.035,    # v62: slower learning for more features
-    max_depth=8,            # v62: 7→8 for additional feature interactions
-    num_leaves=64,          # v62: 48→64 for increased capacity
+    n_estimators=1000,      # v93: 900→1000 for 25 features (3 playoff features)
+    learning_rate=0.032,    # v93: slightly slower for more features
+    max_depth=8,
+    num_leaves=72,          # v93: 64→72 for playoff feature interactions
     random_state=42,
-    subsample=0.80,         # v62: slight reduction for regularization
-    colsample_bytree=0.80,  # v62: same reason
+    subsample=0.80,
+    colsample_bytree=0.78,  # v93: slightly more regularization for 25 features
 )
 
 model_baseline = lgb.LGBMRegressor(**base_params)
@@ -449,8 +554,17 @@ model_baseline.fit(
 baseline_pred_full = model_baseline.predict(X)
 spike_y = np.maximum(0.0, y.values - baseline_pred_full)
 
+# v93: Spike model gets extra weight for high-usage, low-volatility players
+# (superstar overdrive in playoffs) while still catching unexpected bench eruptions.
+spike_w = sample_weight.values.copy()
+_spike_inter = df["spike_usage_interaction"].values
+# High usage × low volatility (>0.15) = playoff superstar profile → 2× spike weight
+spike_w = np.where(_spike_inter > 0.15, spike_w * 2.0, spike_w)
+# Moderate interaction (0.08-0.15) → 1.3× (still relevant, captures fringe starters)
+spike_w = np.where((_spike_inter > 0.08) & (_spike_inter <= 0.15), spike_w * 1.3, spike_w)
+
 model_spike = lgb.LGBMRegressor(**base_params)
-model_spike.fit(X, spike_y, sample_weight=sample_weight.values)
+model_spike.fit(X, spike_y, sample_weight=spike_w)
 
 # ── Evaluation on test split (ranking KPIs) ────────────────────────────────
 test_df = df.loc[test_idx].copy()

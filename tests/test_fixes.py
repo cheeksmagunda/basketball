@@ -531,8 +531,8 @@ class TestLgbmFeatureAlignment:
         if AI_FEATURES is None:
             pytest.skip("No LightGBM bundle loaded (lgbm_model.json / .pkl not present or invalid)")
         n = len(AI_FEATURES)
-        assert n in (12, 16, 17, 22), (
-            f"Expected 12 (legacy), 16 (v2), 17 (v63), or 22 (v62) features, got {n}: {AI_FEATURES}"
+        assert n in (12, 16, 17, 22, 25), (
+            f"Expected 12 (legacy), 16 (v2), 17 (v63), 22 (v62), or 25 (v93 playoff) features, got {n}: {AI_FEATURES}"
         )
         assert AI_FEATURES[9] in ("recent_vs_season", "recent_3g_trend"), (
             f"10th feature (index 9) must be recent_vs_season or legacy recent_3g_trend, got {AI_FEATURES[9]!r}"
@@ -550,7 +550,7 @@ class TestLgbmFeatureAlignment:
                 "opp_pts_allowed",
                 "team_pace_proxy",
             ], f"v63 tail mismatch: {AI_FEATURES[15:17]!r}"
-        if n == 22:
+        if n in (22, 25):
             assert AI_FEATURES[15] == "cascade_signal", f"index 15 must be cascade_signal, got {AI_FEATURES[15]!r}"
             assert AI_FEATURES[16:22] == [
                 "opp_pts_allowed",
@@ -560,6 +560,12 @@ class TestLgbmFeatureAlignment:
                 "game_total",
                 "spread_abs",
             ], f"v62 tail mismatch: {AI_FEATURES[16:22]!r}"
+        if n == 25:
+            assert AI_FEATURES[22:25] == [
+                "playoff_projected_min",
+                "season_series_pts_per_min",
+                "spike_usage_interaction",
+            ], f"v93 playoff tail mismatch: {AI_FEATURES[22:25]!r}"
         # Feature vector adapts to loaded model's feature list
         vec = idx._lgbm_feature_vector(
             avg_min=24.0,
@@ -3114,12 +3120,12 @@ class TestLgbmFeatureVector22:
             teammate_out_count=1, game_total=228,
         )
         assert len(vec) == n
-        if n == 22:
+        if n in (22, 25):
             assert idx.AI_FEATURES[16] == "opp_pts_allowed" and vec[16] == 115.0
             assert idx.AI_FEATURES[20] == "game_total" and vec[20] == 228.0
 
     def test_backward_compatible_16(self):
-        """Defaults for optional kwargs match _feature_map (tail differs for 17 vs 22)."""
+        """Defaults for optional kwargs match _feature_map (tail differs for 17 vs 22 vs 25)."""
         import api.index as idx
         from api.index import _lgbm_feature_vector
 
@@ -3131,7 +3137,7 @@ class TestLgbmFeatureVector22:
             season_min=24, recent_min=25, cascade_bonus=0,
         )
         assert len(vec) == n
-        if n == 22:
+        if n in (22, 25):
             assert vec[16] == 110.0  # opp_pts_allowed default
             assert vec[20] == 222.0  # game_total default
         else:
@@ -3320,10 +3326,10 @@ class TestTrainServeSkewAlignment:
         meta = json.loads(model_json.read_text())
         assert meta["features"] == RS_FEATURES
 
-    def test_rs_features_has_22_entries(self):
+    def test_rs_features_has_25_entries(self):
         from api.features import RS_FEATURES, N_RS_FEATURES
-        assert len(RS_FEATURES) == 22
-        assert N_RS_FEATURES == 22
+        assert len(RS_FEATURES) == 25
+        assert N_RS_FEATURES == 25
 
     def test_compute_rs_features_returns_all_keys(self):
         from api.features import RS_FEATURES, compute_rs_features
@@ -3402,10 +3408,11 @@ class TestTrainServeSkewAlignment:
             home_away=1.0, opp_def_rating=112.0,
         )
         vec = rs_feature_vector(fmap, RS_FEATURES)
-        assert len(vec) == 22
+        assert len(vec) == 25
         assert vec[0] == fmap["avg_min"]
         assert vec[4] == fmap["home_away"]
-        assert vec[-1] == fmap["spread_abs"]
+        assert vec[-1] == fmap["spike_usage_interaction"]
+        assert vec[21] == fmap["spread_abs"]
 
     def test_no_duplicate_helpers_in_training_scripts(self):
         """TEAM_MARKET_SCORES should be imported in training scripts, not redefined."""

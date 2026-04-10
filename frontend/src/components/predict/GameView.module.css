@@ -151,6 +151,16 @@
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+/* ── DESKTOP RESPONSIVE ── */
+@media (min-width: 768px) {
+  .grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .gameCard { padding: 16px; }
+  .gameCardTeams { font-size: 1rem; }
+}
+@media (min-width: 1024px) {
+  .grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+}
+
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   .gameCard {

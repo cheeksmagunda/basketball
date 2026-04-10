@@ -75,3 +75,12 @@
 .badgeLocked {
   color: var(--green);
 }
+
+/* ── DESKTOP RESPONSIVE ── */
+@media (min-width: 768px) {
+  .header { padding: 14px 0 10px; }
+  .logo { font-size: 1.85rem; gap: 12px; }
+  .logoIcon { width: 48px; height: 48px; font-size: 1.4rem; }
+  .sub { font-size: 0.76rem; }
+  .badge { font-size: 0.68rem; }
+}
