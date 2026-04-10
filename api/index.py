@@ -1057,6 +1057,16 @@ _CONFIG_DEFAULTS = {
         # NOTE: Injury return penalties REMOVED after historical audit (2,316 entries, 152 dates).
         # Returning players produce +11.5% higher value than baseline due to boost reset mechanism.
         # The contrarian signal (72% under-drafted, avg 297 drafts vs 647) is too valuable to penalize.
+        # ── Condition Matrix (meta-game layer) ─────────────────────────────
+        # PRIMARY signal: ownership tier × boost tier → historical HV rate.
+        # Source: CONDITION_MATRIX in api/real_score.py (calibrated from historical data).
+        # Ghost + max_boost = 1.00 HV rate; mega_chalk + max_boost = 0.12.
+        # Dead capital combinations (e.g. chalk + low_boost) → coeff = 0.0 → auto-filtered.
+        # This makes format mechanics (who drafts whom × what boost they get) the
+        # dominant signal over basketball conditions (RS, matchups, pace).
+        "condition_matrix": {
+            "enabled": True,
+        },
     },
 }
 
@@ -4253,20 +4263,26 @@ def _apply_per_game_carry_core_pool(sorted_union, chalk_eligible, core_size, per
 
 
 def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=None, n_games=None):
-    """Dynamic lineup builder — unified EV formula, no hardcoded archetypes.
+    """Condition-Matrix-driven lineup builder — format mechanics as primary signal.
 
-    EV formula: RS × (2.0 + boost) × data_multipliers
-      Where 2.0 = top slot multiplier. Strategy report Finding 2: boost is 40%
-      more valuable per unit than RS. Using the top slot multiplier properly
-      weights boost's contribution relative to RS.
+    Composite EV: condition_coeff × RS × (2.0 + boost) × data_multipliers
+      condition_coeff = CONDITION_MATRIX[ownership_tier][boost_tier] (0.0–1.0)
+      Ghost + max_boost → coeff=1.00 (100% HV rate). Mega_chalk + max_boost → 0.12.
+      Dead capital combos → coeff=0.0 → auto-filtered from candidate pool.
+
+    The Condition Matrix (ownership × boost → historical HV rate) is the PRIMARY
+    signal. RS still determines slot assignment (Finding 3) and contributes to
+    EV magnitude, but the meta-game layer dominates player selection.
+
+    No positional caps. Composition driven by composite EV.
+    Max 1 player per team per lineup (S5 and Moonshot each independent).
 
     Pipeline:
       1. Filter: RS >= 2.0, minutes >= 12, not OUT, not blacklisted
-      2. Score: safe_ev = RS × (2.0 + cb_low), upside_ev = RS × (2.0 + cb_high)
-         Plus data-driven multipliers (minutes delta, leaderboard frequency,
-         contrarian bonus for under-drafted high-boost role players)
-      3. Starting 5: top 5 by safe_ev (floor reliability), team cap applied
-      4. Moonshot: top 5 by upside_ev from remaining pool (ceiling)
+      2. Score: condition_coeff × RS × (2.0 + boost) × data_multipliers
+         Dead capital auto-filtered (condition_coeff = 0.0)
+      3. Starting 5: top 5 by safe_ev (floor reliability), max 1 per team
+      4. Moonshot: top 5 by upside_ev from remaining pool, max 1 per team
       5. Slot assignment: sort both lineups by RS descending (provably optimal)
     """
     # ── Configuration ──────────────────────────────────────────────────────
@@ -4417,13 +4433,35 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
     #     Fears/Hawkins: high RS, low drafts, contrarian edge. These are our targets.
     _mc_cfg = _strat.get("momentum_curve", {})
     _mc_enabled = _mc_cfg.get("enabled", True)
+
+    # ── Condition Matrix (meta-game layer) ────────────────────────────────
+    # grep: CONDITION MATRIX
+    # PRIMARY signal: ownership tier × boost tier → historical HV rate.
+    # Ghost + max_boost = 1.00; mega_chalk + max_boost = 0.12; dead capital = 0.0.
+    # Format mechanics dominate basketball conditions — this is the exploit layer.
+    _cm_cfg = _strat.get("condition_matrix", {})
+    _cm_enabled = _cm_cfg.get("enabled", True)
+
+    # Load player history: needed by both momentum curve AND condition matrix
+    # (condition matrix uses historical draft counts for ownership tier classification)
     _mc_history = {}
-    if _mc_enabled:
+    if _mc_enabled or _cm_enabled:
         try:
             from api.boost_model import load_player_history
             _mc_history = load_player_history()
         except Exception:
             pass
+
+    # Lazy imports for condition matrix
+    _condition_coeff_fn = None
+    _estimate_drafts_fn = None
+    if _cm_enabled:
+        try:
+            from api.real_score import condition_coefficient as _condition_coeff_fn
+            from api.boost_model import estimate_draft_popularity as _estimate_drafts_fn
+        except Exception as e:
+            print(f"[build_lineups] condition matrix import failed, disabling: {e}")
+            _cm_enabled = False
 
     for p in candidate_pool:
         rs = float(p.get("rating", 0))
@@ -4544,8 +4582,38 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
                         p["_rising_wave"] = True
                         p["_rising_wave_score"] = round(_wave_score, 3)
 
-        total_mult = mi_mult * lb_mult * ct_mult * mc_mult
-        # Unified EV: RS × (avg_slot + boost) captures both RS and boost value
+        # ── Condition Matrix multiplier (PRIMARY signal) ─────────────────
+        # Ownership tier × boost tier → historical HV rate. This is the
+        # format exploit layer — it doesn't care about basketball, it cares
+        # about how value is calculated and how the crowd drafts.
+        cond_mult = 1.0
+        if _cm_enabled and _condition_coeff_fn:
+            # Primary: use historical draft count from player history
+            _est_drafts = None
+            _pname_cm = _normalize_player_name(p.get("name", ""))
+            _phist_cm = _mc_history.get(_pname_cm, [])
+            if _phist_cm:
+                # Average of last 3 appearances for stability
+                _recent_drafts_cm = [e.get("drafts", 0) for e in _phist_cm[-3:]
+                                     if e.get("drafts") is not None and e.get("drafts", 0) > 0]
+                if _recent_drafts_cm:
+                    _est_drafts = sum(_recent_drafts_cm) / len(_recent_drafts_cm)
+            # Fallback: estimate from player profile (PPG + team + recency)
+            if _est_drafts is None and _estimate_drafts_fn:
+                _est_drafts = _estimate_drafts_fn(
+                    season_ppg=float(p.get("season_pts") or p.get("pts") or 0),
+                    team=(p.get("team") or ""),
+                    recent_ppg=float(p.get("recent_pts") or p.get("season_pts") or p.get("pts") or 0),
+                )
+            cond_mult = _condition_coeff_fn(_est_drafts, boost)
+            p["_cond_coeff"] = round(cond_mult, 3)
+            p["_est_drafts"] = round(_est_drafts or 0, 0)
+            if cond_mult == 0.0:
+                p["_dead_capital"] = True
+
+        total_mult = mi_mult * lb_mult * ct_mult * mc_mult * cond_mult
+        # Unified EV: RS × (avg_slot + boost) × condition_mult captures
+        # format mechanics as the primary signal over basketball conditions
         p["draft_ev"]  = round(rs * (_avg_slot + boost)    * total_mult, 2)
         p["safe_ev"]   = round(rs * (_avg_slot + cb_low)   * total_mult, 2)
         p["upside_ev"] = round(rs * (_avg_slot + cb_high)  * total_mult, 2)
@@ -4553,7 +4621,18 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         p["_lb_mult"]  = round(lb_mult, 3)
         p["_ct_mult"]  = round(ct_mult, 3)
         p["_mc_mult"]  = round(mc_mult, 3)
+        p["_cond_mult"] = round(cond_mult, 3)
         p["moonshot_ev"] = p["draft_ev"]
+
+    # ── Step 2b: Filter dead capital (condition coefficient = 0.0) ────────
+    # Dead capital = ownership × boost combos with zero historical HV rate.
+    # These are trap plays — the crowd is too heavy for positive EV.
+    if _cm_enabled:
+        _dead = [p for p in candidate_pool if p.get("_dead_capital")]
+        if _dead:
+            print(f"[build_lineups] condition matrix filtered {len(_dead)} dead capital player(s): "
+                  f"{[p.get('name') for p in _dead[:5]]}")
+        candidate_pool = [p for p in candidate_pool if not p.get("_dead_capital")]
 
     # ── Step 3: Sort candidate pool by safe_ev ──────────────────────────────
     candidate_pool.sort(key=lambda x: (-x.get("safe_ev", 0), -x.get("rating", 0)))
@@ -4576,13 +4655,11 @@ def _build_lineups(projections, def_stats=None, matchup_intel=None, dvp_data=Non
         return selected, team_counts
 
     # ── Step 4: Starting 5 — top 5 by safe_ev with team cap ─────────────
-    # No hardcoded archetypes. The unified EV formula (RS × (1.6 + boost))
-    # naturally balances stars vs role players per-slate:
-    #   - Star slates: high RS pushes stars to top even with low boost
-    #   - Role-player slates: high boost dominates when RS is moderate
-    #   - Mixed slates: the formula finds the true optimal mix
+    # Composite EV = condition_coeff × RS × (2.0 + boost). No archetypes, no
+    # positional caps. Composition driven entirely by composite EV + team cap.
     # Both lineups drawn from the same pool. Starting 5 uses safe_ev (cb_low)
     # for floor reliability. Moonshot uses upside_ev (cb_high) for ceiling.
+    # Each lineup independently enforces max 1 player per team.
     safe_pool = sorted(candidate_pool, key=lambda x: (-x.get("safe_ev", 0), x.get("player_variance", 0)))
     chalk, _ = _select_with_team_cap(safe_pool, 5, max_per_team)
     chalk_names = {p.get("name") for p in chalk}

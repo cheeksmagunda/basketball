@@ -741,6 +741,9 @@
     "injury_return_rs_penalty": 0.0,
     "historical_rs_discount": {
       "enabled": false
+    },
+    "condition_matrix": {
+      "enabled": true
     }
   }
 }
