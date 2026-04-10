@@ -25,17 +25,14 @@ body::after {
   z-index: 0;
 }
 
-/* App container — fluid up to 1200px on desktop, 500px column on mobile */
+/* App container — fluid up to 1000px on desktop, 500px column on mobile */
 .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 140px; }
 
 @media (min-width: 768px) {
   .app { max-width: 720px; padding: 0 24px 60px; }
 }
 @media (min-width: 1024px) {
-  .app { max-width: 960px; padding: 0 32px 60px; }
-}
-@media (min-width: 1280px) {
-  .app { max-width: 1100px; }
+  .app { max-width: 1000px; padding: 0 1rem 60px; }
 }
 
 /* ── PLAYER GRID — auto-fit cards side-by-side on desktop ── */
