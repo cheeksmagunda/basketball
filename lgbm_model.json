@@ -23,10 +23,7 @@
     "usage_share",
     "teammate_out_count",
     "game_total",
-    "spread_abs",
-    "playoff_projected_min",
-    "season_series_pts_per_min",
-    "spike_usage_interaction"
+    "spread_abs"
   ],
   "baseline_file": "lgbm_baseline.txt",
   "spike_file": "lgbm_spike.txt"
