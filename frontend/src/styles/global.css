@@ -25,8 +25,31 @@ body::after {
   z-index: 0;
 }
 
-/* App container */
+/* App container — fluid up to 1200px on desktop, 500px column on mobile */
 .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 140px; }
+
+@media (min-width: 768px) {
+  .app { max-width: 720px; padding: 0 24px 60px; }
+}
+@media (min-width: 1024px) {
+  .app { max-width: 960px; padding: 0 32px 60px; }
+}
+@media (min-width: 1280px) {
+  .app { max-width: 1100px; }
+}
+
+/* ── PLAYER GRID — auto-fit cards side-by-side on desktop ── */
+.player-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 768px) {
+  .player-grid {
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 12px;
+  }
+}
 /* Uppercase letter-spacing for readability (buttons, labels, metadata) */
 [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: var(--tracking-caps); }
 
@@ -183,6 +206,13 @@ select:focus { border-color: rgba(20,184,166,0.55); border-top-color: rgba(255,2
   font-size: 0.75rem; font-weight: 800; letter-spacing: 0.15em;
   text-transform: uppercase; color: var(--text-dim);
   display: flex; align-items: center; gap: 8px; margin: 20px 0 12px;
+}
+
+/* ── DESKTOP REFINEMENTS ── */
+@media (min-width: 768px) {
+  /* Reduce bottom padding — no floating bottom nav on desktop */
+  .analyze-btn { max-width: 400px; margin-left: auto; margin-right: auto; }
+  .game-select-wrap { max-width: 400px; }
 }
 
 /* ── REDUCED MOTION ── */
