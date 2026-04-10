@@ -23,9 +23,6 @@
   /* Line page accent — gold (secondary) */
   --line: #d4a640;
   --line-glow: rgba(212,166,64,0.22);
-  /* Lab/Ben page accent — teal (same as primary) */
-  --lab: #14b8a6;
-  --lab-glow: rgba(20,184,166,0.22);
   /* Parlay page accent — teal (unified, no more magenta) */
   --parlay: #14b8a6;
   --parlay-glow: rgba(20,184,166,0.22);
@@ -70,8 +67,5 @@
   --color-oracle-label: #5eead4;
   --color-date-chip-bg: #1E2633;
   --color-date-chip-hover: #243040;
-  --lab-vh: 100dvh;
   --keyboard-height: 0px;
-  --lab-header-offset: 80px;
-  --lab-nav-offset: 90px;
 }

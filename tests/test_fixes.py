@@ -1285,71 +1285,6 @@ class TestCorePool:
         assert upside == []
 
 
-# ─────────────────────────────────────────────────────────
-# TestBriefingSimulatedDraftScore — simulated_draft_score surfaces to Ben
-# ─────────────────────────────────────────────────────────
-class TestBriefingSimulatedDraftScore:
-    """simulated_draft_score from _compute_audit must appear in /api/lab/briefing latest_slate."""
-
-    AUDIT = {
-        "date": "2026-03-17",
-        "players_compared": 5,
-        "mae": 1.48,
-        "directional_accuracy": 0.6,
-        "over_projected": 2,
-        "under_projected": 3,
-        "biggest_misses": [],
-        "simulated_draft_score": 62.4,
-        "generated_at": "2026-03-17T23:00:00Z",
-    }
-
-    def _run_briefing_with_audit(self, audit_dict):
-        """Helper: run lab_briefing with a fake paired date using the given audit."""
-        import asyncio, json
-        from unittest.mock import patch
-        from api.index import lab_briefing
-
-        audit_json = json.dumps(audit_dict)
-        date = audit_dict["date"]
-
-        def fake_list_dir(path):
-            if "predictions" in path:
-                return [{"name": f"{date}.csv"}]
-            if "actuals" in path:
-                return [{"name": f"{date}.csv"}]
-            return []
-
-        def fake_get_file(path):
-            if f"audit/{date}" in path:
-                return audit_json, "sha1"
-            return None, None
-
-        with patch('api.index._github_list_dir', side_effect=fake_list_dir):
-            with patch('api.index._github_get_file', side_effect=fake_get_file):
-                with patch('api.index._load_config', return_value={"version": 42, "changelog": []}):
-                    result = asyncio.run(lab_briefing())
-
-        data = result if isinstance(result, dict) else result.body
-        if isinstance(data, bytes):
-            data = json.loads(data)
-        return data
-
-    def test_simulated_draft_score_in_briefing_latest_slate(self):
-        """When audit has simulated_draft_score, briefing latest_slate must include it."""
-        data = self._run_briefing_with_audit(self.AUDIT)
-        latest = data.get("latest_slate") or {}
-        assert "simulated_draft_score" in latest, \
-            "simulated_draft_score must be in briefing latest_slate so Ben can track 60+ goal"
-        assert latest["simulated_draft_score"] == 62.4
-
-    def test_simulated_draft_score_none_handled_gracefully(self):
-        """When audit has simulated_draft_score=None, briefing still works."""
-        audit_no_score = {**self.AUDIT, "simulated_draft_score": None}
-        data = self._run_briefing_with_audit(audit_no_score)
-        latest = data.get("latest_slate") or {}
-        assert latest.get("simulated_draft_score") is None
-
-
 class TestMinGateMinutes:
     """min_gate_minutes enforces a hard 25-minute floor for draft eligibility.
     Small-slate relaxation happens in _build_lineups, not here."""
@@ -3080,43 +3015,6 @@ class TestPerGameFrontend:
         back_fn = re.search(r"function _backToGameGrid\(\)\s*\{[^}]+\}", src)
         assert back_fn, "_backToGameGrid not found"
         assert "strategyInsight" in back_fn.group(0)
-
-
-class TestBenChatTrimTrailingUser:
-    """_ben_chat_trim_trailing_user_orphan — keep single-user threads; drop at most one orphan user tail."""
-
-    def test_single_user_message_preserved(self):
-        from api.index import _ben_chat_trim_trailing_user_orphan
-
-        data = [{"role": "user", "content": "hello"}]
-        _ben_chat_trim_trailing_user_orphan(data)
-        assert len(data) == 1
-        assert data[0]["role"] == "user"
-
-    def test_trailing_user_after_assistant_trimmed_once(self):
-        from api.index import _ben_chat_trim_trailing_user_orphan
-
-        data = [
-            {"role": "user", "content": "a"},
-            {"role": "assistant", "content": "b"},
-            {"role": "user", "content": "orphan"},
-        ]
-        _ben_chat_trim_trailing_user_orphan(data)
-        assert len(data) == 2
-        assert data[-1]["role"] == "assistant"
-
-    def test_two_trailing_users_only_one_popped(self):
-        from api.index import _ben_chat_trim_trailing_user_orphan
-
-        data = [
-            {"role": "assistant", "content": "ok"},
-            {"role": "user", "content": "u1"},
-            {"role": "user", "content": "u2"},
-        ]
-        _ben_chat_trim_trailing_user_orphan(data)
-        assert len(data) == 2
-        assert data[-1]["role"] == "user"
-        assert data[-1]["content"] == "u1"
 
 
 class TestEstimateLogDrafts:

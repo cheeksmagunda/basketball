@@ -1125,13 +1125,6 @@ class TestUpdateConfigValidation:
         assert self._valid("_private_key")
         assert self._valid("card_boost._internal")
 
-    def test_validation_regex_present_in_source(self):
-        """The validation regex must be present in api/index.py (catches accidental deletion)."""
-        src = (ROOT / "api" / "index.py").read_text()
-        assert "Invalid key format" in src, (
-            "update-config key validation removed — H6 security fix regressed"
-        )
-        assert "lab_update_config" in src, "lab_update_config function missing"
 
 
 # ---------------------------------------------------------------------------

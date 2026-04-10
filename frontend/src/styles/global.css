@@ -27,9 +27,6 @@ body::after {
 
 /* App container */
 .app { position: relative; z-index: 1; max-width: 500px; margin: 0 auto; padding: 0 16px 140px; }
-/* Ben tab uses fixed-height flex layout — remove bottom padding to prevent viewport overflow */
-.app.ben-active { padding-bottom: 0; overflow: hidden; height: 100dvh; }
-
 /* Uppercase letter-spacing for readability (buttons, labels, metadata) */
 [style*="text-transform:uppercase"], [style*="text-transform: uppercase"] { letter-spacing: var(--tracking-caps); }
 

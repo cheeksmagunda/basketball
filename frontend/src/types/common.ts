@@ -24,9 +24,6 @@ export function idleState<T>(): AsyncState<T> {
 // Navigation types
 // ---------------------------------------------------------------------------
 
-/** Top-level tab identifiers (matches the 2-tab segmented control) */
-export type Tab = 'predict' | 'lab';
-
 /** Predict sub-nav: Slate-Wide vs Per-Game */
 export type PredictSubNav = 'slate' | 'game';
 
